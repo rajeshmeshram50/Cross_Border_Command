@@ -25,6 +25,7 @@ use App\Http\Controllers\Api\ClmTradeLicenseController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DummyItemController;
+use App\Http\Controllers\Api\EmailController;
 use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\EmployeeDocumentController;
 use App\Http\Controllers\Api\ExitController;
@@ -855,6 +856,16 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/notifications/unread-count',                 [NotificationController::class, 'unreadCount']);
     Route::post  ('/notifications/read-all',                     [NotificationController::class, 'markAllRead']);
     Route::post  ('/notifications/{id}/read',                    [NotificationController::class, 'markRead']);
+
+    // Gmail — tenant-scoped history of every outbound email (auto-captured by
+    // App\Listeners\LogSentEmail) plus a compose/send box. Branch- and
+    // employee-mapped via the email_logs columns the listener fills in.
+    Route::get   ('/emails',                                     [EmailController::class, 'index']);
+    Route::get   ('/emails/stats',                              [EmailController::class, 'stats']);
+    Route::get   ('/emails/recipients',                         [EmailController::class, 'recipients']);
+    Route::post  ('/emails/bulk',                               [EmailController::class, 'bulk']);
+    Route::get   ('/emails/{id}',                               [EmailController::class, 'show']);
+    Route::post  ('/emails',                                     [EmailController::class, 'store']);
 
     // Per-employee balance summary — drives the Leave tab cards on the
     // Employee Profile page (donut + ledger per assigned leave type).

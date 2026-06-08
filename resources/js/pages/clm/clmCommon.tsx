@@ -361,6 +361,17 @@ export function ShortCodeNameModal(props: {
  */
 export function LockedConf(props: { title: string; sub: string; onClose: () => void }) {
   const { title, sub, onClose } = props;
+  // Inline styles can't be reached by the [data-bs-theme="dark"] CSS rules, so
+  // resolve the theme-dependent colours here. The red header band + Cancel
+  // button stay red in both themes; only the card surface, body text and
+  // footer flip so the popup doesn't render as a bright white card in dark.
+  const dark = typeof document !== 'undefined' && document.documentElement.getAttribute('data-bs-theme') === 'dark';
+  const cardBg       = dark ? '#1f2937' : '#fff';
+  const cardBorder   = dark ? 'rgba(239,68,68,.35)' : '#fecaca';
+  const alertText    = dark ? '#f87171' : '#b91c1c';
+  const bodyText     = dark ? '#cbd5e1' : '#334155';
+  const footerBg     = dark ? 'rgba(220,38,38,.12)' : '#fef2f2';
+  const footerBorder = dark ? 'rgba(255,255,255,.08)' : '#f1f5f9';
   return createPortal((
     // Backdrop intentionally does NOT close on click — the popup should only
     // dismiss via the Cancel button so an accidental outside click can't lose it.
@@ -368,8 +379,8 @@ export function LockedConf(props: { title: string; sub: string; onClose: () => v
       <div
         onClick={e => e.stopPropagation()}
         style={{
-          width: '100%', maxWidth: 460, background: '#fff', borderRadius: 12, overflow: 'hidden',
-          boxShadow: '0 24px 60px rgba(15,23,42,.45)', border: '1px solid #fecaca',
+          width: '100%', maxWidth: 460, background: cardBg, borderRadius: 12, overflow: 'hidden',
+          boxShadow: '0 24px 60px rgba(15,23,42,.45)', border: `1px solid ${cardBorder}`,
           fontFamily: "'DM Sans','Inter',system-ui,sans-serif",
         }}
       >
@@ -383,15 +394,15 @@ export function LockedConf(props: { title: string; sub: string; onClose: () => v
 
         {/* Body */}
         <div style={{ padding: '16px 18px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9, color: '#b91c1c', fontWeight: 800, fontSize: 13 }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9, color: alertText, fontWeight: 800, fontSize: 13 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={alertText} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
             Action not allowed
           </div>
-          <div style={{ fontSize: 13.5, color: '#334155', lineHeight: 1.6 }}>{sub}</div>
+          <div style={{ fontSize: 13.5, color: bodyText, lineHeight: 1.6 }}>{sub}</div>
         </div>
 
         {/* Footer */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '12px 18px', borderTop: '1px solid #f1f5f9', background: '#fef2f2' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '12px 18px', borderTop: `1px solid ${footerBorder}`, background: footerBg }}>
           <button
             type="button"
             onClick={onClose}

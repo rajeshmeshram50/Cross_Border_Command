@@ -28,6 +28,7 @@ export default function ClmQcPage() {
   const [editing, setEditing]   = useState<Qc | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Qc | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const reload = () => {
     setLoading(true);
@@ -61,9 +62,11 @@ export default function ClmQcPage() {
     }
   };
   const onDelete = async () => {
-    if (!pendingDelete) return;
+    if (!pendingDelete || deleting) return;
+    setDeleting(true);
     try { await api.delete(`/clm/qc-documents/${pendingDelete.id}`); toast.success('Deleted', `${pendingDelete.name} removed`); setPendingDelete(null); reload(); }
     catch (e: any) { toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete'); }
+    finally { setDeleting(false); }
   };
 
   return (
@@ -163,6 +166,7 @@ export default function ClmQcPage() {
         title="Delete QC Document"
         itemName={pendingDelete ? `${pendingDelete.name} (${pendingDelete.code})` : undefined}
         subMessage="This QC document will be permanently removed. The action cannot be undone."
+        loading={deleting}
         onClose={() => setPendingDelete(null)}
         onConfirm={() => void onDelete()}
       />

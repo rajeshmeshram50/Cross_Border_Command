@@ -92,7 +92,7 @@ class ClmSegmentRuleController extends Controller
 
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $code = sprintf('SR-%03d', ClmSegmentRule::where('client_id', $user->client_id)->count() + 1);
+            $code = $this->nextRuleCode($user->client_id);
 
             $segment = ClmSegment::where('client_id', $user->client_id)
                 ->where('code', $data['segment_code'])->first();
@@ -250,5 +250,32 @@ class ClmSegmentRuleController extends Controller
             }
         }
         return [$mand, $opt];
+    }
+
+    /**
+     * Allocate the next per-tenant rule code (SR-NNN). Uses MAX(numeric
+     * suffix) + 1 rather than count()+1 so a deleted rule in the middle of
+     * the sequence doesn't make the next allocation reuse a rule_code that
+     * still exists — which throws a unique-constraint violation on save.
+     * Caller must already hold the client row lock.
+     */
+    private function nextRuleCode(int $clientId): string
+    {
+        $codes = ClmSegmentRule::where('client_id', $clientId)->pluck('rule_code')->all();
+        $maxN  = 0;
+        $taken = [];
+        foreach ($codes as $c) {
+            if (preg_match('/^SR-(\d+)$/', (string) $c, $m)) {
+                $n = (int) $m[1];
+                if ($n > $maxN) $maxN = $n;
+            }
+            $taken[(string) $c] = true;
+        }
+        $n = $maxN;
+        do {
+            $n++;
+            $code = sprintf('SR-%03d', $n);
+        } while (isset($taken[$code]));
+        return $code;
     }
 }

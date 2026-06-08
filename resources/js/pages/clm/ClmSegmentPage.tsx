@@ -73,6 +73,7 @@ export default function ClmSegmentPage() {
   const [editing, setEditing]     = useState<Segment | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Segment | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const reload = () => {
     setLoading(true);
@@ -115,9 +116,11 @@ export default function ClmSegmentPage() {
     }
   };
   const onDelete = async () => {
-    if (!pendingDelete) return;
+    if (!pendingDelete || deleting) return;
+    setDeleting(true);
     try { await api.delete(`/clm/segments/${pendingDelete.id}`); toast.success('Deleted', `${pendingDelete.name} removed`); setPendingDelete(null); reload(); }
     catch (e: any) { toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete'); }
+    finally { setDeleting(false); }
   };
 
   return (
@@ -263,6 +266,7 @@ export default function ClmSegmentPage() {
         title="Delete Segment"
         itemName={pendingDelete ? `${pendingDelete.name} (${pendingDelete.code})` : undefined}
         subMessage="This segment will be permanently removed. The action cannot be undone."
+        loading={deleting}
         onClose={() => setPendingDelete(null)}
         onConfirm={() => void onDelete()}
       />

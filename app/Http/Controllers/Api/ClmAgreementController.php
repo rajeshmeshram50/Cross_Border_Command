@@ -70,7 +70,7 @@ class ClmAgreementController extends Controller
 
         $row = DB::transaction(function () use ($user, $data, $name) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $code = sprintf('AT-%03d', ClmAgreementType::where('client_id', $user->client_id)->count() + 1);
+            $code = $this->nextCode(ClmAgreementType::class, $user->client_id, 'AT-');
             return ClmAgreementType::create([
                 'client_id'   => $user->client_id,
                 'code'        => $code,
@@ -135,6 +135,39 @@ class ClmAgreementController extends Controller
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
+    /**
+     * Allocate the next per-tenant code (AT-NNN / A-NNN). Uses
+     * MAX(numeric suffix) + 1 rather than count()+1 so a deleted row in the
+     * middle of the sequence doesn't make the next allocation reuse a code
+     * that still exists — which was throwing a unique-constraint violation
+     * (clm_agreement_types_client_id_code_unique) on save. Skips any code
+     * that's already taken just to be doubly safe. Caller must already hold
+     * the client row lock; the composite UNIQUE (client_id, code) is the
+     * final guard.
+     *
+     * @param class-string<\Illuminate\Database\Eloquent\Model> $modelClass
+     */
+    private function nextCode(string $modelClass, int $clientId, string $prefix): string
+    {
+        $codes = $modelClass::where('client_id', $clientId)->pluck('code')->all();
+        $maxN  = 0;
+        $taken = [];
+        $re    = '/^' . preg_quote($prefix, '/') . '(\d+)$/';
+        foreach ($codes as $c) {
+            if (preg_match($re, (string) $c, $m)) {
+                $n = (int) $m[1];
+                if ($n > $maxN) $maxN = $n;
+            }
+            $taken[(string) $c] = true;
+        }
+        $n = $maxN;
+        do {
+            $n++;
+            $code = sprintf('%s%03d', $prefix, $n);
+        } while (isset($taken[$code]));
+        return $code;
+    }
+
     /* ── LIBRARY ── */
 
     public function libraryIndex(Request $request)
@@ -173,7 +206,7 @@ class ClmAgreementController extends Controller
 
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $code = sprintf('A-%03d', ClmAgreementLibrary::where('client_id', $user->client_id)->count() + 1);
+            $code = $this->nextCode(ClmAgreementLibrary::class, $user->client_id, 'A-');
             return ClmAgreementLibrary::create([
                 'client_id'      => $user->client_id,
                 'code'           => $code,

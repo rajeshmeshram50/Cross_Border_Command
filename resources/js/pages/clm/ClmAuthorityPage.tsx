@@ -57,6 +57,7 @@ export default function ClmAuthorityPage() {
   const [editing, setEditing]     = useState<Authority | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Authority | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const reload = () => {
     setLoading(true);
@@ -87,9 +88,11 @@ export default function ClmAuthorityPage() {
     }
   };
   const onDelete = async () => {
-    if (!pendingDelete) return;
+    if (!pendingDelete || deleting) return;
+    setDeleting(true);
     try { await api.delete(`/clm/authorities/${pendingDelete.id}`); toast.success('Deleted', `${pendingDelete.name} removed`); setPendingDelete(null); reload(); }
     catch (e: any) { toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete'); }
+    finally { setDeleting(false); }
   };
 
   return (
@@ -202,6 +205,7 @@ export default function ClmAuthorityPage() {
         title="Delete Authority"
         itemName={pendingDelete ? `${pendingDelete.name} (${pendingDelete.code})` : undefined}
         subMessage="This authority will be permanently removed. The action cannot be undone."
+        loading={deleting}
         onClose={() => setPendingDelete(null)}
         onConfirm={() => void onDelete()}
       />
