@@ -480,6 +480,15 @@ function ComposeDock({ onClose, onSent }: { onClose: () => void; onSent: () => v
     e.preventDefault();
   };
 
+  // Close the autocomplete dropdown when clicking outside the active field.
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (acRef.current && !acRef.current.contains(e.target as Node)) setAcInput('');
+    };
+    window.addEventListener('mousedown', onDown);
+    return () => window.removeEventListener('mousedown', onDown);
+  }, []);
+
   useEffect(() => {
     api.get('/emails/recipients').then(({ data }) => {
       const d = data?.data ?? {};
