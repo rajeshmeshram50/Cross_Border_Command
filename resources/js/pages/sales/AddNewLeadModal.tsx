@@ -101,7 +101,10 @@ export default function AddNewLeadModal(props: {
     if (!open || customerOpts.length > 0) return;
     setCustomersLoading(true);
     api
-      .get<{ data?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>>('/customers')
+      // tab=all → every customer. Without it the endpoint defaults to
+      // tab=fresh, which returns ONLY customers not yet linked to any lead —
+      // so customers already mapped to a lead were missing from this picker.
+      .get<{ data?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>>('/customers', { params: { tab: 'all' } })
       .then(r => {
         const rows = Array.isArray(r.data) ? r.data : (r.data?.data ?? []);
         const opts: CustomerOption[] = rows

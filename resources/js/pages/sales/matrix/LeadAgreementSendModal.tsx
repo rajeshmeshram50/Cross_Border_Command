@@ -61,12 +61,28 @@ export type AgreementRow = {
   footer_config?: FooterConfig | null;
 };
 
+/* Trade document required for a segment, listed per mapped party
+ * (customer / consignee). Sourced from the segment's DCP rule
+ * (doc_selections['td']) + the party's upload state. */
+export type SegmentTradeDoc = {
+  party: 'customer' | 'consignee';
+  db_id: number | null;
+  name: string;
+  reference: string;
+  doc_code: string;
+  requirement: 'M' | 'O';
+  status: 'Verified' | 'Pending';
+  attachment: string | null;
+  attachment_url: string | null;
+};
+
 export type ApplicableSegment = {
   id: number;
   code: string;
   name: string;
   regulatory: 'highly' | 'less';
   agreements: AgreementRow[];
+  trade_documents: SegmentTradeDoc[];
 };
 
 export type ApplicablePayload = {
@@ -112,6 +128,8 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
   const [payload, setPayload] = useState<ApplicablePayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeSegId, setActiveSegId] = useState<number | null>(null);
+  /* Sub-tab within the active segment: Trade Documents vs Agreements. */
+  const [docTab, setDocTab] = useState<'trade' | 'agreements'>('agreements');
   const [previewingId, setPreviewingId] = useState<number | null>(null);
 
   /* Bulk selection. Multi-row checkbox state — the "Send Selected"
@@ -537,7 +555,66 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
                 ))}
               </div>
 
-              {/* Table for the active segment */}
+              {/* Sub-tabs within the active segment: Trade Documents | Agreements */}
+              {activeSeg && (
+                <div className="lasm-subtabs" role="tablist">
+                  <button type="button" role="tab" aria-selected={docTab === 'trade'}
+                    className={`lasm-subtab ${docTab === 'trade' ? 'is-on' : ''}`} onClick={() => setDocTab('trade')}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    Trade Documents
+                    <span className="lasm-subtab-count">{activeSeg.trade_documents.length}</span>
+                  </button>
+                  <button type="button" role="tab" aria-selected={docTab === 'agreements'}
+                    className={`lasm-subtab ${docTab === 'agreements' ? 'is-on' : ''}`} onClick={() => setDocTab('agreements')}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    Agreements
+                    <span className="lasm-subtab-count">{activeSeg.agreements.length}</span>
+                  </button>
+                </div>
+              )}
+
+              {/* ── Trade Documents tab — per mapped party (customer + consignee).
+                  Moved here from the per-party Evidence Vault. ── */}
+              {docTab === 'trade' && activeSeg && (
+                <div className="lasm-td-panel">
+                  {activeSeg.trade_documents.length === 0 ? (
+                    <div className="lasm-td-empty">No trade documents configured for this segment.</div>
+                  ) : (
+                    <table className="lasm-td-table">
+                      <thead>
+                        <tr>
+                          <th>Document</th>
+                          <th style={{ width: 130 }}>Applicable Party</th>
+                          <th style={{ width: 90 }}>Required</th>
+                          <th style={{ width: 110 }}>Status</th>
+                          <th style={{ width: 90 }}>File</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {activeSeg.trade_documents.map((td, i) => (
+                          <tr key={`${td.party}-${td.doc_code}-${i}`}>
+                            <td>
+                              <div className="lasm-doc-name">{td.name}</div>
+                              <div className="lasm-doc-sub">{td.reference}</div>
+                            </td>
+                            <td><span className={`lasm-party-pill lasm-party-${td.party}`}>{td.party === 'customer' ? 'Customer' : 'Consignee'}</span></td>
+                            <td><span className={`lasm-pill ${td.requirement === 'M' ? 'lasm-pill-req' : 'lasm-pill-opt'}`}>{td.requirement === 'M' ? 'REQ' : 'OPT'}</span></td>
+                            <td><span className={`lasm-td-status ${td.status === 'Verified' ? 'is-ok' : 'is-pending'}`}>{td.status === 'Verified' ? 'Uploaded' : 'Pending'}</span></td>
+                            <td>
+                              {td.attachment_url
+                                ? <a className="lasm-td-file" href={td.attachment_url} target="_blank" rel="noopener noreferrer">View</a>
+                                : <span className="lasm-td-dash">—</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+
+              {/* ── Agreements tab ── */}
+              {docTab === 'agreements' && (<>
               <div className="lasm-table-wrap">
                 <table className="lasm-table">
                   <thead>
@@ -558,6 +635,7 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
                       </th>
                       <th style={{ width: 56 }}>Sr No.</th>
                       <th>Document</th>
+                      <th style={{ width: 140 }}>Applicable Party</th>
                       <th style={{ width: 110 }}>Required</th>
                       <th style={{ width: 130 }}>Updated On</th>
                       <th style={{ width: 130 }}>Status</th>
@@ -566,7 +644,7 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
                   </thead>
                   <tbody>
                     {(!activeSeg || activeSeg.agreements.length === 0) ? (
-                      <tr><td colSpan={7} className="lasm-empty-row">No agreements configured for this segment yet.</td></tr>
+                      <tr><td colSpan={8} className="lasm-empty-row">No agreements configured for this segment yet.</td></tr>
                     ) : activeSeg.agreements.map((a, idx) => {
                       const sig = a.signature_request;
                       const sigStatus = sig?.status ?? 'draft';
@@ -597,7 +675,17 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
                           <td>{idx + 1}</td>
                           <td>
                             <div className="lasm-doc-name">{a.title}</div>
-                            <div className="lasm-doc-sub">{a.agreement_type || '—'} · {a.party}</div>
+                            <div className="lasm-doc-sub">{a.agreement_type || '—'}</div>
+                          </td>
+                          <td>
+                            {/* Applicable party CSV (e.g. "Buyer, Consignee") split
+                                into individual pills so the signer set is clear. */}
+                            <div className="lasm-party-cell">
+                              {String(a.party ?? '').split(',').map(p => p.trim()).filter(Boolean).map((p, pi) => (
+                                <span key={pi} className="lasm-party-pill lasm-party-agr">{p}</span>
+                              ))}
+                              {!String(a.party ?? '').trim() && <span className="lasm-td-dash">—</span>}
+                            </div>
                           </td>
                           <td>
                             <span className={`lasm-pill ${a.required === 'REQ' ? 'lasm-pill-req' : 'lasm-pill-opt'}`}>{a.required}</span>
@@ -701,6 +789,7 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
                   </button>
                 </div>
               )}
+              </>)}
             </>
           )}
         </div>
@@ -845,6 +934,33 @@ const LASM_CSS = `
 .lasm-pill { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 10px; font-weight: 800; letter-spacing: .06em; }
 .lasm-pill-req { background: #fee2e2; color: #b91c1c; }
 .lasm-pill-opt { background: #fef3c7; color: #92400e; }
+
+/* ── Sub-tabs within a segment: Trade Documents | Agreements ── */
+.lasm-subtabs { display: inline-flex; gap: 4px; padding: 4px; margin: 4px 0 12px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 10px; }
+.lasm-subtab { display: inline-flex; align-items: center; gap: 7px; padding: 7px 14px; border: none; background: transparent; border-radius: 7px; color: #64748b; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s; }
+.lasm-subtab:hover { background: rgba(8,145,178,.08); color: #0e7490; }
+.lasm-subtab.is-on { background: linear-gradient(135deg,#06b6d4,#0e7490); color: #fff; box-shadow: 0 2px 8px rgba(8,145,178,.32); }
+.lasm-subtab-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: rgba(8,145,178,.14); color: #0e7490; font-size: 10px; font-weight: 800; }
+.lasm-subtab.is-on .lasm-subtab-count { background: rgba(255,255,255,.28); color: #fff; }
+.lasm-party-cell { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.lasm-party-agr { background: #e0f2fe; color: #075985; }
+
+/* ── Segment-wise Trade Documents panel (moved out of the per-party vault) ── */
+.lasm-td-panel { margin: 4px 0 14px; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; background: #f8fafc; }
+.lasm-td-head { display: flex; align-items: center; gap: 7px; padding: 9px 12px; background: #eef6fb; color: #0c4a6e; font-size: 11.5px; font-weight: 800; letter-spacing: .02em; border-bottom: 1px solid #e2e8f0; }
+.lasm-td-empty { padding: 14px 12px; color: #94a3b8; font-size: 11.5px; font-style: italic; }
+.lasm-td-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+.lasm-td-table thead th { text-align: left; padding: 8px 12px; font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #64748b; background: #f1f5f9; }
+.lasm-td-table tbody td { padding: 9px 12px; font-size: 12px; color: #334155; border-top: 1px solid #eef2f7; vertical-align: middle; }
+.lasm-party-pill { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-size: 10px; font-weight: 700; }
+.lasm-party-customer  { background: #fef3c7; color: #92400e; }
+.lasm-party-consignee { background: #d1fae5; color: #065f46; }
+.lasm-td-status { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 700; }
+.lasm-td-status.is-ok { background: #dcfce7; color: #15803d; }
+.lasm-td-status.is-pending { background: #f1f5f9; color: #64748b; }
+.lasm-td-file { color: #0e7490; font-weight: 700; font-size: 11.5px; text-decoration: none; }
+.lasm-td-file:hover { text-decoration: underline; }
+.lasm-td-dash { color: #cbd5e1; }
 .lasm-status-pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 700; }
 .lasm-actions { display: inline-flex; gap: 6px; align-items: center; }
 .lasm-btn-send { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px;
@@ -938,6 +1054,20 @@ const LASM_CSS = `
 [data-bs-theme="dark"] .lasm-pill-opt {
   background: rgba(245,158,11,.20); color: #fcd34d;
 }
+[data-bs-theme="dark"] .lasm-subtabs { background: rgba(30,41,59,.55); border-color: rgba(148,163,184,.18); }
+[data-bs-theme="dark"] .lasm-subtab { color: #cbd5e1; }
+[data-bs-theme="dark"] .lasm-subtab:hover { background: rgba(8,145,178,.16); color: #67e8f9; }
+[data-bs-theme="dark"] .lasm-subtab-count { background: rgba(8,145,178,.22); color: #a5f3fc; }
+[data-bs-theme="dark"] .lasm-subtab.is-on .lasm-subtab-count { background: rgba(255,255,255,.28); color: #fff; }
+[data-bs-theme="dark"] .lasm-party-agr { background: rgba(8,145,178,.20); color: #a5f3fc; }
+[data-bs-theme="dark"] .lasm-td-panel { background: rgba(15,23,42,.40); border-color: rgba(148,163,184,.18); }
+[data-bs-theme="dark"] .lasm-td-head { background: rgba(8,145,178,.14); color: #67e8f9; border-bottom-color: rgba(148,163,184,.18); }
+[data-bs-theme="dark"] .lasm-td-table thead th { background: rgba(30,41,59,.60); color: #94a3b8; }
+[data-bs-theme="dark"] .lasm-td-table tbody td { color: #cbd5e1; border-top-color: rgba(148,163,184,.12); }
+[data-bs-theme="dark"] .lasm-party-customer  { background: rgba(245,158,11,.20); color: #fcd34d; }
+[data-bs-theme="dark"] .lasm-party-consignee { background: rgba(16,185,129,.20); color: #6ee7b7; }
+[data-bs-theme="dark"] .lasm-td-status.is-ok { background: rgba(34,197,94,.20); color: #86efac; }
+[data-bs-theme="dark"] .lasm-td-status.is-pending { background: rgba(148,163,184,.16); color: #cbd5e1; }
 [data-bs-theme="dark"] .lasm-row-selected td { background: rgba(8,145,178,.16) !important; }
 [data-bs-theme="dark"] .lasm-btn-eye {
   background: rgba(8,145,178,.10); color: #67e8f9; border-color: rgba(6,182,212,.30);
