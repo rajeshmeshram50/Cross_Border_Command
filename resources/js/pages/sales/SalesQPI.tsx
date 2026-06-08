@@ -1,5 +1,6 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -311,16 +312,21 @@ function MoreOptionsMenu(props: {
    * way. Labels in the menu also switch on this. */
   kind: 'quotation' | 'pi';
   payload: Record<string, unknown>;
+  /* Zoho Sign completion-certificate request id — present only once the
+   * document is signed. When set, a "Download Signed Certificate" item is
+   * added to the menu. */
+  sigId: number | null;
+  docCode: string;
   onClose: () => void;
   onError: (msg: string) => void;
 }) {
-  const { rect, kind, payload, onClose, onError } = props;
+  const { rect, kind, payload, sigId, docCode, onClose, onError } = props;
   const docLabel = kind === 'quotation' ? 'Quotation' : 'PI';
   const menuRef = useRef<HTMLDivElement>(null);
   /* Busy key encodes mode + signature so only the clicked item shows a
-   * spinner while the request is in flight. Keys mirror the four menu
-   * buttons: view-sig / view-nosig / dl-sig / dl-nosig. */
-  type BusyKey = 'view-sig' | 'view-nosig' | 'dl-sig' | 'dl-nosig';
+   * spinner while the request is in flight. Keys mirror the menu buttons:
+   * view-sig / view-nosig / dl-sig / dl-nosig / cert. */
+  type BusyKey = 'view-sig' | 'view-nosig' | 'dl-sig' | 'dl-nosig' | 'cert';
   const [busy, setBusy] = useState<BusyKey | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
@@ -383,6 +389,26 @@ function MoreOptionsMenu(props: {
       .finally(() => setBusy(null));
   };
 
+  /* Download the Zoho Sign completion certificate (audit-trail PDF) for a
+   * signed document. Saved via a hidden <a download> click, mirroring the
+   * Download items above. */
+  const downloadCertificate = () => {
+    if (sigId == null) return;
+    setBusy('cert');
+    api.get(`/clm/signature-requests/${sigId}/certificate`, { responseType: 'blob' })
+      .then((res) => {
+        const blobUrl = URL.createObjectURL(new Blob([res.data as BlobPart], { type: 'application/pdf' }));
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = `${(docCode || `${kind}-${sigId}`).replace(/[^a-z0-9\-_.]/gi, '_')}_certificate.pdf`;
+        a.click();
+        URL.revokeObjectURL(blobUrl);
+        onClose();
+      })
+      .catch((err: any) => onError(err?.response?.data?.message || 'Could not download the signing certificate'))
+      .finally(() => setBusy(null));
+  };
+
   return createPortal(
     <div
       ref={menuRef}
@@ -433,6 +459,23 @@ function MoreOptionsMenu(props: {
         <span>Download {docLabel} without Signature</span>
         {busy === 'dl-nosig' && <span className="qpi-moremenu-spinner" />}
       </button>
+      {/* Certificate — Zoho Sign completion/audit certificate, shown only
+          once the document has been signed (sigId present). */}
+      {sigId != null && (
+        <>
+          <div className="qpi-moremenu-sep" />
+          <button
+            type="button" role="menuitem"
+            className="qpi-moremenu-item"
+            disabled={busy !== null}
+            onClick={downloadCertificate}
+          >
+            <IconCertificateSm />
+            <span>Download Signed Certificate</span>
+            {busy === 'cert' && <span className="qpi-moremenu-spinner" />}
+          </button>
+        </>
+      )}
     </div>,
     document.body
   );
@@ -442,6 +485,12 @@ const IconEyeSm = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z" />
     <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+const IconCertificateSm = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="8" r="6" />
+    <path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" />
   </svg>
 );
 const IconDownloadSm = () => (
@@ -652,7 +701,7 @@ export default function SalesQPI() {
    * action button (Send -> Sent +Remind/View -> Signed +View). `sigTick`
    * is bumped after a send so the poller refreshes immediately. */
   const [sigSendFor, setSigSendFor] = useState<
-    { kind: 'quotation' | 'pi'; id: number; code: string; customerName: string | null; leadId: number } | null
+    { kind: 'quotation' | 'pi'; id: number; code: string; customerName: string | null; leadId: number | null } | null
   >(null);
   const [sigByRow, setSigByRow] = useState<Record<string, { id: number; status: string }>>({});
   const [sigTick, setSigTick] = useState(0);
@@ -700,6 +749,21 @@ export default function SalesQPI() {
       window.open(URL.createObjectURL(r.data as Blob), '_blank');
     } catch (e: any) {
       toast.error('Open failed', e?.response?.data?.message ?? 'Could not open the signed document.');
+    }
+  };
+  /* Download (not just view) the signed PDF — fired by the labelled
+   * "Signed PDF" button on a completed row. */
+  const onDownloadSignedSig = async (sigId: number, code: string) => {
+    try {
+      const r = await api.get(`/clm/signature-requests/${sigId}/view-file/0`, { responseType: 'blob' });
+      const blobUrl = URL.createObjectURL(new Blob([r.data as BlobPart], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `${(code || `signed-${sigId}`).replace(/[^a-z0-9\-_.]/gi, '_')}_signed.pdf`;
+      a.click();
+      URL.revokeObjectURL(blobUrl);
+    } catch (e: any) {
+      toast.error('Download failed', e?.response?.data?.message ?? 'Could not download the signed document.');
     }
   };
   const onViewSentPdf = async (kind: 'quotation' | 'pi', id: number) => {
@@ -827,10 +891,15 @@ export default function SalesQPI() {
     if (qt.oppId) {
       const blocker = pis.find(p => p.oppId === qt.oppId);
       if (blocker) {
+        // Mutually exclusive with the confirm popup — clear it so a prior
+        // open ConvertToPiModal can't stack behind the blocked dialog.
+        setConvertTarget(null);
         setConvertBlocked({ fromQt: qt.qtNo, pi: blocker });
         return;
       }
     }
+    // Clear any lingering blocked dialog before opening the confirm popup.
+    setConvertBlocked(null);
     setConvertTarget(qt);
     setConvertPreviewCode(null);
     // Best-effort preview of the next PI number (never consumes a number).
@@ -866,8 +935,8 @@ export default function SalesQPI() {
   // Capture coordinates (not DOM element) so a TanStack re-render of the
   // row doesn't leave us pointing at a detached node and dump the menu
   // at top-left.
-  const [qtMenuFor, setQtMenuFor] = useState<{ id: string; rect: AnchorRect; payload: Record<string, unknown> } | null>(null);
-  const [piMenuFor, setPiMenuFor] = useState<{ id: string; rect: AnchorRect; payload: Record<string, unknown> } | null>(null);
+  const [qtMenuFor, setQtMenuFor] = useState<{ id: string; rect: AnchorRect; payload: Record<string, unknown>; sigId: number | null } | null>(null);
+  const [piMenuFor, setPiMenuFor] = useState<{ id: string; rect: AnchorRect; payload: Record<string, unknown>; sigId: number | null } | null>(null);
 
   /* Stable ActionBtn — matches the customer-page pattern: neutral tile,
    * hover shifts border + icon to the column accent.
@@ -933,16 +1002,23 @@ export default function SalesQPI() {
     }
     if (st === 'completed') {
       return (
-        <ActionBtn title="View signed PDF" color="#16a34a" onClick={() => void onViewSignedSig(sig!.id)}
-          icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><polyline points="20 6 9 17 4 12"/></svg>} />
+        <Tooltip label="Download the signed PDF">
+          <button type="button" className="qpi-convert-btn qpi-signed-btn" onClick={() => void onDownloadSignedSig(sig!.id, code)}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Signed PDF
+          </button>
+        </Tooltip>
       );
     }
     return (
       <ActionBtn
-        title={readOnly ? 'View-only — this record belongs to the main branch.' : (!leadId ? 'No linked opportunity — cannot send for signature' : 'Send for Signature')}
+        // A linked opportunity is NO LONGER required — signers are resolved
+        // from the document's own customer/consignee, so a direct PI/quotation
+        // (e.g. a "Without Shipment" PI with no opp) can still be sent.
+        title={readOnly ? 'View-only — this record belongs to the main branch.' : 'Send for Signature'}
         color="#0ea5e9"
-        disabled={readOnly || !leadId}
-        onClick={() => leadId && setSigSendFor({ kind, id, code, customerName: customer || null, leadId })}
+        disabled={readOnly}
+        onClick={() => setSigSendFor({ kind, id, code, customerName: customer || null, leadId: leadId ?? null })}
         icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>}
       />
     );
@@ -1056,22 +1132,22 @@ export default function SalesQPI() {
             )}
             {/* Send for Signature (Zoho Sign) — status-aware control. */}
             {renderSignAction('quotation', r.id, r.qtNo, r.customer, r.leadId, readOnly)}
-            {/* Email button — only enabled until the first send AND only
-                when the user can modify this row. Read-only rows
-                (main-branch viewed by normal branch) show a hint instead. */}
+            {/* Email button — matches the in-matrix Stage 5 table: stays
+                available after every send (no one-time disable) so the
+                quotation can be re-emailed; each send fires a toast.
+                Read-only rows (main-branch viewed by a normal branch) show
+                a hint and stay disabled. */}
             <ActionBtn
               title={
                 readOnly
                   ? readOnlyHint
                   : emailingFor?.kind === 'quotation' && emailingFor.id === r.id
                     ? 'Sending…'
-                    : r.emailedAt
-                      ? 'Already emailed — use Reminder to follow up'
-                      : 'Email Quotation'
+                    : 'Email Quotation'
               }
               icon={<IconMail />}
               color="#2563eb"
-              disabled={readOnly || !!r.emailedAt || (emailingFor?.kind === 'quotation' && emailingFor.id === r.id)}
+              disabled={readOnly || (emailingFor?.kind === 'quotation' && emailingFor.id === r.id)}
               onClick={() => r.id && sendDocEmail('quotation', r.id, r.qtNo)}
             />
             {/* Reminder button — REMOVED for the email flow. The only
@@ -1124,9 +1200,10 @@ export default function SalesQPI() {
                   e.stopPropagation();
                   const b = e.currentTarget.getBoundingClientRect();
                   const rect: AnchorRect = { top: b.top, bottom: b.bottom, left: b.left, right: b.right };
+                  const qSig = r.id ? sigByRow[`quotation:${r.id}`] : undefined;
                   setQtMenuFor(prev => prev?.id === r.qtNo
                     ? null
-                    : { id: r.qtNo, rect, payload: piPayloadFromQuotation(r) });
+                    : { id: r.qtNo, rect, payload: piPayloadFromQuotation(r), sigId: qSig?.status === 'completed' ? qSig.id : null });
                 }}
               >
                 <IconKebab />
@@ -1184,6 +1261,19 @@ export default function SalesQPI() {
       },
     },
     {
+      // Signature status — mirrors the Quotation table (and the in-matrix
+      // Stage 5 PI table): Not Sent -> Sent (awaiting signature) -> Signed.
+      header: () => <div className="text-center">Status</div>,
+      id: '__sigstatus', meta: { align: 'center' },
+      cell: (info: any) => {
+        const r  = info.row.original as PI;
+        const st = r.id ? sigByRow[`pi:${r.id}`]?.status : undefined;
+        if (st === 'completed')  return <span className="qpi-sig-pill qpi-sig-signed">Signed</span>;
+        if (st === 'inprogress') return <span className="qpi-sig-pill qpi-sig-sent">Sent</span>;
+        return <span className="qpi-sig-pill qpi-sig-none">Not Sent</span>;
+      },
+    },
+    {
       header: () => <div className="text-center">Action</div>,
       id: '__actions', meta: { align: 'center' },
       cell: (info: any) => {
@@ -1196,44 +1286,41 @@ export default function SalesQPI() {
           <div className="d-inline-flex align-items-center gap-2 justify-content-center">
             {/* Send for Signature (Zoho Sign) — status-aware control. */}
             {renderSignAction('pi', r.id, r.piNo, r.customer, r.leadId, readOnly)}
-            {/* Email + Reminder are DISABLED for PI — the PI is delivered to
-                the customer via Zoho Sign ("Send for Sign"), so the manual
-                email + reminder buttons are hidden here. Code is kept under
-                `false &&` (not deleted) so it can be re-enabled later. */}
+            {/* Email button — matches the in-matrix Stage 5 PI table: stays
+                available after every send (no one-time disable) so the PI can
+                be re-emailed to the customer; each send fires a toast. The
+                follow-up Reminder button stays retired (Zoho Sign reminders
+                cover PI signing) — kept under `false &&` for restore. */}
+            <ActionBtn
+              title={
+                readOnly
+                  ? readOnlyHint
+                  : emailingFor?.kind === 'pi' && emailingFor.id === r.id
+                    ? 'Sending…'
+                    : 'Email PI'
+              }
+              icon={<IconMail />}
+              color="#2563eb"
+              disabled={readOnly || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
+              onClick={() => r.id && sendDocEmail('pi', r.id, r.piNo)}
+            />
             {false && (
-              <>
-                <ActionBtn
-                  title={
-                    readOnly
-                      ? readOnlyHint
-                      : emailingFor?.kind === 'pi' && emailingFor.id === r.id
-                        ? 'Sending…'
-                        : r.emailedAt
-                          ? 'Already emailed — use Reminder to follow up'
-                          : 'Email PI'
-                  }
-                  icon={<IconMail />}
-                  color="#2563eb"
-                  disabled={readOnly || !!r.emailedAt || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
-                  onClick={() => r.id && sendDocEmail('pi', r.id, r.piNo)}
-                />
-                <ActionBtn
-                  title={
-                    readOnly
-                      ? readOnlyHint
-                      : emailingFor?.kind === 'pi' && emailingFor.id === r.id
-                        ? 'Sending…'
-                        : r.emailedAt
-                          ? `Send Reminder${r.reminderCount ? ` (#${(r.reminderCount ?? 0) + 1})` : ''}`
-                          : 'Send initial email first to enable reminders'
-                  }
-                  icon={<IconBellSm />}
-                  color="#f59e0b"
-                  disabled={readOnly || !r.emailedAt || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
-                  badge={r.reminderCount ?? 0}
-                  onClick={() => r.id && sendReminder('pi', r.id, r.piNo)}
-                />
-              </>
+              <ActionBtn
+                title={
+                  readOnly
+                    ? readOnlyHint
+                    : emailingFor?.kind === 'pi' && emailingFor.id === r.id
+                      ? 'Sending…'
+                      : r.emailedAt
+                        ? `Send Reminder${r.reminderCount ? ` (#${(r.reminderCount ?? 0) + 1})` : ''}`
+                        : 'Send initial email first to enable reminders'
+                }
+                icon={<IconBellSm />}
+                color="#f59e0b"
+                disabled={readOnly || !r.emailedAt || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
+                badge={r.reminderCount ?? 0}
+                onClick={() => r.id && sendReminder('pi', r.id, r.piNo)}
+              />
             )}
             <ActionBtn
               title={readOnly ? readOnlyHint : 'Edit PI'}
@@ -1256,9 +1343,10 @@ export default function SalesQPI() {
                   e.stopPropagation();
                   const b = e.currentTarget.getBoundingClientRect();
                   const rect: AnchorRect = { top: b.top, bottom: b.bottom, left: b.left, right: b.right };
+                  const pSig = r.id ? sigByRow[`pi:${r.id}`] : undefined;
                   setPiMenuFor(prev => prev?.id === r.piNo
                     ? null
-                    : { id: r.piNo, rect, payload: piPayloadFromPI(r) });
+                    : { id: r.piNo, rect, payload: piPayloadFromPI(r), sigId: pSig?.status === 'completed' ? pSig.id : null });
                 }}
               >
                 <IconKebab />
@@ -1438,6 +1526,8 @@ export default function SalesQPI() {
             kind="quotation"
             rect={qtMenuFor.rect}
             payload={qtMenuFor.payload}
+            sigId={qtMenuFor.sigId}
+            docCode={qtMenuFor.id}
             onClose={() => setQtMenuFor(null)}
             onError={(msg) => toast.error('Preview failed', msg)}
           />
@@ -1447,6 +1537,8 @@ export default function SalesQPI() {
             kind="pi"
             rect={piMenuFor.rect}
             payload={piMenuFor.payload}
+            sigId={piMenuFor.sigId}
+            docCode={piMenuFor.id}
             onClose={() => setPiMenuFor(null)}
             onError={(msg) => toast.error('Preview failed', msg)}
           />
@@ -2747,6 +2839,172 @@ function BasicFormSkeleton({ theme }: { theme: 'teal' | 'purple' }) {
   );
 }
 
+/* ─── Opportunity picker — async, server-paginated + globally searchable.
+ *  Replaces the static 50-row MasterSelect: it fetches /sales/leads one
+ *  page at a time, appends the next page when the list is scrolled to the
+ *  bottom (infinite scroll), and routes the search box to the server's
+ *  full-table `search` so a query matches EVERY lead, not just the loaded
+ *  page. `customerId` (when a customer is picked) narrows the list
+ *  server-side via the leads `customer_id` filter. onPick hands the parent
+ *  the fully-mapped LeadRow so the cascade (customer/consignee/currency)
+ *  works without a second lookup. */
+function OpportunitySelect({
+  value, customerId, disabled, onPick,
+}: {
+  value: string;
+  customerId: number | null;
+  disabled?: boolean;
+  onPick: (oppValue: string, row: LeadRow | null) => void;
+}) {
+  const [open, setOpen]       = useState(false);
+  const [items, setItems]     = useState<Array<{ value: string; label: string; row: LeadRow }>>([]);
+  const [page, setPage]       = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch]   = useState('');
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const [menuWidth, setMenuWidth] = useState<number | undefined>(undefined);
+  const [dropDir, setDropDir]     = useState<'up' | 'down'>('down');
+
+  // Map an API lead row → option + LeadRow (identical shape to the static
+  // masters loader so the parent cascade reads the same fields).
+  const mapLead = (r: any): { value: string; label: string; row: LeadRow } | null => {
+    const code = r.opp_code ?? r.opp_id ?? (r.id ? `OPP-${String(r.id).padStart(4, '0')}` : '');
+    const who  = (r.sender_company || r.sender_name || r.company || '').toString();
+    const label = code && who ? `${code} – ${who}` : (code || who || '');
+    if (!label) return null;
+    const dateSrc = r.query_time ?? r.created_at;
+    const row: LeadRow = {
+      leadId:         Number(r.id ?? 0),
+      opp_code:       code,
+      sender_company: who,
+      sender_country: r.sender_country_iso ?? r.sender_country ?? '',
+      date:           dateSrc ? new Date(dateSrc).toLocaleDateString('en-GB') : '',
+      customerDbId:   r.customer_id != null ? Number(r.customer_id) : (r.customer?.id != null ? Number(r.customer.id) : null),
+      consigneeDbId:  r.consignee_id != null ? Number(r.consignee_id) : (r.consignee?.id != null ? Number(r.consignee.id) : null),
+      currency:       r.currency ?? r.quote_currency ?? null,
+    };
+    return { value: label, label, row };
+  };
+
+  const fetchPage = useCallback(async (pageNum: number, q: string, replace: boolean) => {
+    setLoading(true);
+    try {
+      const res = await api.get<any>('/sales/leads', {
+        params: {
+          page: pageNum, per_page: 50, with_counts: 0,
+          search:      q.trim() || undefined,
+          customer_id: customerId || undefined,
+        },
+      });
+      const rows   = Array.isArray(res.data?.data) ? res.data.data : [];
+      const mapped = rows.map(mapLead).filter(Boolean) as Array<{ value: string; label: string; row: LeadRow }>;
+      setItems(prev => (replace ? mapped : [...prev, ...mapped]));
+      const lastPage = res.data?.pagination?.last_page ?? null;
+      setHasMore(lastPage != null ? pageNum < lastPage : mapped.length >= 50);
+      setPage(pageNum);
+    } catch {
+      if (replace) setItems([]);
+      setHasMore(false);
+    } finally {
+      setLoading(false);
+    }
+  }, [customerId]);
+
+  // (Re)load page 1 on open and whenever the search text or customer
+  // changes while open. Debounce typed searches so we don't fire per key.
+  useEffect(() => {
+    if (!open) return;
+    const t = setTimeout(() => { void fetchPage(1, search, true); }, search ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [open, search, fetchPage]);
+  useEffect(() => { if (!open) setSearch(''); }, [open]);
+
+  // Width + auto-flip, mirroring MasterSelect so the portalled menu lines up.
+  useEffect(() => {
+    if (!open || !wrapRef.current) return;
+    const update = () => {
+      if (!wrapRef.current) return;
+      const rect = wrapRef.current.getBoundingClientRect();
+      setMenuWidth(rect.width);
+      const spaceBelow = window.innerHeight - rect.bottom;
+      setDropDir(spaceBelow < 280 && rect.top > spaceBelow ? 'up' : 'down');
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [open]);
+
+  // Infinite scroll — append the next page as the list nears its bottom.
+  const onScroll = () => {
+    const el = listRef.current;
+    if (!el || loading || !hasMore) return;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 48) {
+      void fetchPage(page + 1, search, false);
+    }
+  };
+
+  return (
+    <div ref={wrapRef}>
+      <Dropdown
+        isOpen={open && !disabled}
+        toggle={() => { if (!disabled) setOpen(v => !v); }}
+        direction={dropDir}
+        className={`master-select-wrap${disabled ? ' disabled' : ''}`}
+      >
+        <DropdownToggle tag="button" type="button" disabled={disabled} className="master-select-toggle">
+          {value
+            ? <span className="master-select-value">{value}</span>
+            : <span className="master-select-placeholder">— Select Opportunity —</span>}
+          <i className="ri-arrow-down-s-line master-select-chev" />
+        </DropdownToggle>
+        <DropdownMenu
+          className="master-select-menu"
+          container="body"
+          strategy="fixed"
+          style={menuWidth ? { width: menuWidth, minWidth: menuWidth } : undefined}
+        >
+          <div className="master-select-search" onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
+            <i className="ri-search-line master-select-search-icon" />
+            <input
+              type="text"
+              className="master-select-search-input"
+              placeholder="Search opportunities…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              onKeyDown={e => e.stopPropagation()}
+              autoFocus
+            />
+          </div>
+          <div className="master-select-list" ref={listRef} onScroll={onScroll} style={{ maxHeight: 220, overflowY: 'auto' }}>
+            {items.length === 0 && !loading ? (
+              <div className="master-select-empty">{search ? 'No results' : 'No opportunities'}</div>
+            ) : (
+              <>
+                {items.map(opt => (
+                  <DropdownItem
+                    key={opt.row.leadId}
+                    active={opt.value === value}
+                    onClick={() => onPick(opt.value, opt.row)}
+                    className="master-select-item"
+                  >
+                    {opt.label}
+                  </DropdownItem>
+                ))}
+                {loading && <div className="master-select-empty">Loading…</div>}
+                {!loading && !hasMore && items.length > 0 && (
+                  <div className="master-select-empty" style={{ fontSize: 10.5, opacity: 0.55 }}>— End of list —</div>
+                )}
+              </>
+            )}
+          </div>
+        </DropdownMenu>
+      </Dropdown>
+    </div>
+  );
+}
+
 /* ─── Basic form (Step 1) ─── */
 function BasicForm(props: {
   form: BasicFormState; setForm: (f: BasicFormState) => void;
@@ -2794,24 +3052,17 @@ function BasicForm(props: {
     return masters.customersRaw.find(c => c.code === code) ?? null;
   }, [form.customer, masters.customersRaw]);
 
-  // Opportunities filtered by selected customer's NUMERIC dbId — joins
-  // to lead.customer_id (the real FK). Fallback to company-name match
-  // for any lead rows where customer_id was never set.
-  const filteredOpportunities = useMemo(() => {
-    if (!selectedCustomerRow) return masters.opportunities;
-    const matchCodes = new Set(
-      masters.opportunitiesRaw
-        .filter(o => (o.customerDbId != null && o.customerDbId === selectedCustomerRow.dbId)
-                  || (o.sender_company && selectedCustomerRow.company &&
-                      o.sender_company.toLowerCase() === selectedCustomerRow.company.toLowerCase()))
-        .map(o => o.opp_code)
-    );
-    return masters.opportunities.filter(opt => matchCodes.has(labelCode(opt.value)));
-  }, [selectedCustomerRow, masters.opportunities, masters.opportunitiesRaw]);
+  // (Opportunity filtering now happens server-side inside OpportunitySelect
+  // via the leads `customer_id` param + paginated fetch — the old client-side
+  // `filteredOpportunities` memo over the static 50-row list was removed.)
 
   // Consignees filtered by selected customer — uses consignee.customer_id
-  // (numeric FK) matching the customer's numeric dbId. If no consignees
-  // are mapped at all, fall back to the full list rather than showing nothing.
+  // (numeric FK) matching the customer's numeric dbId. STRICT: only the
+  // consignees mapped to this customer are shown (whether the customer was
+  // picked directly or auto-filled from an opportunity). When the customer
+  // has none mapped, the list is empty and the field shows the
+  // "No consignees for this customer" placeholder — we no longer fall back
+  // to the full list, which used to leak every consignee.
   const filteredConsignees = useMemo(() => {
     if (!selectedCustomerRow) return masters.consignees;
     const matchValues = new Set(
@@ -2819,8 +3070,7 @@ function BasicForm(props: {
         .filter(c => c.customerDbId === selectedCustomerRow.dbId)
         .map(c => `${c.code} – ${c.company}`)
     );
-    const filtered = masters.consignees.filter(opt => matchValues.has(opt.value));
-    return filtered.length > 0 ? filtered : masters.consignees;
+    return masters.consignees.filter(opt => matchValues.has(opt.value));
   }, [selectedCustomerRow, masters.consignees, masters.consigneesRaw]);
 
   // ── Auto-fill on Opportunity selection ────────────────────────
@@ -2829,9 +3079,12 @@ function BasicForm(props: {
   // 3. Use lead.consigneeDbId → resolve the Consignee master row → fill
   //    the EXACT consignee mapped on that lead.
   // 4. Auto-fill Opportunity Date and Origin Country from the lead.
-  const onOpportunityChange = (oppValue: string) => {
+  const onOpportunityChange = (oppValue: string, providedRow?: LeadRow | null) => {
     const code = labelCode(oppValue);
-    const row  = masters.opportunitiesRaw.find(o => o.opp_code === code);
+    // The async OpportunitySelect hands us the picked LeadRow directly (it
+    // may not live in the static masters list when paginated). Fall back to
+    // the masters lookup for any other caller.
+    const row  = providedRow ?? masters.opportunitiesRaw.find(o => o.opp_code === code);
     if (!row) { setForm({ ...form, opportunity: oppValue, oppId: null }); return; }
 
     let nextCustomer  = form.customer;
@@ -3003,13 +3256,10 @@ function BasicForm(props: {
           {lockParty ? (
             <input className="qpi-input qpi-input-readonly" value={form.opportunity} readOnly title="Fixed by the lead this was opened from" />
           ) : (
-            <MasterSelect
-              key={`opp-${filteredOpportunities.length}`}
+            <OpportunitySelect
               value={form.opportunity}
-              loading={masters.loading}
-              placeholder="— Select Opportunity —"
-              options={withCurrent(filteredOpportunities, form.opportunity)}
-              onChange={onOpportunityChange}
+              customerId={form.customerId}
+              onPick={(val, row) => onOpportunityChange(val, row)}
             />
           )}
         </Field>
@@ -3077,18 +3327,33 @@ function BasicForm(props: {
           </Field>
         ) : (
           <>
-            {/* Currency is NOT chosen here — it comes from the opportunity's
-                products (the lead enforces one currency across its products).
-                Read-only display so it can't drift from the product pricing. */}
+            {/* Currency:
+                 • With an Opportunity → driven by the opp's products (the lead
+                   enforces one currency across its products), so it stays
+                   read-only here to avoid drifting from the product pricing.
+                 • Direct customer (no Opportunity) → there are no opp products
+                   to source from, so the user picks the currency from the
+                   Currencies master dropdown. */}
             <Field label="Currency" required>
-              <input
-                className="qpi-input"
-                value={form.currency || ''}
-                readOnly
-                placeholder="Auto — from the opportunity's products"
-                title="Currency is taken from the opportunity's products and cannot be changed here."
-                style={{ background: '#f8fafc', cursor: 'not-allowed' }}
-              />
+              {form.opportunity ? (
+                <input
+                  className="qpi-input qpi-input-readonly"
+                  value={form.currency || ''}
+                  readOnly
+                  placeholder="Auto — from the opportunity's products"
+                  title="Currency is taken from the opportunity's products and cannot be changed here."
+                  style={{ cursor: 'not-allowed' }}
+                />
+              ) : (
+                <MasterSelect
+                  key={`cur-${masters.currencies.length}`}
+                  value={form.currency}
+                  loading={masters.loading}
+                  placeholder="— Select Currency —"
+                  options={withCurrent(masters.currencies, form.currency)}
+                  onChange={(v) => set('currency', v)}
+                />
+              )}
             </Field>
             <Field label="Exchange Rate">
               <input className="qpi-input" placeholder="Enter exchange rate" value={form.exchangeRate} onChange={(e) => set('exchangeRate', e.target.value)} />
@@ -4208,6 +4473,19 @@ const SCOPED_CSS = `
 }
 .qpi-convert-btn-done:hover { transform: none; }
 
+/* "Signed PDF" download button — green pill, clickable (unlike the locked
+   "converted" state above). Shown on completed e-signature rows. */
+.qpi-signed-btn {
+  background: linear-gradient(135deg, #16a34a, #15803d);
+  box-shadow: 0 3px 10px rgba(22,163,74,.28);
+}
+.qpi-signed-btn:hover:not(:disabled) {
+  box-shadow: 0 4px 14px rgba(22,163,74,.42);
+}
+.qpi-signed-btn:focus-visible {
+  box-shadow: 0 0 0 3px rgba(22,163,74,.28), 0 3px 10px rgba(22,163,74,.28);
+}
+
 /* Action tiles — mirror the customer page ActionBtn: neutral background,
    neutral border, hover shifts border + icon to the column accent. */
 .qpi-act {
@@ -4817,8 +5095,12 @@ const SCOPED_CSS = `
   background: rgba(255,255,255,.04);
   border-color: rgba(167,139,250,.25);
 }
-[data-bs-theme="dark"] .qpi-tab        { color: #c4b5fd; }
+[data-bs-theme="dark"] .qpi-tab        { color: #ede9fe; }
 [data-bs-theme="dark"] .qpi-tab:hover  { background: rgba(167,139,250,.12); }
+/* Inactive count chip — the light-mode dark-purple text/bg is invisible on
+   the dark toggle, so brighten both. The active chip stays white-on-glass. */
+[data-bs-theme="dark"] .qpi-tab-count { background: rgba(167,139,250,.22); color: #e9d5ff; }
+[data-bs-theme="dark"] .qpi-tab.active .qpi-tab-count { background: rgba(255,255,255,.28); color: #fff; }
 
 /* What We Are Doing Here */
 [data-bs-theme="dark"] .qpi-wdh {
@@ -4859,12 +5141,15 @@ const SCOPED_CSS = `
   background: linear-gradient(135deg, rgba(124,58,237,.10), rgba(167,139,250,.05));
   border-bottom-color: rgba(167,139,250,.20);
 }
-[data-bs-theme="dark"] .qpi-pill-group {
-  background: var(--vz-secondary-bg);
-  border-color: var(--vz-border-color);
+[data-bs-theme="dark"] .qpi-pill-group,
+[data-layout-mode="dark"] .qpi-pill-group {
+  background: rgba(255,255,255,.05);
+  border-color: rgba(167,139,250,.22);
 }
-[data-bs-theme="dark"] .qpi-pi-subtab { color: var(--vz-secondary-color); }
-[data-bs-theme="dark"] .qpi-pi-subtab:hover { background: rgba(167,139,250,.10); color: #c4b5fd; }
+[data-bs-theme="dark"] .qpi-pi-subtab,
+[data-layout-mode="dark"] .qpi-pi-subtab { color: #cbd5e1; }
+[data-bs-theme="dark"] .qpi-pi-subtab:hover,
+[data-layout-mode="dark"] .qpi-pi-subtab:hover { background: rgba(167,139,250,.12); color: #ede9fe; }
 [data-bs-theme="dark"] .qpi-search {
   background: rgba(255,255,255,.03);
   border-color: rgba(167,139,250,.30);
@@ -4896,19 +5181,23 @@ const SCOPED_CSS = `
   border-bottom-color: color-mix(in srgb, #ffffff 6%, transparent) !important;
 }
 
-[data-bs-theme="dark"] .qpi-table-host .pagination .page-link {
-  background: var(--vz-secondary-bg);
-  color: #c4b5fd;
-  border-color: var(--vz-border-color);
+[data-bs-theme="dark"] .qpi-table-host .pagination .page-link,
+[data-layout-mode="dark"] .qpi-table-host .pagination .page-link {
+  background: #2b2640;
+  color: #ddd6fe;
+  border-color: rgba(167,139,250,.28);
 }
-[data-bs-theme="dark"] .qpi-table-host .pagination .page-link:hover {
-  background: rgba(167,139,250,.12); border-color: rgba(167,139,250,.45);
+[data-bs-theme="dark"] .qpi-table-host .pagination .page-link:hover,
+[data-layout-mode="dark"] .qpi-table-host .pagination .page-link:hover {
+  background: rgba(167,139,250,.12); border-color: rgba(167,139,250,.45); color: #ede9fe;
 }
-[data-bs-theme="dark"] .qpi-table-host .pagination .page-item.active .page-link {
-  background: linear-gradient(135deg, #6d28d9, #4c1d95);
-  border-color: #7c3aed; color: #fff;
+[data-bs-theme="dark"] .qpi-table-host .pagination .page-item.active .page-link,
+[data-layout-mode="dark"] .qpi-table-host .pagination .page-item.active .page-link {
+  background: linear-gradient(135deg, #6d28d9, #4c1d95) !important;
+  border-color: #7c3aed !important; color: #fff !important;
 }
-[data-bs-theme="dark"] .qpi-table-host .pagination .page-item.disabled .page-link {
+[data-bs-theme="dark"] .qpi-table-host .pagination .page-item.disabled .page-link,
+[data-layout-mode="dark"] .qpi-table-host .pagination .page-item.disabled .page-link {
   background: rgba(255,255,255,.03); color: #6b6481;
   border-color: rgba(167,139,250,.18);
 }

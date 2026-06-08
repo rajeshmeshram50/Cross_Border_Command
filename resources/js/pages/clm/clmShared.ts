@@ -306,6 +306,22 @@ export const CLM_CSS = `
 }
 .clm-search:focus-within { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.12); }
 .clm-search input { flex: 1; border: none; outline: none; font-size: 12px; background: transparent; color: #0c4a6e; font-family: inherit; }
+/* Neutralise the browser autofill highlight on the search field. Chrome
+   paints autofilled / previously-searched inputs with a pale fill (yellow/
+   cyan in light mode, near-white in dark) that overrides our transparent
+   input bg and shows up as a tinted "shimmer" across the bar. The 1000px
+   inset box-shadow trick is the only way to repaint that internal surface —
+   here it's the light search bg; the dark-mode override below swaps it. */
+.clm-search input:-webkit-autofill,
+.clm-search input:-webkit-autofill:hover,
+.clm-search input:-webkit-autofill:focus,
+.clm-search input:-webkit-autofill:active {
+  -webkit-text-fill-color: #0c4a6e;
+  caret-color: #0c4a6e;
+  -webkit-box-shadow: 0 0 0 1000px #fff inset !important;
+  box-shadow: 0 0 0 1000px #fff inset !important;
+  transition: background-color 9999s ease-in-out 0s;
+}
 .clm-search-grow:focus-within { width: 480px; }
 
 /* Compound Total badge — icon block + label + count number */
@@ -728,7 +744,26 @@ body > .dropdown-menu.master-select-menu,
   transform: translateY(-2px);
   box-shadow: 0 10px 26px rgba(8,145,178,.55), inset 0 1px 0 rgba(255,255,255,.22);
 }
-.clm-btn-cancel:disabled, .clm-btn-save:disabled { opacity: .55; cursor: not-allowed; transform: none; box-shadow: none; }
+.clm-btn-cancel:disabled { opacity: .55; cursor: not-allowed; transform: none; box-shadow: none; }
+/* Save button is only ever disabled while a submit is in flight, so keep it
+   near-full opacity (not dimmed like Cancel) so the spinner + "Saving…" read
+   as an active operation, with a progress cursor. */
+.clm-btn-save:disabled { opacity: .9; cursor: progress; transform: none; box-shadow: none; }
+/* Inline loader on the Save / Update button while a submit is in flight.
+   Every CLM Add/Edit modal disables its save button only while saving
+   (disabled={saving}) and swaps the label to "Saving…", so keying the spinner
+   off :disabled lights it up in exactly that window — no per-modal JSX change
+   needed. Hide the static save-disk glyph and drop a spinning ring in its
+   place (order:-1 puts it before the label in the inline-flex row). */
+.clm-btn-save:disabled > svg { display: none; }
+.clm-btn-save:disabled::after {
+  content: ''; order: -1; flex-shrink: 0;
+  width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,.45);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: clmSpin .6s linear infinite;
+}
 
 /* ──────────────────────────────────────────────────────────
  * 2-STAGE STEPPER MODAL — used by T&C Library "Add T&C".
@@ -1019,6 +1054,22 @@ body > .dropdown-menu.master-select-menu,
 [data-bs-theme="dark"] .clm-tab:not(.active) .clm-tab-count { background: #1e293b; color: #94a3b8; border-color: rgba(148,163,184,.18); }
 [data-bs-theme="dark"] .clm-search { background: #1e293b; border-color: rgba(6,182,212,.25); }
 [data-bs-theme="dark"] .clm-search input { color: #e2e8f0; }
+/* Chrome/WebKit paints autofilled (and "previously-searched") inputs with a
+   forced near-white background that overrides our transparent input bg — in
+   dark mode that makes the whole search bar flash white (the autofill fade-in
+   reads as a shimmer). The 1000px inset box-shadow trick is the only way to
+   repaint that internal surface; -webkit-text-fill-color keeps the typed text
+   light. Covers hover/focus/active so it doesn't revert white on interaction. */
+[data-bs-theme="dark"] .clm-search input:-webkit-autofill,
+[data-bs-theme="dark"] .clm-search input:-webkit-autofill:hover,
+[data-bs-theme="dark"] .clm-search input:-webkit-autofill:focus,
+[data-bs-theme="dark"] .clm-search input:-webkit-autofill:active {
+  -webkit-text-fill-color: #e2e8f0;
+  caret-color: #e2e8f0;
+  -webkit-box-shadow: 0 0 0 1000px #1e293b inset !important;
+  box-shadow: 0 0 0 1000px #1e293b inset !important;
+  transition: background-color 9999s ease-in-out 0s;
+}
 [data-bs-theme="dark"] .clm-total-num { background: #1e293b; color: #67e8f9; }
 [data-bs-theme="dark"] .clm-table-wrap { background: #0f172a; }
 [data-bs-theme="dark"] .clm-table thead th {

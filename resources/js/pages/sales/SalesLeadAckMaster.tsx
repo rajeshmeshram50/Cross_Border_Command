@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -79,6 +79,19 @@ export default function SalesLeadAckMaster() {
   const [q, setQ]       = useState('');
   const [rpp, setRpp]   = useState(10);
   const [page, setPage] = useState(1);
+
+  // Transient shimmer flags. All three tabs are fetched once on mount, so a
+  // tab switch is instant — we flash the table skeleton briefly on switch so
+  // the change reads as a deliberate "loading the new tab" transition. The
+  // form modal flashes a field skeleton on open before the inputs settle in.
+  const [tabLoading, setTabLoading]   = useState(false);
+  const [formLoading, setFormLoading] = useState(false);
+  const tabTimer  = useRef<number | null>(null);
+  const formTimer = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (tabTimer.current)  window.clearTimeout(tabTimer.current);
+    if (formTimer.current) window.clearTimeout(formTimer.current);
+  }, []);
 
   // Modals
   const [oppSelectorOpen, setOppSelectorOpen] = useState(false);
@@ -170,8 +183,15 @@ export default function SalesLeadAckMaster() {
     if (page !== safePage) setPage(safePage);
   }, [page, safePage]);
 
-  // Tab switch resets page + clears search.
-  const switchTab = (next: OppType) => { setTab(next); setPage(1); setQ(''); };
+  // Tab switch resets page + clears search, and flashes the table skeleton
+  // so the swap to another opportunity type reads as a fresh load.
+  const switchTab = (next: OppType) => {
+    if (next === tab) return;
+    setTab(next); setPage(1); setQ('');
+    setTabLoading(true);
+    if (tabTimer.current) window.clearTimeout(tabTimer.current);
+    tabTimer.current = window.setTimeout(() => setTabLoading(false), 450);
+  };
 
   // ── Modal actions ──
   const openAdd = () => {
@@ -179,6 +199,14 @@ export default function SalesLeadAckMaster() {
     setOppSelectorOpen(true);
     setPendingType(null);
     setEditingId(null);
+  };
+
+  // Flash the form field skeleton briefly whenever the Add/Edit modal opens,
+  // so the form materialises with the same shimmer language as the table.
+  const flashFormSkeleton = () => {
+    setFormLoading(true);
+    if (formTimer.current) window.clearTimeout(formTimer.current);
+    formTimer.current = window.setTimeout(() => setFormLoading(false), 400);
   };
 
   const selectOpp = (t: OppType) => {
@@ -189,6 +217,7 @@ export default function SalesLeadAckMaster() {
     setFormDQ('positive');
     setFormError('');
     setFormOpen(true);
+    flashFormSkeleton();
   };
 
   const openEdit = (row: Reason) => {
@@ -200,6 +229,7 @@ export default function SalesLeadAckMaster() {
     setFormDQ(row.dq_status ?? 'positive');
     setFormError('');
     setFormOpen(true);
+    flashFormSkeleton();
   };
 
   const closeForm = () => {
@@ -371,19 +401,31 @@ export default function SalesLeadAckMaster() {
               </tr>
             </thead>
             <tbody>
-              {loading && (
-                <tr><td colSpan={tab === 'disqualified' ? 5 : 4} className="lam-empty">
-                  <span className="lam-spinner lam-spinner-violet" />
-                  Loading reasons…
-                </td></tr>
-              )}
-              {!loading && rows.length === 0 && (
+              {(loading || tabLoading) && Array.from({ length: 6 }).map((_, i) => (
+                <tr key={`sk-${i}`} className="lam-skel-row">
+                  <td className="lam-td-sr"><span className="lam-skel lam-skel-badge" /></td>
+                  <td className="lam-td-reason">
+                    <span className="lam-skel lam-skel-line" style={{ width: `${72 - (i % 3) * 14}%` }} />
+                  </td>
+                  {tab === 'disqualified' && (
+                    <td style={{ textAlign: 'center' }}><span className="lam-skel lam-skel-pill" /></td>
+                  )}
+                  <td style={{ textAlign: 'center' }}><span className="lam-skel lam-skel-pill" /></td>
+                  <td style={{ textAlign: 'center' }}>
+                    <div className="lam-actions">
+                      <span className="lam-skel lam-skel-btn" />
+                      <span className="lam-skel lam-skel-btn" />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {!loading && !tabLoading && rows.length === 0 && (
                 <tr><td colSpan={tab === 'disqualified' ? 5 : 4} className="lam-empty">
                   <i className="ri-inbox-line lam-empty-icon" />
                   No reasons found
                 </td></tr>
               )}
-              {!loading && rows.map((r, i) => (
+              {!loading && !tabLoading && rows.map((r, i) => (
                 <tr key={r.id}>
                   <td className="lam-td-sr"><span className="lam-sr-badge">{startIdx + i + 1}</span></td>
                   <td className="lam-td-reason"><ReasonCell text={r.reason} /></td>
@@ -478,8 +520,11 @@ export default function SalesLeadAckMaster() {
       </div>
 
       {/* ── Opportunity-type selector modal ── */}
+      {/* No backdrop-click-to-close — users were losing partially filled
+          forms by misclicking the overlay. Close only via the X / Cancel
+          button or the ESC key. */}
       {oppSelectorOpen && (
-        <div className="lam-overlay" onMouseDown={() => setOppSelectorOpen(false)}>
+        <div className="lam-overlay">
           <div className="lam-modal lam-modal-md" onMouseDown={e => e.stopPropagation()}>
             <div className="lam-modal-header">
               <div className="lam-modal-hicon"><i className="ri-folder-add-line" /></div>
@@ -528,7 +573,9 @@ export default function SalesLeadAckMaster() {
               textarea spans the full width; Status / DQ Status sit
               side-by-side in equal columns. ── */}
       {formOpen && pendingType && (
-        <div className="lam-overlay lam-overlay-strong" onMouseDown={() => { if (!saving) closeForm(); }}>
+        /* No backdrop-click-to-close — users were losing partially filled
+           forms by misclicking the overlay. Close only via Cancel or ESC. */
+        <div className="lam-overlay lam-overlay-strong">
           <div className="lam-modal lam-modal-lg lam-modal-noclose" onMouseDown={e => e.stopPropagation()}>
             <div className="lam-modal-header lam-modal-header-rich">
               <span className="lam-mh-orb lam-mh-orb-tr" aria-hidden />
@@ -545,6 +592,29 @@ export default function SalesLeadAckMaster() {
             </div>
 
             <div className="lam-modal-body">
+              {formLoading ? (
+                /* Field skeleton — mirrors the real form shape (label +
+                   textarea, then the Status / DQ Status row) so the inputs
+                   resolve in place rather than popping in cold. */
+                <>
+                  <div className="lam-fld">
+                    <span className="lam-skel lam-skel-flabel" />
+                    <span className="lam-skel lam-skel-ftext" />
+                  </div>
+                  <div className={`lam-row ${pendingType === 'disqualified' ? 'cols-2' : 'cols-1'}`} style={{ marginTop: 18 }}>
+                    <div className="lam-fld">
+                      <span className="lam-skel lam-skel-flabel" />
+                      <span className="lam-skel lam-skel-finput" />
+                    </div>
+                    {pendingType === 'disqualified' && (
+                      <div className="lam-fld">
+                        <span className="lam-skel lam-skel-flabel" />
+                        <span className="lam-skel lam-skel-finput" />
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (<>
               {/* Reason — full width row */}
               <div className="lam-fld">
                 <label className="lam-lbl">Reason <span className="lam-req">*</span></label>
@@ -591,6 +661,7 @@ export default function SalesLeadAckMaster() {
               </div>
 
               {formError && <div className="lam-error"><i className="ri-error-warning-line" /> {formError}</div>}
+              </>)}
             </div>
 
             <div className="lam-modal-footer lam-modal-footer-right">
@@ -945,6 +1016,32 @@ const SCOPED_CSS = `
   border: 2px solid #ddd6fe; border-top-color: #7c3aed; border-radius: 50%;
   vertical-align: -3px;
   animation: lam-spin .7s linear infinite;
+}
+
+/* ─── Skeleton shimmer — shown while the reasons list loads. Each
+   placeholder mirrors the real column shape (Sr-No badge / reason
+   line / status pill / action chips) and sweeps a light lavender
+   gradient across, so the table keeps its structure instead of
+   collapsing to a single spinner row. */
+.lam-skel-row td { background: transparent !important; }
+.lam-skel-row:hover td { background: transparent !important; }
+.lam-skel {
+  display: inline-block;
+  background: linear-gradient(90deg, #efe9fb 25%, #e2d8f7 37%, #efe9fb 63%);
+  background-size: 400% 100%;
+  animation: lam-shimmer 1.4s ease infinite;
+}
+.lam-skel-badge { width: 28px; height: 24px; border-radius: 7px; }
+.lam-skel-line  { height: 12px; border-radius: 999px; vertical-align: middle; }
+.lam-skel-pill  { width: 64px; height: 20px; border-radius: 999px; }
+.lam-skel-btn   { width: 30px; height: 30px; border-radius: 8px; }
+/* Form-field skeletons — used while the Add/Edit modal settles in. */
+.lam-skel-flabel { display: block; width: 90px; height: 11px; border-radius: 999px; margin-bottom: 6px; }
+.lam-skel-ftext  { display: block; width: 100%; height: 96px; border-radius: 8px; }
+.lam-skel-finput { display: block; width: 100%; height: 38px; border-radius: 8px; }
+@keyframes lam-shimmer {
+  0%   { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
 }
 
 .lam-td-sr { font-weight: 700; color: #1e293b; }
@@ -1420,6 +1517,10 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lam-td-reason { color: #ede9fe; }
 [data-bs-theme="dark"] .lam-empty { color: #7a6b9a; }
 [data-bs-theme="dark"] .lam-empty-icon { background: rgba(124,58,237,.16); color: #a78bfa; }
+[data-bs-theme="dark"] .lam-skel {
+  background: linear-gradient(90deg, #241c3a 25%, #322750 37%, #241c3a 63%);
+  background-size: 400% 100%;
+}
 
 /* Dark-mode status pills — softer tints so they don't burn out on
    the deep purple table. Action buttons (.lam-ab) already auto-adapt

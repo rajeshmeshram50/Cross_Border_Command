@@ -218,7 +218,10 @@ export type ProductMappingRow = {
   totalAmount: number;
 };
 
-type StepKey = 1 | 2 | 3 | 4;
+/* Trade Document Management (the former Step 3, an Evidence Vault) was
+ * removed from the supplier form — those uploads now live in the standalone
+ * Evidence Vault popup. The wizard is now Identity → KYC → Map Products. */
+type StepKey = 1 | 2 | 3;
 type IdTab = 'identification' | 'address';
 type KycTab = 'company' | 'owner' | 'license' | 'bank' | 'gst';
 
@@ -941,7 +944,10 @@ export default function AddVendorModal(props: {
    * Keyed on `vendorId` (not `initialVendorId`) so the poller also kicks
    * in for newly-created vendors once Stage 1→2 has saved a row. */
   useEffect(() => {
-    if (!vendorId || step !== 3 || tradeTab !== 'trade') return;
+    // Dormant since the Evidence Vault step was removed: `tradeTab` can no
+    // longer become 'trade' here, so this poller never fires. Kept for the
+    // standalone Evidence Vault flow's parity.
+    if (!vendorId || tradeTab !== 'trade') return;
     let cancelled = false;
     const fetchAndUpdate = async (withSync: boolean) => {
       try {
@@ -1541,23 +1547,9 @@ export default function AddVendorModal(props: {
       if (idx >= 0 && idx < KYC_TAB_ORDER.length - 1) {
         setKycTab(KYC_TAB_ORDER[idx + 1]);
       } else {
+        // Last KYC sub-tab → straight to Map Products (now Step 3). The
+        // Trade Document Management / Evidence Vault step was removed.
         setStep(3);
-      }
-    } else if (step === 3) {
-      // Stage 3 has 2 top tabs and (inside the KYC tab) 3 sub-pills:
-      //   KYC  → Owner KYC → Company Due Diligence → Trade License
-      //   Trade Documents
-      // Save & Next walks the pills, then the top tabs, then Step 4.
-      // Stage 3 is frontend-only — no API call between sub-tabs.
-      if (tradeTab === 'kyc') {
-        const idx = KYC_SUB_ORDER.indexOf(kycSub);
-        if (idx >= 0 && idx < KYC_SUB_ORDER.length - 1) {
-          setKycSub(KYC_SUB_ORDER[idx + 1]);
-        } else {
-          setTradeTab('trade');
-        }
-      } else {
-        setStep(4);
       }
     }
   };
@@ -2068,9 +2060,8 @@ export default function AddVendorModal(props: {
             <div className="avm-step-arrow">›</div>
             <StepperItem n={2} title="Supplier KYC / Due Diligence" sub="Docs, identity & compliance"            current={step} tone="teal" />
             <div className="avm-step-arrow">›</div>
-            <StepperItem n={3} title="Trade Document Management"  sub="Manage trade docs, contracts & agreements" current={step} tone="purple" />
-            <div className="avm-step-arrow">›</div>
-            <StepperItem n={4} title="Map Products"               sub="Link products & pricing"                current={step} tone="green" />
+            {/* Trade Document Management (Evidence Vault) step removed. */}
+            <StepperItem n={3} title="Map Products"               sub="Link products & pricing"                current={step} tone="green" />
           </div>
         </div>
 
@@ -2229,20 +2220,8 @@ export default function AddVendorModal(props: {
               }
             }
 
-            if (step > 3) {
-              const td = tradeDocRows.find(r => r.status !== 'N/A');
-              if (td) {
-                prevStages.push({
-                  name: 'Trade Document Management',
-                  tone: 'purple',
-                  rows: [[
-                    { label: 'Document', value: td.name || '—' },
-                    { label: 'Status',   value: td.status },
-                    ...(td.attachmentName ? [{ label: 'Attachment', value: td.attachmentName }] : []),
-                  ]],
-                });
-              }
-            }
+            // The Trade Document Management recap was removed along with
+            // that step (Evidence Vault).
 
             if (prevStages.length === 0) return null;
 
@@ -2252,7 +2231,7 @@ export default function AddVendorModal(props: {
                   <div className="avm-prev-title">
                     <span className="avm-prev-check"><i className="ri-check-line" /></span>
                     What you did in previous stages
-                    <span className="avm-prev-chip">Stage {step - 1} of 4 Complete</span>
+                    <span className="avm-prev-chip">Stage {step - 1} of 3 Complete</span>
                   </div>
                   <button className="avm-prev-toggle" onClick={() => setPrevOpen(o => !o)}>{prevOpen ? 'Hide' : 'Show'}</button>
                 </div>
@@ -2736,100 +2715,12 @@ export default function AddVendorModal(props: {
           )}
 
           {/* ─── STEP 3 ─── */}
+          {/* Step 3 (Trade Document Management / Evidence Vault) removed —
+              KYC & trade-document uploads now live in the standalone
+              Evidence Vault popup. */}
+
+          {/* ─── STEP 3 — Map Products ─── */}
           {step === 3 && (
-            <SectionCard tone="violet" icon={<i className="ri-file-text-line" />} title="Trade Document Management" subtitle="KYC & trade documents repository">
-              <div className="avm-tabs">
-                <button className={`avm-tab ${tradeTab === 'kyc'   ? 'on' : ''}`} onClick={() => setTradeTab('kyc')}>
-                  <i className="ri-file-list-3-line me-1" /> KYC / Due Diligence Documents
-                </button>
-                <button className={`avm-tab ${tradeTab === 'trade' ? 'on' : ''}`} onClick={() => setTradeTab('trade')}>
-                  <i className="ri-send-plane-line me-1" /> Trade Documents
-                </button>
-              </div>
-
-              {tradeTab === 'kyc' && (
-                <>
-                  <div className="avm-sub-pills">
-                    <button className={`avm-sub-pill ${kycSub === 'owner' ? 'on' : ''}`}   onClick={() => setKycSub('owner')}>Owner KYC</button>
-                    <button className={`avm-sub-pill ${kycSub === 'company' ? 'on' : ''}`} onClick={() => setKycSub('company')}>Company Due Diligence</button>
-                    <button className={`avm-sub-pill ${kycSub === 'license' ? 'on' : ''}`} onClick={() => setKycSub('license')}>Trade License</button>
-                  </div>
-                  {/* Read-only roll-up of Step 2's segment-rule uploads.
-                      Each sub-pill maps to the matching Step 2 tab key
-                      (`company`/`owner`/`license`) — the same prefix
-                      SupplierSegmentRefTable uses to store uploads, so
-                      the View link here resolves the same blob URL the
-                      user picked on Step 2. */}
-                  {(() => {
-                    const sourceRows = kycSub === 'owner'   ? (segmentDocs.kyc || [])
-                                      : kycSub === 'company' ? (segmentDocs.dd  || [])
-                                      : (segmentDocs.tl || []);
-                    const tabKey = kycSub === 'owner' ? 'owner' : kycSub === 'company' ? 'company' : 'license';
-                    if (sourceRows.length === 0) {
-                      return (
-                        <div className="text-center text-muted py-4">
-                          No segment rule loaded for this category. Pick a segment on Step 1 to populate the vault.
-                        </div>
-                      );
-                    }
-                    return (
-                      <div className="table-responsive table-card border rounded mt-2">
-                        <table className="table align-middle table-nowrap mb-0">
-                          <thead className="table-light">
-                            <tr>
-                              <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
-                              <th>AUTHORITY</th><th>EXPIRY</th><th>STATUS</th><th>ATTACHMENT</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {sourceRows.map((d: any, i: number) => {
-                              const refKey = `${tabKey}::${d.code}`;
-                              const uploaded = segmentRefUploads[refKey];
-                              return (
-                                <tr key={d.code}>
-                                  <td>{String(i + 1).padStart(2, '0')}</td>
-                                  <td><span className="avm-auto-code">{d.code}</span></td>
-                                  <td><strong>{d.name}</strong></td>
-                                  <td>{d.authority || '—'}</td>
-                                  <td>{d.expiry || 'N/A'}</td>
-                                  <td>
-                                    <span className={`avm-pill ${d.requirement === 'M' ? 'avm-pill-success' : 'avm-pill-muted'}`}>
-                                      {d.requirement === 'M' ? '✓ Mandatory' : 'Optional'}
-                                    </span>
-                                  </td>
-                                  <td>
-                                    {uploaded ? (
-                                      <a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600 }}>
-                                        <i className="ri-attachment-line me-1" />{uploaded.name}
-                                      </a>
-                                    ) : (
-                                      <span className="text-muted fst-italic">Not uploaded in Step 2</span>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    );
-                  })()}
-                </>
-              )}
-              {tradeTab === 'trade' && (
-                <TradeDocsTable
-                  rows={tradeDocRows.map(r => ({ ...r, cooldownActive: isReminderCooldown(r.signatureRequestId) }))}
-                  onToggleAll={toggleAllTradeDocSign}
-                  onToggleSign={toggleTradeDocSign}
-                  onSend={sendTradeDoc}
-                  onSendSelected={sendSelectedTradeDocs}
-                />
-              )}
-            </SectionCard>
-          )}
-
-          {/* ─── STEP 4 ─── */}
-          {step === 4 && (
             <SectionCard tone="green" icon={<i className="ri-box-3-line" />} title="Products Details" subtitle="Link products to this vendor with purchase price & GST" headerAction={
               <button className="avm-section-add-btn" onClick={openMapPopup}>+ Add More Products</button>
             }>
@@ -2844,7 +2735,7 @@ export default function AddVendorModal(props: {
           <button className="avm-btn-ghost" onClick={onClose}>Cancel</button>
           <div className="avm-foot-right">
             {step > 1 && <button className="avm-btn-outline" onClick={goPrev}>← Previous</button>}
-            {step < 4 ? (
+            {step < 3 ? (
               <button className="avm-btn-primary" onClick={goNext} disabled={saving}>
                 {saving ? (
                   <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>

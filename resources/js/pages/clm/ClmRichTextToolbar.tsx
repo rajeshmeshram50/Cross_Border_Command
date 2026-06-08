@@ -79,8 +79,11 @@ export default function ClmRichTextToolbar({
   // Prevent toolbar mousedown from stealing focus from the editor.
   useEffect(() => { /* no-op; documented in JSX */ }, []);
 
+  // Skip preventDefault for native <select> (font-size / block) so their
+  // dropdowns open — they open ON mousedown, which the selection-preserving
+  // preventDefault otherwise swallowed.
   return (
-    <div className="rtb-bar" onMouseDown={e => e.preventDefault()}>
+    <div className="rtb-bar" onMouseDown={e => { if (!(e.target as HTMLElement).closest('select')) e.preventDefault(); }}>
       <style>{RTB_CSS}</style>
 
       {/* ── Font size + block format ─────────────────────────── */}

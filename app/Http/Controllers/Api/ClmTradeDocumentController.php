@@ -47,7 +47,7 @@ class ClmTradeDocumentController extends Controller
 
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $code = sprintf('TDN-%03d', ClmTradeDocName::where('client_id', $user->client_id)->count() + 1);
+            $code = $this->nextCode(ClmTradeDocName::class, $user->client_id, 'TDN-');
             return ClmTradeDocName::create([
                 'client_id'  => $user->client_id,
                 'code'       => $code,
@@ -72,6 +72,23 @@ class ClmTradeDocumentController extends Controller
     {
         $user = $request->user(); if (!$user) abort(401);
         $row  = ClmTradeDocName::where('client_id', $user->client_id)->findOrFail($id);
+
+        // Block delete if this trade document name is in use. Library drafts
+        // store the chosen name string in clm_trade_doc_library.name (the draft
+        // form picks it from this catalog), so a name referenced by any draft
+        // can't be removed without orphaning those drafts. Mirrors the Segment
+        // master's "in use" guard — reassign/remove the drafts first.
+        $usedBy = ClmTradeDocLibrary::where('client_id', $user->client_id)
+            ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim((string) $row->name))])
+            ->count();
+        if ($usedBy > 0) {
+            $noun = $usedBy === 1 ? 'draft' : 'drafts';
+            return response()->json([
+                'status'  => false,
+                'message' => "This trade document is used by {$usedBy} {$noun} in the Trade Document Library. Remove or reassign " . ($usedBy === 1 ? 'it' : 'them') . " before deleting.",
+            ], 409);
+        }
+
         $row->delete();
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
@@ -105,6 +122,9 @@ class ClmTradeDocumentController extends Controller
             'doc_type'  => 'required|string|max:64',
             'purpose'   => 'required|string|max:500',
             'party'     => 'required|string|max:255',
+            // Regulatory tier + segment scope — mirrors clm_agreement_library.
+            'regulatory' => 'nullable|string|in:highly,less',
+            'segment'    => 'nullable|string|max:500',
             'file_path' => 'nullable|string|max:500',
             'content'   => 'nullable|string',
             // Stage 2 page-shell config — same JSON shape as
@@ -116,7 +136,7 @@ class ClmTradeDocumentController extends Controller
 
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $code = sprintf('TD-%03d', ClmTradeDocLibrary::where('client_id', $user->client_id)->count() + 1);
+            $code = $this->nextCode(ClmTradeDocLibrary::class, $user->client_id, 'TD-');
             return ClmTradeDocLibrary::create($data + [
                 'client_id'  => $user->client_id,
                 'code'       => $code,
@@ -149,6 +169,8 @@ class ClmTradeDocumentController extends Controller
             'doc_type'  => 'sometimes|required|string|max:64',
             'purpose'   => 'sometimes|required|string|max:500',
             'party'     => 'sometimes|required|string|max:255',
+            'regulatory' => 'sometimes|nullable|string|in:highly,less',
+            'segment'    => 'sometimes|nullable|string|max:500',
             'file_path' => 'nullable|string|max:500',
             'content'   => 'nullable|string',
             // Same Stage 2 page-shell config as libraryStore. Re-validated
@@ -190,6 +212,37 @@ class ClmTradeDocumentController extends Controller
      *        revised Word doc and refreshes `content` from its HTML so
      *        the web editor stays in sync.
      */
+    /**
+     * Allocate the next per-tenant code (TDN-NNN / TD-NNN). Uses
+     * MAX(numeric suffix) + 1 rather than count()+1 so a deleted row in the
+     * middle of the sequence doesn't make the next allocation reuse a code
+     * that still exists — which throws a unique-constraint violation on save.
+     * Caller must already hold the client row lock; the composite UNIQUE
+     * (client_id, code) is the final guard.
+     *
+     * @param class-string<\Illuminate\Database\Eloquent\Model> $modelClass
+     */
+    private function nextCode(string $modelClass, int $clientId, string $prefix): string
+    {
+        $codes = $modelClass::where('client_id', $clientId)->pluck('code')->all();
+        $maxN  = 0;
+        $taken = [];
+        $re    = '/^' . preg_quote($prefix, '/') . '(\d+)$/';
+        foreach ($codes as $c) {
+            if (preg_match($re, (string) $c, $m)) {
+                $n = (int) $m[1];
+                if ($n > $maxN) $maxN = $n;
+            }
+            $taken[(string) $c] = true;
+        }
+        $n = $maxN;
+        do {
+            $n++;
+            $code = sprintf('%s%03d', $prefix, $n);
+        } while (isset($taken[$code]));
+        return $code;
+    }
+
     private const DOCX_MAX_KB = 20 * 1024;
 
     public function downloadDocx(Request $request, $id)

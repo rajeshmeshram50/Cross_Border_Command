@@ -11,7 +11,7 @@ class ClmTradeDocLibrary extends Model
 
     protected $fillable = [
         'client_id', 'code', 'name', 'title', 'doc_type', 'purpose',
-        'party', 'file_path', 'content', 'docx_path', 'docx_original_name',
+        'party', 'regulatory', 'segment', 'file_path', 'content', 'docx_path', 'docx_original_name',
         'header_config', 'footer_config',
         'status', 'created_by', 'updated_by',
     ];

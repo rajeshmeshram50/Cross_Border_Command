@@ -236,7 +236,10 @@ interface Props {
 }
 
 type Phase = 'pick-customer' | 'wizard';
-type Stage = 1 | 2 | 3;
+/* Evidence Vault (the former Stage 3) was removed from the consignee form —
+ * those uploads now live in the standalone ConsigneeEvidenceVaultModal. The
+ * form is a 2-stage flow: Legal Identity → KYC / Due Diligence. */
+type Stage = 1 | 2;
 type IdentityTab = 'identification' | 'address-contact';
 type VaultTab = 'kyc' | 'trade';
 
@@ -564,11 +567,14 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
      * land on Stage 2 (KYC) or Stage 3 (Trade Docs), honour it. Create
      * mode always lands on Stage 1 — there's no identity to skip past
      * yet. */
-    const landing: Stage = (consignee ? (initialStage ?? 1) : 1);
+    /* Clamp to ≤2 — the form is now a 2-stage flow. A caller could still
+     * pass the legacy initialStage=3 (Evidence Vault); never land past
+     * Stage 2. */
+    const landing = Math.min(2, consignee ? (initialStage ?? 1) : 1) as Stage;
     setStage   (landing);
-    // Existing consignee = a saved record → all three stages are
-    // reachable for review. Fresh create starts locked to Stage 1.
-    setMaxStage(consignee ? 3 : (landing as Stage));
+    // Existing consignee = a saved record → both stages are reachable
+    // for review. Fresh create starts locked to Stage 1.
+    setMaxStage((consignee ? 2 : landing) as Stage);
     setIdTab   ('identification');
     setKycSub  (remembered?.kycSub   ?? 'company-dd');
     setVaultTab(remembered?.vaultTab ?? 'kyc');
@@ -1141,8 +1147,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * round-trip per inprogress row, so completed signings, declines and
    * recalls show up in the badges without the user having to refresh. */
   useEffect(() => {
+    // Dormant since the Evidence Vault (Stage 3) was removed from this form:
+    // `vaultTab` can no longer become 'trade' here, so this poller never
+    // fires. Kept for the standalone Evidence Vault flow's parity.
     const partyId = consignee?.db_id ?? savedDbId;
-    if (!open || stage !== 3 || vaultTab !== 'trade' || !partyId) return;
+    if (!open || vaultTab !== 'trade' || !partyId) return;
     let cancelled = false;
     const fetchAndUpdate = async (withSync: boolean) => {
       try {
@@ -1670,58 +1679,26 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       return;
     }
     if (stage === 2) {
-      /* Sub-tab cycling: walk through Company DD → Owner KYC →
-       * Trade Licence before crossing into Stage 3 so each sub-tab
-       * gets its own Save & Next step (parallels AddCustomerModal). */
+      /* Stage 2 (final): walk Company DD → Owner KYC → Trade Licence,
+       * each getting its own Save & Next step. On the last sub-tab the
+       * primary button submits the consignee — there is no Stage 3
+       * (Evidence Vault) to step into anymore. */
       if (kycSub === 'company-dd')  { setKycSub('owner-kyc');    return; }
       if (kycSub === 'owner-kyc')   { setKycSub('trade-licence'); return; }
-      // Reset Stage 3 sub-state so Evidence Vault opens on KYC
-      // Documents › Company DD instead of landing mid-flow on
-      // whichever sub-tab the user last visited.
-      setVaultTab('kyc');
-      setEvSub('dd');
-      setStage(3); setMaxStage(m => Math.max(m, 3) as Stage);
+      handleSave();
       return;
     }
-    /* Stage 3 advance — cycle Evidence Vault › KYC Documents
-     * (dd → kyc → tl) → Trade Documents before the final Save
-     * Consignee. Previously this branch fell through to a no-op
-     * setStage that left the user stuck on whichever sub-tab the
-     * Save Consignee button was clicked from, so users could skip
-     * past tabs. */
-    if (vaultTab === 'kyc') {
-      if (evSub === 'dd')  { setEvSub('kyc'); return; }
-      if (evSub === 'kyc') { setEvSub('tl');  return; }
-      setVaultTab('trade');
-      return;
-    }
-    // vaultTab === 'trade' — last Stage 3 sub-tab; fire the actual
-    // submit instead of advancing further.
-    handleSave();
   };
   const goBack = () => {
     if (stage === 1) {
       if (idTab === 'address-contact') setIdTab('identification');
       return;
     }
-    if (stage === 2) {
-      // Mirror goNext: step backwards through Stage 2 sub-tabs before
-      // falling back to Stage 1's last sub-tab.
-      if (kycSub === 'trade-licence') { setKycSub('owner-kyc'); return; }
-      if (kycSub === 'owner-kyc')     { setKycSub('company-dd'); return; }
-      setStage(1); setIdTab('address-contact');
-      return;
-    }
-    // Stage 3 reverse cycle: Trade Documents → KYC Documents
-    // (tl → kyc → dd) → Stage 2.
-    if (vaultTab === 'trade') {
-      setVaultTab('kyc');
-      setEvSub('tl');
-      return;
-    }
-    if (evSub === 'tl')  { setEvSub('kyc'); return; }
-    if (evSub === 'kyc') { setEvSub('dd');  return; }
-    setStage(2);
+    // Stage 2: step backwards through the sub-tabs before falling back
+    // to Stage 1's last sub-tab.
+    if (kycSub === 'trade-licence') { setKycSub('owner-kyc'); return; }
+    if (kycSub === 'owner-kyc')     { setKycSub('company-dd'); return; }
+    setStage(1); setIdTab('address-contact');
   };
 
   /* Jump straight to any already-reached stage from the stepper (click
@@ -2029,16 +2006,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               clickable={stage !== 2 && 2 <= maxStage}
               onClick={() => gotoStage(2)}
             />
-            <div className="acm-steps-arrow"><IconChevronRight /></div>
-            <StepNode
-              n={3}
-              title="Evidence Vault"
-              sub="Trade documents & archive"
-              status={stage === 3 ? 'active' : 3 <= maxStage ? 'incomplete' : 'idle'}
-              icon={<IconVault />}
-              clickable={stage !== 3 && 3 <= maxStage}
-              onClick={() => gotoStage(3)}
-            />
+            {/* Stage 3 (Evidence Vault) removed — KYC / Trade-document
+                uploads now live in the standalone ConsigneeEvidenceVaultModal. */}
           </div>
 
           {/* Linked Customer summary — uses the same slim collapsible
@@ -2099,10 +2068,9 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                       Customer panel when Same as Customer is on so the
                       user sees ONE consolidated read-only block instead
                       of a redundant "What you did in previous stages"
-                      panel below. Only shown from Stage 3 onwards (the
-                      stats are meaningless before the user has reached
-                      Stage 2 / 3). */}
-                  {sameAsCustomer && stage >= 3 && (() => {
+                      panel below. Shown from Stage 2 onwards (the stats
+                      are meaningless before the user reaches KYC). */}
+                  {sameAsCustomer && stage >= 2 && (() => {
                     const segKeys = Object.keys(segmentRefUploads);
                     const segDd  = segKeys.filter(k => k.startsWith('company-dd::')).length;
                     const segOwn = segKeys.filter(k => k.startsWith('owner-kyc::')).length;
@@ -2283,75 +2251,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               persistSegmentRefUpload={persistSegmentRefUpload}
             />
           )}
-          {stage === 3 && (
-            <Stage3
-              vaultTab={vaultTab}
-              setVaultTab={setVaultTab}
-              evSub={evSub}
-              setEvSub={setEvSub}
-              form1={form1}
-              kycDocs={kycDocs}
-              kycOwners={kycOwners}
-              locations={locations}
-              sameAsCustomer={sameAsCustomer}
-              segmentDocs={segmentDocs}
-              segmentRefUploads={segmentRefUploads}
-              tdDocs={tdDocs.map(d => ({ ...d, cooldownActive: isReminderCooldown(d.signature_request_id) }))}
-              onToggleTd={(id) => setTdDocs(prev => prev.map(d => d.id === id ? { ...d, selected: !d.selected } : d))}
-              onToggleAllTd={(checked) => setTdDocs(prev => prev.map(d => d.status === 'completed' ? d : { ...d, selected: checked }))}
-              onSendTd={(id) => {
-                const row = tdDocs.find(d => d.id === id);
-                if (!row?.db_id) { toast.info('Not a library document', 'Pick a segment with mapped trade documents to enable signature sending.'); return; }
-                if (!(consignee?.db_id || savedDbId)) { toast.info('Save consignee first', 'Save the consignee before sending documents for signature.'); return; }
-                /* Resend semantics — see comment in AddCustomerModal's
-                 * matching handler. inprogress → nudge via remind API +
-                 * toast; everything else → re-open the wizard. Bundle-
-                 * aware cooldown stops a 3-doc bundle from triggering
-                 * three reminder emails. */
-                const reqId = row.signature_request_id;
-                if (row.sent && reqId && row.status === 'inprogress') {
-                  if (isReminderCooldown(reqId)) {
-                    toast.info('Already reminded', `One reminder covers every document in this bundle. Try again in ${reminderCooldownSeconds(reqId)}s.`);
-                    return;
-                  }
-                  const bundleCount = tdDocs.filter(d => d.signature_request_id === reqId).length;
-                  api.post(`/clm/signature-requests/${reqId}/remind`)
-                    .then((res) => {
-                      setRecentReminds(prev => ({ ...prev, [reqId]: Date.now() + 60_000 }));
-                      toast.success('Reminder sent',
-                        bundleCount > 1
-                          ? `The signer was notified about all ${bundleCount} documents in this signature request.`
-                          : 'The signer has been notified.',
-                      );
-                      // Optimistic counter bump — server value (when
-                      // present in the response) wins so the badge
-                      // stays in sync with the persisted truth.
-                      const serverCount = Number(res?.data?.data?.reminder_count ?? NaN);
-                      const serverLastAt = (res?.data?.data?.last_reminder_sent_at ?? null) as string | null;
-                      setTdDocs(prev => prev.map(d => (
-                        d.signature_request_id === reqId
-                          ? {
-                              ...d,
-                              reminder_count: Number.isFinite(serverCount) ? serverCount : (d.reminder_count ?? 0) + 1,
-                              last_reminder_sent_at: serverLastAt ?? new Date().toISOString(),
-                            }
-                          : d
-                      )));
-                    })
-                    .catch(err => toast.error('Reminder failed', err?.response?.data?.message ?? 'Could not send the reminder. Try again later.'));
-                  return;
-                }
-                setSendForSignature([row.db_id]);
-              }}
-              onSendSelectedTd={() => {
-                // Signed (completed) docs are locked — never include them.
-                const ids = tdDocs.filter(d => d.selected && d.db_id && d.status !== 'completed').map(d => d.db_id!);
-                if (ids.length === 0) { toast.info('Nothing selected', 'Tick one or more unsigned documents under "Send for Signature" first.'); return; }
-                if (!(consignee?.db_id || savedDbId)) { toast.info('Save consignee first', 'Save the consignee before sending documents for signature.'); return; }
-                setSendForSignature(ids.slice(0, 10));
-              }}
-            />
-          )}
+          {/* Stage 3 (Evidence Vault) body removed — KYC / Trade-document
+              uploads now live in the standalone ConsigneeEvidenceVaultModal. */}
         </div>
 
         {/* Footer */}
@@ -2364,14 +2265,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               </button>
             )}
             {(() => {
-              /* Single primary action button: cycles tabs while there
-               * are more sub-tabs ahead, then morphs into Save Consignee
-               * on the final Stage 3 › Trade Documents tab. Splitting
-               * this into two buttons (the old `stage < 3` / `stage === 3`
-               * branch) meant Stage 3 fired the real save from any
-               * sub-tab, so users could skip past KYC sub-tabs entirely.
-               * Now goNext owns the final dispatch too. */
-              const onFinalTab = stage === 3 && vaultTab === 'trade';
+              /* Single primary action button: cycles sub-tabs while there
+               * are more ahead, then morphs into Save Consignee on the
+               * final Stage 2 › Trade Licence sub-tab. goNext owns the
+               * final dispatch (there's no Stage 3 / Evidence Vault). */
+              const onFinalTab = stage === 2 && kycSub === 'trade-licence';
               return onFinalTab ? (
                 <button
                   className="acm-btn acm-btn-primary"

@@ -355,7 +355,7 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
 
       {/* ── Reason picker modal ── */}
       {pickerBucket && createPortal((
-        <div className="st2-pick-backdrop" onClick={closePicker}>
+        <div className="st2-pick-backdrop">
           <div className="st2-pick-modal" onClick={(e) => e.stopPropagation()}>
             <div className={`st2-pick-head ${BUCKET_META[pickerBucket].pill}`}>
               <div className="st2-pick-head-left">

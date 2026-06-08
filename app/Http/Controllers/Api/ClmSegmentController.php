@@ -103,6 +103,19 @@ class ClmSegmentController extends Controller
 
         if (isset($data['name'])) $data['name'] = trim($data['name']);
 
+        // Regulatory classification is fixed once a segment is created — it
+        // can be changed neither way on edit, since compliance structures
+        // (DCP rules, required docs) get built against it. Guarded here too
+        // because frontend validation can be bypassed.
+        if (isset($data['regulatory_status'])
+            && $data['regulatory_status'] !== $row->regulatory_status) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Regulatory status cannot be changed after the segment is created.',
+                'errors'  => ['regulatory_status' => ['Regulatory status cannot be changed after the segment is created.']],
+            ], 422);
+        }
+
         // Reject rename to a duplicate (case-insensitive, excluding self).
         if (isset($data['name'])) {
             $clash = ClmSegment::where('client_id', $user->client_id)

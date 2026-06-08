@@ -73,6 +73,7 @@ export default function ClmSegmentPage() {
   const [editing, setEditing]     = useState<Segment | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Segment | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const reload = () => {
     setLoading(true);
@@ -115,9 +116,11 @@ export default function ClmSegmentPage() {
     }
   };
   const onDelete = async () => {
-    if (!pendingDelete) return;
+    if (!pendingDelete || deleting) return;
+    setDeleting(true);
     try { await api.delete(`/clm/segments/${pendingDelete.id}`); toast.success('Deleted', `${pendingDelete.name} removed`); setPendingDelete(null); reload(); }
     catch (e: any) { toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete'); }
+    finally { setDeleting(false); }
   };
 
   return (
@@ -263,6 +266,7 @@ export default function ClmSegmentPage() {
         title="Delete Segment"
         itemName={pendingDelete ? `${pendingDelete.name} (${pendingDelete.code})` : undefined}
         subMessage="This segment will be permanently removed. The action cannot be undone."
+        loading={deleting}
         onClose={() => setPendingDelete(null)}
         onConfirm={() => void onDelete()}
       />
@@ -282,6 +286,12 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
   const status: SegStatus = existing?.status ?? 'active';
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+
+  // Regulatory classification is fixed once a segment is created — it can be
+  // changed neither way on edit (no Highly→Less downgrade, no Less→Highly
+  // upgrade), since compliance structures (DCP rules, required docs) are built
+  // against whatever it was set to. Editing only allows it to stay as-is.
+  const regLocked = isEdit;
 
   const handleSave = async () => {
     const trimmed = name.trim();
@@ -309,6 +319,7 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
       }
     }
     if (!reg) next.reg = 'Regulatory status is required';
+    else if (regLocked && reg !== existing?.regulatory_status) next.reg = 'Regulatory status cannot be changed after the segment is created.';
     if (!bc)  next.bc  = 'Buyer / Consignee rule is required';
     setErrors(next);
     if (Object.keys(next).length) return;
@@ -390,6 +401,7 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
             <MasterSelect
               value={reg}
               invalid={!!errors.reg}
+              disabled={regLocked}
               placeholder="— Select —"
               options={[
                 { value: 'highly', label: 'Highly Regulated' },
@@ -397,6 +409,7 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
               ]}
               onChange={(v) => { setReg(v as Reg); setErrors(p => ({ ...p, reg: '' })); }}
             />
+            {regLocked && <div className="clm-field-hint">Regulatory status is fixed once the segment is created and can't be changed.</div>}
             {errors.reg && <div className="clm-err">{errors.reg}</div>}
           </div>
 

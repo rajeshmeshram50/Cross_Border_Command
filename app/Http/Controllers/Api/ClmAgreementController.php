@@ -7,13 +7,17 @@ use App\Http\Controllers\Concerns\HandlesDocxHtmlRoundtrip;
 use App\Models\ClmAgreementLibrary;
 use App\Models\ClmAgreementType;
 use App\Models\ClmSegment;
+use App\Models\ClmSegmentRule;
 use App\Models\ClmSignatureRequest;
+use App\Models\ClmTradeDocLibrary;
 use App\Models\Consignee;
 use App\Models\Customer;
 use App\Models\Lead;
 use App\Models\ProformaInvoice;
 use App\Models\Quotation;
 use App\Models\Product;
+use App\Models\SegmentDocUpload;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -66,7 +70,7 @@ class ClmAgreementController extends Controller
 
         $row = DB::transaction(function () use ($user, $data, $name) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $code = sprintf('AT-%03d', ClmAgreementType::where('client_id', $user->client_id)->count() + 1);
+            $code = $this->nextCode(ClmAgreementType::class, $user->client_id, 'AT-');
             return ClmAgreementType::create([
                 'client_id'   => $user->client_id,
                 'code'        => $code,
@@ -131,6 +135,39 @@ class ClmAgreementController extends Controller
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
+    /**
+     * Allocate the next per-tenant code (AT-NNN / A-NNN). Uses
+     * MAX(numeric suffix) + 1 rather than count()+1 so a deleted row in the
+     * middle of the sequence doesn't make the next allocation reuse a code
+     * that still exists — which was throwing a unique-constraint violation
+     * (clm_agreement_types_client_id_code_unique) on save. Skips any code
+     * that's already taken just to be doubly safe. Caller must already hold
+     * the client row lock; the composite UNIQUE (client_id, code) is the
+     * final guard.
+     *
+     * @param class-string<\Illuminate\Database\Eloquent\Model> $modelClass
+     */
+    private function nextCode(string $modelClass, int $clientId, string $prefix): string
+    {
+        $codes = $modelClass::where('client_id', $clientId)->pluck('code')->all();
+        $maxN  = 0;
+        $taken = [];
+        $re    = '/^' . preg_quote($prefix, '/') . '(\d+)$/';
+        foreach ($codes as $c) {
+            if (preg_match($re, (string) $c, $m)) {
+                $n = (int) $m[1];
+                if ($n > $maxN) $maxN = $n;
+            }
+            $taken[(string) $c] = true;
+        }
+        $n = $maxN;
+        do {
+            $n++;
+            $code = sprintf('%s%03d', $prefix, $n);
+        } while (isset($taken[$code]));
+        return $code;
+    }
+
     /* ── LIBRARY ── */
 
     public function libraryIndex(Request $request)
@@ -169,7 +206,7 @@ class ClmAgreementController extends Controller
 
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $code = sprintf('A-%03d', ClmAgreementLibrary::where('client_id', $user->client_id)->count() + 1);
+            $code = $this->nextCode(ClmAgreementLibrary::class, $user->client_id, 'A-');
             return ClmAgreementLibrary::create([
                 'client_id'      => $user->client_id,
                 'code'           => $code,
@@ -358,6 +395,16 @@ class ClmAgreementController extends Controller
             }
         }
 
+        // Customer + consignee mapped to this lead. Resolved up-front (it
+        // used to sit below the loop) because the per-segment trade-document
+        // block now needs both parties' upload state inside the loop.
+        $customer  = $lead->customer_id  ? Customer::find($lead->customer_id)   : null;
+        $consignee = $lead->consignee_id ? Consignee::find($lead->consignee_id) : null;
+        $partyOwners = array_values(array_filter([
+            $customer  ? ['party' => 'customer',  'model' => $customer]  : null,
+            $consignee ? ['party' => 'consignee', 'model' => $consignee] : null,
+        ]));
+
         // Build the per-segment agreement list.
         $segmentsOut = [];
         foreach ($segments as $seg) {
@@ -435,6 +482,10 @@ class ClmAgreementController extends Controller
                 'name'       => $seg->name,
                 'regulatory' => $seg->regulatory_status,
                 'agreements' => $agreementsOut,
+                // Trade documents required for THIS segment, for both the
+                // customer and the consignee — moved here from the per-party
+                // Evidence Vault so they're surfaced segment-wise.
+                'trade_documents' => $this->segmentTradeDocs((int) $seg->id, (int) $user->client_id, $partyOwners),
             ];
         }
 
@@ -447,10 +498,9 @@ class ClmAgreementController extends Controller
             ->pluck('c', 'regulatory_status');
         $leadCounts = collect($segments)->groupBy('regulatory_status')->map->count();
 
-        // Customer + consignee snapshot — the frontend uses these to
-        // resolve signers based on the agreement's `party` CSV.
-        $customer  = $lead->customer_id  ? Customer::find($lead->customer_id)   : null;
-        $consignee = $lead->consignee_id ? Consignee::find($lead->consignee_id) : null;
+        // ($customer / $consignee resolved before the segment loop above —
+        // the frontend uses these to resolve signers based on the
+        // agreement's `party` CSV.)
 
         return response()->json([
             'status' => true,
@@ -495,6 +545,57 @@ class ClmAgreementController extends Controller
         ]);
     }
 
+    /**
+     * Trade documents required for a single segment, listed for each mapped
+     * party (customer + consignee). Mirrors the Evidence Vault's `td` bucket
+     * logic (segment rule → doc_selections['td'] → master + upload status)
+     * but scoped to ONE segment so the Sales Matrix can show trade documents
+     * segment-wise instead of unioned per party.
+     *
+     * @param  array<int,array{party:string,model:Model}>  $partyOwners
+     * @return array<int,array<string,mixed>>
+     */
+    private function segmentTradeDocs(int $segmentId, int $cid, array $partyOwners): array
+    {
+        $rule = ClmSegmentRule::where('client_id', $cid)
+            ->where('segment_id', $segmentId)
+            ->first();
+        $sel = $rule?->doc_selections['td'] ?? [];
+        if (!is_array($sel) || empty($sel)) return [];
+
+        $masters = ClmTradeDocLibrary::where('client_id', $cid)
+            ->whereIn('code', array_keys($sel))
+            ->get()
+            ->keyBy('code');
+
+        $out = [];
+        foreach ($partyOwners as $owner) {
+            $model = $owner['model'];
+            $uploads = SegmentDocUpload::where('uploadable_type', get_class($model))
+                ->where('uploadable_id', $model->id)
+                ->where('category', 'td')
+                ->get()
+                ->keyBy('doc_code');
+
+            foreach ($sel as $code => $req) {
+                $m = $masters->get($code);
+                $u = $uploads->get($code);
+                $out[] = [
+                    'party'          => $owner['party'],
+                    'db_id'          => $m?->id,
+                    'name'           => $m?->name ?? ($m?->title ?? $code),
+                    'reference'      => $m?->code ?? $code,
+                    'doc_code'       => (string) $code,
+                    'requirement'    => $req === 'M' ? 'M' : 'O',
+                    'status'         => $u ? 'Verified' : 'Pending',
+                    'attachment'     => $u?->attachment_name,
+                    'attachment_url' => $u?->attachment_url,
+                ];
+            }
+        }
+        return $out;
+    }
+
     /* ── DOCX round-trip ──
      *   GET  /clm/agreement-library/{id}/download    → returns the user's
      *        uploaded DOCX when present, otherwise generates a fresh one
@@ -507,6 +608,14 @@ class ClmAgreementController extends Controller
     {
         $user = $request->user(); if (!$user) abort(401);
         $row  = ClmAgreementLibrary::where('client_id', $user->client_id)->findOrFail($id);
+
+        // DOCX generation (PhpWord HTML reader + Word2007 writer) is memory-
+        // and time-heavy for table-rich documents. The web SAPI's default
+        // limits can be lower than CLI, producing intermittent OOM 500s that
+        // surface to the user as a generic "Download failed". Raise both
+        // defensively for this request only. Mirrors the Trade Doc flow.
+        @ini_set('memory_limit', '512M');
+        @set_time_limit(120);
 
         // Prefer the user-uploaded DOCX (it's the source of truth after a
         // Word round-trip — preserves header/footer/styling we can't fully

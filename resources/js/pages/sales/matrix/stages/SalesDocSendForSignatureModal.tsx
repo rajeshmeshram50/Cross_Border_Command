@@ -82,7 +82,9 @@ interface Props {
   kind: 'quotation' | 'pi';
   docId: number;
   docCode: string | null;
-  leadId: number;
+  /** Linked opportunity id, or null for a direct doc with no opportunity —
+   *  the server resolves signers from the document itself. */
+  leadId: number | null;
   /** Display name for the signer chip (the actual contact email/name is
    *  resolved server-side from the customer's primary contact). */
   customerName?: string | null;

@@ -198,7 +198,12 @@ class OnboardingController extends Controller
         $data = $this->validateOnboardingPayload($request, $invite);
 
         try {
-            return DB::transaction(function () use ($invite, $data) {
+            // Only the DB writes run inside the transaction. The welcome
+            // email is deliberately kept OUT of it (and queued) — sending it
+            // synchronously over SMTP was holding the transaction (and the
+            // allocateEmpCode row lock) open for the full ~15s SMTP round-trip,
+            // which is what made this endpoint slow. See the queue() call below.
+            $result = DB::transaction(function () use ($invite, $data) {
                 // Provision the User row first (login account). Same shape as
                 // EmployeeController::store but tenant comes from the invite,
                 // not the request user (which doesn't exist on this public
@@ -244,34 +249,44 @@ class OnboardingController extends Controller
                     'employee_id'  => $employee->id,
                 ]);
 
-                // Welcome email — gated by Settings → Notifications → newUser
-                if (Settings::shouldSendMail('newUser')) try {
-                    $orgName = Client::find($invite->client_id)?->org_name ?? 'Your Organization';
-                    Mail::to($invite->invitee_email)->send(new WelcomeCredentialsMail(
-                        $loginUser->name,
-                        $invite->invitee_email,
-                        $rawPassword,
-                        'employee',
-                        $orgName,
-                        PasswordChangedMail::resolveLoginUrl($request),
-                    ));
-                } catch (\Throwable $e) {
-                    Log::warning('Onboarding welcome mail failed', [
-                        'employee_id' => $employee->id,
-                        'email'       => $invite->invitee_email,
-                        'error'       => $e->getMessage(),
-                    ]);
-                }
-
-                return response()->json([
-                    'message' => 'Onboarding complete. Login credentials sent to your email.',
-                    'employee' => [
-                        'id'           => $employee->id,
-                        'emp_code'     => $employee->emp_code,
-                        'display_name' => $employee->display_name,
-                    ],
-                ]);
+                return ['employee' => $employee, 'loginUser' => $loginUser, 'rawPassword' => $rawPassword];
             });
+
+            $employee    = $result['employee'];
+            $loginUser   = $result['loginUser'];
+            $rawPassword = $result['rawPassword'];
+
+            // Welcome email — gated by Settings → Notifications → newUser.
+            // QUEUED (not ->send()) and run AFTER the transaction commits so
+            // the HTTP response returns immediately instead of blocking on the
+            // SMTP send. Requires the queue worker (database queue) to be
+            // running to actually dispatch the mail.
+            if (Settings::shouldSendMail('newUser')) try {
+                $orgName = Client::find($invite->client_id)?->org_name ?? 'Your Organization';
+                Mail::to($invite->invitee_email)->queue(new WelcomeCredentialsMail(
+                    $loginUser->name,
+                    $invite->invitee_email,
+                    $rawPassword,
+                    'employee',
+                    $orgName,
+                    PasswordChangedMail::resolveLoginUrl($request),
+                ));
+            } catch (\Throwable $e) {
+                Log::warning('Onboarding welcome mail failed to queue', [
+                    'employee_id' => $employee->id,
+                    'email'       => $invite->invitee_email,
+                    'error'       => $e->getMessage(),
+                ]);
+            }
+
+            return response()->json([
+                'message' => 'Onboarding complete. Your login credentials will be emailed to you.',
+                'employee' => [
+                    'id'           => $employee->id,
+                    'emp_code'     => $employee->emp_code,
+                    'display_name' => $employee->display_name,
+                ],
+            ]);
         } catch (QueryException $e) {
             if ($e->getCode() === '23505') {
                 throw ValidationException::withMessages([
