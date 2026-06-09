@@ -580,6 +580,20 @@
   border-color: #a7f3d0;
 }
 .lp-info-banner-success a { color: #047857; font-weight: 600; text-decoration: underline; }
+/* Dark-theme variants — without these the banner kept its light amber/green
+   fill in dark mode (HRMS-BUG-135). Mirrors the .lp-info-banner-blue pattern:
+   translucent tint + lightened text/link. */
+[data-bs-theme="dark"] .lp-info-banner {
+  background: rgba(245, 158, 11, 0.10);
+  color: #fcd34d;
+  border-color: rgba(245, 158, 11, 0.30);
+}
+[data-bs-theme="dark"] .lp-info-banner-success {
+  background: rgba(16, 185, 129, 0.10);
+  color: #6ee7b7;
+  border-color: rgba(16, 185, 129, 0.30);
+}
+[data-bs-theme="dark"] .lp-info-banner-success a { color: #6ee7b7; }
 
 .lp-employees-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -862,6 +876,16 @@
 [data-bs-theme="dark"] .lts-input {
   background: var(--vz-secondary-bg); border-color: var(--vz-border-color);
 }
+/* Auto-skip rule box — colours moved off the inline style so the wrapper
+   follows the active theme (HRMS-BUG-134: white background in dark mode). */
+.lts-skip-rule {
+  background: #fafafa;
+  border: 1px dashed #d1d5db;
+}
+[data-bs-theme="dark"] .lts-skip-rule {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--vz-border-color);
+}
 .lts-toggle-group {
   display: inline-flex;
   border: 1px solid var(--vz-border-color, #e5e7eb);
@@ -914,6 +938,17 @@
 .lts-info-banner a { color: #1d4ed8; font-weight: 600; text-decoration: underline; }
 .lts-info-banner-success { background: #d1fae5; color: #065f46; }
 .lts-info-banner-success a { color: #047857; }
+/* Dark-theme variants — see HRMS-BUG-135 note above. */
+[data-bs-theme="dark"] .lts-info-banner {
+  background: rgba(59, 130, 246, 0.12);
+  color: #93c5fd;
+}
+[data-bs-theme="dark"] .lts-info-banner a { color: #93c5fd; }
+[data-bs-theme="dark"] .lts-info-banner-success {
+  background: rgba(16, 185, 129, 0.10);
+  color: #6ee7b7;
+}
+[data-bs-theme="dark"] .lts-info-banner-success a { color: #6ee7b7; }
 .lts-approval-chain { margin-top: 10px; }
 .lts-approval-card {
   padding: 14px 18px;
@@ -967,6 +1002,21 @@
   background: rgba(14, 165, 233, 0.10);
   color: #7dd3fc;
 }
+/* Inline link button inside the blue banner — colour moved off the inline
+   style so it stays readable on the dark banner (HRMS-BUG-138). */
+.lp-banner-link { color: #0c63b0; }
+[data-bs-theme="dark"] .lp-banner-link { color: #7dd3fc; }
+
+/* IS PAID pill in the Leave Types table — colours were hardcoded inline and
+   kept their light fills in dark mode (HRMS-BUG-138). */
+.lp-pay-pill.is-paid   { background: #d3f0ee; color: #0a716a; }
+.lp-pay-pill.is-unpaid { background: #eef2f6; color: #374151; }
+[data-bs-theme="dark"] .lp-pay-pill.is-paid {
+  background: rgba(16, 185, 129, 0.18); color: #6ee7b7;
+}
+[data-bs-theme="dark"] .lp-pay-pill.is-unpaid {
+  background: rgba(255, 255, 255, 0.08); color: var(--vz-body-color);
+}
 
 .lp-types-head { margin-bottom: 14px; }
 
@@ -975,6 +1025,17 @@
   min-width: 32px; padding: 3px 8px;
   border-radius: 8px;
   font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+  /* Per-type colours arrive as CSS vars from the component so dark mode can
+     re-derive a themed badge from the vivid accent (HRMS-BUG-140). */
+  background: var(--pill-bg, #ece6ff);
+  color: var(--pill-fg, #5a3fd1);
+}
+/* Light pastel fills read as out-of-theme on the dark table. Rebuild the
+   badge from the vivid accent: translucent tint + a lightened accent text,
+   so each type keeps its colour identity with proper contrast. */
+[data-bs-theme="dark"] .lp-code-pill {
+  background: color-mix(in srgb, var(--pill-accent, #7c5cfc) 22%, transparent);
+  color: color-mix(in srgb, var(--pill-accent, #7c5cfc) 60%, #ffffff);
 }
 
 .lp-row-action {
