@@ -33,7 +33,12 @@ type ServerLead = {
    * lead is fresh and lands on Stage 1; otherwise the worksheet opens the
    * matrix detail at this stage so users pick up where they left off. */
   lead_stage_id?:    number | null;
+  key_opportunity?:  boolean;
   salesperson?:      { id: number; name: string } | null;
+  /* Linked buyer entity. When a lead is mapped to a customer the worksheet
+   * shows the customer's company_name (Customer Name col) and legal_name
+   * (Company col) in preference to the raw sender_* lead text. */
+  customer?:         { id: number; company_name: string | null; legal_name: string | null } | null;
 };
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -76,6 +81,9 @@ type Lead = {
   /* Saved pipeline stage — clamped to 1..6 when the user clicks into the
    * matrix detail page so they resume where they left off. */
   leadStageId: number;
+  /* High-priority flag set from the matrix detail's "Key Opportunity"
+   * action; surfaced in the list as a star badge on the Opp Id. */
+  keyOpportunity: boolean;
 };
 
 const TAB_LABELS: Record<TabKey, string> = {
@@ -172,15 +180,19 @@ const mapServerToLead = (r: ServerLead): Lead => {
     assigned: r.salesperson?.name ?? 'Unassigned',
     salespersonId: r.salesperson?.id ?? null,
     oppId:    r.opp_code,
-    customer: r.sender_name || '—',
+    // Customer Name → linked customer.company_name (falls back to the raw
+    // lead sender name for leads not yet mapped to a customer).
+    customer: r.customer?.company_name || r.sender_name || '—',
     phone:    r.sender_mobile || '—',
     email:    r.sender_email || '—',
     product:  r.query_product_name || '—',
-    company:  r.sender_company || '—',
+    // Company → linked customer.legal_name (falls back to raw sender_company).
+    company:  r.customer?.legal_name || r.sender_company || '—',
     country:  r.sender_country_iso || '—',
     status:   r.disqualified ? 'disqualified' : 'qualified',
     whatsappStatus: r.whatsapp_status ?? null,
     leadStageId: Math.min(6, Math.max(1, Number(r.lead_stage_id) || 1)),
+    keyOpportunity: !!r.key_opportunity,
   };
 };
 
@@ -859,10 +871,20 @@ export default function SalesLeadWorksheet() {
                       ); })()}
                     </td>
                     <td>
-                      <span
-                        className="lwp-opp-link"
-                        onClick={e => { e.stopPropagation(); onOpenOpp(l.oppId); }}
-                      >{l.oppId}</span>
+                      <span className="lwp-opp-cell">
+                        <span
+                          className="lwp-opp-link"
+                          onClick={e => { e.stopPropagation(); onOpenOpp(l.oppId); }}
+                        >{l.oppId}</span>
+                        {l.keyOpportunity && (
+                          <Tooltip label="Key Opportunity">
+                            <svg className="lwp-key-star" viewBox="0 0 24 24" width="14" height="14"
+                                 fill="currentColor" aria-label="Key Opportunity" role="img">
+                              <path d="M12 2l2.95 5.98 6.6.96-4.78 4.66 1.13 6.57L12 17.98 6.1 20.17l1.13-6.57L2.45 8.94l6.6-.96L12 2z" />
+                            </svg>
+                          </Tooltip>
+                        )}
+                      </span>
                     </td>
                     <td>
                       <Tooltip label={l.customer} disabled={!l.customer}>
@@ -1568,8 +1590,10 @@ const SCOPED_CSS = `
 }
 
 /* ─── Row sub-elements ─── */
-.lwp-root .lwp-opp-link { color: #0891b2; font-weight: 600; cursor: pointer; display: block; text-align: center; }
+.lwp-root .lwp-opp-cell { display: inline-flex; align-items: center; justify-content: center; gap: 5px; width: 100%; }
+.lwp-root .lwp-opp-link { color: #0891b2; font-weight: 600; cursor: pointer; text-align: center; }
 .lwp-root .lwp-opp-link:hover { text-decoration: underline; color: #0e7490; }
+.lwp-root .lwp-key-star { color: #f59e0b; flex: 0 0 auto; }
 .lwp-root .lwp-cust-name { font-weight: 600; color: #0f172a; }
 .lwp-root .lwp-wa-badge {
   display: inline-flex; align-items: center; gap: 3px;

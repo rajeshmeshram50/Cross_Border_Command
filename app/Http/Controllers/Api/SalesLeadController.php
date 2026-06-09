@@ -75,7 +75,7 @@ class SalesLeadController extends Controller
                 ->limit(1)])
             ->with([
                 'salesperson' => fn ($r) => $r->select('id', 'name')->withTrashed(),
-                'customer'    => fn ($r) => $r->select('id', 'company_name', 'customer_code')->withTrashed(),
+                'customer'    => fn ($r) => $r->select('id', 'company_name', 'legal_name', 'customer_code')->withTrashed(),
                 'consignee'   => fn ($r) => $r->select('id', 'company_name')->withTrashed(),
             ])
             ->orderByDesc('id');
