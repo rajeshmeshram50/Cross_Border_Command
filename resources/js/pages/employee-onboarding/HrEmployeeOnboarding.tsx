@@ -2543,7 +2543,17 @@ export function VaultModal({
       {/* Send-for-signing confirmation */}
       <Modal isOpen={!!sendForTpl} toggle={() => setSendForTpl(null)} size="md" centered contentClassName="border-0" modalClassName="send-sign-modal" backdrop="static">
         <style>{`
+          .send-sign-modal .modal-dialog { max-width: 600px; }
           .send-sign-modal .modal-content { border-radius: 16px; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.30); }
+          /* Body surface — the inline var(--vz-card-bg) falls back to white
+             inside the portalled modal, so dark mode showed a white body.
+             Pin explicit surfaces (a stylesheet !important beats the inline
+             var). Text + footer border re-pinned for the dark surface too. */
+          .send-sign-modal .modal-body { background: #ffffff !important; }
+          [data-bs-theme="dark"] .send-sign-modal .modal-body { background: #1c2531 !important; }
+          [data-bs-theme="dark"] .send-sign-modal .modal-body > div:nth-of-type(2) { color: #ced4da !important; }
+          [data-bs-theme="dark"] .send-sign-modal .modal-body > div:nth-of-type(2) strong { color: #f3f4f6 !important; }
+          [data-bs-theme="dark"] .send-sign-modal .modal-body > div:nth-of-type(3) { border-top-color: rgba(255,255,255,0.10) !important; }
           .send-sign-modal .ss-warn { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
           [data-bs-theme="dark"] .send-sign-modal .ss-warn { background: rgba(245,158,11,0.14); border-color: rgba(245,158,11,0.42); color: #fcd34d; }
           .send-sign-modal .ss-cancel { background: var(--vz-secondary-bg, #fff); color: var(--vz-body-color, #374151); border: 1px solid var(--vz-border-color, #d1d5db); transition: filter .15s ease; }
@@ -7361,7 +7371,17 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
       {/* Send-for-signing — rich workflow modal (matches the Evidence Vault) */}
       <Modal isOpen={!!sendForTpl} toggle={() => setSendForTpl(null)} size="md" centered contentClassName="border-0" modalClassName="send-sign-modal" backdrop="static">
         <style>{`
+          .send-sign-modal .modal-dialog { max-width: 600px; }
           .send-sign-modal .modal-content { border-radius: 16px; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.30); }
+          /* Body surface — the inline var(--vz-card-bg) falls back to white
+             inside the portalled modal, so dark mode showed a white body.
+             Pin explicit surfaces (a stylesheet !important beats the inline
+             var). Text + footer border re-pinned for the dark surface too. */
+          .send-sign-modal .modal-body { background: #ffffff !important; }
+          [data-bs-theme="dark"] .send-sign-modal .modal-body { background: #1c2531 !important; }
+          [data-bs-theme="dark"] .send-sign-modal .modal-body > div:nth-of-type(2) { color: #ced4da !important; }
+          [data-bs-theme="dark"] .send-sign-modal .modal-body > div:nth-of-type(2) strong { color: #f3f4f6 !important; }
+          [data-bs-theme="dark"] .send-sign-modal .modal-body > div:nth-of-type(3) { border-top-color: rgba(255,255,255,0.10) !important; }
           .send-sign-modal .ss-warn { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
           [data-bs-theme="dark"] .send-sign-modal .ss-warn { background: rgba(245,158,11,0.14); border-color: rgba(245,158,11,0.42); color: #fcd34d; }
           .send-sign-modal .ss-cancel { background: var(--vz-secondary-bg, #fff); color: var(--vz-body-color, #374151); border: 1px solid var(--vz-border-color, #d1d5db); transition: filter .15s ease; }
