@@ -776,18 +776,60 @@ export default function SalesQPI() {
     }
   };
 
-  /* Email PDF state — per-row busy flag (so only the clicked row shows
-   * a spinner). Tagged with the kind so the same id can't collide
-   * between a Quotation row id and a PI row id.
-   *
-   * The same flag covers BOTH initial-email sends AND reminders,
-   * because the two actions are mutually exclusive per-row (the UI
-   * only enables one or the other based on emailedAt). */
-  const [emailingFor, setEmailingFor] = useState<{ kind: 'quotation' | 'pi'; id: number } | null>(null);
+  /* Email PDF state — PER-ROW in-flight tracking. Each row's send is
+   * independent: only the row being sent shows the disabled spinner, and a
+   * DIFFERENT quotation/PI can be emailed at the same time. The set holds the
+   * `${kind}:${id}` keys currently sending (covers both initial emails and
+   * reminders — mutually exclusive per row). */
+  const [emailingKeys, setEmailingKeys] = useState<Set<string>>(new Set());
+  // Synchronous mirror of the set — React state only updates on the next
+  // render, so a fast double-click on the SAME row could fire twice before the
+  // disable lands. The ref blocks a repeat of the same key in the same tick;
+  // other rows' keys are unaffected, so concurrent sends are still allowed.
+  const emailingRef = useRef<Set<string>>(new Set());
+  const isEmailing = (kind: 'quotation' | 'pi', id: number) => emailingKeys.has(`${kind}:${id}`);
+
+  /* Rate-limit cooldown — once the server returns 429 (max 3 sends per
+   * doc per minute) we keep that row's Email button disabled-looking until
+   * the cooldown elapses. Keyed by `${kind}:${id}` → epoch-ms when it frees.
+   * A 1s ticker re-renders so the remaining time / disabled state updates. */
+  const [emailCooldowns, setEmailCooldowns] = useState<Record<string, number>>({});
+  const cdKey = (kind: 'quotation' | 'pi', id: number) => `${kind}:${id}`;
+  const cooldownLeft = (kind: 'quotation' | 'pi', id: number): number => {
+    const end = emailCooldowns[cdKey(kind, id)];
+    return end ? Math.max(0, Math.ceil((end - Date.now()) / 1000)) : 0;
+  };
+  const startCooldown = (kind: 'quotation' | 'pi', id: number, seconds: number) => {
+    setEmailCooldowns(m => ({ ...m, [cdKey(kind, id)]: Date.now() + seconds * 1000 }));
+  };
+  useEffect(() => {
+    if (Object.keys(emailCooldowns).length === 0) return;
+    const t = setInterval(() => {
+      setEmailCooldowns(m => {
+        const now = Date.now();
+        const next: Record<string, number> = {};
+        for (const [k, v] of Object.entries(m)) if (v > now) next[k] = v;
+        return Object.keys(next).length === Object.keys(m).length ? m : next;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [emailCooldowns]);
+
   const sendDocEmail = async (kind: 'quotation' | 'pi', id: number, code: string) => {
     if (!id) { toast.error('Cannot email', 'This record has no server id yet.'); return; }
-    if (emailingFor) return;
-    setEmailingFor({ kind, id });
+    const key = `${kind}:${id}`;
+    // Block only a repeat send of THIS SAME row (the button is disabled while
+    // its send is in flight; the ref catches a same-tick double-click). Other
+    // rows are unaffected — they can be emailed concurrently.
+    if (emailingRef.current.has(key)) return;
+    // Still cooling down from a previous rate-limit hit — surface the wait.
+    const left = cooldownLeft(kind, id);
+    if (left > 0) {
+      toast.warning('Please wait', `You can email this ${kind === 'pi' ? 'PI' : 'quotation'} again in ${left}s (max 3 per minute).`);
+      return;
+    }
+    emailingRef.current.add(key);
+    setEmailingKeys(s => new Set(s).add(key));
     const url = kind === 'quotation'
       ? `/sales/quotations/${id}/email`
       : `/sales/proforma-invoices/${id}/email`;
@@ -803,10 +845,20 @@ export default function SalesQPI() {
       if (kind === 'quotation') setQuotations(rows => rows.map(patch));
       else                       setPis(rows => rows.map(patch));
     } catch (e: any) {
-      const msg = e?.response?.data?.message ?? 'Could not send email. Check the customer has a primary email.';
-      toast.error('Email failed', String(msg));
+      // 429 = throttle (max 3 sends per doc per minute). Surface it as a
+      // "please wait" warning, not an error — the send didn't fail, it's
+      // capped — and start the cooldown so the button stays disabled.
+      if (e?.response?.status === 429) {
+        const wait = Number(e?.response?.data?.retry_after_seconds) || 60;
+        startCooldown(kind, id, wait);
+        toast.warning('Please wait', e?.response?.data?.message ?? `Too many attempts — try again in ${wait}s.`);
+      } else {
+        const msg = e?.response?.data?.message ?? 'Could not send email. Check the customer has a primary email.';
+        toast.error('Email failed', String(msg));
+      }
     } finally {
-      setEmailingFor(null);
+      emailingRef.current.delete(key);
+      setEmailingKeys(s => { const n = new Set(s); n.delete(key); return n; });
     }
   };
 
@@ -816,8 +868,10 @@ export default function SalesQPI() {
    * without a full reload. */
   const sendReminder = async (kind: 'quotation' | 'pi', id: number, code: string) => {
     if (!id) { toast.error('Cannot remind', 'This record has no server id yet.'); return; }
-    if (emailingFor) return;
-    setEmailingFor({ kind, id });
+    const key = `${kind}:${id}`;
+    if (emailingRef.current.has(key)) return;
+    emailingRef.current.add(key);
+    setEmailingKeys(s => new Set(s).add(key));
     const url = kind === 'quotation'
       ? `/sales/quotations/${id}/remind`
       : `/sales/proforma-invoices/${id}/remind`;
@@ -829,10 +883,15 @@ export default function SalesQPI() {
       if (kind === 'quotation') setQuotations(rows => rows.map(patch));
       else                       setPis(rows => rows.map(patch));
     } catch (e: any) {
-      const msg = e?.response?.data?.message ?? 'Could not send reminder.';
-      toast.error('Reminder failed', String(msg));
+      if (e?.response?.status === 429) {
+        toast.warning('Please wait', e?.response?.data?.message ?? 'Too many attempts — try again in a minute.');
+      } else {
+        const msg = e?.response?.data?.message ?? 'Could not send reminder.';
+        toast.error('Reminder failed', String(msg));
+      }
     } finally {
-      setEmailingFor(null);
+      emailingRef.current.delete(key);
+      setEmailingKeys(s => { const n = new Set(s); n.delete(key); return n; });
     }
   };
 
@@ -951,13 +1010,16 @@ export default function SalesQPI() {
     onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
     ariaLabel?: string;
     disabled?: boolean;
+    // Rate-limit cooldown: render the dimmed/disabled LOOK but keep the
+    // button clickable so the click can surface the "please wait" toast.
+    cooling?: boolean;
     badge?: number;
   }) => (
     <Tooltip label={p.title}>
       <button
         type="button"
         aria-label={p.ariaLabel ?? p.title}
-        className={`qpi-act${p.disabled ? ' qpi-act-disabled' : ''}`}
+        className={`qpi-act${p.disabled || p.cooling ? ' qpi-act-disabled' : ''}`}
         style={{ ['--qpi-act-accent' as any]: p.color, position: 'relative' }}
         disabled={p.disabled}
         onClick={p.disabled ? undefined : p.onClick}
@@ -1141,13 +1203,16 @@ export default function SalesQPI() {
               title={
                 readOnly
                   ? readOnlyHint
-                  : emailingFor?.kind === 'quotation' && emailingFor.id === r.id
+                  : isEmailing('quotation', r.id)
                     ? 'Sending…'
-                    : 'Email Quotation'
+                    : r.id && cooldownLeft('quotation', r.id) > 0
+                      ? `Please wait ${cooldownLeft('quotation', r.id)}s (max 3 per minute)`
+                      : 'Email Quotation'
               }
               icon={<IconMail />}
               color="#2563eb"
-              disabled={readOnly || (emailingFor?.kind === 'quotation' && emailingFor.id === r.id)}
+              disabled={readOnly || (isEmailing('quotation', r.id))}
+              cooling={!!r.id && cooldownLeft('quotation', r.id) > 0}
               onClick={() => r.id && sendDocEmail('quotation', r.id, r.qtNo)}
             />
             {/* Reminder button — REMOVED for the email flow. The only
@@ -1160,7 +1225,7 @@ export default function SalesQPI() {
               title={
                 readOnly
                   ? readOnlyHint
-                  : emailingFor?.kind === 'quotation' && emailingFor.id === r.id
+                  : isEmailing('quotation', r.id)
                     ? 'Sending…'
                     : r.emailedAt
                       ? `Send Reminder${r.reminderCount ? ` (#${(r.reminderCount ?? 0) + 1})` : ''}`
@@ -1168,7 +1233,7 @@ export default function SalesQPI() {
               }
               icon={<IconBellSm />}
               color="#f59e0b"
-              disabled={readOnly || !r.emailedAt || (emailingFor?.kind === 'quotation' && emailingFor.id === r.id)}
+              disabled={readOnly || !r.emailedAt || (isEmailing('quotation', r.id))}
               badge={r.reminderCount ?? 0}
               onClick={() => r.id && sendReminder('quotation', r.id, r.qtNo)}
             />
@@ -1220,7 +1285,7 @@ export default function SalesQPI() {
         );
       },
     },
-  ], [convertingId, sigByRow, currentUser?.id, currentUser?.is_main_branch]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [convertingId, sigByRow, currentUser?.id, currentUser?.is_main_branch, emailingKeys, emailCooldowns]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── PI table columns — header set differs by sub-tab (BT ID / BT Date
    *    only on With Shipment). Build both column sets memoised. */
@@ -1295,13 +1360,16 @@ export default function SalesQPI() {
               title={
                 readOnly
                   ? readOnlyHint
-                  : emailingFor?.kind === 'pi' && emailingFor.id === r.id
+                  : isEmailing('pi', r.id)
                     ? 'Sending…'
-                    : 'Email PI'
+                    : r.id && cooldownLeft('pi', r.id) > 0
+                      ? `Please wait ${cooldownLeft('pi', r.id)}s (max 3 per minute)`
+                      : 'Email PI'
               }
               icon={<IconMail />}
               color="#2563eb"
-              disabled={readOnly || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
+              disabled={readOnly || (isEmailing('pi', r.id))}
+              cooling={!!r.id && cooldownLeft('pi', r.id) > 0}
               onClick={() => r.id && sendDocEmail('pi', r.id, r.piNo)}
             />
             {false && (
@@ -1309,7 +1377,7 @@ export default function SalesQPI() {
                 title={
                   readOnly
                     ? readOnlyHint
-                    : emailingFor?.kind === 'pi' && emailingFor.id === r.id
+                    : isEmailing('pi', r.id)
                       ? 'Sending…'
                       : r.emailedAt
                         ? `Send Reminder${r.reminderCount ? ` (#${(r.reminderCount ?? 0) + 1})` : ''}`
@@ -1317,7 +1385,7 @@ export default function SalesQPI() {
                 }
                 icon={<IconBellSm />}
                 color="#f59e0b"
-                disabled={readOnly || !r.emailedAt || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
+                disabled={readOnly || !r.emailedAt || (isEmailing('pi', r.id))}
                 badge={r.reminderCount ?? 0}
                 onClick={() => r.id && sendReminder('pi', r.id, r.piNo)}
               />
@@ -1369,8 +1437,8 @@ export default function SalesQPI() {
       },
     },
   ];
-  const piWithColumns    = useMemo<any[]>(() => piColumnsBase(true),  [sigByRow, currentUser?.id, currentUser?.is_main_branch]); // eslint-disable-line react-hooks/exhaustive-deps
-  const piWithoutColumns = useMemo<any[]>(() => piColumnsBase(false), [sigByRow, currentUser?.id, currentUser?.is_main_branch]); // eslint-disable-line react-hooks/exhaustive-deps
+  const piWithColumns    = useMemo<any[]>(() => piColumnsBase(true),  [sigByRow, currentUser?.id, currentUser?.is_main_branch, emailingKeys, emailCooldowns]); // eslint-disable-line react-hooks/exhaustive-deps
+  const piWithoutColumns = useMemo<any[]>(() => piColumnsBase(false), [sigByRow, currentUser?.id, currentUser?.is_main_branch, emailingKeys, emailCooldowns]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="qpi-root">
@@ -4224,77 +4292,116 @@ const SCOPED_CSS = `
 }
 .qpi-table-host .table tbody tr:last-child td { border-bottom: 0 !important; }
 
-/* TableContainer's built-in pagination strip — align the "Showing X of Y"
- * text with the first column and the page buttons with the action column. */
+/* TableContainer's built-in pagination strip — restyled to match the
+ * Sales Lead Worksheet footer (cyan gradient bar, white "Showing X of Y"
+ * pill on the left, circular cyan nav buttons + teal-gradient active page
+ * on the right). Keeps the shared TableContainer DOM; only CSS changes. */
 .qpi-table-host > .row {
   margin: 0 !important;
-  padding: 14px 18px 12px;
+  padding: 10px 16px;
   --bs-gutter-x: 0;
   --bs-gutter-y: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px;
+  border-top: 2px solid #a5f3fc;
+  background: linear-gradient(90deg, #ecfeff 0%, #cffafe 40%, #ecfeff 100%);
+  border-radius: 0 0 13px 13px;
 }
-.qpi-table-host > .row > [class^="col-"] { padding: 0; }
+.qpi-table-host > .row > [class^="col-"] { padding: 0; width: auto; flex: 0 0 auto; }
+/* "Showing X of Y Results" → cyan info pill, like .lwp-pag-info */
 .qpi-table-host .text-muted {
-  color: var(--vz-secondary-color, #878a99) !important;
-  font-size: 13px; font-weight: 500;
+  display: inline-flex; align-items: center; gap: 5px;
+  color: #0e7490 !important;
+  font-size: 11.5px; font-weight: 500;
   font-variant-numeric: tabular-nums;
+  background: rgba(255,255,255,.8); border: 1.5px solid #a5f3fc;
+  padding: 5px 14px; border-radius: 20px;
+  box-shadow: 0 1px 4px rgba(8,145,178,.1), 0 1px 0 rgba(255,255,255,.9) inset;
 }
 .qpi-table-host .text-muted .fw-semibold {
-  color: var(--vz-body-color, #212529);
-  font-weight: 700;
+  color: #0891b2 !important;
+  font-weight: 800;
 }
-/* Pagination — fixed 36×36 buttons (chevron arrows AND numbered
- * pages) matches SalesCustomers.smc-table-wrap. Numbers and arrows
- * sit on the same baseline so the strip reads as one tidy row. */
-.qpi-table-host .pagination { align-items: center; margin: 0; gap: 4px; }
+/* Pagination — circular cyan nav buttons + teal-gradient active page,
+ * matching .lwp-pg-btn / .lwp-pag-range from the worksheet footer. */
+.qpi-table-host .pagination { align-items: center; margin: 0; gap: 5px; }
 .qpi-table-host .pagination .page-item { display: inline-flex; }
 .qpi-table-host .pagination .page-link {
-  border-radius: 8px !important;
-  min-width: 36px; height: 36px;
+  border-radius: 50% !important;
+  min-width: 32px; width: 32px; height: 32px;
   padding: 0 !important;
   display: inline-flex; align-items: center; justify-content: center;
-  color: #6d28d9 !important;
-  background: #fff !important;
-  border: 1px solid #e0d9f7 !important;
-  font-weight: 600;
-  font-size: 13px;
+  color: #0891b2 !important;
+  background: rgba(255,255,255,.8) !important;
+  border: 1.5px solid #a5f3fc !important;
+  font-weight: 700;
+  font-size: 12.5px;
   line-height: 1;
   margin: 0 !important;
+  transition: all .18s;
 }
 .qpi-table-host .pagination .page-link:hover {
-  background: #f5f0ff !important;
-  border-color: #c4b5fd !important;
-  color: #5b21b6 !important;
+  background: #fff !important;
+  border-color: #0891b2 !important;
+  color: #0e7490 !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(8,145,178,.25);
 }
 .qpi-table-host .pagination .page-item.active .page-link,
 .qpi-table-host .pagination .page-link.active {
-  /* Active state matches SalesCustomers — deeper violet so the
-   * selected page reads clearly on the lighter button row. */
-  background: linear-gradient(135deg, #7c3aed, #6d28d9) !important;
-  border-color: #7c3aed !important;
+  /* Active page = teal gradient pill, mirrors .lwp-pag-range. */
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%) !important;
+  border-color: transparent !important;
   color: #fff !important;
-  box-shadow: 0 2px 6px rgba(109,40,217,.25);
+  box-shadow: 0 3px 12px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset;
 }
 .qpi-table-host .pagination .page-item.disabled .page-link {
-  color: #c4b5fd !important;
-  background: #faf7ff !important;
-  opacity: 1;
+  color: #67e8f9 !important;
+  background: rgba(255,255,255,.5) !important;
+  opacity: .55;
 }
-/* Pagination prev/next arrows — match the Customer / Consignee list
- * style: chevron-icon arrow buttons (not text labels). Keeps the
- * sliding 2-button condensed pagination from condensedPagination
- * looking the same across all Sales Matrix tables. */
+/* Pagination prev/next arrows — circular chevron buttons. */
 .qpi-table-host .pagination .page-item:first-child .page-link,
 .qpi-table-host .pagination .page-item:last-child  .page-link {
-  min-width: 32px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  width: 32px; min-width: 32px; padding: 0;
 }
 .qpi-table-host .pagination .page-item:first-child .page-link i,
 .qpi-table-host .pagination .page-item:last-child  .page-link i {
   font-size: 16px;
   line-height: 1;
+}
+/* Dark mode — translucent slate bar + cyan accents, like the worksheet's
+ * dark footer ([data-bs-theme="dark"] .lwp-pagination). */
+[data-bs-theme="dark"] .qpi-table-host > .row,
+[data-layout-mode="dark"] .qpi-table-host > .row {
+  border-top-color: rgba(34, 211, 238, 0.18);
+  background: linear-gradient(90deg, rgba(15,23,42,.55) 0%, rgba(15,23,42,.35) 50%, rgba(15,23,42,.55) 100%);
+}
+[data-bs-theme="dark"] .qpi-table-host .text-muted,
+[data-layout-mode="dark"] .qpi-table-host .text-muted {
+  background: rgba(15,23,42,.55) !important;
+  border-color: rgba(34,211,238,.20) !important;
+  color: #cffafe !important;
+  box-shadow: 0 1px 4px rgba(0,0,0,.25);
+}
+[data-bs-theme="dark"] .qpi-table-host .text-muted .fw-semibold,
+[data-layout-mode="dark"] .qpi-table-host .text-muted .fw-semibold { color: #67e8f9 !important; }
+[data-bs-theme="dark"] .qpi-table-host .pagination .page-link,
+[data-layout-mode="dark"] .qpi-table-host .pagination .page-link {
+  background: rgba(15,23,42,.55) !important;
+  border-color: rgba(34,211,238,.22) !important;
+  color: #67e8f9 !important;
+}
+[data-bs-theme="dark"] .qpi-table-host .pagination .page-link:hover,
+[data-layout-mode="dark"] .qpi-table-host .pagination .page-link:hover {
+  background: rgba(34,211,238,.16) !important;
+  border-color: rgba(103,232,249,.55) !important;
+}
+[data-bs-theme="dark"] .qpi-table-host .pagination .page-item.active .page-link,
+[data-layout-mode="dark"] .qpi-table-host .pagination .page-item.active .page-link {
+  background: linear-gradient(135deg, #06b6d4, #0e7490) !important;
+  border-color: transparent !important;
+  color: #fff !important;
 }
 
 .qpi-empty {

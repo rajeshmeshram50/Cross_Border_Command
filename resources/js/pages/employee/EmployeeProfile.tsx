@@ -5188,7 +5188,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
            the file for now in case we want to re-introduce a "detailed
            application" entry point later. */}
       {tab === 'apply_leave' && (
-        <LeaveSummaryPanel employeeId={employeeId} />
+        <LeaveSummaryPanel employeeId={employeeId} canRequest={isOwnProfile} />
       )}
 
       {/* ── Hiring Requests tab — manager-only. Mirrors HrRecruitment's

@@ -48,19 +48,24 @@ export function MasterDatePicker({
     const update = () => {
       if (!wrapRef.current) return;
       const rect = wrapRef.current.getBoundingClientRect();
-      // Clamp the popup horizontally so it never spills past the viewport. In
-      // right-side drawers (e.g. the leave request panel) the trigger sits near
-      // the right edge, so a plain left-aligned popup pushed its rightmost
-      // columns — Friday/Saturday — off-screen (HRMS-BUG-088). The effective
-      // popup width mirrors the inline min-width below: max(240, trigger width).
       const margin = 8;
-      const popupW = Math.max(240, rect.width);
-      const left = Math.max(margin, Math.min(rect.left, window.innerWidth - popupW - margin));
-      setPopupPos({
-        top: rect.bottom + 5,
-        left,
-        width: rect.width,
-      });
+      const popupW = 240;   // matches the popup's fixed 240px width
+      const popupH = 320;   // approx — used only to decide flip-above
+      // Clamp horizontally so the calendar never spills off the right edge.
+      // Critical inside right-side drawers (e.g. Request Leave) where the
+      // field sits near the screen edge and the popup would overflow — this
+      // is what kept the Saturday column on-screen (HRMS-BUG-088).
+      let left = rect.left;
+      if (left + popupW + margin > window.innerWidth) {
+        left = Math.max(margin, window.innerWidth - popupW - margin);
+      }
+      // Flip above the field when there isn't room below (keeps the whole
+      // calendar on-screen instead of clipping at the bottom).
+      let top = rect.bottom + 5;
+      if (top + popupH + margin > window.innerHeight && rect.top - popupH - 5 > margin) {
+        top = rect.top - popupH - 5;
+      }
+      setPopupPos({ top, left, width: rect.width });
     };
     update();
     window.addEventListener('resize', update);

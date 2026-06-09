@@ -4399,10 +4399,10 @@ export default function HrEmployees() {
           [data-bs-theme="dark"] .emp-ctc-total { background: rgba(124,92,252,0.18); }
           .emp-ctc-total .emp-label, .emp-ctc-total .emp-ctc-num { color: #5a3fd1; }
           [data-bs-theme="dark"] .emp-ctc-total .emp-label, [data-bs-theme="dark"] .emp-ctc-total .emp-ctc-num { color: #c4b5fd; }
-          .emp-payroll-banner { background: linear-gradient(135deg, #ddf5ec, #c7efde); border: 1px solid #b6e9d9; }
-          [data-bs-theme="dark"] .emp-payroll-banner { background: linear-gradient(135deg, rgba(10,179,156,0.18), rgba(10,179,156,0.10)); border-color: rgba(10,179,156,0.35); }
-          .emp-payroll-banner-text { color: #0a8a78; }
-          [data-bs-theme="dark"] .emp-payroll-banner-text { color: #5eead4; }
+          .emp-payroll-banner { background: linear-gradient(135deg, #ece6ff, #ddd6fe); border: 1px solid #c7bdf5; }
+          [data-bs-theme="dark"] .emp-payroll-banner { background: linear-gradient(135deg, rgba(124,92,252,0.18), rgba(124,92,252,0.10)); border-color: rgba(124,92,252,0.35); }
+          .emp-payroll-banner-text { color: #5a3fd1; }
+          [data-bs-theme="dark"] .emp-payroll-banner-text { color: #c4b5fd; }
           .emp-attn-text { color: #374151; }
           [data-bs-theme="dark"] .emp-attn-text { color: var(--vz-body-color); }
           .emp-dashed-btn-violet { background: #fff; color: #7c5cfc; border: 1px dashed #a78bfa; }
@@ -5033,7 +5033,7 @@ export default function HrEmployees() {
                           className="btn p-0 border-0 d-inline-flex align-items-center"
                           style={{
                             width: 36, height: 20, borderRadius: 999,
-                            background: eAttendanceTracking ? '#0ab39c' : '#e5e7eb',
+                            background: eAttendanceTracking ? '#7c5cfc' : '#e5e7eb',
                             position: 'relative',
                             transition: 'background .15s ease',
                           }}
@@ -5345,7 +5345,7 @@ export default function HrEmployees() {
                       className="btn p-0 border-0 d-inline-flex align-items-center"
                       style={{
                         width: 36, height: 20, borderRadius: 999,
-                        background: eEnablePayroll ? '#0ab39c' : '#e5e7eb',
+                        background: eEnablePayroll ? '#7c5cfc' : '#e5e7eb',
                         position: 'relative',
                         transition: 'background .15s ease',
                       }}
