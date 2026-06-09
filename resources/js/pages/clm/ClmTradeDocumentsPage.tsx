@@ -189,6 +189,32 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
   // draft that has already been signed.
   const [locked, setLocked] = useState<{ mode: 'edit' | 'delete'; row: TdLib } | null>(null);
 
+  /* Download a library row as PDF (full page-shell: branded header + content
+   * + footer) or DOCX. The list exposes only the PDF preview. Errors arrive
+   * as a Blob, so read them back for the message. */
+  const download = async (row: TdLib, fmt: 'pdf' | 'docx') => {
+    try {
+      const url = fmt === 'pdf'
+        ? `/clm/trade-doc-library/${row.id}/download-pdf`
+        : `/clm/trade-doc-library/${row.id}/download`;
+      const resp = await api.get(url, { responseType: 'blob' });
+      const blobUrl = URL.createObjectURL(new Blob([resp.data], { type: fmt === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }));
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `${row.code || 'trade-document'}.${fmt}`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch (e: any) {
+      let msg = 'Please try again.';
+      try {
+        const blob = e?.response?.data;
+        if (blob instanceof Blob) { const json = JSON.parse(await blob.text()); if (json?.message) msg = json.message; }
+        else if (typeof e?.response?.data?.message === 'string') msg = e.response.data.message;
+      } catch { /* keep default */ }
+      toast.error('Download failed', msg);
+    }
+  };
+
   const filtered = useMemo(() => {
     if (!search.trim()) return rows;
     const s = search.toLowerCase();
@@ -212,6 +238,23 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
 
   return (
     <div className="clm-page-card">
+      <style>{`
+        .tdl-dl-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; white-space: nowrap;
+          border: 1px solid rgba(8,145,178,.30); background: rgba(8,145,178,.07); color: #0e7490;
+          font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: background .12s, border-color .12s; }
+        .tdl-dl-btn:hover { background: rgba(8,145,178,.14); border-color: #0891b2; }
+        .tdl-dl-backdrop { position: fixed; inset: 0; z-index: 9000; }
+        .tdl-dl-menu { z-index: 9001; min-width: 180px; padding: 6px;
+          background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 12px 28px rgba(15,23,42,.18); }
+        .tdl-dl-item { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 10px; border: 0; border-radius: 7px;
+          background: none; font-family: inherit; font-size: 12.5px; font-weight: 600; color: #1e293b; cursor: pointer; text-align: left; transition: background .12s; }
+        .tdl-dl-item:hover { background: #f1f5f9; }
+        [data-bs-theme="dark"] .tdl-dl-btn { background: rgba(8,145,178,.14); border-color: rgba(6,182,212,.35); color: #67e8f9; }
+        [data-bs-theme="dark"] .tdl-dl-btn:hover { background: rgba(8,145,178,.22); }
+        [data-bs-theme="dark"] .tdl-dl-menu { background: #1e293b; border-color: rgba(148,163,184,.22); }
+        [data-bs-theme="dark"] .tdl-dl-item { color: #e2e8f0; }
+        [data-bs-theme="dark"] .tdl-dl-item:hover { background: rgba(148,163,184,.14); }
+      `}</style>
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
@@ -274,9 +317,13 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
                     <td className="clm-td-desc">{r.purpose}</td>
                     <td className="clm-td-desc">{r.party}</td>
                     <td style={{ textAlign: 'center' }}>
-                      {r.file_path
-                        ? <a href={r.file_path} download className="clm-badge clm-badge-teal" style={{ textDecoration: 'none' }}>.docx</a>
-                        : <span className="clm-badge clm-badge-slate">No file</span>}
+                      {/* Draft PDF preview — the complete combined document
+                          (branded header + content + footer), to see how the
+                          finished trade document looks. */}
+                      <button type="button" className="tdl-dl-btn" onClick={() => void download(r, 'pdf')} title="Download the complete draft as PDF">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                        Download Draft PDF
+                      </button>
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">

@@ -1751,18 +1751,24 @@ function MasterPageInner({
           box-shadow: 0 8px 18px rgba(99,102,241,0.30);
         }
 
-        /* Search box — give the resting + hover border enough contrast so the
-           field is clearly distinguishable from the card background, not just
-           on focus. Scoped to the master list card so other screens'
-           search bars are untouched (HRMS-BUG-085). */
-        .master-list-card .search-box .form-control {
-          border: 1px solid #ced4da;
+        /* Search box — give the resting + hover border real contrast so the
+           field reads as interactive (not just on focus), then the violet
+           focus ring on top. Applied to every search box (HRMS-BUG-116)
+           with the hover treatment carried over from the master list card
+           fix (HRMS-BUG-085). */
+        .search-box .form-control {
+          border: 1px solid #cbd5e1;
           transition: border-color .15s ease, box-shadow .15s ease;
         }
-        .master-list-card .search-box .form-control:hover { border-color: #adb5bd; }
-        [data-bs-theme="dark"] .master-list-card .search-box .form-control { border-color: rgba(255,255,255,0.22); }
-        [data-bs-theme="dark"] .master-list-card .search-box .form-control:hover { border-color: rgba(255,255,255,0.34); }
-        /* Focus ring matches the rest of the system */
+        .search-box .form-control:hover { border-color: #adb5bd; }
+        [data-bs-theme="dark"] .search-box .form-control,
+        [data-layout-mode="dark"] .search-box .form-control {
+          border-color: rgba(255,255,255,0.20);
+        }
+        [data-bs-theme="dark"] .search-box .form-control:hover,
+        [data-layout-mode="dark"] .search-box .form-control:hover {
+          border-color: rgba(255,255,255,0.34);
+        }
         .search-box .form-control:focus {
           border-color: rgba(99,102,241,0.45);
           box-shadow: 0 0 0 3px rgba(99,102,241,0.18);

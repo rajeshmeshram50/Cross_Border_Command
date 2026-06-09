@@ -441,10 +441,10 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
 
   /* ── Mandatory-doc gate for Create PI ──────────────────────────────
    * A PI can't be created until every MANDATORY KYC / Due-Diligence /
-   * Trade doc for BOTH the customer and the consignee is uploaded. We
-   * read each party's vault (requirement = 'M', status = 'Verified' when
-   * uploaded) and flag if anything mandatory is still pending. The
-   * backend also blocks the create (422); this just greys the button. */
+   * Trade-Licence doc for BOTH the customer and the consignee is uploaded.
+   * Trade documents are intentionally EXCLUDED — their upload step (the
+   * Evidence Vault / Stage 3) was removed from the customer/consignee form,
+   * so they can't gate PI creation. The backend gate matches this. */
   const [mandatoryIncomplete, setMandatoryIncomplete] = useState(false);
   useEffect(() => {
     const custId = header.customerId ?? null;
@@ -452,7 +452,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     if (!custId && !consId) { setMandatoryIncomplete(false); return; }
     let cancelled = false;
     const hasPendingMandatory = (vault: any): boolean =>
-      ['company_dd', 'owner_kyc', 'trade_licenses', 'trade_documents'].some(b =>
+      ['company_dd', 'owner_kyc', 'trade_licenses'].some(b =>
         (Array.isArray(vault?.[b]) ? vault[b] : []).some((d: any) => d?.requirement === 'M' && d?.status !== 'Verified'));
     (async () => {
       try {

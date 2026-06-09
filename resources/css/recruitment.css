@@ -5302,6 +5302,17 @@
 }
 [data-bs-theme="dark"] .ep-close-case-title { color: #6ee7b7; }
 [data-bs-theme="dark"] .ep-close-case-sub { color: #a7f3d0; }
+/* Blocked variant — shown when items are still pending. Amber, with a
+   bulleted list of exactly what's outstanding before the exit can close. */
+.ep-close-case--blocked { align-items: flex-start; background: #fffbeb; border-color: #fcd34d; }
+.ep-close-case--blocked > i { color: #b45309; }
+.ep-close-case--blocked .ep-close-case-title { color: #92400e; }
+.ep-close-case-list { margin: 6px 0 0; padding-left: 18px; font-size: 11.5px; color: #92400e; }
+.ep-close-case-list li { margin-bottom: 2px; }
+[data-bs-theme="dark"] .ep-close-case--blocked { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.42); }
+[data-bs-theme="dark"] .ep-close-case--blocked > i,
+[data-bs-theme="dark"] .ep-close-case--blocked .ep-close-case-title,
+[data-bs-theme="dark"] .ep-close-case-list { color: #fcd34d; }
 
 /* Footer with stage info on left + actions on right */
 .ep-footer {

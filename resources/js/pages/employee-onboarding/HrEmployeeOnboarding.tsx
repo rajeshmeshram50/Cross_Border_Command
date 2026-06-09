@@ -155,6 +155,11 @@ const _todayIso = (): string => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
 
+// True when a non-empty value is NOT a valid email — drives the red-border /
+// inline error on the previous-employment HR Email fields (BUG-091).
+const EMAIL_INVALID = (v: string | null | undefined): boolean =>
+  !!v && v.trim() !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+
 /**
  * Validate the employee's office / work email. Returns a human-readable
  * error string when invalid, or an empty string when the email is OK.
@@ -259,11 +264,15 @@ const apiToOnboardRow = (e: any): OnboardRow => {
     managerName: mgrName,
     managerInitials: _initials(mgrName),
     managerAccent: _accent(mgrName || 'manager'),
-    // Profile % spans all six onboarding macro stages. Stage 1 splits
-    // across its 4 internal wizard steps; stages 2-6 each contribute
-    // one sixth on completion. Same formula as HrEmployees so the two
-    // pages stay in sync.
+    // Profile % = field-based completeness from the server's
+    // `profile_completion` accessor — so an employee with real profile data
+    // shows a meaningful % even before the onboarding wizard advances (the
+    // onboarding STAGE is tracked separately by the Status column). Falls
+    // back to the legacy stage-based estimate only if the field is absent.
     profile: ((): number => {
+      if (typeof e.profile_completion === 'number') {
+        return Math.max(0, Math.min(100, Math.round(e.profile_completion)));
+      }
       const step  = Math.max(0, Math.min(4, Number(e.wizard_step_completed ?? 0)));
       const macro = Math.max(0, Math.min(6, Number(e.onboarding_stage_completed ?? 0)));
       const stage1 = macro >= 1 ? 1 : step / 4;
@@ -585,7 +594,14 @@ export default function HrEmployeeOnboarding() {
   const [initiateOpen, setInitiateOpen] = useState(false);
   const [initiateRow,  setInitiateRow]  = useState<OnboardRow | null>(null);
   const openInitiate = (row: OnboardRow) => { setInitiateRow(row); setInitiateOpen(true); };
-  const closeInitiate = () => { setInitiateOpen(false); setInitiateRow(null); };
+  const closeInitiate = () => {
+    setInitiateOpen(false);
+    setInitiateRow(null);
+    // Reconcile the list once on close — stage-to-stage navigation now saves
+    // silently (no per-step full reload), so refresh here to pick up the final
+    // profile %, status and stage progress.
+    reloadApiRows();
+  };
 
   // Edit Employee modal — opened from the Action column pencil button
   const [editOpen, setEditOpen] = useState(false);
@@ -1074,18 +1090,16 @@ export default function HrEmployeeOnboarding() {
         onClose={closeInitiate}
         emp={initiateRow}
         onSaved={() => {
-          // Pull fresh data so Stage 1's hydrate effect sees the new
-          // wizard_step / saved fields next render. Also update the row
-          // currently held by `initiateRow` so the modal stays open with
-          // the latest saved snapshot.
-          api.get('/employees').then(r => {
-            const list = Array.isArray(r.data) ? r.data : [];
-            const next = list.map(apiToOnboardRow);
-            setApiRows(next);
-            if (initiateRow?.empId) {
-              const refreshed = next.find(x => x.empId === initiateRow.empId);
-              if (refreshed) setInitiateRow(refreshed);
-            }
+          // Refresh ONLY the employee being edited (was reloading the entire
+          // /employees list on every save — the heavy part of the stage-nav
+          // lag, BUG-030). Fetch the single row and patch it into both the
+          // background list and the open modal's snapshot.
+          const dbId = initiateRow?.dbId;
+          if (!dbId) return;
+          api.get(`/employees/${dbId}`).then(r => {
+            const row = apiToOnboardRow(r.data);
+            setApiRows(prev => prev.map(x => x.empId === row.empId ? row : x));
+            setInitiateRow(prev => (prev && prev.empId === row.empId ? row : prev));
           }).catch(() => { /* keep stale data on error */ });
         }}
       />
@@ -3703,7 +3717,7 @@ const validateStage1 = (): boolean => {
    *  saved yet stay null on the row. wizard_step_completed gets bumped
    *  by the controller's high-watermark logic only if we send a higher
    *  value, so passing 4 here marks the wizard fully done. */
-const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<boolean> => {
+const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = false): Promise<boolean> => {
   if (!emp?.dbId || s1Saving) return false;
   // Skip Stage-1 specific validation when called from later stages
   // (e.g. Stage 3 re-uses saveStage1 to persist its asset/provisioning
@@ -3766,21 +3780,23 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
     if (markComplete) payload.wizard_step_completed = 4;
     try {
       await api.put(`/employees/${emp.dbId}`, payload);
-      onSaved?.();
-      // Success feedback — was silent before, so users had no idea the
-      // PUT had landed. `markComplete` means the wizard finished Stage 1
-      // entirely; otherwise it's a partial save (Stage 3 advance, etc).
-      if (markComplete) {
-        toast.success('Stage 1 saved', 'Setup details persisted.');
-      } else if (skipValidate) {
-        // Save Draft path — partial save without marking the stage
-        // complete. Surface a "Draft saved" toast so the user gets
-        // explicit feedback that their typed-but-incomplete values are
-        // safe on the server (and will rehydrate next time they open
-        // this employee's form).
-        toast.success('Draft saved', 'Your changes have been saved. You can finish the rest later.');
-      } else {
-        toast.success('Saved', 'Your changes have been persisted.');
+      // `silent` (stage-to-stage navigation) skips the heavy parent reload
+      // AND the toast: the PUT already persisted the data, and re-fetching the
+      // whole /employees list on every Next-Stage click was the main cause of
+      // the navigation lag. The full reload still runs on Save Draft / final
+      // save / close so the background list stays in sync.
+      if (!silent) {
+        onSaved?.();
+        // Success feedback — `markComplete` means the wizard finished Stage 1
+        // entirely; otherwise it's a partial save (Stage 3 advance, etc).
+        if (markComplete) {
+          toast.success('Stage 1 saved', 'Setup details persisted.');
+        } else if (skipValidate) {
+          // Save Draft path — partial save without marking the stage complete.
+          toast.success('Draft saved', 'Your changes have been saved. You can finish the rest later.');
+        } else {
+          toast.success('Saved', 'Your changes have been persisted.');
+        }
       }
       return true;
     } catch (err: any) {
@@ -4076,8 +4092,11 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
         return;
       }
     }
+    // Stage-to-stage navigation persists the current stage SILENTLY — the PUT
+    // runs, but we skip the full /employees reload + toast so the next stage
+    // opens fast (that reload was the navigation-lag culprit, BUG-030).
     if (activeStage === 1) {
-      await saveStage1(false, true);
+      await saveStage1(false, true, true);
     } else if (activeStage === 2) {
       // Persist any typed-but-unblurred Previous-Employment rows so
       // the user doesn't lose Company Name / Job Title / dates on
@@ -4085,7 +4104,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
       // hood — flushing here just awaits any rows that haven't been.
       await stage2Ref.current?.flush();
     } else if (activeStage === 3) {
-      await saveStage1(false, true);
+      await saveStage1(false, true, true);
     } else if (activeStage === 4) {
       await saveStage4(false);
     }
@@ -5597,15 +5616,23 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [emp?.dbId]);
 
-  const updateCompany = (key: string, patch: Partial<PrevCompanyRow>) =>
-    setPrevCompanies(prev => prev.map(c => (c._localKey === key ? { ...c, ...patch } : c)));
-
-  const addCompany = () => setPrevCompanies(prev => [...prev, newDraft()]);
-
   // Keep an always-fresh snapshot of prevCompanies so the imperative
-  // flush() below sees the latest typed-but-not-blurred values even
-  // when the parent calls it from outside React's render cycle.
+  // flush() below — AND the deferred persistCompany() calls fired from date
+  // pickers — see the latest typed value. Updated SYNCHRONOUSLY here (not via
+  // a post-render effect) so a setTimeout(0) persist that runs before React
+  // re-renders still reads the just-changed end_date (BUG-093: the end date
+  // wasn't being saved because persist read a stale snapshot).
   const prevCompaniesRef = useRef<PrevCompanyRow[]>([]);
+  const updateCompany = (key: string, patch: Partial<PrevCompanyRow>) => {
+    prevCompaniesRef.current = prevCompaniesRef.current.map(c => (c._localKey === key ? { ...c, ...patch } : c));
+    setPrevCompanies(prev => prev.map(c => (c._localKey === key ? { ...c, ...patch } : c)));
+  };
+
+  const addCompany = () => setPrevCompanies(prev => {
+    const next = [...prev, newDraft()];
+    prevCompaniesRef.current = next;
+    return next;
+  });
   useEffect(() => { prevCompaniesRef.current = prevCompanies; }, [prevCompanies]);
 
   /** PATCH/POST a single company row to the server. Called onBlur from
@@ -5615,7 +5642,10 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
    *  flow can chain on it without waiting for the next React render. */
   const persistCompany = async (key: string): Promise<number | null> => {
     if (!emp?.dbId) return null;
-    const row = prevCompanies.find(c => c._localKey === key);
+    // Read from the always-current ref (not the closure's possibly-stale
+    // `prevCompanies` state) so a persist deferred via setTimeout(0) from a
+    // date picker sees the value the user just selected. (BUG-093.)
+    const row = prevCompaniesRef.current.find(c => c._localKey === key);
     if (!row || row._busy) return row?.id ?? null;
     if (!row.company_name.trim()) return null; // need a name before we can save
     // Quick email + date sanity checks before round-tripping.
@@ -6228,7 +6258,10 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                   <MasterDatePicker
                     placeholder="Select start date"
                     value={c.start_date}
-                    // Previous employment must have already started — cap at today.
+                    // Previous employment must have already started — cap at
+                    // today; floor at 5 years ago so the captured experience
+                    // can't exceed the allowed 5-year window (BUG-034).
+                    minDate={_shiftYears(-5)}
                     maxDate={c.end_date || _todayIso()}
                     onChange={(v) => { updateCompany(c._localKey, { start_date: v }); setTimeout(() => persistCompany(c._localKey), 0); }}
                   />
@@ -6336,7 +6369,9 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                     onChange={e => updateCompany(c._localKey, { hr_email_1: e.target.value })}
                     onBlur={() => persistCompany(c._localKey)}
                     disabled={c._busy}
+                    style={EMAIL_INVALID(c.hr_email_1) ? { borderColor: '#ef4444', boxShadow: '0 0 0 2px rgba(239,68,68,.12)' } : undefined}
                   />
+                  {EMAIL_INVALID(c.hr_email_1) && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 3 }}>Enter a valid email address.</div>}
                 </Col>
                 <Col md={4}>
                   <label className="onb-init-label">HR Email ID 2</label>
@@ -6347,7 +6382,9 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                     onChange={e => updateCompany(c._localKey, { hr_email_2: e.target.value })}
                     onBlur={() => persistCompany(c._localKey)}
                     disabled={c._busy}
+                    style={EMAIL_INVALID(c.hr_email_2) ? { borderColor: '#ef4444', boxShadow: '0 0 0 2px rgba(239,68,68,.12)' } : undefined}
                   />
+                  {EMAIL_INVALID(c.hr_email_2) && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 3 }}>Enter a valid email address.</div>}
                 </Col>
                 <Col md={4}>
                   <label className="onb-init-label">Company Contact Number</label>
@@ -6733,7 +6770,10 @@ function Stage4Payroll({
 
       {/* Bank Details — only collected for `bank` mode. Cheque/cash skip
           straight to Tax & Statutory since no account is needed. */}
-      {s4.salary_payment_mode === 'bank' && (
+      {/* Bank Details show for Bank transfer AND Cheque — cheque issuance /
+          processing still needs the bank account + IFSC. Hidden only for Cash.
+          (BUG-031.) */}
+      {(s4.salary_payment_mode === 'bank' || s4.salary_payment_mode === 'cheque') && (
       <div className="onb-pay-section">
         <div className="onb-pay-section-head">
           <span className="onb-pay-section-icon bank"><i className="ri-money-dollar-circle-line" /></span>
@@ -7103,7 +7143,11 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
           const run = runByTemplateId.get(tpl.id) || null;
           const isSending = sendingId === tpl.id;
           const runActive = !!run && (run.status === 'Pending' || run.status === 'In Progress');
-          const canSend = tpl.status === 'Active' && !!emp.dbId && !isSending && !runActive;
+          // Once signed (Completed) the document is final — Resend must be
+          // disabled (a signed offer letter can't be re-sent). Rejected /
+          // cancelled runs are NOT signed, so they stay re-sendable.
+          const runSigned = !!run && run.status === 'Completed';
+          const canSend = tpl.status === 'Active' && !!emp.dbId && !isSending && !runActive && !runSigned;
           // Status pill text/colour derived from the run.
           const statusInfo = run?.status === 'Completed'  ? { label: 'Signed',      color: '#10b981' }
                            : run?.status === 'Rejected'   ? { label: 'Rejected',    color: '#ef4444' }
@@ -7175,6 +7219,7 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
                   onClick={(e) => { e.stopPropagation(); handleSend(tpl); }}
                   title={
                     isSending          ? 'Sending…'
+                    : runSigned        ? 'Already signed — this document is final and cannot be re-sent'
                     : runActive        ? 'Already sent — signing in progress'
                     : tpl.status !== 'Active' ? 'Only Active templates can be sent'
                     : !emp.dbId        ? 'Save the employee first'
@@ -7189,7 +7234,7 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
                     cursor: canSend ? 'pointer' : 'not-allowed',
                   }}
                 >
-                  <i className={isSending ? 'ri-loader-4-line' : 'ri-send-plane-line'} /> {isSending ? 'Sending…' : (run && !runActive ? 'Resend' : 'Send')}
+                  <i className={isSending ? 'ri-loader-4-line' : (runSigned ? 'ri-check-double-line' : 'ri-send-plane-line')} /> {isSending ? 'Sending…' : (runSigned ? 'Signed' : (run && !runActive ? 'Resend' : 'Send'))}
                 </button>
                 <span
                   className="onb-pol-doc-chev"

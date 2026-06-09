@@ -43,7 +43,9 @@ class OnboardingController extends Controller
             'invitee_name'       => 'required|string|max:255',
             'invitee_email'      => 'required|email|max:191',
             'department_id'      => 'nullable|integer|exists:master_departments,id',
-            'expected_join_date' => 'nullable|date',
+            // Realistic window for a new joiner — no absurd historical dates,
+            // no far-future. Mirrors validateOnboardingPayload's date_of_joining.
+            'expected_join_date' => 'nullable|date|after_or_equal:' . now()->subYear()->toDateString() . '|before_or_equal:' . now()->addYears(2)->toDateString(),
             'expiry_days'        => 'nullable|integer|in:3,7,15,30',
             // Optional caller-supplied origin (e.g. http://127.0.0.1:8000)
             // so the invite link points at the SPA the admin is using right
@@ -367,7 +369,7 @@ class OnboardingController extends Controller
         if ($grantedBy) {
             $adminMasterIds = Permission::where('user_id', $grantedBy)
                 ->where('can_view', true)
-                ->whereHas('module', fn ($q) => $q->where('slug', 'like', 'master.%'))
+                ->whereHas('module', fn($q) => $q->where('slug', 'like', 'master.%'))
                 ->pluck('module_id')
                 ->all();
         }
@@ -451,8 +453,12 @@ class OnboardingController extends Controller
             'primary_role_id' => 'nullable|integer',
             'ancillary_role_id' => 'nullable|integer',
             'legal_entity_id' => 'nullable|integer',
-            'location'        => array_merge(['nullable', 'string', 'max:191'], $noTags),
-            'date_of_joining' => 'nullable|date',
+            'location'        => 'nullable|string|max:191',
+            // Joining date must be realistic for a NEW joiner — not an absurd
+            // historical date (e.g. 1900) and not far in the future. Window:
+            // up to 1 year in the past (covers late onboarding) through 2 years
+            // ahead (covers scheduled future starts).
+            'date_of_joining' => 'nullable|date|after_or_equal:' . now()->subYear()->toDateString() . '|before_or_equal:' . now()->addYears(2)->toDateString(),
         ], [
             'city.not_regex'               => 'City cannot contain < or > characters.',
             'address_line1.not_regex'      => 'Address cannot contain < or > characters.',
@@ -468,6 +474,8 @@ class OnboardingController extends Controller
             'alt_mobile.regex'   => 'Alternate mobile must be 7–15 digits.',
             'pincode.regex'      => 'Pincode must be 4–10 digits.',
             'perm_pincode.regex' => 'Pincode must be 4–10 digits.',
+            'date_of_joining.after_or_equal'  => 'Joining date is too far in the past — enter a realistic joining date.',
+            'date_of_joining.before_or_equal' => 'Joining date is too far in the future — enter a realistic joining date.',
             'date_of_birth.before_or_equal' => 'You must be at least 18 years old.',
         ]);
     }
