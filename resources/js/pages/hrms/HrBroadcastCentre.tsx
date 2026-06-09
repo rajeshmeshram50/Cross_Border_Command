@@ -536,6 +536,15 @@ function CreateAnnouncementModal({
       if (!title.trim()) e.title = 'Title is required';
       if (!description.trim()) e.description = 'Description is required';
     }
+    if (s === 2) {
+      // BUG-121 / BUG-122: Role-Based / Designation-Based must pick at least
+      // one option — All Employees needs none.
+      if (audienceType === 'roles' && roleIds.length === 0) {
+        e.audience = 'Select at least one role.';
+      } else if (audienceType === 'designations' && designationIds.length === 0) {
+        e.audience = 'Select at least one designation.';
+      }
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -712,6 +721,7 @@ function CreateAnnouncementModal({
                 designations={designations} designationIds={designationIds} setDesignationIds={setDesignationIds}
                 employees={employees} excludeIds={excludeIds} setExcludeIds={setExcludeIds}
                 audienceCount={audienceCount}
+                errors={errors}
               />
             )}
             {step === 3 && (
@@ -880,6 +890,7 @@ function Step2Audience({
   roles, roleIds, setRoleIds,
   designations, designationIds, setDesignationIds,
   employees, excludeIds, setExcludeIds,
+  errors = {},
 }: any) {
   // Total tenant headcount drives the All-Employees banner — the picked
   // role/designation case shows its own picker count instead.
@@ -932,6 +943,7 @@ function Step2Audience({
             onChange={setRoleIds}
             empty="No roles configured in Master → Roles"
           />
+          {errors.audience && <div className="text-danger mt-1" style={{ fontSize: 12 }}><i className="ri-error-warning-line me-1" />{errors.audience}</div>}
         </div>
       )}
 
@@ -945,6 +957,7 @@ function Step2Audience({
             onChange={setDesignationIds}
             empty="No designations configured in Master → Designations"
           />
+          {errors.audience && <div className="text-danger mt-1" style={{ fontSize: 12 }}><i className="ri-error-warning-line me-1" />{errors.audience}</div>}
         </div>
       )}
 
