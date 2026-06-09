@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Milon\Barcode\DNS1D;
 use stdClass;
@@ -26,7 +27,7 @@ use stdClass;
 
 class SalesPdfController extends Controller
 {
-    
+
     public function previewPi(Request $request)
     {
         $payload = $request->validate([
@@ -228,7 +229,11 @@ class SalesPdfController extends Controller
         if (preg_match('#^(\d{2})/(\d{2})/(\d{4})$#', $s, $m)) {
             return \DateTime::createFromFormat('Y-m-d', sprintf('%04d-%02d-%02d', $m[3], $m[2], $m[1])) ?: null;
         }
-        try { return new \DateTime($s); } catch (\Exception) { return null; }
+        try {
+            return new \DateTime($s);
+        } catch (\Exception) {
+            return null;
+        }
     }
 
     /* ──────────────────────────────────────────────────────────────────
@@ -377,7 +382,9 @@ class SalesPdfController extends Controller
             ->setOption('isPhpEnabled', true);
 
         $dir = storage_path('app/temp');
-        if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0775, true);
+        }
         $path = $dir . DIRECTORY_SEPARATOR . Str::uuid()->toString() . '.pdf';
         $pdf->save($path);
 
@@ -407,7 +414,8 @@ class SalesPdfController extends Controller
     public function publicViewQuotation(int $id)
     {
         $quot = Quotation::with([
-            'items', 'branch',
+            'items',
+            'branch',
             'customer:id,customer_code,company_name,primary_email,website',
             'customer.primaryAddress:id,customer_id,address_line,country,state,city,pin,cp_contact,cp_email',
             'consignee:id,consignee_code,company_name,primary_email,website',
@@ -436,7 +444,8 @@ class SalesPdfController extends Controller
     public function publicViewProformaInvoice(int $id)
     {
         $pi = ProformaInvoice::with([
-            'items', 'branch',
+            'items',
+            'branch',
             'customer:id,customer_code,company_name,primary_email,website',
             'customer.primaryAddress:id,customer_id,address_line,country,state,city,pin,cp_contact,cp_email',
             'consignee:id,consignee_code,company_name,primary_email,website',
@@ -483,7 +492,8 @@ class SalesPdfController extends Controller
         if (!$user) abort(401);
 
         $quot = Quotation::with([
-            'items', 'branch',
+            'items',
+            'branch',
             'customer:id,customer_code,company_name,primary_email,website',
             'customer.primaryAddress:id,customer_id,address_line,country,state,city,pin,cp_contact,cp_email',
             'consignee:id,consignee_code,company_name,primary_email,website',
@@ -495,10 +505,28 @@ class SalesPdfController extends Controller
         // Email = WRITE (stamps emailed_at + sends mail). Normal branch
         // users can't email main-branch quotations.
         $this->assertRecordScope($quot, $user, 'write');
+        $rateLimitKey = 'email-quotation:' . $user->id . ':' . $quot->id;
+        $maxAttempts = 3;
+        $decaySeconds = 60;
+
+        if (RateLimiter::tooManyAttempts($rateLimitKey, $maxAttempts)) {
+            $seconds = RateLimiter::availableIn($rateLimitKey);
+
+            return response()->json([
+                'success' => false,
+                'message' => "Too many email attempts. Please try again after {$seconds} seconds.",
+                'retry_after_seconds' => $seconds,
+            ], 429);
+        }
+
+        RateLimiter::hit($rateLimitKey, $decaySeconds);
 
         return $this->sendSalesDocumentEmail(
-            $request, $quot,
-            kind: 'Quotation', pdfTitle: 'QUOTATION DOCUMENT', docLabel: 'QT',
+            $request,
+            $quot,
+            kind: 'Quotation',
+            pdfTitle: 'QUOTATION DOCUMENT',
+            docLabel: 'QT',
             filenamePrefix: 'Quotation',
         );
     }
@@ -509,7 +537,8 @@ class SalesPdfController extends Controller
         if (!$user) abort(401);
 
         $pi = ProformaInvoice::with([
-            'items', 'branch',
+            'items',
+            'branch',
             'customer:id,customer_code,company_name,primary_email,website',
             'customer.primaryAddress:id,customer_id,address_line,country,state,city,pin,cp_contact,cp_email',
             'consignee:id,consignee_code,company_name,primary_email,website',
@@ -520,9 +549,30 @@ class SalesPdfController extends Controller
 
         $this->assertRecordScope($pi, $user, 'write');
 
+        // Rate limit — max 3 sends per PI per user per minute (mirrors
+        // emailQuotation) so an over-eager click doesn't spam the customer.
+        $rateLimitKey = 'email-proforma-invoice:' . $user->id . ':' . $pi->id;
+        $maxAttempts = 3;
+        $decaySeconds = 60;
+
+        if (RateLimiter::tooManyAttempts($rateLimitKey, $maxAttempts)) {
+            $seconds = RateLimiter::availableIn($rateLimitKey);
+
+            return response()->json([
+                'success' => false,
+                'message' => "Too many email attempts. Please try again after {$seconds} seconds.",
+                'retry_after_seconds' => $seconds,
+            ], 429);
+        }
+
+        RateLimiter::hit($rateLimitKey, $decaySeconds);
+
         return $this->sendSalesDocumentEmail(
-            $request, $pi,
-            kind: 'Proforma Invoice', pdfTitle: 'PROFORMA INVOICE', docLabel: 'PI',
+            $request,
+            $pi,
+            kind: 'Proforma Invoice',
+            pdfTitle: 'PROFORMA INVOICE',
+            docLabel: 'PI',
             filenamePrefix: 'PI',
         );
     }
@@ -710,7 +760,8 @@ class SalesPdfController extends Controller
         if (!$user) abort(401);
 
         $quot = Quotation::with([
-            'items', 'branch',
+            'items',
+            'branch',
             'customer:id,customer_code,company_name,primary_email,website',
             'customer.primaryAddress:id,customer_id,address_line,country,state,city,pin,cp_contact,cp_email',
             'consignee:id,consignee_code,company_name,primary_email,website',
@@ -723,8 +774,11 @@ class SalesPdfController extends Controller
         $this->assertRecordScope($quot, $user, 'write');
 
         return $this->sendSalesReminderEmail(
-            $request, $quot,
-            kind: 'Quotation', pdfTitle: 'QUOTATION DOCUMENT', docLabel: 'QT',
+            $request,
+            $quot,
+            kind: 'Quotation',
+            pdfTitle: 'QUOTATION DOCUMENT',
+            docLabel: 'QT',
             filenamePrefix: 'Quotation',
         );
     }
@@ -735,7 +789,8 @@ class SalesPdfController extends Controller
         if (!$user) abort(401);
 
         $pi = ProformaInvoice::with([
-            'items', 'branch',
+            'items',
+            'branch',
             'customer:id,customer_code,company_name,primary_email,website',
             'customer.primaryAddress:id,customer_id,address_line,country,state,city,pin,cp_contact,cp_email',
             'consignee:id,consignee_code,company_name,primary_email,website',
@@ -747,8 +802,11 @@ class SalesPdfController extends Controller
         $this->assertRecordScope($pi, $user, 'write');
 
         return $this->sendSalesReminderEmail(
-            $request, $pi,
-            kind: 'Proforma Invoice', pdfTitle: 'PROFORMA INVOICE', docLabel: 'PI',
+            $request,
+            $pi,
+            kind: 'Proforma Invoice',
+            pdfTitle: 'PROFORMA INVOICE',
+            docLabel: 'PI',
             filenamePrefix: 'PI',
         );
     }
@@ -933,7 +991,8 @@ class SalesPdfController extends Controller
                 if (Storage::disk('local')->exists($key)) {
                     return Storage::disk('local')->get($key);
                 }
-            } catch (\Throwable $e) { /* fall through to a fresh render */ }
+            } catch (\Throwable $e) { /* fall through to a fresh render */
+            }
         }
 
         // DomPDF's pure-PHP renderer is slow on this heavy template (large
@@ -948,7 +1007,10 @@ class SalesPdfController extends Controller
         $bytes = $pdf->output();
 
         if ($key) {
-            try { Storage::disk('local')->put($key, $bytes); } catch (\Throwable $e) { /* best-effort cache */ }
+            try {
+                Storage::disk('local')->put($key, $bytes);
+            } catch (\Throwable $e) { /* best-effort cache */
+            }
         }
 
         return $bytes;
@@ -967,10 +1029,18 @@ class SalesPdfController extends Controller
         // Address blocks composed from the structured address columns —
         // branch first, then client.
         $branchAddress = trim(implode(', ', array_filter([
-            $branch?->address, $branch?->city, $branch?->state, $branch?->pincode, $branch?->country,
+            $branch?->address,
+            $branch?->city,
+            $branch?->state,
+            $branch?->pincode,
+            $branch?->country,
         ]))) ?: '';
         $clientAddress = trim(implode(', ', array_filter([
-            $client?->address, $client?->city, $client?->state, $client?->pincode, $client?->country,
+            $client?->address,
+            $client?->city,
+            $client?->state,
+            $client?->pincode,
+            $client?->country,
         ]))) ?: '';
 
         // Header logo: the branch's uploaded logo, else the CLIENT
@@ -1021,7 +1091,7 @@ class SalesPdfController extends Controller
             // signature at public/images/test-signature.png so a tester can
             // just drop a file there without touching the DB.
             'signature_data'    => $this->branchAssetDataUri($branch?->signature_path)
-                                   ?? $this->publicImageDataUri('images/test-signature.png'),
+                ?? $this->publicImageDataUri('images/test-signature.png'),
         ];
 
         // Buyer / Consignee — Name comes from the LIVE master row so
@@ -1098,9 +1168,9 @@ class SalesPdfController extends Controller
         $productIds = collect($q->items)->pluck('product_id')->filter()->unique()->values();
         $productMap = $productIds->isNotEmpty()
             ? DB::table('products')
-                ->whereIn('id', $productIds)
-                ->get(['id', 'product_code', 'name', 'description'])
-                ->keyBy('id')
+            ->whereIn('id', $productIds)
+            ->get(['id', 'product_code', 'name', 'description'])
+            ->keyBy('id')
             : collect();
 
         $quotationProducts = collect($q->items)->map(function ($it) use ($productMap) {
@@ -1290,7 +1360,7 @@ class SalesPdfController extends Controller
         // Items in their on-document SEQUENCE (line_no, then id) — the T&Cs
         // are emitted product-by-product in this same order.
         $items = collect($q->items ?? [])
-            ->sortBy(fn ($it) => [(int) ($it->line_no ?? 0), (int) ($it->id ?? 0)])
+            ->sortBy(fn($it) => [(int) ($it->line_no ?? 0), (int) ($it->id ?? 0)])
             ->values();
         $productIds = $items->pluck('product_id')->filter()->unique()->values();
         if ($productIds->isEmpty()) return [];
@@ -1306,7 +1376,9 @@ class SalesPdfController extends Controller
 
         // Candidate T&Cs — pre-filtered to the doc type + kind (tolerant).
         $candidates = \App\Models\ClmTncLibrary::where('client_id', $clientId)
-            ->where(function ($w) { $w->whereNull('status')->orWhere('status', 'active'); })
+            ->where(function ($w) {
+                $w->whereNull('status')->orWhere('status', 'active');
+            })
             ->orderBy('id')
             ->get()
             ->filter(function ($row) use ($docType, $docKind) {
@@ -1331,7 +1403,7 @@ class SalesPdfController extends Controller
                 if (isset($matched[$row->id])) continue;             // already emitted
                 if ((string) $row->regulatory !== $segReg) continue; // tier must agree
                 $tncSegs = array_filter(array_map(
-                    fn ($s) => mb_strtolower(trim($s)),
+                    fn($s) => mb_strtolower(trim($s)),
                     explode(',', (string) $row->segment)
                 ));
                 if (!in_array($segNameLc, $tncSegs, true)) continue; // segment must match
@@ -1459,7 +1531,7 @@ class SalesPdfController extends Controller
     {
         $hex = ltrim((string) ($hex ?? ''), '#');
         if (strlen($hex) === 3) {
-            $hex = $hex[0].$hex[0].$hex[1].$hex[1].$hex[2].$hex[2];
+            $hex = $hex[0] . $hex[0] . $hex[1] . $hex[1] . $hex[2] . $hex[2];
         }
         if (!preg_match('/^[0-9a-fA-F]{6}$/', $hex)) return '#ffffff';
         $r = hexdec(substr($hex, 0, 2));
@@ -1482,7 +1554,7 @@ class SalesPdfController extends Controller
         if (!preg_match('/^[0-9a-f]{3}([0-9a-f]{3})?$/', $hex)) return null;
         if (strlen($hex) === 3) {
             // Expand "#abc" → "#aabbcc"
-            $hex = $hex[0].$hex[0].$hex[1].$hex[1].$hex[2].$hex[2];
+            $hex = $hex[0] . $hex[0] . $hex[1] . $hex[1] . $hex[2] . $hex[2];
         }
         return '#' . $hex;
     }

@@ -776,18 +776,60 @@ export default function SalesQPI() {
     }
   };
 
-  /* Email PDF state — per-row busy flag (so only the clicked row shows
-   * a spinner). Tagged with the kind so the same id can't collide
-   * between a Quotation row id and a PI row id.
-   *
-   * The same flag covers BOTH initial-email sends AND reminders,
-   * because the two actions are mutually exclusive per-row (the UI
-   * only enables one or the other based on emailedAt). */
-  const [emailingFor, setEmailingFor] = useState<{ kind: 'quotation' | 'pi'; id: number } | null>(null);
+  /* Email PDF state — PER-ROW in-flight tracking. Each row's send is
+   * independent: only the row being sent shows the disabled spinner, and a
+   * DIFFERENT quotation/PI can be emailed at the same time. The set holds the
+   * `${kind}:${id}` keys currently sending (covers both initial emails and
+   * reminders — mutually exclusive per row). */
+  const [emailingKeys, setEmailingKeys] = useState<Set<string>>(new Set());
+  // Synchronous mirror of the set — React state only updates on the next
+  // render, so a fast double-click on the SAME row could fire twice before the
+  // disable lands. The ref blocks a repeat of the same key in the same tick;
+  // other rows' keys are unaffected, so concurrent sends are still allowed.
+  const emailingRef = useRef<Set<string>>(new Set());
+  const isEmailing = (kind: 'quotation' | 'pi', id: number) => emailingKeys.has(`${kind}:${id}`);
+
+  /* Rate-limit cooldown — once the server returns 429 (max 3 sends per
+   * doc per minute) we keep that row's Email button disabled-looking until
+   * the cooldown elapses. Keyed by `${kind}:${id}` → epoch-ms when it frees.
+   * A 1s ticker re-renders so the remaining time / disabled state updates. */
+  const [emailCooldowns, setEmailCooldowns] = useState<Record<string, number>>({});
+  const cdKey = (kind: 'quotation' | 'pi', id: number) => `${kind}:${id}`;
+  const cooldownLeft = (kind: 'quotation' | 'pi', id: number): number => {
+    const end = emailCooldowns[cdKey(kind, id)];
+    return end ? Math.max(0, Math.ceil((end - Date.now()) / 1000)) : 0;
+  };
+  const startCooldown = (kind: 'quotation' | 'pi', id: number, seconds: number) => {
+    setEmailCooldowns(m => ({ ...m, [cdKey(kind, id)]: Date.now() + seconds * 1000 }));
+  };
+  useEffect(() => {
+    if (Object.keys(emailCooldowns).length === 0) return;
+    const t = setInterval(() => {
+      setEmailCooldowns(m => {
+        const now = Date.now();
+        const next: Record<string, number> = {};
+        for (const [k, v] of Object.entries(m)) if (v > now) next[k] = v;
+        return Object.keys(next).length === Object.keys(m).length ? m : next;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [emailCooldowns]);
+
   const sendDocEmail = async (kind: 'quotation' | 'pi', id: number, code: string) => {
     if (!id) { toast.error('Cannot email', 'This record has no server id yet.'); return; }
-    if (emailingFor) return;
-    setEmailingFor({ kind, id });
+    const key = `${kind}:${id}`;
+    // Block only a repeat send of THIS SAME row (the button is disabled while
+    // its send is in flight; the ref catches a same-tick double-click). Other
+    // rows are unaffected — they can be emailed concurrently.
+    if (emailingRef.current.has(key)) return;
+    // Still cooling down from a previous rate-limit hit — surface the wait.
+    const left = cooldownLeft(kind, id);
+    if (left > 0) {
+      toast.warning('Please wait', `You can email this ${kind === 'pi' ? 'PI' : 'quotation'} again in ${left}s (max 3 per minute).`);
+      return;
+    }
+    emailingRef.current.add(key);
+    setEmailingKeys(s => new Set(s).add(key));
     const url = kind === 'quotation'
       ? `/sales/quotations/${id}/email`
       : `/sales/proforma-invoices/${id}/email`;
@@ -803,10 +845,20 @@ export default function SalesQPI() {
       if (kind === 'quotation') setQuotations(rows => rows.map(patch));
       else                       setPis(rows => rows.map(patch));
     } catch (e: any) {
-      const msg = e?.response?.data?.message ?? 'Could not send email. Check the customer has a primary email.';
-      toast.error('Email failed', String(msg));
+      // 429 = throttle (max 3 sends per doc per minute). Surface it as a
+      // "please wait" warning, not an error — the send didn't fail, it's
+      // capped — and start the cooldown so the button stays disabled.
+      if (e?.response?.status === 429) {
+        const wait = Number(e?.response?.data?.retry_after_seconds) || 60;
+        startCooldown(kind, id, wait);
+        toast.warning('Please wait', e?.response?.data?.message ?? `Too many attempts — try again in ${wait}s.`);
+      } else {
+        const msg = e?.response?.data?.message ?? 'Could not send email. Check the customer has a primary email.';
+        toast.error('Email failed', String(msg));
+      }
     } finally {
-      setEmailingFor(null);
+      emailingRef.current.delete(key);
+      setEmailingKeys(s => { const n = new Set(s); n.delete(key); return n; });
     }
   };
 
@@ -816,8 +868,10 @@ export default function SalesQPI() {
    * without a full reload. */
   const sendReminder = async (kind: 'quotation' | 'pi', id: number, code: string) => {
     if (!id) { toast.error('Cannot remind', 'This record has no server id yet.'); return; }
-    if (emailingFor) return;
-    setEmailingFor({ kind, id });
+    const key = `${kind}:${id}`;
+    if (emailingRef.current.has(key)) return;
+    emailingRef.current.add(key);
+    setEmailingKeys(s => new Set(s).add(key));
     const url = kind === 'quotation'
       ? `/sales/quotations/${id}/remind`
       : `/sales/proforma-invoices/${id}/remind`;
@@ -829,10 +883,15 @@ export default function SalesQPI() {
       if (kind === 'quotation') setQuotations(rows => rows.map(patch));
       else                       setPis(rows => rows.map(patch));
     } catch (e: any) {
-      const msg = e?.response?.data?.message ?? 'Could not send reminder.';
-      toast.error('Reminder failed', String(msg));
+      if (e?.response?.status === 429) {
+        toast.warning('Please wait', e?.response?.data?.message ?? 'Too many attempts — try again in a minute.');
+      } else {
+        const msg = e?.response?.data?.message ?? 'Could not send reminder.';
+        toast.error('Reminder failed', String(msg));
+      }
     } finally {
-      setEmailingFor(null);
+      emailingRef.current.delete(key);
+      setEmailingKeys(s => { const n = new Set(s); n.delete(key); return n; });
     }
   };
 
@@ -951,13 +1010,16 @@ export default function SalesQPI() {
     onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
     ariaLabel?: string;
     disabled?: boolean;
+    // Rate-limit cooldown: render the dimmed/disabled LOOK but keep the
+    // button clickable so the click can surface the "please wait" toast.
+    cooling?: boolean;
     badge?: number;
   }) => (
     <Tooltip label={p.title}>
       <button
         type="button"
         aria-label={p.ariaLabel ?? p.title}
-        className={`qpi-act${p.disabled ? ' qpi-act-disabled' : ''}`}
+        className={`qpi-act${p.disabled || p.cooling ? ' qpi-act-disabled' : ''}`}
         style={{ ['--qpi-act-accent' as any]: p.color, position: 'relative' }}
         disabled={p.disabled}
         onClick={p.disabled ? undefined : p.onClick}
@@ -1141,13 +1203,16 @@ export default function SalesQPI() {
               title={
                 readOnly
                   ? readOnlyHint
-                  : emailingFor?.kind === 'quotation' && emailingFor.id === r.id
+                  : isEmailing('quotation', r.id)
                     ? 'Sending…'
-                    : 'Email Quotation'
+                    : r.id && cooldownLeft('quotation', r.id) > 0
+                      ? `Please wait ${cooldownLeft('quotation', r.id)}s (max 3 per minute)`
+                      : 'Email Quotation'
               }
               icon={<IconMail />}
               color="#2563eb"
-              disabled={readOnly || (emailingFor?.kind === 'quotation' && emailingFor.id === r.id)}
+              disabled={readOnly || (isEmailing('quotation', r.id))}
+              cooling={!!r.id && cooldownLeft('quotation', r.id) > 0}
               onClick={() => r.id && sendDocEmail('quotation', r.id, r.qtNo)}
             />
             {/* Reminder button — REMOVED for the email flow. The only
@@ -1160,7 +1225,7 @@ export default function SalesQPI() {
               title={
                 readOnly
                   ? readOnlyHint
-                  : emailingFor?.kind === 'quotation' && emailingFor.id === r.id
+                  : isEmailing('quotation', r.id)
                     ? 'Sending…'
                     : r.emailedAt
                       ? `Send Reminder${r.reminderCount ? ` (#${(r.reminderCount ?? 0) + 1})` : ''}`
@@ -1168,7 +1233,7 @@ export default function SalesQPI() {
               }
               icon={<IconBellSm />}
               color="#f59e0b"
-              disabled={readOnly || !r.emailedAt || (emailingFor?.kind === 'quotation' && emailingFor.id === r.id)}
+              disabled={readOnly || !r.emailedAt || (isEmailing('quotation', r.id))}
               badge={r.reminderCount ?? 0}
               onClick={() => r.id && sendReminder('quotation', r.id, r.qtNo)}
             />
@@ -1220,7 +1285,7 @@ export default function SalesQPI() {
         );
       },
     },
-  ], [convertingId, sigByRow, currentUser?.id, currentUser?.is_main_branch]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [convertingId, sigByRow, currentUser?.id, currentUser?.is_main_branch, emailingKeys, emailCooldowns]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── PI table columns — header set differs by sub-tab (BT ID / BT Date
    *    only on With Shipment). Build both column sets memoised. */
@@ -1295,13 +1360,16 @@ export default function SalesQPI() {
               title={
                 readOnly
                   ? readOnlyHint
-                  : emailingFor?.kind === 'pi' && emailingFor.id === r.id
+                  : isEmailing('pi', r.id)
                     ? 'Sending…'
-                    : 'Email PI'
+                    : r.id && cooldownLeft('pi', r.id) > 0
+                      ? `Please wait ${cooldownLeft('pi', r.id)}s (max 3 per minute)`
+                      : 'Email PI'
               }
               icon={<IconMail />}
               color="#2563eb"
-              disabled={readOnly || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
+              disabled={readOnly || (isEmailing('pi', r.id))}
+              cooling={!!r.id && cooldownLeft('pi', r.id) > 0}
               onClick={() => r.id && sendDocEmail('pi', r.id, r.piNo)}
             />
             {false && (
@@ -1309,7 +1377,7 @@ export default function SalesQPI() {
                 title={
                   readOnly
                     ? readOnlyHint
-                    : emailingFor?.kind === 'pi' && emailingFor.id === r.id
+                    : isEmailing('pi', r.id)
                       ? 'Sending…'
                       : r.emailedAt
                         ? `Send Reminder${r.reminderCount ? ` (#${(r.reminderCount ?? 0) + 1})` : ''}`
@@ -1317,7 +1385,7 @@ export default function SalesQPI() {
                 }
                 icon={<IconBellSm />}
                 color="#f59e0b"
-                disabled={readOnly || !r.emailedAt || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
+                disabled={readOnly || !r.emailedAt || (isEmailing('pi', r.id))}
                 badge={r.reminderCount ?? 0}
                 onClick={() => r.id && sendReminder('pi', r.id, r.piNo)}
               />
@@ -1369,8 +1437,8 @@ export default function SalesQPI() {
       },
     },
   ];
-  const piWithColumns    = useMemo<any[]>(() => piColumnsBase(true),  [sigByRow, currentUser?.id, currentUser?.is_main_branch]); // eslint-disable-line react-hooks/exhaustive-deps
-  const piWithoutColumns = useMemo<any[]>(() => piColumnsBase(false), [sigByRow, currentUser?.id, currentUser?.is_main_branch]); // eslint-disable-line react-hooks/exhaustive-deps
+  const piWithColumns    = useMemo<any[]>(() => piColumnsBase(true),  [sigByRow, currentUser?.id, currentUser?.is_main_branch, emailingKeys, emailCooldowns]); // eslint-disable-line react-hooks/exhaustive-deps
+  const piWithoutColumns = useMemo<any[]>(() => piColumnsBase(false), [sigByRow, currentUser?.id, currentUser?.is_main_branch, emailingKeys, emailCooldowns]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="qpi-root">

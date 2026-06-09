@@ -106,6 +106,12 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   const [quotations, setQuotations] = useState<QuotationRow[]>([]);
   const [pis, setPis]           = useState<PIRow[]>([]);
   const [actingId, setActingId] = useState<number | null>(null);
+  // Per-row email in-flight set (decoupled from actingId so two different
+  // docs can be emailed at once). `${kind}:${id}` keys; ref mirrors it for a
+  // synchronous same-tick double-click guard. See onEmail.
+  const [emailingKeys, setEmailingKeys] = useState<Set<string>>(new Set());
+  const emailingRef = useRef<Set<string>>(new Set());
+  const isEmailing = (kind: DocType, id: number) => emailingKeys.has(`${kind}:${id}`);
   // Convert-to-PI confirmation popup state (target row + previewed PI code).
   const [convertTarget, setConvertTarget] = useState<QuotationRow | null>(null);
   const [convertPreviewCode, setConvertPreviewCode] = useState<string | null>(null);
@@ -336,15 +342,36 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   };
 
   const onEmail = async (kind: DocType, id: number, code: string | null) => {
-    setActingId(id);
+    const key = cdKey(kind, id);
+    // Per-row send: only block a repeat of THIS row (its button is disabled
+    // while in flight; the ref catches a same-tick double-click). A DIFFERENT
+    // quotation/PI can be emailed at the same time.
+    if (emailingRef.current.has(key)) return;
+    // Still cooling down from a previous rate-limit hit — surface the wait.
+    const left = cooldownLeft(kind, id);
+    if (left > 0) {
+      toast.warning('Please wait', `You can email this ${kind === 'pi' ? 'PI' : 'quotation'} again in ${left}s (max 3 per minute).`);
+      return;
+    }
+    emailingRef.current.add(key);
+    setEmailingKeys(s => new Set(s).add(key));
     try {
       const url = kind === 'quotation' ? `/sales/quotations/${id}/email` : `/sales/proforma-invoices/${id}/email`;
       await api.post(url, {});
       toast.success('Email sent', `${code ?? 'Document'} was emailed to the customer.`);
     } catch (e: any) {
-      toast.error('Email failed', e?.response?.data?.message ?? 'Could not send the email — check the customer contact details.');
+      // 429 = throttle (max 3 sends per doc per minute). Not a real failure —
+      // tell the user to wait, and start the cooldown so the button locks.
+      if (e?.response?.status === 429) {
+        const wait = Number(e?.response?.data?.retry_after_seconds) || 60;
+        setEmailCooldowns(m => ({ ...m, [cdKey(kind, id)]: Date.now() + wait * 1000 }));
+        toast.warning('Please wait', e?.response?.data?.message ?? `Too many attempts — try again in ${wait}s.`);
+      } else {
+        toast.error('Email failed', e?.response?.data?.message ?? 'Could not send the email — check the customer contact details.');
+      }
     } finally {
-      setActingId(null);
+      emailingRef.current.delete(key);
+      setEmailingKeys(s => { const n = new Set(s); n.delete(key); return n; });
     }
   };
 
@@ -421,6 +448,28 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   /* ── Derived ───────────────────────────────────────────────────── */
   const rows = docType === 'quotation' ? quotations : pis;
   const anyActing = actingId !== null;
+
+  /* Email rate-limit cooldown — server caps sends at 3 per doc per minute
+   * (429). Keep that row's Email button disabled-looking until it frees.
+   * Keyed by `${kind}:${id}` → epoch-ms; a 1s ticker re-renders the countdown. */
+  const [emailCooldowns, setEmailCooldowns] = useState<Record<string, number>>({});
+  const cdKey = (kind: DocType, id: number) => `${kind}:${id}`;
+  const cooldownLeft = (kind: DocType, id: number): number => {
+    const end = emailCooldowns[cdKey(kind, id)];
+    return end ? Math.max(0, Math.ceil((end - Date.now()) / 1000)) : 0;
+  };
+  useEffect(() => {
+    if (Object.keys(emailCooldowns).length === 0) return;
+    const t = setInterval(() => {
+      setEmailCooldowns(m => {
+        const now = Date.now();
+        const next: Record<string, number> = {};
+        for (const [k, v] of Object.entries(m)) if (v > now) next[k] = v;
+        return Object.keys(next).length === Object.keys(m).length ? m : next;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [emailCooldowns]);
 
   /* PI "Converted From" → resolve the source quotation's code from the
    * quotation list we already loaded. */
@@ -706,8 +755,10 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               stays available after every send (no one-time hide)
                               so the document can be re-emailed to the customer
                               as many times as needed; each send fires a toast. */}
-                          <button type="button" className="s5-icn s5-icn-mail" title="Send via Email"
-                            onClick={() => void onEmail(docType, r.id, r.code)} disabled={anyActing}>
+                          <button type="button"
+                            className={`s5-icn s5-icn-mail${cooldownLeft(docType, r.id) > 0 ? ' s5-icn-cooling' : ''}`}
+                            title={cooldownLeft(docType, r.id) > 0 ? `Please wait ${cooldownLeft(docType, r.id)}s (max 3 per minute)` : 'Send via Email'}
+                            onClick={() => void onEmail(docType, r.id, r.code)} disabled={isEmailing(docType, r.id)}>
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
                           </button>
                           {(() => {
@@ -1329,8 +1380,12 @@ const STAGE5_CSS = `
   border: 1.5px solid; transition: all .15s;
 }
 .s5-icn:disabled { opacity: .5; cursor: not-allowed; }
+/* Rate-limit cooldown — dimmed disabled LOOK but still clickable so the
+   click surfaces the "please wait" toast. No hover lift while cooling. */
+.s5-icn-cooling { opacity: .45; cursor: not-allowed; }
+.s5-icn-cooling:hover { transform: none !important; }
 .s5-icn-mail { background: #eff6ff; border-color: #bfdbfe; color: #3b82f6; }
-.s5-icn-mail:hover:not(:disabled) { background: #3b82f6; color: #fff; border-color: transparent; transform: translateY(-1px); }
+.s5-icn-mail:hover:not(:disabled):not(.s5-icn-cooling) { background: #3b82f6; color: #fff; border-color: transparent; transform: translateY(-1px); }
 .s5-icn-edit { background: #f0fdf4; border-color: #bbf7d0; color: #16a34a; }
 .s5-icn-edit:hover:not(:disabled) { background: #16a34a; color: #fff; border-color: transparent; transform: translateY(-1px); }
 .s5-icn-more { background: #f8fafc; border-color: #e2e8f0; color: #64748b; }
