@@ -11,11 +11,11 @@ import type { VaultData, VaultDoc, VaultStatus } from './CustomerEvidenceVaultMo
 /* ────────────────────────────────────────────────────────────────────────────
  * Lead Evidence Vault — Sales Matrix lead-stage popup
  *
- * A dedicated, lead-scoped vault rendered in the exact IDIMS "Evidence
- * Vault" popup design (sky-blue/cyan theme): blue gradient hero, four
- * document tabs (Due Diligence / KYC Documents / Trade License / Trade
- * Documents), per-tab Verified / Expiring / Pending chips, the navy
- * document table, and an Export All / Close Vault footer.
+ * A dedicated, lead-scoped vault. Styled to match the Agreement / Trade
+ * Document popup's violet theme: a compact violet gradient hero, three
+ * document tabs (Due Diligence / KYC Documents / Trade License), the violet
+ * document table, and an Export All / Close Vault footer. (The per-tab
+ * summary card and Verified/Expiring/Pending chips were removed by design.)
  *
  * Same live data + per-document actions (View / Download / Upload-replace
  * / Certificate) as the standalone Customer / Consignee vaults — only the
@@ -146,17 +146,6 @@ export default function LeadEvidenceVaultModal({ open, target, onClose }: Props)
          : vault.company_dd;
   }, [vault, tab]);
 
-  const tabMeta = TABS.find(t => t.key === tab)!;
-
-  const chips = useMemo(() => {
-    let verified = 0, expiring = 0, pending = 0;
-    for (const d of docsForTab) {
-      if (d.status === 'Verified' || d.status === 'Signed') verified++;
-      else if (d.status === 'Expiring') expiring++;
-      else if (d.status === 'Pending') pending++;
-    }
-    return { verified, expiring, pending };
-  }, [docsForTab]);
 
   /* Export All → a single ZIP with four folders (Due Diligence / KYC
    * Documents / Trade License / Trade Documents). Every uploaded file in
@@ -277,27 +266,8 @@ export default function LeadEvidenceVaultModal({ open, target, onClose }: Props)
 
           {/* ── BODY ── */}
           <div className="lev-body">
-            {/* Section card */}
-            <div className="lev-section-card">
-              <div className="lev-section-left">
-                <div className="lev-section-icon"><TabSvg name={tabMeta.icon} /></div>
-                <div className="lev-section-text">
-                  <h3 className="lev-section-title">{tabMeta.sectionTitle}</h3>
-                  <div className="lev-section-desc">{tabMeta.sub}</div>
-                </div>
-              </div>
-              <div className="lev-section-count">
-                <div className="num">{docsForTab.length}</div>
-                <div className="lbl">Documents</div>
-              </div>
-            </div>
-
-            {/* Chips */}
-            <div className="lev-chips">
-              <span className="lev-chip verified">✓ Verified <span className="lev-chip-count">{chips.verified}</span></span>
-              <span className="lev-chip expiring">⚠ Expiring <span className="lev-chip-count">{chips.expiring}</span></span>
-              <span className="lev-chip pending">⏳ Pending <span className="lev-chip-count">{chips.pending}</span></span>
-            </div>
+            {/* Section summary card + Verified/Expiring/Pending chips removed
+                per design — the table goes straight under the tabs. */}
 
             {/* Table */}
             <div className="lev-table-card">
@@ -486,9 +456,10 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
 }
 
 /* ─────────────────────────── styles ───────────────────────────
-   Values lifted verbatim from the SalesMatrix prototype's popup-mode
-   Evidence Vault (#eepOverlay sky-blue/cyan theme) so the React popup is
-   pixel-faithful: gradients, font weights, letter-spacing, paddings. */
+   Violet theme matching the Agreement / Trade Document popup
+   (LeadAgreementSendModal): violet gradient hero, violet active tabs,
+   violet table header, violet primary buttons. Status chips (Verified /
+   Expiring / Pending) keep their semantic green / amber / red. */
 const LEV_CSS = `
 @keyframes lev-pop { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
 
@@ -501,7 +472,7 @@ const LEV_CSS = `
   width: min(1100px, 100%); max-height: calc(100vh - 56px);
   background: #fff; border-radius: 18px; overflow: hidden;
   display: flex; flex-direction: column;
-  box-shadow: 0 24px 64px rgba(15,23,42,.30), 0 60px 120px rgba(2,132,199,.18);
+  box-shadow: 0 24px 64px rgba(15,23,42,.30), 0 60px 120px rgba(124,58,237,.18);
   animation: lev-pop .22s ease-out;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
@@ -510,31 +481,31 @@ const LEV_CSS = `
 .lev-hero {
   background:
     radial-gradient(circle at 15% 50%, rgba(255,255,255,.15) 0%, transparent 55%),
-    linear-gradient(135deg, #0c4a6e 0%, #0369a1 30%, #0284c7 65%, #0ea5e9 100%);
-  padding: 24px 30px 24px; position: relative; overflow: hidden; color: #fff;
+    linear-gradient(135deg, #4c1d95 0%, #5b21b6 30%, #6d28d9 65%, #7c3aed 100%);
+  padding: 13px 26px; position: relative; overflow: hidden; color: #fff;
 }
 .lev-hero::after {
-  content: ''; position: absolute; top: -40%; right: -5%;
-  width: 460px; height: 460px;
+  content: ''; position: absolute; top: -60%; right: -5%;
+  width: 320px; height: 320px;
   background: radial-gradient(circle, rgba(255,255,255,.10) 0%, transparent 70%); pointer-events: none;
 }
-.lev-hero-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; position: relative; z-index: 1; }
-.lev-hero-left { display: flex; align-items: flex-start; gap: 18px; flex: 1 1 auto; min-width: 0; }
+.lev-hero-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; position: relative; z-index: 1; }
+.lev-hero-left { display: flex; align-items: center; gap: 13px; flex: 1 1 auto; min-width: 0; }
 .lev-hero-avatar {
-  width: 60px; height: 60px; border-radius: 16px; flex-shrink: 0;
+  width: 42px; height: 42px; border-radius: 11px; flex-shrink: 0;
   background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.28);
   display: inline-flex; align-items: center; justify-content: center;
-  box-shadow: 0 8px 18px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.30);
+  box-shadow: 0 6px 14px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.30);
 }
-.lev-hero-avatar svg { width: 28px; height: 28px; stroke: #fff; display: block; }
+.lev-hero-avatar svg { width: 21px; height: 21px; stroke: #fff; display: block; }
 .lev-hero-text { flex: 1 1 auto; min-width: 0; }
-.lev-hero-eyebrow { font-size: 10.5px; font-weight: 800; color: rgba(255,255,255,.80); letter-spacing: .16em; text-transform: uppercase; margin-bottom: 4px; }
-.lev-hero-name { font-size: 24px; font-weight: 800; color: #fff; letter-spacing: -.5px; margin: 0 0 8px; line-height: 1.2; text-shadow: 0 1px 3px rgba(0,0,0,.12); }
-.lev-hero-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 12.5px; color: rgba(255,255,255,.85); font-weight: 500; }
+.lev-hero-eyebrow { font-size: 9.5px; font-weight: 800; color: rgba(255,255,255,.80); letter-spacing: .16em; text-transform: uppercase; margin-bottom: 2px; }
+.lev-hero-name { font-size: 17px; font-weight: 800; color: #fff; letter-spacing: -.3px; margin: 0 0 4px; line-height: 1.15; text-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.lev-hero-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 11.5px; color: rgba(255,255,255,.85); font-weight: 500; }
 .lev-hero-id {
-  font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace; font-weight: 700; letter-spacing: .04em;
+  font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace; font-weight: 700; letter-spacing: .04em; font-size: 11px;
   background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.24);
-  padding: 3px 10px; border-radius: 8px; color: #fff;
+  padding: 2px 9px; border-radius: 7px; color: #fff;
 }
 .lev-hero-risk {
   display: inline-flex; align-items: center; gap: 5px;
@@ -544,12 +515,12 @@ const LEV_CSS = `
 }
 .lev-dot { width: 4px; height: 4px; border-radius: 50%; background: rgba(255,255,255,.45); flex-shrink: 0; }
 .lev-hero-close {
-  width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0; cursor: pointer;
+  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; cursor: pointer;
   background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.24); color: #fff;
   display: inline-flex; align-items: center; justify-content: center; transition: all .18s ease; position: relative; z-index: 1;
 }
 .lev-hero-close:hover { background: rgba(255,255,255,.30); transform: rotate(90deg); }
-.lev-hero-close svg { width: 18px; height: 18px; }
+.lev-hero-close svg { width: 16px; height: 16px; }
 
 /* ── Tabs ── */
 .lev-tabs { background: #fff; display: flex; align-items: center; gap: 0; padding: 0 30px; border-bottom: 1px solid #ECEEF3; flex-wrap: wrap; }
@@ -561,10 +532,10 @@ const LEV_CSS = `
 }
 .lev-tab svg { width: 16px; height: 16px; stroke: currentColor; }
 .lev-tab .lev-tab-count { background: #F1F5F9; color: #64748B; border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.lev-tab:hover:not(.active) { color: #0284c7; background: #F0F9FF; }
-.lev-tab.active { color: #0284c7; border-bottom-color: #0284c7; font-weight: 700; }
-.lev-tab.active svg { color: #0284c7; }
-.lev-tab.active .lev-tab-count { background: #e0f2fe; color: #0c4a6e; }
+.lev-tab:hover:not(.active) { color: #6d28d9; background: #F5F3FF; }
+.lev-tab.active { color: #6d28d9; border-bottom-color: #6d28d9; font-weight: 700; }
+.lev-tab.active svg { color: #6d28d9; }
+.lev-tab.active .lev-tab-count { background: #ede9fe; color: #4c1d95; }
 
 /* ── Body ── */
 .lev-body { flex: 1; overflow-y: auto; padding: 22px 30px; background: linear-gradient(180deg, #FAFBFF 0%, #F1F5F9 100%); }
@@ -577,9 +548,9 @@ const LEV_CSS = `
 .lev-section-left { display: flex; align-items: center; gap: 14px; flex: 1 1 auto; min-width: 0; }
 .lev-section-icon {
   width: 48px; height: 48px; border-radius: 12px; flex-shrink: 0;
-  background: linear-gradient(135deg, #0284c7 0%, #0ea5e9 100%); color: #fff;
+  background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%); color: #fff;
   display: inline-flex; align-items: center; justify-content: center;
-  box-shadow: 0 6px 14px rgba(2,132,199,.34), inset 0 1px 0 rgba(255,255,255,.20);
+  box-shadow: 0 6px 14px rgba(124,58,237,.34), inset 0 1px 0 rgba(255,255,255,.20);
 }
 .lev-section-icon svg { width: 22px; height: 22px; stroke: currentColor; }
 .lev-section-text { flex: 1 1 auto; min-width: 0; }
@@ -600,7 +571,7 @@ const LEV_CSS = `
 /* ── Table ── */
 .lev-table-card { background: #fff; border: 1px solid #ECEEF3; border-radius: 14px; overflow: hidden; overflow-x: auto; box-shadow: 0 1px 3px rgba(15,23,42,.04), 0 8px 18px rgba(15,23,42,.05); }
 .lev-doc-table { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 1000px; }
-.lev-doc-table thead tr { background: linear-gradient(135deg, #0c4a6e 0%, #1e3a8a 100%); }
+.lev-doc-table thead tr { background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 100%); }
 .lev-doc-table th { background: transparent; color: #fff; padding: 14px 18px; font-size: 10.5px; font-weight: 800; letter-spacing: .10em; text-transform: uppercase; text-align: left; white-space: nowrap; }
 .lev-doc-table td { padding: 14px 18px; border-bottom: 1px solid #F1F5F9; font-size: 13px; color: #1E293B; vertical-align: middle; white-space: nowrap; }
 .lev-doc-table tbody tr:last-child td { border-bottom: none; }
@@ -608,7 +579,7 @@ const LEV_CSS = `
 .lev-doc-table tbody tr:hover td { background: #FAFBFF; }
 .lev-empty { text-align: center; padding: 30px 14px; color: #94A3B8; font-style: italic; }
 .lev-doc-name { font-weight: 700; color: #0F172A; }
-.lev-doc-license { font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace; color: #0369a1; font-weight: 700; font-size: 12.5px; }
+.lev-doc-license { font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace; color: #5b21b6; font-weight: 700; font-size: 12.5px; }
 .lev-doc-att { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 8px; background: #ECFDF5; color: #047857; border: 1px solid #A7F3D0; font-size: 11.5px; font-weight: 700; cursor: pointer; text-decoration: none; transition: all .15s ease; }
 .lev-doc-att:hover { background: #D1FAE5; }
 .lev-doc-att svg { width: 12px; height: 12px; stroke: currentColor; }
@@ -622,13 +593,13 @@ const LEV_CSS = `
 .lev-row-actions { display: flex; gap: 6px; align-items: center; }
 .lev-act { width: 28px; height: 28px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; border: 1px solid transparent; text-decoration: none; transition: all .12s; }
 .lev-act svg { width: 13px; height: 13px; }
-.lev-act-view { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; }
-.lev-act-view:hover { background: #bae6fd; }
-.lev-act-download { background: #ecfeff; color: #0e7490; border-color: #a5f3fc; }
-.lev-act-download:hover { background: #cffafe; }
+.lev-act-view { background: #ede9fe; color: #5b21b6; border-color: #ddd6fe; }
+.lev-act-view:hover { background: #ddd6fe; }
+.lev-act-download { background: #f5f3ff; color: #7c3aed; border-color: #ddd6fe; }
+.lev-act-download:hover { background: #ede9fe; }
 .lev-act-upload { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
 .lev-act-upload:hover { background: #dcfce7; }
-.lev-act-cert { background: #cffafe; color: #0e7490; border-color: #67e8f9; }
+.lev-act-cert { background: #ede9fe; color: #7c3aed; border-color: #c4b5fd; }
 .lev-act.is-disabled { opacity: .4; cursor: not-allowed; pointer-events: none; }
 
 /* ── Pagination ── */
@@ -642,9 +613,9 @@ const LEV_CSS = `
   display: inline-flex; align-items: center; justify-content: center; transition: all .14s ease;
 }
 .lev-pager-btn svg { width: 14px; height: 14px; }
-.lev-pager-btn:hover:not(:disabled), .lev-pager-num:hover:not(.active) { background: #F0F9FF; border-color: #bae6fd; color: #0284c7; }
+.lev-pager-btn:hover:not(:disabled), .lev-pager-num:hover:not(.active) { background: #F5F3FF; border-color: #ddd6fe; color: #6d28d9; }
 .lev-pager-btn:disabled { opacity: .45; cursor: not-allowed; }
-.lev-pager-num.active { background: linear-gradient(135deg, #0284c7 0%, #0ea5e9 100%); border-color: #0284c7; color: #fff; box-shadow: 0 3px 8px rgba(2,132,199,.30); }
+.lev-pager-num.active { background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%); border-color: #6d28d9; color: #fff; box-shadow: 0 3px 8px rgba(124,58,237,.30); }
 
 /* ── Footer ── */
 .lev-footer { background: #fff; border-top: 1px solid #ECEEF3; padding: 14px 30px; display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
@@ -654,18 +625,18 @@ const LEV_CSS = `
 .lev-footer-btn { height: 38px; padding: 0 18px; border-radius: 10px; font-size: 12.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; font-family: inherit; border: 1.5px solid transparent; transition: all .22s cubic-bezier(.22,1,.36,1); }
 .lev-footer-btn svg { width: 14px; height: 14px; stroke: currentColor; }
 .lev-footer-btn.outline { background: #fff; border-color: #E2E8F0; color: #475569; }
-.lev-footer-btn.outline:hover:not(:disabled) { background: #F0F9FF; border-color: #bae6fd; color: #0284c7; transform: translateY(-1px); }
+.lev-footer-btn.outline:hover:not(:disabled) { background: #F5F3FF; border-color: #ddd6fe; color: #6d28d9; transform: translateY(-1px); }
 .lev-footer-btn.outline:disabled { opacity: .55; cursor: not-allowed; }
-.lev-footer-btn.primary { background: linear-gradient(135deg, #0284c7 0%, #0ea5e9 100%); border: none; color: #fff; box-shadow: 0 6px 14px rgba(2,132,199,.32), inset 0 1px 0 rgba(255,255,255,.20); }
-.lev-footer-btn.primary:hover { transform: translateY(-1px); box-shadow: 0 10px 20px rgba(2,132,199,.40), inset 0 1px 0 rgba(255,255,255,.25); }
+.lev-footer-btn.primary { background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%); border: none; color: #fff; box-shadow: 0 6px 14px rgba(124,58,237,.32), inset 0 1px 0 rgba(255,255,255,.20); }
+.lev-footer-btn.primary:hover { transform: translateY(-1px); box-shadow: 0 10px 20px rgba(124,58,237,.40), inset 0 1px 0 rgba(255,255,255,.25); }
 
 /* ── Dark mode — keep the hero/table chrome, tint the surfaces ── */
 [data-bs-theme="dark"] .lev-modal { background: #0f172a; }
 [data-bs-theme="dark"] .lev-tabs { background: #0f172a; border-bottom-color: rgba(148,163,184,.18); }
 [data-bs-theme="dark"] .lev-tab { color: #94a3b8; }
 [data-bs-theme="dark"] .lev-tab .lev-tab-count { background: rgba(148,163,184,.18); color: #cbd5e1; }
-[data-bs-theme="dark"] .lev-tab.active { color: #38bdf8; border-bottom-color: #38bdf8; }
-[data-bs-theme="dark"] .lev-tab.active .lev-tab-count { background: rgba(56,189,248,.20); color: #e0f2fe; }
+[data-bs-theme="dark"] .lev-tab.active { color: #a78bfa; border-bottom-color: #a78bfa; }
+[data-bs-theme="dark"] .lev-tab.active .lev-tab-count { background: rgba(167,139,250,.20); color: #ede9fe; }
 [data-bs-theme="dark"] .lev-body { background: #0b1220; }
 [data-bs-theme="dark"] .lev-section-card { background: rgba(124,58,237,.10); border-color: rgba(167,139,250,.30); }
 [data-bs-theme="dark"] .lev-section-title { color: #f1f5f9; }
@@ -673,16 +644,16 @@ const LEV_CSS = `
 [data-bs-theme="dark"] .lev-section-count .num { color: #c4b5fd; }
 [data-bs-theme="dark"] .lev-table-card { background: #0f172a; border-color: rgba(148,163,184,.18); }
 [data-bs-theme="dark"] .lev-doc-table td { color: #e2e8f0; border-bottom-color: rgba(148,163,184,.14); }
-[data-bs-theme="dark"] .lev-doc-table tbody tr:hover td { background: rgba(56,189,248,.08); }
+[data-bs-theme="dark"] .lev-doc-table tbody tr:hover td { background: rgba(167,139,250,.08); }
 [data-bs-theme="dark"] .lev-doc-name { color: #f8fafc; }
-[data-bs-theme="dark"] .lev-doc-license { color: #7dd3fc; }
+[data-bs-theme="dark"] .lev-doc-license { color: #c4b5fd; }
 [data-bs-theme="dark"] .lev-footer { background: #0f172a; border-top-color: rgba(148,163,184,.18); }
 [data-bs-theme="dark"] .lev-footer-info { color: #94a3b8; }
 [data-bs-theme="dark"] .lev-footer-info strong { color: #e2e8f0; }
 [data-bs-theme="dark"] .lev-footer-btn.outline { background: #1e293b; border-color: rgba(148,163,184,.30); color: #cbd5e1; }
 [data-bs-theme="dark"] .lev-pager-info { color: #94a3b8; }
 [data-bs-theme="dark"] .lev-pager-btn, [data-bs-theme="dark"] .lev-pager-num { background: #1e293b; border-color: rgba(148,163,184,.30); color: #cbd5e1; }
-[data-bs-theme="dark"] .lev-pager-num.active { background: linear-gradient(135deg, #0284c7 0%, #0ea5e9 100%); border-color: #0284c7; color: #fff; }
+[data-bs-theme="dark"] .lev-pager-num.active { background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%); border-color: #6d28d9; color: #fff; }
 
 @media (max-width: 760px) {
   .lev-backdrop { padding: 10px; }

@@ -894,8 +894,8 @@ export default function SalesMatrixDetail() {
                 </svg>
               </div>
               <div>
-                <div className="smd-clm-group-title">KYC / DD / Trade License</div>
-                <div className="smd-clm-group-sub">View customer and consignee information</div>
+                <div className="smd-clm-group-title">Standard Documents</div>
+                <div className="smd-clm-group-sub">One Time · KYC, DD & Licenses</div>
               </div>
             </div>
 
@@ -993,8 +993,8 @@ export default function SalesMatrixDetail() {
                 </svg>
               </div>
               <div>
-                <div className="smd-clm-group-title">Segment Details</div>
-                <div className="smd-clm-group-sub">Agreements & trade documents per segment</div>
+                <div className="smd-clm-group-title">Case to Case Agreements</div>
+                <div className="smd-clm-group-sub">Per Deal · Trade Docs & Agreements</div>
               </div>
             </div>
 

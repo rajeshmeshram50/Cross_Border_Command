@@ -1260,13 +1260,19 @@ const LASM_CSS = `
 .lasm-tab.is-on { color: #6d28d9; border-bottom-color: #6d28d9; }
 .lasm-tab-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; margin-left: 7px; padding: 0 5px; border-radius: 9px; background: #e2e8f0; color: #475569; font-size: 10px; font-weight: 800; }
 .lasm-tab.is-on .lasm-tab-count { background: #ede9fe; color: #6d28d9; }
-.lasm-table-wrap { padding: 0 22px 18px; flex: 1 1 0; min-height: 0; overflow: auto; }
-.lasm-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+/* Rounded card wrapper — mirrors the Evidence Vault's .lev-table-card so the
+   table reads as a bordered, shadowed card with rounded corners. It's also the
+   scroll container, so the sticky violet header clips to the rounded top. */
+.lasm-table-wrap { margin: 16px 22px 18px; flex: 1 1 0; min-height: 0; overflow: auto;
+  background: #fff; border: 1px solid #eceef3; border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(15,23,42,.04), 0 8px 18px rgba(15,23,42,.05); }
+.lasm-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
 /* Header row matches the popup's violet header — a flat fill so every column
    reads as one continuous bar (a per-cell gradient would segment). */
-.lasm-table thead th { position: sticky; top: 0; z-index: 1; text-align: left; padding: 12px 12px; font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #ffffff; background: #6d28d9; border-bottom: 1.5px solid rgba(124,58,237,.45); }
-.lasm-table tbody td { padding: 12px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; color: #1e293b; }
-.lasm-table tbody tr:hover td { background: rgba(241,245,249,.4); }
+.lasm-table thead th { position: sticky; top: 0; z-index: 1; text-align: left; padding: 14px 18px; font-size: 10.5px; font-weight: 800; letter-spacing: .10em; text-transform: uppercase; white-space: nowrap; color: #fff; background: linear-gradient(180deg, #4c1d95 0%, #6d28d9 100%); }
+.lasm-table tbody td { padding: 14px 18px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; color: #1e293b; }
+.lasm-table tbody tr:last-child td { border-bottom: none; }
+.lasm-table tbody tr:hover td { background: #fafbff; }
 .lasm-empty-row { text-align: center; color: #94a3b8; padding: 22px !important; }
 .lasm-mono { font-family: 'Geist Mono', ui-monospace, monospace; color: #64748b; }
 .lasm-doc-name { font-weight: 700; color: #4c1d95; }
@@ -1416,10 +1422,13 @@ const LASM_CSS = `
   color: #c4b5fd;
   border-bottom-color: #8b5cf6;
 }
+[data-bs-theme="dark"] .lasm-table-wrap {
+  background: #1e293b; border-color: rgba(139,92,246,.22);
+  box-shadow: 0 1px 3px rgba(0,0,0,.30), 0 8px 18px rgba(0,0,0,.25);
+}
 [data-bs-theme="dark"] .lasm-table thead th {
   color: #ffffff;
-  background: #6d28d9;
-  border-bottom-color: rgba(124,58,237,.5);
+  background: linear-gradient(180deg, #4c1d95 0%, #6d28d9 100%);
 }
 [data-bs-theme="dark"] .lasm-table tbody td {
   color: #e2e8f0;
