@@ -126,8 +126,22 @@ export function MasterDatePicker({
   // years`; picking a value walks back down the chain.
   const [view, setView] = useState<'days' | 'months' | 'years'>('days');
   // Reset to the day grid every time the popup re-opens so the user always
-  // starts on the familiar day picker.
-  useEffect(() => { if (open) setView('days'); }, [open]);
+  // starts on the familiar day picker. Also re-anchor the month view on the
+  // selected date (or today): browsing to a far month and closing WITHOUT
+  // picking a date used to leave the calendar stranded on that month, so
+  // reopening showed e.g. "February 2023" while the field held a 2026 date
+  // (the value-sync effect below only fires when currentValue *changes*).
+  useEffect(() => {
+    if (!open) return;
+    setView('days');
+    setViewDate(
+      currentValue ? new Date(currentValue)
+        : maxDate ? new Date(maxDate)
+        : minDate ? new Date(minDate)
+        : new Date()
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   // Year grid spans 12 years anchored on the current view year.
   const yearBlockStart = Math.floor(year / 12) * 12;

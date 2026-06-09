@@ -574,6 +574,15 @@
   background: #d3f0ee; color: #0a716a;
   font-size: 11.5px; font-weight: 600;
 }
+/* Dark-mode variants — the QUOTA / END OF YEAR status pills kept their
+   light pastel fills in dark mode. Rebuild a translucent tinted chip so
+   each keeps its colour identity (red = not setup, teal = configured). */
+[data-bs-theme="dark"] .lp-status-todo {
+  background: rgba(220, 38, 38, 0.18); color: #fca5a5;
+}
+[data-bs-theme="dark"] .lp-status-ok {
+  background: rgba(16, 185, 129, 0.18); color: #6ee7b7;
+}
 .lp-setup-btn {
   padding: 6px 18px; border-radius: 8px;
   background: linear-gradient(135deg, #7c5cfc, #5a3fd1);
@@ -649,6 +658,12 @@
 [data-bs-theme="dark"] .lp-field-input {
   background: var(--vz-secondary-bg); border-color: var(--vz-border-color);
 }
+/* Native <select> option popup follows color-scheme — dark mode otherwise
+   opened a light popup with washed-out options (Leave Balances filters). */
+[data-bs-theme="dark"] select.lp-field-input { color-scheme: dark; }
+[data-bs-theme="dark"] select.lp-field-input option {
+  background-color: #1a1d21; color: #e5e7eb;
+}
 
 .lp-radio-card {
   display: flex; align-items: flex-start; gap: 10px;
@@ -676,6 +691,24 @@
   cursor: pointer;
 }
 .lp-checkbox-row input[type="checkbox"] { accent-color: #7c5cfc; }
+/* Velzon's .form-check-input defaults to the blue primary when checked and
+   ignores accent-color, so these read blue against the module's purple
+   theme. Repaint them purple (scoped to lp-checkbox-row so recruitment
+   forms sharing rec-form-modal are unaffected). Also bump the box size a
+   touch so it's easier to see / tap. */
+.lp-checkbox-row .form-check-input {
+  width: 18px; height: 18px;
+  margin-top: 0;
+  cursor: pointer;
+}
+.lp-checkbox-row .form-check-input:checked {
+  background-color: #7c5cfc;
+  border-color: #7c5cfc;
+}
+.lp-checkbox-row .form-check-input:focus {
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 3px rgba(124, 92, 252, 0.15);
+}
 
 .lp-toggle-row {
   display: flex; align-items: center; justify-content: space-between;
@@ -748,14 +781,33 @@
   padding: 2px 8px; border-radius: 999px;
   background: #d3f0ee; color: #0a716a;
 }
+[data-bs-theme="dark"] .alt-existing-pill {
+  background: rgba(16, 185, 129, 0.18); color: #6ee7b7;
+}
 .alt-info-icon {
   font-size: 16px;
   color: var(--vz-secondary-color, #9ca3af);
   flex-shrink: 0;
+  cursor: help;
 }
 [data-bs-theme="dark"] .alt-row {
   background: var(--vz-secondary-bg);
   border-color: var(--vz-border-color);
+}
+/* Selected / already-added rows — tint derived from the category accent
+   (--alt-accent set inline). Light-mode pastel fills used to be hardcoded
+   inline and stayed light in dark mode; CSS now re-derives the fill per
+   theme so the selected state reads coherent in both. */
+.alt-row.is-selected {
+  border-color: var(--alt-accent, #7c5cfc) !important;
+  background: color-mix(in srgb, var(--alt-accent, #7c5cfc) 10%, #fff);
+}
+[data-bs-theme="dark"] .alt-row.is-selected {
+  background: color-mix(in srgb, var(--alt-accent, #7c5cfc) 20%, transparent);
+}
+/* Category-accented checkbox keeps its tint readable on the dark row. */
+[data-bs-theme="dark"] .alt-row input[type="checkbox"] {
+  filter: brightness(1.15);
 }
 
 
@@ -810,6 +862,14 @@
 .lts-icon-btn:hover { background: #e5e7eb; color: #111827; }
 .lts-icon-btn i { font-size: 17px; }
 [data-bs-theme="dark"] .lts-icon-btn { background: var(--vz-secondary-bg); }
+/* Dark-mode hover — the light-mode hover set a dark icon colour (#111827)
+   while the dark background rule above kept the box dark, so on hover the X
+   became a dark glyph on a dark box (invisible). Use a light tint + white
+   glyph so it stays clearly visible. */
+[data-bs-theme="dark"] .lts-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
 
 .lts-body {
   flex: 1; min-height: 0;
@@ -841,13 +901,27 @@
   cursor: pointer; transition: all .15s ease;
   margin-bottom: 4px;
 }
-.lts-side-item:hover { background: #f3f4f6; }
+.lts-side-item:hover:not(.is-active) { background: #f3f4f6; }
+/* Dark-mode hover — the light #f3f4f6 hover made the sidebar item flash a
+   white block in dark mode when hovered/selected. Use a translucent tint
+   instead (and scope off the active item so it keeps its purple). */
+[data-bs-theme="dark"] .lts-side-item:hover:not(.is-active) {
+  background: var(--vz-secondary-bg);
+}
 .lts-side-item.is-active { background: #f3eeff; font-weight: 700; }
 [data-bs-theme="dark"] .lts-side-item.is-active { background: rgba(124, 92, 252, 0.15); }
 .lts-side-icon {
   width: 28px; height: 28px; border-radius: 8px;
   display: inline-flex; align-items: center; justify-content: center;
   flex-shrink: 0;
+  /* Inactive default — active state sets its own tone inline. The light
+     fill used to be hardcoded inline and stayed light in dark mode. */
+  background: #f3f4f6;
+  color: #6b7280;
+}
+[data-bs-theme="dark"] .lts-side-icon {
+  background: var(--vz-secondary-bg);
+  color: var(--vz-secondary-color);
 }
 .lts-side-icon i { font-size: 14px; }
 .lts-main { padding: 20px 24px; overflow-y: auto; }
@@ -873,6 +947,13 @@
   display: inline-flex; align-items: center; justify-content: center;
 }
 .lts-card-icon i { font-size: 16px; color: #6b7280; }
+/* The pastel icon fill (passed inline as --lts-ic) read as a bright light
+   block in dark mode. Re-derive a low-alpha tint from the same accent and
+   lighten the glyph so the card heading stays on-theme. */
+[data-bs-theme="dark"] .lts-card-icon {
+  background: color-mix(in srgb, var(--lts-ic, #7c5cfc) 26%, transparent) !important;
+}
+[data-bs-theme="dark"] .lts-card-icon i { color: #e5e7eb; }
 .lts-card-body { padding: 16px 18px; }
 
 .lts-input {
@@ -891,6 +972,12 @@
 .lts-input:disabled { opacity: 0.55; cursor: not-allowed; }
 [data-bs-theme="dark"] .lts-input {
   background: var(--vz-secondary-bg); border-color: var(--vz-border-color);
+}
+/* Native <select> option popup follows color-scheme — make it dark so the
+   options aren't washed-out light-on-light in dark mode. */
+[data-bs-theme="dark"] select.lts-input { color-scheme: dark; }
+[data-bs-theme="dark"] select.lts-input option {
+  background-color: #1a1d21; color: #e5e7eb;
 }
 /* Auto-skip rule box — colours moved off the inline style so the wrapper
    follows the active theme (HRMS-BUG-134: white background in dark mode). */
@@ -1009,6 +1096,49 @@
   padding: 3px 10px; border-radius: 999px;
   background: #ddd0ff; color: #5a3fd1;
   font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+}
+[data-bs-theme="dark"] .lts-level-pill {
+  background: rgba(124, 92, 252, 0.22); color: #c4b5fd;
+}
+/* Approver-kind pill — accent (--kp-bg / --kp-fg) arrives inline. Light
+   pastel fills stayed light in dark mode; dark mode rebuilds the chip from
+   the vivid foreground so each kind keeps its colour identity. */
+.lts-kind-pill {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+  background: var(--kp-bg, #ece6ff); color: var(--kp-fg, #5a3fd1);
+}
+[data-bs-theme="dark"] .lts-kind-pill {
+  background: color-mix(in srgb, var(--kp-fg, #7c5cfc) 22%, transparent);
+  color: color-mix(in srgb, var(--kp-fg, #7c5cfc) 55%, #ffffff);
+}
+
+/* Config-modal checkboxes — Velzon's .form-check-input defaults to the blue
+   primary when checked and doesn't honour accent-color. Repaint to the
+   module's purple in both themes, bump the size a touch, and give the
+   unchecked box a clearly visible border (the default dark border was too
+   faint to read against the modal). */
+.lts-shell .form-check-input {
+  width: 17px; height: 17px;
+  margin-top: 0.15em;
+  cursor: pointer;
+  border-width: 1.5px;
+}
+.lts-shell .form-check-input:not(:checked) {
+  border-color: #b6bcc6;
+}
+[data-bs-theme="dark"] .lts-shell .form-check-input:not(:checked) {
+  background-color: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.32);
+}
+.lts-shell .form-check-input:checked {
+  background-color: #7c5cfc;
+  border-color: #7c5cfc;
+}
+.lts-shell .form-check-input:focus {
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 3px rgba(124, 92, 252, 0.15);
 }
 .lts-assignee-row {
   display: flex; align-items: center; gap: 10px;
