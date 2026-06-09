@@ -1494,6 +1494,68 @@ const STAGE5_CSS = `
 [data-bs-theme="dark"] .s5-sum-money-row { color: #cffafe; }
 [data-bs-theme="dark"] .s5-sum-foot { background: #14102a; border-top-color: rgba(165,243,252,.18); }
 
+/* ─── Latest Quoted Price Summary popup — dark mode ───
+   Header + table head are already dark gradients; darken the body, stats
+   bar, table cells, chips and footer so the whole popup reads dark. Both
+   theme attributes covered. */
+[data-bs-theme="dark"] .s5-ps-modal,
+[data-layout-mode="dark"] .s5-ps-modal { background: #0f172a; }
+/* Stats bar */
+[data-bs-theme="dark"] .s5-ps-stats,
+[data-layout-mode="dark"] .s5-ps-stats { background: linear-gradient(90deg, #111c2e, #0e1a26, #111c2e); border-bottom-color: rgba(56,189,248,.22); }
+[data-bs-theme="dark"] .s5-ps-stat,
+[data-layout-mode="dark"] .s5-ps-stat { border-right-color: rgba(56,189,248,.16); }
+[data-bs-theme="dark"] .s5-ps-stat-tint,
+[data-layout-mode="dark"] .s5-ps-stat-tint { background: rgba(8,145,178,.12); }
+[data-bs-theme="dark"] .s5-ps-stat-red,
+[data-layout-mode="dark"] .s5-ps-stat-red { background: rgba(239,68,68,.12); }
+[data-bs-theme="dark"] .s5-ps-stat-grn,
+[data-layout-mode="dark"] .s5-ps-stat-grn { background: rgba(5,150,105,.12); }
+[data-bs-theme="dark"] .s5-ps-stat-lbl,
+[data-layout-mode="dark"] .s5-ps-stat-lbl { color: #94a3b8; }
+[data-bs-theme="dark"] .s5-ps-stat-val.c-cyan,
+[data-layout-mode="dark"] .s5-ps-stat-val.c-cyan { color: #22d3ee; }
+[data-bs-theme="dark"] .s5-ps-stat-val.c-blue,
+[data-layout-mode="dark"] .s5-ps-stat-val.c-blue { color: #38bdf8; }
+[data-bs-theme="dark"] .s5-ps-stat-val.c-green,
+[data-layout-mode="dark"] .s5-ps-stat-val.c-green { color: #34d399; }
+[data-bs-theme="dark"] .s5-ps-stat-val.c-red,
+[data-layout-mode="dark"] .s5-ps-stat-val.c-red { color: #f87171; }
+/* Table body */
+[data-bs-theme="dark"] .s5-ps-table tbody td,
+[data-layout-mode="dark"] .s5-ps-table tbody td { color: #e2e8f0; border-bottom-color: rgba(255,255,255,.06); }
+[data-bs-theme="dark"] .s5-ps-table tbody tr:nth-child(even),
+[data-layout-mode="dark"] .s5-ps-table tbody tr:nth-child(even) { background: rgba(255,255,255,.03); }
+[data-bs-theme="dark"] .s5-ps-table tbody tr:hover,
+[data-layout-mode="dark"] .s5-ps-table tbody tr:hover { background: rgba(8,145,178,.14); }
+[data-bs-theme="dark"] .s5-ps-empty,
+[data-layout-mode="dark"] .s5-ps-empty { color: #94a3b8; }
+[data-bs-theme="dark"] .s5-ps-sr,
+[data-layout-mode="dark"] .s5-ps-sr { background: linear-gradient(135deg, rgba(56,189,248,.18), rgba(14,165,233,.22)); color: #7dd3fc; border-color: rgba(56,189,248,.35); }
+[data-bs-theme="dark"] .s5-ps-code,
+[data-layout-mode="dark"] .s5-ps-code { background: rgba(56,189,248,.12); color: #7dd3fc; border-color: rgba(56,189,248,.30); }
+[data-bs-theme="dark"] .s5-ps-name,
+[data-layout-mode="dark"] .s5-ps-name { color: #f1f5f9; }
+[data-bs-theme="dark"] .s5-ps-date,
+[data-layout-mode="dark"] .s5-ps-date { color: #cbd5e1; }
+[data-bs-theme="dark"] .s5-ps-qty,
+[data-layout-mode="dark"] .s5-ps-qty { color: #f1f5f9; }
+[data-bs-theme="dark"] .s5-ps-target,
+[data-layout-mode="dark"] .s5-ps-target { color: #38bdf8; }
+[data-bs-theme="dark"] .s5-ps-act,
+[data-layout-mode="dark"] .s5-ps-act { background: rgba(56,189,248,.12); color: #7dd3fc; border-color: rgba(56,189,248,.28); }
+[data-bs-theme="dark"] .s5-ps-act:hover:not(:disabled),
+[data-layout-mode="dark"] .s5-ps-act:hover:not(:disabled) { background: #0891b2; color: #fff; border-color: transparent; }
+/* Footer */
+[data-bs-theme="dark"] .s5-ps-foot,
+[data-layout-mode="dark"] .s5-ps-foot { background: linear-gradient(90deg, #111c2e, #0e1a26); border-top-color: rgba(56,189,248,.18); }
+[data-bs-theme="dark"] .s5-ps-foot-note,
+[data-layout-mode="dark"] .s5-ps-foot-note { color: #94a3b8; }
+[data-bs-theme="dark"] .s5-ps-export,
+[data-layout-mode="dark"] .s5-ps-export { background: rgba(56,189,248,.10); color: #7dd3fc; border-color: rgba(56,189,248,.30); box-shadow: none; }
+[data-bs-theme="dark"] .s5-ps-export:hover:not(:disabled),
+[data-layout-mode="dark"] .s5-ps-export:hover:not(:disabled) { background: linear-gradient(135deg, #0891b2, #0e7490); color: #fff; border-color: transparent; }
+
 @media (max-width: 820px) {
   .s5-tab-row { flex-direction: column; align-items: stretch; }
   .s5-head-right { flex-wrap: wrap; }
