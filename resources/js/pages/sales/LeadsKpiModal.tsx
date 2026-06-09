@@ -427,6 +427,34 @@ const LKM_CSS = `
 [data-bs-theme="dark"] .lkm-strong    { color: #fef3c7; }
 [data-bs-theme="dark"] .lkm-pag       { background: #1c1410; border-color: #422006; }
 [data-bs-theme="dark"] .lkm-pag-info  { background: #1f1611; color: #fde68a; border-color: #422006; }
+/* Remaining light-surfaced cell bits — badges, links, status pills and the
+   pagination controls — retuned so the whole popup reads cohesively against
+   the dark #1c1410 surface instead of flashing light-mode tints. */
+[data-bs-theme="dark"] .lkm-sr {
+  background: #2a1d10; color: #fdba74; border-color: #7c2d12;
+}
+[data-bs-theme="dark"] .lkm-type-badge {
+  background: rgba(59,130,246,.18); color: #93c5fd; border-color: rgba(59,130,246,.40);
+}
+[data-bs-theme="dark"] .lkm-opp { color: #a5b4fc; }
+[data-bs-theme="dark"] .lkm-na  { color: #78716c; }
+[data-bs-theme="dark"] .lkm-status   { color: #a8a29e; }
+[data-bs-theme="dark"] .lkm-status-q {
+  background: rgba(22,163,74,.18); color: #86efac; border-color: rgba(34,197,94,.40);
+}
+[data-bs-theme="dark"] .lkm-status-d {
+  background: rgba(220,38,38,.18); color: #fca5a5; border-color: rgba(239,68,68,.40);
+}
+[data-bs-theme="dark"] .lkm-pag-info strong { color: #a5b4fc; }
+[data-bs-theme="dark"] .lkm-pag-range {
+  color: #fcd34d; background: linear-gradient(135deg, #28190e, #1f1611); border-color: #422006;
+}
+[data-bs-theme="dark"] .lkm-pag-btn {
+  background: #1f1611; border-color: #422006; color: #fcd34d;
+}
+[data-bs-theme="dark"] .lkm-pag-btn:hover:not(:disabled) {
+  background: #d97706; color: #1c1410; border-color: #d97706;
+}
 
 @media (max-width: 640px) {
   .lkm-backdrop { padding: 10px; }

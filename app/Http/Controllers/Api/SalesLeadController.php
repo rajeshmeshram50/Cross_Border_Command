@@ -87,6 +87,18 @@ class SalesLeadController extends Controller
             $q->where('qualified', true)->where('disqualified', false);
         } elseif ($status === 'disqualified') {
             $q->where('disqualified', true);
+        } elseif ($status === 'key_opportunity') {
+            // Key Opportunity Leads tab — flagged high-priority leads. The
+            // optional `deal_state` sub-tab splits them into pipeline
+            // ("in_progress", won_at still null) vs closed ("won", won_at set
+            // the first time the lead reached Victory / Stage 6).
+            $q->where('key_opportunity', true);
+            $dealState = $request->query('deal_state');
+            if ($dealState === 'in_progress') {
+                $q->whereNull('won_at');
+            } elseif ($dealState === 'won') {
+                $q->whereNotNull('won_at');
+            }
         }
         // 'all' or anything else → no status filter
 
@@ -117,13 +129,19 @@ class SalesLeadController extends Controller
             $row = $countsQ->selectRaw(
                 "COUNT(*) AS c_all,
                  SUM(CASE WHEN qualified = true AND disqualified = false THEN 1 ELSE 0 END) AS c_qual,
-                 SUM(CASE WHEN disqualified = true THEN 1 ELSE 0 END) AS c_disq"
+                 SUM(CASE WHEN disqualified = true THEN 1 ELSE 0 END) AS c_disq,
+                 SUM(CASE WHEN key_opportunity = true THEN 1 ELSE 0 END) AS c_key,
+                 SUM(CASE WHEN key_opportunity = true AND won_at IS NULL THEN 1 ELSE 0 END) AS c_key_inprogress,
+                 SUM(CASE WHEN key_opportunity = true AND won_at IS NOT NULL THEN 1 ELSE 0 END) AS c_key_won"
             )->first();
 
             $counts = [
-                'all'          => (int) ($row->c_all  ?? 0),
-                'qualified'    => (int) ($row->c_qual ?? 0),
-                'disqualified' => (int) ($row->c_disq ?? 0),
+                'all'             => (int) ($row->c_all  ?? 0),
+                'qualified'       => (int) ($row->c_qual ?? 0),
+                'disqualified'    => (int) ($row->c_disq ?? 0),
+                'key_opportunity' => (int) ($row->c_key  ?? 0),
+                'key_in_progress' => (int) ($row->c_key_inprogress ?? 0),
+                'key_won'         => (int) ($row->c_key_won ?? 0),
             ];
         }
 
