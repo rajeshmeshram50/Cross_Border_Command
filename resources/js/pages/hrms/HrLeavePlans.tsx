@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Col, Row, Modal, ModalBody, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import { MasterFormStyles } from '../master/masterFormKit';
@@ -8,6 +8,7 @@ import '../employee-onboarding/HrEmployeeOnboarding.css';
 import { leavePlansApi, leaveTypesApi, leaveBalancesApi, ApiLeavePlan, ApiLeaveType, ApiPlanEmployee, ApiLeaveBalancesResponse } from './leavePlansApi';
 import EmployeePicker, { PickedEmployee } from '../../components/ui/EmployeePicker';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -284,6 +285,7 @@ function apiTypeToCatalog(api: ApiLeaveType): CatalogType {
     initials: (api.short_code || api.name).slice(0, 3).toUpperCase(),
     bg: tone.bg,
     fg: tone.fg,
+    accent: tone.color,
     group: api.type === 'Incident Based Leave' ? 'incidental' : 'regular',
   };
 }
@@ -395,6 +397,7 @@ export default function HrLeavePlans() {
   // separate leaf). A view-only grant must not expose create / edit / delete
   // of plans or types. Super admin bypasses.
   const { user } = useAuth();
+  const toast = useToast();
   const isSuperAdmin = user?.user_type === 'super_admin';
   const leavePerm = user?.permissions?.['hr.leave'];
   const canAdd    = isSuperAdmin || !!leavePerm?.can_add;
@@ -482,7 +485,7 @@ export default function HrLeavePlans() {
   // for quota_summary / eoy_summary lives on the pivot row, so a refetch
   // keeps the Configuration table consistent with the backend.
   // ──────────────────────────────────────────────────────────────────────
-  const onSaveLeaveType = async (t: Omit<CatalogType, 'id' | 'initials' | 'bg' | 'fg'>) => {
+  const onSaveLeaveType = async (t: Omit<CatalogType, 'id' | 'initials' | 'bg' | 'fg' | 'accent'>) => {
     const apiType = (() => {
       if (t.type === 'Compensatory offs') return 'Compoff' as const;
       if (t.type === 'Incident based') return 'Incident Based Leave' as const;
@@ -496,6 +499,7 @@ export default function HrLeavePlans() {
       paid_unpaid: t.isPaid,
       status: 'Active',
     };
+    const isEdit = !!editingTypeId;
     try {
       if (editingTypeId) {
         await leaveTypesApi.update(Number(editingTypeId), payload);
@@ -503,8 +507,14 @@ export default function HrLeavePlans() {
         await leaveTypesApi.create(payload);
       }
       await loadCatalog();
-    } catch (err) {
+      toast.success(
+        isEdit ? 'Leave type updated' : 'Leave type added',
+        `"${t.name}" has been saved.`,
+      );
+    } catch (err: any) {
       console.error('[HrLeavePlans] save leave type failed', err);
+      const msg = err?.response?.data?.message || err?.message || 'Please try again.';
+      toast.error(isEdit ? 'Could not update leave type' : 'Could not add leave type', msg);
     } finally {
       setShowAddType(false);
       setEditingTypeId(null);
@@ -1022,6 +1032,7 @@ type CatalogType = {
   initials: string;        // small badge text (e.g. SL)
   bg: string;
   fg: string;
+  accent: string;          // vivid mid-tone — used for the dark-theme badge
   group: 'regular' | 'incidental';
 };
 
@@ -1053,7 +1064,8 @@ function LeaveTypesTab({
         <button
           type="button"
           onClick={onShowGuide}
-          style={{ background: 'none', border: 'none', padding: 0, color: '#0c63b0', textDecoration: 'underline', fontWeight: 600, cursor: 'pointer' }}
+          className="lp-banner-link"
+          style={{ background: 'none', border: 'none', padding: 0, textDecoration: 'underline', fontWeight: 600, cursor: 'pointer' }}
         >
           Here's a quick guide to get you started!
         </button>
@@ -1124,24 +1136,18 @@ function CatalogRow({
     <tr>
       <td>
         <div className="d-flex align-items-center gap-2">
-          <span className="lp-code-pill" style={{ background: t.bg, color: t.fg }}>{t.initials}</span>
+          <span className="lp-code-pill" style={{ ['--pill-bg' as string]: t.bg, ['--pill-fg' as string]: t.fg, ['--pill-accent' as string]: t.accent } as CSSProperties}>{t.initials}</span>
           <span className="fw-semibold fs-13">{t.name}</span>
         </div>
       </td>
       <td className="fs-13 text-muted">{t.type}</td>
       <td>
-        <span
-          className="rec-pill"
-          style={{
-            background: t.isPaid === 'Paid' ? '#d3f0ee' : '#eef2f6',
-            color:      t.isPaid === 'Paid' ? '#0a716a' : '#374151',
-          }}
-        >
+        <span className={`rec-pill lp-pay-pill ${t.isPaid === 'Paid' ? 'is-paid' : 'is-unpaid'}`}>
           {t.isPaid}
         </span>
       </td>
       <td>
-        <span className="lp-code-pill" style={{ background: t.bg, color: t.fg }}>{t.code}</span>
+        <span className="lp-code-pill" style={{ ['--pill-bg' as string]: t.bg, ['--pill-fg' as string]: t.fg, ['--pill-accent' as string]: t.accent } as CSSProperties}>{t.code}</span>
       </td>
       <td style={{ textAlign: 'right' }}>
         <div className="d-flex justify-content-end gap-1">
@@ -1399,7 +1405,7 @@ function ViewLeaveTypeModal({
 
         <div className="rec-form-body" style={{ padding: '18px 22px' }}>
           <div className="d-flex align-items-center gap-2 mb-3">
-            <span className="lp-code-pill" style={{ background: t.bg, color: t.fg, fontSize: 13, padding: '4px 10px' }}>{t.initials}</span>
+            <span className="lp-code-pill" style={{ ['--pill-bg' as string]: t.bg, ['--pill-fg' as string]: t.fg, ['--pill-accent' as string]: t.accent, fontSize: 13, padding: '4px 10px' } as CSSProperties}>{t.initials}</span>
             <h5 className="fw-bold mb-0" style={{ fontSize: 16 }}>{t.name}</h5>
           </div>
 
@@ -1833,7 +1839,7 @@ function AddLeaveTypeModal({
   isOpen: boolean;
   editing: CatalogType | null;
   onClose: () => void;
-  onSave: (t: Omit<CatalogType, 'id' | 'initials' | 'bg' | 'fg'>) => void;
+  onSave: (t: Omit<CatalogType, 'id' | 'initials' | 'bg' | 'fg' | 'accent'>) => void;
 }) {
   const [name, setName]   = useState('');
   const [type, setType]   = useState<string>('Regular');
@@ -3199,8 +3205,7 @@ function SkipRuleEditor({
 
   return (
     <div className="lts-skip-rule" style={{
-      marginTop: 8, padding: '8px 10px', background: '#fafafa',
-      border: '1px dashed #d1d5db', borderRadius: 8,
+      marginTop: 8, padding: '8px 10px', borderRadius: 8,
     }}>
       <div className="d-flex align-items-center gap-2 flex-wrap">
         <span className="text-muted" style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.3 }}>

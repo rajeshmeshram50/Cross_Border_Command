@@ -530,13 +530,17 @@ export const MASTER_MODAL_CSS = `
 
   .master-modal-cancel {
     background: transparent;
-    border: 1.5px solid var(--vz-border-color);
+    /* Resting border bumped to a clearly visible grey — the themed
+       --vz-border-color was too faint to read against the modal footer
+       (HRMS-BUG-086). Hover still flips to the red treatment below. */
+    border: 1.5px solid #ced4da;
     color: var(--vz-heading-color, var(--vz-body-color));
     font-weight: 600;
     padding: 8px 22px;
     border-radius: 999px;
     transition: all .2s ease;
   }
+  [data-bs-theme="dark"] .master-modal-cancel { border-color: rgba(255,255,255,0.28); }
   .master-modal-cancel:hover {
     background: #fef2f2;
     border-color: #f87171;

@@ -1751,7 +1751,18 @@ function MasterPageInner({
           box-shadow: 0 8px 18px rgba(99,102,241,0.30);
         }
 
-        /* Search box — focus ring matches the rest of the system */
+        /* Search box — give the resting + hover border enough contrast so the
+           field is clearly distinguishable from the card background, not just
+           on focus. Scoped to the master list card so other screens'
+           search bars are untouched (HRMS-BUG-085). */
+        .master-list-card .search-box .form-control {
+          border: 1px solid #ced4da;
+          transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        .master-list-card .search-box .form-control:hover { border-color: #adb5bd; }
+        [data-bs-theme="dark"] .master-list-card .search-box .form-control { border-color: rgba(255,255,255,0.22); }
+        [data-bs-theme="dark"] .master-list-card .search-box .form-control:hover { border-color: rgba(255,255,255,0.34); }
+        /* Focus ring matches the rest of the system */
         .search-box .form-control:focus {
           border-color: rgba(99,102,241,0.45);
           box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
