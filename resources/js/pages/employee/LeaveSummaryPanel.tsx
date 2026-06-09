@@ -22,6 +22,10 @@ import { Shimmer } from '../../components/ui/Shimmer';
 // ─────────────────────────────────────────────────────────────────────────────
 interface Props {
   employeeId: string;
+  // Only the employee viewing their OWN profile may raise a leave request.
+  // HR / branch / admin users opening someone else's profile can VIEW the
+  // leave overview but the "Request Leave" action is hidden for them.
+  canRequest?: boolean;
 }
 
 const TYPE_PALETTE: Record<string, { ring: string; track: string; bg: string; fg: string }> = {
@@ -60,7 +64,7 @@ function shortDate(raw: string | null | undefined): string {
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 }
 
-export default function LeaveSummaryPanel({ employeeId }: Props) {
+export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Props) {
   const [requests, setRequests] = useState<ApiLeaveRequest[]>([]);
   const [balances, setBalances] = useState<ApiEmployeeBalanceResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -122,13 +126,18 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
       {/* ── Top action bar: Request Leave ── */}
       <div className="d-flex justify-content-between align-items-center mb-3">
         <h5 className="fw-bold mb-0" style={{ fontSize: 16 }}>Leave</h5>
-        <button
-          type="button"
-          className="rec-btn-primary"
-          onClick={() => setShowRequest(true)}
-        >
-          <i className="ri-add-line" />Request Leave
-        </button>
+        {/* Raising a leave request is self-service — only shown when the
+            logged-in user is viewing their OWN profile. Others (HR / branch /
+            admin) get a read-only view of the leave overview. */}
+        {canRequest && (
+          <button
+            type="button"
+            className="rec-btn-primary"
+            onClick={() => setShowRequest(true)}
+          >
+            <i className="ri-add-line" />Request Leave
+          </button>
+        )}
       </div>
 
       {/* ── Pending Leave Requests ── */}
