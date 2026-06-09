@@ -684,13 +684,15 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               Not Sent (draft) → Sent (awaiting) → Signed. */}
                           {(() => {
                             const st = sigByRow[`${docType}:${r.id}`]?.status;
+                            // Clean solid pill — same shape as the Document Type
+                            // badge (s5-dt2), just colour-coded by signature state.
                             if (st === 'completed') {
-                              return <span className="s5-st-live"><span className="s5-st-dot" />Signed</span>;
+                              return <span className="s5-st-badge s5-st-signed">Signed</span>;
                             }
                             if (st === 'inprogress') {
-                              return <span className="s5-st-live" style={{ background: '#fef9c3', color: '#854d0e', borderColor: '#fde68a' }}><span className="s5-st-dot" style={{ background: '#d97706' }} />Sent</span>;
+                              return <span className="s5-st-badge s5-st-sent">Sent</span>;
                             }
-                            return <span className="s5-st-live" style={{ background: '#f1f5f9', color: '#64748b', borderColor: '#e2e8f0' }}><span className="s5-st-dot" style={{ background: '#94a3b8' }} />Not Sent</span>;
+                            return <span className="s5-st-badge s5-st-notsent">Not Sent</span>;
                           })()}
                         </td>
                       )}
@@ -1360,6 +1362,12 @@ const STAGE5_CSS = `
 .s5-val2 { font-weight: 800; color: #059669; font-size: 12px; font-family: ui-monospace, monospace; }
 .s5-st-live { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 9.5px; font-weight: 700; background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; white-space: nowrap; }
 .s5-st-dot { width: 5px; height: 5px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 4px rgba(34,197,94,.8); }
+/* Status badge — clean solid pill matching the Document Type badge (s5-dt2),
+   colour-coded by signature state (no live dot). */
+.s5-st-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 9.5px; font-weight: 700; white-space: nowrap; }
+.s5-st-signed  { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+.s5-st-sent    { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
+.s5-st-notsent { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
 
 /* ─── Action cell ─── */
 .s5-acts { display: flex; align-items: center; justify-content: flex-end; gap: 5px; flex-wrap: nowrap; }
@@ -1374,23 +1382,26 @@ const STAGE5_CSS = `
 .s5-convert2:hover:not(:disabled) { background: linear-gradient(135deg, #6d28d9, #4c1d95); box-shadow: 0 4px 12px rgba(124,58,237,.45); transform: translateY(-1px); }
 .s5-convert2:disabled { opacity: .55; cursor: not-allowed; }
 .s5-converted-chip { display: inline-flex; align-items: center; padding: 4px 11px; border-radius: 20px; font-size: 9.5px; font-weight: 800; background: #ede9fe; color: #6d28d9; border: 1px solid #ddd6fe; white-space: nowrap; }
+/* All action icon buttons (view, reminder, email, edit, more, delete) share
+   ONE neutral resting style so the row reads as a tidy, uniform toolbar. Each
+   variant only contributes its accent colour on hover. */
 .s5-icn {
   width: 28px; height: 28px; border-radius: 7px; cursor: pointer; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
-  border: 1.5px solid; transition: all .15s;
+  border: 1.5px solid #e2e8f0; background: #f8fafc; color: #64748b;
+  transition: all .15s;
 }
 .s5-icn:disabled { opacity: .5; cursor: not-allowed; }
+/* Default neutral hover — applies to the plain buttons (view / reminder) and
+   any variant that doesn't define its own accent. */
+.s5-icn:hover:not(:disabled):not(.s5-icn-cooling) { background: #475569; color: #fff; border-color: transparent; transform: translateY(-1px); }
 /* Rate-limit cooldown — dimmed disabled LOOK but still clickable so the
    click surfaces the "please wait" toast. No hover lift while cooling. */
 .s5-icn-cooling { opacity: .45; cursor: not-allowed; }
 .s5-icn-cooling:hover { transform: none !important; }
-.s5-icn-mail { background: #eff6ff; border-color: #bfdbfe; color: #3b82f6; }
 .s5-icn-mail:hover:not(:disabled):not(.s5-icn-cooling) { background: #3b82f6; color: #fff; border-color: transparent; transform: translateY(-1px); }
-.s5-icn-edit { background: #f0fdf4; border-color: #bbf7d0; color: #16a34a; }
 .s5-icn-edit:hover:not(:disabled) { background: #16a34a; color: #fff; border-color: transparent; transform: translateY(-1px); }
-.s5-icn-more { background: #f8fafc; border-color: #e2e8f0; color: #64748b; }
 .s5-icn-more:hover:not(:disabled) { background: #475569; color: #fff; border-color: transparent; }
-.s5-icn-del { background: #fff1f2; border-color: #fecaca; color: #ef4444; }
 .s5-icn-del:hover:not(:disabled) { background: #ef4444; color: #fff; border-color: transparent; transform: translateY(-1px); }
 
 /* ─── More Actions menu (portal) ─── */
@@ -1536,6 +1547,13 @@ const STAGE5_CSS = `
 [data-bs-theme="dark"] .s5-dt2 { background: rgba(59,130,246,.18); color: #93c5fd; border-color: rgba(59,130,246,.35); }
 [data-bs-theme="dark"] .s5-cf { background: rgba(56,189,248,.15); color: #7dd3fc; border-color: rgba(56,189,248,.35); }
 [data-bs-theme="dark"] .s5-st-live { background: rgba(34,197,94,.18); color: #86efac; border-color: rgba(34,197,94,.35); }
+/* Status badge (clean pill) — dark, colour-coded by state. */
+[data-bs-theme="dark"] .s5-st-signed,  [data-layout-mode="dark"] .s5-st-signed  { background: rgba(34,197,94,.18);  color: #86efac; border-color: rgba(34,197,94,.35); }
+[data-bs-theme="dark"] .s5-st-sent,    [data-layout-mode="dark"] .s5-st-sent    { background: rgba(234,179,8,.18);   color: #fde047; border-color: rgba(234,179,8,.35); }
+[data-bs-theme="dark"] .s5-st-notsent, [data-layout-mode="dark"] .s5-st-notsent { background: rgba(148,163,184,.16); color: #cbd5e1; border-color: rgba(148,163,184,.30); }
+/* Uniform action icons — dark neutral resting surface (hover accents already
+   work on dark). */
+[data-bs-theme="dark"] .s5-icn, [data-layout-mode="dark"] .s5-icn { background: rgba(148,163,184,.12); border-color: rgba(148,163,184,.28); color: #cbd5e1; }
 [data-bs-theme="dark"] .s5-converted-chip { background: rgba(139,92,246,.20); color: #c4b5fd; border-color: rgba(139,92,246,.35); }
 [data-bs-theme="dark"] .s5-menu { background: #14102a; border-color: rgba(124,58,237,.35); }
 [data-bs-theme="dark"] .s5-menu-head { border-bottom-color: rgba(167,139,250,.18); }
