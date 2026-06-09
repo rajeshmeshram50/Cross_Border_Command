@@ -1212,15 +1212,17 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
 
 function StatusPill({ status }: { status: string }) {
   const s = status.toLowerCase();
+  // Class-based (not inline) so dark mode can re-tint — inline styles would
+  // win over the [data-bs-theme="dark"] rules.
   const tone =
-      s === 'completed'  ? { bg: '#d1fae5', fg: '#047857', mark: '✓', label: 'Signed' }
-    : s === 'inprogress' ? { bg: '#dbeafe', fg: '#1e40af', mark: '◔', label: 'In Progress' }
-    : s === 'declined'   ? { bg: '#fee2e2', fg: '#b91c1c', mark: '✕', label: 'Declined' }
-    : s === 'recalled'   ? { bg: '#fef3c7', fg: '#92400e', mark: '⤺', label: 'Recalled' }
-    : s === 'expired'    ? { bg: '#f3e8ff', fg: '#6b21a8', mark: '⌛', label: 'Expired' }
-    :                      { bg: '#e2e8f0', fg: '#475569', mark: '●', label: 'Draft' };
+      s === 'completed'  ? { cls: 'lasm-st-signed',   mark: '✓', label: 'Signed' }
+    : s === 'inprogress' ? { cls: 'lasm-st-progress', mark: '◔', label: 'In Progress' }
+    : s === 'declined'   ? { cls: 'lasm-st-declined', mark: '✕', label: 'Declined' }
+    : s === 'recalled'   ? { cls: 'lasm-st-recalled', mark: '⤺', label: 'Recalled' }
+    : s === 'expired'    ? { cls: 'lasm-st-expired',  mark: '⌛', label: 'Expired' }
+    :                      { cls: 'lasm-st-draft',    mark: '●', label: 'Draft' };
   return (
-    <span className="lasm-status-pill" style={{ background: tone.bg, color: tone.fg }}>
+    <span className={`lasm-status-pill ${tone.cls}`}>
       {tone.mark} {tone.label}
     </span>
   );
@@ -1339,6 +1341,12 @@ const LASM_CSS = `
 .lasm-td-file:hover { text-decoration: underline; }
 .lasm-td-dash { color: #cbd5e1; }
 .lasm-status-pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 700; }
+.lasm-st-signed   { background: #d1fae5; color: #047857; }
+.lasm-st-progress { background: #dbeafe; color: #1e40af; }
+.lasm-st-declined { background: #fee2e2; color: #b91c1c; }
+.lasm-st-recalled { background: #fef3c7; color: #92400e; }
+.lasm-st-expired  { background: #f3e8ff; color: #6b21a8; }
+.lasm-st-draft    { background: #e2e8f0; color: #475569; }
 .lasm-actions { display: inline-flex; gap: 6px; align-items: center; }
 .lasm-btn-send { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px;
   background: linear-gradient(135deg,#8b5cf6,#6d28d9); color: #fff; border: none; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; }
@@ -1431,6 +1439,12 @@ const LASM_CSS = `
 [data-bs-theme="dark"] .lasm-pill-opt {
   background: rgba(245,158,11,.20); color: #fcd34d;
 }
+[data-bs-theme="dark"] .lasm-st-signed   { background: rgba(16,185,129,.18); color: #6ee7b7; }
+[data-bs-theme="dark"] .lasm-st-progress { background: rgba(59,130,246,.20); color: #93c5fd; }
+[data-bs-theme="dark"] .lasm-st-declined { background: rgba(239,68,68,.18);  color: #fca5a5; }
+[data-bs-theme="dark"] .lasm-st-recalled { background: rgba(245,158,11,.18); color: #fde68a; }
+[data-bs-theme="dark"] .lasm-st-expired  { background: rgba(168,85,247,.22); color: #d8b4fe; }
+[data-bs-theme="dark"] .lasm-st-draft    { background: rgba(148,163,184,.20); color: #cbd5e1; }
 [data-bs-theme="dark"] .lasm-tier-tabs { background: rgba(30,41,59,.55); border-color: rgba(148,163,184,.18); }
 [data-bs-theme="dark"] .lasm-tier-tab { color: #cbd5e1; }
 [data-bs-theme="dark"] .lasm-tier-tab:hover { background: rgba(148,163,184,.12); }

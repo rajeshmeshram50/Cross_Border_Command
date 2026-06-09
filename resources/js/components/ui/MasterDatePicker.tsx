@@ -53,7 +53,8 @@ export function MasterDatePicker({
       const popupH = 320;   // approx — used only to decide flip-above
       // Clamp horizontally so the calendar never spills off the right edge.
       // Critical inside right-side drawers (e.g. Request Leave) where the
-      // field sits near the screen edge and the popup would overflow.
+      // field sits near the screen edge and the popup would overflow — this
+      // is what kept the Saturday column on-screen (HRMS-BUG-088).
       let left = rect.left;
       if (left + popupW + margin > window.innerWidth) {
         left = Math.max(margin, window.innerWidth - popupW - margin);
