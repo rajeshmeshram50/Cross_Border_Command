@@ -90,7 +90,7 @@ export default function CustomFieldModal(props: {
           animation: cfm-fade .18s ease both;
         }
         .cfm-popup {
-          width: 100%; max-width: 560px; background: #fff; border-radius: 16px;
+          width: 100%; max-width: 640px; background: #fff; border-radius: 16px;
           overflow: hidden; box-shadow: 0 25px 60px rgba(0,0,0,0.25);
           animation: cfm-pop .22s cubic-bezier(.22,1,.36,1) both;
         }
@@ -186,10 +186,12 @@ export default function CustomFieldModal(props: {
         [data-layout-mode="dark"] .cfm-cancel:hover { background: rgba(255,255,255,0.10) !important; }
       `}</style>
 
-      <div className="cfm-overlay" onClick={onClose}>
+      {/* Backdrop click does NOT dismiss — this form collects input that's
+          easy to lose on a stray click. Close only via the × / Cancel button. */}
+      <div className="cfm-overlay">
         <div className="cfm-popup" onClick={e => e.stopPropagation()}>
           {/* Gradient header */}
-          <div style={{ padding: '16px 22px', background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 60%,#a855f7 100%)', display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ padding: '13px 22px', background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 60%,#a855f7 100%)', display: 'flex', alignItems: 'center', gap: 14, userSelect: 'none', cursor: 'default' }}>
             <span style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(255,255,255,0.22)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
               <i className="ri-star-fill" style={{ fontSize: 22, color: '#fff' }} />
             </span>
@@ -204,7 +206,7 @@ export default function CustomFieldModal(props: {
           </div>
 
           {/* Body */}
-          <div className="cfm-body" style={{ padding: 22 }}>
+          <div className="cfm-body" style={{ padding: '16px 22px' }}>
             <div className="mb-3">
               <label className="cfm-label" style={fieldLabel}>Field Name <span style={req}>*</span></label>
               <input type="text" value={name} onChange={e => setName(e.target.value)}
