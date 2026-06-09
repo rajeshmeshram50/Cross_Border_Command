@@ -1280,6 +1280,7 @@ export default function SalesMatrixDetail() {
       <ProductDirectoryModal
         open={productDirectoryOpen}
         leadId={resolvedLeadId ?? null}
+        leadStage={furthestStage}
         onClose={() => setProductDirectoryOpen(false)}
         onAddProduct={() => {
           /* "+ New Master" inside the directory chains into the same
