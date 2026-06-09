@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\EnforcesSegmentBuyerConsignee;
 use App\Http\Controllers\Controller;
 use App\Models\Consignee;
 use App\Models\Customer;
@@ -16,6 +17,8 @@ use Illuminate\Validation\Rule;
 
 class ProformaInvoiceController extends Controller
 {
+    use EnforcesSegmentBuyerConsignee;
+
     /* ── LIST ───────────────────────────────────────────────── */
     public function index(Request $request): JsonResponse
     {
@@ -112,6 +115,15 @@ class ProformaInvoiceController extends Controller
         // DCP gate: the customer (and consignee, if mapped) must have uploaded
         // every mandatory document for their segment before a PI can be made.
         if ($block = $this->partyDocsBlockResponse($user, $data['customer_id'] ?? null, $data['consignee_id'] ?? null)) {
+            return $block;
+        }
+
+        // Segment "Buyer ≠ Consignee" guard — same rule as Quotation create.
+        if ($block = $this->segmentPartyBlockResponse(
+            (int) $user->client_id,
+            array_map(fn ($it) => $it['product_id'] ?? null, $data['items']),
+            $data['consignee_id'] ?? null,
+        )) {
             return $block;
         }
 
@@ -484,6 +496,16 @@ class ProformaInvoiceController extends Controller
         // converting a quotation to a PI must also wait for the customer /
         // consignee to upload their required documents.
         if ($block = $this->partyDocsBlockResponse($user, $qt->customer_id, $qt->consignee_id)) {
+            return $block;
+        }
+
+        // Segment "Buyer ≠ Consignee" guard — products come from the source
+        // quotation's items.
+        if ($block = $this->segmentPartyBlockResponse(
+            (int) $user->client_id,
+            $qt->items()->pluck('product_id')->all(),
+            $qt->consignee_id,
+        )) {
             return $block;
         }
 

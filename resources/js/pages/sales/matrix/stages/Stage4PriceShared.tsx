@@ -226,14 +226,11 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
       toast.warning('Open from worksheet', 'Re-enter this stage from the Lead Worksheet to save your progress.');
       return;
     }
-    /* Customer + Consignee must be mapped (via the toolbar above) before
-     * advancing to Stage 5 — Quotation/PI cannot be raised without both. */
+    /* A customer must be mapped (via the toolbar above) before advancing to
+     * Stage 5. The consignee is NOT required here — it can be picked/mapped
+     * directly in the Create Quotation form on Stage 5. */
     if (!header.customerId) {
       toast.warning('Map a customer first', 'Add a customer from the toolbar above before advancing to Stage 5.');
-      return;
-    }
-    if (!header.consigneeId) {
-      toast.warning('Map a consignee first', 'Add a consignee from the toolbar above before advancing to Stage 5.');
       return;
     }
     if (sharedRows.length === 0) {
@@ -637,7 +634,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
       {!embedded && (
       <div className="smd-stg-foot">
         <div className="smd-stg-foot-note">
-          ⚠ <strong>Note :</strong> Map a customer &amp; consignee and share at least one quoted price before advancing to Stage 5.
+          ⚠ <strong>Note :</strong> Map a customer and share at least one quoted price before advancing to Stage 5. The consignee can be set in the Create Quotation form.
         </div>
         <div className="smd-stg-btn-row">
           <button className="smd-stg-btn" onClick={onPrev} type="button">← Previous</button>
