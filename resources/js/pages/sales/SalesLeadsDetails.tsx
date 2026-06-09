@@ -508,6 +508,34 @@ const LDD_CSS = `
 [data-bs-theme="dark"] .ldd-strong       { color: #fef3c7; }
 [data-bs-theme="dark"] .ldd-pag          { background: #1c1410; border-color: #422006; }
 [data-bs-theme="dark"] .ldd-pag-info     { background: #1f1611; color: #fde68a; border-color: #422006; }
+/* Remaining light-surfaced cell bits — badges, links, status pills and the
+   pagination controls — retuned for the dark #1c1410 surface so the page
+   reads cohesively instead of flashing light-mode tints. */
+[data-bs-theme="dark"] .ldd-sr {
+  background: #2a1d10; color: #fdba74; border-color: #7c2d12;
+}
+[data-bs-theme="dark"] .ldd-type-badge {
+  background: rgba(59,130,246,.18); color: #93c5fd; border-color: rgba(59,130,246,.40);
+}
+[data-bs-theme="dark"] .ldd-opp { color: #a5b4fc; }
+[data-bs-theme="dark"] .ldd-na  { color: #78716c; }
+[data-bs-theme="dark"] .ldd-status   { color: #a8a29e; }
+[data-bs-theme="dark"] .ldd-status-q {
+  background: rgba(22,163,74,.18); color: #86efac; border-color: rgba(34,197,94,.40);
+}
+[data-bs-theme="dark"] .ldd-status-d {
+  background: rgba(220,38,38,.18); color: #fca5a5; border-color: rgba(239,68,68,.40);
+}
+[data-bs-theme="dark"] .ldd-pag-info strong { color: #a5b4fc; }
+[data-bs-theme="dark"] .ldd-pag-range {
+  color: #fcd34d; background: linear-gradient(135deg, #28190e, #1f1611); border-color: #422006;
+}
+[data-bs-theme="dark"] .ldd-pag-btn {
+  background: #1f1611; border-color: #422006; color: #fcd34d;
+}
+[data-bs-theme="dark"] .ldd-pag-btn:hover:not(:disabled) {
+  background: #d97706; color: #1c1410; border-color: #d97706;
+}
 
 /* Responsive */
 @media (max-width: 1100px) {

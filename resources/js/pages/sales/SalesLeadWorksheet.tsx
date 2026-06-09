@@ -33,7 +33,12 @@ type ServerLead = {
    * lead is fresh and lands on Stage 1; otherwise the worksheet opens the
    * matrix detail at this stage so users pick up where they left off. */
   lead_stage_id?:    number | null;
+  key_opportunity?:  boolean;
   salesperson?:      { id: number; name: string } | null;
+  /* Linked buyer entity. When a lead is mapped to a customer the worksheet
+   * shows the customer's company_name (Customer Name col) and legal_name
+   * (Company col) in preference to the raw sender_* lead text. */
+  customer?:         { id: number; company_name: string | null; legal_name: string | null } | null;
 };
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -53,7 +58,10 @@ type ServerLead = {
  * ──────────────────────────────────────────────────────────────────────── */
 
 type LeadStatus = 'qualified' | 'disqualified';
-type TabKey     = 'qualified' | 'disqualified' | 'all';
+type TabKey     = 'qualified' | 'disqualified' | 'all' | 'key_opportunity';
+/* Sub-tabs shown only under the Key Opportunity tab — splits the flagged
+ * leads into still-in-pipeline (won_at null) vs closed-won (won_at set). */
+type DealState  = 'in_progress' | 'won';
 
 type Lead = {
   id:   number;           // DB primary key — needed for /sales/leads/assign payloads
@@ -76,12 +84,22 @@ type Lead = {
   /* Saved pipeline stage — clamped to 1..6 when the user clicks into the
    * matrix detail page so they resume where they left off. */
   leadStageId: number;
+  /* High-priority flag set from the matrix detail's "Key Opportunity"
+   * action; surfaced in the list as a star badge on the Opp Id. */
+  keyOpportunity: boolean;
 };
 
 const TAB_LABELS: Record<TabKey, string> = {
-  qualified:    'Qualified Leads',
-  disqualified: 'Disqualified Leads',
-  all:          'All Leads',
+  qualified:       'Qualified Leads',
+  disqualified:    'Disqualified Leads',
+  all:             'All Leads',
+  key_opportunity: 'Key Opportunity Leads',
+};
+
+/* Sub-tab labels for the Key Opportunity view. */
+const DEAL_STATE_LABELS: Record<DealState, string> = {
+  in_progress: 'In Progress',
+  won:         'Deal Won',
 };
 
 const ROWS_PER_PAGE_OPTIONS = [10, 25, 50];
@@ -172,15 +190,19 @@ const mapServerToLead = (r: ServerLead): Lead => {
     assigned: r.salesperson?.name ?? 'Unassigned',
     salespersonId: r.salesperson?.id ?? null,
     oppId:    r.opp_code,
-    customer: r.sender_name || '—',
+    // Customer Name → linked customer.company_name (falls back to the raw
+    // lead sender name for leads not yet mapped to a customer).
+    customer: r.customer?.company_name || r.sender_name || '—',
     phone:    r.sender_mobile || '—',
     email:    r.sender_email || '—',
     product:  r.query_product_name || '—',
-    company:  r.sender_company || '—',
+    // Company → linked customer.legal_name (falls back to raw sender_company).
+    company:  r.customer?.legal_name || r.sender_company || '—',
     country:  r.sender_country_iso || '—',
     status:   r.disqualified ? 'disqualified' : 'qualified',
     whatsappStatus: r.whatsapp_status ?? null,
     leadStageId: Math.min(6, Math.max(1, Number(r.lead_stage_id) || 1)),
+    keyOpportunity: !!r.key_opportunity,
   };
 };
 
@@ -210,8 +232,15 @@ export default function SalesLeadWorksheet() {
   const [loading, setLoading]   = useState(false);
   const [total, setTotal]       = useState(0);
   const [lastPage, setLastPage] = useState(1);
-  const [counts, setCounts]     = useState<Record<TabKey, number>>({ qualified: 0, disqualified: 0, all: 0 });
+  /* Bucket counts shown in the tab pills. Keyed by string (not TabKey) so it
+   * can also carry the Key-Opportunity sub-tab counts (key_in_progress /
+   * key_won) that aren't themselves top-level tabs. */
+  const [counts, setCounts]     = useState<Record<string, number>>({
+    qualified: 0, disqualified: 0, all: 0, key_opportunity: 0, key_in_progress: 0, key_won: 0,
+  });
   const [tab, setTab]   = useState<TabKey>('qualified');
+  /* Active Key-Opportunity sub-tab; only meaningful while tab === 'key_opportunity'. */
+  const [dealState, setDealState] = useState<DealState>('in_progress');
   const [q, setQ]       = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
   const [rpp, setRpp]   = useState(10);
@@ -354,7 +383,7 @@ export default function SalesLeadWorksheet() {
   // Fetch leads from the API whenever tab / search / pagination / filters change.
   const fetchLeads = useCallback(async () => {
     const filtersSig = JSON.stringify(activeFilters);
-    const countSig = `${tab}|${debouncedQ}|${rpp}|${filtersSig}`;
+    const countSig = `${tab}|${dealState}|${debouncedQ}|${rpp}|${filtersSig}`;
     const withCounts = countSigRef.current !== countSig ? 1 : 0;
     countSigRef.current = countSig;
 
@@ -364,10 +393,12 @@ export default function SalesLeadWorksheet() {
         status: boolean;
         data: ServerLead[];
         pagination: { current_page: number; last_page: number; per_page: number; total: number };
-        counts?: Record<TabKey, number>;
+        counts?: Record<string, number>;
       }>('/sales/leads', {
         params: {
           status: tab,
+          // Sub-tab only applies to the Key Opportunity view; omitted otherwise.
+          deal_state: tab === 'key_opportunity' ? dealState : undefined,
           search: debouncedQ || undefined,
           page,
           per_page: rpp,
@@ -387,7 +418,7 @@ export default function SalesLeadWorksheet() {
     } finally {
       setLoading(false);
     }
-  }, [tab, debouncedQ, page, rpp, toast, activeFilters]);
+  }, [tab, dealState, debouncedQ, page, rpp, toast, activeFilters]);
 
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
@@ -404,6 +435,14 @@ export default function SalesLeadWorksheet() {
 
   const switchTab = (next: TabKey) => {
     setTab(next);
+    // Always land on the In Progress sub-tab when (re)entering Key Opportunity.
+    if (next === 'key_opportunity') setDealState('in_progress');
+    setPage(1);
+    setSelected(new Set());
+  };
+
+  const switchDealState = (next: DealState) => {
+    setDealState(next);
     setPage(1);
     setSelected(new Set());
   };
@@ -719,6 +758,21 @@ export default function SalesLeadWorksheet() {
         </div>
       </div>
 
+      {/* ── Key Opportunity sub-tabs — only under the Key Opportunity tab ── */}
+      {tab === 'key_opportunity' && (
+        <div className="lwp-subtabs">
+          {(Object.keys(DEAL_STATE_LABELS) as DealState[]).map(s => (
+            <div
+              key={s}
+              className={`lwp-subtab ${dealState === s ? 'active' : ''}`}
+              onClick={() => switchDealState(s)}
+            >
+              {DEAL_STATE_LABELS[s]} ({counts[s === 'in_progress' ? 'key_in_progress' : 'key_won'] ?? 0})
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Active-filter chips — one per applied field, with an inline × to
           drop just that filter. Rendered above the table so the user can
           see at a glance why the row count shrank. */}
@@ -859,10 +913,20 @@ export default function SalesLeadWorksheet() {
                       ); })()}
                     </td>
                     <td>
-                      <span
-                        className="lwp-opp-link"
-                        onClick={e => { e.stopPropagation(); onOpenOpp(l.oppId); }}
-                      >{l.oppId}</span>
+                      <span className="lwp-opp-cell">
+                        <span
+                          className="lwp-opp-link"
+                          onClick={e => { e.stopPropagation(); onOpenOpp(l.oppId); }}
+                        >{l.oppId}</span>
+                        {l.keyOpportunity && (
+                          <Tooltip label="Key Opportunity">
+                            <svg className="lwp-key-star" viewBox="0 0 24 24" width="14" height="14"
+                                 fill="currentColor" aria-label="Key Opportunity" role="img">
+                              <path d="M12 2l2.95 5.98 6.6.96-4.78 4.66 1.13 6.57L12 17.98 6.1 20.17l1.13-6.57L2.45 8.94l6.6-.96L12 2z" />
+                            </svg>
+                          </Tooltip>
+                        )}
+                      </span>
                     </td>
                     <td>
                       <Tooltip label={l.customer} disabled={!l.customer}>
@@ -1446,6 +1510,41 @@ const SCOPED_CSS = `
   box-shadow: 0 3px 12px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset;
   border-radius: 8px;
 }
+
+/* ─── Key Opportunity sub-tabs ───────────────────────────────────────
+ * Secondary strip shown only under the Key Opportunity tab. Amber tonal
+ * family (echoes the key-opportunity star) so it reads as a child of the
+ * cyan primary tabs rather than a competing peer. */
+.lwp-root .lwp-subtabs {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: linear-gradient(110deg, #fffbeb 0%, #fef3c7 60%, #fde68a 100%);
+  padding: 4px; border-radius: 10px;
+  border: 1.5px solid #fcd34d;
+  box-shadow: 0 2px 8px rgba(217,119,6,.12);
+  margin-bottom: 8px; flex-shrink: 0;
+}
+.lwp-root .lwp-subtab {
+  padding: 6px 14px; border-radius: 7px;
+  font-size: 11.5px; font-weight: 600; cursor: pointer;
+  background: transparent; color: #b45309;
+  transition: all .18s; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.lwp-root .lwp-subtab:hover { color: #92400e; background: rgba(255,255,255,.6); }
+.lwp-root .lwp-subtab.active {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 55%, #b45309 100%);
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(217,119,6,.4), 0 1px 0 rgba(255,255,255,.2) inset;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-subtabs {
+  background: linear-gradient(110deg, #1f1611 0%, #28190e 60%, #422006 100%);
+  border-color: #7c2d12;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-subtab { color: #fcd34d; }
+[data-bs-theme="dark"] .lwp-root .lwp-subtab:hover { color: #fde68a; background: rgba(0,0,0,.25); }
+[data-bs-theme="dark"] .lwp-root .lwp-subtab.active {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 55%, #b45309 100%); color: #1c1410;
+}
 .lwp-root .lwp-search {
   display: flex; align-items: center;
   background: #ffffff;
@@ -1568,8 +1667,10 @@ const SCOPED_CSS = `
 }
 
 /* ─── Row sub-elements ─── */
-.lwp-root .lwp-opp-link { color: #0891b2; font-weight: 600; cursor: pointer; display: block; text-align: center; }
+.lwp-root .lwp-opp-cell { display: inline-flex; align-items: center; justify-content: center; gap: 5px; width: 100%; }
+.lwp-root .lwp-opp-link { color: #0891b2; font-weight: 600; cursor: pointer; text-align: center; }
 .lwp-root .lwp-opp-link:hover { text-decoration: underline; color: #0e7490; }
+.lwp-root .lwp-key-star { color: #f59e0b; flex: 0 0 auto; }
 .lwp-root .lwp-cust-name { font-weight: 600; color: #0f172a; }
 .lwp-root .lwp-wa-badge {
   display: inline-flex; align-items: center; gap: 3px;

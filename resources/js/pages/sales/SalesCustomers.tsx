@@ -42,11 +42,19 @@ type Customer = {
  * themes. Each entry pairs a brand-saturated text colour with a soft
  * tinted bg + matching border so the badge feels modern rather than
  * pastel-flat. */
+/* Every entry uses an rgba tint + a mid-saturated text colour that reads on
+ * BOTH light and dark surfaces (solid hex backgrounds would glare as bright
+ * pills in dark mode). New types map here too so they don't fall through to a
+ * solid fallback. */
 const TYPE_COLORS: Record<string, { bg: string; color: string; border: string; dot: string }> = {
-  'Retailer':   { bg:'rgba(59,130,246,0.12)',  color:'#2563eb', border:'rgba(59,130,246,0.35)',  dot:'#3b82f6' },
-  'Exporter':   { bg:'rgba(34,197,94,0.12)',   color:'#16a34a', border:'rgba(34,197,94,0.35)',   dot:'#22c55e' },
-  'Reseller':   { bg:'rgba(239,68,68,0.12)',   color:'#dc2626', border:'rgba(239,68,68,0.35)',   dot:'#ef4444' },
-  'Wholesaler': { bg:'rgba(245,158,11,0.14)',  color:'#d97706', border:'rgba(245,158,11,0.38)',  dot:'#f59e0b' },
+  'Retailer':     { bg:'rgba(59,130,246,0.14)',  color:'#2563eb', border:'rgba(59,130,246,0.38)',  dot:'#3b82f6' },
+  'Exporter':     { bg:'rgba(34,197,94,0.14)',   color:'#16a34a', border:'rgba(34,197,94,0.38)',   dot:'#22c55e' },
+  'Reseller':     { bg:'rgba(239,68,68,0.14)',   color:'#dc2626', border:'rgba(239,68,68,0.38)',   dot:'#ef4444' },
+  'Wholesaler':   { bg:'rgba(245,158,11,0.16)',  color:'#d97706', border:'rgba(245,158,11,0.40)',  dot:'#f59e0b' },
+  'Manufacturer': { bg:'rgba(124,58,237,0.16)',  color:'#7c3aed', border:'rgba(124,58,237,0.40)',  dot:'#7c3aed' },
+  'Trader':       { bg:'rgba(6,182,212,0.16)',   color:'#0891b2', border:'rgba(6,182,212,0.40)',   dot:'#06b6d4' },
+  'Distributor':  { bg:'rgba(219,39,119,0.16)',  color:'#db2777', border:'rgba(219,39,119,0.40)',  dot:'#ec4899' },
+  'Importer':     { bg:'rgba(13,148,136,0.16)',  color:'#0d9488', border:'rgba(13,148,136,0.40)',  dot:'#14b8a6' },
 };
 
 const ROWS_PER_PAGE = 5;
@@ -268,7 +276,7 @@ export default function SalesCustomers() {
       cell: (info: any) => {
         const v = info.getValue() as string | null;
         if (!v) return <span className="text-muted">—</span>;
-        const t = TYPE_COLORS[v] || { bg: '#f3f0ff', color: '#6d28d9', border: '#ddd6fe', dot: '#7c3aed' };
+        const t = TYPE_COLORS[v] || { bg: 'rgba(124,58,237,0.14)', color: '#7c3aed', border: 'rgba(124,58,237,0.40)', dot: '#7c3aed' };
         return (
           <span className="smc-type-pill" style={{ background: t.bg, color: t.color, borderColor: t.border }}>
             {v}

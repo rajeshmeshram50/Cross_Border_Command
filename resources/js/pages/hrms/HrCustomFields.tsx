@@ -5,9 +5,14 @@ import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import { ShimmerTableRows } from '../../components/ui/Shimmer';
+import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import CustomFieldModal, { CustomFieldFormPayload } from './doc-templates/CustomFieldModal';
 import '../../../css/recruitment.css';
+
+// Truncate to N chars (default 30) with an ellipsis. The full value is shown
+// via the app's <Tooltip> on hover.
+const truncate = (s: string, n = 30) => (s.length > n ? s.slice(0, n) + '…' : s);
 
 // â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 type FieldType = 'text' | 'date' | 'number' | 'textarea';
@@ -120,6 +125,19 @@ export default function HrCustomFields() {
       });
   }, [rows, typeFilter, search]);
 
+  // Client-side pagination — 5 rows per page (matches the Employee list).
+  const ROWS_PER_PAGE = 5;
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ROWS_PER_PAGE));
+  useEffect(() => { setPage(1); }, [search, typeFilter, rows]);
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+  const pageRows = filtered.slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE);
+  // Only ever show TWO page buttons between the arrows — a sliding window that
+  // moves with the current page ([1][2] → next → [2][3] → [3][4] …).
+  const PAG_WINDOW = 2;
+  const pagStart = Math.min(Math.max(1, page), Math.max(1, totalPages - PAG_WINDOW + 1));
+  const visiblePages = Array.from({ length: Math.min(PAG_WINDOW, totalPages) }, (_, i) => pagStart + i);
+
   const handleSave = async (payload: CustomFieldFormPayload) => {
     try {
       if (payload.id) {
@@ -165,7 +183,7 @@ export default function HrCustomFields() {
 
   return (
     <Row>
-      <Col xs={12}>
+      <Col xs={12} className="cf-page">
         <style>{`
           /* KPI hover — lift + indigo glow, smooth transitions */
           .cf-page .cf-kpi-tile {
@@ -226,6 +244,46 @@ export default function HrCustomFields() {
           }
           [data-bs-theme="dark"] .cf-page .cf-info-banner strong,
           [data-layout-mode="dark"] .cf-page .cf-info-banner strong { color: #f5f3ff !important; }
+          [data-bs-theme="dark"] .cf-page .cf-info-icon,
+          [data-layout-mode="dark"] .cf-page .cf-info-icon { color: #c4b5fd !important; }
+          [data-bs-theme="dark"] .cf-page .cf-info-code,
+          [data-layout-mode="dark"] .cf-page .cf-info-code { background: rgba(139,92,246,0.22) !important; color: #c4b5fd !important; }
+
+          /* Uniform cell padding + middle-align so the header columns line up
+             exactly with the body columns (some cells had ad-hoc inline padding). */
+          .cf-page .cf-table th, .cf-page .cf-table td { padding: 11px 14px !important; vertical-align: middle; }
+
+          /* Search input — default form-control blended into the dark card.
+             Give it a distinct surface + visible border in both themes. */
+          .cf-page .cf-search-input { background: var(--vz-secondary-bg); border: 1px solid var(--vz-border-color); color: var(--vz-body-color); }
+          .cf-page .cf-search-input:focus { border-color: #7c5cfc; box-shadow: 0 0 0 3px rgba(124,92,252,0.16); background: var(--vz-secondary-bg); color: var(--vz-body-color); }
+          [data-bs-theme="dark"] .cf-page .cf-search-input::placeholder,
+          [data-layout-mode="dark"] .cf-page .cf-search-input::placeholder { color: #8a909c; }
+
+          /* Pagination buttons — identical to the Employee list (square 32×32). */
+          .cf-page .cf-pag-btn {
+            height: 32px; min-width: 32px; padding: 0;
+            border-radius: 8px; border: 1px solid #e0d9f7;
+            background: #fff; color: #6d28d9;
+            font-size: 12.5px; font-weight: 700; font-family: inherit;
+            display: inline-flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .22s ease;
+          }
+          .cf-page .cf-pag-btn:hover:not(:disabled):not(.is-active) { background: #f5f3ff; border-color: #c4b5fd; color: #5b21b6; }
+          .cf-page .cf-pag-btn.is-active { background: linear-gradient(135deg, #7c3aed, #6d28d9); border-color: #7c3aed; color: #fff; box-shadow: 0 2px 6px rgba(109,40,217,.30); cursor: default; }
+          .cf-page .cf-pag-btn:disabled { opacity: .4; cursor: not-allowed; }
+          [data-bs-theme="dark"] .cf-page .cf-pag-btn,
+          [data-layout-mode="dark"] .cf-page .cf-pag-btn { background: rgba(255,255,255,0.04); border-color: rgba(167,139,250,0.30); color: #c4b5fd; }
+          [data-bs-theme="dark"] .cf-page .cf-pag-btn:hover:not(:disabled):not(.is-active),
+          [data-layout-mode="dark"] .cf-page .cf-pag-btn:hover:not(:disabled):not(.is-active) { background: rgba(124,58,237,0.20); border-color: rgba(167,139,250,0.50); color: #ede9fe; }
+          [data-bs-theme="dark"] .cf-page .cf-pag-btn.is-active,
+          [data-layout-mode="dark"] .cf-page .cf-pag-btn.is-active { background: linear-gradient(135deg, #6d28d9, #4c1d95); border-color: #7c3aed; color: #fff; }
+          /* Single rotating current-page indicator (no full 1·2·3 list). */
+          .cf-page .cf-pag-current { height: 32px; min-width: 38px; padding: 0 10px; border-radius: 8px; background: linear-gradient(135deg,#7c3aed,#6d28d9); color: #fff; font-size: 12.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(109,40,217,.30); }
+          .cf-page .cf-pag-total { font-weight: 600; opacity: 0.75; margin-left: 2px; }
+          [data-bs-theme="dark"] .cf-page .cf-pag-current,
+          [data-layout-mode="dark"] .cf-page .cf-pag-current { background: linear-gradient(135deg, #6d28d9, #4c1d95); }
 
           [data-bs-theme="dark"] .cf-page .cf-table thead,
           [data-layout-mode="dark"] .cf-page .cf-table thead {
@@ -338,8 +396,8 @@ export default function HrCustomFields() {
           <Card className="mb-3 cf-filter-card" style={{ borderRadius: 12 }}>
             <CardBody className="d-flex flex-wrap gap-3 align-items-center" style={{ padding: 12 }}>
               <div style={{ position: 'relative', minWidth: 260 }}>
-                <i className="ri-search-line" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
-                <Input type="text" placeholder="Search fields…" value={search} onChange={e => setSearch(e.target.value)}
+                <i className="ri-search-line cf-search-icon" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', zIndex: 1 }} />
+                <Input type="text" className="cf-search-input" placeholder="Search fields…" value={search} onChange={e => setSearch(e.target.value)}
                   style={{ paddingLeft: 30, height: 36 }} />
               </div>
               <div className="d-flex align-items-center gap-2">
@@ -369,10 +427,10 @@ export default function HrCustomFields() {
           </Card>
 
           {/* Info banner */}
-          <div className="cf-info-banner" style={{ borderRadius: 10, background: '#f5f3ff', border: '1px solid #ddd6fe', padding: '10px 14px', marginBottom: 12, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-            <i className="ri-information-line" style={{ fontSize: 18, color: '#7c3aed', marginTop: 1 }} />
-            <div style={{ fontSize: 12.5, color: '#4c1d95', lineHeight: 1.5 }}>
-              Custom Fields are variables you define here that <strong>are not available in employee data</strong>. When a document template includes <code style={{ background: '#ede9fe', color: '#6d28d9', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>{'{{YourField}}'}</code>, the system will ask you to fill this value manually at generation time.
+          <div className="cf-info-banner" style={{ borderRadius: 10, background: '#f5f3ff', border: '1px solid #ddd6fe', padding: '10px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, color: '#4c1d95' }}>
+            <i className="ri-information-line cf-info-icon" style={{ fontSize: 18, color: '#7c3aed', flexShrink: 0 }} />
+            <div style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+              Custom Fields are variables you define here that <strong>are not available in employee data</strong>. When a document template includes <code className="cf-info-code" style={{ background: '#ede9fe', color: '#6d28d9', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>{'{{YourField}}'}</code>, the system will ask you to fill this value manually at generation time.
             </div>
           </div>
 
@@ -401,7 +459,7 @@ export default function HrCustomFields() {
                         No custom fields match these filters. Click <strong>+ Add Custom Field</strong> to create one.
                       </td></tr>
                     ) : (
-                      filtered.map((r, i) => {
+                      pageRows.map((r, i) => {
                         const tone = TYPE_TONES[r.type];
                         const used = r.used_in || [];
                         // Prefer real scan results; fall back to the user's
@@ -413,12 +471,18 @@ export default function HrCustomFields() {
                         const usedFromHint = used.length === 0 && !!r.used_in_hint;
                         return (
                           <tr key={r.id}>
-                            <td className="cf-row-num" style={{ padding: '10px 12px', color: '#6b7280' }}>{i + 1}</td>
-                            <td className="cf-row-name" style={{ fontWeight: 700, color: '#1f2937' }}>{r.name}</td>
+                            <td className="cf-row-num" style={{ padding: '10px 12px', color: '#6b7280' }}>{(page - 1) * ROWS_PER_PAGE + i + 1}</td>
+                            <td className="cf-row-name" style={{ fontWeight: 700, color: '#1f2937' }}>
+                              <Tooltip label={r.name} disabled={r.name.length <= 30}>
+                                <span style={{ cursor: 'default' }}>{truncate(r.name)}</span>
+                              </Tooltip>
+                            </td>
                             <td>
-                              <span className="cf-var-chip" style={{ display: 'inline-block', padding: '3px 9px', borderRadius: 6, fontFamily: 'monospace', fontSize: 11.5, fontWeight: 700, background: '#ede9fe', color: '#6d28d9' }}>
-                                {`{{${r.name}}}`}
-                              </span>
+                              <Tooltip label={`{{${r.name}}}`} disabled={r.name.length <= 30}>
+                                <span className="cf-var-chip" style={{ display: 'inline-block', cursor: 'default', padding: '3px 9px', borderRadius: 6, fontFamily: 'monospace', fontSize: 11.5, fontWeight: 700, background: '#ede9fe', color: '#6d28d9' }}>
+                                  {`{{${truncate(r.name)}}}`}
+                                </span>
+                              </Tooltip>
                             </td>
                             <td>
                               <span className={`cf-type-chip cf-type-${r.type}`} style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 999, background: tone.bg, color: tone.fg, fontSize: 11.5, fontWeight: 700, border: `1px solid ${tone.border}` }}>
@@ -457,6 +521,24 @@ export default function HrCustomFields() {
                   </tbody>
                 </table>
               </div>
+              {!loading && filtered.length > 0 && (
+                <div className="cf-pag-footer d-flex flex-wrap align-items-center justify-content-between gap-2" style={{ padding: '12px 16px', borderTop: '1px solid var(--vz-border-color)' }}>
+                  <span style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)' }}>
+                    Showing <strong style={{ color: 'var(--vz-body-color)' }}>{(page - 1) * ROWS_PER_PAGE + 1}</strong>–<strong style={{ color: 'var(--vz-body-color)' }}>{Math.min(page * ROWS_PER_PAGE, filtered.length)}</strong> of <strong style={{ color: 'var(--vz-body-color)' }}>{filtered.length}</strong> fields
+                  </span>
+                  <div className="d-flex align-items-center gap-1">
+                    <button type="button" className="cf-pag-btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} aria-label="Previous page">
+                      <i className="ri-arrow-left-s-line" />
+                    </button>
+                    {visiblePages.map(n => (
+                      <button key={n} type="button" className={`cf-pag-btn ${n === page ? 'is-active' : ''}`} onClick={() => setPage(n)}>{n}</button>
+                    ))}
+                    <button type="button" className="cf-pag-btn" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} aria-label="Next page">
+                      <i className="ri-arrow-right-s-line" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </CardBody>
           </Card>
         </div>
@@ -487,18 +569,18 @@ export default function HrCustomFields() {
 
 // ── Small bits ──────────────────────────────────────────────────────────────
 function ActionBtn({ icon, tone, onClick, title }: { icon: string; tone: 'info' | 'danger'; onClick: () => void; title: string }) {
-  const palette: Record<string, { bg: string; fg: string }> = {
-    info:   { bg: '#dbeafe', fg: '#1d4ed8' },
-    danger: { bg: '#fee2e2', fg: '#b91c1c' },
-  };
-  const c = palette[tone];
-  // data-tooltip uses the app's global styled tooltip (app.css) — an instant,
-  // themed bubble instead of the slow/unstyled native `title`. aria-label keeps
-  // it accessible for screen readers.
+  // Matches the shared row-action icon style (HrEmployees): theme-aware subtle
+  // square + border, muted icon, tinting to the tone colour on hover. Works in
+  // both light and dark mode via Velzon CSS variables.
   return (
-    <button type="button" onClick={onClick} data-tooltip={title} aria-label={title}
-      style={{ width: 30, height: 30, borderRadius: 8, border: 0, background: c.bg, color: c.fg, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-      <i className={icon} />
-    </button>
+    <Tooltip label={title}>
+      <button type="button" onClick={onClick} aria-label={title}
+        className="btn p-0 d-inline-flex align-items-center justify-content-center"
+        style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', color: 'var(--vz-secondary-color)', transition: 'all .15s ease' }}
+        onMouseEnter={e => { const el = e.currentTarget as HTMLButtonElement; el.style.borderColor = `var(--vz-${tone})`; el.style.color = `var(--vz-${tone})`; }}
+        onMouseLeave={e => { const el = e.currentTarget as HTMLButtonElement; el.style.borderColor = 'var(--vz-border-color)'; el.style.color = 'var(--vz-secondary-color)'; }}>
+        <i className={`${icon} fs-14`} />
+      </button>
+    </Tooltip>
   );
 }
