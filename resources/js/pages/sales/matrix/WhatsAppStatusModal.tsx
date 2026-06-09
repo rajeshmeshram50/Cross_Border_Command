@@ -45,6 +45,21 @@ export default function WhatsAppStatusModal({
   // session, so the Yes branch stops showing the old proof once cleared.
   const [removedExisting, setRemovedExisting] = useState(false);
 
+  /* Reason length bounds (only relevant on the "No" branch, where the reason
+   * is required). Max is also enforced as a hard `maxLength` on the textarea. */
+  const REASON_MIN = 5;
+  const REASON_MAX = 250;
+  const trimmedReason  = reason.trim();
+  const reasonTooShort = choice === 'no' && trimmedReason.length > 0 && trimmedReason.length < REASON_MIN;
+  const reasonTooLong  = choice === 'no' && reason.length > REASON_MAX;
+  // Invalid for submit: empty, under min, or over max.
+  const reasonInvalid  = choice === 'no' && (trimmedReason.length < REASON_MIN || reason.length > REASON_MAX);
+  const reasonError    = reasonTooShort
+    ? `Reason must be at least ${REASON_MIN} characters`
+    : reasonTooLong
+      ? `Reason must be ${REASON_MAX} characters or fewer`
+      : '';
+
   /* Pre-fill from the lead's previously saved WhatsApp status so reopening
    * the modal shows what was logged before, rather than a blank form:
    *   connected     → Yes (+ the saved screenshot is shown)
@@ -72,6 +87,10 @@ export default function WhatsAppStatusModal({
     }
     if (choice === 'no' && !reason.trim()) {
       toast.warning('Reason required', 'Specify why you didn’t communicate via WhatsApp');
+      return;
+    }
+    if (choice === 'no' && reasonInvalid) {
+      toast.warning('Invalid reason', reasonError || `Reason must be ${REASON_MIN}–${REASON_MAX} characters`);
       return;
     }
     setSaving(true);
@@ -104,6 +123,12 @@ export default function WhatsAppStatusModal({
   const showExisting = !picked && !removedExisting && !!currentScreenshot;
   const existingName = currentScreenshot ? currentScreenshot.split('/').pop() ?? 'Uploaded file' : '';
   const fileLabel = picked ? picked.name : (showExisting ? existingName : '');
+
+  /* A proof file is attached (either just-picked or a saved screenshot still
+   * shown). While it's there the lead is effectively "connected via WhatsApp",
+   * so switching to "No" makes no sense — the No option stays disabled until
+   * the user removes the file. */
+  const hasUpload = !!picked || showExisting;
 
   const clearPicked = () => {
     setPicked(null);
@@ -150,12 +175,16 @@ export default function WhatsAppStatusModal({
                 />
                 <span>Yes</span>
               </label>
-              <label className="was-radio">
+              <label
+                className={`was-radio${hasUpload ? ' was-radio-disabled' : ''}`}
+                title={hasUpload ? 'Remove the uploaded proof first to switch to No' : undefined}
+              >
                 <input
                   type="radio"
                   name="was-choice"
                   value="no"
                   checked={choice === 'no'}
+                  disabled={hasUpload}
                   onChange={() => setChoice('no')}
                 />
                 <span>No</span>
@@ -211,12 +240,17 @@ export default function WhatsAppStatusModal({
               <>
                 <div className="was-prompt">Please Specify The Reason For Not Communicating With The Customer Via WhatsApp.</div>
                 <textarea
-                  className="was-textarea"
+                  className={`was-textarea${reasonError ? ' was-textarea-error' : ''}`}
                   rows={4}
-                  placeholder="Reason For Not Communicating"
+                  placeholder={`Reason For Not Communicating (${REASON_MIN}–${REASON_MAX} characters)`}
                   value={reason}
+                  maxLength={REASON_MAX}
                   onChange={e => setReason(e.target.value)}
                 />
+                <div className="was-reason-meta">
+                  <span className="was-reason-err">{reasonError}</span>
+                  <span className="was-reason-count">{reason.length}/{REASON_MAX}</span>
+                </div>
               </>
             )}
 
@@ -231,7 +265,7 @@ export default function WhatsAppStatusModal({
           <button
             className="was-btn was-btn-primary"
             onClick={() => void onSubmit()}
-            disabled={saving || !leadId || !choice || (choice === 'no' && !reason.trim())}
+            disabled={saving || !leadId || !choice || (choice === 'no' && reasonInvalid)}
           >
             {saving ? 'Saving…' : 'Submit'}
           </button>
@@ -339,6 +373,8 @@ const WAS_CSS = `
   cursor: pointer;
   margin: 0;
 }
+.was-radio-disabled { opacity: .45; cursor: not-allowed; }
+.was-radio-disabled input[type="radio"] { cursor: not-allowed; }
 
 /* ── Conditional prompt heading ── */
 .was-prompt {
@@ -426,6 +462,16 @@ const WAS_CSS = `
   box-shadow: 0 0 0 3px rgba(16, 185, 129, .18);
 }
 .was-textarea::placeholder { color: #94a3b8; }
+.was-textarea-error { border-color: #ef4444 !important; }
+.was-textarea-error:focus { box-shadow: 0 0 0 3px rgba(239, 68, 68, .18); }
+
+/* Reason error + live character counter row under the textarea. */
+.was-reason-meta {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-top: 4px; min-height: 15px;
+}
+.was-reason-err   { font-size: 11.5px; font-weight: 600; color: #ef4444; }
+.was-reason-count { font-size: 10.5px; font-weight: 600; color: #94a3b8; margin-left: auto; }
 
 /* ── Note ── */
 .was-note {
