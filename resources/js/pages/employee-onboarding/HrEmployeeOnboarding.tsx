@@ -1649,7 +1649,11 @@ export function VaultModal({
     // which is now the WHOLE template list, so the tile was about to
     // misrepresent every matched-but-unsigned template as "signed".
     signed:   completedCount,
-    pending:  allDocs.filter(d => d.status === 'Pending' || d.status === 'Uploaded').length
+    // PENDING = only docs that are NOT yet in the vault (still 'Pending'),
+    // plus matched org templates that haven't been signed. Uploaded docs are
+    // counted under their own KPI now, so an upload moves the doc OUT of
+    // Pending and INTO Uploaded instead of sitting in both.
+    pending:  allDocs.filter(d => d.status === 'Pending').length
               + (signedTemplates.length - completedCount),
     notGen:   0,
   };
@@ -2029,6 +2033,7 @@ export function VaultModal({
                 {[
                   { key: 'total',    label: 'Total Docs',    value: counts.total,    icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
                   { key: 'verified', label: 'Verified',      value: counts.verified, icon: 'ri-checkbox-circle-fill', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
+                  { key: 'uploaded', label: 'Uploaded',      value: counts.uploaded, icon: 'ri-upload-cloud-2-line',  gradient: 'linear-gradient(135deg,#3b82f6,#60a5fa)' },
                   { key: 'signed',   label: 'Signed',        value: counts.signed,   icon: 'ri-quill-pen-line',       gradient: 'linear-gradient(135deg,#5e4dd6,#9b7dff)' },
                   { key: 'pending',  label: 'Pending',       value: counts.pending,  icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)' },
                   { key: 'notgen',   label: 'Not Generated', value: counts.notGen,   icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)' },
@@ -3201,7 +3206,7 @@ interface DocCategory { id: string; title: string; icon: string; tint: string; f
 
 const STAGE2_CATEGORIES: DocCategory[] = [
   {
-    id: 'identity', title: 'Identity Documents', icon: 'ri-id-card-line', tint: '#ece6ff', fg: '#5a3fd1',
+    id: 'identity', title: 'Identity Documents', icon: 'ri-profile-line', tint: '#ece6ff', fg: '#5a3fd1',
     docs: [
       { id: 'aadhaar',    name: 'Aadhaar Card (Front & Back)', sub: 'PDF or Image · max 2 MB', maxMb: 2, status: 'Pending' },
       { id: 'pan',        name: 'PAN Card',                    sub: 'PDF or Image · max 2 MB', maxMb: 2, status: 'Pending' },
@@ -5544,6 +5549,11 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   // Yes/No answer picked. Cleared the moment the HR makes a choice so
   // the red ring doesn't persist after they fix it.
   const [hasExperienceError, setHasExperienceError] = useState(false);
+  // Initial-load shimmer. Stage 2 fetches documents + previous-employments on
+  // mount; the UI used to render before they resolved, flashing empty/erroring
+  // state. Hold a skeleton until BOTH first fetches settle.
+  const [docsLoading, setDocsLoading] = useState(true);
+  const [prevLoading, setPrevLoading] = useState(true);
 
   // Hydrate from server every time this stage mounts for this employee.
   // The wizard unmounts the stage when the user navigates forward and
@@ -5554,7 +5564,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   // `prevCompanies.length` to the dep list isn't right either — we
   // explicitly want this to run once per mount.
   useEffect(() => {
-    if (!emp?.dbId) return;
+    if (!emp?.dbId) { setPrevLoading(false); return; }
     let cancelled = false;
     const hydrate = async () => {
       try {
@@ -5585,6 +5595,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
           _localKey:      `pc_${p.id}`,
         })));
       } catch { /* keep empty draft on error */ }
+      finally { if (!cancelled) setPrevLoading(false); }
     };
     hydrate();
     return () => { cancelled = true; };
@@ -5812,7 +5823,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   const [docsByKey, setDocsByKey] = useState<Record<string, ApiDocument>>({});
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const reloadDocs = async () => {
-    if (!emp?.dbId) return;
+    if (!emp?.dbId) { setDocsLoading(false); return; }
     try {
       const r = await api.get(`/employees/${emp.dbId}/documents`);
       const list: ApiDocument[] = Array.isArray(r.data) ? r.data : [];
@@ -5823,6 +5834,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
       // header refresh together.
       onDocsChanged?.(list.map(d => ({ document_key: d.document_key, status: d.status })));
     } catch { /* keep stale on error */ }
+    finally { setDocsLoading(false); }
   };
   useEffect(() => { reloadDocs(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [emp?.dbId]);
 
@@ -5932,6 +5944,32 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
     .filter(s => s === 'uploaded' || s === 'verified').length;
   const pct = totalDocs ? Math.round((uploadedDocs / totalDocs) * 100) : 0;
 
+  // Initial-load skeleton — unique to Stage 2 (animated category cards) so the
+  // documents/previous-employment UI doesn't render against un-fetched data.
+  if (docsLoading || prevLoading) {
+    return (
+      <div className="onb-s2sk">
+        {[0, 1, 2].map(i => (
+          <div className="onb-s2sk-cat" key={i}>
+            <div className="onb-s2sk-head">
+              <span className="onb-s2sk-icn onb-s2sk-bar" />
+              <span className="onb-s2sk-ttl onb-s2sk-bar" />
+              <span className="onb-s2sk-pct onb-s2sk-bar" />
+            </div>
+            {[0, 1].map(j => (
+              <div className="onb-s2sk-row" key={j}>
+                <span className="onb-s2sk-dot onb-s2sk-bar" />
+                <span className="onb-s2sk-meta onb-s2sk-bar" />
+                <span className="onb-s2sk-pill onb-s2sk-bar" />
+                <span className="onb-s2sk-act onb-s2sk-bar" />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <>
       {/* Per-stage progress banner removed — sidebar already shows this. */}
@@ -5963,7 +6001,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         return (
           <div key={cat.id} className="onb-doc-cat">
             <div className="onb-doc-cat-head">
-              <span className="onb-doc-cat-icon" style={{ background: cat.tint, color: cat.fg }}>
+              <span className={`onb-doc-cat-icon onb-doc-cat-icon--${cat.id}`} style={{ background: cat.tint, color: cat.fg }}>
                 <i className={cat.icon} />
               </span>
               <h6 className="onb-doc-cat-title">{cat.title}</h6>
@@ -6014,8 +6052,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                         href={srv.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="onb-doc-upload-btn"
-                        style={{ background: '#fff', color: '#5a3fd1', border: '1px solid #d6c9ff', textDecoration: 'none' }}
+                        className="onb-doc-upload-btn onb-doc-ghost-btn onb-doc-ghost-view"
                       >
                         <i className="ri-eye-line" /> View
                       </a>
@@ -6037,9 +6074,8 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                     <Tooltip label="Remove this document">
                       <button
                         type="button"
-                        className="onb-doc-upload-btn"
+                        className="onb-doc-upload-btn onb-doc-ghost-btn onb-doc-ghost-del"
                         onClick={() => triggerDelete(srv.id, d.name)}
-                        style={{ background: '#fff', color: '#b1401d', border: '1px solid #f3c0b3' }}
                       >
                         <i className="ri-delete-bin-line" />
                       </button>
@@ -6256,7 +6292,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
 
               <p className="onb-doc-comp-section" style={{ marginTop: 14 }}><i className="ri-file-list-line" /> Document Upload</p>
               {!c.id && (
-                <div style={{ fontSize: 11.5, color: '#a4661c', background: '#fde8c4', padding: '6px 10px', borderRadius: 8, marginBottom: 6 }}>
+                <div className="onb-doc-hint-banner">
                   Save the company name first to enable document uploads.
                 </div>
               )}
@@ -6284,8 +6320,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                           href={srv.url}
                           target="_blank"
                           rel="noreferrer"
-                          className="onb-doc-upload-btn"
-                          style={{ background: '#fff', color: '#5a3fd1', border: '1px solid #d6c9ff', textDecoration: 'none' }}
+                          className="onb-doc-upload-btn onb-doc-ghost-btn onb-doc-ghost-view"
                         >
                           <i className="ri-eye-line" /> View
                         </a>
@@ -6313,9 +6348,8 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                       <Tooltip label="Remove this document">
                         <button
                           type="button"
-                          className="onb-doc-upload-btn"
+                          className="onb-doc-upload-btn onb-doc-ghost-btn onb-doc-ghost-del"
                           onClick={() => triggerDelete(srv.id, d.name)}
-                          style={{ background: '#fff', color: '#b1401d', border: '1px solid #f3c0b3' }}
                         >
                           <i className="ri-delete-bin-line" />
                         </button>

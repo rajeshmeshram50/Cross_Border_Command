@@ -1045,6 +1045,22 @@
         [data-bs-theme="dark"] .onb-doc-cat { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
         .onb-doc-cat-head { display: flex; align-items: center; gap: 11px; padding: 10px 14px; }
         .onb-doc-cat-icon { width: 30px; height: 30px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+        /* BUG-151: category icons used light inline tints (white/blue/green)
+           that stayed light in dark mode. Override per-category in dark with
+           translucent fills + bright glyphs (!important beats the inline). */
+        [data-bs-theme="dark"] .onb-doc-cat-icon--identity,
+        [data-layout-mode="dark"] .onb-doc-cat-icon--identity { background: rgba(124,58,237,0.20) !important; color: #c4b5fd !important; }
+        [data-bs-theme="dark"] .onb-doc-cat-icon--address,
+        [data-layout-mode="dark"] .onb-doc-cat-icon--address { background: rgba(59,130,246,0.20) !important; color: #93c5fd !important; }
+        [data-bs-theme="dark"] .onb-doc-cat-icon--education,
+        [data-layout-mode="dark"] .onb-doc-cat-icon--education { background: rgba(20,184,166,0.20) !important; color: #5eead4 !important; }
+        [data-bs-theme="dark"] .onb-doc-cat-icon--bank,
+        [data-layout-mode="dark"] .onb-doc-cat-icon--bank { background: rgba(16,185,129,0.20) !important; color: #6ee7b7 !important; }
+
+        /* "Save the company name first…" hint banner — was hardcoded light amber. */
+        .onb-doc-hint-banner { font-size: 11.5px; color: #a4661c; background: #fde8c4; padding: 6px 10px; border-radius: 8px; margin-bottom: 6px; }
+        [data-bs-theme="dark"] .onb-doc-hint-banner,
+        [data-layout-mode="dark"] .onb-doc-hint-banner { color: #fcd34d; background: rgba(251,191,36,0.14); border: 1px solid rgba(251,191,36,0.30); }
         .onb-doc-cat-title { font-size: 13px; font-weight: 700; color: #1f2937; margin: 0; flex-grow: 1; }
         [data-bs-theme="dark"] .onb-doc-cat-title { color: var(--vz-heading-color, var(--vz-body-color)); }
         .onb-doc-cat-count { font-size: 11px; color: var(--vz-secondary-color); }
@@ -1074,6 +1090,53 @@
         .onb-doc-tag { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 4px; font-size: 9px; font-weight: 800; letter-spacing: 0.06em; background: #ece6ff; color: #5a3fd1; text-transform: uppercase; }
         .onb-doc-upload-btn { padding: 6px 13px; border-radius: 8px; font-size: 11.5px; font-weight: 600; color: #fff; border: none; background: linear-gradient(135deg,#7c3aed,#5b21b6); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 3px 8px rgba(91,33,182,0.24); }
         .onb-doc-upload-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 12px rgba(91,33,182,0.32); }
+
+        /* Ghost (secondary) doc buttons — View / Delete. Were hardcoded white
+           inline, so they stayed white in dark mode. Now theme-aware classes
+           (the !important beats the .onb-doc-upload-btn gradient base). */
+        .onb-doc-ghost-btn { box-shadow: none !important; text-decoration: none; }
+        .onb-doc-ghost-view { background: #fff !important; color: #5a3fd1 !important; border: 1px solid #d6c9ff !important; }
+        .onb-doc-ghost-del  { background: #fff !important; color: #b1401d !important; border: 1px solid #f3c0b3 !important; }
+        .onb-doc-ghost-view:hover { background: #f5f0ff !important; }
+        .onb-doc-ghost-del:hover  { background: #fff1ef !important; }
+        [data-bs-theme="dark"] .onb-doc-ghost-view,
+        [data-layout-mode="dark"] .onb-doc-ghost-view { background: rgba(124,58,237,0.18) !important; color: #c4b5fd !important; border-color: rgba(167,139,250,0.40) !important; }
+        [data-bs-theme="dark"] .onb-doc-ghost-view:hover,
+        [data-layout-mode="dark"] .onb-doc-ghost-view:hover { background: rgba(124,58,237,0.28) !important; }
+        [data-bs-theme="dark"] .onb-doc-ghost-del,
+        [data-layout-mode="dark"] .onb-doc-ghost-del { background: rgba(239,68,68,0.16) !important; color: #fca5a5 !important; border-color: rgba(239,68,68,0.40) !important; }
+        [data-bs-theme="dark"] .onb-doc-ghost-del:hover,
+        [data-layout-mode="dark"] .onb-doc-ghost-del:hover { background: rgba(239,68,68,0.26) !important; }
+
+        /* ── Stage 2 loading skeleton — unique animated category cards shown
+           while documents + previous-employments fetch. Distinct diagonal
+           sweep (onb-s2sweep) so it doesn't look like other shimmers. ── */
+        .onb-s2sk { display: flex; flex-direction: column; gap: 14px; padding: 4px 2px; }
+        .onb-s2sk-cat { border: 1px solid #ece6ff; border-radius: 12px; padding: 14px; background: #faf9ff; }
+        .onb-s2sk-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+        .onb-s2sk-row { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-top: 1px dashed #efeafe; }
+        .onb-s2sk-icn { width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0; }
+        .onb-s2sk-ttl { height: 13px; width: 180px; border-radius: 6px; }
+        .onb-s2sk-pct { height: 13px; width: 42px; border-radius: 6px; margin-left: auto; }
+        .onb-s2sk-dot { width: 26px; height: 26px; border-radius: 7px; flex-shrink: 0; }
+        .onb-s2sk-meta { height: 11px; flex: 1; max-width: 300px; border-radius: 6px; }
+        .onb-s2sk-pill { height: 18px; width: 64px; border-radius: 20px; margin-left: auto; }
+        .onb-s2sk-act { height: 26px; width: 78px; border-radius: 8px; }
+        .onb-s2sk-bar {
+          background: linear-gradient(115deg, #e7e1f7 0%, #e7e1f7 38%, #f7f4fd 50%, #e7e1f7 62%, #e7e1f7 100%);
+          background-size: 250% 100%;
+          animation: onb-s2sweep 1.25s ease-in-out infinite;
+        }
+        @keyframes onb-s2sweep { 0% { background-position: 140% 0; } 100% { background-position: -40% 0; } }
+        [data-bs-theme="dark"] .onb-s2sk-cat,
+        [data-layout-mode="dark"] .onb-s2sk-cat { background: rgba(124,58,237,0.06); border-color: rgba(167,139,250,0.20); }
+        [data-bs-theme="dark"] .onb-s2sk-row,
+        [data-layout-mode="dark"] .onb-s2sk-row { border-top-color: rgba(167,139,250,0.14); }
+        [data-bs-theme="dark"] .onb-s2sk-bar,
+        [data-layout-mode="dark"] .onb-s2sk-bar {
+          background: linear-gradient(115deg, rgba(148,163,184,0.14) 0%, rgba(148,163,184,0.14) 38%, rgba(196,181,253,0.28) 50%, rgba(148,163,184,0.14) 62%, rgba(148,163,184,0.14) 100%);
+          background-size: 250% 100%;
+        }
 
         /* Previous Employment companies */
         .onb-doc-prev { background: #fff; border: 1px solid #fde8c4; border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
