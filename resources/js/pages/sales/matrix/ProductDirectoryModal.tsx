@@ -693,15 +693,24 @@ const SCOPED_CSS = `
   /* Show ~5 product rows; the rest scroll inside (sticky header stays put). */
   max-height: 320px;
 }
-/* Loading shimmer — skeleton bar in each cell of the skeleton rows. */
+/* Loading shimmer — skeleton bar in each cell of the skeleton rows. The
+   base is a clearly visible grey so the bar reads as a placeholder, with a
+   brighter band sweeping across it for the shimmer. */
 .pdm-skeleton-row td { padding: 14px 12px; }
 .pdm-shimmer {
   display: block; height: 12px; width: 100%; border-radius: 6px;
-  background: linear-gradient(90deg, #ece9f5 25%, #f6f3fb 37%, #ece9f5 63%);
-  background-size: 400% 100%;
-  animation: pdm-shimmer 1.2s ease-in-out infinite;
+  background: linear-gradient(90deg, #e2e0ec 0%, #e2e0ec 30%, #f4f1fb 50%, #e2e0ec 70%, #e2e0ec 100%);
+  background-size: 200% 100%;
+  animation: pdm-shimmer 1.3s ease-in-out infinite;
 }
-@keyframes pdm-shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+@keyframes pdm-shimmer { 0% { background-position: 150% 0; } 100% { background-position: -50% 0; } }
+/* Dark mode — slate base with a lighter slate sweep so the shimmer stays
+   visible against the dark modal surface (the light gradient looked white). */
+[data-bs-theme="dark"] .pdm-shimmer,
+[data-layout-mode="dark"] .pdm-shimmer {
+  background: linear-gradient(90deg, rgba(148,163,184,.16) 0%, rgba(148,163,184,.16) 30%, rgba(196,181,253,.30) 50%, rgba(148,163,184,.16) 70%, rgba(148,163,184,.16) 100%);
+  background-size: 200% 100%;
+}
 .pdm-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 1000px; }
 /* Table header — gradient lives on the <tr> so a single 90° sweep
    spans the whole row instead of each <th> rendering its own copy

@@ -4224,77 +4224,116 @@ const SCOPED_CSS = `
 }
 .qpi-table-host .table tbody tr:last-child td { border-bottom: 0 !important; }
 
-/* TableContainer's built-in pagination strip — align the "Showing X of Y"
- * text with the first column and the page buttons with the action column. */
+/* TableContainer's built-in pagination strip — restyled to match the
+ * Sales Lead Worksheet footer (cyan gradient bar, white "Showing X of Y"
+ * pill on the left, circular cyan nav buttons + teal-gradient active page
+ * on the right). Keeps the shared TableContainer DOM; only CSS changes. */
 .qpi-table-host > .row {
   margin: 0 !important;
-  padding: 14px 18px 12px;
+  padding: 10px 16px;
   --bs-gutter-x: 0;
   --bs-gutter-y: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px;
+  border-top: 2px solid #a5f3fc;
+  background: linear-gradient(90deg, #ecfeff 0%, #cffafe 40%, #ecfeff 100%);
+  border-radius: 0 0 13px 13px;
 }
-.qpi-table-host > .row > [class^="col-"] { padding: 0; }
+.qpi-table-host > .row > [class^="col-"] { padding: 0; width: auto; flex: 0 0 auto; }
+/* "Showing X of Y Results" → cyan info pill, like .lwp-pag-info */
 .qpi-table-host .text-muted {
-  color: var(--vz-secondary-color, #878a99) !important;
-  font-size: 13px; font-weight: 500;
+  display: inline-flex; align-items: center; gap: 5px;
+  color: #0e7490 !important;
+  font-size: 11.5px; font-weight: 500;
   font-variant-numeric: tabular-nums;
+  background: rgba(255,255,255,.8); border: 1.5px solid #a5f3fc;
+  padding: 5px 14px; border-radius: 20px;
+  box-shadow: 0 1px 4px rgba(8,145,178,.1), 0 1px 0 rgba(255,255,255,.9) inset;
 }
 .qpi-table-host .text-muted .fw-semibold {
-  color: var(--vz-body-color, #212529);
-  font-weight: 700;
+  color: #0891b2 !important;
+  font-weight: 800;
 }
-/* Pagination — fixed 36×36 buttons (chevron arrows AND numbered
- * pages) matches SalesCustomers.smc-table-wrap. Numbers and arrows
- * sit on the same baseline so the strip reads as one tidy row. */
-.qpi-table-host .pagination { align-items: center; margin: 0; gap: 4px; }
+/* Pagination — circular cyan nav buttons + teal-gradient active page,
+ * matching .lwp-pg-btn / .lwp-pag-range from the worksheet footer. */
+.qpi-table-host .pagination { align-items: center; margin: 0; gap: 5px; }
 .qpi-table-host .pagination .page-item { display: inline-flex; }
 .qpi-table-host .pagination .page-link {
-  border-radius: 8px !important;
-  min-width: 36px; height: 36px;
+  border-radius: 50% !important;
+  min-width: 32px; width: 32px; height: 32px;
   padding: 0 !important;
   display: inline-flex; align-items: center; justify-content: center;
-  color: #6d28d9 !important;
-  background: #fff !important;
-  border: 1px solid #e0d9f7 !important;
-  font-weight: 600;
-  font-size: 13px;
+  color: #0891b2 !important;
+  background: rgba(255,255,255,.8) !important;
+  border: 1.5px solid #a5f3fc !important;
+  font-weight: 700;
+  font-size: 12.5px;
   line-height: 1;
   margin: 0 !important;
+  transition: all .18s;
 }
 .qpi-table-host .pagination .page-link:hover {
-  background: #f5f0ff !important;
-  border-color: #c4b5fd !important;
-  color: #5b21b6 !important;
+  background: #fff !important;
+  border-color: #0891b2 !important;
+  color: #0e7490 !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(8,145,178,.25);
 }
 .qpi-table-host .pagination .page-item.active .page-link,
 .qpi-table-host .pagination .page-link.active {
-  /* Active state matches SalesCustomers — deeper violet so the
-   * selected page reads clearly on the lighter button row. */
-  background: linear-gradient(135deg, #7c3aed, #6d28d9) !important;
-  border-color: #7c3aed !important;
+  /* Active page = teal gradient pill, mirrors .lwp-pag-range. */
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%) !important;
+  border-color: transparent !important;
   color: #fff !important;
-  box-shadow: 0 2px 6px rgba(109,40,217,.25);
+  box-shadow: 0 3px 12px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset;
 }
 .qpi-table-host .pagination .page-item.disabled .page-link {
-  color: #c4b5fd !important;
-  background: #faf7ff !important;
-  opacity: 1;
+  color: #67e8f9 !important;
+  background: rgba(255,255,255,.5) !important;
+  opacity: .55;
 }
-/* Pagination prev/next arrows — match the Customer / Consignee list
- * style: chevron-icon arrow buttons (not text labels). Keeps the
- * sliding 2-button condensed pagination from condensedPagination
- * looking the same across all Sales Matrix tables. */
+/* Pagination prev/next arrows — circular chevron buttons. */
 .qpi-table-host .pagination .page-item:first-child .page-link,
 .qpi-table-host .pagination .page-item:last-child  .page-link {
-  min-width: 32px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  width: 32px; min-width: 32px; padding: 0;
 }
 .qpi-table-host .pagination .page-item:first-child .page-link i,
 .qpi-table-host .pagination .page-item:last-child  .page-link i {
   font-size: 16px;
   line-height: 1;
+}
+/* Dark mode — translucent slate bar + cyan accents, like the worksheet's
+ * dark footer ([data-bs-theme="dark"] .lwp-pagination). */
+[data-bs-theme="dark"] .qpi-table-host > .row,
+[data-layout-mode="dark"] .qpi-table-host > .row {
+  border-top-color: rgba(34, 211, 238, 0.18);
+  background: linear-gradient(90deg, rgba(15,23,42,.55) 0%, rgba(15,23,42,.35) 50%, rgba(15,23,42,.55) 100%);
+}
+[data-bs-theme="dark"] .qpi-table-host .text-muted,
+[data-layout-mode="dark"] .qpi-table-host .text-muted {
+  background: rgba(15,23,42,.55) !important;
+  border-color: rgba(34,211,238,.20) !important;
+  color: #cffafe !important;
+  box-shadow: 0 1px 4px rgba(0,0,0,.25);
+}
+[data-bs-theme="dark"] .qpi-table-host .text-muted .fw-semibold,
+[data-layout-mode="dark"] .qpi-table-host .text-muted .fw-semibold { color: #67e8f9 !important; }
+[data-bs-theme="dark"] .qpi-table-host .pagination .page-link,
+[data-layout-mode="dark"] .qpi-table-host .pagination .page-link {
+  background: rgba(15,23,42,.55) !important;
+  border-color: rgba(34,211,238,.22) !important;
+  color: #67e8f9 !important;
+}
+[data-bs-theme="dark"] .qpi-table-host .pagination .page-link:hover,
+[data-layout-mode="dark"] .qpi-table-host .pagination .page-link:hover {
+  background: rgba(34,211,238,.16) !important;
+  border-color: rgba(103,232,249,.55) !important;
+}
+[data-bs-theme="dark"] .qpi-table-host .pagination .page-item.active .page-link,
+[data-layout-mode="dark"] .qpi-table-host .pagination .page-item.active .page-link {
+  background: linear-gradient(135deg, #06b6d4, #0e7490) !important;
+  border-color: transparent !important;
+  color: #fff !important;
 }
 
 .qpi-empty {
