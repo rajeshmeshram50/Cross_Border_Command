@@ -7,6 +7,35 @@ import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import { DeleteConf } from './clmCommon';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 
+/* Locks <body> scroll while a modal is mounted, so the page behind the
+ * overlay can't scroll-chain. Captures the prior overflow and restores it on
+ * unmount — nesting-safe (a nested modal restores to the parent's 'hidden'
+ * while the parent is still open, then the parent restores the original). */
+function useBodyScrollLock() {
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+}
+
+/* Next sequential code preview (e.g. CLT-007 / CL-005). Mirrors the backend's
+ * allocator exactly — max numeric suffix + 1, then skip any already-taken code
+ * — instead of `count + 1`, which showed a DUPLICATE of an existing code once
+ * a middle row had been deleted (e.g. previewed CLT-006 but saved CLT-007). */
+function nextSeqCode(codes: string[], prefix: string): string {
+  const taken = new Set(codes);
+  const re = new RegExp(`^${prefix}-(\\d+)$`);
+  let maxN = 0;
+  for (const c of codes) {
+    const m = re.exec(c);
+    if (m) { const n = parseInt(m[1], 10); if (n > maxN) maxN = n; }
+  }
+  let n = maxN, code: string;
+  do { n++; code = `${prefix}-${String(n).padStart(3, '0')}`; } while (taken.has(code));
+  return code;
+}
+
 /* Central CLM → Clause Library Master (two tabs: Types + Library). */
 
 type ClType = { id: number; code: string; name: string; description: string };
@@ -166,7 +195,7 @@ function TypesPane({ rows, loading, reload }: { rows: ClType[]; loading: boolean
         )}
       </div>
 
-      {modalOpen && <ClauseTypeModal title={editing ? 'Edit Clause Type' : 'Add Clause Type'} code={editing?.code ?? `CLT-${String(rows.length + 1).padStart(3, '0')}`} isEdit={!!editing} initialName={editing?.name ?? ''} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(name) => onSave({ name, description: '' }, editing?.id)} />}
+      {modalOpen && <ClauseTypeModal title={editing ? 'Edit Clause Type' : 'Add Clause Type'} code={editing?.code ?? nextSeqCode(rows.map(r => r.code), 'CLT')} isEdit={!!editing} initialName={editing?.name ?? ''} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(name) => onSave({ name, description: '' }, editing?.id)} />}
       {pendingDelete && createPortal(<DeleteConf title="Delete clause type?" sub={`${pendingDelete.name} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
     </div>
   );
@@ -275,7 +304,7 @@ function LibraryPane({ rows, types, loading, reload }: { rows: ClLib[]; types: C
         )}
       </div>
 
-      {modalOpen && <ClauseLibModal existing={editing} types={types} nextCode={`CL-${String(rows.length + 1).padStart(3, '0')}`} onTypeCreated={reload} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(f) => onSave(f, editing?.id)} />}
+      {modalOpen && <ClauseLibModal existing={editing} types={types} nextCode={nextSeqCode(rows.map(r => r.code), 'CL')} onTypeCreated={reload} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(f) => onSave(f, editing?.id)} />}
       {pendingDelete && createPortal(<DeleteConf title="Delete clause?" sub={`${pendingDelete.name} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
     </div>
   );
@@ -318,6 +347,7 @@ function ClauseLibModal(props: {
   const { existing, types, nextCode, onTypeCreated, onClose, onSave } = props;
   const toast = useToast();
   const isEdit = !!existing;
+  useBodyScrollLock();
 
   /* Form fields. Per the design brief, party + status are dropped from
    * the visible form — we still send them in the payload (defaults) so
@@ -521,6 +551,7 @@ function ClauseTypeModal(props: {
   onSave: (name: string) => void;
 }) {
   const { title, code, isEdit, onClose, onSave } = props;
+  useBodyScrollLock();
   const [name, setName] = useState(props.initialName);
   const [err,  setErr]  = useState('');
   const [saving, setSaving] = useState(false);

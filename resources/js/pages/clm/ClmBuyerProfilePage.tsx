@@ -491,6 +491,9 @@ export default function ClmBuyerProfilePage() {
   // pagination state
   const [buyerPage, setBuyerPage] = useState(1);
   const [consPage, setConsPage] = useState(1);
+  // Buyer / Consignee list search boxes (name · id · segment · country).
+  const [buyerSearch, setBuyerSearch] = useState('');
+  const [consSearch, setConsSearch] = useState('');
   const [wsEqPage, setWsEqPage] = useState(1);
   const [wsNeqPage, setWsNeqPage] = useState(1);
   const [wosEqPage, setWosEqPage] = useState(1);
@@ -580,8 +583,30 @@ export default function ClmBuyerProfilePage() {
   const txnTd = allTxn.filter((r) => r.td.d < r.td.t).length;
   const txnAgr = allTxn.filter((r) => r.agr.d < r.agr.t).length;
 
-  const buyerSlice = bpBuyerData.slice((buyerPage - 1) * BP_PER_PAGE, (buyerPage - 1) * BP_PER_PAGE + BP_PER_PAGE);
-  const consSlice = bpConsData.slice((consPage - 1) * BP_PER_PAGE, (consPage - 1) * BP_PER_PAGE + BP_PER_PAGE);
+  /* Case-insensitive search across Company Name, Customer/Consignee ID,
+   * Segment and Country. Buyer segments are an array; consignee segment is a
+   * single string. Falls back to the full list when the box is empty. */
+  const buyerQ = buyerSearch.trim().toLowerCase();
+  const buyerFiltered = buyerQ
+    ? bpBuyerData.filter((r) =>
+        r.name.toLowerCase().includes(buyerQ) ||
+        r.id.toLowerCase().includes(buyerQ) ||
+        r.country.toLowerCase().includes(buyerQ) ||
+        r.seg.some((s) => s.toLowerCase().includes(buyerQ)))
+    : bpBuyerData;
+  const consQ = consSearch.trim().toLowerCase();
+  const consFiltered = consQ
+    ? bpConsData.filter((r) =>
+        r.name.toLowerCase().includes(consQ) ||
+        r.id.toLowerCase().includes(consQ) ||
+        r.country.toLowerCase().includes(consQ) ||
+        r.seg.toLowerCase().includes(consQ))
+    : bpConsData;
+  const buyerListTotal = buyerFiltered.length;
+  const consListTotal = consFiltered.length;
+
+  const buyerSlice = buyerFiltered.slice((buyerPage - 1) * BP_PER_PAGE, (buyerPage - 1) * BP_PER_PAGE + BP_PER_PAGE);
+  const consSlice = consFiltered.slice((consPage - 1) * BP_PER_PAGE, (consPage - 1) * BP_PER_PAGE + BP_PER_PAGE);
   const wsEqSlice = wsEqData.slice((wsEqPage - 1) * WS_PER_PAGE, (wsEqPage - 1) * WS_PER_PAGE + WS_PER_PAGE);
   const wsNeqSlice = wsNeqData.slice((wsNeqPage - 1) * WS_PER_PAGE, (wsNeqPage - 1) * WS_PER_PAGE + WS_PER_PAGE);
   const wosEqSlice = wosEqData.slice((wosEqPage - 1) * WOS_PER_PAGE, (wosEqPage - 1) * WOS_PER_PAGE + WOS_PER_PAGE);
@@ -997,14 +1022,14 @@ export default function ClmBuyerProfilePage() {
                     </div>
                     <div>
                       <div style={{ fontSize: '13px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.2px' }}>Buyer List</div>
-                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{buyerTotal} customers registered across all segments</div>
+                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{buyerListTotal} customers registered across all segments</div>
                     </div>
-                    <span style={{ fontSize: '8px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.1)', border: '1px solid rgba(6,182,212,.22)', padding: '3px 10px', borderRadius: '20px', letterSpacing: '.02em' }}>{buyerTotal} records</span>
+                    <span style={{ fontSize: '8px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.1)', border: '1px solid rgba(6,182,212,.22)', padding: '3px 10px', borderRadius: '20px', letterSpacing: '.02em' }}>{buyerListTotal} records</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '7px', height: '36px', padding: '0 12px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)' }}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-                      <input type="text" placeholder="Search buyers..." style={{ border: 'none', outline: 'none', fontSize: '11px', fontFamily: 'inherit', color: '#0c4a6e', width: '280px', background: 'transparent' }} />
+                      <input type="text" placeholder="Search by name, segment, country, ID..." value={buyerSearch} onChange={(e) => { setBuyerSearch(e.target.value); setBuyerPage(1); }} style={{ border: 'none', outline: 'none', fontSize: '11px', fontFamily: 'inherit', color: '#0c4a6e', width: '280px', background: 'transparent' }} />
                     </div>
                   </div>
                 </div>
@@ -1058,7 +1083,7 @@ export default function ClmBuyerProfilePage() {
                     </tbody>
                   </table>
                 </div>
-                <ListPager page={buyerPage} total={buyerTotal} perPage={BP_PER_PAGE} noun="customers" onPage={setBuyerPage} />
+                <ListPager page={buyerPage} total={buyerListTotal} perPage={BP_PER_PAGE} noun="customers" onPage={setBuyerPage} />
               </div>
             </div>
           )}
@@ -1074,14 +1099,14 @@ export default function ClmBuyerProfilePage() {
                     </div>
                     <div>
                       <div style={{ fontSize: '13px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.2px' }}>Consignee List</div>
-                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{bpConsData.length} consignees registered across all buyers</div>
+                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{consListTotal} consignees registered across all buyers</div>
                     </div>
-                    <span style={{ fontSize: '8px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.1)', border: '1px solid rgba(6,182,212,.22)', padding: '3px 10px', borderRadius: '20px', letterSpacing: '.02em' }}>{bpConsData.length} records</span>
+                    <span style={{ fontSize: '8px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.1)', border: '1px solid rgba(6,182,212,.22)', padding: '3px 10px', borderRadius: '20px', letterSpacing: '.02em' }}>{consListTotal} records</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '7px', height: '36px', padding: '0 12px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)' }}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-                      <input type="text" placeholder="Search consignees..." style={{ border: 'none', outline: 'none', fontSize: '11px', fontFamily: 'inherit', color: '#0c4a6e', width: '280px', background: 'transparent' }} />
+                      <input type="text" placeholder="Search by name, segment, country, ID..." value={consSearch} onChange={(e) => { setConsSearch(e.target.value); setConsPage(1); }} style={{ border: 'none', outline: 'none', fontSize: '11px', fontFamily: 'inherit', color: '#0c4a6e', width: '280px', background: 'transparent' }} />
                     </div>
                     <button style={{ position: 'relative', overflow: 'hidden', display: 'inline-flex', alignItems: 'center', gap: '7px', height: '36px', padding: '0 18px', border: 'none', borderRadius: '10px', fontFamily: 'inherit', fontSize: '12px', fontWeight: 700, color: '#fff', cursor: 'pointer', background: 'linear-gradient(135deg,#06b6d4,#0891b2,#0e7490)', boxShadow: '0 4px 14px rgba(8,145,178,.4),inset 0 1px 0 rgba(255,255,255,.18)', transition: 'all .18s' }}>
                       <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.18),transparent)', borderRadius: '10px 10px 0 0', pointerEvents: 'none' }} />
@@ -1133,7 +1158,7 @@ export default function ClmBuyerProfilePage() {
                     </tbody>
                   </table>
                 </div>
-                <ListPager page={consPage} total={bpConsData.length} perPage={BP_PER_PAGE} noun="consignees" onPage={setConsPage} />
+                <ListPager page={consPage} total={consListTotal} perPage={BP_PER_PAGE} noun="consignees" onPage={setConsPage} />
               </div>
             </div>
           )}
