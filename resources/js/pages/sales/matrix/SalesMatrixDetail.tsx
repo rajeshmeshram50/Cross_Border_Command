@@ -476,6 +476,12 @@ export default function SalesMatrixDetail() {
     data?: {
       total_documents?: number;
       verified_signed?: number;
+      /* CORE tally = Company DD + Owner KYC + Trade Licences only (excludes
+       * Trade Documents, which were removed from the customer/consignee form).
+       * The CLM panel card uses these; falls back to the all-inclusive
+       * total_documents/verified_signed for older API responses. */
+      core_total_documents?: number;
+      core_verified_signed?: number;
     };
   };
 
@@ -495,8 +501,8 @@ export default function SalesMatrixDetail() {
         if (cancelled) return;
         const d = res.data?.data;
         setCustTally({
-          total:    Number(d?.total_documents  ?? 0),
-          verified: Number(d?.verified_signed ?? 0),
+          total:    Number(d?.core_total_documents ?? d?.total_documents ?? 0),
+          verified: Number(d?.core_verified_signed ?? d?.verified_signed ?? 0),
         });
       })
       .catch(() => { if (!cancelled) setCustTally({ total: 0, verified: 0, error: true }); });
@@ -513,8 +519,8 @@ export default function SalesMatrixDetail() {
         if (cancelled) return;
         const d = res.data?.data;
         setConsTally({
-          total:    Number(d?.total_documents  ?? 0),
-          verified: Number(d?.verified_signed ?? 0),
+          total:    Number(d?.core_total_documents ?? d?.total_documents ?? 0),
+          verified: Number(d?.core_verified_signed ?? d?.verified_signed ?? 0),
         });
       })
       .catch(() => { if (!cancelled) setConsTally({ total: 0, verified: 0, error: true }); });

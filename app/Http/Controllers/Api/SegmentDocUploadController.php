@@ -349,11 +349,21 @@ class SegmentDocUploadController extends Controller
         $verified = collect($allRows)->where('status', 'Verified')->count();
         $pending  = collect($allRows)->where('status', 'Pending')->count();
 
+        // CORE tally = Company DD + Owner KYC + Trade Licences ONLY (the
+        // "KYC / DD / Trade License" card). Trade Documents were dropped from
+        // the customer/consignee form, so they no longer belong in that card's
+        // "X of Y documents" count. total_documents/verified_signed stay
+        // all-inclusive for the Evidence Vault (which still lists Trade Docs).
+        $coreRows     = array_merge($company_dd, $owner_kyc, $trade_licenses);
+        $coreVerified = collect($coreRows)->where('status', 'Verified')->count();
+
         return response()->json([
             'data' => [
                 'same_as_customer'       => $sameAsCustomer,
                 'total_documents'        => count($allRows),
                 'verified_signed'        => $verified,
+                'core_total_documents'   => count($coreRows),
+                'core_verified_signed'   => $coreVerified,
                 'pending'                => $pending,
                 'company_dd_count'       => count($company_dd),
                 'owner_kyc_count'        => count($owner_kyc),
