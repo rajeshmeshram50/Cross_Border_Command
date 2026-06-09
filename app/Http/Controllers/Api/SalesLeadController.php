@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\EnforcesSegmentBuyerConsignee;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\Employee;
@@ -25,6 +26,8 @@ use Illuminate\Validation\Rule;
 
 class SalesLeadController extends Controller
 {
+    use EnforcesSegmentBuyerConsignee;
+
     /* ISO 3166-1 alpha-2 → human-readable name. Used as a fallback in
      * filterOptions() when a lead row has an ISO code but no persisted
      * sender_country_name. Kept narrow to the countries we actually see
@@ -1152,6 +1155,17 @@ class SalesLeadController extends Controller
                 'status'  => false,
                 'message' => 'This product is already mapped to the lead — edit the existing row instead',
             ], 422);
+        }
+
+        // Segment "Buyer ≠ Consignee" guard at mapping time: a product whose
+        // segment is flagged not-allowed can't be mapped while this lead has a
+        // distinct consignee (one that isn't Same-as-Customer).
+        if ($block = $this->segmentPartyBlockResponse(
+            (int) $user->client_id,
+            [$data['product_id']],
+            $lead->consignee_id,
+        )) {
+            return $block;
         }
 
         /* Single-currency-per-lead rule. Every LeadProduct row on the

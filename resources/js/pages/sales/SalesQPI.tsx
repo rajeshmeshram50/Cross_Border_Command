@@ -2359,6 +2359,12 @@ export function CreateQuotationModal(props: {
         await api.post('/sales/quotations', payload);
         toast.success('Quotation Created', 'Saved as draft for review');
       }
+      // If the lead had no consignee and one was picked here, map it back onto
+      // the lead (same as the toolbar's consignee mapping) so it sticks.
+      if (form.oppId && form.consigneeId && !initialOpp?.consigneeId) {
+        try { await api.put(`/sales/leads/${form.oppId}`, { consignee_id: form.consigneeId }); }
+        catch { /* non-fatal — the quotation already carries the consignee */ }
+      }
       onSubmit();   // Parent closes modal + reloads list.
     } catch (e: any) {
       // Use ?? + explicit parens to avoid the (|| ? :) precedence trap —
@@ -2462,6 +2468,7 @@ export function CreateQuotationModal(props: {
               masters={masters} theme="teal"
               titleLabel="Basic Quotation Details" partyKind="Quotation"
               lockParty={!!initialOpp}
+              lockConsignee={!!initialOpp?.consigneeId}
               errors={step1Errors}
               clearError={(k) => setStep1Errors(prev => {
                 if (!prev.has(k)) return prev;
@@ -2714,6 +2721,11 @@ export function CreatePIModal(props: {
           ? `Converted ${source.qtNo} → new draft PI`
           : 'Saved as draft for review');
       }
+      // Map a newly-picked consignee back onto the lead (it had none).
+      if (form.oppId && form.consigneeId && !initialOpp?.consigneeId) {
+        try { await api.put(`/sales/leads/${form.oppId}`, { consignee_id: form.consigneeId }); }
+        catch { /* non-fatal — the PI already carries the consignee */ }
+      }
       onSubmit();
     } catch (e: any) {
       const data = e?.response?.data;
@@ -2812,6 +2824,7 @@ export function CreatePIModal(props: {
               masters={masters} theme="purple"
               titleLabel="Basic PI Details" partyKind="PI"
               lockParty={!!initialOpp || isEdit}
+              lockConsignee={isEdit || !!initialOpp?.consigneeId}
               lockDocType={isEdit}
               errors={step1Errors}
               clearError={(k) => setStep1Errors(prev => {
@@ -3088,12 +3101,17 @@ function BasicForm(props: {
    * fixes the Opportunity + its mapped Customer & Consignee — those four
    * fields render read-only so they can't drift away from the lead. */
   lockParty?: boolean;
+  /* Lock ONLY the Consignee field. When the lead this was opened from has a
+   * consignee mapped it's read-only (like the customer); when the lead has
+   * NO consignee, this is false so the user can pick one here — and the
+   * parent maps that choice back onto the lead on save. */
+  lockConsignee?: boolean;
   /* Lock the Document Type (e.g. when EDITING a PI) — changing
    * International/Domestic on an existing doc would break its tax/costing
    * structure, so it renders read-only. */
   lockDocType?: boolean;
 }) {
-  const { form, setForm, masters, theme, partyKind, errors, clearError, lockParty, lockDocType } = props;
+  const { form, setForm, masters, theme, partyKind, errors, clearError, lockParty, lockConsignee, lockDocType } = props;
   const hasError = (k: string) => errors?.has(k) ?? false;
   const set = <K extends keyof BasicFormState>(k: K, v: BasicFormState[K]) => {
     setForm({ ...form, [k]: v });
@@ -3350,7 +3368,7 @@ function BasicForm(props: {
           )}
         </Field>
         <Field label="Consignee" required>
-          {lockParty ? (
+          {lockConsignee ? (
             <input className="qpi-input qpi-input-readonly" value={form.consignee} readOnly title="Fixed by the lead this was opened from" />
           ) : (
             <MasterSelect
