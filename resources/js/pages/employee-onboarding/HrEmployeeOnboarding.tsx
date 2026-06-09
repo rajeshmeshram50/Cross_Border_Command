@@ -2543,7 +2543,17 @@ export function VaultModal({
       {/* Send-for-signing confirmation */}
       <Modal isOpen={!!sendForTpl} toggle={() => setSendForTpl(null)} size="md" centered contentClassName="border-0" modalClassName="send-sign-modal" backdrop="static">
         <style>{`
+          .send-sign-modal .modal-dialog { max-width: 600px; }
           .send-sign-modal .modal-content { border-radius: 16px; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.30); }
+          /* Body surface — the inline var(--vz-card-bg) falls back to white
+             inside the portalled modal, so dark mode showed a white body.
+             Pin explicit surfaces (a stylesheet !important beats the inline
+             var). Text + footer border re-pinned for the dark surface too. */
+          .send-sign-modal .modal-body { background: #ffffff !important; }
+          [data-bs-theme="dark"] .send-sign-modal .modal-body { background: #1c2531 !important; }
+          [data-bs-theme="dark"] .send-sign-modal .modal-body > div:nth-of-type(2) { color: #ced4da !important; }
+          [data-bs-theme="dark"] .send-sign-modal .modal-body > div:nth-of-type(2) strong { color: #f3f4f6 !important; }
+          [data-bs-theme="dark"] .send-sign-modal .modal-body > div:nth-of-type(3) { border-top-color: rgba(255,255,255,0.10) !important; }
           .send-sign-modal .ss-warn { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
           [data-bs-theme="dark"] .send-sign-modal .ss-warn { background: rgba(245,158,11,0.14); border-color: rgba(245,158,11,0.42); color: #fcd34d; }
           .send-sign-modal .ss-cancel { background: var(--vz-secondary-bg, #fff); color: var(--vz-body-color, #374151); border: 1px solid var(--vz-border-color, #d1d5db); transition: filter .15s ease; }
@@ -6397,26 +6407,24 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                 <Col md={4}>
                   <label className="onb-init-label">HR Email ID 1</label>
                   <input
-                    className="onb-init-input"
+                    className={`onb-init-input${EMAIL_INVALID(c.hr_email_1) ? ' is-invalid' : ''}`}
                     placeholder="hr@company.com"
                     value={c.hr_email_1}
                     onChange={e => updateCompany(c._localKey, { hr_email_1: e.target.value })}
                     onBlur={() => persistCompany(c._localKey)}
                     disabled={c._busy}
-                    style={EMAIL_INVALID(c.hr_email_1) ? { borderColor: '#ef4444', boxShadow: '0 0 0 2px rgba(239,68,68,.12)' } : undefined}
                   />
                   {EMAIL_INVALID(c.hr_email_1) && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 3 }}>Enter a valid email address.</div>}
                 </Col>
                 <Col md={4}>
                   <label className="onb-init-label">HR Email ID 2</label>
                   <input
-                    className="onb-init-input"
+                    className={`onb-init-input${EMAIL_INVALID(c.hr_email_2) ? ' is-invalid' : ''}`}
                     placeholder="hr2@company.com"
                     value={c.hr_email_2}
                     onChange={e => updateCompany(c._localKey, { hr_email_2: e.target.value })}
                     onBlur={() => persistCompany(c._localKey)}
                     disabled={c._busy}
-                    style={EMAIL_INVALID(c.hr_email_2) ? { borderColor: '#ef4444', boxShadow: '0 0 0 2px rgba(239,68,68,.12)' } : undefined}
                   />
                   {EMAIL_INVALID(c.hr_email_2) && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 3 }}>Enter a valid email address.</div>}
                 </Col>
@@ -6817,7 +6825,7 @@ function Stage4Payroll({
           <Row className="g-3">
             <Col md={4}>
               <label className="onb-init-label">Bank Name <span className="req">*</span></label>
-              <input className="onb-init-input is-required" placeholder="e.g. HDFC Bank" value={s4.bank_name} onChange={e => setS4(p => ({ ...p, bank_name: e.target.value }))} />
+              <input className="onb-init-input is-required" placeholder="e.g. HDFC Bank" value={s4.bank_name} onChange={e => setS4(p => ({ ...p, bank_name: e.target.value.replace(/[^A-Za-z0-9 .,&/'()\-]/g, '') }))} />
             </Col>
             <Col md={4}>
               <label className="onb-init-label">Account Number <span className="req">*</span></label>
@@ -6873,11 +6881,11 @@ function Stage4Payroll({
             </Col>
             <Col md={4}>
               <label className="onb-init-label">Name on the Account <span className="req">*</span></label>
-              <input className="onb-init-input is-required" placeholder="Full legal name as per bank" value={s4.account_holder_name} onChange={e => setS4(p => ({ ...p, account_holder_name: e.target.value }))} />
+              <input className="onb-init-input is-required" placeholder="Full legal name as per bank" value={s4.account_holder_name} onChange={e => setS4(p => ({ ...p, account_holder_name: e.target.value.replace(/[^A-Za-z .'-]/g, '') }))} />
             </Col>
             <Col md={4}>
               <label className="onb-init-label">Branch <span className="req">*</span></label>
-              <input className="onb-init-input is-required" placeholder="e.g. Baner, Pune" value={s4.bank_branch} onChange={e => setS4(p => ({ ...p, bank_branch: e.target.value }))} />
+              <input className="onb-init-input is-required" placeholder="e.g. Baner, Pune" value={s4.bank_branch} onChange={e => setS4(p => ({ ...p, bank_branch: e.target.value.replace(/[^A-Za-z0-9 .,&/'()\-]/g, '') }))} />
             </Col>
             <Col md={4}>
               <label className="onb-init-label">Account Type</label>
@@ -7363,7 +7371,17 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
       {/* Send-for-signing — rich workflow modal (matches the Evidence Vault) */}
       <Modal isOpen={!!sendForTpl} toggle={() => setSendForTpl(null)} size="md" centered contentClassName="border-0" modalClassName="send-sign-modal" backdrop="static">
         <style>{`
+          .send-sign-modal .modal-dialog { max-width: 600px; }
           .send-sign-modal .modal-content { border-radius: 16px; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.30); }
+          /* Body surface — the inline var(--vz-card-bg) falls back to white
+             inside the portalled modal, so dark mode showed a white body.
+             Pin explicit surfaces (a stylesheet !important beats the inline
+             var). Text + footer border re-pinned for the dark surface too. */
+          .send-sign-modal .modal-body { background: #ffffff !important; }
+          [data-bs-theme="dark"] .send-sign-modal .modal-body { background: #1c2531 !important; }
+          [data-bs-theme="dark"] .send-sign-modal .modal-body > div:nth-of-type(2) { color: #ced4da !important; }
+          [data-bs-theme="dark"] .send-sign-modal .modal-body > div:nth-of-type(2) strong { color: #f3f4f6 !important; }
+          [data-bs-theme="dark"] .send-sign-modal .modal-body > div:nth-of-type(3) { border-top-color: rgba(255,255,255,0.10) !important; }
           .send-sign-modal .ss-warn { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
           [data-bs-theme="dark"] .send-sign-modal .ss-warn { background: rgba(245,158,11,0.14); border-color: rgba(245,158,11,0.42); color: #fcd34d; }
           .send-sign-modal .ss-cancel { background: var(--vz-secondary-bg, #fff); color: var(--vz-body-color, #374151); border: 1px solid var(--vz-border-color, #d1d5db); transition: filter .15s ease; }

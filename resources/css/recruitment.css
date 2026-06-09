@@ -657,6 +657,19 @@
 [data-bs-theme="dark"] .rec-form-modal .master-datepicker-wrap .master-datepicker-toggle {
   background: var(--vz-card-bg); border-color: var(--vz-border-color); color: var(--vz-body-color);
 }
+/* Native <select> renders its option popup using the control's color-scheme.
+   Without this, a dark-mode select opened a light popup with light option
+   text → washed-out / unreadable options. color-scheme:dark makes the
+   browser paint the native dropdown dark with proper contrast. */
+[data-bs-theme="dark"] select.rec-input { color-scheme: dark; }
+/* Explicit option colours — color-scheme alone didn't repaint the native
+   popup on every Chrome/Windows build, so the options stayed light-on-light
+   (washed out / greyed). Styling <option> directly forces a dark popup with
+   readable text. */
+[data-bs-theme="dark"] select.rec-input option {
+  background-color: #1a1d21;
+  color: #e5e7eb;
+}
 /* Invalid state — both the light-mode base rule AND the dark-mode
    override use a `.rec-form-modal …` ancestor selector that outranks
    the .invalid border-color rule shipped with MasterDatePicker.css /
@@ -7090,9 +7103,9 @@
 }
 [data-bs-theme="dark"] .att-date-nav { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.10); }
 .att-date-nav-btn {
-  width: 28px; height: 28px;
+  width: 30px; height: 32px;
   display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent; border: 0;
   color: var(--vz-secondary-color);
   cursor: pointer;
@@ -7101,18 +7114,27 @@
 .att-date-nav-btn:hover:not(:disabled) { background: #f3f4f6; color: var(--vz-body-color); }
 .att-date-nav-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .att-date-nav-btn i { font-size: 16px; }
-.att-date-nav-pick { min-width: 160px; }
+.att-date-nav-pick { min-width: 168px; }
 .att-date-nav-pick .master-datepicker-toggle {
-  min-height: 30px !important;
-  height: 30px !important;
-  padding: 4px 28px 4px 10px !important;
+  min-height: 32px !important;
+  height: 32px !important;
+  /* Symmetric padding — the calendar icon is a flex child here, not an
+     absolute overlay, so the old 28px right padding just created dead
+     space and shoved the ✕ + 📅 inward (looked misaligned/cramped). */
+  padding: 4px 12px !important;
+  gap: 6px !important;
   font-size: 12px !important;
+  border-radius: 8px !important;
 }
 .att-date-nav-pick .master-datepicker-value,
 .att-date-nav-pick .master-datepicker-placeholder { font-size: 12px; }
+/* Keep the value hugging the left and the ✕ / 📅 grouped neatly on the
+   right so the field reads as one tidy unit (matches the standalone picker). */
+.att-date-nav-pick .master-datepicker-icon { font-size: 15px; }
+.att-date-nav-pick .master-datepicker-clear { font-size: 13px; }
 .att-date-nav-today {
-  height: 28px; padding: 0 12px;
-  border-radius: 7px;
+  height: 32px; padding: 0 14px;
+  border-radius: 8px;
   background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
   color: #ffffff;
   border: 1px solid #0d9488;

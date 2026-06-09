@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState, useCallback, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Col, Row, Modal, ModalBody, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
-import { MasterFormStyles } from '../master/masterFormKit';
+import { MasterFormStyles, MasterDatePicker, MasterSelect } from '../master/masterFormKit';
 import '../../../css/recruitment.css';
 import '../../../css/leave.css';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
 import { leavePlansApi, leaveTypesApi, leaveBalancesApi, ApiLeavePlan, ApiLeaveType, ApiPlanEmployee, ApiLeaveBalancesResponse } from './leavePlansApi';
 import EmployeePicker, { PickedEmployee } from '../../components/ui/EmployeePicker';
+import Tooltip from '../../components/ui/Tooltip';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
@@ -987,13 +988,13 @@ function ConfigurationTab({
                 </td>
                 <td>
                   <span className={t.configured ? 'lp-status-ok' : 'lp-status-todo'}>
-                    {t.configured ? <i className="ri-check-line" /> : <i className="ri-error-warning-line" />}
+                    {!t.configured && <i className="ri-error-warning-line" />}
                     {t.quotaLabel}
                   </span>
                 </td>
                 <td>
                   <span className={t.configured ? 'lp-status-ok' : 'lp-status-todo'}>
-                    {t.configured ? <i className="ri-check-line" /> : <i className="ri-error-warning-line" />}
+                    {!t.configured && <i className="ri-error-warning-line" />}
                     {t.endOfYearLabel}
                   </span>
                 </td>
@@ -1152,25 +1153,30 @@ function CatalogRow({
       </td>
       <td style={{ textAlign: 'right' }}>
         <div className="d-flex justify-content-end gap-1">
-          <button type="button" className="lp-row-action" aria-label="View" onClick={() => onView(t.id)} title="View details">
-            <i className="ri-eye-line" />
-          </button>
+          <Tooltip label="View details">
+            <button type="button" className="lp-row-action" aria-label="View" onClick={() => onView(t.id)}>
+              <i className="ri-eye-line" />
+            </button>
+          </Tooltip>
           {canEdit && (
-          <button type="button" className="lp-row-action" aria-label="Edit" onClick={() => onEdit(t.id)} title="Edit leave type">
-            <i className="ri-pencil-line" />
-          </button>
+          <Tooltip label="Edit leave type">
+            <button type="button" className="lp-row-action" aria-label="Edit" onClick={() => onEdit(t.id)}>
+              <i className="ri-pencil-line" />
+            </button>
+          </Tooltip>
           )}
           {canDelete && (
-          <button
-            type="button"
-            className="lp-row-action"
-            aria-label="Delete"
-            onClick={() => onDelete(t.id)}
-            title="Delete leave type"
-            style={{ color: '#dc2626' }}
-          >
-            <i className="ri-delete-bin-line" />
-          </button>
+          <Tooltip label="Delete leave type">
+            <button
+              type="button"
+              className="lp-row-action"
+              aria-label="Delete"
+              onClick={() => onDelete(t.id)}
+              style={{ color: '#dc2626' }}
+            >
+              <i className="ri-delete-bin-line" />
+            </button>
+          </Tooltip>
           )}
         </div>
       </td>
@@ -1246,14 +1252,10 @@ function LeaveBalancesTab() {
 
       <div className="d-flex align-items-center gap-2 flex-wrap mb-3">
         <div style={{ minWidth: 150 }}>
-          <select className="lp-field-input" value={department} onChange={e => setDepartment(e.target.value)}>
-            {DEPT_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
+          <MasterSelect value={department} onChange={setDepartment} options={DEPT_OPTS} placeholder="Department" />
         </div>
         <div style={{ minWidth: 140 }}>
-          <select className="lp-field-input" value={location} onChange={e => setLocation(e.target.value)}>
-            {LOC_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
+          <MasterSelect value={location} onChange={setLocation} options={LOC_OPTS} placeholder="Location" />
         </div>
         <div className="lp-search-box flex-grow-1" style={{ minWidth: 240 }}>
           <i className="ri-search-line" />
@@ -1421,7 +1423,7 @@ function ViewLeaveTypeModal({
             </Col>
             <Col md={6}>
               <div className="text-muted" style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.4 }}>IS PAID</div>
-              <span className="rec-pill" style={{ background: t.isPaid === 'Paid' ? '#d3f0ee' : '#eef2f6', color: t.isPaid === 'Paid' ? '#0a716a' : '#374151' }}>
+              <span className={`rec-pill lp-pay-pill ${t.isPaid === 'Paid' ? 'is-paid' : 'is-unpaid'}`}>
                 {t.isPaid}
               </span>
             </Col>
@@ -1713,12 +1715,13 @@ function AddLeavePlanModal({
                   <div className="flex-grow-1">
                     <div className="fw-semibold" style={{ fontSize: 13 }}>Starts from a particular month</div>
                     {calendarStart === 'fixed_month' && (
-                      <input
-                        type="date"
-                        className="rec-input mt-2"
-                        value={startDate}
-                        onChange={e => setStartDate(e.target.value)}
-                      />
+                      <div className="mt-2" style={{ maxWidth: 240 }}>
+                        <MasterDatePicker
+                          value={startDate}
+                          onChange={setStartDate}
+                          placeholder="Select start date"
+                        />
+                      </div>
                     )}
                   </div>
                 </label>
@@ -1770,7 +1773,9 @@ function AddLeavePlanModal({
                     onChange={e => setShowSystemPolicy(e.target.checked)}
                   />
                   <span className="flex-grow-1">Show leave policy explanation generated by system</span>
-                  <i className="ri-information-line text-muted" title="Auto-generated from configured leave types" />
+                  <Tooltip label="Auto-generated from configured leave types" position="left">
+                    <i className="ri-information-line text-muted" style={{ cursor: 'help' }} />
+                  </Tooltip>
                 </label>
               </Col>
               <Col md={12}>
@@ -1971,9 +1976,12 @@ function AddLeaveTypeModal({
               </Col>
               <Col md={12}>
                 <label className="rec-form-label">Type Category</label>
-                <select className="rec-input" value={type} onChange={e => setType(e.target.value)}>
-                  {TYPE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                </select>
+                <MasterSelect
+                  value={type}
+                  onChange={setType}
+                  options={TYPE_OPTIONS.map(o => ({ value: o, label: o }))}
+                  placeholder="Select category"
+                />
               </Col>
             </Row>
           </div>
@@ -2226,15 +2234,10 @@ function AssignLeaveTypesModal({
                       <label
                         key={t.id}
                         className={`alt-row ${isSelected ? 'is-selected' : ''} ${isExisting ? 'is-locked' : ''}`}
-                        style={isSelected ? {
-                          // Tint matches the category accent so the selected
-                          // state reads coherent across groups.
-                          background: meta.color === '#dc2626' ? '#fee2e2'
-                            : meta.color === '#16a34a' ? '#d1fae5'
-                            : meta.color === '#0ea5e9' ? '#dbeafe'
-                            : '#ece6ff',
-                          borderColor: meta.color,
-                        } : undefined}
+                        // Drive the selected tint from the category accent via a
+                        // CSS var so dark mode can re-derive a themed fill
+                        // (light pastel inline styles stayed light in dark mode).
+                        style={{ ['--alt-accent' as string]: meta.color } as CSSProperties}
                       >
                         <input
                           type="checkbox"
@@ -2245,11 +2248,12 @@ function AssignLeaveTypesModal({
                         />
                         <span className="alt-row-name">{t.name}</span>
                         {isExisting && <span className="alt-existing-pill">Already added</span>}
-                        <i
-                          className="ri-information-line alt-info-icon"
-                          title={t.description}
-                          aria-label={t.description}
-                        />
+                        <Tooltip label={t.description || `${meta.label} · ${t.name}`} position="left" maxWidth={240}>
+                          <i
+                            className="ri-information-line alt-info-icon"
+                            aria-label={t.description || t.name}
+                          />
+                        </Tooltip>
                       </label>
                     );
                   })}
@@ -2342,10 +2346,6 @@ function LeaveTypeSetupModal({
         <div className="lts-shell">
           {/* Header */}
           <div className="lts-header">
-            <button type="button" className="lts-back-btn" onClick={onClose}>
-              <i className="ri-arrow-left-s-line" />Back to Plan
-            </button>
-            <div className="lts-divider" />
             <div className="d-flex align-items-center gap-2 min-w-0">
               <span className="lts-type-icon" style={{ background: `${leaveType.color}20` }}>
                 <i className="ri-file-list-3-line" style={{ color: leaveType.color }} />
@@ -2356,7 +2356,6 @@ function LeaveTypeSetupModal({
               </div>
             </div>
             <div className="ms-auto d-flex align-items-center gap-2">
-              <span className="text-muted" style={{ fontSize: 11.5 }}>All changes are auto-saved</span>
               <button type="button" className="lts-icon-btn" onClick={onClose} aria-label="Close">
                 <i className="ri-close-line" />
               </button>
@@ -2377,10 +2376,7 @@ function LeaveTypeSetupModal({
                 >
                   <span
                     className="lts-side-icon"
-                    style={{
-                      background: active === s.key ? `${s.tone}20` : '#f3f4f6',
-                      color: active === s.key ? s.tone : '#6b7280',
-                    }}
+                    style={active === s.key ? { background: `${s.tone}20`, color: s.tone } : undefined}
                   >
                     <i className={s.icon} />
                   </span>
@@ -2431,7 +2427,7 @@ function SectionCard({
   return (
     <div className="lts-card">
       <div className="lts-card-head">
-        <span className="lts-card-icon" style={{ background: iconBg }}>
+        <span className="lts-card-icon" style={{ ['--lts-ic' as string]: iconBg, background: iconBg } as CSSProperties}>
           <i className={icon} />
         </span>
         <h6 className="fw-bold mb-0" style={{ fontSize: 13.5 }}>{title}</h6>
@@ -2562,17 +2558,18 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
           <div className="lts-nested-block">
             <div className="d-flex align-items-center gap-2 flex-wrap mb-2">
               <span className="text-muted" style={{ fontSize: 12.5 }}>Accrue leave</span>
-              <select
-                className="lts-input"
-                style={{ width: 160 }}
-                value={cfg.frequency}
-                onChange={e => update({ frequency: e.target.value as AccrualConfig['frequency'] })}
-              >
-                <option value="monthly">Once every month</option>
-                <option value="quarterly">Once every quarter</option>
-                <option value="half_yearly">Twice a year</option>
-                <option value="yearly">Once a year</option>
-              </select>
+              <div style={{ width: 170 }}>
+                <MasterSelect
+                  value={cfg.frequency}
+                  onChange={v => update({ frequency: v as AccrualConfig['frequency'] })}
+                  options={[
+                    { value: 'monthly',     label: 'Once every month' },
+                    { value: 'quarterly',   label: 'Once every quarter' },
+                    { value: 'half_yearly', label: 'Twice a year' },
+                    { value: 'yearly',      label: 'Once a year' },
+                  ]}
+                />
+              </div>
               <span className="text-muted" style={{ fontSize: 12.5 }}>on</span>
               <select
                 className="lts-input"
@@ -2987,75 +2984,80 @@ function ApprovalSectionView({ cfg, update }: { cfg: ApprovalConfig; update: (p:
                 <div key={idx} className="lts-approval-card" style={{ marginBottom: 10 }}>
                   <div className="d-flex align-items-center gap-2 mb-2 flex-wrap">
                     <span className="lts-level-pill">LEVEL {idx + 1}</span>
-                    <span className="lts-level-pill" style={{ background: meta.bg, color: meta.fg }}>
+                    <span
+                      className="lts-kind-pill"
+                      style={{ ['--kp-bg' as string]: meta.bg, ['--kp-fg' as string]: meta.fg } as CSSProperties}
+                    >
                       {meta.label.toUpperCase()}
                     </span>
                     <div className="ms-auto d-flex align-items-center gap-1">
-                      <button
-                        type="button"
-                        className="lp-icon-btn"
-                        title="Move up"
-                        onClick={() => moveLevel(idx, -1)}
-                        disabled={idx === 0}
-                        style={{ opacity: idx === 0 ? 0.3 : 1 }}
-                      >
-                        <i className="ri-arrow-up-s-line" />
-                      </button>
-                      <button
-                        type="button"
-                        className="lp-icon-btn"
-                        title="Move down"
-                        onClick={() => moveLevel(idx, 1)}
-                        disabled={idx === chain.length - 1}
-                        style={{ opacity: idx === chain.length - 1 ? 0.3 : 1 }}
-                      >
-                        <i className="ri-arrow-down-s-line" />
-                      </button>
-                      <button
-                        type="button"
-                        className="lp-icon-btn"
-                        title="Remove level"
-                        onClick={() => removeLevel(idx)}
-                        disabled={chain.length <= 1}
-                        style={{ color: chain.length <= 1 ? '#d1d5db' : '#dc2626' }}
-                      >
-                        <i className="ri-delete-bin-line" />
-                      </button>
+                      <Tooltip label="Move up">
+                        <button
+                          type="button"
+                          className="lp-icon-btn"
+                          onClick={() => moveLevel(idx, -1)}
+                          disabled={idx === 0}
+                          style={{ opacity: idx === 0 ? 0.3 : 1 }}
+                        >
+                          <i className="ri-arrow-up-s-line" />
+                        </button>
+                      </Tooltip>
+                      <Tooltip label="Move down">
+                        <button
+                          type="button"
+                          className="lp-icon-btn"
+                          onClick={() => moveLevel(idx, 1)}
+                          disabled={idx === chain.length - 1}
+                          style={{ opacity: idx === chain.length - 1 ? 0.3 : 1 }}
+                        >
+                          <i className="ri-arrow-down-s-line" />
+                        </button>
+                      </Tooltip>
+                      <Tooltip label="Remove level">
+                        <button
+                          type="button"
+                          className="lp-icon-btn"
+                          onClick={() => removeLevel(idx)}
+                          disabled={chain.length <= 1}
+                          style={{ color: chain.length <= 1 ? '#d1d5db' : '#dc2626' }}
+                        >
+                          <i className="ri-delete-bin-line" />
+                        </button>
+                      </Tooltip>
                     </div>
                   </div>
 
                   <div className="text-muted mb-2" style={{ fontSize: 12 }}>Approver</div>
 
                   <div className="d-flex align-items-center gap-2 flex-wrap" style={{ marginBottom: 6 }}>
-                    <select
-                      className="lts-input"
-                      style={{ minWidth: 200 }}
-                      value={level.approver_kind}
-                      onChange={e => updateLevel(idx, {
-                        approver_kind: e.target.value as ApprovalLevel['approver_kind'],
-                        // Clear secondary fields when changing kind so stale
-                        // values don't get persisted into a mismatched shape.
-                        approver_role: null, approver_user_id: null, approver_employee_id: null,
-                      })}
-                    >
-                      <option value="reporting_manager">Reporting Manager</option>
-                      <option value="role">Role</option>
-                      <option value="user">Specific User</option>
-                      <option value="employee">Specific Employee</option>
-                    </select>
+                    <div style={{ minWidth: 200 }}>
+                      <MasterSelect
+                        value={level.approver_kind}
+                        onChange={v => updateLevel(idx, {
+                          approver_kind: v as ApprovalLevel['approver_kind'],
+                          // Clear secondary fields when changing kind so stale
+                          // values don't get persisted into a mismatched shape.
+                          approver_role: null, approver_user_id: null, approver_employee_id: null,
+                        })}
+                        options={[
+                          { value: 'reporting_manager', label: 'Reporting Manager' },
+                          { value: 'role',              label: 'Role' },
+                          { value: 'user',              label: 'Specific User' },
+                          { value: 'employee',          label: 'Specific Employee' },
+                        ]}
+                        placeholder="Pick approver type"
+                      />
+                    </div>
 
                     {level.approver_kind === 'role' && (
-                      <select
-                        className="lts-input"
-                        style={{ minWidth: 200 }}
-                        value={level.approver_role ?? ''}
-                        onChange={e => updateLevel(idx, { approver_role: e.target.value || null })}
-                      >
-                        <option value="">Pick a role…</option>
-                        {ROLE_OPTIONS.map(o => (
-                          <option key={o.value} value={o.value}>{o.label}</option>
-                        ))}
-                      </select>
+                      <div style={{ minWidth: 200 }}>
+                        <MasterSelect
+                          value={level.approver_role ?? ''}
+                          onChange={v => updateLevel(idx, { approver_role: v || null })}
+                          options={ROLE_OPTIONS}
+                          placeholder="Pick a role…"
+                        />
+                      </div>
                     )}
 
                     {level.approver_kind === 'user' && (
@@ -3212,18 +3214,17 @@ function SkipRuleEditor({
         <span className="text-muted" style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.3 }}>
           AUTO-SKIP RULE
         </span>
-        <select
-          className="lts-input"
-          style={{ minWidth: 150, padding: '4px 8px', fontSize: 12 }}
-          value={activeOp}
-          onChange={e => setOp(e.target.value as SkipOp)}
-        >
-          {(Object.keys(SKIP_OP_LABELS) as SkipOp[]).map(op => (
-            <option key={op} value={op}>
-              {op === '' ? SKIP_OP_LABELS[op] : `Days are ${SKIP_OP_LABELS[op]}…`}
-            </option>
-          ))}
-        </select>
+        <div style={{ minWidth: 170 }}>
+          <MasterSelect
+            value={activeOp}
+            onChange={v => setOp(v as SkipOp)}
+            options={(Object.keys(SKIP_OP_LABELS) as SkipOp[]).map(op => ({
+              value: op,
+              label: op === '' ? SKIP_OP_LABELS[op] : `Days are ${SKIP_OP_LABELS[op]}…`,
+            }))}
+            placeholder="No auto-skip"
+          />
+        </div>
         {activeOp !== '' && (
           <>
             <input
@@ -3270,16 +3271,17 @@ function YearEndSectionView({ cfg, update }: { cfg: YearEndConfig; update: (p: P
         <div className="text-muted mb-2" style={{ fontSize: 12.5 }}>
           What happens to the remaining leave balances (if any) at the end of the year?
         </div>
-        <select
-          className="lts-input"
-          style={{ width: '100%', maxWidth: 360 }}
-          value={cfg.carryForward}
-          onChange={e => update({ carryForward: e.target.value as YearEndConfig['carryForward'] })}
-        >
-          <option value="reset">Reset to zero</option>
-          <option value="carry_capped">Carry forward (capped)</option>
-          <option value="carry_all">Carry forward all</option>
-        </select>
+        <div style={{ width: '100%', maxWidth: 360 }}>
+          <MasterSelect
+            value={cfg.carryForward}
+            onChange={v => update({ carryForward: v as YearEndConfig['carryForward'] })}
+            options={[
+              { value: 'reset',        label: 'Reset to zero' },
+              { value: 'carry_capped', label: 'Carry forward (capped)' },
+              { value: 'carry_all',    label: 'Carry forward all' },
+            ]}
+          />
+        </div>
 
         <div className="mt-3">
           <CheckRow

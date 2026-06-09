@@ -124,6 +124,21 @@
   </td></tr>
   @endif
 
+  {{-- ============ INLINE IMAGE PREVIEW ============ --}}
+  {{-- When the attachment is an image, show it inline in the body instead of
+       only naming it. Uses a normal http(s) URL (not a cid: embed) so it
+       renders both in real inboxes AND in the in-app /gmail viewer, which
+       displays the stored HTML in a browser and can't resolve cid:. The URL
+       resolves correctly only when APP_URL points at a publicly reachable
+       host — on localhost it loads in-app but not in external clients. --}}
+  @if(!empty($inlineImageUrl))
+  <tr><td style="padding:0 32px 18px;text-align:center;">
+    <img src="{{ $inlineImageUrl }}"
+         alt="{{ $announcement->attachment_original_name ?: 'Attachment' }}"
+         style="max-width:100%;height:auto;border:1px solid #e5e7eb;border-radius:8px;display:inline-block;" />
+  </td></tr>
+  @endif
+
   {{-- ============ POSTED DATE STRIP ============ --}}
   @php($postedAt = $announcement->created_at?->format('d M Y, h:i A'))
   @if($postedAt)
