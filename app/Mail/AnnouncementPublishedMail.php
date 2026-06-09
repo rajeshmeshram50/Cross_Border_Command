@@ -48,7 +48,47 @@ class AnnouncementPublishedMail extends Mailable
 
     public function content(): Content
     {
-        return new Content(view: 'emails.announcement-published');
+        return new Content(
+            view: 'emails.announcement-published',
+            with: [
+                // Public http(s) URL of the attachment when it's an image, so
+                // the template can render it inline with a normal <img src>.
+                // We deliberately use a real URL (not $message->embed()/cid:)
+                // because the in-app /gmail viewer renders the stored HTML in a
+                // browser, which can't resolve cid: references. Null for
+                // non-image attachments (PDF/DOCX) — those keep the text notice.
+                'inlineImageUrl' => $this->resolveInlineImageUrl(),
+            ],
+        );
+    }
+
+    /**
+     * Returns a public URL for the attachment when it is an image we can
+     * preview inline, otherwise null. Kept separate from attachments() so the
+     * file is BOTH shown in the body and offered as a download.
+     */
+    private function resolveInlineImageUrl(): ?string
+    {
+        $rel = $this->announcement->attachment_path;
+        if (!$rel) return null;
+
+        $abs = storage_path('app/public/' . ltrim($rel, '/'));
+        if (!is_file($abs)) return null;
+
+        $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
+        if (!in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'], true)) {
+            return null;
+        }
+
+        // Build a fully-qualified URL via asset() so it includes the app's
+        // base path (e.g. /Cross_Border_Command/public). file_url() leans on
+        // the public disk's `url` config which is the root-relative "/storage",
+        // and that 404s under a subdirectory install + in email clients.
+        $normalized = ltrim(str_replace('\\', '/', $rel), '/');
+        if (str_starts_with($normalized, 'storage/')) $normalized = substr($normalized, 8);
+        if (str_starts_with($normalized, 'public/'))  $normalized = substr($normalized, 7);
+
+        return asset('storage/' . $normalized);
     }
 
     public function attachments(): array

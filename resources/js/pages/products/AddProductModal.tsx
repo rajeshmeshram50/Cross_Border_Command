@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
-import { resolveFileUrl, viewFile } from '../../utils/resolveFileUrl';
+import { resolveFileUrl, viewFile, downloadFile } from '../../utils/resolveFileUrl';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
@@ -531,16 +531,27 @@ export default function AddProductModal(props: {
      reject the request with PostTooLargeException. Mirrors the
      `max:2048` rule on ProductController::storeCore. */
   const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
-  const ALLOWED_PRODUCT_EXTS = ['.png', '.jpg', '.jpeg', '.pdf'];
+  /* Accept the common JPEG extension variants too — Windows/Chrome routinely
+     save JPEGs as `.jfif` (and occasionally `.jpe`/`.pjpeg`), which are the
+     same image/jpeg bytes the server already accepts. Without these a user
+     picking a perfectly valid JPEG was wrongly told "unsupported file type". */
+  const ALLOWED_PRODUCT_EXTS = ['.png', '.jpg', '.jpeg', '.jfif', '.jpe', '.pjpeg', '.pdf'];
+  /* Allowed MIME types — used as a fallback so a JPEG with an unusual
+     extension still passes on its content type. */
+  const ALLOWED_PRODUCT_MIMES = /^(image\/(png|jpeg|pjpeg)|application\/pdf)$/i;
   /* Two-stage validation on picked product files:
-       1. extension/mime → only PNG, JPG, or PDF allowed
+       1. extension OR mime → only PNG, JPG/JPEG, or PDF allowed
        2. size → 2 MB cap (matches `max:2048` rule on storeCore)
-     Extension check uses the filename suffix because some browsers ship
-     an empty `file.type` for PDFs picked via drag-drop. */
+     We accept the file when EITHER the extension matches OR the browser-
+     reported MIME type matches — some browsers ship an empty `file.type`
+     for PDFs picked via drag-drop (extension covers that), while a JPEG
+     saved as `.jfif` fails the extension test but carries image/jpeg
+     (MIME covers that). */
   const validateImageSize = (file: File): boolean => {
     const lowerName = file.name.toLowerCase();
-    const okExt = ALLOWED_PRODUCT_EXTS.some(ext => lowerName.endsWith(ext));
-    if (!okExt) {
+    const okExt  = ALLOWED_PRODUCT_EXTS.some(ext => lowerName.endsWith(ext));
+    const okMime = !!file.type && ALLOWED_PRODUCT_MIMES.test(file.type);
+    if (!okExt && !okMime) {
       toast.error('Unsupported file type', `${file.name} — only PNG, JPG, or PDF files are allowed.`);
       return false;
     }
@@ -684,6 +695,20 @@ export default function AddProductModal(props: {
     </Tooltip>
   );
 
+  /* Vendor-mapping Remarks bounds. The field is optional, but once the user
+   * types into it the value must sit within [min, max] characters so a stray
+   * keypress isn't saved as a "remark" and an unbounded essay can't be pasted
+   * in. Max is also enforced as a hard `maxLength` on the textarea. */
+  const REMARKS_MIN = 3;
+  const REMARKS_MAX = 250;
+  const vendorRemarksError = (val: string): string | undefined => {
+    const t = val.trim();
+    if (t.length === 0)          return undefined;                                  // optional — blank is fine
+    if (t.length < REMARKS_MIN)  return `Remarks must be at least ${REMARKS_MIN} characters`;
+    if (val.length > REMARKS_MAX) return `Remarks must be ${REMARKS_MAX} characters or fewer`;
+    return undefined;
+  };
+
   const saveVendorDraft = () => {
     const missing: string[] = [];
     if (!vendorSelected)        missing.push('Vendor');
@@ -693,6 +718,12 @@ export default function AddProductModal(props: {
       return;
     }
     if (!vendorSelected) return; // type-guard after the check
+
+    const remarksErr = vendorRemarksError(vendorRemarks);
+    if (remarksErr) {
+      toast.error('Invalid remarks', remarksErr);
+      return;
+    }
 
     /* Edit mode — overlay the editable fields onto the existing row
      * and keep its id so the change is in-place rather than producing
@@ -1933,9 +1964,18 @@ export default function AddProductModal(props: {
                                         <a href={uploaded.url} target="_blank" rel="noreferrer" className="btn btn-sm btn-soft-info" title={`View ${uploaded.name}`}>
                                           <i className="ri-eye-line" />
                                         </a>
-                                        <a href={uploaded.url} download={uploaded.name} className="btn btn-sm btn-soft-secondary" title={`Download ${uploaded.name}`}>
+                                        {/* Force a real download via blob fetch — the native
+                                            `download` attr is ignored for cross-origin files
+                                            (Azure Blob / different API origin), which made the
+                                            button open the file inline instead of saving it. */}
+                                        <button
+                                          type="button"
+                                          onClick={() => void downloadFile(uploaded.url, uploaded.name)}
+                                          className="btn btn-sm btn-soft-secondary"
+                                          title={`Download ${uploaded.name}`}
+                                        >
                                           <i className="ri-download-2-line" />
-                                        </a>
+                                        </button>
                                         <label className="btn btn-sm btn-soft-primary mb-0" title="Re-upload (replace file)" style={{ cursor: 'pointer' }}>
                                           <i className="ri-refresh-line" />
                                           <input
@@ -2113,8 +2153,16 @@ export default function AddProductModal(props: {
                       {/* Map date is auto-stamped server-side (and locally
                           defaults to today()), so the user no longer picks
                           it. Remarks gets the full row. */}
-                      <Field label="Remarks" icon={<i className="ri-chat-3-line" />}>
-                        <textarea className="apm-input apm-input-mf apm-textarea" placeholder="Enter remarks" value={vendorRemarks} onChange={e => setVendorRemarks(e.target.value)} rows={2} />
+                      <Field label="Remarks" icon={<i className="ri-chat-3-line" />} error={vendorRemarksError(vendorRemarks)}>
+                        <textarea
+                          className="apm-input apm-input-mf apm-textarea"
+                          placeholder={`Enter remarks (${REMARKS_MIN}–${REMARKS_MAX} characters)`}
+                          value={vendorRemarks}
+                          onChange={e => setVendorRemarks(e.target.value)}
+                          maxLength={REMARKS_MAX}
+                          rows={2}
+                        />
+                        <span className="apm-char-count">{vendorRemarks.length}/{REMARKS_MAX}</span>
                       </Field>
                     </div>
 
@@ -2531,7 +2579,7 @@ function UploadDropzone(props: {
       <label className="apm-dropzone">
         <input
           type="file"
-          accept=".png,.jpg,.jpeg,.pdf,image/png,image/jpeg,application/pdf"
+          accept=".png,.jpg,.jpeg,.jfif,.jpe,.pjpeg,.pdf,image/png,image/jpeg,image/pjpeg,application/pdf"
           multiple={props.multiple}
           onChange={props.onPick}
           className="apm-dropzone-input"
@@ -3429,6 +3477,14 @@ const SCOPED_CSS = `
 .apm-field.has-error .apm-master-field,
 .apm-field.has-error textarea {
   border-color: #ef4444 !important;
+}
+
+/* Live character counter shown under a bounded textarea (e.g. vendor
+   Remarks). Right-aligned, muted, so it reads as a hint not a value. */
+.apm-char-count {
+  display: block; text-align: right;
+  font-size: 10.5px; font-weight: 600; color: #94a3b8;
+  margin-top: 2px;
 }
 .apm-field.has-error .apm-input:focus,
 .apm-field.has-error textarea:focus {

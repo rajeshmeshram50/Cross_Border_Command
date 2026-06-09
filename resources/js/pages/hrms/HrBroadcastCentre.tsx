@@ -270,15 +270,14 @@ export default function HrBroadcastCentre() {
                           <th>Audience</th>
                           <th style={{ width: 110 }}>Status</th>
                           <th style={{ width: 130 }}>Publish Date</th>
-                          <th style={{ width: 130 }}>Expiry</th>
                           <th className="text-center pe-3" style={{ width: 180 }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {loading ? (
-                          <ShimmerTableRows rows={5} cols={10} />
+                          <ShimmerTableRows rows={5} cols={9} />
                         ) : visible.length === 0 ? (
-                          <tr><td colSpan={10} className="text-center py-5 text-muted">
+                          <tr><td colSpan={9} className="text-center py-5 text-muted">
                             <i className="ri-send-plane-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
                             {rows.length === 0 ? 'No announcements yet — click New Announcement to add one' : 'No announcements match your filters'}
                           </td></tr>
@@ -318,7 +317,6 @@ export default function HrBroadcastCentre() {
                                 </span>
                               </td>
                               <td className="fs-13"><span className="rec-date">{r.publish_at ? formatDate(r.publish_at) : (r.status === 'Draft' ? '—' : formatDate(r.created_at))}</span></td>
-                              <td className="fs-13"><span className="rec-date">{formatDate(r.expires_at)}</span></td>
                               <td className="pe-3 text-center">
                                 {/* text-center on the cell centres the action
                                     icons under the centered "Actions" header —
@@ -455,7 +453,7 @@ function CreateAnnouncementModal({
   // Lookups for audience picker
   const [roles, setRoles]                       = useState<Array<{ id: number; name: string }>>([]);
   const [designations, setDesignations]         = useState<Array<{ id: number; name: string }>>([]);
-  const [employees, setEmployees]               = useState<Array<{ id: number; display_name: string; emp_code?: string }>>([]);
+  const [employees, setEmployees]               = useState<Array<{ id: number; display_name: string; emp_code?: string; primary_role_id?: number | null; ancillary_role_id?: number | null; designation_id?: number | null }>>([]);
 
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -504,7 +502,14 @@ function CreateAnnouncementModal({
         const isActive = (r: any) => !r.status || String(r.status).toLowerCase() === 'active';
         setRoles(roleRows.filter(isActive).map(r => ({ id: r.id, name: r.name })));
         setDesignations(desigRows.filter(isActive).map(r => ({ id: r.id, name: r.name })));
-        setEmployees(empRows.map(e => ({ id: e.id, display_name: e.display_name || `${e.first_name || ''} ${e.last_name || ''}`.trim() || `Employee #${e.id}`, emp_code: e.emp_code })));
+        setEmployees(empRows.map(e => ({
+          id: e.id,
+          display_name: e.display_name || `${e.first_name || ''} ${e.last_name || ''}`.trim() || `Employee #${e.id}`,
+          emp_code: e.emp_code,
+          primary_role_id: e.primary_role_id ?? null,
+          ancillary_role_id: e.ancillary_role_id ?? null,
+          designation_id: e.designation_id ?? null,
+        })));
       } catch {
         if (!cancelled) { setRoles([]); setDesignations([]); setEmployees([]); }
       }
@@ -516,16 +521,25 @@ function CreateAnnouncementModal({
   // recipient subtitle in the preview panel.
   const audienceCount = useMemo(() => {
     if (employees.length === 0) return 0;
-    let pool = employees.map(e => e.id);
-    if (audienceType === 'roles' || audienceType === 'designations') {
-      // We don't have role/designation per employee in this lookup — fall
-      // back to a heuristic: 0 if no ids picked, else the picked count.
-      const picked = audienceType === 'roles' ? roleIds.length : designationIds.length;
-      pool = picked > 0 ? employees.map(e => e.id) : []; // approximate
+    // Filter the same way the backend's computeAudienceCount does so the
+    // preview matches the saved audience_count exactly. The /employees
+    // lookup carries primary_role_id / ancillary_role_id / designation_id,
+    // so role- and designation-based targeting can be resolved client-side.
+    let pool = employees;
+    if (audienceType === 'roles') {
+      if (roleIds.length === 0) return 0;
+      const set = new Set(roleIds);
+      pool = pool.filter(e =>
+        (e.primary_role_id != null && set.has(e.primary_role_id)) ||
+        (e.ancillary_role_id != null && set.has(e.ancillary_role_id)));
+    } else if (audienceType === 'designations') {
+      if (designationIds.length === 0) return 0;
+      const set = new Set(designationIds);
+      pool = pool.filter(e => e.designation_id != null && set.has(e.designation_id));
     }
     if (excludeIds.length > 0) {
       const set = new Set(excludeIds);
-      pool = pool.filter(id => !set.has(id));
+      pool = pool.filter(e => !set.has(e.id));
     }
     return pool.length;
   }, [employees, audienceType, roleIds, designationIds, excludeIds]);
