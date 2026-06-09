@@ -950,7 +950,8 @@ function ConfigurationTab({
           <button
             type="button"
             onClick={onShowGuide}
-            style={{ background: 'none', border: 'none', padding: 0, color: '#0c63b0', textDecoration: 'underline', fontWeight: 600, cursor: 'pointer' }}
+            className="lp-banner-link"
+            style={{ background: 'none', border: 'none', padding: 0, textDecoration: 'underline', fontWeight: 600, cursor: 'pointer' }}
           >
             Check the guide here.
           </button>

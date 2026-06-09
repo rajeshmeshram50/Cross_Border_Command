@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Col, Row, Input, Modal, ModalBody } from 'reactstrap';
 import { MasterFormStyles, MasterSelect, MasterDatePicker } from '../master/masterFormKit';
@@ -785,7 +785,7 @@ export default function HrLeave() {
                           <span className="lv-today-chip-body">
                             <span className="lv-today-chip-name">{r.empName}</span>
                             <span className="lv-today-chip-meta">
-                              <span className="rec-pill" style={{ background: tType.bg, color: tType.fg, padding: '1px 7px', fontSize: 10 }}>
+                              <span className="rec-pill lv-tone-pill" style={{ ['--lvp-bg' as string]: tType.bg, ['--lvp-fg' as string]: tType.fg, ['--lvp-accent' as string]: tType.fg, padding: '1px 7px', fontSize: 10 } as CSSProperties}>
                                 {r.type}
                               </span>
                               <span className="text-muted" style={{ fontSize: 10.5 }}>
@@ -972,7 +972,7 @@ export default function HrLeave() {
                                 </div>
                               </td>
                               <td>
-                                <span className="rec-pill" style={{ background: tType.bg, color: tType.fg }}>
+                                <span className="rec-pill lv-tone-pill" style={{ ['--lvp-bg' as string]: tType.bg, ['--lvp-fg' as string]: tType.fg, ['--lvp-accent' as string]: tType.fg } as CSSProperties}>
                                   {r.type}
                                 </span>
                               </td>
@@ -985,7 +985,7 @@ export default function HrLeave() {
                                 <ChainDots row={r} />
                               </td>
                               <td>
-                                <span className="rec-pill" style={{ background: tPay.bg, color: tPay.fg }}>
+                                <span className="rec-pill lv-tone-pill" style={{ ['--lvp-bg' as string]: tPay.bg, ['--lvp-fg' as string]: tPay.fg, ['--lvp-accent' as string]: tPay.fg } as CSSProperties}>
                                   {r.payroll}
                                 </span>
                               </td>
@@ -1018,7 +1018,7 @@ export default function HrLeave() {
                                 )}
                               </td>
                               <td>
-                                <span className="rec-pill" style={{ background: tone.bg, color: tone.fg }}>
+                                <span className="rec-pill lv-tone-pill" style={{ ['--lvp-bg' as string]: tone.bg, ['--lvp-fg' as string]: tone.fg, ['--lvp-accent' as string]: tone.dot } as CSSProperties}>
                                   {r.stage}
                                 </span>
                                 {isPending && r.stageNote && (
@@ -1063,13 +1063,14 @@ export default function HrLeave() {
                                   />
                                   <ActionBtn
                                     title={
-                                      r.stage === 'Rejected'  ? 'Already rejected'
+                                      r.stage === 'Approved'  ? 'Already approved'
+                                      : r.stage === 'Rejected'  ? 'Already rejected'
                                       : r.stage === 'Cancelled' ? 'Request cancelled'
                                       : 'Reject'
                                     }
                                     icon="ri-close-line"
                                     tone="danger"
-                                    disabled={r.stage === 'Rejected' || r.stage === 'Cancelled'}
+                                    disabled={r.stage === 'Rejected' || r.stage === 'Cancelled' || r.stage === 'Approved'}
                                     onClick={() => setConfirmAction({ row: r, action: 'reject' })}
                                   />
                                     </>
@@ -1614,7 +1615,7 @@ function ConfirmActionModal({
             Comment {isApprove ? <span className="text-muted">(optional)</span> : <span className="text-danger">*</span>}
           </label>
           <textarea
-            className="form-control"
+            className="form-control lv-confirm-textarea"
             rows={3}
             placeholder={
               isApprove

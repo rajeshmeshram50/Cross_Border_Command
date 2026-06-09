@@ -582,6 +582,13 @@ class LeavePlanController extends Controller
             ])
             ->join('leave_plan_employees as lpe', 'lpe.employee_id', '=', 'employees.id')
             ->whereIn('lpe.leave_plan_id', $planIds)
+            // Drop employees who have left the company so the balance grid only
+            // lists people who still accrue/consume leave. Soft-deleted rows are
+            // already excluded by Eloquent's default scope; this additionally
+            // hides exit/terminal statuses that keep their pivot row but should
+            // no longer show up (HRMS-BUG-078). Probation / Notice Period /
+            // On Leave staff are still active and remain visible.
+            ->whereRaw('(employees.status IS NULL OR LOWER(employees.status) NOT IN (?, ?, ?, ?))', ['inactive', 'resigned', 'terminated', 'exited'])
             ->with([
                 'department:id,name',
                 'designation:id,name',

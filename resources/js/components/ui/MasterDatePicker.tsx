@@ -48,9 +48,17 @@ export function MasterDatePicker({
     const update = () => {
       if (!wrapRef.current) return;
       const rect = wrapRef.current.getBoundingClientRect();
+      // Clamp the popup horizontally so it never spills past the viewport. In
+      // right-side drawers (e.g. the leave request panel) the trigger sits near
+      // the right edge, so a plain left-aligned popup pushed its rightmost
+      // columns — Friday/Saturday — off-screen (HRMS-BUG-088). The effective
+      // popup width mirrors the inline min-width below: max(240, trigger width).
+      const margin = 8;
+      const popupW = Math.max(240, rect.width);
+      const left = Math.max(margin, Math.min(rect.left, window.innerWidth - popupW - margin));
       setPopupPos({
         top: rect.bottom + 5,
-        left: rect.left,
+        left,
         width: rect.width,
       });
     };

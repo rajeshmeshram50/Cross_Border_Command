@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, ModalBody } from 'reactstrap';
+import Swal from 'sweetalert2';
 import api from '../../api';
+import { useToast } from '../../contexts/ToastContext';
 import { MasterDatePicker } from '../master/masterFormKit';
 import {
   employeeBalancesApi,
@@ -53,6 +55,7 @@ const initialsOf = (name: string) =>
   name.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase() || '?';
 
 export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmitted }: Props) {
+  const toast = useToast();
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [leaveTypeId, setLeaveTypeId] = useState<string>('');
@@ -128,6 +131,10 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
 
   const totalDays = useMemo(() => diffDaysInclusive(fromDate, toDate), [fromDate, toDate]);
 
+  // Earliest selectable date — the backend rejects past-dated leave, so the
+  // calendar must not offer past days in the first place (HRMS-BUG-143).
+  const today = new Date().toISOString().slice(0, 10);
+
   const isSelected = useCallback(
     (id: number) => selectedNotify.some(s => s.id === id),
     [selectedNotify],
@@ -150,7 +157,13 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
     if (selectedBalance && !selectedBalance.unlimited) {
       const remaining = selectedBalance.available ?? 0;
       if (totalDays > remaining) {
-        alert(`Not enough balance — ${selectedBalance.name} has ${remaining} days available but you requested ${totalDays}.`);
+        await Swal.fire({
+          title: 'Not enough leave balance',
+          text: `${selectedBalance.name} has ${remaining} day${remaining === 1 ? '' : 's'} available but you requested ${totalDays}.`,
+          icon: 'warning',
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#f06548',
+        });
         return;
       }
     }
@@ -169,7 +182,7 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
       onClose();
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Could not submit request';
-      alert(msg);
+      toast.error('Could not submit request', msg);
     } finally {
       setSubmitting(false);
     }
@@ -232,6 +245,7 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
                     setFromDate(v);
                     if (toDate && new Date(toDate) < new Date(v)) setToDate(v);
                   }}
+                  minDate={today}
                   placeholder="Select date"
                 />
               </div>
@@ -246,7 +260,7 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
                 <MasterDatePicker
                   value={toDate}
                   onChange={setToDate}
-                  minDate={fromDate || undefined}
+                  minDate={fromDate || today}
                   placeholder="Select date"
                 />
               </div>
@@ -272,10 +286,15 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
               >
                 <option value="">Select a leave type…</option>
                 {balanceTypes.map(t => {
-                  const avail = t.unlimited ? '∞' : (t.available ?? 0);
+                  // Native <option> text can't be styled per-character, so the
+                  // tiny ∞ glyph read as invisible (HRMS-BUG-098). Spell it out
+                  // as "Unlimited" instead for unlimited types.
+                  const availLabel = t.unlimited
+                    ? 'Unlimited days available'
+                    : `${t.available ?? 0} days available`;
                   return (
                     <option key={t.leave_type_id} value={String(t.leave_type_id)}>
-                      {t.name} — {avail} days available
+                      {t.name} — {availLabel}
                     </option>
                   );
                 })}
