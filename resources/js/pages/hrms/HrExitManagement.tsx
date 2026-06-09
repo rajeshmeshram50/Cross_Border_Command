@@ -322,9 +322,6 @@ export default function HrExitManagement() {
                 <div className="min-w-0">
                   <div className="d-flex align-items-center gap-2 flex-wrap">
                     <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Exit Management Hub</h5>
-                    <span className="exit-head-badge">
-                      <span className="dot" />Active
-                    </span>
                   </div>
                   <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
                     Track active employees, ongoing exit cases, and completed employee exits
