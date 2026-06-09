@@ -570,8 +570,16 @@ export default function HrEmployeeOnboarding() {
         // that can't even sign in. Filter at the boundary so every
         // downstream guard (button visibility, stats, vault counts) is
         // automatically correct.
+        //
+        // ALSO drop EXITED / INACTIVE employees. Completing an exit flips
+        // employees.status to Resigned/Terminated (and disables the login)
+        // WITHOUT soft-deleting the row, so a !deleted_at filter alone let
+        // exited people reappear in the onboarding queue. An exited employee
+        // belongs only in the Disabled tab, never in onboarding.
+        const EXCLUDED_STATUSES = ['Resigned', 'Terminated', 'Inactive'];
         const list = (Array.isArray(r.data) ? r.data : [])
-          .filter((e: any) => !e?.deleted_at);
+          .filter((e: any) => !e?.deleted_at)
+          .filter((e: any) => !EXCLUDED_STATUSES.includes(String(e?.status ?? '')));
         setApiRows(list.map(apiToOnboardRow));
       })
       .catch(() => setApiRows([]))
@@ -707,9 +715,6 @@ export default function HrEmployeeOnboarding() {
           <div className="min-w-0">
             <div className="d-flex align-items-center gap-2 flex-wrap">
               <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Employee Onboarding Hub</h5>
-              <span className="onb-hero-pill">
-                <span className="dot" />Active
-              </span>
             </div>
             <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
               Track newly joined employees, onboarding progress, and completed onboarding records
@@ -1636,6 +1641,9 @@ export function VaultModal({
   const counts = {
     total:    allDocs.length + signedTemplates.length,
     verified: allDocs.filter(d => d.status === 'Verified').length,
+    // Uploaded-but-not-yet-verified docs. They count toward vault completion
+    // (the file IS in the vault), even though HR hasn't ticked "Verified" yet.
+    uploaded: allDocs.filter(d => d.status === 'Uploaded').length,
     // SIGNED KPI = how many of the matched templates the employee has
     // actually completed signing. Used to read signedTemplates.length,
     // which is now the WHOLE template list, so the tile was about to
@@ -1647,7 +1655,11 @@ export function VaultModal({
   };
   const empCount = allDocs.length;
   const orgCount = signedTemplates.length;
-  const completion = counts.total ? Math.round(((counts.verified + counts.signed) / counts.total) * 100) : 0;
+  // Vault completion = everything that's actually in the vault — uploaded OR
+  // verified docs, plus signed org templates — over the total expected. Was
+  // (verified + signed) only, so a vault full of uploaded-but-unverified docs
+  // wrongly read 0% until HR verified each one.
+  const completion = counts.total ? Math.round(((counts.verified + counts.uploaded + counts.signed) / counts.total) * 100) : 0;
   const sections = tab === 'employee' ? employeeSections : [];  // org tab renders from signedTemplates below
 
   // 3-dot menu state (which row is open)
@@ -1899,27 +1911,6 @@ export function VaultModal({
     }
   };
 
-  // Download an employee document through the app (same-origin, attachment
-  // disposition) so it actually SAVES. A raw Azure Blob URL only opens a
-  // preview (cross-origin, no CORS, served inline). Routing through the
-  // backend mirrors how the customer Evidence Vault downloads its files.
-  const downloadEmpDoc = async (docId?: number, filename?: string) => {
-    if (!docId) return;
-    try {
-      const resp = await api.get(`/documents/${docId}/download`, { responseType: 'blob' });
-      const url = URL.createObjectURL(new Blob([resp.data]));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename || `document-${docId}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (err: any) {
-      toast.error('Could not download', err?.response?.data?.message || 'Please try again.');
-    }
-  };
-
   return (
     <Modal
       isOpen={isOpen}
@@ -2148,16 +2139,6 @@ export function VaultModal({
                           >
                             <i className="ri-eye-line" /> View
                           </a>
-                          <button
-                            type="button"
-                            onClick={() => { if (hasFile) void downloadEmpDoc(doc.docId, doc.desc || doc.name); }}
-                            disabled={!hasFile}
-                            className="vault-action-download"
-                            style={{ opacity: hasFile ? 1 : 0.5, pointerEvents: hasFile ? 'auto' : 'none', cursor: hasFile ? 'pointer' : 'default' }}
-                            title={hasFile ? 'Download original upload' : 'No file available'}
-                          >
-                            <i className="ri-download-2-line" /> Download
-                          </button>
                         </div>
                       );
                     })}
@@ -2274,10 +2255,14 @@ export function VaultModal({
                           <span className={`badge rounded-pill bg-${tplStatusColor}-subtle text-${tplStatusColor} fw-semibold px-3 py-2 fs-13`}>
                             {tpl.status}
                           </span>
-                          <button type="button" className="vault-action-view" onClick={() => handleView(tpl)}
-                            data-tooltip="Preview with this employee's data" data-tooltip-pos="bottom" aria-label="Preview document">
-                            <i className="ri-eye-line" /> View
-                          </button>
+                          {/* Once fully signed, the row collapses to a single
+                              Download action — View/Send/Sign are hidden. */}
+                          {run?.status !== 'Completed' && (
+                            <button type="button" className="vault-action-view" onClick={() => handleView(tpl)}
+                              data-tooltip="Preview with this employee's data" data-tooltip-pos="bottom" aria-label="Preview document">
+                              <i className="ri-eye-line" /> View
+                            </button>
+                          )}
                           {/* If the current user is the next signer, surface
                               their action button inline so they don't have to
                               hunt for it. */}
@@ -2289,23 +2274,18 @@ export function VaultModal({
                               <i className="ri-quill-pen-line me-1" />{currentSigner!.action}
                             </button>
                           )}
-                          {/* Send for signing — shown when there's no active run.
-                              Once the run is fully signed (Completed) the button
-                              is DISABLED (greyed) so a signed document can't be
-                              re-sent by mistake. Rejected/Cancelled still allow
-                              a fresh send. */}
-                          {(!run || run.status === 'Completed' || run.status === 'Rejected' || run.status === 'Cancelled') && (() => {
-                            const isCompleted = run?.status === 'Completed';
-                            const sendDisabled = !canGenerate || isCompleted;
-                            return (
-                              <button type="button" onClick={() => { if (!sendDisabled) openSend(tpl); }}
-                                disabled={sendDisabled}
-                                style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: sendDisabled ? 'not-allowed' : 'pointer', opacity: sendDisabled ? 0.5 : 1 }}
-                                data-tooltip={isCompleted ? 'Already fully signed — cannot re-send' : (canGenerate ? 'Send through the signing workflow' : 'Only Active templates can be sent')} data-tooltip-pos="bottom" aria-label="Send for signing">
-                                <i className="ri-send-plane-line me-1" /> Send
-                              </button>
-                            );
-                          })()}
+                          {/* Send for signing — only when there's no active run
+                              (or a previous run was Rejected/Cancelled). While a
+                              run is in flight it's hidden (can't re-send); once
+                              Completed the row shows only Download instead. */}
+                          {(!run || run.status === 'Rejected' || run.status === 'Cancelled') && (
+                            <button type="button" onClick={() => { if (canGenerate) openSend(tpl); }}
+                              disabled={!canGenerate}
+                              style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: canGenerate ? 'pointer' : 'not-allowed', opacity: canGenerate ? 1 : 0.5 }}
+                              data-tooltip={canGenerate ? 'Send through the signing workflow' : 'Only Active templates can be sent'} data-tooltip-pos="bottom" aria-label="Send for signing">
+                              <i className="ri-send-plane-line me-1" /> Send
+                            </button>
+                          )}
                           {/* Reminder — visible only on in-flight runs.
                               Pings the CURRENT pending signer by email.
                               Backend throttles to 1 reminder / 6 hours
@@ -2318,21 +2298,15 @@ export function VaultModal({
                               <i className="ri-mail-send-line me-1" /> Reminder
                             </button>
                           )}
-                          <button type="button" className="vault-action-download" onClick={() => handleGenerate(tpl)}
-                            disabled={!canGenerate}
-                            style={{ opacity: canGenerate ? 1 : 0.5, cursor: canGenerate ? 'pointer' : 'not-allowed' }}
-                            data-tooltip={canGenerate ? 'Generate DOCX with this employee\'s data' : 'Only Active templates can be generated'} data-tooltip-pos="bottom" aria-label="Generate document">
-                            <i className="ri-play-fill" /> Generate
-                          </button>
                           {/* Download signed PDF — icon-only (compact) so the
                               action row stays uncluttered. Shown only once the
                               run is fully signed. */}
                           {run && run.status === 'Completed' && (
                             <button type="button" onClick={() => downloadSignedDoc(run)}
-                              aria-label="Download signed PDF"
-                              style={{ width: 32, height: 32, padding: 0, borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#16a34a,#22c55e)', color: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-                              data-tooltip="Download signed PDF" data-tooltip-pos="bottom">
-                              <i className="ri-file-pdf-2-line" style={{ fontSize: 15 }} />
+                              aria-label="Download signed document"
+                              style={{ padding: '6px 14px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#16a34a,#22c55e)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                              data-tooltip="Download the fully-signed document" data-tooltip-pos="bottom">
+                              <i className="ri-download-2-line" /> Download
                             </button>
                           )}
 
@@ -3287,13 +3261,8 @@ const STAGE2_COMPANY_DOCS: { id: string; name: string; status: DocStatus; maxMb?
   { id: 'offer_letter', name: 'Previous Offer Letter',      status: 'Optional', maxMb: 5 },
 ];
 
-const DOC_STATUS_TONE: Record<DocStatus, { bg: string; fg: string; dot: string }> = {
-  Pending:  { bg: '#fde8c4', fg: '#a4661c', dot: '#f59e0b' },
-  Uploaded: { bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
-  Verified: { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' },
-  Rejected: { bg: '#fdd9d6', fg: '#b1401d', dot: '#f06548' },
-  Optional: { bg: '#ece6ff', fg: '#5a3fd1', dot: '#7c5cfc' },
-};
+// Document status colours now live as .onb-doc-status-pill--<status> CSS
+// classes (theme-aware, no leading dot) in HrEmployeeOnboarding.css.
 
 function InitiateOnboardingModal({
   isOpen, onClose, emp, onSaved,
@@ -6009,7 +5978,6 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
               const effective: DocStatus = srv
                 ? _serverStatusToUi(srv.status)
                 : (d.status === 'Optional' ? 'Optional' : 'Pending');
-              const tone = DOC_STATUS_TONE[effective];
               // Per-doc picker filter. Passport photo: images only.
               // Cheque: images + PDF. Everything else: every accepted
               // type (PDF / JPG / PNG / WEBP). Previously this used
@@ -6037,8 +6005,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                       {srv?.rejection_reason && <> · <span style={{ color: '#b1401d' }}>Reason: {srv.rejection_reason}</span></>}
                     </p>
                   </div>
-                  <span className="onb-doc-status-pill" style={{ background: tone.bg, color: tone.fg }}>
-                    <span className="dot" style={{ background: tone.dot }} />
+                  <span className={`onb-doc-status-pill onb-doc-status-pill--${String(effective).toLowerCase()}`}>
                     {effective}
                   </span>
                   {srv?.url && (
@@ -6299,7 +6266,6 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                 const effective: DocStatus = srv
                   ? _serverStatusToUi(srv.status)
                   : (d.status === 'Optional' ? 'Optional' : 'Pending');
-                const tone = DOC_STATUS_TONE[effective];
                 const isBusy = uploadingKey === fullKey;
                 return (
                   <div key={d.id} className="onb-doc-comp-doc">
@@ -6309,8 +6275,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                       {d.status === 'Optional' && <span className="onb-doc-tag">Optional</span>}
                       {srv?.original_name && <span style={{ marginLeft: 8, fontSize: 11, color: '#6b7280' }}>· {srv.original_name}</span>}
                     </h6>
-                    <span className="onb-doc-status-pill" style={{ background: tone.bg, color: tone.fg }}>
-                      <span className="dot" style={{ background: tone.dot }} />
+                    <span className={`onb-doc-status-pill onb-doc-status-pill--${String(effective).toLowerCase()}`}>
                       {effective}
                     </span>
                     {srv?.url && (
@@ -6939,13 +6904,7 @@ function Stage4Payroll({
                   <i className={ok ? 'ri-check-line' : 'ri-loader-line'} />
                 </span>
                 <h6 className="onb-pay-check-name">{c.name}</h6>
-                <span
-                  className="onb-doc-status-pill"
-                  style={ok
-                    ? { background: '#d1fae5', color: '#065f46' }
-                    : { background: '#fde8c4', color: '#a4661c' }}
-                >
-                  <span className="dot" style={{ background: ok ? '#10b981' : '#f59e0b' }} />
+                <span className={`onb-doc-status-pill onb-doc-status-pill--${ok ? 'verified' : 'pending'}`}>
                   {ok ? 'Verified' : 'Pending'}
                 </span>
               </div>
@@ -7664,7 +7623,6 @@ function Stage6Verify({
               <div className="onb-ver-stage-sub">{s.sub}</div>
             </div>
             <span className={`onb-ver-status-pill ${s.verified ? 'verified' : 'pending'}`}>
-              <span className="dot" />
               {s.verified ? 'Verified' : 'Pending'}
             </span>
           </div>
