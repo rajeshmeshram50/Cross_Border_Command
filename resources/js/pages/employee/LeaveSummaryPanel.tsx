@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal, ModalBody } from 'reactstrap';
+import Swal from 'sweetalert2';
 import {
   employeeBalancesApi,
   leaveRequestsApi,
@@ -111,13 +112,24 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
   };
 
   const cancel = async (requestId: number) => {
-    if (!window.confirm('Cancel this leave request?')) return;
+    const result = await Swal.fire({
+      title: 'Cancel leave request?',
+      text: 'This will withdraw the request. This cannot be undone.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, cancel it',
+      cancelButtonText: 'Keep request',
+      confirmButtonColor: '#f06548',
+      cancelButtonColor: '#878a99',
+    });
+    if (!result.isConfirmed) return;
     try {
       await leaveRequestsApi.cancel(requestId);
       await refetch();
+      Swal.fire({ title: 'Cancelled', text: 'Your leave request has been withdrawn.', icon: 'success', timer: 1600, showConfirmButton: false });
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Cancel failed';
-      alert(msg);
+      Swal.fire({ title: 'Could not cancel', text: msg, icon: 'error' });
     }
   };
 
@@ -299,7 +311,11 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
                   <div className="d-flex justify-content-between mt-3 pt-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
                     <div>
                       <div className="text-muted" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.4 }}>AVAILABLE</div>
-                      <div className="fw-semibold" style={{ fontSize: 13 }}>{t.unlimited ? '∞' : available} {available === 1 ? 'day' : 'days'}</div>
+                      <div className="fw-semibold" style={{ fontSize: 13 }}>
+                        {t.unlimited
+                          ? <span style={{ fontSize: 22, lineHeight: 1, verticalAlign: 'middle' }}>∞</span>
+                          : <>{available} {available === 1 ? 'day' : 'days'}</>}
+                      </div>
                     </div>
                     <div>
                       <div className="text-muted" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.4 }}>CONSUMED</div>
@@ -307,7 +323,11 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
                     </div>
                     <div>
                       <div className="text-muted" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.4 }}>ANNUAL QUOTA</div>
-                      <div className="fw-semibold" style={{ fontSize: 13 }}>{t.unlimited ? '∞' : total} {total === 1 ? 'day' : 'days'}</div>
+                      <div className="fw-semibold" style={{ fontSize: 13 }}>
+                        {t.unlimited
+                          ? <span style={{ fontSize: 22, lineHeight: 1, verticalAlign: 'middle' }}>∞</span>
+                          : <>{total} {total === 1 ? 'day' : 'days'}</>}
+                      </div>
                     </div>
                   </div>
                 </div>

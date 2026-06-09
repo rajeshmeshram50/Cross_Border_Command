@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Col, Row, Modal, ModalBody } from 'reactstrap';
 import { leaveRequestsApi, ApiLeaveRequest, ApiLeaveApprover } from './leavePlansApi';
@@ -161,23 +161,56 @@ export default function HrLeaveApprovals() {
           </div>
 
           {/* Filter row */}
-          <div className="d-flex align-items-center gap-2 flex-wrap p-3" style={{ background: '#fff', borderBottom: '1px solid #e5e7eb' }}>
-            {(['Pending', 'Approved', 'Rejected', 'All'] as StatusFilter[]).map(s => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setStatus(s)}
-                className={`lp-top-tab ${status === s ? 'is-active' : ''}`}
-                style={{ fontSize: 13 }}
-              >
-                {s}
-                {s !== 'All' && counts[s as keyof typeof counts] > 0 && (
-                  <span className="ms-1 fw-bold" style={{ color: STATUS_TONE[s].fg }}>
-                    ({counts[s as keyof typeof counts]})
-                  </span>
-                )}
-              </button>
-            ))}
+          <div className="d-flex align-items-center gap-2 flex-wrap p-3" style={{ background: 'var(--vz-card-bg)', borderBottom: '1px solid var(--vz-border-color)' }}>
+            {/* Status filters as a segmented control — were plain text links
+                before, now distinct tab buttons matching the other HRMS
+                modules' filter bars (HRMS-BUG-100). */}
+            <div
+              className="d-flex flex-wrap"
+              style={{
+                background: 'var(--vz-secondary-bg)',
+                border: '1px solid var(--vz-border-color)',
+                borderRadius: 10,
+                padding: 4,
+                gap: 4,
+              }}
+            >
+              {(['Pending', 'Approved', 'Rejected', 'All'] as StatusFilter[]).map(s => {
+                const on = status === s;
+                const count = s === 'All' ? undefined : counts[s as keyof typeof counts];
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setStatus(s)}
+                    className="btn d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
+                    style={{
+                      borderRadius: 8,
+                      padding: '7px 14px',
+                      fontSize: 13,
+                      background: on ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'transparent',
+                      color: on ? '#fff' : 'var(--vz-secondary-color)',
+                      border: 'none',
+                      boxShadow: on ? '0 4px 12px rgba(124,92,252,0.25)' : 'none',
+                    }}
+                  >
+                    {s}
+                    {count !== undefined && count > 0 && (
+                      <span
+                        className="badge rounded-pill"
+                        style={{
+                          fontSize: 11,
+                          background: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
+                          color: on ? '#fff' : 'var(--vz-secondary-color)',
+                        }}
+                      >
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
             <div className="lp-search-box flex-grow-1 ms-auto" style={{ minWidth: 240, maxWidth: 360 }}>
               <i className="ri-search-line" />
               <input
@@ -358,11 +391,12 @@ export default function HrLeaveApprovals() {
                           : c.is_current ? { bg: '#ede9fe', fg: '#5a3fd1', ring: '#7c5cfc' }
                           : { bg: '#f3f4f6', fg: '#6b7280', ring: '#d1d5db' };
                         return (
-                          <div key={i} className="flex-grow-1 d-flex align-items-center gap-2" style={{
-                            background: tone.bg, color: tone.fg, padding: '10px 12px', borderRadius: 10,
+                          <div key={i} className="lva-tone-card flex-grow-1 d-flex align-items-center gap-2" style={{
+                            ['--lva-bg' as string]: tone.bg, ['--lva-fg' as string]: tone.fg, ['--lva-ring' as string]: tone.ring,
+                            padding: '10px 12px', borderRadius: 10,
                             border: c.is_current ? `2px solid ${tone.ring}` : '1px solid transparent',
                             minWidth: 0,
-                          }}>
+                          } as CSSProperties}>
                             <span className="rounded-circle d-inline-flex align-items-center justify-content-center fw-bold flex-shrink-0" style={{
                               width: 24, height: 24, fontSize: 11, background: tone.ring, color: '#fff',
                             }}>
@@ -402,7 +436,7 @@ export default function HrLeaveApprovals() {
 
                 {/* Handover */}
                 {detail.handover_required && (
-                  <div className="mb-3" style={{ background: '#f8f9fa', borderRadius: 10, padding: 12 }}>
+                  <div className="mb-3" style={{ background: 'var(--vz-secondary-bg)', borderRadius: 10, padding: 12 }}>
                     <div className="fw-bold mb-1" style={{ fontSize: 12 }}>Handover</div>
                     {detail.cover_person && (
                       <div style={{ fontSize: 12 }}>
@@ -416,11 +450,13 @@ export default function HrLeaveApprovals() {
 
                 {/* Already-decided state */}
                 {detail.status !== 'Pending' && (
-                  <div className="mb-3" style={{
-                    background: STATUS_TONE[detail.status]?.bg || '#eef2f6',
-                    color: STATUS_TONE[detail.status]?.fg || '#374151',
+                  <div className="lva-tone-card mb-3" style={{
+                    ['--lva-bg' as string]: STATUS_TONE[detail.status]?.bg || '#eef2f6',
+                    ['--lva-fg' as string]: STATUS_TONE[detail.status]?.fg || '#374151',
+                    ['--lva-ring' as string]: detail.status === 'Approved' ? '#10b981'
+                      : detail.status === 'Rejected' ? '#ef4444' : '#9ca3af',
                     borderRadius: 10, padding: 12, fontSize: 13,
-                  }}>
+                  } as CSSProperties}>
                     <strong>{detail.status}</strong>
                     {detail.approver?.name && <> by {detail.approver.name}</>}
                     {detail.approved_at && <> on {fmtDate(detail.approved_at)}</>}

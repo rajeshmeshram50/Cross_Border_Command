@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\EnforcesSegmentBuyerConsignee;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\Employee;
@@ -25,6 +26,8 @@ use Illuminate\Validation\Rule;
 
 class SalesLeadController extends Controller
 {
+    use EnforcesSegmentBuyerConsignee;
+
     /* ISO 3166-1 alpha-2 → human-readable name. Used as a fallback in
      * filterOptions() when a lead row has an ISO code but no persisted
      * sender_country_name. Kept narrow to the countries we actually see
@@ -72,7 +75,7 @@ class SalesLeadController extends Controller
                 ->limit(1)])
             ->with([
                 'salesperson' => fn ($r) => $r->select('id', 'name')->withTrashed(),
-                'customer'    => fn ($r) => $r->select('id', 'company_name', 'customer_code')->withTrashed(),
+                'customer'    => fn ($r) => $r->select('id', 'company_name', 'legal_name', 'customer_code')->withTrashed(),
                 'consignee'   => fn ($r) => $r->select('id', 'company_name')->withTrashed(),
             ])
             ->orderByDesc('id');
@@ -84,6 +87,18 @@ class SalesLeadController extends Controller
             $q->where('qualified', true)->where('disqualified', false);
         } elseif ($status === 'disqualified') {
             $q->where('disqualified', true);
+        } elseif ($status === 'key_opportunity') {
+            // Key Opportunity Leads tab — flagged high-priority leads. The
+            // optional `deal_state` sub-tab splits them into pipeline
+            // ("in_progress", won_at still null) vs closed ("won", won_at set
+            // the first time the lead reached Victory / Stage 6).
+            $q->where('key_opportunity', true);
+            $dealState = $request->query('deal_state');
+            if ($dealState === 'in_progress') {
+                $q->whereNull('won_at');
+            } elseif ($dealState === 'won') {
+                $q->whereNotNull('won_at');
+            }
         }
         // 'all' or anything else → no status filter
 
@@ -114,13 +129,19 @@ class SalesLeadController extends Controller
             $row = $countsQ->selectRaw(
                 "COUNT(*) AS c_all,
                  SUM(CASE WHEN qualified = true AND disqualified = false THEN 1 ELSE 0 END) AS c_qual,
-                 SUM(CASE WHEN disqualified = true THEN 1 ELSE 0 END) AS c_disq"
+                 SUM(CASE WHEN disqualified = true THEN 1 ELSE 0 END) AS c_disq,
+                 SUM(CASE WHEN key_opportunity = true THEN 1 ELSE 0 END) AS c_key,
+                 SUM(CASE WHEN key_opportunity = true AND won_at IS NULL THEN 1 ELSE 0 END) AS c_key_inprogress,
+                 SUM(CASE WHEN key_opportunity = true AND won_at IS NOT NULL THEN 1 ELSE 0 END) AS c_key_won"
             )->first();
 
             $counts = [
-                'all'          => (int) ($row->c_all  ?? 0),
-                'qualified'    => (int) ($row->c_qual ?? 0),
-                'disqualified' => (int) ($row->c_disq ?? 0),
+                'all'             => (int) ($row->c_all  ?? 0),
+                'qualified'       => (int) ($row->c_qual ?? 0),
+                'disqualified'    => (int) ($row->c_disq ?? 0),
+                'key_opportunity' => (int) ($row->c_key  ?? 0),
+                'key_in_progress' => (int) ($row->c_key_inprogress ?? 0),
+                'key_won'         => (int) ($row->c_key_won ?? 0),
             ];
         }
 
@@ -183,14 +204,21 @@ class SalesLeadController extends Controller
         }
 
         if ($search = trim((string) $request->query('search', ''))) {
-            $like = "%{$search}%";
+            // Case-INSENSITIVE, global search. We LOWER() both the column and
+            // the term so it behaves identically on MySQL (collation-dependent)
+            // and PostgreSQL (whose plain LIKE is case-SENSITIVE — "rice" would
+            // otherwise not match "RICE"). The column list is a fixed
+            // whitelist, never user input, so whereRaw is injection-safe; only
+            // the lowered term is bound as a parameter.
+            $like = '%' . mb_strtolower($search) . '%';
             /* Full-table search — every column the My Workplace table
-             * shows is now searchable from the single header search box.
+             * shows is searchable from the single header search box.
              * Coverage:
              *   • Opportunity Id   → opp_code, unique_query_id
              *   • Lead Type        → query_type ("W" / "B" / "BIZ")
              *   • Lead Source      → platform ("Vortex" / "Purvee" …)
-             *   • Customer Name    → sender_name + customer.org_name
+             *   • Customer Name    → sender_name + customer.company_name
+             *   • Customer Id      → customer.customer_code
              *   • Customer Number  → sender_mobile + sender_mobile_alt
              *   • Customer Email   → sender_email + sender_email_alt
              *   • Company          → sender_company + sender_address /
@@ -201,44 +229,34 @@ class SalesLeadController extends Controller
              *   • Assigned To      → salesperson.name (relation lookup)
              * The relation-based searches use whereHas so they stay
              * indexed and don't pull every related row into PHP. */
-            $q->where(function ($w) use ($like, $search) {
-                $w->where('opp_code',              'like', $like)
-                  ->orWhere('unique_query_id',     'like', $like)
-                  ->orWhere('query_type',          'like', $like)
-                  ->orWhere('platform',            'like', $like)
-                  ->orWhere('source_account',      'like', $like)
-                  ->orWhere('sender_name',         'like', $like)
-                  ->orWhere('sender_mobile',       'like', $like)
-                  ->orWhere('sender_mobile_alt',   'like', $like)
-                  ->orWhere('sender_email',        'like', $like)
-                  ->orWhere('sender_email_alt',    'like', $like)
-                  ->orWhere('sender_company',      'like', $like)
-                  ->orWhere('sender_address',      'like', $like)
-                  ->orWhere('sender_city',         'like', $like)
-                  ->orWhere('sender_state',        'like', $like)
-                  ->orWhere('sender_pincode',      'like', $like)
-                  ->orWhere('sender_country_iso',  'like', $like)
-                  ->orWhere('sender_country_name', 'like', $like)
-                  ->orWhere('query_product_name',  'like', $like)
-                  ->orWhere('query_mcat_name',     'like', $like)
-                  ->orWhere('query_message',       'like', $like)
-                  ->orWhere('remark',              'like', $like)
-                  ->orWhere('whatsapp_status',     'like', $like)
-                  // Related lookups — salesperson and customer names.
-                  ->orWhereHas('salesperson', function ($s) use ($like) {
-                      $s->where('name',  'like', $like)
-                        ->orWhere('email','like', $like);
-                  })
-                  ->orWhereHas('customer', function ($c) use ($like) {
-                      // customers table uses company_name / legal_name —
-                      // the earlier `org_name` reference was inherited
-                      // from the clients table and crashed with "column
-                      // org_name does not exist" on Postgres.
-                      $c->where('company_name', 'like', $like)
-                        ->orWhere('legal_name',   'like', $like)
-                        ->orWhere('customer_code','like', $like)
-                        ->orWhere('primary_email','like', $like);
-                  });
+            $cols = [
+                'opp_code', 'unique_query_id', 'query_type', 'platform',
+                'source_account', 'sender_name', 'sender_mobile',
+                'sender_mobile_alt', 'sender_email', 'sender_email_alt',
+                'sender_company', 'sender_address', 'sender_city',
+                'sender_state', 'sender_pincode', 'sender_country_iso',
+                'sender_country_name', 'query_product_name', 'query_mcat_name',
+                'query_message', 'remark', 'whatsapp_status',
+            ];
+            $q->where(function ($w) use ($cols, $like, $search) {
+                foreach ($cols as $col) {
+                    $w->orWhereRaw('LOWER(' . $col . ') LIKE ?', [$like]);
+                }
+                // Related lookups — salesperson and customer names.
+                $w->orWhereHas('salesperson', function ($s) use ($like) {
+                    $s->whereRaw('LOWER(name) LIKE ?', [$like])
+                      ->orWhereRaw('LOWER(email) LIKE ?', [$like]);
+                })
+                ->orWhereHas('customer', function ($c) use ($like) {
+                    // customers table uses company_name / legal_name —
+                    // the earlier `org_name` reference was inherited
+                    // from the clients table and crashed with "column
+                    // org_name does not exist" on Postgres.
+                    $c->whereRaw('LOWER(company_name) LIKE ?', [$like])
+                      ->orWhereRaw('LOWER(legal_name) LIKE ?', [$like])
+                      ->orWhereRaw('LOWER(customer_code) LIKE ?', [$like])
+                      ->orWhereRaw('LOWER(primary_email) LIKE ?', [$like]);
+                });
 
                 // Numeric columns get a strict-equals branch when the
                 // term looks like an integer so a search for the bare
@@ -1152,6 +1170,17 @@ class SalesLeadController extends Controller
                 'status'  => false,
                 'message' => 'This product is already mapped to the lead — edit the existing row instead',
             ], 422);
+        }
+
+        // Segment "Buyer ≠ Consignee" guard at mapping time: a product whose
+        // segment is flagged not-allowed can't be mapped while this lead has a
+        // distinct consignee (one that isn't Same-as-Customer).
+        if ($block = $this->segmentPartyBlockResponse(
+            (int) $user->client_id,
+            [$data['product_id']],
+            $lead->consignee_id,
+        )) {
+            return $block;
         }
 
         /* Single-currency-per-lead rule. Every LeadProduct row on the

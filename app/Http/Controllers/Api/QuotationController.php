@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\EnforcesSegmentBuyerConsignee;
 use App\Http\Controllers\Controller;
 use App\Models\Quotation;
 use App\Models\QuotationItem;
@@ -12,6 +13,8 @@ use Illuminate\Validation\Rule;
 
 class QuotationController extends Controller
 {
+    use EnforcesSegmentBuyerConsignee;
+
     /* ── LIST ───────────────────────────────────────────────── */
 
     public function index(Request $request): JsonResponse
@@ -107,6 +110,16 @@ class QuotationController extends Controller
 
         $data = $this->validatePayload($request);
 
+        // Segment "Buyer ≠ Consignee" guard: if any quoted product belongs to a
+        // segment flagged not-allowed, the consignee must be Same-as-Customer.
+        if ($block = $this->segmentPartyBlockResponse(
+            (int) $user->client_id,
+            array_map(fn ($it) => $it['product_id'] ?? null, $data['items']),
+            $data['consignee_id'] ?? null,
+        )) {
+            return $block;
+        }
+
         // Server-compute every line `amount` + the header totals.
         // Anything the client sent for `amount` / `sub_total` etc. is
         // discarded — we never trust client-side math.
@@ -200,6 +213,16 @@ class QuotationController extends Controller
         }
 
         $data = $this->validatePayload($request);
+
+        // Segment "Buyer ≠ Consignee" guard — also enforced on edit so a clean
+        // quotation can't be amended to add a not-allowed product/consignee.
+        if ($block = $this->segmentPartyBlockResponse(
+            (int) $user->client_id,
+            array_map(fn ($it) => $it['product_id'] ?? null, $data['items']),
+            $data['consignee_id'] ?? null,
+        )) {
+            return $block;
+        }
 
         /* B31: enforce status transition order. Without this any payload
          * could regress an `approved` quote back to `draft`, or skip

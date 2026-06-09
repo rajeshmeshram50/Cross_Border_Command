@@ -2541,30 +2541,57 @@ export function VaultModal({
       </Modal>
 
       {/* Send-for-signing confirmation */}
-      <Modal isOpen={!!sendForTpl} toggle={() => setSendForTpl(null)} size="md" centered contentClassName="border-0" backdrop="static">
-        <ModalBody className="p-0">
-          <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', borderRadius: '6px 6px 0 0' }}>
-            {/* No top-right X — footer has Cancel; one dismiss path. */}
-            <strong style={{ fontSize: 15 }}><i className="ri-send-plane-line me-2" />Send for Signing</strong>
-          </div>
-          <div style={{ padding: 16, fontSize: 13 }}>
-            <p style={{ marginBottom: 12 }}>
-              Send <strong>{sendForTpl?.name}</strong> for <strong>{emp?.name}</strong>?
-              The document will follow this signing workflow:
-            </p>
-            <SendWorkflowPreview templateId={sendForTpl?.id ?? null} />
-            <div style={{ marginTop: 12, padding: '8px 10px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 8, fontSize: 11.5, color: '#92400e' }}>
-              <i className="ri-information-line me-1" />Placeholders will be locked at send-time using this employee's data.
+      <Modal isOpen={!!sendForTpl} toggle={() => setSendForTpl(null)} size="md" centered contentClassName="border-0" modalClassName="send-sign-modal" backdrop="static">
+        <style>{`
+          .send-sign-modal .modal-content { border-radius: 16px; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.30); }
+          .send-sign-modal .ss-warn { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+          [data-bs-theme="dark"] .send-sign-modal .ss-warn { background: rgba(245,158,11,0.14); border-color: rgba(245,158,11,0.42); color: #fcd34d; }
+          .send-sign-modal .ss-cancel { background: var(--vz-secondary-bg, #fff); color: var(--vz-body-color, #374151); border: 1px solid var(--vz-border-color, #d1d5db); transition: filter .15s ease; }
+          .send-sign-modal .ss-cancel:hover { filter: brightness(0.97); }
+          [data-bs-theme="dark"] .send-sign-modal .ss-cancel:hover { filter: brightness(1.25); }
+          .send-sign-modal .ss-send { transition: filter .15s ease, transform .15s ease; }
+          .send-sign-modal .ss-send:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+          .send-sign-modal .ssw-step { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 10px; }
+          .send-sign-modal .ssw-step-num { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; background: #4338ca; color: #fff; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 700; flex-shrink: 0; }
+          .send-sign-modal .ssw-step-role { font-size: 12px; font-weight: 700; color: #4338ca; line-height: 1.15; }
+          .send-sign-modal .ssw-step-action { font-size: 10px; font-weight: 500; color: #6366f1; }
+          .send-sign-modal .ssw-arrow { color: #9ca3af; font-size: 16px; }
+          [data-bs-theme="dark"] .send-sign-modal .ssw-step { background: rgba(99,102,241,0.16); border-color: rgba(99,102,241,0.40); }
+          [data-bs-theme="dark"] .send-sign-modal .ssw-step-num { background: #6366f1; }
+          [data-bs-theme="dark"] .send-sign-modal .ssw-step-role { color: #c4b5fd; }
+          [data-bs-theme="dark"] .send-sign-modal .ssw-step-action { color: #a5b4fc; }
+          [data-bs-theme="dark"] .send-sign-modal .ssw-arrow { color: #6b7280; }
+        `}</style>
+        <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg, #fff)' }}>
+          <div style={{ padding: '18px 20px', background: 'linear-gradient(135deg,#5a3fd1 0%,#7c3aed 55%,#a855f7 100%)', color: '#fff' }}>
+            <div className="d-flex align-items-center gap-2">
+              <span style={{ width: 40, height: 40, borderRadius: 11, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>
+                <i className="ri-send-plane-fill" />
+              </span>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2 }}>Send for Signing</div>
+                <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>Confirm the signing workflow before sending</div>
+              </div>
             </div>
           </div>
-          <div style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <div style={{ padding: 18, fontSize: 13, color: 'var(--vz-body-color)' }}>
+            <p style={{ marginBottom: 14 }}>
+              Send <strong>{sendForTpl?.name}</strong> for <strong>{emp?.name}</strong>? The document will follow this signing workflow:
+            </p>
+            <SendWorkflowPreview templateId={sendForTpl?.id ?? null} />
+            <div className="ss-warn d-flex align-items-start gap-2" style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, fontSize: 11.5 }}>
+              <i className="ri-information-line" style={{ marginTop: 1, flexShrink: 0 }} />
+              <span>Placeholders will be locked at send-time using this employee's data.</span>
+            </div>
+          </div>
+          <div style={{ padding: '14px 18px', borderTop: '1px solid var(--vz-border-color)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" onClick={() => setSendForTpl(null)} disabled={sending}
-              style={{ padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
+              className="ss-cancel" style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
               Cancel
             </button>
             <button type="button" onClick={confirmSend} disabled={sending}
-              style={{ padding: '7px 16px', background: 'linear-gradient(135deg,#7c3aed,#a855f7)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
-              {sending ? 'Sending…' : 'Send Document'}
+              className="ss-send" style={{ padding: '8px 18px', background: 'linear-gradient(135deg,#7c3aed,#a855f7)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: sending ? 'wait' : 'pointer', opacity: sending ? 0.8 : 1, boxShadow: '0 4px 14px rgba(124,58,237,0.40)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <i className={sending ? 'ri-loader-4-line ri-spin' : 'ri-send-plane-fill'} />{sending ? 'Sending…' : 'Send Document'}
             </button>
           </div>
         </ModalBody>
@@ -2987,18 +3014,20 @@ function SendWorkflowPreview({ templateId }: { templateId: number | null }) {
   }, [templateId]);
 
   if (signers.length === 0) {
-    return <div style={{ fontSize: 12, color: '#9ca3af', fontStyle: 'italic' }}>No signers configured on this template.</div>;
+    return <div style={{ fontSize: 12, color: 'var(--vz-secondary-color)', fontStyle: 'italic' }}>No signers configured on this template.</div>;
   }
   return (
-    <div className="d-flex flex-wrap align-items-center" style={{ gap: 6 }}>
+    <div className="d-flex flex-wrap align-items-center" style={{ gap: 8 }}>
       {signers.map((s, i) => (
-        <div key={i} className="d-flex align-items-center" style={{ gap: 6 }}>
-          <div style={{ padding: '6px 10px', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#4338ca' }}>
-            <span style={{ display: 'inline-flex', width: 18, height: 18, borderRadius: '50%', background: '#4338ca', color: '#fff', alignItems: 'center', justifyContent: 'center', marginRight: 6, fontSize: 10 }}>{i + 1}</span>
-            {s.role_name || 'Unassigned'}
-            <div style={{ fontSize: 10.5, fontWeight: 500 }}>{s.action || 'Sign'}</div>
+        <div key={i} className="d-flex align-items-center" style={{ gap: 8 }}>
+          <div className="ssw-step">
+            <span className="ssw-step-num">{i + 1}</span>
+            <div>
+              <div className="ssw-step-role">{s.role_name || 'Unassigned'}</div>
+              <div className="ssw-step-action">{s.action || 'Sign'}</div>
+            </div>
           </div>
-          {i < signers.length - 1 && <i className="ri-arrow-right-line" style={{ color: '#9ca3af' }} />}
+          {i < signers.length - 1 && <i className="ri-arrow-right-line ssw-arrow" />}
         </div>
       ))}
     </div>
@@ -7055,6 +7084,9 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
   };
   const [runs, setRuns] = useState<SignatureRun[]>([]);
   const [sendingId, setSendingId] = useState<number | null>(null);
+  // Rich "Send for Signing" modal (workflow preview) — replaces the plain
+  // confirm so this matches the Evidence Vault send experience.
+  const [sendForTpl, setSendForTpl] = useState<Tpl | null>(null);
 
   const fetchRuns = useCallback(async () => {
     if (!emp?.dbId) { setRuns([]); return; }
@@ -7079,9 +7111,11 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
 
   const signedCount = templates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed').length;
 
-  const handleSend = async (tpl: Tpl) => {
-    if (!emp?.dbId) return;
-    if (!window.confirm(`Send "${tpl.name}" for signing?\n\nThe configured signers will be notified to sign in sequence. Placeholders are locked with this employee's data at send time.`)) return;
+  // Open the rich send modal; the actual POST happens in confirmSend.
+  const handleSend = (tpl: Tpl) => { setSendForTpl(tpl); };
+  const confirmSend = async () => {
+    const tpl = sendForTpl;
+    if (!tpl || !emp?.dbId || sendingId) return;
     setSendingId(tpl.id);
     try {
       const { data } = await api.post('/hr-document-signatures', {
@@ -7089,6 +7123,7 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
         employee_id: emp.dbId,
       });
       toast.success('Sent for signing', `${data?.code || tpl.code || 'Document'} entered the signing workflow.`);
+      setSendForTpl(null);
       await fetchRuns();
     } catch (err: any) {
       toast.error('Could not send', err?.response?.data?.message || 'Please try again.');
@@ -7324,6 +7359,63 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
           );
         })}
       </div>
+
+      {/* Send-for-signing — rich workflow modal (matches the Evidence Vault) */}
+      <Modal isOpen={!!sendForTpl} toggle={() => setSendForTpl(null)} size="md" centered contentClassName="border-0" modalClassName="send-sign-modal" backdrop="static">
+        <style>{`
+          .send-sign-modal .modal-content { border-radius: 16px; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.30); }
+          .send-sign-modal .ss-warn { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+          [data-bs-theme="dark"] .send-sign-modal .ss-warn { background: rgba(245,158,11,0.14); border-color: rgba(245,158,11,0.42); color: #fcd34d; }
+          .send-sign-modal .ss-cancel { background: var(--vz-secondary-bg, #fff); color: var(--vz-body-color, #374151); border: 1px solid var(--vz-border-color, #d1d5db); transition: filter .15s ease; }
+          .send-sign-modal .ss-cancel:hover { filter: brightness(0.97); }
+          [data-bs-theme="dark"] .send-sign-modal .ss-cancel:hover { filter: brightness(1.25); }
+          .send-sign-modal .ss-send { transition: filter .15s ease, transform .15s ease; }
+          .send-sign-modal .ss-send:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+          .send-sign-modal .ssw-step { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 10px; }
+          .send-sign-modal .ssw-step-num { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; background: #4338ca; color: #fff; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 700; flex-shrink: 0; }
+          .send-sign-modal .ssw-step-role { font-size: 12px; font-weight: 700; color: #4338ca; line-height: 1.15; }
+          .send-sign-modal .ssw-step-action { font-size: 10px; font-weight: 500; color: #6366f1; }
+          .send-sign-modal .ssw-arrow { color: #9ca3af; font-size: 16px; }
+          [data-bs-theme="dark"] .send-sign-modal .ssw-step { background: rgba(99,102,241,0.16); border-color: rgba(99,102,241,0.40); }
+          [data-bs-theme="dark"] .send-sign-modal .ssw-step-num { background: #6366f1; }
+          [data-bs-theme="dark"] .send-sign-modal .ssw-step-role { color: #c4b5fd; }
+          [data-bs-theme="dark"] .send-sign-modal .ssw-step-action { color: #a5b4fc; }
+          [data-bs-theme="dark"] .send-sign-modal .ssw-arrow { color: #6b7280; }
+        `}</style>
+        <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg, #fff)' }}>
+          <div style={{ padding: '18px 20px', background: 'linear-gradient(135deg,#5a3fd1 0%,#7c3aed 55%,#a855f7 100%)', color: '#fff' }}>
+            <div className="d-flex align-items-center gap-2">
+              <span style={{ width: 40, height: 40, borderRadius: 11, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>
+                <i className="ri-send-plane-fill" />
+              </span>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2 }}>Send for Signing</div>
+                <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>Confirm the signing workflow before sending</div>
+              </div>
+            </div>
+          </div>
+          <div style={{ padding: 18, fontSize: 13, color: 'var(--vz-body-color)' }}>
+            <p style={{ marginBottom: 14 }}>
+              Send <strong>{sendForTpl?.name}</strong> for <strong>{emp?.name}</strong>? The document will follow this signing workflow:
+            </p>
+            <SendWorkflowPreview templateId={sendForTpl?.id ?? null} />
+            <div className="ss-warn d-flex align-items-start gap-2" style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, fontSize: 11.5 }}>
+              <i className="ri-information-line" style={{ marginTop: 1, flexShrink: 0 }} />
+              <span>Placeholders will be locked at send-time using this employee's data.</span>
+            </div>
+          </div>
+          <div style={{ padding: '14px 18px', borderTop: '1px solid var(--vz-border-color)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button type="button" onClick={() => setSendForTpl(null)} disabled={!!sendingId}
+              className="ss-cancel" style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              Cancel
+            </button>
+            <button type="button" onClick={confirmSend} disabled={!!sendingId}
+              className="ss-send" style={{ padding: '8px 18px', background: 'linear-gradient(135deg,#7c3aed,#a855f7)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: sendingId ? 'wait' : 'pointer', opacity: sendingId ? 0.8 : 1, boxShadow: '0 4px 14px rgba(124,58,237,0.40)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <i className={sendingId ? 'ri-loader-4-line ri-spin' : 'ri-send-plane-fill'} />{sendingId ? 'Sending…' : 'Send Document'}
+            </button>
+          </div>
+        </ModalBody>
+      </Modal>
     </>
   );
 }

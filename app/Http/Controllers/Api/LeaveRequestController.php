@@ -189,12 +189,40 @@ class LeaveRequestController extends Controller
         if (!$planId) {
             abort(422, 'You are not assigned to a leave plan yet. Please contact HR.');
         }
-        $typeInPlan = DB::table('leave_plan_leave_types')
+        $ptConfigRaw = DB::table('leave_plan_leave_types')
             ->where('leave_plan_id', $planId)
             ->where('leave_type_id', $data['leave_type_id'])
-            ->exists();
-        if (!$typeInPlan) {
+            ->value('config_json');
+        if ($ptConfigRaw === null) {
             abort(422, 'The selected leave type is not part of your assigned leave plan.');
+        }
+
+        // Balance / quota enforcement. Previously the backend accepted any
+        // request regardless of the configured quota, so an employee could
+        // file more days than their plan allowed (HRMS-BUG-107: "1 week per
+        // month" plan still let a 9-day request through). Block requests that
+        // exceed the available balance. Unlimited types are exempt; an opt-in
+        // per-type overdraft allowance extends the ceiling. Both Approved and
+        // still-Pending days count so a user can't stack several over-quota
+        // requests before any is acted on.
+        $ptConfig  = json_decode((string) $ptConfigRaw, true);
+        $accrual   = (is_array($ptConfig) ? $ptConfig['accrual'] ?? [] : []);
+        $unlimited = (bool) ($accrual['unlimited'] ?? false);
+        if (!$unlimited) {
+            $quota     = (float) ($accrual['yearlyQuota'] ?? 0);
+            $overdraft = !empty($accrual['employeeOverdraft']['enabled'])
+                ? (float) ($accrual['employeeOverdraft']['days'] ?? 0)
+                : 0.0;
+            $usedDays = (float) LeaveRequest::query()
+                ->where('employee_id', $employee->id)
+                ->where('leave_type_id', $data['leave_type_id'])
+                ->whereIn('status', ['Approved', 'Pending'])
+                ->sum('days');
+            $available = max(0.0, $quota - $usedDays) + $overdraft;
+            if ($days > $available) {
+                $fmt = fn (float $n) => rtrim(rtrim(number_format($n, 2), '0'), '.');
+                abort(422, "Not enough leave balance — only {$fmt($available)} day(s) available for this leave type, but you requested {$fmt($days)}.");
+            }
         }
 
         // Snapshot the approval chain from the plan-type config_json so

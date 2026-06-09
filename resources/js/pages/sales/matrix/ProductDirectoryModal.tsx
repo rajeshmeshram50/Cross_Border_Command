@@ -866,6 +866,12 @@ const SCOPED_CSS = `
 }
 .pdm-curr-lock-banner svg { flex-shrink: 0; color: #b45309; }
 .pdm-curr-lock-banner strong { color: #78350f; }
+/* Dark mode — amber tint on the dark surface instead of a solid light strip. */
+[data-bs-theme="dark"] .pdm-curr-lock-banner {
+  background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.32); color: #fcd34d;
+}
+[data-bs-theme="dark"] .pdm-curr-lock-banner svg { color: #fbbf24; }
+[data-bs-theme="dark"] .pdm-curr-lock-banner strong { color: #fde68a; }
 .pdm-num { font-variant-numeric: tabular-nums; }
 .pdm-status {
   text-align: center; padding: 24px 14px;

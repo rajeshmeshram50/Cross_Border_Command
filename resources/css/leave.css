@@ -263,6 +263,13 @@
   border-color: #a78bfa;
   box-shadow: 0 0 0 3px rgba(124, 92, 252, 0.15);
 }
+/* Placeholder colour — the plain form-control placeholder didn't adapt to the
+   dark modal, so the hint text was near-invisible (HRMS-BUG-081). */
+.lv-confirm-textarea::placeholder { color: #9ca3af; }
+[data-bs-theme="dark"] .lv-confirm-textarea::placeholder,
+[data-layout-mode="dark"] .lv-confirm-textarea::placeholder {
+  color: rgba(255, 255, 255, 0.40);
+}
 
 .lv-confirm-footer {
   display: flex; justify-content: flex-end; gap: 10px;
@@ -507,6 +514,15 @@
   font-size: 12px;
 }
 .lp-help-chip a { color: #0369a1; font-weight: 600; text-decoration: underline; }
+/* Dark-theme variant — the light blue chip kept its fill in dark mode
+   (HRMS-BUG-138 follow-up: "Need help configuring?" chip). */
+[data-bs-theme="dark"] .lp-help-chip,
+[data-layout-mode="dark"] .lp-help-chip {
+  background: rgba(14, 165, 233, 0.10);
+  color: #7dd3fc;
+}
+[data-bs-theme="dark"] .lp-help-chip a,
+[data-layout-mode="dark"] .lp-help-chip a { color: #7dd3fc; }
 
 .lp-config-table-wrap, .lp-emp-table-wrap { overflow-x: auto; }
 .lp-config-table, .lp-emp-table {
@@ -949,6 +965,35 @@
   color: #6ee7b7;
 }
 [data-bs-theme="dark"] .lts-info-banner-success a { color: #6ee7b7; }
+
+/* Leave Approvals · Review-modal status cards (approval chain + decision
+   banner). The per-status colours arrive as CSS vars from the component.
+   Inline pastel fills stayed light in dark mode (HRMS-BUG-130); dark mode
+   rebuilds a dark chip from the vivid accent so each card matches the theme
+   while keeping its status colour. */
+.lva-tone-card {
+  background: var(--lva-bg, #f3f4f6);
+  color: var(--lva-fg, #374151);
+}
+[data-bs-theme="dark"] .lva-tone-card,
+[data-layout-mode="dark"] .lva-tone-card {
+  background: color-mix(in srgb, var(--lva-ring, #7c5cfc) 20%, transparent);
+  color: color-mix(in srgb, var(--lva-ring, #7c5cfc) 45%, #ffffff);
+}
+
+/* Leave Management table badges — Type / Payroll / Status pills carried
+   light pastel fills inline so they stayed light in dark mode
+   (HRMS-BUG-141). Light mode keeps the pastel; dark mode rebuilds a dark
+   chip from the badge's accent, preserving its colour identity. */
+.lv-tone-pill {
+  background: var(--lvp-bg);
+  color: var(--lvp-fg);
+}
+[data-bs-theme="dark"] .lv-tone-pill,
+[data-layout-mode="dark"] .lv-tone-pill {
+  background: color-mix(in srgb, var(--lvp-accent, var(--lvp-fg)) 22%, transparent);
+  color: color-mix(in srgb, var(--lvp-accent, var(--lvp-fg)) 52%, #ffffff);
+}
 .lts-approval-chain { margin-top: 10px; }
 .lts-approval-card {
   padding: 14px 18px;
