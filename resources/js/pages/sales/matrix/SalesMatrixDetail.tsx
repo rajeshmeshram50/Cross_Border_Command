@@ -434,6 +434,7 @@ export default function SalesMatrixDetail() {
       whatsapp_status: 'connected' | 'pending' | 'not_connected' | 'opted_out' | null;
       whatsapp_reason: string | null;
       whatsapp_screenshot: string | null;
+      whatsapp_screenshot_url: string | null;
       task_manager: StageTaskManager | null;
       acknowledgements: StageAcknowledgement[];
     }}>(`/sales/leads/${resolvedLeadId}`)
@@ -455,7 +456,9 @@ export default function SalesMatrixDetail() {
           remark:              d.remark,
           whatsappStatus:      d.whatsapp_status,
           whatsappReason:      d.whatsapp_reason,
-          whatsappScreenshot:  d.whatsapp_screenshot,
+          // Prefer the server-resolved URL (points at the real file host);
+          // fall back to the raw path for older API responses.
+          whatsappScreenshot:  d.whatsapp_screenshot_url ?? d.whatsapp_screenshot,
         });
       })
       .catch(() => toast.error('Load failed', 'Could not load this lead'))

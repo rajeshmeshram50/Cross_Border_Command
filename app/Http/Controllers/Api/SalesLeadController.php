@@ -370,6 +370,15 @@ class SalesLeadController extends Controller
         $this->applyScope($q, $user);
         $lead = $q->findOrFail($id);
 
+        // Resolve the WhatsApp proof screenshot to a real public URL using the
+        // SAME helper as product/QC attachments. Previously only the raw disk
+        // path was returned and the frontend built its own URL from the
+        // browser origin — when that didn't match the server's configured
+        // storage host the link 404'd and the SPA catch-all rendered the
+        // dashboard instead of the file. file_url() also returns null for
+        // malformed/legacy paths so we don't surface a broken "View" link.
+        $lead->setAttribute('whatsapp_screenshot_url', file_url($lead->whatsapp_screenshot));
+
         return response()->json(['status' => true, 'data' => $lead]);
     }
 
@@ -740,7 +749,10 @@ class SalesLeadController extends Controller
 
         $data = $request->validate([
             'whatsapp_status' => 'required|string|in:connected,pending,not_connected,opted_out',
-            'whatsapp_reason' => 'nullable|string|max:1000',
+            // Reason is optional (only the "not connected" branch sends it), but
+            // when present it must sit within the same 5–250 char bounds the
+            // modal enforces so a stray keypress or pasted essay can't slip in.
+            'whatsapp_reason' => 'nullable|string|min:5|max:250',
             'screenshot'      => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:5120',
         ]);
 
@@ -762,11 +774,12 @@ class SalesLeadController extends Controller
             'has_whatsapp'        => $data['whatsapp_status'] === 'connected',
         ]);
 
+        $fresh = $lead->fresh();
         return response()->json([
             'status' => true,
-            'data'   => $lead->fresh()->only([
+            'data'   => $fresh->only([
                 'id', 'has_whatsapp', 'whatsapp_status', 'whatsapp_reason', 'whatsapp_screenshot',
-            ]),
+            ]) + ['whatsapp_screenshot_url' => file_url($fresh->whatsapp_screenshot)],
         ]);
     }
 
