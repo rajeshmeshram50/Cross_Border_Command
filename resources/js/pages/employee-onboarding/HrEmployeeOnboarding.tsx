@@ -155,6 +155,17 @@ const _todayIso = (): string => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
 
+/* Today shifted by N years, as YYYY-MM-DD. Module-level so every component
+ * (Initiate modal AND the public previous-employment section) can use it for
+ * date-picker min/max bounds — a local copy lived only inside the Initiate
+ * modal and threw "_shiftYears is not defined" when used elsewhere. */
+const _shiftYears = (years: number): string => {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + years);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
 // True when a non-empty value is NOT a valid email — drives the red-border /
 // inline error on the previous-employment HR Email fields (BUG-091).
 const EMAIL_INVALID = (v: string | null | undefined): boolean =>
@@ -3564,11 +3575,6 @@ useEffect(() => { if (isOpen) setS1Errors({}); }, [isOpen, emp?.id]);
 const _toIso = (d: Date) => {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
-const _shiftYears = (years: number) => {
-  const d = new Date();
-  d.setFullYear(d.getFullYear() + years);
-  return _toIso(d);
 };
 const todayIso = _toIso(new Date());
 // DOB: employee must be at least 18 today, and not older than 100.

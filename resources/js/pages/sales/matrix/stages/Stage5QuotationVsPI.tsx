@@ -1467,8 +1467,15 @@ const STAGE5_CSS = `
 [data-bs-theme="dark"] .s5-create-q { background: #1f1845; color: #c4b5fd; border-color: rgba(167,139,250,.40); box-shadow: none; }
 [data-bs-theme="dark"] .s5-tbl-card { background: #14102a; border-color: rgba(167,139,250,.25); }
 [data-bs-theme="dark"] .s5-tbl tbody td { color: #ede9fe; border-bottom-color: rgba(167,139,250,.18); }
-[data-bs-theme="dark"] .s5-tbl tbody tr:nth-child(even) { background: rgba(124,58,237,.10); }
-[data-bs-theme="dark"] .s5-tbl tbody tr:hover { background: rgba(124,58,237,.20); }
+[data-bs-theme="dark"] .s5-tbl tbody tr:nth-child(even),
+[data-layout-mode="dark"] .s5-tbl tbody tr:nth-child(even) { background: rgba(124,58,237,.10); }
+[data-bs-theme="dark"] .s5-tbl tbody tr:hover,
+[data-layout-mode="dark"] .s5-tbl tbody tr:hover { background: rgba(124,58,237,.20); }
+/* Row being converted/acted on — the light #ede9fe !important base showed
+   as a near-white strip in dark mode behind the Convert modal. Override it
+   (also !important to beat the light rule) for both dark attributes. */
+[data-bs-theme="dark"] .s5-row-acting,
+[data-layout-mode="dark"] .s5-row-acting { background: rgba(124,58,237,.28) !important; }
 [data-bs-theme="dark"] .s5-muted { color: #94a3b8; }
 [data-bs-theme="dark"] .s5-cur2 { background: rgba(148,163,184,.18); color: #cbd5e1; border-color: rgba(148,163,184,.30); }
 [data-bs-theme="dark"] .s5-dt2 { background: rgba(59,130,246,.18); color: #93c5fd; border-color: rgba(59,130,246,.35); }
