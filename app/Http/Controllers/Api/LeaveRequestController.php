@@ -108,6 +108,17 @@ class LeaveRequestController extends Controller
             abort(403, 'You cannot file leave for an employee outside your tenant.');
         }
 
+        // Self-service rule — raising a leave request is something an employee
+        // does for THEMSELVES. Filing on behalf of someone else is an admin-only
+        // capability (client/super admin). Branch users and employees can VIEW
+        // others' leave but not raise it — so a branch user can't apply leave
+        // from another employee's profile (matches the hidden "Request Leave"
+        // button in the UI).
+        $isAdmin = in_array($user->user_type, ['super_admin', 'client_admin'], true);
+        if (!$isAdmin && (int) ($employee->user_id ?? 0) !== (int) $user->id) {
+            abort(403, 'You can only raise a leave request for yourself.');
+        }
+
         // Past-date guard. Backdated leave bypasses the entire approval
         // workflow's purpose — if HR really needs to log a historical
         // absence, we can add a dedicated "Adjustments" path later.

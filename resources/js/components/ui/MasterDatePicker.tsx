@@ -48,11 +48,23 @@ export function MasterDatePicker({
     const update = () => {
       if (!wrapRef.current) return;
       const rect = wrapRef.current.getBoundingClientRect();
-      setPopupPos({
-        top: rect.bottom + 5,
-        left: rect.left,
-        width: rect.width,
-      });
+      const margin = 8;
+      const popupW = 240;   // matches the popup's fixed 240px width
+      const popupH = 320;   // approx — used only to decide flip-above
+      // Clamp horizontally so the calendar never spills off the right edge.
+      // Critical inside right-side drawers (e.g. Request Leave) where the
+      // field sits near the screen edge and the popup would overflow.
+      let left = rect.left;
+      if (left + popupW + margin > window.innerWidth) {
+        left = Math.max(margin, window.innerWidth - popupW - margin);
+      }
+      // Flip above the field when there isn't room below (keeps the whole
+      // calendar on-screen instead of clipping at the bottom).
+      let top = rect.bottom + 5;
+      if (top + popupH + margin > window.innerHeight && rect.top - popupH - 5 > margin) {
+        top = rect.top - popupH - 5;
+      }
+      setPopupPos({ top, left, width: rect.width });
     };
     update();
     window.addEventListener('resize', update);

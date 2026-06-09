@@ -327,3 +327,75 @@
   box-shadow: none;
 }
 .lvr-btn-primary:not(:disabled):hover { filter: brightness(1.05); }
+
+/* =================================================================
+   Dark mode — the drawer was authored light-only (#fff surfaces,
+   light greys), so every panel glared on the dark theme. These
+   overrides recolour each surface to the dark palette. The purple
+   header + primary button already work in both themes.
+   ================================================================= */
+[data-bs-theme="dark"] .lvr-drawer-modal .modal-content,
+[data-bs-theme="dark"] .lvr-drawer-content {
+  /* Solid opaque hex — NOT var(--vz-card-bg): the modal is portalled and the
+     theme variable resolved transparent there, making the whole drawer
+     see-through. A fixed dark surface keeps it solid. */
+  background: #1c2531 !important;
+}
+[data-bs-theme="dark"] .lvr-section-title { color: #9ca3af; }
+[data-bs-theme="dark"] .lvr-mini-label { color: #9ca3af; }
+
+[data-bs-theme="dark"] .lvr-input,
+[data-bs-theme="dark"] .lvr-textarea {
+  background: var(--vz-secondary-bg);
+  color: var(--vz-body-color);
+  border-color: var(--vz-border-color);
+}
+[data-bs-theme="dark"] .lvr-input::placeholder,
+[data-bs-theme="dark"] .lvr-textarea::placeholder { color: #8a909c; }
+
+[data-bs-theme="dark"] .lvr-date-strip {
+  background: rgba(255,255,255,0.04);
+  border-color: var(--vz-border-color);
+}
+[data-bs-theme="dark"] .lvr-days-pill,
+[data-bs-theme="dark"] .lvr-count-pill {
+  background: rgba(124,92,252,0.20);
+  color: #c4b5fd;
+}
+
+[data-bs-theme="dark"] .lvr-warning {
+  background: rgba(245,158,11,0.14);
+  color: #fcd34d;
+}
+
+[data-bs-theme="dark"] .lvr-chip {
+  background: rgba(124,92,252,0.18);
+  border-color: rgba(124,92,252,0.40);
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .lvr-chip-x { color: #c4b5fd; }
+[data-bs-theme="dark"] .lvr-chip-x:hover { background: rgba(124,92,252,0.30); }
+
+[data-bs-theme="dark"] .lvr-notify-list {
+  background: #232d3a;
+  border-color: var(--vz-border-color);
+}
+[data-bs-theme="dark"] .lvr-notify-row { border-bottom-color: var(--vz-border-color); }
+[data-bs-theme="dark"] .lvr-notify-row:hover { background: rgba(255,255,255,0.04); }
+[data-bs-theme="dark"] .lvr-notify-row.is-selected { background: rgba(124,92,252,0.15); }
+[data-bs-theme="dark"] .lvr-notify-name { color: var(--vz-body-color); }
+[data-bs-theme="dark"] .lvr-notify-sub { color: #9ca3af; }
+
+[data-bs-theme="dark"] .lvr-footer {
+  background: #1c2531;
+  border-top-color: var(--vz-border-color);
+}
+[data-bs-theme="dark"] .lvr-btn-ghost {
+  background: var(--vz-secondary-bg);
+  color: var(--vz-body-color);
+  border-color: var(--vz-border-color);
+}
+[data-bs-theme="dark"] .lvr-btn-ghost:hover {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.20);
+}
