@@ -246,14 +246,17 @@ export default function SalesTodo() {
       if (!autoFitRef.current) return;
       const avail = el.clientHeight;
       if (avail <= 0) return;
-      const THEAD = 38, ROW = 50;   // todo table header + row heights (px)
+      const THEAD = 36, ROW = 40;   // todo table header + row heights (px)
       const fit = Math.max(5, Math.floor((avail - THEAD) / ROW));
       setRpp(prev => (prev === fit ? prev : fit));
     };
     const ro = new ResizeObserver(recompute);
     ro.observe(el);
     recompute();
-    return () => ro.disconnect();
+    // Recompute after the flex layout settles (first paint can report a
+    // stale/zero height before the viewport-fill chain resolves).
+    const raf = requestAnimationFrame(recompute);
+    return () => { ro.disconnect(); cancelAnimationFrame(raf); };
   }, []);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -1702,6 +1705,36 @@ function CalendarSection(props: {
   const { tab, meetingSub, calYear, calMonth, calendarMap, monthStats, todayDate,
           onPrev, onNext, onToday, popover, setPopover, onItemClick } = props;
 
+  // Draggable popover: once the user drags it, dragPos overrides the anchored position.
+  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
+  const dragRef = useRef<{ dx: number; dy: number } | null>(null);
+
+  // Reset drag position whenever a new day popover opens.
+  useEffect(() => { setDragPos(null); }, [popover?.dateKey, popover?.x, popover?.y]);
+
+  const onDragStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const pop = document.getElementById('td-cal-popover');
+    if (!pop) return;
+    const rect = pop.getBoundingClientRect();
+    dragRef.current = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+    const onMove = (ev: MouseEvent) => {
+      if (!dragRef.current) return;
+      const w = pop.offsetWidth, h = pop.offsetHeight;
+      const nx = Math.max(8, Math.min(ev.clientX - dragRef.current.dx, window.innerWidth  - w - 8));
+      const ny = Math.max(8, Math.min(ev.clientY - dragRef.current.dy, window.innerHeight - h - 8));
+      setDragPos({ x: nx, y: ny });
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
   const firstDay  = new Date(calYear, calMonth, 1).getDay();          // 0 = Sun
   const daysIn    = new Date(calYear, calMonth + 1, 0).getDate();
   const prevDaysIn = new Date(calYear, calMonth, 0).getDate();
@@ -1809,13 +1842,16 @@ function CalendarSection(props: {
         id="td-cal-popover"
         className="td-cal-popover"
         style={{
-          left: Math.max(8, Math.min(popover.x, window.innerWidth - 360)),
-          top:  Math.max(60, Math.min(popover.y, window.innerHeight - 340)),
+          left: dragPos ? dragPos.x : Math.max(8, Math.min(popover.x, window.innerWidth - 360)),
+          top:  dragPos ? dragPos.y : Math.max(60, Math.min(popover.y, window.innerHeight - 340)),
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="td-cal-popover-hdr">
-          <div>
+        <div className="td-cal-popover-hdr" onMouseDown={onDragStart}>
+          <span className="td-cal-popover-grip" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="6" r="1.6"/><circle cx="8" cy="12" r="1.6"/><circle cx="8" cy="18" r="1.6"/><circle cx="16" cy="6" r="1.6"/><circle cx="16" cy="12" r="1.6"/><circle cx="16" cy="18" r="1.6"/></svg>
+          </span>
+          <div className="td-cal-popover-hdr-main">
             <div className="td-cal-popover-title">{label}</div>
             <div className="td-cal-popover-meta">
               <span className="td-cal-popover-chip">{list.length} {tab === 'meeting' ? 'Meeting' : 'Reminder'}{list.length !== 1 ? 's' : ''}</span>
@@ -1823,7 +1859,7 @@ function CalendarSection(props: {
               {dnN > 0 && <span className="td-cal-popover-chip">{dnN} Done</span>}
             </div>
           </div>
-          <button className="td-cal-popover-close" onClick={() => setPopover(null)} aria-label="Close">
+          <button className="td-cal-popover-close" onMouseDown={(e) => e.stopPropagation()} onClick={() => setPopover(null)} aria-label="Close">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
@@ -2972,25 +3008,30 @@ const SCOPED_CSS = `
 }
 .td-root .td-cal-day-hdr {
   display:grid; grid-template-columns:repeat(7,1fr);
-  border-bottom: 1.5px solid #f0f0f0;
-  flex-shrink:0;
+  gap:1px; flex-shrink:0;
+  background: #cdeee7;
+  border-bottom: 1.5px solid #cdeee7;
 }
 .td-root .td-cal-day-hdr-cell {
   padding:11px 12px 10px;
-  font-size:10px; font-weight:800; color:#8899a6;
-  text-transform:uppercase; letter-spacing:.1em;
-  background:#fff; border-right:1px solid #eef0ef;
-  border-bottom:2px solid #eef0ef;
+  font-size:10.5px; font-weight:800; color:#0f766e;
+  text-transform:uppercase; letter-spacing:.12em;
+  text-align:center;
+  background: linear-gradient(180deg,#f0fdfa 0%,#e6faf6 100%);
 }
-.td-root .td-cal-day-hdr-cell:last-child { border-right:none; }
-.td-root .td-cal-day-hdr-we    { background:#fafcfb; color:#9db4ae; }
-.td-root .td-cal-day-hdr-today { background: linear-gradient(90deg,#f0fdfa,#ccfbf1); color:#0d9488; border-bottom-color:#14b8a6; }
+.td-root .td-cal-day-hdr-we    { color:#5b8f87; }
+.td-root .td-cal-day-hdr-today {
+  color:#fff; background: linear-gradient(135deg,#0d9488,#0f766e);
+  box-shadow: inset 0 -3px 0 #115e59;
+}
 
 .td-root .td-cal-grid {
   flex:1; min-height:0; overflow-y:auto;
   display:grid; grid-template-columns:repeat(7,1fr);
-  grid-auto-rows: minmax(92px, 1fr);
+  grid-auto-rows: minmax(116px, 1fr);
+  gap:1px;
   scrollbar-width: thin; scrollbar-color: #5eead4 transparent;
+  background:#e3ebe9;
 }
 .td-root .td-cal-grid::-webkit-scrollbar { width: 9px; }
 .td-root .td-cal-grid::-webkit-scrollbar-track { background: transparent; }
@@ -2998,36 +3039,49 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .td-root .td-cal-grid { scrollbar-color: rgba(94,234,212,.4) transparent; }
 [data-bs-theme="dark"] .td-root .td-cal-grid::-webkit-scrollbar-thumb { background: rgba(94,234,212,.4); background-clip: content-box; }
 .td-root .td-cal-cell {
-  background:#fff;
-  border-right:1px solid #eef0ef;
-  border-bottom:1px solid #eef0ef;
-  padding:10px 12px;
-  min-height:92px;
+  background-color:#fff;
+  /* faint diagonal "paper" texture so empty days read as designed, not blank */
+  background-image: repeating-linear-gradient(135deg,
+    rgba(13,148,136,.032) 0, rgba(13,148,136,.032) 1px,
+    transparent 1px, transparent 12px);
+  padding:8px 10px 10px;
+  min-height:116px;
   position:relative;
-  transition: background .14s;
+  transition: background-color .14s, box-shadow .14s;
 }
-.td-root .td-cal-cell:hover { background:#f5fffe; }
-.td-root .td-cal-cell-weekend { background: linear-gradient(160deg,#f8fffe 0%,#f4faf8 100%); }
-.td-root .td-cal-cell-weekend:hover { background:#ecfdf8; }
+.td-root .td-cal-cell:hover {
+  background-color:#f1fcf9;
+  box-shadow: inset 0 0 0 1.5px rgba(20,184,166,.35);
+  z-index:1;
+}
+.td-root .td-cal-cell-weekend { background-color:#f8fcfb; }
+.td-root .td-cal-cell-weekend:hover { background-color:#ecfbf6; }
 .td-root .td-cal-cell-today {
-  background: linear-gradient(160deg,#f0fdf9 0%,#e0f7f3 100%);
-  box-shadow: inset 0 0 0 2px #14b8a6, inset 2px 0 0 #14b8a6;
+  background-color:#e9f9f3; background-image:none;
+  box-shadow: inset 0 0 0 2px #14b8a6;
 }
-.td-root .td-cal-cell-today:hover { background: linear-gradient(160deg,#e0f8f2,#ccf7ed); }
+.td-root .td-cal-cell-today:hover { background-color:#dff5ed; }
+/* Out-of-month days: stronger muted hatch so they clearly read as "off" */
 .td-root .td-cal-cell-out {
-  background: repeating-linear-gradient(135deg,#f9fafb 0px,#f9fafb 10px,#f5f6f5 10px,#f5f6f5 20px);
+  background-color:#f4f7f6;
+  background-image: repeating-linear-gradient(135deg,
+    rgba(100,116,139,.06) 0, rgba(100,116,139,.06) 1px,
+    transparent 1px, transparent 10px);
   cursor: default;
 }
-.td-root .td-cal-cell-out:hover { background: repeating-linear-gradient(135deg,#f9fafb 0px,#f9fafb 10px,#f5f6f5 10px,#f5f6f5 20px); }
-.td-root .td-cal-cell-out-num { font-size:11.5px; color:#d1d5db; font-weight:500; }
-.td-root .td-cal-weekend-stripe {
-  position:absolute; top:0; left:0; width:100%; height:3px;
-  background: linear-gradient(90deg,#99f6e4,#5eead4); opacity:.4;
-}
+.td-root .td-cal-cell-out:hover { box-shadow:none; }
+.td-root .td-cal-cell-out-num { font-size:12px; color:#c2cbc8; font-weight:500; }
+.td-root .td-cal-weekend-stripe { display:none; }
 .td-root .td-cal-cell-head {
   display:flex; align-items:center; margin-bottom:5px;
 }
-.td-root .td-cal-num     { font-size:13px; font-weight:400; color:#1e293b; }
+.td-root .td-cal-num     {
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:24px; height:24px; border-radius:50%;
+  font-size:12.5px; font-weight:600; color:#334155;
+  transition: background .12s, color .12s;
+}
+.td-root .td-cal-cell:hover .td-cal-num { background:#d6f5ee; color:#0f766e; }
 .td-root .td-cal-num-we  { font-weight:700; color:#0f766e; }
 .td-root .td-cal-today-num {
   display:inline-flex; align-items:center; justify-content:center;
@@ -3048,14 +3102,18 @@ const SCOPED_CSS = `
   border-color: rgba(20,184,166,.4);
 }
 .td-root .td-cal-pill {
-  border-radius:6px; padding:3px 8px 3px 7px;
-  font-size:9.5px; font-weight:600;
-  margin-bottom:3px; cursor:pointer;
+  position:relative;
+  border-radius:7px; padding:4px 8px 4px 11px;
+  font-size:10px; font-weight:600; line-height:1.35;
+  margin-bottom:4px; cursor:pointer;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  max-width:100%; box-shadow: 0 1px 2px rgba(0,0,0,.06);
-  transition: all .13s;
+  max-width:100%;
+  box-shadow: 0 1px 2px rgba(16,24,40,.07), inset 0 0 0 1px rgba(255,255,255,.4);
+  transition: transform .13s, box-shadow .13s, filter .13s;
 }
-.td-root .td-cal-pill:hover { transform: translateX(2px); box-shadow: 0 2px 6px rgba(0,0,0,.1); filter: brightness(.97); }
+/* round the inline left-accent into a soft pill edge */
+.td-root .td-cal-pill { border-left-width:3px !important; border-top-left-radius:7px; border-bottom-left-radius:7px; }
+.td-root .td-cal-pill:hover { transform: translateY(-1px); box-shadow: 0 5px 12px rgba(16,24,40,.16); filter: brightness(.98); }
 .td-root .td-cal-more {
   font-size:9px; color:#0d9488; font-weight:800;
   padding:2px 6px; cursor:pointer;
@@ -3069,45 +3127,67 @@ const SCOPED_CSS = `
 /* Popover */
 .td-cal-popover {
   position: fixed; z-index: 10500;
-  background:#fff; border-radius:14px;
-  box-shadow: 0 20px 60px rgba(0,0,0,.15), 0 4px 20px rgba(0,0,0,.08);
-  min-width:320px; max-width:360px;
-  overflow:hidden; border:1px solid #e2e8f0;
+  background:#fff; border-radius:16px;
+  box-shadow: 0 24px 70px rgba(2,44,40,.28), 0 6px 24px rgba(0,0,0,.10);
+  min-width:340px; max-width:380px;
+  overflow:hidden; border:1px solid rgba(13,148,136,.18);
   font-family: 'DM Sans','Inter',sans-serif;
+  animation: td-pop-in .16s cubic-bezier(.16,1,.3,1);
+}
+@keyframes td-pop-in {
+  from { opacity:0; transform: translateY(-6px) scale(.97); }
+  to   { opacity:1; transform: translateY(0)    scale(1); }
 }
 .td-cal-popover-hdr {
-  background: linear-gradient(135deg, #134e4a 0%, #0d9488 100%);
-  padding:13px 16px;
-  display:flex; align-items:flex-start; justify-content:space-between;
+  background: linear-gradient(135deg, #0f766e 0%, #0d9488 55%, #14b8a6 100%);
+  padding:12px 14px 12px 12px;
+  display:flex; align-items:flex-start; gap:9px;
+  cursor: grab; user-select:none; position:relative; overflow:hidden;
 }
+.td-cal-popover-hdr::after {
+  content:''; position:absolute; right:-30px; top:-34px;
+  width:110px; height:110px; border-radius:50%;
+  background: rgba(255,255,255,.07); pointer-events:none;
+}
+.td-cal-popover-hdr:active { cursor: grabbing; }
+.td-cal-popover-grip {
+  color: rgba(255,255,255,.6); flex-shrink:0;
+  display:flex; align-items:center; margin-top:1px;
+  transition: color .12s;
+}
+.td-cal-popover-hdr:hover .td-cal-popover-grip { color: rgba(255,255,255,.9); }
+.td-cal-popover-hdr-main { flex:1; min-width:0; position:relative; z-index:1; }
 .td-cal-popover-title {
-  font-size:13px; font-weight:800; color:#fff;
-  letter-spacing:-.15px; margin-bottom:5px;
+  font-size:13.5px; font-weight:800; color:#fff;
+  letter-spacing:-.2px; margin-bottom:6px;
 }
 .td-cal-popover-meta { display:flex; gap:5px; flex-wrap:wrap; }
 .td-cal-popover-chip {
-  font-size:10px; background: rgba(255,255,255,.18); color:#fff;
-  padding:2px 9px; border-radius:20px; font-weight:700;
+  font-size:10px; background: rgba(255,255,255,.20); color:#fff;
+  padding:2.5px 10px; border-radius:20px; font-weight:700;
+  backdrop-filter: blur(2px);
 }
 .td-cal-popover-close {
-  width:24px; height:24px; border-radius:7px; border:none;
-  background: rgba(255,255,255,.18); color:#fff; cursor:pointer;
+  width:25px; height:25px; border-radius:8px; border:none;
+  background: rgba(255,255,255,.16); color:#fff; cursor:pointer;
   display:flex; align-items:center; justify-content:center; flex-shrink:0;
-  transition: background .12s;
+  transition: background .12s; position:relative; z-index:1;
 }
-.td-cal-popover-close:hover { background: rgba(255,255,255,.3); }
-.td-cal-popover-list { max-height:300px; overflow-y:auto; }
+.td-cal-popover-close:hover { background: rgba(255,255,255,.34); }
+.td-cal-popover-list { max-height:320px; overflow-y:auto; padding:4px 0; }
+.td-cal-popover-list::-webkit-scrollbar { width:7px; }
+.td-cal-popover-list::-webkit-scrollbar-thumb { background:#5eead4; border-radius:4px; border:2px solid #fff; }
 .td-cal-popover-row {
-  padding:10px 14px;
-  display:flex; gap:10px; align-items:flex-start;
+  padding:9px 14px;
+  display:flex; gap:11px; align-items:flex-start;
   cursor:pointer; transition: background .12s;
-  border-bottom: 1px solid #f8fafc;
+  border-bottom: 1px solid #f1f5f9;
 }
 .td-cal-popover-row:last-child { border-bottom:none; }
-.td-cal-popover-row:hover { background:#f8fafc; }
+.td-cal-popover-row:hover { background:#f0fdfa; }
 .td-cal-popover-bar {
-  width:3px; border-radius:2px; align-self:stretch;
-  flex-shrink:0; min-height:44px;
+  width:3.5px; border-radius:3px; align-self:stretch;
+  flex-shrink:0; min-height:42px;
 }
 .td-cal-popover-body { flex:1; min-width:0; }
 .td-cal-popover-row-title {
@@ -3325,9 +3405,19 @@ const SCOPED_CSS = `
 
 /* Calendar — dark cells + popover */
 [data-bs-theme="dark"] .td-cal-card { background: #11182a; border-color: rgba(94,234,212,.25); }
-[data-bs-theme="dark"] .td-cal-grid { background: rgba(15,23,42,.55); }
-[data-bs-theme="dark"] .td-cal-cell { background: #0e1726; border-color: rgba(255,255,255,.06); }
-[data-bs-theme="dark"] .td-cal-cell-out { background: rgba(15,23,42,.4); }
+[data-bs-theme="dark"] .td-cal-grid { background: rgba(94,234,212,.10); }
+[data-bs-theme="dark"] .td-cal-cell {
+  background-color: #0e1726;
+  background-image: repeating-linear-gradient(135deg,
+    rgba(94,234,212,.038) 0, rgba(94,234,212,.038) 1px,
+    transparent 1px, transparent 12px);
+}
+[data-bs-theme="dark"] .td-cal-cell-out {
+  background-color: #0a101e;
+  background-image: repeating-linear-gradient(135deg,
+    rgba(148,163,184,.055) 0, rgba(148,163,184,.055) 1px,
+    transparent 1px, transparent 10px);
+}
 [data-bs-theme="dark"] .td-cal-cell-out-num { color: #475569; }
 /* Calendar hover — the light-mode rules use near-white tints (#f5fffe etc.)
    which bleed through to dark mode and create a harsh bright flash on
@@ -3335,33 +3425,32 @@ const SCOPED_CSS = `
    that reads as "highlighted" without losing the dark-mode feel. */
 [data-bs-theme="dark"] .td-cal-cell:hover {
   background: rgba(20,184,166,.10) !important;
-  border-color: rgba(94,234,212,.30);
+  box-shadow: inset 0 0 0 1.5px rgba(94,234,212,.30);
 }
-[data-bs-theme="dark"] .td-cal-cell-weekend { background: rgba(15,23,42,.55); }
+[data-bs-theme="dark"] .td-cal-cell:hover .td-cal-num { background: rgba(20,184,166,.25); color:#5eead4; }
+[data-bs-theme="dark"] .td-cal-cell-weekend { background-color: rgba(15,23,42,.55); }
 [data-bs-theme="dark"] .td-cal-cell-weekend:hover {
   background: rgba(20,184,166,.13) !important;
 }
 [data-bs-theme="dark"] .td-cal-cell-today:hover {
   background: linear-gradient(160deg, rgba(20,184,166,.22), rgba(13,148,136,.18)) !important;
-  border-color: rgba(94,234,212,.45);
 }
-[data-bs-theme="dark"] .td-cal-cell-out:hover {
-  background: repeating-linear-gradient(135deg,
-    rgba(15,23,42,.55) 0px, rgba(15,23,42,.55) 10px,
-    rgba(20,184,166,.08) 10px, rgba(20,184,166,.08) 20px) !important;
-}
+[data-bs-theme="dark"] .td-cal-cell-out:hover { background: rgba(15,23,42,.4) !important; box-shadow:none; }
 [data-bs-theme="dark"] .td-cal-num { color: #e2e8f0; }
 [data-bs-theme="dark"] .td-cal-num-we { color: #5eead4; }
 /* Weekday header row */
-[data-bs-theme="dark"] .td-cal-day-hdr { border-bottom-color: rgba(255,255,255,.08); }
-[data-bs-theme="dark"] .td-cal-day-hdr-cell {
-  background: #0e1726; color: #94a3b8;
-  border-right-color: rgba(255,255,255,.06); border-bottom-color: rgba(255,255,255,.08);
+[data-bs-theme="dark"] .td-cal-day-hdr {
+  background: rgba(94,234,212,.18);
+  border-bottom-color: rgba(94,234,212,.25);
 }
-[data-bs-theme="dark"] .td-cal-day-hdr-we { background: rgba(15,23,42,.6); color: #5eead4; }
+[data-bs-theme="dark"] .td-cal-day-hdr-cell {
+  background: linear-gradient(180deg, rgba(20,184,166,.14), rgba(15,23,42,.65));
+  color: #5eead4;
+}
+[data-bs-theme="dark"] .td-cal-day-hdr-we { color: #4cc9b8; }
 [data-bs-theme="dark"] .td-cal-day-hdr-today {
-  background: linear-gradient(90deg, rgba(20,184,166,.18), rgba(20,184,166,.10));
-  color: #5eead4; border-bottom-color: #14b8a6;
+  background: linear-gradient(135deg, #0d9488, #0f766e);
+  color: #fff; box-shadow: inset 0 -3px 0 #115e59;
 }
 /* Today cell base (only :hover was overridden before — base stayed light) */
 [data-bs-theme="dark"] .td-cal-cell-today {
@@ -3374,7 +3463,26 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .td-cal-more {
   background: rgba(20,184,166,.14); color: #5eead4; border-color: rgba(94,234,212,.30);
 }
-[data-bs-theme="dark"] .td-cal-popover { background: #0e1726; border-color: rgba(94,234,212,.35); }
+/* Event pills: their light pastel fill + dark text are set inline (per-event
+   hash colour) and glare in dark mode. Override the surface to a dark slate and
+   the text to light; the inline coloured left-accent stays for event identity. */
+[data-bs-theme="dark"] .td-cal-pill {
+  background: rgba(30,41,59,.92) !important;
+  color: #e2e8f0 !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,.4) !important;
+}
+[data-bs-theme="dark"] .td-cal-pill:hover {
+  background: rgba(51,65,85,.95) !important;
+  box-shadow: 0 5px 12px rgba(0,0,0,.5) !important;
+  filter: none;
+}
+[data-bs-theme="dark"] .td-cal-popover { background: #0e1726; border-color: rgba(94,234,212,.35); box-shadow: 0 24px 70px rgba(0,0,0,.55), 0 6px 24px rgba(0,0,0,.4); }
+[data-bs-theme="dark"] .td-cal-popover-hdr { background: linear-gradient(135deg, #115e59 0%, #0d9488 100%); }
+[data-bs-theme="dark"] .td-cal-popover-row { border-bottom-color: rgba(148,163,184,.12); }
+[data-bs-theme="dark"] .td-cal-popover-row:hover { background: rgba(20,184,166,.10); }
+[data-bs-theme="dark"] .td-cal-popover-row-title { color: #e2e8f0; }
+[data-bs-theme="dark"] .td-cal-popover-pill-muted { color:#94a3b8; background:rgba(148,163,184,.12); border-color:rgba(148,163,184,.22); }
+[data-bs-theme="dark"] .td-cal-popover-list::-webkit-scrollbar-thumb { border-color:#0e1726; }
 
 /* ════════════════════════════════════════════════════════════════════
  * RESPONSIVE — three breakpoints: mobile (≤640), tablet (641-1024),
