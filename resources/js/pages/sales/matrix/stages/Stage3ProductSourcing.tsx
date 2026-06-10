@@ -24,6 +24,7 @@ type Row = {
   product_code:      string | null;
   product_name:      string | null;
   product_status:    string | null;
+  product_category:  string | null;   // segment name → small badge under the name
   currency:          string;
   quantity:          number | string | null;
   target_price:      number | string | null;
@@ -445,6 +446,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                         <td><span className="s3-code s3-code-violet">{r.product_code ?? `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                         <td>
                           <div className="s3-prod-name">{r.product_name ?? '—'}</div>
+                          {r.product_category && <span className="s3-cat-badge s3-cat-badge-violet">{r.product_category.toUpperCase()}</span>}
                         </td>
                         <td>
                           <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : statusLc === 'draft' ? 's3-pill-draft' : 's3-pill-inactive'}`}>
@@ -453,7 +455,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                         </td>
                         <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
                         <td className="s3-price">$ {r.target_price != null ? Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
-                        <td><span className="s3-curr">{r.currency}</span></td>
+                        <td><span className="s3-curr s3-curr-violet">{r.currency}</span></td>
                         <td>
                           {updatingId === r.id ? (
                             <span className="s3-spin">Saving…</span>
@@ -584,7 +586,10 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                           </td>
                           <td><span className="s3-sr s3-sr-amber">{idx + 1}</span></td>
                           <td><span className="s3-code s3-code-amber">{r.product_code ?? `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
-                          <td><div className="s3-prod-name">{r.product_name ?? '—'}</div></td>
+                          <td>
+                            <div className="s3-prod-name">{r.product_name ?? '—'}</div>
+                            {r.product_category && <span className="s3-cat-badge s3-cat-badge-amber">{r.product_category.toUpperCase()}</span>}
+                          </td>
                           <td>
                             <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : statusLc === 'draft' ? 's3-pill-draft' : 's3-pill-inactive'}`}>
                               ● {statusLc ? statusLc.charAt(0).toUpperCase() + statusLc.slice(1) : '—'}
@@ -592,7 +597,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                           </td>
                           <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
                           <td className="s3-price">$ {r.target_price != null ? Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
-                          <td><span className="s3-curr">{r.currency}</span></td>
+                          <td><span className="s3-curr s3-curr-amber">{r.currency}</span></td>
                           <td>
                             {hasProc ? (
                               <button
@@ -628,7 +633,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                             {r.vendor_count > 0 ? (
                               <button
                                 type="button"
-                                className="s3-vendor-count"
+                                className="s3-vendor-count s3-vc-amber"
                                 title="View vendor mappings"
                                 onClick={() => setVendorMapRow(r)}
                               >
@@ -741,7 +746,10 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                       <tr key={r.id}>
                         <td><span className="s3-sr s3-sr-mint">{idx + 1}</span></td>
                         <td><span className="s3-code s3-code-mint">{r.product_code ?? `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
-                        <td><div className="s3-prod-name">{r.product_name ?? '—'}</div></td>
+                        <td>
+                          <div className="s3-prod-name">{r.product_name ?? '—'}</div>
+                          {r.product_category && <span className="s3-cat-badge s3-cat-badge-mint">{r.product_category.toUpperCase()}</span>}
+                        </td>
                         <td>
                           <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : statusLc === 'draft' ? 's3-pill-draft' : 's3-pill-inactive'}`}>
                             ● {statusLc ? statusLc.charAt(0).toUpperCase() + statusLc.slice(1) : '—'}
@@ -749,12 +757,12 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                         </td>
                         <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
                         <td className="s3-price">$ {r.target_price != null ? Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
-                        <td><span className="s3-curr">{r.currency}</span></td>
+                        <td><span className="s3-curr s3-curr-mint">{r.currency}</span></td>
                         <td>
                           {r.vendor_count > 0 ? (
                             <button
                               type="button"
-                              className="s3-vendor-count"
+                              className="s3-vendor-count s3-vc-mint"
                               title="View vendor mappings"
                               onClick={() => setVendorMapRow(r)}
                             >
@@ -767,7 +775,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                             <span className="s3-dash">—</span>
                           )}
                         </td>
-                        <td><span className="s3-skip">Skipped</span></td>
+                        <td><span className="s3-skip">Ready</span></td>
                       </tr>
                     );
                   })}
@@ -1123,6 +1131,19 @@ const STAGE3_CSS = `
 .s3-code-mint   { background: #d1fae5; color: #047857; border-color: #a7f3d0; }
 
 .s3-prod-name { font-weight: 700; color: #1e293b; font-size: 12.5px; }
+/* Segment badge under the product name — same chip in every tab, only the
+   colour matches the tab theme (violet / amber / mint). */
+.s3-cat-badge {
+  display: inline-block; margin-top: 3px;
+  padding: 2px 8px; border-radius: 6px;
+  font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+}
+.s3-cat-badge-violet { background: #ede9fe; color: #6d28d9; }
+.s3-cat-badge-amber  { background: #fef3c7; color: #b45309; }
+.s3-cat-badge-mint   { background: #d1fae5; color: #047857; }
+[data-bs-theme="dark"] .s3-cat-badge-violet { background: rgba(124,58,237,.22); color: #c4b5fd; }
+[data-bs-theme="dark"] .s3-cat-badge-amber  { background: rgba(252,191,36,.20); color: #fde68a; }
+[data-bs-theme="dark"] .s3-cat-badge-mint   { background: rgba(110,231,183,.20); color: #6ee7b7; }
 
 .s3-pill {
   display: inline-block; white-space: nowrap;
@@ -1136,10 +1157,16 @@ const STAGE3_CSS = `
 .s3-price { color: #047857; font-weight: 700; }
 .s3-curr {
   display: inline-block; padding: 3px 9px; border-radius: 6px;
-  background: #eff6ff; color: #1d4ed8;
-  border: 1px solid #bfdbfe;
+  border: 1px solid transparent;
   font-size: 11px; font-weight: 800;
 }
+/* Currency badge colour matches the tab theme (violet / amber / mint). */
+.s3-curr-violet { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
+.s3-curr-amber  { background: #fef3c7; color: #b45309; border-color: #fde68a; }
+.s3-curr-mint   { background: #d1fae5; color: #047857; border-color: #a7f3d0; }
+[data-bs-theme="dark"] .s3-curr-violet { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.40); }
+[data-bs-theme="dark"] .s3-curr-amber  { background: rgba(252,191,36,.18); color: #fde68a; border-color: rgba(252,191,36,.40); }
+[data-bs-theme="dark"] .s3-curr-mint   { background: rgba(110,231,183,.18); color: #6ee7b7; border-color: rgba(110,231,183,.40); }
 
 .s3-spin { color: #6d28d9; font-style: italic; font-size: 11.5px; }
 
@@ -1169,10 +1196,19 @@ const STAGE3_CSS = `
   display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
   font-family: inherit; font-size: 12px; font-weight: 800;
   padding: 4px 12px; border-radius: 999px;
-  background: #ecfdf5; color: #047857; border: 1.5px solid #6ee7b7;
+  border: 1.5px solid transparent;
   transition: background .15s, transform .12s;
 }
-.s3-vendor-count:hover { background: #d1fae5; transform: translateY(-1px); }
+.s3-vendor-count:hover { transform: translateY(-1px); }
+/* Vendor-count badge colour matches the tab theme. */
+.s3-vc-amber  { background: #fef3c7; color: #b45309; border-color: #fde68a; }
+.s3-vc-amber:hover  { background: #fde68a; }
+.s3-vc-mint   { background: #ecfdf5; color: #047857; border-color: #6ee7b7; }
+.s3-vc-mint:hover   { background: #d1fae5; }
+[data-bs-theme="dark"] .s3-vc-amber { background: rgba(252,191,36,.18); color: #fde68a; border-color: rgba(252,191,36,.40); }
+[data-bs-theme="dark"] .s3-vc-amber:hover { background: rgba(252,191,36,.28); }
+[data-bs-theme="dark"] .s3-vc-mint  { background: rgba(16,185,129,.18); color: #6ee7b7; border-color: rgba(110,231,183,.45); }
+[data-bs-theme="dark"] .s3-vc-mint:hover  { background: rgba(16,185,129,.28); }
 .s3-pending { color: #d97706; font-style: italic; font-size: 11.5px; font-weight: 600; }
 .s3-mark-btn {
   display: inline-flex; align-items: center; gap: 4px;
@@ -1308,7 +1344,7 @@ const STAGE3_CSS = `
 [data-bs-theme="dark"] .s3-legend-on  { background: rgba(34,197,94,.18); color: #86efac; }
 [data-bs-theme="dark"] .s3-legend-off { background: rgba(239,68,68,.18); color: #fca5a5; }
 [data-bs-theme="dark"] .s3-price { color: #6ee7b7; }
-[data-bs-theme="dark"] .s3-curr { background: rgba(96,165,250,.18); color: #93c5fd; border-color: rgba(96,165,250,.40); }
+/* (currency colour now comes from the per-tab .s3-curr-* variants) */
 [data-bs-theme="dark"] .s3-set-required { background: rgba(252,191,36,.18); color: #fde68a; border-color: rgba(252,191,36,.40); }
 [data-bs-theme="dark"] .s3-set-notreq   { background: rgba(110,231,183,.18); color: #6ee7b7; border-color: rgba(110,231,183,.40); }
 [data-bs-theme="dark"] .s3-set-none     { color: rgba(196,181,253,.45); }
@@ -1329,8 +1365,7 @@ const STAGE3_CSS = `
 [data-bs-theme="dark"] .s3-dash    { color: rgba(167,139,250,.40); }
 [data-bs-theme="dark"] .s3-proc-pill { background: rgba(252,191,36,.18); color: #fde68a; border-color: rgba(252,191,36,.45); }
 [data-bs-theme="dark"] .s3-proc-pill:hover { background: rgba(252,191,36,.28); }
-[data-bs-theme="dark"] .s3-vendor-count { background: rgba(16,185,129,.18); color: #6ee7b7; border-color: rgba(110,231,183,.45); }
-[data-bs-theme="dark"] .s3-vendor-count:hover { background: rgba(16,185,129,.28); }
+/* (vendor-count colour now comes from the per-tab .s3-vc-* variants) */
 
 /* Readiness panel — dark mode. Warn variant uses translucent amber on
  * the deep-slate body; ok variant uses translucent mint. Items + CTAs

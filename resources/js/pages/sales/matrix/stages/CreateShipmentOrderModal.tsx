@@ -526,6 +526,18 @@ const SCOPED_CSS = `
 }
 .cso-input:focus { border-color: #d97706; box-shadow: 0 0 0 3px rgba(217,119,6,.16); }
 .cso-input-err   { border-color: #ef4444 !important; }
+
+/* Dropdowns (MasterSelect) match the amber input border within this form. */
+.cso-grid .master-select-toggle {
+  border: 1.5px solid #fde68a; border-radius: 8px;
+  height: 36px; background: #fffef9;
+}
+.cso-grid .master-select-toggle:hover:not(:disabled) {
+  border-color: #fcd34d; box-shadow: none;
+}
+.cso-grid .master-select-wrap.show .master-select-toggle {
+  border-color: #d97706 !important; box-shadow: 0 0 0 3px rgba(217,119,6,.16) !important;
+}
 .cso-err { font-size: 10.5px; color: #dc2626; font-weight: 600; }
 
 /* Master-load shimmer */

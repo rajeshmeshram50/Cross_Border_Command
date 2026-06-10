@@ -43,7 +43,7 @@ const STAGES: { n: StageNum; title: string; sub: string }[] = [
   { n: 1, title: 'Inquiry Received',     sub: 'Lead inquiry captured' },
   { n: 2, title: 'Lead Acknowledgement', sub: 'Qualification confirmed' },
   { n: 3, title: 'Product Sourcing',     sub: 'Product/supplier sourcing' },
-  { n: 4, title: 'Price Shared',         sub: 'Price shared with customer' },
+  { n: 4, title: 'Price Shared',         sub: 'Quoted prices shared with customer' },
   { n: 5, title: 'Quotation vs PI',      sub: 'Quotation/PI comparison' },
   { n: 6, title: 'Victory Stage',        sub: 'Deal successfully won' },
 ];

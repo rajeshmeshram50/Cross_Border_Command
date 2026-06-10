@@ -235,6 +235,27 @@ export default function SalesTodo() {
   const [page, setPage]           = useState(1);
   const [rpp, setRpp]             = useState(10);
 
+  // ── Auto-fit rows ── show exactly as many rows as fill the scroll area so
+  // big screens don't leave a gap; picking a Rows-per-page value overrides it.
+  const wrapRef    = useRef<HTMLDivElement>(null);
+  const autoFitRef = useRef(true);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const recompute = () => {
+      if (!autoFitRef.current) return;
+      const avail = el.clientHeight;
+      if (avail <= 0) return;
+      const THEAD = 38, ROW = 50;   // todo table header + row heights (px)
+      const fit = Math.max(5, Math.floor((avail - THEAD) / ROW));
+      setRpp(prev => (prev === fit ? prev : fit));
+    };
+    const ro = new ResizeObserver(recompute);
+    ro.observe(el);
+    recompute();
+    return () => ro.disconnect();
+  }, []);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm]           = useState<FormShape>({});
   // Validation errors are kept as a list so every failing field surfaces at
@@ -872,27 +893,25 @@ export default function SalesTodo() {
                 </button>
               </>
             )}
-            {/* View toggle stays inline for Meeting tab (matches screenshot 3) */}
-            {tab === 'meeting' && (
-              <div className="td-view-toggle">
-                <button
-                  className={`td-view-btn ${view === 'list' ? 'active' : ''}`}
-                  title="List View"
-                  onClick={() => setView('list')}
-                >
-                  <IconList />
-                  List
-                </button>
-                <button
-                  className={`td-view-btn ${view === 'calendar' ? 'active' : ''}`}
-                  title="Calendar View"
-                  onClick={() => { setView('calendar'); setPopover(null); }}
-                >
-                  <IconCal />
-                  Calendar
-                </button>
-              </div>
-            )}
+            {/* View toggle inline with the filters for both tabs (matches Figma) */}
+            <div className="td-view-toggle">
+              <button
+                className={`td-view-btn ${view === 'list' ? 'active' : ''}`}
+                title="List View"
+                onClick={() => setView('list')}
+              >
+                <IconList />
+                List
+              </button>
+              <button
+                className={`td-view-btn ${view === 'calendar' ? 'active' : ''}`}
+                title="Calendar View"
+                onClick={() => { setView('calendar'); setPopover(null); }}
+              >
+                <IconCal />
+                Calendar
+              </button>
+            </div>
           </div>
           {/* Search sits right after the filters (and the inline view
               toggle for the Meeting tab) so it lands next to the
@@ -918,30 +937,6 @@ export default function SalesTodo() {
             )}
           </div>
         </div>
-
-        {/* View toggle on its own row for Reminder tab (matches screenshot 1) */}
-        {tab === 'reminder' && (
-          <div className="td-reminder-view-row">
-            <div className="td-view-toggle">
-              <button
-                className={`td-view-btn ${view === 'list' ? 'active' : ''}`}
-                title="List View"
-                onClick={() => setView('list')}
-              >
-                <IconList />
-                List
-              </button>
-              <button
-                className={`td-view-btn ${view === 'calendar' ? 'active' : ''}`}
-                title="Calendar View"
-                onClick={() => { setView('calendar'); setPopover(null); }}
-              >
-                <IconCal />
-                Calendar
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Meeting status sub-filter row (only shown for Meeting tab) */}
         {tab === 'meeting' && (
@@ -1005,18 +1000,18 @@ export default function SalesTodo() {
       {/* ── Table ── */}
       {view === 'list' && (
       <div className="td-table-card">
-        <div className="td-table-wrap">
+        <div className="td-table-wrap" ref={wrapRef}>
           {tab === 'reminder' ? (
-            <table className="td-table">
+            <table className="td-table" style={{ tableLayout: 'fixed' }}>
               <thead>
                 <tr>
-                  <th style={{ width: 60 }}>Sr No</th>
-                  <th style={{ width: 110 }}>Opportunity ID</th>
-                  <th>Reminder Subject</th>
-                  <th style={{ width: 150 }}>Reminder Set Date</th>
-                  <th style={{ width: 90 }}>TAT</th>
-                  <th style={{ width: 120 }}>Status</th>
-                  <th style={{ width: 120, textAlign: 'center' }}>Actions</th>
+                  <th style={{ width: '5%' }}>Sr No</th>
+                  <th style={{ width: '13%' }}>Opportunity ID</th>
+                  <th style={{ width: '34%' }}>Reminder Subject</th>
+                  <th style={{ width: '14%' }}>Reminder Set Date</th>
+                  <th style={{ width: '10%' }}>TAT</th>
+                  <th style={{ width: '12%' }}>Status</th>
+                  <th style={{ width: '12%', textAlign: 'center' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1030,7 +1025,6 @@ export default function SalesTodo() {
                       <td><span className="td-sr-pill">{startIdx + i + 1}</span></td>
                       <td><span className="td-opp-id">{r.oppId}</span></td>
                       <td className="td-cell-subject" style={{ fontWeight: 500 }}>
-                        {today && <span title="Today's Priority" style={{ color: '#0d9488', marginRight: 4 }}>🔔</span>}
                         <span className="td-subject-text" title={r.subject}>{r.subject}</span>
                       </td>
                       <td className="td-cell-muted">
@@ -1076,7 +1070,7 @@ export default function SalesTodo() {
               </tbody>
             </table>
           ) : (
-            <table className="td-table">
+            <table className="td-table td-table-mtg">
               <thead>
                 <tr>
                   <th style={{ width: 60 }}>Sr No</th>
@@ -1105,7 +1099,7 @@ export default function SalesTodo() {
                       <td>
                         <span className="td-opp-id">{m.code}</span>
                         <span className={`td-mtg-type ${isPhys ? 'td-mtg-type-phys' : 'td-mtg-type-virt'}`}>
-                          {isPhys ? '🏢 Physical' : '💻 Virtual'}
+                          {isPhys ? 'Physical' : 'Virtual'}
                         </span>
                       </td>
                       <td><span className="td-opp-id">{m.oppId}</span></td>
@@ -1181,11 +1175,6 @@ export default function SalesTodo() {
                               <button className="td-ab td-ab-revert" aria-label="Revert to In Progress" onClick={() => setMark(m, 'In Progress')}><IconRevert /></button>
                             </Tooltip>
                           )}
-                          {canDel && (
-                            <Tooltip label="Delete">
-                              <button className="td-ab td-ab-del" aria-label="Delete" onClick={() => del(m)}><IconTrash /></button>
-                            </Tooltip>
-                          )}
                         </div>
                       </td>
                     </tr>
@@ -1206,8 +1195,8 @@ export default function SalesTodo() {
           <div className="td-pag-btns">
             <span className="td-pag-rows">
               Rows:
-              <select value={rpp} onChange={e => { setRpp(parseInt(e.target.value, 10)); setPage(1); }}>
-                {ROWS_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+              <select value={rpp} onChange={e => { autoFitRef.current = false; setRpp(parseInt(e.target.value, 10)); setPage(1); }}>
+                {[...new Set([rpp, ...ROWS_OPTIONS])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
               </select>
             </span>
             <span className="td-pag-range">{safePage} / {pages}</span>
@@ -1420,7 +1409,7 @@ export default function SalesTodo() {
                         value={form.remark || ''}
                         maxLength={2000}
                         onChange={e => setForm(p => ({ ...p, remark: e.target.value }))}
-                        placeholder="Add a remark…"
+                        placeholder="Add a remark or note…"
                         style={{ resize: 'none', minHeight: 72 }}
                       />
                       <span className="td-char-count">{(form.remark || '').length}/2000</span>
@@ -1512,7 +1501,7 @@ export default function SalesTodo() {
                         />
                       </div>
                     </Field>
-                    <Field label={meetingSub === 'physical' ? 'Meeting Type' : 'Platform'} required>
+                    <Field label={meetingSub === 'physical' ? 'Meeting Type / Format' : 'Platform'} required>
                       <MasterSelect
                         value={form.platform || ''}
                         placeholder={meetingSub === 'physical' ? 'Select type' : 'Select platform'}
@@ -2105,7 +2094,7 @@ const IconVideo = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="no
 const IconClock = () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>;
 const IconCam   = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>;
 const IconPin   = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>;
-const IconEye   = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg>;
+const IconEye   = () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg>;
 const IconRevert = () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></svg>;
 
 /* ─── Scoped CSS ─── */
@@ -2113,9 +2102,10 @@ const SCOPED_CSS = `
 .td-root {
   font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
   background: linear-gradient(160deg, #f0fdfa 0%, #ecfdf5 50%, #ffffff 100%);
-  padding: 14px 18px 20px;
-  margin: -1rem -0.75rem;
-  min-height: calc(100vh - 70px);
+  padding: 16px 24px 24px;
+  margin: -1rem -1.5rem;
+  height: calc(100vh - 130px);
+  overflow: hidden;
   color: #111827;
   font-size: 13.5px;
   display: flex; flex-direction: column; gap: 0;
@@ -2149,10 +2139,7 @@ const SCOPED_CSS = `
 }
 .td-root .td-header-title {
   font-size:15px; font-weight:800; letter-spacing:-.3px; line-height:1.2;
-  background: linear-gradient(135deg, #14b8a6 0%, #0d9488 50%, #0f766e 100%);
-  -webkit-background-clip: text; background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: #0d9488;
+  color: #065f46;
 }
 .td-root .td-header-sub   { font-size:11px; color:#0d9488; margin-top:2px; font-weight:500; opacity:.85; }
 .td-root .td-header-text  { flex: 1; }
@@ -2178,11 +2165,12 @@ const SCOPED_CSS = `
   display:flex; align-items:center;
   gap:10px; flex-wrap: nowrap; min-width: 0;
 }
-/* Search sits next to the view toggle; Add button anchors to the right. */
-.td-root .td-toolbar-row .td-toolbar-right { margin-left: auto; }
+/* Search + Add button group anchors to the right together (Figma): the
+   search-wrap takes the auto margin so it sits beside the Add button. */
+.td-root .td-toolbar-row .td-search-wrap { margin-left: auto; }
 @media (max-width: 900px) {
   .td-root .td-toolbar-row { flex-wrap: wrap; }
-  .td-root .td-toolbar-row .td-toolbar-right { margin-left: 0; }
+  .td-root .td-toolbar-row .td-search-wrap { margin-left: 0; }
 }
 .td-root .td-filters { display:flex; align-items:center; gap:8px; flex-wrap:nowrap; min-width: 0; }
 .td-root .td-sf {
@@ -2334,9 +2322,23 @@ const SCOPED_CSS = `
   box-shadow: 0 4px 20px rgba(20,184,166,.1), 0 1px 4px rgba(0,0,0,.04);
   overflow: hidden;
   display: flex; flex-direction: column;
+  flex: 1; min-height: 0;
 }
-.td-root .td-table-wrap { overflow-x: auto; }
+.td-root .td-table-wrap {
+  overflow: auto; flex: 1; min-height: 0;
+  scrollbar-width: thin; scrollbar-color: #5eead4 transparent;
+}
+.td-root .td-table-wrap::-webkit-scrollbar { width: 9px; height: 9px; }
+.td-root .td-table-wrap::-webkit-scrollbar-track { background: transparent; }
+.td-root .td-table-wrap::-webkit-scrollbar-thumb {
+  background: #5eead4; border-radius: 8px;
+  border: 2px solid transparent; background-clip: content-box;
+}
+.td-root .td-table-wrap::-webkit-scrollbar-thumb:hover { background: #2dd4bf; background-clip: content-box; }
+[data-bs-theme="dark"] .td-root .td-table-wrap { scrollbar-color: rgba(94,234,212,.4) transparent; }
+[data-bs-theme="dark"] .td-root .td-table-wrap::-webkit-scrollbar-thumb { background: rgba(94,234,212,.4); background-clip: content-box; }
 .td-root .td-table { width:100%; border-collapse: collapse; font-size: 11.5px; }
+.td-root .td-table thead { position: sticky; top: 0; z-index: 5; }
 .td-root .td-table thead tr {
   background: linear-gradient(90deg, #14b8a6 0%, #0d9488 55%, #0f766e 100%);
   box-shadow: 0 2px 8px rgba(20,184,166,.2);
@@ -2344,7 +2346,7 @@ const SCOPED_CSS = `
 .td-root .td-table thead th {
   color: rgba(255,255,255,.95);
   font-size: 9.5px; font-weight: 700;
-  padding: 10px 10px; letter-spacing: .06em; text-transform: uppercase;
+  padding: 8px 10px; letter-spacing: .06em; text-transform: uppercase;
   text-align: left; white-space: nowrap;
 }
 .td-root .td-table thead th:first-child { padding-left: 14px; }
@@ -2354,7 +2356,7 @@ const SCOPED_CSS = `
 .td-root .td-table tbody td:first-child { padding-left: 14px; }
 .td-root .td-empty { text-align: center !important; padding: 36px !important; color: #94a3b8; font-style: italic; }
 
-.td-root .td-today-row td { background: linear-gradient(90deg, #f0fdfa, #ecfdf5); }
+.td-root .td-today-row td { background: transparent; }
 
 .td-root .td-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; color: #0d9488; font-weight: 600; font-size: 10.5px; }
 .td-root .td-cust-sub { color: #94a3b8; font-size: 10px; margin-top: 2px; }
@@ -2392,6 +2394,8 @@ const SCOPED_CSS = `
 }
 .td-root .td-mtg-type-virt { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
 .td-root .td-mtg-type-phys { background: #fef3c7; color: #d97706; border: 1px solid #fde68a; }
+[data-bs-theme="dark"] .td-root .td-mtg-type-virt { background: rgba(59,130,246,.20); color: #93c5fd; border-color: rgba(59,130,246,.38); }
+[data-bs-theme="dark"] .td-root .td-mtg-type-phys { background: rgba(245,158,11,.20); color: #fcd34d; border-color: rgba(245,158,11,.38); }
 
 .td-root .td-tat-pill {
   display:inline-flex; align-items:center;
@@ -2406,8 +2410,8 @@ const SCOPED_CSS = `
   background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd;
 }
 
-.td-root .td-badge { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:20px; font-size:10.5px; font-weight:700; white-space:nowrap; line-height:1.2; }
-.td-root .td-badge-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.td-root .td-badge { display:inline-flex; align-items:center; gap:0; padding:5px 14px; border-radius:999px; font-size:11.5px; font-weight:600; white-space:nowrap; line-height:1.2; border:none; }
+.td-root .td-badge-dot { display:none; }
 .td-root .td-inprog { background:#dbeafe; color:#1d4ed8; border:1px solid #bfdbfe; }
 .td-root .td-done   { background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; }
 .td-root .td-post   { background:#fef3c7; color:#92400e; border:1px solid #fde68a; }
@@ -2421,8 +2425,8 @@ const SCOPED_CSS = `
 }
 .td-root .td-ab-edit { background:#ccfbf1; color:#0d9488; }
 .td-root .td-ab-edit:hover { background:#0d9488; color:#fff; }
-.td-root .td-ab-view { background:#e0f2fe; color:#0369a1; }
-.td-root .td-ab-view:hover { background:#0369a1; color:#fff; }
+.td-root .td-ab-view { background:#dbeafe; color:#1d4ed8; }
+.td-root .td-ab-view:hover { background:#1d4ed8; color:#fff; }
 .td-root .td-ab-revert { background:#ede9fe; color:#7c3aed; }
 .td-root .td-ab-revert:hover { background:#7c3aed; color:#fff; }
 .td-root .td-ab-del  { background:#fff1f2; color:#f43f5e; }
@@ -2514,12 +2518,25 @@ const SCOPED_CSS = `
   overflow: hidden;
 }
 .td-modal-header {
-  background: linear-gradient(135deg, #14b8a6 0%, #0d9488 60%, #0f766e 100%);
+  background: linear-gradient(135deg, #0d9488 0%, #065f46 60%, #064e3b 100%);
   padding: 14px 18px;
   display:flex; align-items:center; justify-content:space-between;
   flex-shrink: 0;
+  position: relative; overflow: hidden;
 }
-.td-modal-header-left { display:flex; align-items:center; gap:11px; }
+/* Decorative bubble orbs — exact Figma values (solid translucent circles) */
+.td-modal-header::before {
+  content:''; position:absolute; right:-40px; top:-40px;
+  width:160px; height:160px; border-radius:50%;
+  background: rgba(255,255,255,.06); pointer-events:none;
+}
+.td-modal-header::after {
+  content:''; position:absolute; right:80px; bottom:-50px;
+  width:120px; height:120px; border-radius:50%;
+  background: rgba(255,255,255,.04); pointer-events:none;
+}
+.td-modal-header-left { display:flex; align-items:center; gap:11px; position: relative; z-index: 1; }
+.td-modal-close { position: relative; z-index: 1; }
 .td-modal-header-icon {
   width:36px; height:36px; border-radius:9px;
   background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.3);
@@ -2545,23 +2562,23 @@ const SCOPED_CSS = `
 .td-modal-close:hover { background: rgba(255,255,255,.4); transform: rotate(90deg); }
 .td-modal-close:active { background: rgba(255,255,255,.55); }
 .td-modal-body {
-  padding: 18px 22px 14px; background: #f0fdfa;
+  padding: 13px 22px 10px; background: #f0fdfa;
   overflow-y: auto; flex: 1;
 }
 .td-form-grid {
   display: grid; grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 10px;
 }
 .td-form-row {
   display: grid; grid-template-columns: 1fr 1fr;
-  gap: 12px 14px; margin-bottom: 12px;
+  gap: 10px 14px; margin-bottom: 9px;
   align-items: start;
 }
 .td-form-row-3 { grid-template-columns: 1fr 1fr 1fr; }
-.td-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.td-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .td-label {
-  font-size: 10.5px; font-weight: 600;
-  color: #475569; letter-spacing: .04em;
+  font-size: 10.5px; font-weight: 800;
+  color: #475569; letter-spacing: .08em;
   text-transform: uppercase;
   margin: 0;
   line-height: 1.3;
@@ -2583,6 +2600,10 @@ const SCOPED_CSS = `
   line-height: 22px;       /* 22 + 6 + 6 + 2 border = 36px exactly */
   vertical-align: middle;
 }
+/* Fields render on white so they stand out from the tinted (#f0fdfa) modal
+   body — the Master select / date toggles otherwise blend into the body. */
+.td-modal .master-select-toggle,
+.td-modal .master-datepicker-toggle { background: #fff; }
 .td-modal textarea.td-inp {
   height: auto;
   min-height: 60px;
@@ -2611,10 +2632,10 @@ const SCOPED_CSS = `
    Extra top margin separates this row from the standalone Meeting Link /
    Venue field above it (those use colSpan=2 without a .td-form-row wrapper,
    so they don't contribute a bottom margin). */
-.td-form-row-3 { gap: 12px 12px; margin-top: 14px; }
+.td-form-row-3 { gap: 10px 12px; margin-top: 9px; }
 /* Standalone colSpan=2 fields (Meeting Link / Venue / Meeting Agenda) — give
    them their own bottom margin so they don't crowd the next row. */
-.td-modal-body > .td-field { margin-bottom: 12px; }
+.td-modal-body > .td-field { margin-bottom: 9px; }
 
 /* Virtual / Physical toggle at top of meeting modal */
 .td-mtg-toggle {
@@ -2829,6 +2850,11 @@ const SCOPED_CSS = `
 /* Semantic table-cell classes — replace inline color styles so dark mode can
    override them. Inline style color always wins over CSS, which is why the
    meeting table looked dim on dark bg before this refactor. */
+/* Meeting table: every cell stays on one line (Figma) — the code + Virtual/
+   Physical badge sit inline, and the wide table scrolls horizontally rather
+   than wrapping rows onto two lines. */
+.td-root .td-table-mtg tbody td { white-space: nowrap; }
+.td-root .td-table-mtg .td-mtg-type { vertical-align: middle; }
 .td-cell-strong  { font-weight: 600; color: #1e293b; }
 .td-cell-muted   { color: #64748b; }
 .td-cell-sm      { font-size: 11px; }
@@ -2842,7 +2868,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .td-cell-link   { color: #5eead4; }
 [data-bs-theme="dark"] .td-cell-empty  { color: #64748b; }
 
-.td-cell-subject { max-width: 320px; }
+.td-cell-subject { max-width: none; }
 .td-subject-text {
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -2942,7 +2968,7 @@ const SCOPED_CSS = `
   overflow:hidden;
   border:1px solid #e2e8e7;
   display:flex; flex-direction:column;
-  min-height: 540px;
+  flex:1; min-height:0;
 }
 .td-root .td-cal-day-hdr {
   display:grid; grid-template-columns:repeat(7,1fr);
@@ -2961,15 +2987,22 @@ const SCOPED_CSS = `
 .td-root .td-cal-day-hdr-today { background: linear-gradient(90deg,#f0fdfa,#ccfbf1); color:#0d9488; border-bottom-color:#14b8a6; }
 
 .td-root .td-cal-grid {
-  flex:1; display:grid; grid-template-columns:repeat(7,1fr);
-  grid-auto-rows: minmax(108px, 1fr);
+  flex:1; min-height:0; overflow-y:auto;
+  display:grid; grid-template-columns:repeat(7,1fr);
+  grid-auto-rows: minmax(92px, 1fr);
+  scrollbar-width: thin; scrollbar-color: #5eead4 transparent;
 }
+.td-root .td-cal-grid::-webkit-scrollbar { width: 9px; }
+.td-root .td-cal-grid::-webkit-scrollbar-track { background: transparent; }
+.td-root .td-cal-grid::-webkit-scrollbar-thumb { background: #5eead4; border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+[data-bs-theme="dark"] .td-root .td-cal-grid { scrollbar-color: rgba(94,234,212,.4) transparent; }
+[data-bs-theme="dark"] .td-root .td-cal-grid::-webkit-scrollbar-thumb { background: rgba(94,234,212,.4); background-clip: content-box; }
 .td-root .td-cal-cell {
   background:#fff;
   border-right:1px solid #eef0ef;
   border-bottom:1px solid #eef0ef;
   padding:10px 12px;
-  min-height:108px;
+  min-height:92px;
   position:relative;
   transition: background .14s;
 }
@@ -3114,6 +3147,7 @@ const SCOPED_CSS = `
   border-color: rgba(94,234,212,.28);
   box-shadow: 0 2px 14px rgba(20,184,166,.25);
 }
+[data-bs-theme="dark"] .td-root .td-header-title { color: #5eead4; }
 [data-bs-theme="dark"] .td-root .td-header-sub { color: #5eead4; opacity: .9; }
 [data-bs-theme="dark"] .td-root .td-tabs {
   background: rgba(15,23,42,.55);
@@ -3169,7 +3203,14 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .td-root .td-table tbody tr { border-bottom-color: rgba(255,255,255,.06); }
 [data-bs-theme="dark"] .td-root .td-table tbody tr:hover { background: rgba(20,184,166,.08); }
 [data-bs-theme="dark"] .td-root .td-table tbody td { color: #e2e8f0; }
-[data-bs-theme="dark"] .td-root .td-today-row td { background: linear-gradient(90deg, rgba(20,184,166,.10), rgba(20,184,166,.05)); }
+[data-bs-theme="dark"] .td-root .td-today-row td { background: transparent; }
+/* TODAY pill — translucent amber on dark (was bright cream). */
+[data-bs-theme="dark"] .td-root .td-today-pill { background: rgba(245,158,11,.20); color: #fcd34d; border-color: rgba(245,158,11,.38); }
+/* Status badges — translucent tint + light ink on dark (matches role-pill style). */
+[data-bs-theme="dark"] .td-root .td-inprog { background: rgba(59,130,246,.22); color: #93c5fd; border-color: rgba(59,130,246,.35); }
+[data-bs-theme="dark"] .td-root .td-done   { background: rgba(34,197,94,.22);  color: #6ee7b7; border-color: rgba(34,197,94,.35); }
+[data-bs-theme="dark"] .td-root .td-post   { background: rgba(245,158,11,.20); color: #fcd34d; border-color: rgba(245,158,11,.35); }
+[data-bs-theme="dark"] .td-root .td-cancel { background: rgba(239,68,68,.20);  color: #fca5a5; border-color: rgba(239,68,68,.35); }
 [data-bs-theme="dark"] .td-root .td-empty { color: #64748b; }
 [data-bs-theme="dark"] .td-root .td-sr-pill { background: rgba(20,184,166,.18); color: #5eead4; }
 [data-bs-theme="dark"] .td-root .td-opp-id { color: #5eead4; }
@@ -3205,6 +3246,10 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .td-root .td-ab-join:hover { background: #16a34a; color: #fff; }
 [data-bs-theme="dark"] .td-root .td-ab-loc { background: rgba(245,158,11,.18); color: #fcd34d; }
 [data-bs-theme="dark"] .td-root .td-ab-loc:hover { background: #d97706; color: #fff; }
+[data-bs-theme="dark"] .td-root .td-ab-view { background: rgba(59,130,246,.20); color: #93c5fd; }
+[data-bs-theme="dark"] .td-root .td-ab-view:hover { background: #3b82f6; color: #fff; }
+[data-bs-theme="dark"] .td-root .td-ab-revert { background: rgba(124,58,237,.20); color: #c4b5fd; }
+[data-bs-theme="dark"] .td-root .td-ab-revert:hover { background: #7c3aed; color: #fff; }
 
 /* Modal */
 [data-bs-theme="dark"] .td-modal { background: #0e1726; box-shadow: 0 24px 60px rgba(0,0,0,.6); }
@@ -3214,6 +3259,8 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .td-cs-trigger {
   background: #0e1726; color: #e2e8f0; border-color: rgba(94,234,212,.28);
 }
+[data-bs-theme="dark"] .td-modal .master-select-toggle,
+[data-bs-theme="dark"] .td-modal .master-datepicker-toggle { background: #0e1726; }
 [data-bs-theme="dark"] .td-inp:focus,
 [data-bs-theme="dark"] .td-cs.is-open .td-cs-trigger {
   border-color: #14b8a6; box-shadow: 0 0 0 3px rgba(20,184,166,.20);
@@ -3304,6 +3351,29 @@ const SCOPED_CSS = `
     rgba(20,184,166,.08) 10px, rgba(20,184,166,.08) 20px) !important;
 }
 [data-bs-theme="dark"] .td-cal-num { color: #e2e8f0; }
+[data-bs-theme="dark"] .td-cal-num-we { color: #5eead4; }
+/* Weekday header row */
+[data-bs-theme="dark"] .td-cal-day-hdr { border-bottom-color: rgba(255,255,255,.08); }
+[data-bs-theme="dark"] .td-cal-day-hdr-cell {
+  background: #0e1726; color: #94a3b8;
+  border-right-color: rgba(255,255,255,.06); border-bottom-color: rgba(255,255,255,.08);
+}
+[data-bs-theme="dark"] .td-cal-day-hdr-we { background: rgba(15,23,42,.6); color: #5eead4; }
+[data-bs-theme="dark"] .td-cal-day-hdr-today {
+  background: linear-gradient(90deg, rgba(20,184,166,.18), rgba(20,184,166,.10));
+  color: #5eead4; border-bottom-color: #14b8a6;
+}
+/* Today cell base (only :hover was overridden before — base stayed light) */
+[data-bs-theme="dark"] .td-cal-cell-today {
+  background: linear-gradient(160deg, rgba(20,184,166,.16), rgba(20,184,166,.08));
+  box-shadow: inset 0 0 0 2px #14b8a6, inset 2px 0 0 #14b8a6;
+}
+/* Count chip + "+more" pill */
+[data-bs-theme="dark"] .td-cal-count { background: rgba(148,163,184,.18); color: #94a3b8; border-color: rgba(148,163,184,.28); }
+[data-bs-theme="dark"] .td-cal-cell-today .td-cal-count { background: rgba(20,184,166,.22); color: #5eead4; border-color: rgba(20,184,166,.4); }
+[data-bs-theme="dark"] .td-cal-more {
+  background: rgba(20,184,166,.14); color: #5eead4; border-color: rgba(94,234,212,.30);
+}
 [data-bs-theme="dark"] .td-cal-popover { background: #0e1726; border-color: rgba(94,234,212,.35); }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -3354,10 +3424,4 @@ const SCOPED_CSS = `
   .td-footer-actions { width: 100%; justify-content: flex-end; }
 }
 
-/* Big-screen cap — prevents the table card from stretching too wide on
-   ultra-wide monitors which makes rows hard to read. The page container
-   becomes centred with a max-width. */
-@media (min-width: 1600px) {
-  .td-root { max-width: 1560px; margin-left: auto; margin-right: auto; padding-left: 24px; padding-right: 24px; }
-}
 `;
