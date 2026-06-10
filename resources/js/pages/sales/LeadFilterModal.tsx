@@ -458,7 +458,7 @@ const LFM_CSS = `
 @keyframes lfm-fade { from { opacity: 0; } to { opacity: 1; } }
 
 .lfm-modal {
-  width: min(94vw, 720px); max-height: 84vh;
+  width: min(94vw, 720px); height: 480px; max-height: 84vh;
   background: #fff; border-radius: 22px; box-shadow: 0 24px 60px rgba(8,145,178,.18), 0 8px 24px rgba(15,23,42,.20);
   overflow: hidden; display: flex; flex-direction: column;
   animation: lfm-pop .18s ease-out;

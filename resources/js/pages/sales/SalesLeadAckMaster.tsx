@@ -80,6 +80,31 @@ export default function SalesLeadAckMaster() {
   const [rpp, setRpp]   = useState(10);
   const [page, setPage] = useState(1);
 
+  // ── Auto-fit rows ──
+  // Rather than a fixed page size that leaves a gap on big screens, measure the
+  // scroll area and show exactly as many rows as fit. Picking a value from the
+  // Rows-per-page dropdown turns auto-fit off (manual override).
+  const wrapRef     = useRef<HTMLDivElement>(null);
+  const autoFitRef  = useRef(true);
+  const APPROX_THEAD = 46;   // sticky header height (px)
+  const APPROX_ROW   = 38;   // one compact row height (px)
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const recompute = () => {
+      if (!autoFitRef.current) return;
+      const avail = el.clientHeight;
+      if (avail <= 0) return;
+      const fit = Math.max(5, Math.floor((avail - APPROX_THEAD) / APPROX_ROW));
+      setRpp(prev => (prev === fit ? prev : fit));
+    };
+    const ro = new ResizeObserver(recompute);
+    ro.observe(el);
+    recompute();
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Transient shimmer flags. All three tabs are fetched once on mount, so a
   // tab switch is instant — we flash the table skeleton briefly on switch so
   // the change reads as a deliberate "loading the new tab" transition. The
@@ -386,7 +411,7 @@ export default function SalesLeadAckMaster() {
 
       {/* ── Table card ── */}
       <div className="lam-table-card">
-        <div className="lam-table-wrap">
+        <div className="lam-table-wrap" ref={wrapRef}>
           <table className="lam-table" style={{ tableLayout: 'fixed', minWidth: 560 }}>
             <thead>
               <tr>
@@ -480,7 +505,7 @@ export default function SalesLeadAckMaster() {
           <span className="lam-pag-info">
             {total === 0
               ? 'No records found'
-              : <>Showing <strong>{startIdx + 1}</strong>–<strong>{startIdx + rows.length}</strong> of <strong>{total}</strong> Results</>}
+              : <>Showing <strong>{startIdx + 1}</strong>–<strong>{startIdx + rows.length}</strong> of <strong>{total}</strong></>}
           </span>
           <div className="lam-pag-right">
             <div className="lam-rows">
@@ -490,50 +515,40 @@ export default function SalesLeadAckMaster() {
               <select
                 className="lam-rows-sel"
                 value={rpp}
-                onChange={e => { setRpp(Number(e.target.value)); setPage(1); }}
+                onChange={e => { autoFitRef.current = false; setRpp(Number(e.target.value)); setPage(1); }}
                 aria-label="Rows per page"
               >
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={30}>30</option>
-                <option value={40}>40</option>
-                <option value={50}>50</option>
+                {[...new Set([rpp, 10, 20, 30, 40, 50])].sort((a, b) => a - b).map(n => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
               </select>
             </div>
             {/* Page navigation only appears when there's more than one page —
-                a single-page list shouldn't show a lone "1" button. */}
+                matches the My-Workplace footer: a "page / pages" pill + arrows. */}
             {pages > 1 && (
-              <div className="lam-pag-btns">
-                <button
-                  type="button"
-                  className="lam-pag-btn"
-                  disabled={safePage <= 1}
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  aria-label="Previous page"
-                >
-                  <i className="ri-arrow-left-s-line" />
-                </button>
-                {Array.from({ length: pages }, (_, n) => n + 1).map(n => (
+              <>
+                <span className="lam-pag-range">{safePage} / {pages}</span>
+                <div className="lam-pag-btns">
                   <button
-                    key={n}
                     type="button"
-                    className={`lam-pag-btn ${n === safePage ? 'is-active' : ''}`}
-                    onClick={() => setPage(n)}
-                    aria-current={n === safePage ? 'page' : undefined}
+                    className="lam-pag-btn"
+                    disabled={safePage <= 1}
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    aria-label="Previous page"
                   >
-                    {n}
+                    <i className="ri-arrow-left-s-line" />
                   </button>
-                ))}
-                <button
-                  type="button"
-                  className="lam-pag-btn"
-                  disabled={safePage >= pages || total === 0}
-                  onClick={() => setPage(p => Math.min(pages, p + 1))}
-                  aria-label="Next page"
-                >
-                  <i className="ri-arrow-right-s-line" />
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    className="lam-pag-btn"
+                    disabled={safePage >= pages || total === 0}
+                    onClick={() => setPage(p => Math.min(pages, p + 1))}
+                    aria-label="Next page"
+                  >
+                    <i className="ri-arrow-right-s-line" />
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -1221,14 +1236,22 @@ const SCOPED_CSS = `
   position: absolute; right: 9px; top: 50%; transform: translateY(-50%);
   pointer-events: none; color: #7c3aed; font-size: 16px;
 }
-.lam-pag-btns { display: inline-flex; align-items: center; gap: 4px; }
+/* "page / pages" pill — violet counterpart of the My-Workplace footer pill. */
+.lam-pag-range {
+  font-size: 11.5px; font-weight: 800; color: #fff;
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%);
+  border: none; padding: 5px 18px; border-radius: 20px;
+  box-shadow: 0 3px 12px rgba(124,58,237,.4), 0 1px 0 rgba(255,255,255,.2) inset;
+  white-space: nowrap;
+}
+.lam-pag-btns { display: inline-flex; align-items: center; gap: 6px; }
 .lam-pag-btn {
-  height: 32px; min-width: 32px; padding: 0 6px;
-  border-radius: 8px;
-  border: 1px solid #e0d9f7;
+  width: 32px; height: 32px; padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid #ddd6fe;
   background: #fff;
   cursor: pointer;
-  color: #6d28d9; font-size: 13px; font-weight: 700;
+  color: #7c3aed; font-size: 16px; font-weight: 700;
   display: inline-flex; align-items: center; justify-content: center;
   transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .22s ease;
   font-family: inherit;
@@ -1633,6 +1656,10 @@ const SCOPED_CSS = `
   border-top-color: rgba(167,139,250,.20);
 }
 [data-bs-theme="dark"] .lam-pag-info { color: #9aa0b4; }
+[data-bs-theme="dark"] .lam-pag-range {
+  background: linear-gradient(135deg, #6d28d9, #4c1d95);
+  box-shadow: 0 3px 12px rgba(0,0,0,.35), 0 1px 0 rgba(255,255,255,.08) inset;
+}
 [data-bs-theme="dark"] .lam-pag-info strong { color: #ede9fe; }
 [data-bs-theme="dark"] .lam-select option { background: #1a1530; color: #ede9fe; }
 [data-bs-theme="dark"] .lam-pag-btn {

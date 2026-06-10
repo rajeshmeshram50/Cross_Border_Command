@@ -247,6 +247,27 @@ export default function SalesLeadWorksheet() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
+  // ── Auto-fit rows ── show exactly as many rows as fill the scroll area so
+  // big screens don't leave a gap; picking a Rows-per-page value overrides it.
+  const wrapRef    = useRef<HTMLDivElement>(null);
+  const autoFitRef = useRef(true);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const recompute = () => {
+      if (!autoFitRef.current) return;
+      const avail = el.clientHeight;
+      if (avail <= 0) return;
+      const THEAD = 40, ROW = 44;   // worksheet header + row heights (px)
+      const fit = Math.max(5, Math.floor((avail - THEAD) / ROW));
+      setRpp(prev => (prev === fit ? prev : fit));
+    };
+    const ro = new ResizeObserver(recompute);
+    ro.observe(el);
+    recompute();
+    return () => ro.disconnect();
+  }, []);
+
   // CTQ confirmation modal
   const [ctqLead, setCtqLead] = useState<Lead | null>(null);
 
@@ -821,7 +842,7 @@ export default function SalesLeadWorksheet() {
 
       {/* ── Table ── */}
       <div className="lwp-table-card">
-        <div className="lwp-table-wrap">
+        <div className="lwp-table-wrap" ref={wrapRef}>
           <table className="lwp-table">
             <colgroup>
               <col className="c-chk" /><col className="c-type" /><col className="c-date" /><col className="c-source" />
@@ -1014,8 +1035,8 @@ export default function SalesLeadWorksheet() {
           <div className="lwp-pag-right">
             <div className="lwp-rows-sel">
               Rows per page:
-              <select value={rpp} onChange={e => { setRpp(parseInt(e.target.value, 10)); setPage(1); }}>
-                {ROWS_PER_PAGE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+              <select value={rpp} onChange={e => { autoFitRef.current = false; setRpp(parseInt(e.target.value, 10)); setPage(1); }}>
+                {[...new Set([rpp, ...ROWS_PER_PAGE_OPTIONS])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
               </select>
             </div>
             <span className="lwp-pag-range">{safePage} / {pages}</span>
