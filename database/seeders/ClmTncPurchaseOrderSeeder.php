@@ -6,47 +6,37 @@ use App\Models\ClmTncCategory;
 use Illuminate\Database\Seeder;
 
 /**
- * Seeds the four standard T&C Document Categories used by the PDF
- * auto-fetch (SalesPdfController::fetchSegmentTncs):
+ * Seeds the two Purchase Order T&C Document Categories:
  *
- *   <Document Type> <Document Kind>
- *     • International Quotation
- *     • Domestic Quotation
- *     • International Proforma Invoice
- *     • Domestic Proforma Invoice
+ *   • International Purchase Order
+ *   • Domestic Purchase Order
  *
- * The matcher looks for a category whose name CONTAINS the document-type
- * word (International / Domestic) AND the document-kind words
- * (Quotation / Proforma Invoice), so these exact names make the link work.
+ * GLOBAL, not per-tenant: created with client_id = NULL so they show for
+ * every client/branch (ClmTncController::categoriesIndex merges global +
+ * tenant rows). Mirrors the pattern in ClmTncCategorySeeder.
  *
- * GLOBAL, not per-tenant: a single shared set is created with
- * client_id = NULL so it shows for every client/branch (see
- * ClmTncController::categoriesIndex, which merges global + tenant rows).
  * Idempotent — a global category already present (by name, case-insensitive)
  * is skipped, and DC-### codes continue from the highest existing global
- * suffix. Any leftover PER-CLIENT copies of these four names (from the old
+ * suffix. Any leftover PER-CLIENT copies of these two names (from earlier
  * per-tenant seeding) are removed so the list doesn't show duplicates.
  *
  * Run standalone:
- *   php artisan db:seed --class=Database\\Seeders\\ClmTncCategorySeeder
+ *   php artisan db:seed --class=ClmTncPurchaseOrderSeeder
  */
-class ClmTncCategorySeeder extends Seeder
+class ClmTncPurchaseOrderSeeder extends Seeder
 {
     /** name => short_code (≤ 12 chars). */
     private const CATEGORIES = [
-        'International Quotation'        => 'IQ',
-        'Domestic Quotation'            => 'DQ',
-        'International Proforma Invoice' => 'IPI',
-        'Domestic Proforma Invoice'     => 'DPI',
-        // Purchase Order categories live in their own ClmTncPurchaseOrderSeeder.
+        'International Purchase Order' => 'IPO',
+        'Domestic Purchase Order'     => 'DPO',
     ];
 
     public function run(): void
     {
         $standardNames = array_map('mb_strtolower', array_keys(self::CATEGORIES));
 
-        // Drop per-client copies of these standard names left over from the
-        // old per-tenant seeding — they're now owned by the global set.
+        // Drop per-client copies of these names left over from any earlier
+        // per-tenant seeding — they're now owned by the global set.
         $dupes = ClmTncCategory::whereNotNull('client_id')->get()
             ->filter(fn ($c) => in_array(mb_strtolower((string) $c->name), $standardNames, true));
         $removed = $dupes->count();
@@ -80,6 +70,6 @@ class ClmTncCategorySeeder extends Seeder
             $created++;
         }
 
-        $this->command?->info("ClmTncCategorySeeder: created {$created} global category row(s); removed {$removed} per-client duplicate(s).");
+        $this->command?->info("ClmTncPurchaseOrderSeeder: created {$created} global category row(s); removed {$removed} per-client duplicate(s).");
     }
 }
