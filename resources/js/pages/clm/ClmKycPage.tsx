@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
-import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
+import { CLM_CSS } from './clmShared';
+
+/* This list paginates at 6 rows/page (vs the shared 10) so it mirrors the
+ * customer list — a compact first page that pages through the rest. */
+const KYC_PER_PAGE = 6;
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
@@ -44,7 +48,10 @@ export default function ClmKycPage() {
     const s = search.toLowerCase();
     return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.authority.toLowerCase().includes(s));
   }, [rows, search]);
-  const { slice, start, pageCount, safePage } = paginate(filtered, page);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / KYC_PER_PAGE));
+  const safePage  = Math.min(Math.max(1, page), pageCount);
+  const start     = (safePage - 1) * KYC_PER_PAGE;
+  const slice     = filtered.slice(start, start + KYC_PER_PAGE);
 
   const onSave = async (form: { name: string; authority: string }, id?: number) => {
     try {
@@ -139,7 +146,7 @@ export default function ClmKycPage() {
               </table>
               {!loading && filtered.length > 0 && (
                 <div className="clm-pag">
-                  <span className="clm-pag-info">Showing <b>{start + 1}–{Math.min(start + PER_PAGE, filtered.length)}</b> of <b>{filtered.length}</b> record{filtered.length === 1 ? '' : 's'}</span>
+                  <span className="clm-pag-info">Showing <b>{start + 1}–{Math.min(start + KYC_PER_PAGE, filtered.length)}</b> of <b>{filtered.length}</b> record{filtered.length === 1 ? '' : 's'}</span>
                   <div className="clm-pag-btns">
                     {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
                       <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
@@ -166,7 +173,7 @@ export default function ClmKycPage() {
   );
 }
 
-function KycModal(props: { existing: Kyc | null; authorities: Authority[]; nextCode: string; onClose: () => void; onSave: (f: { name: string; authority: string }) => void; }) {
+export function KycModal(props: { existing: Kyc | null; authorities: Authority[]; nextCode: string; onClose: () => void; onSave: (f: { name: string; authority: string }) => void; }) {
   const { existing, authorities: initialAuthorities, nextCode, onClose, onSave } = props;
   const toast = useToast();
   const isEdit = !!existing;
