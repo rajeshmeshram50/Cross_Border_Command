@@ -29,6 +29,7 @@ type LeadProductRow = {
   product_id:       number;
   product_code:     string | null;
   product_name:     string | null;
+  product_category: string | null;
   product_status:   string | null;
   currency:         string;
   quantity:         number | string | null;
@@ -42,6 +43,7 @@ type SharedRow = {
   product_id:       number | null;
   product_code:     string | null;
   product_name:     string | null;
+  product_category: string | null;
   product_status:   string | null;
   currency:         string | null;
   quantity:         number | string | null;
@@ -91,7 +93,6 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
   const [historyLoading, setHistoryLoading] = useState(false);
 
   /* Search on Shared Price tab */
-  const [sharedQuery, setSharedQuery] = useState('');
 
   /* Both fetches kicked off in parallel via Promise.allSettled so a single
    * failure doesn't block the other from rendering — and the loading
@@ -251,15 +252,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
     }
   };
 
-  /* ── Search filter for Shared tab ─────────────────────────────── */
-  const filteredShared = useMemo(() => {
-    const q = sharedQuery.trim().toLowerCase();
-    if (!q) return sharedRows;
-    return sharedRows.filter(r => {
-      const hay = [r.product_code, r.product_name, formatDateTime(r.shared_at).date].join(' ').toLowerCase();
-      return hay.includes(q);
-    });
-  }, [sharedRows, sharedQuery]);
+  const filteredShared = sharedRows;
 
   const sharedCount = sharedRows.length;
   const toShareCount = products.length;
@@ -418,21 +411,6 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                   <span className="s4-tab-count">{sharedCount}</span>
                 </button>
               </div>
-              {/* Search sits to the RIGHT of the tabs row (space-between).
-                  Shown on the Shared Price tab, which it filters. */}
-              {tab === 'shared' && (
-                <div className="s4-search">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                  </svg>
-                  <input
-                    type="text"
-                    placeholder="Search code, name or date…"
-                    value={sharedQuery}
-                    onChange={(e) => setSharedQuery(e.target.value)}
-                  />
-                </div>
-              )}
             </div>
 
             {/* ── PRICE TO BE SHARE TAB ── */}
@@ -446,7 +424,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                       <tr>
                         <th style={{ width: 50 }}>Sr No</th>
                         <th style={{ width: 110 }}>Product Code</th>
-                        <th>Product Name</th>
+                        <th style={{ minWidth: 280 }}>Product Name</th>
                         <th style={{ width: 100 }}>Status</th>
                         <th style={{ width: 80 }}>Quantity</th>
                         <th style={{ width: 140 }}>Target Price</th>
@@ -478,7 +456,10 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                           <tr key={r.id} className={blocked ? 's4-row-blocked' : ''}>
                             <td><span className="s4-sr s4-sr-navy">{idx + 1}</span></td>
                             <td><span className="s4-code s4-code-navy">{r.product_code ?? `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
-                            <td><div className="s4-prod-name">{r.product_name ?? '—'}</div></td>
+                            <td>
+                              <div className="s4-prod-name">{r.product_name ?? '—'}</div>
+                              {r.product_category && <span className="s4-cat-badge">{r.product_category.toUpperCase()}</span>}
+                            </td>
                             <td>
                               <span className={`s4-pill ${statusLc === 'active' ? 's4-pill-active' : statusLc === 'draft' ? 's4-pill-draft' : 's4-pill-inactive'}`}>
                                 ● {statusLc ? statusLc.charAt(0).toUpperCase() + statusLc.slice(1) : '—'}
@@ -556,7 +537,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                       <tr>
                         <th style={{ width: 50 }}>Sr No</th>
                         <th style={{ width: 110 }}>Product Code</th>
-                        <th>Product Name</th>
+                        <th style={{ minWidth: 280 }}>Product Name</th>
                         <th style={{ width: 150 }}>Date &amp; Time</th>
                         <th style={{ width: 80 }}>Quantity</th>
                         <th style={{ width: 140 }}>Target Price</th>
@@ -588,7 +569,10 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                           <tr key={r.id}>
                             <td><span className="s4-sr s4-sr-navy">{idx + 1}</span></td>
                             <td><span className="s4-code s4-code-navy">{r.product_code ?? `P-${String(r.product_id ?? 0).padStart(3,'0')}`}</span></td>
-                            <td><div className="s4-prod-name">{r.product_name ?? '—'}</div></td>
+                            <td>
+                              <div className="s4-prod-name">{r.product_name ?? '—'}</div>
+                              {r.product_category && <span className="s4-cat-badge">{r.product_category.toUpperCase()}</span>}
+                            </td>
                             <td><span className="s4-dt">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>
                           {date} <span className="s4-dt-sep">/</span> {time}
@@ -676,25 +660,26 @@ const STAGE4_CSS = `
    slightly-raised pill; the inactive tab is flat text inside the track.
    Clean, modern, premium — one cohesive control instead of two pills. */
 .s4-tabs {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px; border-radius: 13px;
-  background: #f5f3ff; border: 1px solid #e9e3ff;
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px; border-radius: 14px;
+  background: #faf5ff; border: 1.5px solid #e9d5ff;
   flex-wrap: wrap;
 }
 .s4-tab {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 6px 13px; border-radius: 9px;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 18px; border-radius: 10px;
   border: none; background: transparent;
   color: #6d28d9;
-  font-family: inherit; font-size: 12px; font-weight: 700;
+  font-family: inherit; font-size: 11.5px; font-weight: 700;
   cursor: pointer; white-space: nowrap;
-  transition: background .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease;
+  transition: all .2s cubic-bezier(.34, 1.2, .64, 1);
 }
 .s4-tab:hover:not(.active) { background: rgba(124,58,237,.08); }
 .s4-tab.active {
-  background: linear-gradient(135deg, #6d28d9, #7c3aed);
+  background: linear-gradient(135deg, #7c3aed, #4c1d95);
   color: #fff;
-  box-shadow: 0 4px 12px rgba(124,58,237,.32), inset 0 1px 0 rgba(255,255,255,.18);
+  box-shadow: 0 4px 14px rgba(124,58,237,.35);
+  transform: translateY(-0.5px);
 }
 .s4-tab-ico { display: inline-flex; align-items: center; justify-content: center; }
 .s4-tab-count {
@@ -712,7 +697,7 @@ const STAGE4_CSS = `
   border: 1.5px solid; border-radius: 14px;
   overflow: hidden;
 }
-.s4-card-navy    { border-color: #ddd6fe; }
+.s4-card-navy    { border: 1.5px solid #e9d5ff; border-top: 3px solid #7c3aed; box-shadow: 0 4px 20px rgba(124,58,237,.09), 0 1px 3px rgba(0,0,0,.04); }
 .s4-card-emerald { border-color: #a7f3d0; }
 
 .s4-card-head {
@@ -785,8 +770,13 @@ const STAGE4_CSS = `
 .s4-search input::placeholder { color: #94a3b8; }
 
 /* ═══════════════════════════════ TABLE ═══════════════════════════════ */
-.s4-table-wrap { overflow-x: auto; background: #fff; }
+.s4-table-wrap { overflow: auto; max-height: 58vh; background: #fff; scrollbar-width: thin; scrollbar-color: #c4b5fd #f5f3ff; }
+.s4-table-wrap::-webkit-scrollbar { width: 9px; height: 9px; }
+.s4-table-wrap::-webkit-scrollbar-track { background: #f5f3ff; }
+.s4-table-wrap::-webkit-scrollbar-thumb { background: #c4b5fd; border-radius: 6px; border: 2px solid #f5f3ff; }
+.s4-table-wrap::-webkit-scrollbar-thumb:hover { background: #a78bfa; }
 .s4-table { width: 100%; border-collapse: collapse; min-width: 880px; }
+.s4-table thead th { position: sticky; top: 0; z-index: 2; }
 .s4-thead-navy th {
   padding: 12px 14px; text-align: left;
   font-size: 11.5px; font-weight: 800; color: #fff;
@@ -824,6 +814,7 @@ const STAGE4_CSS = `
 .s4-code-emerald { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
 
 .s4-prod-name { font-weight: 700; color: #1e293b; font-size: 12.5px; }
+.s4-cat-badge { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 6px; font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; background: #ede9fe; color: #6d28d9; }
 
 .s4-pill {
   display: inline-flex; align-items: center; gap: 4px;
@@ -930,7 +921,7 @@ const STAGE4_CSS = `
 [data-bs-theme="dark"] .s4-tab-count { background: rgba(167,139,250,.20); color: #c4b5fd; }
 [data-bs-theme="dark"] .s4-tab.active .s4-tab-count { background: rgba(0,0,0,.28); color: #fff; }
 [data-bs-theme="dark"] .s4-card { background: #14102a; }
-[data-bs-theme="dark"] .s4-card-navy    { border-color: rgba(167,139,250,.30); }
+[data-bs-theme="dark"] .s4-card-navy    { border-color: rgba(167,139,250,.30); border-top-color: #7c3aed; }
 [data-bs-theme="dark"] .s4-card-emerald { border-color: rgba(110,231,183,.30); }
 [data-bs-theme="dark"] .s4-card-head-navy {
   background: rgba(124,58,237,.18); border-bottom-color: rgba(167,139,250,.30);
@@ -957,6 +948,7 @@ const STAGE4_CSS = `
 [data-bs-theme="dark"] .s4-code-navy    { background: rgba(167,139,250,.18); color: #ddd6fe; border-color: rgba(167,139,250,.40); }
 [data-bs-theme="dark"] .s4-code-emerald { background: rgba(110,231,183,.18); color: #6ee7b7; border-color: rgba(110,231,183,.40); }
 [data-bs-theme="dark"] .s4-prod-name { color: #ede9fe; }
+[data-bs-theme="dark"] .s4-cat-badge { background: rgba(124,58,237,.22); color: #c4b5fd; }
 [data-bs-theme="dark"] .s4-pill-active   { background: rgba(16,185,129,.18); color: #6ee7b7; }
 [data-bs-theme="dark"] .s4-pill-inactive { background: rgba(239,68,68,.18); color: #fca5a5; }
 [data-bs-theme="dark"] .s4-pill-draft    { background: rgba(245,158,11,.18); color: #fde68a; }
