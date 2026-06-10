@@ -300,9 +300,9 @@ export default function LeadEvidenceVaultModal({ open, target, onClose }: Props)
                       <td>{d.authority || '—'}</td>
                       <td>
                         {d.requirement === 'M' ? (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>
+                          <span className="lev-req lev-req-m">★ Mandatory</span>
                         ) : (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
+                          <span className="lev-req lev-req-o">Optional</span>
                         )}
                       </td>
                       <td>
@@ -583,6 +583,14 @@ const LEV_CSS = `
 .lev-doc-att { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 8px; background: #ECFDF5; color: #047857; border: 1px solid #A7F3D0; font-size: 11.5px; font-weight: 700; cursor: pointer; text-decoration: none; transition: all .15s ease; }
 .lev-doc-att:hover { background: #D1FAE5; }
 .lev-doc-att svg { width: 12px; height: 12px; stroke: currentColor; }
+/* Requirement badge (Mandatory / Optional) — class-based so dark mode can
+   re-tint it (inline styles couldn't be reached by the dark theme rules). */
+.lev-req { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 800; border: 1px solid; white-space: nowrap; }
+.lev-req-m { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
+.lev-req-o { background: #f1f5f9; color: #64748b; border-color: #e2e8f0; font-weight: 700; }
+[data-bs-theme="dark"] .lev-req-m { background: rgba(34,197,94,.18); color: #86efac; border-color: rgba(34,197,94,.40); }
+[data-bs-theme="dark"] .lev-req-o { background: rgba(148,163,184,.16); color: #cbd5e1; border-color: rgba(148,163,184,.32); }
+
 .lev-doc-status { display: inline-flex; align-items: center; gap: 5px; padding: 4px 11px; border-radius: 999px; font-size: 10.5px; font-weight: 800; letter-spacing: .04em; border: 1px solid; white-space: nowrap; }
 .lev-doc-status.verified { background: #ECFDF5; color: #047857; border-color: #A7F3D0; }
 .lev-doc-status.expiring { background: #FEF3C7; color: #B45309; border-color: #FDE68A; }
@@ -601,6 +609,15 @@ const LEV_CSS = `
 .lev-act-upload:hover { background: #dcfce7; }
 .lev-act-cert { background: #ede9fe; color: #7c3aed; border-color: #c4b5fd; }
 .lev-act.is-disabled { opacity: .4; cursor: not-allowed; pointer-events: none; }
+/* Dark-mode tints — translucent fills so the icon buttons read on the dark
+   table instead of sitting as bright light chips. */
+[data-bs-theme="dark"] .lev-act-view     { background: rgba(124,58,237,.22); color: #c4b5fd; border-color: rgba(167,139,250,.38); }
+[data-bs-theme="dark"] .lev-act-view:hover { background: rgba(124,58,237,.34); }
+[data-bs-theme="dark"] .lev-act-download { background: rgba(124,58,237,.14); color: #c4b5fd; border-color: rgba(167,139,250,.30); }
+[data-bs-theme="dark"] .lev-act-download:hover { background: rgba(124,58,237,.26); }
+[data-bs-theme="dark"] .lev-act-upload   { background: rgba(34,197,94,.16); color: #86efac; border-color: rgba(34,197,94,.35); }
+[data-bs-theme="dark"] .lev-act-upload:hover { background: rgba(34,197,94,.26); }
+[data-bs-theme="dark"] .lev-act-cert     { background: rgba(124,58,237,.22); color: #c4b5fd; border-color: rgba(167,139,250,.42); }
 
 /* ── Pagination ── */
 .lev-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
@@ -637,6 +654,9 @@ const LEV_CSS = `
 [data-bs-theme="dark"] .lev-tab .lev-tab-count { background: rgba(148,163,184,.18); color: #cbd5e1; }
 [data-bs-theme="dark"] .lev-tab.active { color: #a78bfa; border-bottom-color: #a78bfa; }
 [data-bs-theme="dark"] .lev-tab.active .lev-tab-count { background: rgba(167,139,250,.20); color: #ede9fe; }
+/* Hover — translucent violet instead of the light #F5F3FF box, which read as
+   a bright white tab on the dark tab bar. */
+[data-bs-theme="dark"] .lev-tab:hover:not(.active) { color: #c4b5fd; background: rgba(124,58,237,.14); }
 [data-bs-theme="dark"] .lev-body { background: #0b1220; }
 [data-bs-theme="dark"] .lev-section-card { background: rgba(124,58,237,.10); border-color: rgba(167,139,250,.30); }
 [data-bs-theme="dark"] .lev-section-title { color: #f1f5f9; }

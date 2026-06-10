@@ -606,10 +606,9 @@ const LFM_CSS = `
 .lfm-search:hover { border-color: #cbd5e1; }
 .lfm-search:focus { background: #fff; border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.15); }
 
-/* Cap the options list so the modal stays a consistent compact size — when a
-   facet has many entries (e.g. Customer), the list scrolls INSIDE instead of
-   the whole modal growing tall. */
-.lfm-options { flex: 1; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 4px; max-height: 42vh; scrollbar-width: thin; scrollbar-color: #a5f3fc transparent; }
+/* Fills the fixed-height modal and scrolls internally — the popup size never
+   changes, however many entries a facet has (e.g. Customer). */
+.lfm-options { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 4px; scrollbar-width: thin; scrollbar-color: #a5f3fc transparent; }
 .lfm-options::-webkit-scrollbar { width: 8px; }
 .lfm-options::-webkit-scrollbar-track { background: transparent; }
 .lfm-options::-webkit-scrollbar-thumb { background: #a5f3fc; border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }

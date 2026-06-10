@@ -119,6 +119,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
   const sourcingLocked = (leadStage ?? 0) >= 4;
 
   const [rows, setRows]               = useState<DirectoryRow[]>([]);
+  const [page, setPage]               = useState(1);   // 4 products per page
   const [loading, setLoading]         = useState(false);
   const [products, setProducts]       = useState<ProductOpt[]>([]);
   const [productsLoading, setPL]      = useState(false);
@@ -190,6 +191,16 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
     for (const p of products) m.set(p.id, p);
     return m;
   }, [products]);
+
+  /* Pagination — 4 products per page. safePage clamps when rows shrink
+   * (e.g. after an unmap) so we never render an out-of-range empty page. */
+  const PER_PAGE = 4;
+  const pageCount = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+  const safePage  = Math.min(page, pageCount);
+  const pageStart = (safePage - 1) * PER_PAGE;
+  const pagedRows = rows.slice(pageStart, pageStart + PER_PAGE);
+  // Reset to the first page whenever the modal (re)opens.
+  useEffect(() => { if (open) setPage(1); }, [open]);
 
   /* Hide products that are already mapped — prevents 422 on save. */
   const mappedIds = useMemo(() => new Set(rows.map(r => r.product_id)), [rows]);
@@ -421,10 +432,10 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                   </tr>
                 )}
 
-                {!loading && rows.map((r, i) => {
+                {!loading && pagedRows.map((r, i) => {
                   return (
                     <tr key={r.id}>
-                      <td><span className="pdm-sr-pill">{i + 1}</span></td>
+                      <td><span className="pdm-sr-pill">{pageStart + i + 1}</span></td>
                       <td>
                         <span className="pdm-code-chip" title={r.product_code ?? ''}>
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -479,6 +490,43 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
               </tbody>
             </table>
           </div>
+
+          {/* Pagination — only when there's more than one page of products. */}
+          {!loading && rows.length > PER_PAGE && (
+            <div className="pdm-pager">
+              <span className="pdm-pager-info">
+                Showing {pageStart + 1}–{Math.min(pageStart + PER_PAGE, rows.length)} of {rows.length}
+              </span>
+              <div className="pdm-pager-ctrls">
+                <button
+                  type="button"
+                  className="pdm-pager-btn"
+                  disabled={safePage <= 1}
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  aria-label="Previous page"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                </button>
+                {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
+                  <button
+                    key={p}
+                    type="button"
+                    className={`pdm-pager-num ${p === safePage ? 'on' : ''}`}
+                    onClick={() => setPage(p)}
+                  >{p}</button>
+                ))}
+                <button
+                  type="button"
+                  className="pdm-pager-btn"
+                  disabled={safePage >= pageCount}
+                  onClick={() => setPage(p => Math.min(pageCount, p + 1))}
+                  aria-label="Next page"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer — left status text + right Close button. Pinned below
@@ -764,6 +812,30 @@ const SCOPED_CSS = `
 .pdm-table tbody tr:hover { background: #faf5ff; }
 .pdm-table tbody td { padding: 10px 12px; color: #1e293b; vertical-align: middle; }
 .pdm-draft-row { background: #fdf4ff !important; }
+
+/* ── Pagination (4 products per page) ── */
+.pdm-pager {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 10px 16px; flex-wrap: wrap;
+  border-top: 1px solid #ede9fe; background: #faf7ff;
+}
+.pdm-pager-info { font-size: 11.5px; font-weight: 600; color: #6d28d9; }
+.pdm-pager-ctrls { display: inline-flex; align-items: center; gap: 5px; }
+.pdm-pager-btn, .pdm-pager-num {
+  min-width: 28px; height: 28px; padding: 0 7px; border-radius: 7px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #fff; border: 1.5px solid #e9d5ff; color: #6d28d9;
+  font-family: inherit; font-size: 12px; font-weight: 700;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.pdm-pager-btn:hover:not(:disabled), .pdm-pager-num:hover:not(.on) { background: #f3e8ff; border-color: #c4b5fd; }
+.pdm-pager-btn:disabled { opacity: .45; cursor: not-allowed; }
+.pdm-pager-num.on { background: linear-gradient(135deg, #7c3aed, #6d28d9); border-color: #6d28d9; color: #fff; }
+[data-bs-theme="dark"] .pdm-pager { background: #1f1635; border-top-color: rgba(167,139,250,.2); }
+[data-bs-theme="dark"] .pdm-pager-info { color: #c4b5fd; }
+[data-bs-theme="dark"] .pdm-pager-btn, [data-bs-theme="dark"] .pdm-pager-num { background: #2a2150; border-color: rgba(167,139,250,.3); color: #d8b4fe; }
+[data-bs-theme="dark"] .pdm-pager-btn:hover:not(:disabled), [data-bs-theme="dark"] .pdm-pager-num:hover:not(.on) { background: #342861; }
+[data-bs-theme="dark"] .pdm-pager-num.on { background: linear-gradient(135deg, #7c3aed, #6d28d9); border-color: #a78bfa; color: #fff; }
 .pdm-prod-cell { display: flex; flex-direction: column; gap: 2px; }
 .pdm-prod-code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
