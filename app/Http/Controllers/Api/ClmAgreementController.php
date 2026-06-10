@@ -7,7 +7,6 @@ use App\Http\Controllers\Concerns\HandlesDocxHtmlRoundtrip;
 use App\Models\ClmAgreementLibrary;
 use App\Models\ClmAgreementType;
 use App\Models\ClmSegment;
-use App\Models\ClmSegmentRule;
 use App\Models\ClmSignatureRequest;
 use App\Models\ClmTradeDocLibrary;
 use App\Models\Consignee;
@@ -398,6 +397,31 @@ class ClmAgreementController extends Controller
             }
         }
 
+        // Same lookup for TRADE-DOCUMENT sends, keyed by trade-doc-library id,
+        // so each trade-doc row can surface its live signature status (Sent /
+        // Signed), the Remind button + count, and the signed-PDF / certificate
+        // download links — exactly like the agreement rows.
+        $tdSigRows = $source
+            ? ClmSignatureRequest::where('client_id', $user->client_id)
+                ->where('document_type', ClmSignatureRequest::DOC_TRADE)
+                ->where('lead_id', $lead->id)
+                ->whereNull('deleted_at')
+                ->orderByDesc('id')
+                ->get()
+            : collect();
+        $latestPerTradeDoc = [];
+        foreach ($tdSigRows as $r) {
+            $ids = is_array($r->trade_doc_ids) && !empty($r->trade_doc_ids)
+                ? $r->trade_doc_ids
+                : [$r->trade_doc_id];
+            foreach ((array) $ids as $tid) {
+                $tid = (int) $tid;
+                if ($tid && !isset($latestPerTradeDoc[$tid])) {
+                    $latestPerTradeDoc[$tid] = $r;
+                }
+            }
+        }
+
         // Customer + consignee mapped to this lead. Resolved up-front (it
         // used to sit below the loop) because the per-segment trade-document
         // block now needs both parties' upload state inside the loop.
@@ -491,7 +515,7 @@ class ClmAgreementController extends Controller
                 // Trade documents required for THIS segment, for both the
                 // customer and the consignee — moved here from the per-party
                 // Evidence Vault so they're surfaced segment-wise.
-                'trade_documents' => $this->segmentTradeDocs((int) $seg->id, (int) $user->client_id, $partyOwners),
+                'trade_documents' => $this->segmentTradeDocs($seg, (int) $user->client_id, $partyOwners, $latestPerTradeDoc),
             ];
         }
 
@@ -573,18 +597,33 @@ class ClmAgreementController extends Controller
      * @param  array<int,array{party:string,model:Model}>  $partyOwners
      * @return array<int,array<string,mixed>>
      */
-    private function segmentTradeDocs(int $segmentId, int $cid, array $partyOwners): array
+    private function segmentTradeDocs($seg, int $cid, array $partyOwners, array $latestPerTradeDoc = []): array
     {
-        $rule = ClmSegmentRule::where('client_id', $cid)
-            ->where('segment_id', $segmentId)
-            ->first();
-        $sel = $rule?->doc_selections['td'] ?? [];
-        if (!is_array($sel) || empty($sel)) return [];
-
-        $masters = ClmTradeDocLibrary::where('client_id', $cid)
-            ->whereIn('code', array_keys($sel))
-            ->get()
-            ->keyBy('code');
+        // Trade documents now carry their own `regulatory` + `segment` (CSV)
+        // columns — exactly like the Agreement Library — instead of being
+        // selected on the DCP segment rule. So we resolve them the SAME way
+        // agreements are: match the library's regulatory tier + segment CSV
+        // against this segment's name/code. (Previously this read the segment
+        // rule's doc_selections['td'], which no longer exists.)
+        $name = $seg->name;
+        $code = $seg->code;
+        $docs = ClmTradeDocLibrary::where('client_id', $cid)
+            ->where('regulatory', $seg->regulatory_status)
+            ->where(function ($q) use ($name, $code) {
+                foreach ([$name, $code] as $needle) {
+                    $q->orWhere('segment', $needle)
+                      ->orWhere('segment', 'LIKE', $needle . ',%')
+                      ->orWhere('segment', 'LIKE', $needle . ', %')
+                      ->orWhere('segment', 'LIKE', '%,' . $needle)
+                      ->orWhere('segment', 'LIKE', '%, ' . $needle)
+                      ->orWhere('segment', 'LIKE', '%,' . $needle . ',%')
+                      ->orWhere('segment', 'LIKE', '%, ' . $needle . ',%');
+                }
+            })
+            ->where('status', 'active')
+            ->orderBy('id')
+            ->get();
+        if ($docs->isEmpty()) return [];
 
         // Upload state keyed by doc_code, per mapped party owner.
         $uploadsByOwner = [];
@@ -598,15 +637,15 @@ class ClmAgreementController extends Controller
         }
 
         $out = [];
-        foreach ($sel as $code => $req) {
-            $m = $masters->get($code);
+        foreach ($docs as $m) {
+            $docCode = $m->code;
 
             // Applicable party comes from the master's `party` CSV (e.g.
             // "Buyer,Consignee,Supplier-Material"). A doc that names neither
             // Buyer nor Consignee falls back to "both" so it's never hidden.
             $tokens = array_filter(array_map(
                 fn ($t) => strtolower(trim($t)),
-                explode(',', (string) ($m?->party ?? ''))
+                explode(',', (string) ($m->party ?? ''))
             ));
             $forBuyer     = in_array('buyer', $tokens, true);
             $forConsignee = in_array('consignee', $tokens, true);
@@ -615,21 +654,44 @@ class ClmAgreementController extends Controller
             // Verified if EITHER mapped party has uploaded this code.
             $uploaded = null;
             foreach ($uploadsByOwner as $ups) {
-                if ($hit = $ups->get($code)) { $uploaded = $hit; break; }
+                if ($hit = $ups->get($docCode)) { $uploaded = $hit; break; }
+            }
+
+            // Live signature status for this trade doc (latest Zoho send on
+            // this lead) — drives the Sent/Signed badge, Remind button + count,
+            // and signed-PDF / certificate downloads, same as agreements.
+            $req = $latestPerTradeDoc[(int) $m->id] ?? null;
+            $sigOut = null;
+            if ($req) {
+                $signedPaths = is_array($req->signed_document_paths) ? $req->signed_document_paths : [];
+                $first = $signedPaths[0] ?? [];
+                $sigOut = [
+                    'id'                    => $req->id,
+                    'status'                => $req->status,
+                    'sent_at'               => optional($req->created_at)->toIso8601String(),
+                    'completed_at'          => optional($req->completed_at)->toIso8601String(),
+                    'signed_url'            => $first['file_url'] ?? $first['url'] ?? null,
+                    'certificate_url'       => $req->certificate_path ? file_url($req->certificate_path) : null,
+                    'reminder_count'        => (int) ($req->reminder_count ?? 0),
+                    'last_reminder_sent_at' => optional($req->last_reminder_sent_at)->toIso8601String(),
+                ];
             }
 
             $out[] = [
-                'db_id'            => $m?->id,
-                'name'             => $m?->name ?? ($m?->title ?? $code),
-                'reference'        => $m?->code ?? $code,
-                'doc_code'         => (string) $code,
-                'requirement'      => $req === 'M' ? 'M' : 'O',
-                'applicable_party' => (string) ($m?->party ?? ''),
+                'db_id'            => $m->id,
+                'name'             => $m->name ?? ($m->title ?? $docCode),
+                'reference'        => $m->code ?? $docCode,
+                'doc_code'         => (string) $docCode,
+                // Highly-regulated trade docs read as required (REQ); less-reg
+                // as optional — same convention as agreements.
+                'requirement'      => $seg->regulatory_status === 'highly' ? 'M' : 'O',
+                'applicable_party' => (string) ($m->party ?? ''),
                 'for_buyer'        => $forBuyer,
                 'for_consignee'    => $forConsignee,
                 'status'           => $uploaded ? 'Verified' : 'Pending',
                 'attachment'       => $uploaded?->attachment_name,
                 'attachment_url'   => $uploaded?->attachment_url,
+                'signature_request' => $sigOut,
             ];
         }
         return $out;

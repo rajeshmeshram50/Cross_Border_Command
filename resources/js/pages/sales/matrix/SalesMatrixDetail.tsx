@@ -554,10 +554,34 @@ export default function SalesMatrixDetail() {
    * agreement signature request has completed; drives the row progress bar. */
   const segDocTallies = useMemo(() => {
     const segs = agreementApplicable?.segments ?? [];
+    const buyerEqualsConsignee = !!agreementApplicable?.buyerEqualsConsignee;
+    /* Party bucket for an agreement's `party` CSV — mirrors the agreement
+     * popup's partyBucket(). When buyer == consignee the popup shows ONLY
+     * buyer-only agreements (a Buyer+Consignee or Consignee-only agreement is
+     * redundant with a single party), so the card count must exclude the same
+     * rows — otherwise the card said "0 of 2" while the popup listed 1. */
+    const partyBucket = (party: string | null | undefined): 'buyer' | 'consignee' | 'both' => {
+      const tokens = String(party ?? '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+      const b = tokens.includes('buyer'), c = tokens.includes('consignee');
+      if (b && c) return 'both';
+      if (b) return 'buyer';
+      if (c) return 'consignee';
+      return 'both';
+    };
     let agrTotal = 0, agrDone = 0, tdTotal = 0, tdDone = 0;
     for (const s of segs) {
-      for (const a of s.agreements) { agrTotal++; if (a.signature_request?.status === 'completed') agrDone++; }
-      for (const td of s.trade_documents) { tdTotal++; if (td.status === 'Verified') tdDone++; }
+      for (const a of s.agreements) {
+        if (buyerEqualsConsignee && partyBucket(a.party) !== 'buyer') continue;
+        agrTotal++;
+        if (a.signature_request?.status === 'completed') agrDone++;
+      }
+      // A trade doc counts as "done" when it's uploaded/verified OR signed
+      // (its signature request reached completed) — same way agreements count
+      // a completed e-signature.
+      for (const td of s.trade_documents) {
+        tdTotal++;
+        if (td.status === 'Verified' || td.signature_request?.status === 'completed') tdDone++;
+      }
     }
     return { agrTotal, agrDone, tdTotal, tdDone };
   }, [agreementApplicable]);
@@ -1231,8 +1255,12 @@ export default function SalesMatrixDetail() {
               await api.put(`/sales/leads/${resolvedLeadId}`, { consignee_id: dbId });
               toast.success('Consignee mapped', 'Linked to this opportunity');
               await reloadLead();
-            } catch {
-              toast.error('Mapping failed', 'Could not link this consignee to the lead');
+            } catch (e: any) {
+              // Surface the backend reason (e.g. the segment "Buyer ≠ Consignee"
+              // block) instead of a generic message, and don't open the edit
+              // form for a consignee that couldn't be mapped.
+              toast.error('Mapping failed', e?.response?.data?.message ?? 'Could not link this consignee to the lead');
+              return;
             }
           }
           setConsigneeEditing(row); setConsigneeAddOpen(true);
@@ -1418,7 +1446,13 @@ export default function SalesMatrixDetail() {
         leadId={resolvedLeadId}
         view={agreementModalView}
         data={agreementApplicable}
-        onClose={() => setAgreementModalOpen(false)}
+        onClose={() => {
+          setAgreementModalOpen(false);
+          // Re-pull so the Segment Details card reflects any status that
+          // changed while the popup was open — e.g. a trade doc / agreement
+          // that got signed via the popup's live Zoho poll.
+          setAgreementRefreshTick(t => t + 1);
+        }}
         onSent={() => setAgreementRefreshTick(t => t + 1)}
       />
 
