@@ -1897,7 +1897,21 @@ class ClmSignatureController extends Controller
         // used by the Send-for-Signature modal when the user pastes in
         // a table via Insert Table or otherwise edits the body inline.
         $sourceHtml    = $contentOverride !== null ? $contentOverride : (string) $doc->content;
-        $processedHtml = $this->replacePlaceholders($sourceHtml, $party, $modelName);
+        // Resolve EVERY party the opportunity has mapped so BOTH {{customer.*}}
+        // AND {{consignee.*}} tokens fill in. The trade-doc send flow only
+        // loads a single primary party ($party), so a Buyer+Consignee document
+        // was leaving the consignee tokens raw — pull the lead's customer +
+        // consignee here and hand them to replacePlaceholders as extra parties.
+        $allParties = [];
+        if ($lead) {
+            $cust = $lead->customer_id  ? Customer::where('client_id', $doc->client_id)->find($lead->customer_id)   : null;
+            $cons = $lead->consignee_id ? Consignee::where('client_id', $doc->client_id)->find($lead->consignee_id) : null;
+            if ($cust) $allParties['Customer'] = $cust;
+            // A same-as-customer consignee mirrors the customer's data, so the
+            // Customer entry already covers it — skip to avoid blanking fields.
+            if ($cons && !$cons->same_as_customer) $allParties['Consignee'] = $cons;
+        }
+        $processedHtml = $this->replacePlaceholders($sourceHtml, $party, $modelName, $allParties);
         // Expand the {{product.*}} table into one row per opportunity product.
         $processedHtml = $this->expandProductTable($processedHtml, $lead);
         $client = Client::find($doc->client_id);
