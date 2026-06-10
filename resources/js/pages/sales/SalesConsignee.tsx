@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -36,7 +36,7 @@ const RISK_COLORS: Record<string, { bg: string; color: string; dot: string }> = 
   'High':   { bg:'rgba(239,68,68,0.12)',  color:'#dc2626', dot:'#ef4444' },
 };
 
-const ROWS_PER_PAGE = 5;
+const ROWS_PER_PAGE = 10;
 
 /* titleCase + TruncatedCell are module-level so the function refs
  * stay stable across renders. The page's `columns` useMemo captures
@@ -95,6 +95,48 @@ export default function SalesConsignee() {
    * disabled state on the confirm dialog so the user has a visual
    * cue that the DELETE request is still going. */
   const [deleting, setDeleting] = useState(false);
+
+  /* Fit the table card to the viewport (mirrors SalesCustomers): its bottom
+   * lands 15px above the page bottom at any height/zoom so only the TABLE
+   * scrolls internally. The same measure computes a dynamic page size — 10 is
+   * the floor; on a taller screen it grows to fill the leftover space. */
+  const tableCardRef = useRef<HTMLDivElement>(null);
+  const [pageSize, setPageSize] = useState(ROWS_PER_PAGE);
+  useEffect(() => {
+    const el = tableCardRef.current;
+    if (!el) return;
+    const fit = () => {
+      const top = el.getBoundingClientRect().top;
+      const h = Math.max(240, window.innerHeight - top - 15);
+      el.style.flex = 'none';
+      el.style.height = `${h}px`;
+      el.style.maxHeight = `${h}px`;
+
+      const toolbarH = (el.querySelector('.smcg-toolbar') as HTMLElement | null)?.offsetHeight || 0;
+      const theadH   = (el.querySelector('.smcg-table-wrap thead') as HTMLElement | null)?.offsetHeight || 0;
+      const footerH  = (el.querySelector('.smcg-table-wrap > .row') as HTMLElement | null)?.offsetHeight || 0;
+      const rowH     = (el.querySelector('.smcg-table-wrap tbody tr') as HTMLElement | null)?.offsetHeight || 40;
+      const avail = h - toolbarH - theadH - footerH - 26;
+      const rowsFit = Math.floor(avail / rowH);
+      setPageSize(Math.max(ROWS_PER_PAGE, rowsFit));
+    };
+    fit();
+    const t = window.setTimeout(fit, 120);
+    window.addEventListener('resize', fit);
+    // Re-fit on every frame of the WDH banner expand/collapse animation.
+    let ro: ResizeObserver | undefined;
+    const banner = document.querySelector('.smcg-wdh-body-wrap');
+    if (banner && typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => fit());
+      ro.observe(banner);
+    }
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener('resize', fit);
+      ro?.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wdhOpen, loading]);
 
   const fetchRows = useCallback(async () => {
     if (!canView) return;
@@ -324,14 +366,18 @@ export default function SalesConsignee() {
       cell: (info: any) => {
         const c = info.row.original as ConsigneeRow;
         return (
-          <div className="d-inline-flex align-items-center gap-1">
-            {canEdit && <ActionBtn title="Edit Consignee" icon="ri-pencil-line" color="primary" onClick={() => { setEditing(c); setAddOpen(true); }} />}
-            {/* Evidence Vault — icon-only action, matching the Customer
-                list's "Customer Evidence Vault" button (ri-file-shield-line). */}
-            <ActionBtn
-              title="Consignee Evidence Vault"
-              icon="ri-file-shield-line"
-              color="info"
+          <div className="smcg-actions">
+            {canEdit && (
+              <Tooltip label="Edit Consignee">
+                <button type="button" className="smcg-act smcg-act-edit" onClick={() => { setEditing(c); setAddOpen(true); }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                </button>
+              </Tooltip>
+            )}
+            {/* Evidence Vault — icon + "Vault" label pill (Figma). */}
+            <button
+              type="button"
+              className="smcg-act smcg-act-vault"
               onClick={() => setVaultTarget({
                 id: c.id,
                 db_id: c.db_id,
@@ -343,7 +389,10 @@ export default function SalesConsignee() {
                 contactCity: c.countryDetail,
                 customerId: c.customerId,
               })}
-            />
+            >
+              <i className="ri-archive-line" />
+              Vault
+            </button>
             {/* Delete action removed per product request — consignees
                 are kept (soft-delete only via API if ever needed). The
                 handleDelete + DeleteConfirmModal wiring is intentionally
@@ -384,6 +433,9 @@ export default function SalesConsignee() {
             sharp white text on a saturated green background pops
             against the page chrome instead of blending with it. */}
       <div className="smcg-cstrip">
+        <span className="smcg-cstrip__accent" />
+        <span className="smcg-cstrip__glow" />
+        <span className="smcg-cstrip__sheen" />
         <div className="smcg-cstrip-left">
           <div className="smcg-cstrip-icon">
             <i className="ri-truck-line" />
@@ -457,7 +509,7 @@ export default function SalesConsignee() {
       </div>
 
       {/* ── Main card — toolbar (search + Add Consignee) + table + pagination ── */}
-      <div className="smcg-table-card">
+      <div className="smcg-table-card" ref={tableCardRef}>
 
         {/* Toolbar — search + column filters (Segment / Country / Risk). */}
         <div className="smcg-toolbar">
@@ -491,7 +543,7 @@ export default function SalesConsignee() {
                cols=12 matches the live header strip (Sr No, Consignee ID,
                Customer ID, Company, Segment, Risk Level, Contact,
                Email, Contact No, Country, Actions, +1 buffer). */
-            <ShimmerTable rows={ROWS_PER_PAGE} cols={12} />
+            <ShimmerTable rows={pageSize} cols={12} />
           ) : (
             <TableContainer
               /* `key` flips when search state toggles, forcing the table
@@ -503,12 +555,12 @@ export default function SalesConsignee() {
               columns={columns}
               data={filtered}
               isGlobalFilter={false}
-              customPageSize={ROWS_PER_PAGE}
+              customPageSize={pageSize}
               tableClass="table align-middle table-nowrap mb-0"
               theadClass="table-light"
               divClass="table-responsive table-card border rounded"
               SearchPlaceholder="Search consignees..."
-              condensedPagination
+              pageOfTotalPagination
             />
           )}
           {!loading && filtered.length === 0 && (
@@ -613,7 +665,7 @@ const SCOPED_CSS = `
   background: transparent;
   padding: 0;
   margin: 0;
-  display: flex; flex-direction: column; gap: 14px;
+  display: flex; flex-direction: column; gap: 7px;
   color: var(--vz-body-color);
 }
 .smcg-root *, .smcg-root *::before, .smcg-root *::after { box-sizing: border-box; }
@@ -623,17 +675,53 @@ const SCOPED_CSS = `
    minty background with a dark-emerald icon + dark-emerald primary
    button on top. Reads "ultra HD" without being a heavy solid bar. */
 .smcg-cstrip {
+  /* Mirror of the violet Customer hero (.smc-cstrip), recolored emerald.
+     Gradient-ring border via the padding-box / border-box double-background
+     trick, soft glows (::before), a top glass shine line (::after), and the
+     3 overlay spans (accent / glow / sheen). */
   position: relative;
+  overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
   gap: 16px;
-  min-height: 66px;
-  padding: 0 18px;
+  min-height: 70px;
+  padding: 12px 18px;
+  border: 1px solid transparent;
   border-radius: 16px;
-  background: linear-gradient(110deg, #f0fdf9 0%, #ccfbf1 25%, #99f6e4 55%, #5eead4 85%, #2dd4bf 100%);
-  border: 1px solid #5eead4;
-  box-shadow: 0 2px 0 rgba(255,255,255,0.85) inset, 0 8px 28px rgba(13,148,136,0.20), 0 2px 8px rgba(0,0,0,0.06);
-  overflow: hidden;
+  background:
+    linear-gradient(110deg, #f0fdf9 0%, #ecfdf5 45%, #e2fbf1 75%, #d6f9ea 100%) padding-box,
+    linear-gradient(125deg, #059669 0%, #10b981 22%, #14b8a6 48%, #2dd4bf 76%, #5eead4 100%) border-box;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.70) inset,
+    0 4px 18px rgba(13,148,136,0.16),
+    0 1px 4px rgba(16,185,129,0.10);
   flex-shrink: 0;
+}
+.smcg-cstrip::before {
+  content: '';
+  position: absolute; inset: 0;
+  pointer-events: none; border-radius: inherit;
+  background-image:
+    radial-gradient(ellipse at 12% 50%, rgba(255,255,255,0.40) 0%, transparent 55%),
+    radial-gradient(ellipse at 88% 50%, rgba(94,234,212,0.20) 0%, transparent 55%);
+}
+/* Fine glass-reflection shine line across the top — strong emerald on the
+   RIGHT, soft white-mint highlight in the MIDDLE, fading left to transparent. */
+.smcg-cstrip::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 14px; right: 14px;
+  height: 1.5px; border-radius: 2px;
+  pointer-events: none; z-index: 3;
+  background: linear-gradient(90deg,
+    rgba(255,255,255,0)      0%,
+    rgba(153,246,228,0.30)  14%,
+    rgba(94,234,212,0.55)   30%,
+    rgba(240,253,250,0.95)  50%,
+    rgba(110,231,183,0.80)  66%,
+    rgba(16,185,129,0.95)   86%,
+    rgba(5,150,105,0.92)   100%);
+  opacity: 0.9;
+  filter: blur(0.4px);
 }
 .smcg-cstrip-left {
   display: flex; align-items: center; gap: 16px;
@@ -641,10 +729,28 @@ const SCOPED_CSS = `
   min-width: 0;
   flex: 1;
 }
+.smcg-cstrip__accent {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, #5eead4, #10b981, #047857);
+  border-radius: 16px 0 0 16px;
+}
+.smcg-cstrip__glow {
+  position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    radial-gradient(ellipse at 10% 50%, rgba(153,246,228,.45) 0%, transparent 50%),
+    radial-gradient(ellipse at 90% 50%, rgba(94,234,212,.25) 0%, transparent 55%);
+}
+.smcg-cstrip__sheen {
+  position: absolute; top: 0; left: 0; right: 0; height: 50%;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.5), transparent);
+  border-radius: 16px 16px 0 0;
+}
 .smcg-cstrip-icon {
   position: relative;
   width: 46px; height: 46px; border-radius: 12px;
-  background: linear-gradient(135deg, #10b981, #047857);
+  background: linear-gradient(135deg, #0d9488, #065f46);
   display: inline-flex; align-items: center; justify-content: center;
   color: #fff;
   font-size: 22px;
@@ -701,12 +807,20 @@ const SCOPED_CSS = `
 .smcg-cstrip-add:active { transform: translateY(0); }
 .smcg-cstrip-add i { font-size: 16px; }
 [data-bs-theme="dark"] .smcg-cstrip {
-  background: linear-gradient(110deg, #0d2f25 0%, #114a3a 30%, #0f6b54 60%, #138671 85%, #14a78a 100%);
-  border-color: rgba(94,234,212,0.40);
+  /* Keep the emerald gradient ring; swap the padding-box fill for deep teal. */
+  border: 1px solid transparent;
+  background:
+    linear-gradient(110deg, #0d2f25 0%, #114a3a 35%, #0f6b54 70%, #138671 100%) padding-box,
+    linear-gradient(125deg, #059669 0%, #10b981 22%, #14b8a6 48%, #2dd4bf 76%, #5eead4 100%) border-box;
   box-shadow:
-    0 2px 0 rgba(255,255,255,0.05) inset,
-    0 8px 28px rgba(0,0,0,0.50),
-    0 2px 8px rgba(0,0,0,0.35);
+    0 1px 0 rgba(255,255,255,0.05) inset,
+    0 6px 22px rgba(0,0,0,0.45),
+    0 2px 8px rgba(13,148,136,0.20);
+}
+[data-bs-theme="dark"] .smcg-cstrip::before {
+  background-image:
+    radial-gradient(ellipse at 12% 50%, rgba(94,234,212,0.18) 0%, transparent 55%),
+    radial-gradient(ellipse at 88% 50%, rgba(16,185,129,0.15) 0%, transparent 55%);
 }
 [data-bs-theme="dark"] .smcg-cstrip-title { color: #f0fdfa; }
 [data-bs-theme="dark"] .smcg-cstrip-sub   { color: #ccfbf1; opacity: 0.92; }
@@ -754,11 +868,15 @@ const SCOPED_CSS = `
   background: linear-gradient(135deg, rgba(255,255,255,0.20), rgba(255,255,255,0.05));
   border-bottom: 1px solid rgba(255,255,255,0.45);
 }
+/* Collapsed → slim the header row (less vertical padding + a smaller bulb)
+   so the banner reads as a compact bar, not a tall block. */
+.smcg-wdh-card:not(.is-open) .smcg-wdh-toggle-row { padding: 9px 18px; }
+.smcg-wdh-card:not(.is-open) .smcg-wdh-bulb { width: 32px; height: 32px; border-radius: 9px; font-size: 15px; }
 .smcg-wdh-heading { display: flex; align-items: center; gap: 12px; }
 .smcg-wdh-bulb {
   width: 40px; height: 40px; border-radius: 12px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #10b981, #047857);
+  background: linear-gradient(135deg, #0d9488, #065f46);
   box-shadow: 0 4px 10px rgba(16,185,129,0.25);
   color: #fff; font-size: 18px; flex-shrink: 0;
 }
@@ -893,9 +1011,17 @@ const SCOPED_CSS = `
 .smcg-step-arrow {
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
-  width: 24px;
-  color: var(--vz-secondary-color);
-  font-size: 18px;
+  /* Centre the circle vertically between the cards (row is align-items:stretch). */
+  align-self: center;
+  /* Chevron inside a soft white circle (same recipe as the Customer page,
+     recolored teal) instead of a bare gray arrow. */
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1px solid rgba(13,148,136,0.22);
+  color: #0d9488;
+  font-size: 16px;
+  box-shadow: 0 1px 4px rgba(13,148,136,0.12);
 }
 
 /* ─── Toolbar — search + Add Consignee inside the main card. */
@@ -942,7 +1068,7 @@ const SCOPED_CSS = `
   display: inline-flex; align-items: center; gap: 8px;
   padding: 0 22px; height: 42px;
   border: 0; border-radius: 999px;
-  background: linear-gradient(135deg, #10b981, #047857);
+  background: linear-gradient(135deg, #0d9488, #065f46);
   color: #fff;
   font-family: inherit;
   font-size: 13px; font-weight: 600;
@@ -972,10 +1098,13 @@ const SCOPED_CSS = `
 
 /* ─── Table ─── */
 .smcg-table-wrap {
-  /* Only vertical scroll on the wrap; the inner .table-responsive
-     handles horizontal scroll. Prevents stacked scrollbars. */
-  overflow-x: hidden;
-  overflow-y: auto;
+  /* The wrap itself does NOT scroll — it's a vertical flex column:
+       [ .table-responsive → flex:1, the ONLY vertical scroller ]
+       [ .row (footer)     → flex:0, pinned below, never scrolls ]
+     Keeps the sticky header pinned + footer fixed while only rows scroll. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   flex: 1; min-height: 0;
   padding: 14px 14px 12px;
   scrollbar-width: thin;
@@ -1010,8 +1139,11 @@ const SCOPED_CSS = `
   background: var(--vz-card-bg, #fff) !important;
   border: 1px solid var(--vz-border-color) !important;
   border-radius: 10px !important;
+  /* The ONLY vertical scroller — rows scroll here while the sticky thead
+     (top:0) and the footer below stay put. */
+  flex: 1; min-height: 0;
   overflow-x: auto;
-  overflow-y: visible;
+  overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
 .smcg-table-wrap .table { --bs-table-bg: transparent; margin-bottom: 0 !important; }
@@ -1029,7 +1161,11 @@ const SCOPED_CSS = `
 .smcg-table-wrap .table thead.table-light th {
   --bs-table-bg: transparent !important;
   --bs-table-accent-bg: transparent !important;
-  background: transparent !important;
+  /* Solid teal (not transparent) + sticky so the header pins to the top of
+     the scrolling .table-responsive. A transparent th would let rows show
+     through once the body scrolls under it. */
+  background: #0d9488 !important;
+  position: sticky; top: 0; z-index: 3;
   color: #ffffff !important;
   font-size: 12px !important;
   font-weight: 600 !important;
@@ -1060,6 +1196,44 @@ const SCOPED_CSS = `
 }
 .smcg-table-wrap .table tbody tr:last-child td { border-bottom: none !important; }
 
+/* ── Table footer (TableContainer's "Showing X / Y" + pagination row) ──
+   Sits BELOW the scrolling .table-responsive as a fixed flex item — it never
+   scrolls because the scroll lives inside .table-responsive, not here. */
+.smcg-table-wrap > .row {
+  margin: 8px 0 0 !important;
+  --bs-gutter-x: 0; --bs-gutter-y: 0;
+  padding: 8px 4px 0;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px;
+  /* FLAT + transparent — no border / rounded box, so the footer doesn't read
+     as a second panel nested inside the table. Pills provide the structure. */
+  flex-shrink: 0;
+  background: transparent;
+}
+.smcg-table-wrap > .row > [class^="col-"] { padding: 0; width: auto; flex: 0 0 auto; }
+.smcg-table-wrap > .row .text-muted {
+  display: inline-block !important;
+  background: #ecfdf5; border: 1.5px solid #a7f3d0;
+  color: #047857 !important; font-weight: 600; font-size: 12px;
+  padding: 5px 14px; border-radius: 20px; line-height: 1.4;
+}
+[data-bs-theme="dark"] .smcg-table-wrap > .row {
+  /* Flat + transparent (no box) — pills sit cleanly below the table. */
+  background: transparent !important;
+  border: none !important;
+}
+[data-bs-theme="dark"] .smcg-table-wrap > .row .text-muted {
+  background: rgba(16,185,129,0.10); border-color: rgba(110,231,183,0.30); color: #6ee7b7 !important;
+}
+/* "current / total" indicator pill (pageOfTotalPagination). */
+.smcg-table-wrap .page-of-total {
+  background: #ecfdf5 !important; border: 1px solid #a7f3d0 !important;
+  color: #047857 !important; font-weight: 700;
+}
+[data-bs-theme="dark"] .smcg-table-wrap .page-of-total {
+  background: rgba(16,185,129,0.12) !important; border-color: rgba(110,231,183,0.35) !important; color: #6ee7b7 !important;
+}
+
 /* Pagination strip — emerald-tinted pills with a green gradient on
    the active page.
    Fixed 36×36 box on every button (numbers AND chevrons) so the row
@@ -1082,7 +1256,7 @@ const SCOPED_CSS = `
   line-height: 1;
 }
 .smcg-table-wrap .pagination .page-item.active .page-link {
-  background: linear-gradient(135deg, #10b981, #047857);
+  background: linear-gradient(135deg, #0d9488, #065f46);
   border-color: #10b981;
   color: #fff;
   box-shadow: 0 2px 6px rgba(16,185,129,.25);
@@ -1103,7 +1277,7 @@ const SCOPED_CSS = `
    we need !important to beat it. */
 .smcg-table-wrap .pagination .page-item.active .page-link,
 .smcg-table-wrap .pagination .page-link.active {
-  background: linear-gradient(135deg, #10b981, #047857) !important;
+  background: linear-gradient(135deg, #0d9488, #065f46) !important;
   border-color: #10b981 !important;
   color: #fff !important;
   box-shadow: 0 2px 6px rgba(16,185,129,.25);
@@ -1292,18 +1466,22 @@ const SCOPED_CSS = `
 .smcg-mono    { font-family: 'JetBrains Mono', ui-monospace, monospace; color: #495057; font-size: 12px; }
 .smcg-email   { color: #059669; font-size: 12px; font-weight: 500; }
 
-.smcg-actions { display:flex; align-items:center; justify-content:center; gap:6px; flex-wrap:nowrap; }
+.smcg-actions { display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:nowrap; }
 .smcg-act {
-  display:inline-flex; align-items:center; justify-content:center; gap:5px;
-  height:28px; padding: 0 10px;
-  border-radius:8px;
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  height:32px;
+  border-radius:9px;
   cursor:pointer; flex-shrink:0;
-  font-family: inherit; font-size: 11px; font-weight: 700;
+  font-family: inherit; font-size: 12px; font-weight: 700;
   transition: all .18s cubic-bezier(.22,1,.36,1);
   border: 1.5px solid;
 }
-.smcg-act-edit  { border-color:#a7f3d0; background:#fff; color:#047857; }
-.smcg-act-vault { border-color:#a7f3d0; background:#fff; color:#047857; }
+/* Edit — square, light-mint fill, teal pencil (Figma). */
+.smcg-act-edit  { width:32px; padding:0; border-color:#5eead4; background:#ecfdf5; color:#0d9488; }
+.smcg-act-edit i { font-size:15px; }
+/* Vault — white pill with the safe icon + "Vault" label, teal border. */
+.smcg-act-vault { padding:0 13px; border-color:#5eead4; background:#fff; color:#0d9488; }
+.smcg-act-vault i { font-size:15px; }
 .smcg-act-edit:hover  { background: linear-gradient(135deg, #34d399, #047857); color:#fff; border-color:transparent; box-shadow:0 4px 14px rgba(5,150,105,.4); transform:translateY(-2px); }
 .smcg-act-vault:hover { background: linear-gradient(135deg, #34d399, #047857); color:#fff; border-color:transparent; box-shadow:0 4px 14px rgba(5,150,105,.4); transform:translateY(-2px); }
 
@@ -1387,28 +1565,30 @@ const SCOPED_CSS = `
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
 }
-[data-bs-theme="dark"] .smcg-step[data-n="0"] { border-color: rgba(16,185,129,0.40); border-left-color: #10b981; }
-[data-bs-theme="dark"] .smcg-step[data-n="1"] { border-color: rgba(102,145,231,0.40); border-left-color: #6691e7; }
-/* Tile 3 (Compliance & Risk) — Indigo palette in dark mode. Flat
-   solid accent (no gradient) that sits between tile 2's blue and
-   tile 4's violet, formal/professional feel without the harshness
-   of the previous red. */
-[data-bs-theme="dark"] .smcg-step[data-n="2"] { border-color: rgba(129,140,248,0.45); border-left-color: #818cf8; }
-[data-bs-theme="dark"] .smcg-step[data-n="3"] { border-color: rgba(167,139,250,0.40); border-left-color: #a78bfa; }
-[data-bs-theme="dark"] .smcg-step[data-n="0"] .smcg-step-name { color: #6ee7b7; }
-[data-bs-theme="dark"] .smcg-step[data-n="1"] .smcg-step-name { color: #93b4f0; }
-[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-name { color: #c7d2fe; }
-[data-bs-theme="dark"] .smcg-step[data-n="3"] .smcg-step-name { color: #c4b5fd; }
-[data-bs-theme="dark"] .smcg-step[data-n="0"] .smcg-step-tag     { color: #6ee7b7; }
-[data-bs-theme="dark"] .smcg-step[data-n="1"] .smcg-step-tag     { color: #93b4f0; }
-[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-tag     { color: #c7d2fe; }
-/* Badge "3" number tile + tag dot — solid indigo so the whole tile
-   reads as one cohesive professional accent in dark mode. */
-[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-num    { background: #818cf8; box-shadow: 0 3px 8px rgba(129,140,248,0.40); }
-[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-tag-dot { background: #818cf8; }
-[data-bs-theme="dark"] .smcg-step[data-n="3"] .smcg-step-tag     { color: #c4b5fd; }
+/* Dark mode — all four tiles share the SAME emerald/teal accent (matches
+   the unified light-mode palette). The old per-tile blue / indigo / violet
+   overrides are gone so the banner reads as one cohesive teal set. */
+[data-bs-theme="dark"] .smcg-step[data-n="0"],
+[data-bs-theme="dark"] .smcg-step[data-n="1"],
+[data-bs-theme="dark"] .smcg-step[data-n="2"],
+[data-bs-theme="dark"] .smcg-step[data-n="3"] { border-color: rgba(16,185,129,0.40); border-left-color: #10b981; }
+[data-bs-theme="dark"] .smcg-step[data-n="0"] .smcg-step-name,
+[data-bs-theme="dark"] .smcg-step[data-n="1"] .smcg-step-name,
+[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-name,
+[data-bs-theme="dark"] .smcg-step[data-n="3"] .smcg-step-name { color: #6ee7b7; }
+[data-bs-theme="dark"] .smcg-step[data-n="0"] .smcg-step-tag,
+[data-bs-theme="dark"] .smcg-step[data-n="1"] .smcg-step-tag,
+[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-tag,
+[data-bs-theme="dark"] .smcg-step[data-n="3"] .smcg-step-tag { color: #6ee7b7; }
+[data-bs-theme="dark"] .smcg-step .smcg-step-num     { background: linear-gradient(135deg, #14b8a6, #0d9488); box-shadow: 0 3px 8px rgba(13,148,136,0.40); }
+[data-bs-theme="dark"] .smcg-step .smcg-step-tag-dot { background: #14b8a6; }
 [data-bs-theme="dark"] .smcg-step-desc { color: #cbd5e1; }
-[data-bs-theme="dark"] .smcg-step-arrow { color: #ccfbf1; }
+[data-bs-theme="dark"] .smcg-step-arrow {
+  background: rgba(16,185,129,0.12);
+  border-color: rgba(110,231,183,0.30);
+  color: #6ee7b7;
+  box-shadow: none;
+}
 
 /* Toolbar — dark emerald wash on the toolbar background. */
 [data-bs-theme="dark"] .smcg-toolbar {
