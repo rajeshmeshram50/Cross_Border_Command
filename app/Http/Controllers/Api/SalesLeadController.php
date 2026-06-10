@@ -484,6 +484,25 @@ class SalesLeadController extends Controller
             $data['won_at'] = null;
         }
 
+        // Segment "Buyer ≠ Consignee" guard at CONSIGNEE-MAPPING time.
+        // When products were added to the directory with no consignee (so the
+        // mapping-time product guard passed), then a DISTINCT consignee is
+        // mapped here, re-run the rule against the lead's existing products so
+        // the user is blocked NOW — not later, only when creating the
+        // quotation/PI. Only checked when a consignee is actually being set.
+        if (array_key_exists('consignee_id', $data) && $data['consignee_id']) {
+            $leadProductIds = LeadProduct::where('lead_id', $lead->id)
+                ->pluck('product_id')
+                ->all();
+            if ($block = $this->segmentPartyBlockResponse(
+                (int) $user->client_id,
+                $leadProductIds,
+                (int) $data['consignee_id'],
+            )) {
+                return $block;
+            }
+        }
+
         $lead->update($data);
 
         return response()->json(['status' => true, 'data' => $lead->fresh(['salesperson:id,name'])]);

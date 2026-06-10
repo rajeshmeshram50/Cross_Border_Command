@@ -705,8 +705,6 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
             tradeDocs.length === 0 ? (
               <div className="lasm-empty">No trade documents configured for this lead's PI segments yet.</div>
             ) : (() => {
-              const custCount = tradeDocs.filter(d => d.for_buyer).length;
-              const consCount = tradeDocs.filter(d => d.for_consignee).length;
               const rows = tdBuckets[tdTab];
               // Library docs (db_id set) are the only sendable rows.
               const selectableIds = Array.from(new Set(rows.filter(r => r.db_id != null).map(r => r.db_id as number)));
@@ -726,11 +724,9 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                 <div className="lasm-party-tabs">
                   {(['customer', 'consignee'] as const).map(p => {
                     const info  = p === 'customer' ? payload.lead.customer : payload.lead.consignee;
-                    const count = p === 'customer' ? custCount : consCount;
                     return (
                       <div key={p} className={`lasm-party-tab lasm-party-tab-readonly lasm-party-tab-${p} is-on`}>
                         <span className="lasm-party-tab-role">{p === 'customer' ? 'Customer' : 'Consignee'}</span>
-                        <span className="lasm-party-tab-count">{count} doc{count === 1 ? '' : 's'}</span>
                         <span className="lasm-party-tab-title-row">
                           <span className="lasm-party-tab-name">{info?.code ? `${info.code}: ` : ''}{info?.name ?? 'Not mapped'}</span>
                           <span className="lasm-party-tab-country">
@@ -1311,8 +1307,8 @@ const LASM_CSS = `
 .lasm-party-tab-k { font-size: 9px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #94a3b8; }
 .lasm-party-tab-customer.is-on { border-color: #6d28d9; background: linear-gradient(180deg,#faf5ff,#fff); box-shadow: 0 2px 10px rgba(124,58,237,.18); }
 .lasm-party-tab-customer.is-on .lasm-party-tab-role { color: #6d28d9; }
-.lasm-party-tab-consignee.is-on { border-color: #16a34a; background: linear-gradient(180deg,#f0fdf4,#fff); box-shadow: 0 2px 10px rgba(22,163,74,.18); }
-.lasm-party-tab-consignee.is-on .lasm-party-tab-role { color: #16a34a; }
+.lasm-party-tab-consignee.is-on { border-color: #6d28d9; background: linear-gradient(180deg,#faf5ff,#fff); box-shadow: 0 2px 10px rgba(124,58,237,.18); }
+.lasm-party-tab-consignee.is-on .lasm-party-tab-role { color: #6d28d9; }
 .lasm-party-tab.is-on .lasm-party-tab-count { background: rgba(15,23,42,.10); color: #0f172a; }
 
 /* ── Sub-tabs within a segment (e.g. Buyer / Consignee / Both agreements) ── */
@@ -1471,7 +1467,7 @@ const LASM_CSS = `
 [data-bs-theme="dark"] .lasm-party-tab-meta > span { color: #cbd5e1; }
 [data-bs-theme="dark"] .lasm-party-tab-count { background: rgba(148,163,184,.18); color: #cbd5e1; }
 [data-bs-theme="dark"] .lasm-party-tab-customer.is-on { border-color: #a78bfa; background: rgba(124,58,237,.16); }
-[data-bs-theme="dark"] .lasm-party-tab-consignee.is-on { border-color: #4ade80; background: rgba(22,163,74,.16); }
+[data-bs-theme="dark"] .lasm-party-tab-consignee.is-on { border-color: #a78bfa; background: rgba(124,58,237,.16); }
 [data-bs-theme="dark"] .lasm-party-tab.is-on .lasm-party-tab-count { background: rgba(255,255,255,.16); color: #f1f5f9; }
 
 [data-bs-theme="dark"] .lasm-subtabs { background: rgba(30,41,59,.55); border-color: rgba(148,163,184,.18); }
