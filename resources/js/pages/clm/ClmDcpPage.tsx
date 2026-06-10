@@ -105,6 +105,19 @@ export default function ClmDcpPage() {
   // saved with (bug: Rice showed "High" though it's a less-regulated segment).
   const regOf = (r: SegRule) => boot?.segments.find(seg => seg.code === r.segment_code)?.regulatory_status ?? r.regulatory_status;
 
+  // Resolve an authority reference (stored in auths_json) to its display name.
+  // Rules persist authority *ids*, so the table mapped raw ids before — look
+  // them up against the bootstrap authority master and fall back to code → name
+  // (and finally the raw value) so nothing renders a bare numeric id.
+  const authName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const a of boot?.authorities ?? []) {
+      m.set(String(a.id), a.name);
+      if (a.code) m.set(a.code, a.name);
+    }
+    return m;
+  }, [boot]);
+
   // Tab counts derived from the segment-master tier (matches the badges).
   const tierCounts = useMemo<Counts>(() => ({
     all:    rows.length,
@@ -219,16 +232,16 @@ export default function ClmDcpPage() {
               <table className="clm-table" style={{ minWidth: 1100 }}>
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
-                  <th style={{ width: 90, textAlign: 'center' }}>RULE ID</th>
-                  <th style={{ width: 90, textAlign: 'center' }}>SEGMENT</th>
+                  <th style={{ width: 110, textAlign: 'center' }}>SEGMENT ID</th>
                   <th>SEGMENT NAME</th>
-                  <th style={{ width: 110, textAlign: 'center' }}>REGULATORY</th>
+                  <th style={{ width: 130, textAlign: 'center' }}>REGULATORY STATUS</th>
+                  <th style={{ width: 140, textAlign: 'center' }}>BUYER ≠ CONSIGNEE</th>
+                  <th style={{ width: 180, textAlign: 'center' }}>AUTHORITIES</th>
                   <th style={{ width: 60, textAlign: 'center' }}>KYC</th>
-                  <th style={{ width: 60, textAlign: 'center' }}>DD</th>
-                  <th style={{ width: 60, textAlign: 'center' }}>TL</th>
+                  <th style={{ width: 90, textAlign: 'center' }}>DUE DILIGENCE</th>
+                  <th style={{ width: 95, textAlign: 'center' }}>TRADE LICENSES</th>
                   <th style={{ width: 60, textAlign: 'center' }}>QC</th>
-                  <th style={{ width: 80, textAlign: 'center' }}>TOTAL</th>
-                  <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
+                  <th style={{ width: 90, textAlign: 'center' }}>ACTION</th>
                 </tr></thead>
                 <tbody>
                   {loading && <ShimmerTableRows rows={6} cols={11} cellClassName="" keyPrefix="dcp-shim" />}
@@ -239,11 +252,22 @@ export default function ClmDcpPage() {
                     return (
                       <tr key={r.id}>
                         <td className="clm-td-num">{start + i + 1}</td>
-                        <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.rule_code}</span></td>
                         <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.segment_code}</span></td>
                         <td className="clm-td-name">{seg?.name ?? r.segment_code}</td>
                         <td style={{ textAlign: 'center' }}>
                           <span className={`clm-badge ${isHigh ? 'clm-badge-red' : 'clm-badge-green'}`}><span className="clm-badge-dot" />{isHigh ? 'High' : 'Less'}</span>
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          {seg?.buyer_consignee === 'allowed'
+                            ? <span style={{ color: '#16a34a', fontWeight: 700, fontSize: 12 }}>✓ Yes</span>
+                            : <span style={{ color: '#dc2626', fontWeight: 700, fontSize: 12 }}>✗ No</span>}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          {(r.auths_json && r.auths_json.length > 0) ? (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
+                              {r.auths_json.map(a => <span key={a} className="clm-code-pill">{authName.get(String(a)) ?? a}</span>)}
+                            </div>
+                          ) : <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>}
                         </td>
                         {CAT_KEYS.map(c => {
                           const n = segCount(c);
@@ -262,22 +286,6 @@ export default function ClmDcpPage() {
                             </td>
                           );
                         })}
-                        <td style={{ textAlign: 'center' }}>
-                          {(r.mandatory_count + r.optional_count) > 0 ? (
-                            <button
-                              type="button"
-                              className="clm-total-btn"
-                              onClick={() => setViewDocs({ rule: r, cat: 'all' })}
-                              title="View all documents"
-                            >
-                              <span style={{ color: '#dc2626' }}>{r.mandatory_count}M</span>
-                              <span style={{ opacity: .5, margin: '0 3px' }}>·</span>
-                              <span style={{ color: '#d97706' }}>{r.optional_count}O</span>
-                            </button>
-                          ) : (
-                            <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>
-                          )}
-                        </td>
                         <td style={{ textAlign: 'center' }}>
                           <div className="clm-actions">
                             <button className="clm-act clm-act-edit" title="Edit rule" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
