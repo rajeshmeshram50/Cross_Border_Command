@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
@@ -57,7 +57,7 @@ const TYPE_COLORS: Record<string, { bg: string; color: string; border: string; d
   'Importer':     { bg:'rgba(13,148,136,0.16)',  color:'#0d9488', border:'rgba(13,148,136,0.40)',  dot:'#14b8a6' },
 };
 
-const ROWS_PER_PAGE = 5;
+const ROWS_PER_PAGE = 10;
 
 /* Display the first alphabetic letter as upper-case so company /
  * contact entries that were saved lowercase (e.g. "tcs", "igc")
@@ -136,6 +136,66 @@ export default function SalesCustomers() {
    * the effect fires showed the empty-state UI for a frame. */
   const [loading, setLoading]     = useState(true);
 
+  /* Fit the table card to the viewport: its bottom always lands 15px above the
+   * page bottom, whatever the page height / zoom, so only the TABLE scrolls
+   * internally instead of the whole page. Recomputed on resize and whenever
+   * the layout above it changes (banner toggle, data load, tab switch). */
+  const tableCardRef = useRef<HTMLDivElement>(null);
+  /* Dynamic page size: on a tall screen we show the full ROWS_PER_PAGE (10);
+   * on a short screen we drop to however many rows actually fit between the
+   * toolbar/header and the footer, so the remaining customers spill onto the
+   * next page (no internal scroll needed) instead of being hidden. */
+  const [pageSize, setPageSize] = useState(ROWS_PER_PAGE);
+  useEffect(() => {
+    const el = tableCardRef.current;
+    if (!el) return;
+    const fit = () => {
+      const top = el.getBoundingClientRect().top;
+      const h = Math.max(240, window.innerHeight - top - 15);
+      // Fixed height so the card bottom lands 15px above the viewport bottom;
+      // the inner table-wrap (overflow-y:auto) scrolls. flex:none stops the
+      // page-level flex from overriding the explicit height.
+      el.style.flex = 'none';
+      el.style.height = `${h}px`;
+      el.style.maxHeight = `${h}px`;
+
+      // How many rows fit in the remaining body height → page size.
+      const toolbarH = (el.querySelector('.smc-toolbar') as HTMLElement | null)?.offsetHeight || 0;
+      const theadH   = (el.querySelector('.smc-table-wrap thead') as HTMLElement | null)?.offsetHeight || 0;
+      const footerH  = (el.querySelector('.smc-table-wrap > .row') as HTMLElement | null)?.offsetHeight || 0;
+      const rowH     = (el.querySelector('.smc-table-wrap tbody tr') as HTMLElement | null)?.offsetHeight || 40;
+      // 26px ≈ wrap vertical padding (14 top + 12 bottom) + footer top margin.
+      const avail = h - toolbarH - theadH - footerH - 26;
+      const rowsFit = Math.floor(avail / rowH);
+      // 10 is the floor (always show at least the default page of 10). On a
+      // taller screen where MORE than 10 rows fit, grow to fill the leftover
+      // space; we never drop below 10 (the inner scroll covers any overflow).
+      setPageSize(Math.max(ROWS_PER_PAGE, rowsFit));
+    };
+    fit();
+    // Run again after the layout settles (banner animation / async rows).
+    const t = window.setTimeout(fit, 120);
+    window.addEventListener('resize', fit);
+    // The "What We Are Doing Here" banner expands/collapses with a CSS
+    // max-height transition. A single delayed measure catches the START of
+    // the animation, not the end, so when the banner is collapsed the table
+    // card stayed short and left a gap below the footer. Watch the banner
+    // body with a ResizeObserver and re-fit on every frame of the animation
+    // so the card grows into the freed space as soon as it settles.
+    let ro: ResizeObserver | undefined;
+    const banner = document.querySelector('.smc-wdh-body-wrap');
+    if (banner && typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => fit());
+      ro.observe(banner);
+    }
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener('resize', fit);
+      ro?.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wdhOpen, loading]);
+
   const fetchCustomers = useCallback(() => {
     setLoading(true);
     api.get('/customers', { params: { tab, q } })
@@ -212,35 +272,23 @@ export default function SalesCustomers() {
    * light/dark mode automatically; on hover the border + icon shift
    * to the column-specific accent (primary / success / info / etc.).
    * Always wrapped in <Tooltip> for consistent hover hints. */
-  const ActionBtn = ({ title, icon, color, onClick }: { title: string; icon: string; color: 'primary'|'success'|'info'|'danger'|'warning'; onClick: () => void }) => (
-    <Tooltip label={title}>
-      <button
-        type="button"
-        aria-label={title}
-        className="btn p-0 d-inline-flex align-items-center justify-content-center"
-        style={{
-          width: 30, height: 30, borderRadius: 8,
-          background: 'var(--vz-secondary-bg)',
-          border: '1px solid var(--vz-border-color)',
-          color: 'var(--vz-secondary-color)',
-          transition: 'all .15s ease',
-        }}
-        onMouseEnter={e => {
-          const el = e.currentTarget as HTMLButtonElement;
-          el.style.borderColor = `var(--vz-${color})`;
-          el.style.color = `var(--vz-${color})`;
-        }}
-        onMouseLeave={e => {
-          const el = e.currentTarget as HTMLButtonElement;
-          el.style.borderColor = 'var(--vz-border-color)';
-          el.style.color = 'var(--vz-secondary-color)';
-        }}
-        onClick={onClick}
-      >
-        <i className={`${icon} fs-14`} />
-      </button>
-    </Tooltip>
-  );
+  const ActionBtn = ({ title, icon, color, onClick }: { title: string; icon: string; color: 'primary'|'success'|'info'|'danger'|'warning'; onClick: () => void }) => {
+    // Map the action tone to the colour-tinted smc-act variant (Figma):
+    // edit = blue, map/consignee = green, vault/doc = purple.
+    const variant = color === 'success' ? 'smc-act-map' : color === 'info' ? 'smc-act-vault' : 'smc-act-edit';
+    return (
+      <Tooltip label={title}>
+        <button
+          type="button"
+          aria-label={title}
+          className={`smc-act ${variant} d-inline-flex align-items-center justify-content-center`}
+          onClick={onClick}
+        >
+          <i className={`${icon} fs-14`} />
+        </button>
+      </Tooltip>
+    );
+  };
 
   /* titleCase + TruncatedCell are hoisted to module scope at the top
    * of this file so they share a stable reference across renders.
@@ -377,14 +425,18 @@ export default function SalesCustomers() {
             Customer's purple palette so the rest of the page (wdh
             banner, tabs, action accents) stays cohesive. */}
       <div className="smc-cstrip">
+        <span className="cv-cstrip__accent"></span>
+              <span className="cv-cstrip__glow"></span>
+      <span className="cv-cstrip__sheen"></span>
         <div className="smc-cstrip-left">
+           
           <div className="smc-cstrip-icon">
-            <i className="ri-user-3-line" />
+            <i className="ri-group-line" />
           </div>
           <div>
-            <div className="smc-cstrip-title">Customer</div>
+            <div className="smc-cstrip-title">Customers</div>
             <div className="smc-cstrip-sub">
-              Manage customer identity, KYC compliance, contact ownership, and consignee linkage that drive every export and shipment downstream.
+              Manage customer onboarding and lifecycle with strict compliance, KYC verification, and product mapping for sales readiness.
             </div>
           </div>
         </div>
@@ -411,11 +463,10 @@ export default function SalesCustomers() {
         >
           <div className="smc-wdh-heading">
             <span className="smc-wdh-bulb">
-              <i className="ri-lightbulb-flash-line" />
+              <i className="ri-group-line" />
             </span>
             <div>
-              <div className="smc-wdh-title">Customers — What you are doing here</div>
-              <small className="smc-wdh-sub">Quick 4-step guide to set up a Customer record</small>
+              <div className="smc-wdh-title">Customers — What We Are Doing Here:</div>
             </div>
           </div>
           <span className={`smc-wdh-chev ${wdhOpen ? 'is-open' : ''}`}>
@@ -446,44 +497,27 @@ export default function SalesCustomers() {
         </div>
       </div>
 
-      {/* ── Main card — search + Add Customer + tabs + table + pagination ── */}
-      <div className="smc-table-card">
+      {/* ── Single card: toolbar (tabs + search) + table together ── */}
+      <div className="smc-table-card" ref={tableCardRef}>
 
-        {/* Toolbar — search only. The Add Customer CTA moved to the
-            violet hero strip above (matches Consignee page pattern).
-            Block kept commented in case we ever want the second button
-            back. */}
+        {/* One row: Fresh / Recurring tabs on the LEFT, search on the RIGHT. */}
         <div className="smc-toolbar">
+          <div className="smc-pill-group">
+            <button className={`smc-pill ${tab === 'fresh' ? 'on' : 'off'}`} onClick={() => switchTab('fresh')}>
+              <i className="ri-group-line" /> Fresh Customers
+            </button>
+            <button className={`smc-pill ${tab === 'recurring' ? 'on' : 'off'}`} onClick={() => switchTab('recurring')}>
+              <i className="ri-refresh-line" /> Recurring Customers
+            </button>
+          </div>
           <div className="smc-search">
             <i className="ri-search-line smc-search-icon" />
             <input
               type="text"
-              placeholder="Search customers..."
+              placeholder="Search by name, ID, company, email, segment..."
               value={q}
               onChange={(e) => onSearch(e.target.value)}
             />
-          </div>
-          {false && canAdd && (
-            <button
-              type="button"
-              className="smc-add-btn"
-              onClick={() => { setEditing(null); setAddOpen(true); }}
-            >
-              <i className="ri-add-line" />
-              Add Customer
-            </button>
-          )}
-        </div>
-
-        {/* Fresh / Recurring tabs */}
-        <div className="smc-tabs-bar">
-          <div className="smc-pill-group">
-            <button className={`smc-pill ${tab === 'fresh' ? 'on' : 'off'}`} onClick={() => switchTab('fresh')}>
-              <i className="ri-user-add-line" /> Fresh Customers
-            </button>
-            <button className={`smc-pill ${tab === 'recurring' ? 'on' : 'off'}`} onClick={() => switchTab('recurring')}>
-              <i className="ri-repeat-line" /> Recurring Customers
-            </button>
           </div>
         </div>
 
@@ -504,18 +538,19 @@ export default function SalesCustomers() {
                matches the live header strip (Sr No, Customer ID, Company,
                Type, Segment, Country, Contact, Phone, Email, WhatsApp,
                Consignees, Actions). */
-            <ShimmerTable rows={ROWS_PER_PAGE} cols={12} />
+            <ShimmerTable rows={pageSize} cols={12} />
           ) : (
             <TableContainer
               columns={columns}
               data={filtered}
               isGlobalFilter={false}
-              customPageSize={ROWS_PER_PAGE}
+              customPageSize={pageSize}
               tableClass="table align-middle table-nowrap mb-0"
               theadClass="table-light"
               divClass="table-responsive table-card border rounded"
               SearchPlaceholder="Search customers..."
               condensedPagination
+              pageOfTotalPagination
             />
           )}
           {!loading && !tabSwitching && filtered.length === 0 && (
@@ -608,13 +643,24 @@ const CSTRIP_CSS = `
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 66px;
-  padding: 0 18px;
+  min-height: 70px;
+  padding: 12px 18px;
   margin-bottom: 0;
+  /* Thin purple→blue→pink GRADIENT border via the padding-box / border-box
+     double-background trick (transparent border lets the border-box gradient
+     show through as a 1px glowing ring). */
   border: 1px solid #c4b5fd;
   border-radius: 16px;
-  background: linear-gradient(110deg, #faf5ff 0%, #f3e8ff 25%, #ede9fe 55%, #ddd6fe 85%, #c4b5fd 100%);
-  box-shadow: 0 2px 0 rgba(255, 255, 255, .85) inset, 0 8px 28px rgba(139, 92, 246, .2), 0 2px 8px rgba(0, 0, 0, .06);
+  background:
+    linear-gradient(110deg, #faf7ff 0%, #f4eeff 45%, #efe8ff 75%, #ece4ff 100%) padding-box,
+    /* Stronger, more saturated violet on the LEFT edge (matches the Figma's
+       bright purple left border), easing through blue into pink on the right. */
+    linear-gradient(125deg, #7c3aed 0%, #8b5cf6 22%, #6366f1 48%, #d946ef 76%, #ec4899 100%) border-box;
+  /* Subtle, soft glow — not a heavy drop shadow. */
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.70) inset,
+    0 4px 18px rgba(124,58,237,0.16),
+    0 1px 4px rgba(99,102,241,0.10);
   font-family: 'DM Sans', system-ui, sans-serif;
 }
 .smc-cstrip::before {
@@ -622,15 +668,64 @@ const CSTRIP_CSS = `
   position: absolute;
   inset: 0;
   pointer-events: none;
+  border-radius: inherit;
   background-image:
     radial-gradient(ellipse at 12% 50%, rgba(255,255,255,0.40) 0%, transparent 55%),
-    radial-gradient(ellipse at 88% 50%, rgba(167,139,250,0.22) 0%, transparent 55%);
+    radial-gradient(ellipse at 88% 50%, rgba(167,139,250,0.20) 0%, transparent 55%);
+}
+/* Fine premium "glass reflection" shine line across the top of the card.
+   Reads right-to-left: strong purple/lavender glow on the RIGHT, a soft
+   white/pink highlight in the MIDDLE, fading smoothly to transparent on the
+   LEFT. 1.5px tall — a subtle reflection, not a divider. */
+.smc-cstrip::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 14px; right: 14px;
+  height: 1.5px;
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 3;
+  background: linear-gradient(90deg,
+    rgba(255,255,255,0)      0%,    /* left → transparent */
+    rgba(147,197,253,0.30)  14%,    /* faint blue fade-in */
+    rgba(196,181,253,0.55)  30%,    /* lavender */
+    rgba(253,242,248,0.95)  50%,    /* soft white-pink highlight (middle) */
+    rgba(232,193,255,0.80)  66%,    /* soft pink-lavender */
+    rgba(168,85,247,0.95)   86%,    /* stronger purple (right) */
+    rgba(124,58,237,0.92)  100%);   /* deep lavender/purple right edge */
+  opacity: 0.9;
+  filter: blur(0.4px);
 }
 .smc-cstrip-left {
   display: flex; align-items: center; gap: 16px;
   position: relative; z-index: 1;
   min-width: 0;
   flex: 1;
+}
+  .cv-cstrip__accent {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
+    border-radius: 16px 0 0 16px;
+}
+    .cv-cstrip__glow {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: radial-gradient(ellipse at 10% 50%, rgba(196, 181, 253, .45) 0%, transparent 50%), radial-gradient(ellipse at 90% 50%, rgba(167, 139, 250, .25) 0%, transparent 55%);
+}
+    cv-cstrip__sheen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 50%;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(255, 255, 255, .5), transparent);
+    border-radius: 16px 16px 0 0;
 }
 .smc-cstrip-icon {
   position: relative;
@@ -646,11 +741,11 @@ const CSTRIP_CSS = `
   content: '';
   position: absolute;
   bottom: -2px; right: -2px;
-  width: 10px; height: 10px;
+  width: 11px; height: 11px;
   border-radius: 50%;
-  background: #a78bfa;
-  border: 2px solid #f5f3ff;
-  box-shadow: 0 2px 4px rgba(167,139,250,0.40);
+  background: #22c55e;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(34,197,94,0.25), 0 2px 5px rgba(34,197,94,0.45);
 }
 .smc-cstrip-title {
   font-size: 18px;
@@ -661,7 +756,7 @@ const CSTRIP_CSS = `
 }
 .smc-cstrip-sub {
   font-size: 12px;
-  color: #3b1d8a;
+  color: #6b7280;
   font-weight: 400;
   margin-top: 4px;
   line-height: 1.5;
@@ -692,33 +787,50 @@ const CSTRIP_CSS = `
   white-space: nowrap;
   cursor: pointer;
   flex-shrink: 0;
-  background: #7c3aed;
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 45%, #6d28d9 100%);
   box-shadow:
-    0 6px 20px rgba(124, 58, 237, .5),
-    0 2px 6px rgba(91, 33, 182, .3),
-    0 1px 0 rgba(255, 255, 255, .18) inset;
+    0 5px 16px rgba(124, 58, 237, .40),
+    0 2px 5px rgba(91, 33, 182, .25),
+    0 1px 0 rgba(255, 255, 255, .22) inset;
   text-shadow: none;
-  transition: background .18s, transform .18s, box-shadow .18s;
+  transition: background .18s, transform .18s, box-shadow .18s, filter .18s;
   align-self: center;
 }
 .smc-cstrip-add:hover {
   transform: translateY(-2px);
-  background: #6d28d9;
+  filter: brightness(1.05);
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 45%, #5b21b6 100%);
   box-shadow:
-    0 10px 28px rgba(124, 58, 237, .55),
-    0 2px 6px rgba(91, 33, 182, .35),
-    0 1px 0 rgba(255, 255, 255, .18) inset;
+    0 9px 24px rgba(124, 58, 237, .48),
+    0 2px 6px rgba(91, 33, 182, .30),
+    0 1px 0 rgba(255, 255, 255, .22) inset;
 }
 .smc-cstrip-add:active { transform: translateY(0); }
 .smc-cstrip-add i { font-size: 16px; }
 
+/* Responsive — stack the button under the title block on narrow screens. */
+@media (max-width: 640px) {
+  .smc-cstrip {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 14px;
+    min-height: 0;
+  }
+  .smc-cstrip-left { width: 100%; }
+  .smc-cstrip-add { width: 100%; align-self: stretch; }
+}
+
 [data-bs-theme="dark"] .smc-cstrip {
-  background: linear-gradient(110deg, #1e1b4b 0%, #2e1065 30%, #4c1d95 60%, #6d28d9 85%, #7c3aed 100%);
-  border-color: rgba(167,139,250,0.40);
+  /* Keep the gradient ring; swap the padding-box fill for a deep violet. */
+  border: 1px solid transparent;
+  background:
+    linear-gradient(110deg, #1e1b4b 0%, #2e1065 35%, #3b1675 70%, #4c1d95 100%) padding-box,
+    linear-gradient(125deg, #7c3aed 0%, #8b5cf6 22%, #6366f1 48%, #d946ef 76%, #ec4899 100%) border-box;
   box-shadow:
-    0 2px 0 rgba(255,255,255,0.05) inset,
-    0 8px 28px rgba(0,0,0,0.50),
-    0 2px 8px rgba(0,0,0,0.35);
+    0 1px 0 rgba(255,255,255,0.05) inset,
+    0 6px 22px rgba(0,0,0,0.45),
+    0 2px 8px rgba(124,58,237,0.20);
 }
 [data-bs-theme="dark"] .smc-cstrip::before {
   background-image:
@@ -733,15 +845,15 @@ const CSTRIP_CSS = `
 }
 [data-bs-theme="dark"] .smc-cstrip-icon::after { border-color: #1e1b4b; }
 [data-bs-theme="dark"] .smc-cstrip-add {
-  background: #7c3aed;
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 45%, #6d28d9 100%);
   color: #fff;
   box-shadow:
-    0 6px 20px rgba(124, 58, 237, .5),
-    0 2px 6px rgba(91, 33, 182, .3),
-    0 1px 0 rgba(255, 255, 255, .18) inset;
+    0 5px 16px rgba(124, 58, 237, .45),
+    0 2px 5px rgba(91, 33, 182, .30),
+    0 1px 0 rgba(255, 255, 255, .20) inset;
 }
 [data-bs-theme="dark"] .smc-cstrip-add:hover {
-  background: #8b5cf6;
+  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 50%, #7c3aed 100%);
 }
 `;
 
@@ -766,7 +878,7 @@ ${CSTRIP_CSS}
   background: transparent;
   padding: 0;
   margin: 0;
-  display: flex; flex-direction: column; gap: 14px;
+  display: flex; flex-direction: column; gap: 10px;
   color: var(--vz-body-color);
 }
 .smc-root *, .smc-root *::before, .smc-root *::after { box-sizing: border-box; }
@@ -786,14 +898,8 @@ ${CSTRIP_CSS}
   overflow: hidden;
   box-shadow: 0 4px 16px rgba(124,58,237,0.10), 0 1px 3px rgba(124,58,237,0.06);
 }
-.smc-wdh-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, #5b21b6 0%, #7c3aed 35%, #a78bfa 70%, #c4b5fd 100%);
-  z-index: 1;
-}
+/* Top gradient accent line removed per Figma — the banner has no separate
+   top border colour. */
 .smc-wdh-toggle-row {
   width: 100%;
   display: flex; align-items: center; justify-content: space-between;
@@ -808,9 +914,11 @@ ${CSTRIP_CSS}
   z-index: 1;
 }
 .smc-wdh-toggle-row:hover { background: rgba(124,58,237,0.05); }
+/* Figma keeps the header strip and the content area as ONE colour — so the
+   open header stays transparent (shows the card's lavender) with no divider,
+   instead of getting its own darker violet band. */
 .smc-wdh-card.is-open .smc-wdh-toggle-row {
-  background: linear-gradient(135deg, rgba(124,58,237,0.10), rgba(167,139,250,0.05));
-  border-bottom: 1px solid rgba(124,58,237,0.18);
+  background: transparent;
 }
 .smc-wdh-heading { display: flex; align-items: center; gap: 12px; }
 .smc-wdh-bulb {
@@ -822,7 +930,7 @@ ${CSTRIP_CSS}
 }
 .smc-wdh-title {
   font-size: 15px; font-weight: 700;
-  color: var(--vz-heading-color, var(--vz-body-color));
+  color:#3b0764;
   line-height: 1.2;
 }
 .smc-wdh-sub {
@@ -870,21 +978,10 @@ ${CSTRIP_CSS}
   transform: translateY(-2px);
   box-shadow: 0 8px 22px rgba(124,58,237,0.18), 0 2px 6px rgba(124,58,237,0.10);
 }
-.smc-step[data-n="1"] { border-color: rgba(64,81,137,0.20); border-left-color: #405189; }
-.smc-step[data-n="1"]:hover { box-shadow: 0 8px 22px rgba(64,81,137,0.20), 0 2px 6px rgba(64,81,137,0.12); }
-.smc-step[data-n="1"] .smc-step-num  { background: linear-gradient(135deg, #405189, #6691e7); box-shadow: 0 3px 8px rgba(64,81,137,0.30); }
-.smc-step[data-n="1"] .smc-step-name { color: #405189; }
-.smc-step[data-n="2"] { border-color: rgba(10,179,156,0.22); border-left-color: #0ab39c; }
-.smc-step[data-n="2"]:hover { box-shadow: 0 8px 22px rgba(10,179,156,0.22), 0 2px 6px rgba(10,179,156,0.12); }
-.smc-step[data-n="2"] .smc-step-num  { background: linear-gradient(135deg, #0ab39c, #30d5b5); box-shadow: 0 3px 8px rgba(10,179,156,0.30); }
-.smc-step[data-n="2"] .smc-step-name { color: #0ab39c; }
-.smc-step[data-n="3"] { border-color: rgba(247,184,75,0.25); border-left-color: #d97a08; }
-.smc-step[data-n="3"]:hover { box-shadow: 0 8px 22px rgba(247,184,75,0.25), 0 2px 6px rgba(247,184,75,0.14); }
-.smc-step[data-n="3"] .smc-step-num  { background: linear-gradient(135deg, #f7b84b, #ffd47a); box-shadow: 0 3px 8px rgba(247,184,75,0.30); }
-.smc-step[data-n="3"] .smc-step-name { color: #d97a08; }
-.smc-step[data-n="0"] .smc-step-num  { background: linear-gradient(135deg, #7c3aed, #a78bfa); }
-.smc-step[data-n="0"] .smc-step-name { color: #6d28d9; }
-.smc-step[data-n="0"]:hover { box-shadow: 0 8px 22px rgba(124,58,237,0.22), 0 2px 6px rgba(124,58,237,0.12); }
+/* All 4 steps share ONE purple/violet accent (matches the Figma) — the
+   per-step navy / teal / orange variants were removed. The base .smc-step
+   (purple left border) and .smc-step-num / .smc-step-name (purple) below
+   now apply uniformly to every step. */
 .smc-step-head { display: flex; align-items: center; gap: 8px; }
 .smc-step-num {
   width: 24px; height: 24px; border-radius: 50%;
@@ -907,9 +1004,18 @@ ${CSTRIP_CSS}
 .smc-step-arrow {
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
-  width: 24px;
-  color: var(--vz-secondary-color);
-  font-size: 18px;
+  /* Centre the circle vertically between the cards — the row uses
+     align-items: stretch, so a fixed-height item pins to the top without this. */
+  align-self: center;
+  /* Chevron sits inside a soft white circle (matches the Figma) instead of
+     being a bare gray arrow. */
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1px solid rgba(124,58,237,0.22);
+  color: #7c3aed;
+  font-size: 16px;
+  box-shadow: 0 1px 4px rgba(124,58,237,0.12);
 }
 
 /* ─── Toolbar — search input + Add Customer button row inside
@@ -917,9 +1023,9 @@ ${CSTRIP_CSS}
    so the brand color carries through. */
 .smc-toolbar {
   display: flex; align-items: center; gap: 12px;
-  padding: 14px 18px;
-  background: linear-gradient(135deg, rgba(124,58,237,0.04), rgba(167,139,250,0.02));
-  border-bottom: 1px solid rgba(124,58,237,0.15);
+  padding: 7px 1px;
+  background: linear-gradient(110deg, #ede9fe 0%, #ddd6fe 50%, #c4b5fd 100%);
+  border-bottom: 2px solid #a78bfa;
   flex-wrap: wrap;
   position: relative;
   z-index: 1;
@@ -929,7 +1035,7 @@ ${CSTRIP_CSS}
   flex: 1; min-width: 240px;
   background: rgba(255,255,255,0.85);
   border: 1px solid rgba(124,58,237,0.20);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 0 14px 0 38px;
   height: 42px;
   display: flex; align-items: center;
@@ -980,20 +1086,13 @@ ${CSTRIP_CSS}
   position: relative;
   background: var(--vz-card-bg, #fff);
   border: 1px solid var(--vz-border-color);
-  border-radius: 16px;
+  border-radius: 0;
   overflow: hidden;
   display: flex; flex-direction: column;
   flex: 1; min-height: 0;
   box-shadow: 0 2px 10px rgba(0,0,0,0.04);
 }
-.smc-table-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, #5b21b6 0%, #7c3aed 35%, #a78bfa 70%, #c4b5fd 100%);
-  z-index: 1;
-}
+/* Top accent stripe removed per request. */
 .smc-tabs-bar {
   padding: 12px 18px;
   border-bottom: 1px solid rgba(124,58,237,0.15);
@@ -1002,16 +1101,24 @@ ${CSTRIP_CSS}
 }
 .smc-pill-group {
   display: inline-flex; align-items: center; gap: 2px;
-  background: var(--vz-secondary-bg);
-  border: 1px solid var(--vz-border-color);
-  border-radius: 10px;
-  padding: 4px;
-  flex-shrink: 0;
+  // background: var(--vz-secondary-bg);
+  // border: 1px solid var(--vz-border-color);
+  // border-radius: 12px;
+  // padding: 4px;
+  height: 50px;            /* match the search bar height */
+  // flex-shrink: 0;
+  background: rgba(255, 255, 255, .5);
+    border: 1.5px solid #c4b5fd;
+    border-radius: 12px;
+    padding: 4px;
+    flex-shrink: 0;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 2px 8px rgba(109, 40, 217, .1);
 }
 .smc-pill {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 16px; height: 32px;
-  border: 0; border-radius: 8px;
+  padding: 0 16px; height: 34px;
+  border: 0; border-radius: 9px;
   font-family: inherit;
   font-size: 12.5px; font-weight: 600;
   cursor: pointer;
@@ -1024,8 +1131,8 @@ ${CSTRIP_CSS}
   color: #fff;
   box-shadow: 0 3px 10px rgba(124,58,237,0.30);
 }
-.smc-pill.off { background: transparent; color: var(--vz-secondary-color); }
-.smc-pill.off:hover { background: rgba(124,58,237,0.06); color: #6d28d9; }
+.smc-pill.off { background: transparent; color: #6d28d9; }
+.smc-pill.off:hover { background: rgba(124,58,237,0.08); color: #5b21b6; }
 .smc-pill i { font-size: 14px; }
 
 /* ─── Table ───
@@ -1037,11 +1144,14 @@ ${CSTRIP_CSS}
  * integrated with the purple page chrome without going back to the
  * heavy gradient header. */
 .smc-table-wrap {
-  /* Only vertical scroll on the wrap; horizontal scroll is handled
-     by the inner .table-responsive so we never get TWO horizontal
-     scrollbars stacked (one on the outer wrap and one on the table). */
-  overflow-x: hidden;
-  overflow-y: auto;
+  /* The wrap itself does NOT scroll. It's a vertical flex column:
+       [ .table-responsive  → flex:1, the ONLY vertical scroller ]
+       [ .row (footer)      → flex:0, pinned below, never scrolls ]
+     This keeps both the sticky header (top of .table-responsive) and
+     the footer fixed while only the rows scroll between them. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   flex: 1; min-height: 0;
   padding: 14px 14px 12px;
   /* Light, subtle scrollbar (Firefox). */
@@ -1101,8 +1211,11 @@ ${CSTRIP_CSS}
   background: var(--vz-card-bg, #fff) !important;
   border: 1px solid var(--vz-border-color) !important;
   border-radius: 10px !important;
+  /* This is the ONLY vertical scroller — rows scroll here while the
+     sticky thead (top:0) and the footer below stay put. */
+  flex: 1; min-height: 0;
   overflow-x: auto;
-  overflow-y: visible;
+  overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
 .smc-table-wrap .table {
@@ -1114,7 +1227,7 @@ ${CSTRIP_CSS}
    the pale background and keeps the brand color present without
    making the row visually heavy. */
 .smc-table-wrap .table thead.table-light tr {
-  background: linear-gradient(110deg, #f5f0ff 0%, #ede9fe 50%, #e0d7fc 100%) !important;
+  background: linear-gradient(110deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%) !important;
 }
 /* Typography matches the HR Employees / Master pages — every cell +
    header reads at 13px with header weight 600 so the table looks like
@@ -1122,29 +1235,34 @@ ${CSTRIP_CSS}
 .smc-table-wrap .table thead.table-light th {
   --bs-table-bg: transparent !important;
   --bs-table-accent-bg: transparent !important;
-  background: transparent !important;
-  color: #5b21b6 !important;
-  /* Header reads at 12px so it sits as a muted label row above the
-     13px body cells (was 13px + uppercase which looked heavier than
-     the rest of the table). */
+  /* Solid violet so the header keeps a fill when STICKY (the row gradient
+     can't ride along a sticky <th>). Sticky keeps it visible while the 10
+     rows scroll. */
+  background: #6d28d9 !important;
+  position: sticky; top: 0; z-index: 3;
+  color: #ffffff !important;
   font-size: 12px !important;
-  font-weight: 600 !important;
-  letter-spacing: .02em !important;
-  padding: 10px 14px !important;
+  font-weight: 700 !important;
+  letter-spacing: .03em !important;
+  padding: 11px 14px !important;
   line-height: 1.3 !important;
-  border-bottom: 1px solid rgba(124,58,237,0.18) !important;
+  border-bottom: 0 !important;
   white-space: nowrap;
   text-transform: uppercase;
   vertical-align: middle !important;
 }
-.smc-table-wrap .table thead th i { font-size: 12px; opacity: 0.55; color: #6d28d9; }
+.smc-table-wrap .table thead th i { font-size: 12px; opacity: 0.85; color: rgba(255,255,255,0.85); }
 /* Body — white rows with soft lavender hover. */
 .smc-table-wrap .table tbody tr {
-  background: transparent;
+  background: #ffffff;
   transition: background .12s ease;
 }
+/* Subtle zebra striping (prototype alternates #fff / #fdfaff). */
+.smc-table-wrap .table tbody tr:nth-child(even) {
+  background: #fdfaff;
+}
 .smc-table-wrap .table tbody tr:hover {
-  background: #faf7ff !important;
+  background: #f5f0ff !important;
 }
 .smc-table-wrap .table tbody td {
   --bs-table-bg: transparent !important;
@@ -1192,6 +1310,75 @@ ${CSTRIP_CSS}
   background: #faf7ff;
 }
 
+/* ── Table footer (TableContainer's "Showing X of Y" + pagination row) ──
+   Figma look: soft lavender bar, "Showing…" as a white purple-bordered pill
+   on the left, circular nav + light-violet active page on the right. */
+.smc-table-wrap > .row {
+  /* Aligns with the table-responsive above (same inset). */
+  margin: 10px 0 0 !important;
+  --bs-gutter-x: 0; --bs-gutter-y: 0;
+  padding: 10px 16px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px;
+  /* Sits BELOW the scrolling .table-responsive as a fixed flex row — it
+     never scrolls because the scroll lives inside .table-responsive, not here. */
+  flex-shrink: 0;
+  background: #ffffff;
+  border: 1px solid var(--vz-border-color);
+  border-radius: 10px;
+}
+.smc-table-wrap > .row > [class^="col-"] { padding: 0; width: auto; flex: 0 0 auto; }
+.smc-table-wrap > .row .text-muted {
+  /* inline-block (not flex) so the spaces between "Showing 1 of 1 Results"
+     aren't collapsed into "1of1Results". */
+  display: inline-block !important;
+  background: #ffffff; border: 1.5px solid #ddd6fe;
+  color: #6d28d9 !important; font-weight: 600; font-size: 12px;
+  padding: 5px 14px; border-radius: 20px; line-height: 1.4;
+}
+.smc-table-wrap > .row .text-muted .fw-semibold { color: #5b21b6; font-weight: 800; }
+/* "1 / 2" indicator → light-violet capsule pill (Figma). */
+.smc-table-wrap .pagination .page-link.page-of-total {
+  border-radius: 20px !important;
+  padding: 0 16px !important;
+  height: 32px; min-width: 52px;
+  background: #ede9fe !important;
+  border: 1.5px solid #c4b5fd !important;
+  color: #5b21b6 !important;
+  font-weight: 800; font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+/* Numbered page chips → light-violet pills (when not in 1/2 mode). */
+.smc-table-wrap .pagination .page-link {
+  background: rgba(255,255,255,0.7);
+}
+.smc-table-wrap .pagination .page-item.active .page-link {
+  background: #ddd6fe !important;
+  border-color: #c4b5fd !important;
+  color: #5b21b6 !important;
+  box-shadow: none !important;
+}
+/* prev / next → white circular buttons. */
+.smc-table-wrap .pagination .page-item:first-child .page-link,
+.smc-table-wrap .pagination .page-item:last-child .page-link {
+  border-radius: 50% !important;
+  width: 32px; min-width: 32px; height: 32px;
+  background: #ffffff; border-color: #e0d9f7;
+}
+[data-bs-theme="dark"] .smc-table-wrap > .row {
+  background: var(--vz-card-bg, #1f2937);
+  border: 1px solid rgba(167,139,250,0.20);
+}
+[data-bs-theme="dark"] .smc-table-wrap > .row .text-muted {
+  background: rgba(255,255,255,0.05); border-color: rgba(167,139,250,0.30); color: #c4b5fd !important;
+}
+[data-bs-theme="dark"] .smc-table-wrap > .row .text-muted .fw-semibold { color: #e9d5ff; }
+[data-bs-theme="dark"] .smc-table-wrap .pagination .page-link.page-of-total {
+  background: rgba(167,139,250,0.18) !important;
+  border-color: rgba(167,139,250,0.35) !important;
+  color: #e9d5ff !important;
+}
+
 /* Dark-mode table chrome — flip the lavender thead wash to a deep
    purple-tinted dark slate so it reads cleanly on the dark canvas. */
 [data-bs-theme="dark"] .smc-table-wrap .table-responsive {
@@ -1199,14 +1386,18 @@ ${CSTRIP_CSS}
   border-color: var(--vz-border-color) !important;
 }
 [data-bs-theme="dark"] .smc-table-wrap .table thead.table-light tr {
-  background: linear-gradient(110deg, rgba(76,29,149,0.22) 0%, rgba(109,40,217,0.16) 50%, rgba(124,58,237,0.12) 100%) !important;
+  background: linear-gradient(110deg, #5b21b6 0%, #4c1d95 55%, #3b1675 100%) !important;
 }
 [data-bs-theme="dark"] .smc-table-wrap .table thead.table-light th {
-  color: #e9d5ff !important;
-  border-bottom-color: rgba(167,139,250,0.25) !important;
+  color: #ffffff !important;
+  border-bottom: 0 !important;
+  background: #4c1d95 !important;   /* solid fill for the sticky header on dark */
 }
-[data-bs-theme="dark"] .smc-table-wrap .table thead th i { color: #c4b5fd !important; opacity: 0.7; }
-[data-bs-theme="dark"] .smc-table-wrap .table tbody tr:hover { background: rgba(167,139,250,0.08) !important; }
+[data-bs-theme="dark"] .smc-table-wrap .table thead th i { color: rgba(255,255,255,0.85) !important; opacity: 0.85; }
+/* Dark: rows transparent (card shows through), faint violet zebra. */
+[data-bs-theme="dark"] .smc-table-wrap .table tbody tr { background: transparent; }
+[data-bs-theme="dark"] .smc-table-wrap .table tbody tr:nth-child(even) { background: rgba(167,139,250,0.05); }
+[data-bs-theme="dark"] .smc-table-wrap .table tbody tr:hover { background: rgba(167,139,250,0.10) !important; }
 [data-bs-theme="dark"] .smc-table-wrap .table tbody td {
   color: var(--vz-body-color);
   border-bottom-color: rgba(167,139,250,0.10) !important;
@@ -1442,8 +1633,22 @@ ${CSTRIP_CSS}
 /* Sr No + Consignees — plain dark text (no badge bubble). Matches
    the Admin Clients table where the row number is rendered as a
    simple numeric value, not a colored chip. */
-.smc-srno { color: #495057; font-weight: 600; font-size: 13px; }
-.smc-cons { color: #495057; font-weight: 600; font-size: 13px; }
+/* SR No — purple ROUNDED-SQUARE badge (prototype: 7px radius). */
+.smc-srno {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 7px;
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  color: #fff; font-weight: 800; font-size: 11px;
+  box-shadow: 0 2px 6px rgba(109,40,217,0.30);
+}
+/* Consignees — purple PILL (rounded-rectangle), not a square. */
+.smc-cons {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 24px; height: 22px; padding: 0 8px; border-radius: 20px;
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  color: #fff; font-weight: 800; font-size: 11px; letter-spacing: .02em;
+  box-shadow: 0 2px 6px rgba(109,40,217,0.30);
+}
 
 /* Customer ID — soft violet mono chip. Restrained — no gradient or
    heavy shadow, just a clean pill so the ID stays readable but
@@ -1496,9 +1701,20 @@ ${CSTRIP_CSS}
 }
 .smc-wa.yes { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
 .smc-wa.no  { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+/* Colored leading dot inside the status pills (Figma) — uses the pill's own
+   text colour, so Type/Segment/WhatsApp each get a matching dot. */
+.smc-type-pill::before,
+.smc-seg::before,
+.smc-wa::before {
+  content: '';
+  width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
 .smc-actions { display:flex; align-items:center; justify-content:center; gap:4px; flex-wrap:nowrap; }
 .smc-act {
-  width:24px; height:24px; border-radius:7px;
+  width:28px; height:28px; border-radius:8px;
   display:inline-flex; align-items:center; justify-content:center;
   cursor:pointer; flex-shrink:0; padding:0;
   transition: all .18s cubic-bezier(.22,1,.36,1);
@@ -1570,9 +1786,9 @@ ${CSTRIP_CSS}
 }
 [data-bs-theme="dark"] .smc-wdh-toggle-row { background: transparent; }
 [data-bs-theme="dark"] .smc-wdh-toggle-row:hover { background: rgba(255,255,255,0.06); }
+/* Header strip + content are ONE colour (no separate band / divider). */
 [data-bs-theme="dark"] .smc-wdh-card.is-open .smc-wdh-toggle-row {
-  background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
-  border-bottom-color: rgba(167,139,250,0.30);
+  background: transparent;
 }
 [data-bs-theme="dark"] .smc-wdh-bulb {
   background: linear-gradient(135deg, #a78bfa, #7c3aed);
@@ -1595,16 +1811,18 @@ ${CSTRIP_CSS}
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
 }
-[data-bs-theme="dark"] .smc-step[data-n="0"] { border-color: rgba(167,139,250,0.40); border-left-color: #a78bfa; }
-[data-bs-theme="dark"] .smc-step[data-n="1"] { border-color: rgba(102,145,231,0.40); border-left-color: #6691e7; }
-[data-bs-theme="dark"] .smc-step[data-n="2"] { border-color: rgba(48,213,181,0.40); border-left-color: #30d5b5; }
-[data-bs-theme="dark"] .smc-step[data-n="3"] { border-color: rgba(255,212,122,0.40); border-left-color: #ffd47a; }
-[data-bs-theme="dark"] .smc-step[data-n="0"] .smc-step-name { color: #c4b5fd; }
-[data-bs-theme="dark"] .smc-step[data-n="1"] .smc-step-name { color: #93b4f0; }
-[data-bs-theme="dark"] .smc-step[data-n="2"] .smc-step-name { color: #5eead4; }
-[data-bs-theme="dark"] .smc-step[data-n="3"] .smc-step-name { color: #fcd34d; }
+/* All 4 steps share ONE purple accent in dark too (matches the light
+   unification) — number circle, left border and title are all violet. */
+[data-bs-theme="dark"] .smc-step { border-left-color: #a78bfa; }
+[data-bs-theme="dark"] .smc-step-num  { background: linear-gradient(135deg, #a78bfa, #7c3aed); }
+[data-bs-theme="dark"] .smc-step-name { color: #c4b5fd; }
 [data-bs-theme="dark"] .smc-step-desc { color: #cbd5e1; }
-[data-bs-theme="dark"] .smc-step-arrow { color: #e9d5ff; }
+[data-bs-theme="dark"] .smc-step-arrow {
+  background: rgba(167,139,250,0.12);
+  border-color: rgba(167,139,250,0.30);
+  color: #c4b5fd;
+  box-shadow: none;
+}
 
 [data-bs-theme="dark"] .smc-table-card {
   background: var(--vz-card-bg);
@@ -1619,12 +1837,14 @@ ${CSTRIP_CSS}
   background: var(--vz-secondary-bg);
   border-color: var(--vz-border-color);
 }
-[data-bs-theme="dark"] .smc-pill.off       { color: var(--vz-secondary-color); }
+[data-bs-theme="dark"] .smc-pill.off       { color: #c4b5fd; }
 [data-bs-theme="dark"] .smc-pill.off:hover { background: rgba(167,139,250,0.10); color: #c4b5fd; }
 
 [data-bs-theme="dark"] .smc-toolbar {
-  background: linear-gradient(135deg, rgba(167,139,250,0.08), rgba(124,58,237,0.04));
-  border-bottom-color: rgba(167,139,250,0.20);
+  /* Solid violet bar to match the light toolbar's presence (light is a bold
+     lavender gradient; dark gets a deep-violet equivalent). */
+  background: linear-gradient(110deg, rgba(76,29,149,0.45) 0%, rgba(91,33,182,0.32) 50%, rgba(124,58,237,0.24) 100%);
+  border-bottom: 2px solid rgba(167,139,250,0.35);
 }
 [data-bs-theme="dark"] .smc-toolbar .smc-search {
   background: rgba(255,255,255,0.04);

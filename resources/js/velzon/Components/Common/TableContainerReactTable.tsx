@@ -94,6 +94,10 @@ interface TableContainerProps {
    *  every page when the total is ≤7. Pass it from list pages that
    *  want the tighter bar even at small page counts. */
   condensedPagination?: boolean;
+  /** When true, the pagination renders a single "current / total" indicator
+   *  (e.g. "1 / 2") between the prev/next arrows instead of numbered page
+   *  buttons. Opt-in per list page; default keeps the numbered view. */
+  pageOfTotalPagination?: boolean;
 }
 
 const TableContainer = ({
@@ -109,6 +113,7 @@ const TableContainer = ({
   SearchPlaceholder,
   isBordered,
   condensedPagination = false,
+  pageOfTotalPagination = false,
 
 }: TableContainerProps) => {
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -281,6 +286,14 @@ const TableContainer = ({
               //     Renders as "1 … 3 … 12" even at small page counts.
               const total = getPageOptions().length;
               const current = getState().pagination.pageIndex;
+              // "1 / 2" mode — a single read-only indicator between the arrows.
+              if (pageOfTotalPagination) {
+                return (
+                  <li className="page-item">
+                    <span className="page-link page-of-total" style={{ cursor: 'default' }}>{current + 1} / {Math.max(total, 1)}</span>
+                  </li>
+                );
+              }
               const items: Array<number | 'ellipsis-l' | 'ellipsis-r'> = [];
               if (condensedPagination) {
                 // Sliding 2-button window: always show two page numbers
