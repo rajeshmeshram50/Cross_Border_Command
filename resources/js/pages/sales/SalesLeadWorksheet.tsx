@@ -1264,8 +1264,8 @@ const SCOPED_CSS = `
 .lwp-root {
   font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
   background: linear-gradient(160deg, #f0fdfe 0%, #e8fafb 30%, #f5feff 60%, #ffffff 100%);
-  padding: 12px 20px 12px;
-  margin: -1rem -0.75rem;
+  padding: 12px 24px 12px;
+  margin: -1rem -1.5rem;
   /* Fixed available height (viewport minus the header + horizontal menu) so
      the table card fills the screen, the table scrolls INSIDE it, and the
      pagination stays pinned at the bottom — works on small screens without
