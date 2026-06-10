@@ -247,6 +247,27 @@ export default function SalesLeadWorksheet() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
+  // ── Auto-fit rows ── show exactly as many rows as fill the scroll area so
+  // big screens don't leave a gap; picking a Rows-per-page value overrides it.
+  const wrapRef    = useRef<HTMLDivElement>(null);
+  const autoFitRef = useRef(true);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const recompute = () => {
+      if (!autoFitRef.current) return;
+      const avail = el.clientHeight;
+      if (avail <= 0) return;
+      const THEAD = 40, ROW = 44;   // worksheet header + row heights (px)
+      const fit = Math.max(5, Math.floor((avail - THEAD) / ROW));
+      setRpp(prev => (prev === fit ? prev : fit));
+    };
+    const ro = new ResizeObserver(recompute);
+    ro.observe(el);
+    recompute();
+    return () => ro.disconnect();
+  }, []);
+
   // CTQ confirmation modal
   const [ctqLead, setCtqLead] = useState<Lead | null>(null);
 
@@ -821,7 +842,7 @@ export default function SalesLeadWorksheet() {
 
       {/* ── Table ── */}
       <div className="lwp-table-card">
-        <div className="lwp-table-wrap">
+        <div className="lwp-table-wrap" ref={wrapRef}>
           <table className="lwp-table">
             <colgroup>
               <col className="c-chk" /><col className="c-type" /><col className="c-date" /><col className="c-source" />
@@ -1014,8 +1035,8 @@ export default function SalesLeadWorksheet() {
           <div className="lwp-pag-right">
             <div className="lwp-rows-sel">
               Rows per page:
-              <select value={rpp} onChange={e => { setRpp(parseInt(e.target.value, 10)); setPage(1); }}>
-                {ROWS_PER_PAGE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+              <select value={rpp} onChange={e => { autoFitRef.current = false; setRpp(parseInt(e.target.value, 10)); setPage(1); }}>
+                {[...new Set([rpp, ...ROWS_PER_PAGE_OPTIONS])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
               </select>
             </div>
             <span className="lwp-pag-range">{safePage} / {pages}</span>
@@ -1518,33 +1539,35 @@ const SCOPED_CSS = `
  * cyan primary tabs rather than a competing peer. */
 .lwp-root .lwp-subtabs {
   display: inline-flex; align-items: center; gap: 4px;
-  background: linear-gradient(110deg, #fffbeb 0%, #fef3c7 60%, #fde68a 100%);
+  align-self: flex-start;
+  background: linear-gradient(110deg, #ecfeff 0%, #cffafe 50%, #a5f3fc 100%);
   padding: 4px; border-radius: 10px;
-  border: 1.5px solid #fcd34d;
-  box-shadow: 0 2px 8px rgba(217,119,6,.12);
+  border: 1.5px solid #a5f3fc;
+  box-shadow: 0 2px 8px rgba(8,145,178,.12), 0 1px 0 rgba(255,255,255,.9) inset;
   margin-bottom: 8px; flex-shrink: 0;
 }
 .lwp-root .lwp-subtab {
   padding: 6px 14px; border-radius: 7px;
   font-size: 11.5px; font-weight: 600; cursor: pointer;
-  background: transparent; color: #b45309;
+  background: transparent; color: #0e7490;
   transition: all .18s; white-space: nowrap;
   display: inline-flex; align-items: center; gap: 6px;
 }
-.lwp-root .lwp-subtab:hover { color: #92400e; background: rgba(255,255,255,.6); }
+.lwp-root .lwp-subtab:hover { color: #0891b2; background: rgba(255,255,255,.6); }
 .lwp-root .lwp-subtab.active {
-  background: linear-gradient(135deg, #f59e0b 0%, #d97706 55%, #b45309 100%);
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
   color: #fff;
-  box-shadow: 0 3px 10px rgba(217,119,6,.4), 0 1px 0 rgba(255,255,255,.2) inset;
+  box-shadow: 0 3px 10px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset;
 }
 [data-bs-theme="dark"] .lwp-root .lwp-subtabs {
-  background: linear-gradient(110deg, #1f1611 0%, #28190e 60%, #422006 100%);
-  border-color: #7c2d12;
+  background: rgba(8,145,178,0.12);
+  border-color: rgba(34,211,238,0.18);
+  box-shadow: none;
 }
-[data-bs-theme="dark"] .lwp-root .lwp-subtab { color: #fcd34d; }
-[data-bs-theme="dark"] .lwp-root .lwp-subtab:hover { color: #fde68a; background: rgba(0,0,0,.25); }
+[data-bs-theme="dark"] .lwp-root .lwp-subtab { color: #67e8f9; }
+[data-bs-theme="dark"] .lwp-root .lwp-subtab:hover { color: #cffafe; background: rgba(0,0,0,.25); }
 [data-bs-theme="dark"] .lwp-root .lwp-subtab.active {
-  background: linear-gradient(135deg, #f59e0b 0%, #d97706 55%, #b45309 100%); color: #1c1410;
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%); color: #fff;
 }
 .lwp-root .lwp-search {
   display: flex; align-items: center;
