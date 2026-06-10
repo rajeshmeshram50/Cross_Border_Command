@@ -738,7 +738,7 @@ const STAGE2_CSS = `
    tall. Thin themed scrollbar. */
 .st2-pick-body {
   padding: 14px 18px; overflow-y: auto; background: #f8fafc;
-  height: min(340px, 52vh);
+  height: min(280px, 44vh);
   scrollbar-width: thin; scrollbar-color: #ddd6fe transparent;
 }
 .st2-pick-body::-webkit-scrollbar { width: 8px; }
@@ -758,9 +758,11 @@ const STAGE2_CSS = `
 .st2-pick-row.on { border-color: #7c3aed; background: #ede9fe; }
 .st2-pick-row input { accent-color: #7c3aed; cursor: pointer; }
 
-.st2-pick-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+.st2-pick-cols { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 0; }
+.st2-pick-cols .st2-pick-col { min-width: 0; }
 .st2-pick-cols .st2-pick-col:first-child { padding-right: 18px; border-right: 1.5px solid #e9d5ff; }
 .st2-pick-cols .st2-pick-col:last-child  { padding-left: 18px; }
+.st2-pick-row > span { min-width: 0; overflow-wrap: anywhere; }
 /* Underlined section headers (Figma) — coloured dot + uppercase label
    over a tinted hairline, instead of the old filled pill. */
 .st2-pick-col-head {
