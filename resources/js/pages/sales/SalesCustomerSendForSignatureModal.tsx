@@ -512,6 +512,7 @@ export default function SalesCustomerSendForSignatureModal({
             trade_doc_id: docId,
             party_id: customer!.db_id,
             model_name: modelName,
+            ...(leadId ? { lead_id: leadId } : {}),
             ...(headerOverride  ? { header_config_override:  headerOverride  } : {}),
             ...(footerOverride  ? { footer_config_override:  footerOverride  } : {}),
             ...(contentOverride !== undefined ? { content_override: contentOverride } : {}),
@@ -600,7 +601,7 @@ export default function SalesCustomerSendForSignatureModal({
 
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, activeDocId, customer?.db_id, agreementContext?.leadId, isAgreement, headerOverrides, footerOverrides, contentOverrides]);
+  }, [step, activeDocId, customer?.db_id, leadId, agreementContext?.leadId, isAgreement, headerOverrides, footerOverrides, contentOverrides]);
 
   /* ── Release blob URLs we created so we don't leak memory. */
   useEffect(() => {
@@ -1531,7 +1532,7 @@ export default function SalesCustomerSendForSignatureModal({
         <ClmInsertPlaceholderModal
           open={placeholderPickerOpen}
           onClose={() => setPlaceholderPickerOpen(false)}
-          onInsert={(token) => { insertIntoBody(token, 'text'); setPlaceholderPickerOpen(false); }}
+          onInsert={(token) => { insertIntoBody(token, /^\s*</.test(token) ? 'html' : 'text'); setPlaceholderPickerOpen(false); }}
         />
 
         {clausePickerOpen && (
