@@ -2,7 +2,6 @@
 
 namespace Database\Seeders;
 
-use App\Models\Client;
 use App\Models\ClmTncCategory;
 use Illuminate\Database\Seeder;
 
@@ -20,10 +19,13 @@ use Illuminate\Database\Seeder;
  * word (International / Domestic) AND the document-kind words
  * (Quotation / Proforma Invoice), so these exact names make the link work.
  *
- * Per-tenant: one set of categories is created for every client. Idempotent
- * — a category already present (by name, case-insensitive) is skipped, and
- * DC-### codes continue from the highest existing suffix so it never
- * collides with categories an admin already added through the UI.
+ * GLOBAL, not per-tenant: a single shared set is created with
+ * client_id = NULL so it shows for every client/branch (see
+ * ClmTncController::categoriesIndex, which merges global + tenant rows).
+ * Idempotent — a global category already present (by name, case-insensitive)
+ * is skipped, and DC-### codes continue from the highest existing global
+ * suffix. Any leftover PER-CLIENT copies of these four names (from the old
+ * per-tenant seeding) are removed so the list doesn't show duplicates.
  *
  * Run standalone:
  *   php artisan db:seed --class=Database\\Seeders\\ClmTncCategorySeeder
@@ -40,44 +42,43 @@ class ClmTncCategorySeeder extends Seeder
 
     public function run(): void
     {
-        $clientIds = Client::query()->pluck('id');
+        $standardNames = array_map('mb_strtolower', array_keys(self::CATEGORIES));
 
-        if ($clientIds->isEmpty()) {
-            $this->command?->warn('ClmTncCategorySeeder: no clients found — nothing to seed.');
-            return;
+        // Drop per-client copies of these standard names left over from the
+        // old per-tenant seeding — they're now owned by the global set.
+        $dupes = ClmTncCategory::whereNotNull('client_id')->get()
+            ->filter(fn ($c) => in_array(mb_strtolower((string) $c->name), $standardNames, true));
+        $removed = $dupes->count();
+        $dupes->each->delete();
+
+        // Highest existing global DC-### suffix (DB-agnostic).
+        $next = 0;
+        foreach (ClmTncCategory::whereNull('client_id')->pluck('code') as $code) {
+            if (preg_match('/^DC-(\d+)$/', (string) $code, $m)) {
+                $next = max($next, (int) $m[1]);
+            }
         }
 
         $created = 0;
-
-        foreach ($clientIds as $clientId) {
-            // Highest existing DC-### suffix for this client (DB-agnostic).
-            $next = 0;
-            foreach (ClmTncCategory::where('client_id', $clientId)->pluck('code') as $code) {
-                if (preg_match('/^DC-(\d+)$/', (string) $code, $m)) {
-                    $next = max($next, (int) $m[1]);
-                }
+        foreach (self::CATEGORIES as $name => $short) {
+            $exists = ClmTncCategory::whereNull('client_id')
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+                ->exists();
+            if ($exists) {
+                continue;
             }
 
-            foreach (self::CATEGORIES as $name => $short) {
-                $exists = ClmTncCategory::where('client_id', $clientId)
-                    ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
-                    ->exists();
-                if ($exists) {
-                    continue;
-                }
-
-                $next++;
-                ClmTncCategory::create([
-                    'client_id'  => $clientId,
-                    'code'       => sprintf('DC-%03d', $next),
-                    'short_code' => $short,
-                    'name'       => $name,
-                    'status'     => 'active',
-                ]);
-                $created++;
-            }
+            $next++;
+            ClmTncCategory::create([
+                'client_id'  => null,
+                'code'       => sprintf('DC-%03d', $next),
+                'short_code' => $short,
+                'name'       => $name,
+                'status'     => 'active',
+            ]);
+            $created++;
         }
 
-        $this->command?->info("ClmTncCategorySeeder: created {$created} category row(s) across {$clientIds->count()} client(s).");
+        $this->command?->info("ClmTncCategorySeeder: created {$created} global category row(s); removed {$removed} per-client duplicate(s).");
     }
 }

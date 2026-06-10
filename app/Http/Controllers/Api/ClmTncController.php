@@ -16,9 +16,16 @@ class ClmTncController extends Controller
     public function categoriesIndex(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $rows = $user->client_id
-            ? ClmTncCategory::where('client_id', $user->client_id)->orderBy('id')->get()
-            : collect();
+        // The four standard categories are GLOBAL (client_id NULL) and show
+        // for every tenant; a client's own custom categories are merged on top.
+        $rows = ClmTncCategory::where(function ($w) use ($user) {
+                $w->whereNull('client_id');
+                if ($user->client_id) {
+                    $w->orWhere('client_id', $user->client_id);
+                }
+            })
+            ->orderBy('id')
+            ->get();
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
     }
 
