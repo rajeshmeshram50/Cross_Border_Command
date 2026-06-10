@@ -13,7 +13,7 @@ import { useToast } from '../../contexts/ToastContext';
  * party's saved e-signature image at generation time.
  * ─────────────────────────────────────────────────────────────────────── */
 
-type Tab = 'customer' | 'consignee' | 'supplier';
+type Tab = 'customer' | 'consignee' | 'supplier' | 'product';
 type Field = { label: string; token: string; isSignature?: boolean };
 
 const FIELDS: Record<Tab, Field[]> = {
@@ -52,12 +52,22 @@ const FIELDS: Record<Tab, Field[]> = {
     { label: 'PAN',             token: '{{supplier.pan}}' },
     { label: 'Bank Account',    token: '{{supplier.bank_account}}' },
   ],
+  // Product placeholders mirror the Proforma Invoice product table columns
+  // (code · name · segment · quantity). The renderer expands {{product.*}}
+  // tokens into a row per mapped product at generation time.
+  product: [
+    { label: 'Product Code',    token: '{{product.code}}' },
+    { label: 'Product Name',    token: '{{product.name}}' },
+    { label: 'Product Segment', token: '{{product.segment}}' },
+    { label: 'Quantity',        token: '{{product.quantity}}' },
+  ],
 };
 
 const TABS: { key: Tab; label: string; icon: string; color: string }[] = [
   { key: 'customer',  label: 'Customer',  icon: '👤', color: '#6366f1' },
   { key: 'consignee', label: 'Consignee', icon: '🚚', color: '#f59e0b' },
   { key: 'supplier',  label: 'Supplier',  icon: '📦', color: '#10b981' },
+  { key: 'product',   label: 'Product',   icon: '🛒', color: '#8b5cf6' },
 ];
 
 interface Props {
