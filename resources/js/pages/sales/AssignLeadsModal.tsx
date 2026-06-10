@@ -383,11 +383,23 @@ const ALM_CSS = `
 }
 @keyframes alm-pop { from { transform: scale(.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .alm-head {
+  position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 20px; background: linear-gradient(135deg, #0e7490, #0891b2);
   color: #fff; border-radius: 14px 14px 0 0;
 }
-.alm-head-left { display: flex; align-items: center; gap: 12px; }
+/* Decorative bubble orbs (figma) — soft white circles clipped by the header. */
+.alm-head::before {
+  content: ''; position: absolute; right: -40px; top: -40px;
+  width: 160px; height: 160px; border-radius: 50%;
+  background: rgba(255,255,255,.06); pointer-events: none;
+}
+.alm-head::after {
+  content: ''; position: absolute; right: 80px; bottom: -50px;
+  width: 120px; height: 120px; border-radius: 50%;
+  background: rgba(255,255,255,.04); pointer-events: none;
+}
+.alm-head-left { display: flex; align-items: center; gap: 12px; position: relative; z-index: 1; }
 .alm-head-icon {
   width: 36px; height: 36px; border-radius: 10px;
   background: rgba(255,255,255,.18); display: flex; align-items: center; justify-content: center;
@@ -395,6 +407,7 @@ const ALM_CSS = `
 .alm-head-title { font-size: 16px; font-weight: 600; line-height: 1.2; }
 .alm-head-sub { font-size: 11px; opacity: .85; line-height: 1.3; margin-top: 2px; }
 .alm-close {
+  position: relative; z-index: 1;
   width: 28px; height: 28px; border: none; background: rgba(255,255,255,.15);
   color: #fff; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: background .15s;

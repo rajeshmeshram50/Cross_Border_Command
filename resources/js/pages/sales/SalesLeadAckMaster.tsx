@@ -77,7 +77,7 @@ export default function SalesLeadAckMaster() {
   // UI state
   const [tab, setTab]   = useState<OppType>('qualified');
   const [q, setQ]       = useState('');
-  const [rpp]           = useState(12);
+  const [rpp, setRpp]   = useState(10);
   const [page, setPage] = useState(1);
 
   // Transient shimmer flags. All three tabs are fetched once on mount, so a
@@ -482,36 +482,59 @@ export default function SalesLeadAckMaster() {
               ? 'No records found'
               : <>Showing <strong>{startIdx + 1}</strong>–<strong>{startIdx + rows.length}</strong> of <strong>{total}</strong> Results</>}
           </span>
-          <div className="lam-pag-btns">
-            <button
-              type="button"
-              className="lam-pag-btn"
-              disabled={safePage <= 1}
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              aria-label="Previous page"
-            >
-              <i className="ri-arrow-left-s-line" />
-            </button>
-            {Array.from({ length: pages }, (_, n) => n + 1).map(n => (
-              <button
-                key={n}
-                type="button"
-                className={`lam-pag-btn ${n === safePage ? 'is-active' : ''}`}
-                onClick={() => setPage(n)}
-                aria-current={n === safePage ? 'page' : undefined}
+          <div className="lam-pag-right">
+            <div className="lam-rows">
+              <span>Rows per page</span>
+              <span className="lam-rows-val">{rpp}</span>
+              <i className="ri-arrow-down-s-line lam-rows-caret" />
+              <select
+                className="lam-rows-sel"
+                value={rpp}
+                onChange={e => { setRpp(Number(e.target.value)); setPage(1); }}
+                aria-label="Rows per page"
               >
-                {n}
-              </button>
-            ))}
-            <button
-              type="button"
-              className="lam-pag-btn"
-              disabled={safePage >= pages || total === 0}
-              onClick={() => setPage(p => Math.min(pages, p + 1))}
-              aria-label="Next page"
-            >
-              <i className="ri-arrow-right-s-line" />
-            </button>
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={30}>30</option>
+                <option value={40}>40</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
+            {/* Page navigation only appears when there's more than one page —
+                a single-page list shouldn't show a lone "1" button. */}
+            {pages > 1 && (
+              <div className="lam-pag-btns">
+                <button
+                  type="button"
+                  className="lam-pag-btn"
+                  disabled={safePage <= 1}
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  aria-label="Previous page"
+                >
+                  <i className="ri-arrow-left-s-line" />
+                </button>
+                {Array.from({ length: pages }, (_, n) => n + 1).map(n => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={`lam-pag-btn ${n === safePage ? 'is-active' : ''}`}
+                    onClick={() => setPage(n)}
+                    aria-current={n === safePage ? 'page' : undefined}
+                  >
+                    {n}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="lam-pag-btn"
+                  disabled={safePage >= pages || total === 0}
+                  onClick={() => setPage(p => Math.min(pages, p + 1))}
+                  aria-label="Next page"
+                >
+                  <i className="ri-arrow-right-s-line" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -724,7 +747,12 @@ const SCOPED_CSS = `
   background: linear-gradient(180deg, #faf7ff 0%, #f5f3ff 100%);
   padding: 14px 18px 22px;
   margin: -1rem -0.75rem;
-  min-height: calc(100vh - 70px);
+  /* Fixed available height (viewport minus the top header + horizontal menu)
+     so the table card fills the screen, the table scrolls INSIDE it, and the
+     pagination stays pinned at the bottom — no big empty area below the card,
+     no page scroll. */
+  height: calc(100vh - 130px);
+  overflow: hidden;
   display: flex; flex-direction: column; gap: 8px;
   color: #111827;
   font-size: 13.5px;
@@ -983,14 +1011,33 @@ const SCOPED_CSS = `
   overflow: hidden;
   box-shadow: 0 2px 14px rgba(124,58,237,0.07);
   display: flex; flex-direction: column;
-  /* Size to content so the pagination sits right under the rows instead of
-     being stretched to the bottom of the viewport (was flex:1). */
+  flex: 1; min-height: 0;
 }
-.lam-table-wrap { overflow-x: auto; }
+/* Fills the card and scrolls the rows internally; the pagination (the card's
+   last child) stays pinned at the bottom and always visible. */
+.lam-table-wrap {
+  flex: 1; min-height: 0; overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #ddd6fe transparent;
+}
+/* Thin themed scrollbar (replaces the chunky default). */
+.lam-table-wrap::-webkit-scrollbar { width: 9px; height: 9px; }
+.lam-table-wrap::-webkit-scrollbar-track { background: transparent; }
+.lam-table-wrap::-webkit-scrollbar-thumb {
+  background: #c4b5fd; border-radius: 8px;
+  border: 2px solid transparent; background-clip: content-box;
+}
+.lam-table-wrap::-webkit-scrollbar-thumb:hover { background: #a78bfa; background-clip: content-box; }
+[data-bs-theme="dark"] .lam-table-wrap { scrollbar-color: rgba(167,139,250,.4) transparent; }
+[data-bs-theme="dark"] .lam-table-wrap::-webkit-scrollbar-thumb { background: rgba(167,139,250,.4); background-clip: content-box; }
 .lam-table { width: 100%; border-collapse: separate; border-spacing: 0; }
-/* Continuous violet gradient header bar (figma). The gradient lives on the
-   <tr> so it spans the whole row as one band; the cells are transparent so
-   they don't segment it at each column boundary. */
+/* Sticky gradient header — stays fixed while the rows scroll inside the card.
+   The gradient lives on the <tr> so it spans the whole row as one continuous
+   band; making the whole <thead> sticky keeps that band intact (the cells
+   stay transparent, so there's no per-column segmentation). */
+.lam-table thead {
+  position: sticky; top: 0; z-index: 5;
+}
 .lam-table thead tr {
   background: linear-gradient(90deg, #5b21b6 0%, #6d28d9 25%, #7c3aed 55%, #8b5cf6 80%, #a78bfa 100%);
   box-shadow: 0 2px 10px rgba(124,58,237,0.30);
@@ -1150,6 +1197,30 @@ const SCOPED_CSS = `
    right. Matches the project-standard pagination (HR Employees / Customers). */
 .lam-pag-info { font-size: 12.5px; font-weight: 500; color: #475569; }
 .lam-pag-info strong { color: #1f2937; font-weight: 800; }
+.lam-pag-right { display: inline-flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+/* Rows-per-page pill — styled in the page's own violet language (not a raw
+   native control). The <select> is appearance:none and only shows its value;
+   a remix chevron sits on the right. */
+.lam-rows {
+  position: relative; display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 600; color: #6d28d9;
+  background: #fff; border: 1px solid #e0d9f7;
+  padding: 5px 30px 5px 12px; border-radius: 8px;
+  cursor: pointer;
+}
+.lam-rows:hover { border-color: #c4b5fd; }
+.lam-rows-val { font-size: 12.5px; font-weight: 800; color: #7c3aed; }
+/* The real <select> overlays the whole pill (transparent) so a click
+   anywhere on it opens the dropdown — only the value text + chevron show. */
+.lam-rows-sel {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer; border: none;
+  font-family: inherit;
+}
+.lam-rows-caret {
+  position: absolute; right: 9px; top: 50%; transform: translateY(-50%);
+  pointer-events: none; color: #7c3aed; font-size: 16px;
+}
 .lam-pag-btns { display: inline-flex; align-items: center; gap: 4px; }
 .lam-pag-btn {
   height: 32px; min-width: 32px; padding: 0 6px;
@@ -1580,6 +1651,13 @@ const SCOPED_CSS = `
   border-color: #7c3aed; color: #fff;
   box-shadow: 0 2px 8px rgba(124,58,237,.45);
 }
+[data-bs-theme="dark"] .lam-rows {
+  background: rgba(255,255,255,.04); border-color: rgba(167,139,250,.30); color: #c4b5fd;
+}
+[data-bs-theme="dark"] .lam-rows-sel { color: #c4b5fd; }
+[data-bs-theme="dark"] .lam-rows-caret { color: #c4b5fd; }
+[data-bs-theme="dark"] select.lam-rows-sel { color-scheme: dark; }
+[data-bs-theme="dark"] .lam-rows-sel option { background: #1a1530; color: #ede9fe; }
 
 [data-bs-theme="dark"] .lam-modal { background: #1a1530; box-shadow: 0 24px 60px rgba(0,0,0,.55), 0 4px 24px rgba(0,0,0,.30); }
 [data-bs-theme="dark"] .lam-modal-body { background: #221a3a; }

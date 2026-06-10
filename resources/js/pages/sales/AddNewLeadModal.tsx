@@ -552,10 +552,10 @@ const SCOPED_CSS = `
   font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
 }
 .anl-modal {
-  width: 100%; max-width: 920px;
+  width: 100%; max-width: 820px;
   margin: auto;
   background: #fff;
-  border-radius: 18px;
+  border-radius: 20px;
   overflow: hidden;
   display: flex; flex-direction: column;
   box-shadow: 0 30px 80px rgba(15, 23, 42, .45);
@@ -569,33 +569,43 @@ const SCOPED_CSS = `
  * share one visual identity. */
 .anl-head {
   position: relative;
-  padding: 18px 22px;
+  padding: 16px 22px;
   background: linear-gradient(135deg, #0e7490 0%, #0891b2 60%, #06b6d4 100%);
   color: #fff;
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   overflow: hidden;
 }
+/* Decorative bubble orbs (from the figma header) — two soft white circles
+   clipped by the header's overflow:hidden, sitting behind the content. */
+.anl-head::before {
+  content: '';
+  position: absolute;
+  right: -40px; top: -40px;
+  width: 160px; height: 160px; border-radius: 50%;
+  background: rgba(255,255,255,.06);
+  pointer-events: none;
+}
 .anl-head::after {
   content: '';
   position: absolute;
-  top: -40%; right: -10%;
-  width: 320px; height: 240px;
-  background: radial-gradient(ellipse, rgba(255,255,255,.18), transparent 70%);
+  right: 80px; bottom: -50px;
+  width: 120px; height: 120px; border-radius: 50%;
+  background: rgba(255,255,255,.04);
   pointer-events: none;
 }
 .anl-head-left { display: flex; align-items: center; gap: 14px; min-width: 0; position: relative; z-index: 1; }
 .anl-head-icon {
-  width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+  width: 42px; height: 42px; border-radius: 13px; flex-shrink: 0;
   background: rgba(255,255,255,.18);
   border: 1px solid rgba(255,255,255,.28);
   display: flex; align-items: center; justify-content: center;
   color: #fff;
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
 }
-.anl-head-title { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
-.anl-head-sub   { font-size: 12px; font-weight: 400; color: rgba(255,255,255,.85); margin-top: 2px; }
+.anl-head-title { font-size: 16px; font-weight: 800; letter-spacing: -0.4px; }
+.anl-head-sub   { font-size: 11px; font-weight: 400; color: rgba(255,255,255,.85); margin-top: 2px; }
 .anl-close {
-  width: 32px; height: 32px; border-radius: 9px;
+  width: 30px; height: 30px; border-radius: 9px;
   border: 1px solid rgba(255,255,255,.25);
   background: rgba(255,255,255,.12);
   color: #fff; cursor: pointer;
@@ -607,8 +617,8 @@ const SCOPED_CSS = `
 
 /* Body */
 .anl-body {
-  padding: 22px;
-  display: flex; flex-direction: column; gap: 18px;
+  padding: 16px 22px 18px;
+  display: flex; flex-direction: column; gap: 14px;
   background: linear-gradient(180deg, #f0fdff 0%, #ffffff 100%);
   overflow-y: auto;
 }
@@ -617,54 +627,54 @@ const SCOPED_CSS = `
    row that pulls saved customer records, distinct from the cyan form
    below it. */
 .anl-existing-toggle {
-  display: flex; align-items: center; gap: 14px;
-  padding: 14px 18px;
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 14px;
   border: 1.5px solid #0e7490 ;
-  border-radius: 12px;
-  background: #f0fdf4;
+  border-radius: 11px;
+  background: #ffffff;
   cursor: pointer;
   transition: border-color .15s, background .15s;
 }
-.anl-existing-toggle:hover { border-color: #0e7490 ; background: #ecfdf5; }
+.anl-existing-toggle:hover { border-color: #0e7490 ; background: #f8fdff; }
 .anl-existing-toggle input[type="checkbox"] {
-  width: 18px; height: 18px;
+  width: 15px; height: 15px;
   accent-color: #0891b2;
   cursor: pointer; flex-shrink: 0;
 }
 .anl-existing-icon {
-  width: 32px; height: 32px; border-radius: 9px;
+  width: 28px; height: 28px; border-radius: 8px;
   background: #cffafe; color: #0891b2;
   display: inline-flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
 .anl-existing-title {
   display: block;
-  font-size: 13px; font-weight: 600; color: #155e75;
+  font-size: 12px; font-weight: 700; color: #155e75;
   letter-spacing: -0.01em;
 }
 .anl-existing-sub {
   display: block;
-  font-size: 11.5px; color: #475569; font-weight: 400;
-  margin-top: 2px;
+  font-size: 10px; color: #475569; font-weight: 400;
+  margin-top: 1px;
 }
 
 /* Section header pill */
 .anl-section-label {
   display: inline-flex; align-items: center; gap: 8px;
-  font-size: 10.5px; font-weight: 600;
+  font-size: 9.5px; font-weight: 800;
   color: #0891b2;
-  text-transform: uppercase; letter-spacing: 0.08em;
-  margin-top: 4px; margin-bottom: -6px;
+  text-transform: uppercase; letter-spacing: 0.12em;
+  margin-top: 2px; margin-bottom: -4px;
 }
 .anl-section-icon {
-  width: 22px; height: 22px; border-radius: 7px;
+  width: 20px; height: 20px; border-radius: 6px;
   background: #cffafe; color: #0891b2;
   display: inline-flex; align-items: center; justify-content: center;
 }
 
 /* Grids */
-.anl-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 18px; }
-.anl-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 18px; }
+.anl-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.anl-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .anl-col-span-2 { grid-column: span 2; }
 
 @media (max-width: 900px) {
@@ -679,10 +689,10 @@ const SCOPED_CSS = `
 /* Field */
 .anl-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .anl-label {
-  font-size: 10.5px; font-weight: 500;
+  font-size: 9.5px; font-weight: 700;
   letter-spacing: 0.06em; text-transform: uppercase;
   color: #0e7490;
-  margin-bottom: 3px;
+  margin-bottom: 4px;
 }
 .anl-req { color: #f06548; font-weight: 600; }
 .anl-field-error {
@@ -696,13 +706,13 @@ const SCOPED_CSS = `
   width: 100%;
 }
 .anl-input {
-  width: 100%; height: 40px;
-  padding: 8px 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
+  width: 100%; height: 34px;
+  padding: 8px 10px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 9px;
   background: #fff;
   color: #0f172a;
-  font-family: inherit; font-size: 13px; font-weight: 500;
+  font-family: inherit; font-size: 12px; font-weight: 500;
   outline: none;
   transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
 }
@@ -716,10 +726,10 @@ const SCOPED_CSS = `
 .anl-input:disabled {
   background: #f1f5f9; color: #94a3b8; cursor: not-allowed;
 }
-.anl-input-wrap.has-icon .anl-input { padding-left: 36px; }
+.anl-input-wrap.has-icon .anl-input { padding-left: 30px; }
 .anl-input-icon {
-  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
-  font-size: 15px; color: #94a3b8; pointer-events: none;
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  font-size: 13px; color: #94a3b8; pointer-events: none;
   transition: color .18s ease;
 }
 .anl-input-wrap:focus-within .anl-input-icon { color: #0891b2; }
