@@ -370,6 +370,15 @@ class SalesLeadController extends Controller
         $this->applyScope($q, $user);
         $lead = $q->findOrFail($id);
 
+        // Resolve the WhatsApp proof screenshot to a real public URL using the
+        // SAME helper as product/QC attachments. Previously only the raw disk
+        // path was returned and the frontend built its own URL from the
+        // browser origin — when that didn't match the server's configured
+        // storage host the link 404'd and the SPA catch-all rendered the
+        // dashboard instead of the file. file_url() also returns null for
+        // malformed/legacy paths so we don't surface a broken "View" link.
+        $lead->setAttribute('whatsapp_screenshot_url', file_url($lead->whatsapp_screenshot));
+
         return response()->json(['status' => true, 'data' => $lead]);
     }
 
@@ -740,7 +749,10 @@ class SalesLeadController extends Controller
 
         $data = $request->validate([
             'whatsapp_status' => 'required|string|in:connected,pending,not_connected,opted_out',
-            'whatsapp_reason' => 'nullable|string|max:1000',
+            // Reason is optional (only the "not connected" branch sends it), but
+            // when present it must sit within the same 5–250 char bounds the
+            // modal enforces so a stray keypress or pasted essay can't slip in.
+            'whatsapp_reason' => 'nullable|string|min:5|max:250',
             'screenshot'      => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:5120',
         ]);
 
@@ -762,11 +774,12 @@ class SalesLeadController extends Controller
             'has_whatsapp'        => $data['whatsapp_status'] === 'connected',
         ]);
 
+        $fresh = $lead->fresh();
         return response()->json([
             'status' => true,
-            'data'   => $lead->fresh()->only([
+            'data'   => $fresh->only([
                 'id', 'has_whatsapp', 'whatsapp_status', 'whatsapp_reason', 'whatsapp_screenshot',
-            ]),
+            ]) + ['whatsapp_screenshot_url' => file_url($fresh->whatsapp_screenshot)],
         ]);
     }
 
@@ -1292,7 +1305,32 @@ class SalesLeadController extends Controller
         $lead = $leadQ->findOrFail($leadId);
 
         $row = LeadProduct::where('lead_id', $lead->id)->findOrFail($mappingId);
-        $row->delete();
+
+        // Lock the product list once Product Sourcing (Stage 3) is complete —
+        // i.e. the opportunity has advanced to Stage 4 (Price Shared) or beyond.
+        // From that point the mapped products feed shared prices, quotation and
+        // PI, so removing one would orphan downstream data. The user must step
+        // the opportunity back below Stage 4 before changing its products.
+        if ((int) ($lead->lead_stage_id ?? 1) >= 4) {
+            return response()->json([
+                'status'  => false,
+                'message' => "You can't unmap this product now — Product Sourcing (Stage 3) is already complete for this opportunity.",
+            ], 422);
+        }
+
+        // Remove dependent rows explicitly so the unmap succeeds even after the
+        // product has been through sourcing — by then it can own shared-price
+        // rows and be referenced by procurement product lines. The migrations
+        // declare cascade/null FKs, but we don't rely on the DB-level rule
+        // being present (it varies by environment); doing it here makes the
+        // unmap deterministic. Shared prices are owned by the mapping and go
+        // with it; procurement product lines just drop their lead-product link
+        // (the procurement itself is left intact).
+        DB::transaction(function () use ($row) {
+            LeadProductSharedPrice::where('lead_product_id', $row->id)->delete();
+            ProcurementProduct::where('lead_product_id', $row->id)->update(['lead_product_id' => null]);
+            $row->delete();
+        });
 
         return response()->json(['status' => true, 'message' => 'Product unmapped']);
     }

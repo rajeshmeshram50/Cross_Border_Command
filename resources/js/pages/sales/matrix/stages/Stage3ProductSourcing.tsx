@@ -96,6 +96,10 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
     () => requiredRows.filter(r => r.procurement_id == null),
     [requiredRows],
   );
+  /* Group procurement bundles 2+ products into one procurement, so it only
+   * makes sense when there are at least two products still to procure. With a
+   * single product the row's own "+ Create" covers it — no group affordance. */
+  const canGroup = procurableRows.length >= 2;
 
   /* Product Details progress — how many rows have a sourcing decision. */
   const detailsTotal = rows.length;
@@ -517,7 +521,9 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                       Sourcing Required <span className="s3-card-count s3-card-count-amber">{requiredRows.length}</span>
                     </div>
                     <div className="s3-card-sub s3-card-sub-italic">
-                      Check rows and click "Create Group Procurement" to bundle multiple products
+                      {canGroup
+                        ? 'Check rows and click "Create Group Procurement" to bundle multiple products'
+                        : 'Use the "+ Create" action on the row to start procurement'}
                     </div>
                   </div>
                 </div>
@@ -567,7 +573,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                       return (
                         <tr key={r.id}>
                           <td>
-                            {!hasProc && (
+                            {!hasProc && canGroup && (
                               <input
                                 type="checkbox"
                                 className="s3-cb"
@@ -665,8 +671,9 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
               </div>
             </div>
 
-            {/* Create Group Procurement button — shows when selection > 0 */}
-            {selectedIds.size > 0 && (
+            {/* Create Group Procurement button — only when 2+ products are
+                selected (a "group" of one is just a single procurement). */}
+            {canGroup && selectedIds.size >= 2 && (
               <div className="s3-cta-row">
                 <button type="button" className="s3-group-btn" onClick={onCreateGroup}>
                   + Create Group Procurement

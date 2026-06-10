@@ -1238,11 +1238,16 @@ export default function SalesQPI() {
               onClick={() => r.id && sendReminder('quotation', r.id, r.qtNo)}
             />
             )}
+            {(() => {
+              // Once a quotation is e-signed (signature status 'completed') it
+              // is a finalised document — editing must be locked.
+              const qSigned = r.id ? sigByRow[`quotation:${r.id}`]?.status === 'completed' : false;
+              return (
             <ActionBtn
-              title={readOnly ? readOnlyHint : 'Edit Quotation'}
+              title={readOnly ? readOnlyHint : qSigned ? 'Quotation signed — editing locked' : 'Edit Quotation'}
               icon={<IconEdit />}
               color="#16a34a"
-              disabled={readOnly}
+              disabled={readOnly || qSigned}
               onClick={() => {
                 if (!r.id) { toast.error('Cannot edit', 'This quotation has no server id yet.'); return; }
                 if (r.status === 'converted_to_pi') {
@@ -1253,6 +1258,8 @@ export default function SalesQPI() {
                 setCreateQtOpen(true);
               }}
             />
+              );
+            })()}
             <Tooltip label="More Options">
               <button
                 type="button"
@@ -1274,13 +1281,17 @@ export default function SalesQPI() {
                 <IconKebab />
               </button>
             </Tooltip>
-            <ActionBtn
-              title={readOnly ? readOnlyHint : 'Delete Quotation'}
-              icon={<IconTrash />}
-              color="#dc2626"
-              disabled={readOnly}
-              onClick={() => r.id && setDeleteTarget({ kind: 'quotation', id: r.id, code: r.qtNo })}
-            />
+            {/* Signed quotations are finalised documents — hide Delete entirely
+                so a signed record can't be removed. */}
+            {!(r.id && sigByRow[`quotation:${r.id}`]?.status === 'completed') && (
+              <ActionBtn
+                title={readOnly ? readOnlyHint : 'Delete Quotation'}
+                icon={<IconTrash />}
+                color="#dc2626"
+                disabled={readOnly}
+                onClick={() => r.id && setDeleteTarget({ kind: 'quotation', id: r.id, code: r.qtNo })}
+              />
+            )}
           </div>
         );
       },
@@ -1390,17 +1401,23 @@ export default function SalesQPI() {
                 onClick={() => r.id && sendReminder('pi', r.id, r.piNo)}
               />
             )}
+            {(() => {
+              // A signed PI is a finalised document — lock editing.
+              const pSigned = r.id ? sigByRow[`pi:${r.id}`]?.status === 'completed' : false;
+              return (
             <ActionBtn
-              title={readOnly ? readOnlyHint : 'Edit PI'}
+              title={readOnly ? readOnlyHint : pSigned ? 'PI signed — editing locked' : 'Edit PI'}
               icon={<IconEdit />}
               color="#16a34a"
-              disabled={readOnly}
+              disabled={readOnly || pSigned}
               onClick={() => {
                 if (!r.id) { toast.error('Cannot edit', 'This PI has no server id yet.'); return; }
                 setEditingPiId(r.id);
                 setCreatePiOpen(true);
               }}
             />
+              );
+            })()}
             <Tooltip label="More Options">
               <button
                 type="button"
@@ -3558,6 +3575,10 @@ function ProductsStep(props: {
   // (general quotation), allow the full Products master.
   const [allowedProductIds, setAllowedProductIds] = useState<Set<number> | null>(null);
   const [leadPriceMap, setLeadPriceMap] = useState<Map<number, { rate: number; qty: number }>>(new Map());
+  // Latest quoted price per product (from Stage 4 "Price Shared"). This is the
+  // most recently shared price the customer was quoted — it takes priority over
+  // the Product Directory's target_price when auto-filling the rate on pick.
+  const [latestQuotedMap, setLatestQuotedMap] = useState<Map<number, number>>(new Map());
   const [loadingLeadProducts, setLoadingLeadProducts] = useState(false);
 
   useEffect(() => {
@@ -3565,14 +3586,22 @@ function ProductsStep(props: {
     if (!form.oppId) {
       setAllowedProductIds(null);
       setLeadPriceMap(new Map());
+      setLatestQuotedMap(new Map());
       return;
     }
     let cancelled = false;
     setLoadingLeadProducts(true);
-    api.get<{ status: boolean; data: Array<any> }>(`/sales/leads/${form.oppId}/products`)
-      .then(({ data }) => {
+    Promise.all([
+      api.get<{ status: boolean; data: Array<any> }>(`/sales/leads/${form.oppId}/products`),
+      // Shared prices come back ordered by shared_at DESC, so the FIRST row per
+      // product_id is its latest quoted price. Best-effort — a lead with no
+      // Stage-4 shares just falls back to target_price.
+      api.get<{ status: boolean; data: Array<any> }>(`/sales/leads/${form.oppId}/shared-prices`)
+        .catch(() => ({ data: { data: [] } })),
+    ])
+      .then(([prodRes, sharedRes]) => {
         if (cancelled) return;
-        const rows = Array.isArray(data?.data) ? data.data : [];
+        const rows = Array.isArray(prodRes.data?.data) ? prodRes.data.data : [];
         const ids = new Set<number>();
         const priceMap = new Map<number, { rate: number; qty: number }>();
         rows.forEach((r) => {
@@ -3584,13 +3613,22 @@ function ProductsStep(props: {
             qty:  Number(r.quantity     ?? 0),
           });
         });
+        const sharedRows = Array.isArray(sharedRes.data?.data) ? sharedRes.data.data : [];
+        const quotedMap = new Map<number, number>();
+        sharedRows.forEach((s) => {
+          const pid = Number(s.product_id ?? 0);
+          const price = Number(s.quoted_price ?? 0);
+          // First row per product wins (rows are shared_at DESC = newest first).
+          if (pid && price > 0 && !quotedMap.has(pid)) quotedMap.set(pid, price);
+        });
         setAllowedProductIds(ids);
         setLeadPriceMap(priceMap);
+        setLatestQuotedMap(quotedMap);
       })
       .catch(() => {
         // On error, fall back to the full master so the user is never
         // blocked from quoting — just lose the per-opp narrowing.
-        if (!cancelled) { setAllowedProductIds(null); setLeadPriceMap(new Map()); }
+        if (!cancelled) { setAllowedProductIds(null); setLeadPriceMap(new Map()); setLatestQuotedMap(new Map()); }
       })
       .finally(() => { if (!cancelled) setLoadingLeadProducts(false); });
     return () => { cancelled = true; };
@@ -3641,9 +3679,10 @@ function ProductsStep(props: {
   }, [allowedProductIds, productOptions, productsRaw, products]);
 
   // On product selection, auto-fill hsn + (qty/rate/tax) from masters.
-  // Priority for rate: lead-product target_price > product master base_price.
-  // Priority for qty:  lead-product quantity > current draft qty.
-  // Never overwrite a value the user has already typed.
+  // Priority for rate: latest QUOTED price (Stage 4) > lead-product
+  //   target_price > product master base_price.
+  // Priority for qty:  lead-product quantity (Product Directory) > draft qty.
+  // Tax: product master taxPct. Never overwrite a value the user has typed.
   const onProductPick = (label: string) => {
     const code = (label || '').split(' – ')[0]?.trim() ?? '';
     const p = productsRaw.find(pr => pr.code === code);
@@ -3652,13 +3691,14 @@ function ProductsStep(props: {
       return;
     }
     const leadPrice = leadPriceMap.get(p.dbId);
+    const latestQuoted = latestQuotedMap.get(p.dbId);
     setDraft({
       ...draft,
       name:      `${p.code} – ${p.name}`,
       productId: p.dbId,
       hsn:       p.hsn,
       qty:    draft.qty    > 0 ? draft.qty    : (leadPrice?.qty  ?? draft.qty),
-      rate:   draft.rate   > 0 ? draft.rate   : (leadPrice?.rate ?? p.rate),
+      rate:   draft.rate   > 0 ? draft.rate   : (latestQuoted ?? leadPrice?.rate ?? p.rate),
       taxPct: draft.taxPct > 0 ? draft.taxPct : p.taxPct,
     });
   };
@@ -4310,114 +4350,93 @@ const SCOPED_CSS = `
 }
 .qpi-table-host .table tbody tr:last-child td { border-bottom: 0 !important; }
 
-/* TableContainer's built-in pagination strip — restyled to match the
- * Sales Lead Worksheet footer (cyan gradient bar, white "Showing X of Y"
- * pill on the left, circular cyan nav buttons + teal-gradient active page
- * on the right). Keeps the shared TableContainer DOM; only CSS changes. */
+/* TableContainer's built-in pagination strip — styled as a proper card
+ * footer that MIRRORS the toolbar above (same soft lavender wash + violet
+ * hairline border + violet pagination), so it reads as part of .qpi-card,
+ * not a separate coloured strip. The card's overflow:hidden + 16px radius
+ * already round the footer's bottom corners. */
 .qpi-table-host > .row {
   margin: 0 !important;
-  padding: 10px 16px;
+  padding: 12px 18px;
   --bs-gutter-x: 0;
   --bs-gutter-y: 0;
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 8px;
-  border-top: 2px solid #a5f3fc;
-  background: linear-gradient(90deg, #ecfeff 0%, #cffafe 40%, #ecfeff 100%);
-  border-radius: 0 0 13px 13px;
+  border-top: 1px solid rgba(124,58,237,0.15);
+  background: linear-gradient(135deg, rgba(124,58,237,0.04), rgba(167,139,250,0.02));
 }
 .qpi-table-host > .row > [class^="col-"] { padding: 0; width: auto; flex: 0 0 auto; }
-/* "Showing X of Y Results" → cyan info pill, like .lwp-pag-info */
+/* "Showing X of Y Results" — plain muted text, no pill. */
 .qpi-table-host .text-muted {
-  display: inline-flex; align-items: center; gap: 5px;
-  color: #0e7490 !important;
-  font-size: 11.5px; font-weight: 500;
+  display: inline-flex; align-items: center; gap: 4px;
+  color: var(--vz-secondary-color, #878a99) !important;
+  font-size: 12.5px; font-weight: 500;
   font-variant-numeric: tabular-nums;
-  background: rgba(255,255,255,.8); border: 1.5px solid #a5f3fc;
-  padding: 5px 14px; border-radius: 20px;
-  box-shadow: 0 1px 4px rgba(8,145,178,.1), 0 1px 0 rgba(255,255,255,.9) inset;
 }
 .qpi-table-host .text-muted .fw-semibold {
-  color: #0891b2 !important;
-  font-weight: 800;
+  color: var(--vz-body-color, #212529) !important;
+  font-weight: 700;
 }
-/* Pagination — circular cyan nav buttons + teal-gradient active page,
- * matching .lwp-pg-btn / .lwp-pag-range from the worksheet footer. */
-.qpi-table-host .pagination { align-items: center; margin: 0; gap: 5px; }
+/* Pagination — violet rounded buttons matching the qpi accent. */
+.qpi-table-host .pagination { align-items: center; margin: 0; gap: 4px; }
 .qpi-table-host .pagination .page-item { display: inline-flex; }
 .qpi-table-host .pagination .page-link {
-  border-radius: 50% !important;
-  min-width: 32px; width: 32px; height: 32px;
-  padding: 0 !important;
+  border-radius: 8px !important;
+  min-width: 32px; height: 32px;
+  padding: 0 8px !important;
   display: inline-flex; align-items: center; justify-content: center;
-  color: #0891b2 !important;
-  background: rgba(255,255,255,.8) !important;
-  border: 1.5px solid #a5f3fc !important;
-  font-weight: 700;
-  font-size: 12.5px;
-  line-height: 1;
-  margin: 0 !important;
-  transition: all .18s;
+  color: #6d28d9 !important;
+  background: var(--vz-card-bg, #fff) !important;
+  border: 1px solid rgba(124,58,237,0.20) !important;
+  font-weight: 600; font-size: 13px; line-height: 1; margin: 0 !important;
+  transition: all .15s;
 }
 .qpi-table-host .pagination .page-link:hover {
-  background: #fff !important;
-  border-color: #0891b2 !important;
-  color: #0e7490 !important;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(8,145,178,.25);
+  background: rgba(124,58,237,0.08) !important;
+  border-color: rgba(124,58,237,0.40) !important;
+  color: #5b21b6 !important;
 }
 .qpi-table-host .pagination .page-item.active .page-link,
 .qpi-table-host .pagination .page-link.active {
-  /* Active page = teal gradient pill, mirrors .lwp-pag-range. */
-  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%) !important;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9) !important;
   border-color: transparent !important;
   color: #fff !important;
-  box-shadow: 0 3px 12px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset;
+  box-shadow: 0 2px 8px rgba(124,58,237,0.30);
 }
 .qpi-table-host .pagination .page-item.disabled .page-link {
-  color: #67e8f9 !important;
-  background: rgba(255,255,255,.5) !important;
-  opacity: .55;
+  color: #c4b5fd !important;
+  opacity: .6;
 }
-/* Pagination prev/next arrows — circular chevron buttons. */
+/* prev / next chevron buttons */
 .qpi-table-host .pagination .page-item:first-child .page-link,
 .qpi-table-host .pagination .page-item:last-child  .page-link {
-  width: 32px; min-width: 32px; padding: 0;
+  min-width: 32px; padding: 0;
 }
 .qpi-table-host .pagination .page-item:first-child .page-link i,
 .qpi-table-host .pagination .page-item:last-child  .page-link i {
   font-size: 16px;
   line-height: 1;
 }
-/* Dark mode — translucent slate bar + cyan accents, like the worksheet's
- * dark footer ([data-bs-theme="dark"] .lwp-pagination). */
+/* Dark mode — blends with the dark card, violet accents. */
 [data-bs-theme="dark"] .qpi-table-host > .row,
 [data-layout-mode="dark"] .qpi-table-host > .row {
-  border-top-color: rgba(34, 211, 238, 0.18);
-  background: linear-gradient(90deg, rgba(15,23,42,.55) 0%, rgba(15,23,42,.35) 50%, rgba(15,23,42,.55) 100%);
+  border-top-color: rgba(167,139,250,0.20);
+  background: linear-gradient(135deg, rgba(124,58,237,0.10), rgba(167,139,250,0.04));
 }
-[data-bs-theme="dark"] .qpi-table-host .text-muted,
-[data-layout-mode="dark"] .qpi-table-host .text-muted {
-  background: rgba(15,23,42,.55) !important;
-  border-color: rgba(34,211,238,.20) !important;
-  color: #cffafe !important;
-  box-shadow: 0 1px 4px rgba(0,0,0,.25);
-}
-[data-bs-theme="dark"] .qpi-table-host .text-muted .fw-semibold,
-[data-layout-mode="dark"] .qpi-table-host .text-muted .fw-semibold { color: #67e8f9 !important; }
 [data-bs-theme="dark"] .qpi-table-host .pagination .page-link,
 [data-layout-mode="dark"] .qpi-table-host .pagination .page-link {
-  background: rgba(15,23,42,.55) !important;
-  border-color: rgba(34,211,238,.22) !important;
-  color: #67e8f9 !important;
+  background: rgba(255,255,255,0.04) !important;
+  border-color: rgba(167,139,250,0.25) !important;
+  color: #c4b5fd !important;
 }
 [data-bs-theme="dark"] .qpi-table-host .pagination .page-link:hover,
 [data-layout-mode="dark"] .qpi-table-host .pagination .page-link:hover {
-  background: rgba(34,211,238,.16) !important;
-  border-color: rgba(103,232,249,.55) !important;
+  background: rgba(124,58,237,0.20) !important;
+  border-color: rgba(167,139,250,0.45) !important;
 }
 [data-bs-theme="dark"] .qpi-table-host .pagination .page-item.active .page-link,
 [data-layout-mode="dark"] .qpi-table-host .pagination .page-item.active .page-link {
-  background: linear-gradient(135deg, #06b6d4, #0e7490) !important;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9) !important;
   border-color: transparent !important;
   color: #fff !important;
 }

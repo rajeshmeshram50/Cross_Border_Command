@@ -14,7 +14,7 @@ class ClmAgreementLibrary extends Model
     public const REG_VALUES = [self::REG_HIGHLY, self::REG_LESS];
 
     protected $fillable = [
-        'client_id', 'code', 'agreement_type', 'title', 'party',
+        'client_id', 'code', 'agreement_type', 'title', 'purpose', 'party',
         'regulatory', 'signing', 'segment', 'agr_status', 'content',
         'docx_path', 'docx_original_name',
         'header_config', 'footer_config', 'status',

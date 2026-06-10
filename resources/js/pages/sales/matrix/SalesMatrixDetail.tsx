@@ -434,6 +434,7 @@ export default function SalesMatrixDetail() {
       whatsapp_status: 'connected' | 'pending' | 'not_connected' | 'opted_out' | null;
       whatsapp_reason: string | null;
       whatsapp_screenshot: string | null;
+      whatsapp_screenshot_url: string | null;
       task_manager: StageTaskManager | null;
       acknowledgements: StageAcknowledgement[];
     }}>(`/sales/leads/${resolvedLeadId}`)
@@ -455,7 +456,9 @@ export default function SalesMatrixDetail() {
           remark:              d.remark,
           whatsappStatus:      d.whatsapp_status,
           whatsappReason:      d.whatsapp_reason,
-          whatsappScreenshot:  d.whatsapp_screenshot,
+          // Prefer the server-resolved URL (points at the real file host);
+          // fall back to the raw path for older API responses.
+          whatsappScreenshot:  d.whatsapp_screenshot_url ?? d.whatsapp_screenshot,
         });
       })
       .catch(() => toast.error('Load failed', 'Could not load this lead'))
@@ -473,6 +476,12 @@ export default function SalesMatrixDetail() {
     data?: {
       total_documents?: number;
       verified_signed?: number;
+      /* CORE tally = Company DD + Owner KYC + Trade Licences only (excludes
+       * Trade Documents, which were removed from the customer/consignee form).
+       * The CLM panel card uses these; falls back to the all-inclusive
+       * total_documents/verified_signed for older API responses. */
+      core_total_documents?: number;
+      core_verified_signed?: number;
     };
   };
 
@@ -492,8 +501,8 @@ export default function SalesMatrixDetail() {
         if (cancelled) return;
         const d = res.data?.data;
         setCustTally({
-          total:    Number(d?.total_documents  ?? 0),
-          verified: Number(d?.verified_signed ?? 0),
+          total:    Number(d?.core_total_documents ?? d?.total_documents ?? 0),
+          verified: Number(d?.core_verified_signed ?? d?.verified_signed ?? 0),
         });
       })
       .catch(() => { if (!cancelled) setCustTally({ total: 0, verified: 0, error: true }); });
@@ -510,8 +519,8 @@ export default function SalesMatrixDetail() {
         if (cancelled) return;
         const d = res.data?.data;
         setConsTally({
-          total:    Number(d?.total_documents  ?? 0),
-          verified: Number(d?.verified_signed ?? 0),
+          total:    Number(d?.core_total_documents ?? d?.total_documents ?? 0),
+          verified: Number(d?.core_verified_signed ?? d?.verified_signed ?? 0),
         });
       })
       .catch(() => { if (!cancelled) setConsTally({ total: 0, verified: 0, error: true }); });
@@ -885,8 +894,8 @@ export default function SalesMatrixDetail() {
                 </svg>
               </div>
               <div>
-                <div className="smd-clm-group-title">KYC / DD / Trade License</div>
-                <div className="smd-clm-group-sub">View customer and consignee information</div>
+                <div className="smd-clm-group-title">Standard Documents</div>
+                <div className="smd-clm-group-sub">One Time · KYC, DD & Licenses</div>
               </div>
             </div>
 
@@ -984,8 +993,8 @@ export default function SalesMatrixDetail() {
                 </svg>
               </div>
               <div>
-                <div className="smd-clm-group-title">Segment Details</div>
-                <div className="smd-clm-group-sub">Agreements & trade documents per segment</div>
+                <div className="smd-clm-group-title">Case to Case Agreements</div>
+                <div className="smd-clm-group-sub">Per Deal · Trade Docs & Agreements</div>
               </div>
             </div>
 
@@ -1280,6 +1289,7 @@ export default function SalesMatrixDetail() {
       <ProductDirectoryModal
         open={productDirectoryOpen}
         leadId={resolvedLeadId ?? null}
+        leadStage={furthestStage}
         onClose={() => setProductDirectoryOpen(false)}
         onAddProduct={() => {
           /* "+ New Master" inside the directory chains into the same

@@ -111,6 +111,19 @@ export default function CreateProcurementModal({
   const [submitting, setSubmitting]  = useState(false);
   const [errors, setErrors]          = useState<Record<string, string>>({});
 
+  /* Notes / Remarks length bounds. The field is optional, but once filled it
+   * must sit within [min, max] characters. Max is also enforced as a hard
+   * maxLength on the textarea. */
+  const NOTES_MIN = 5;
+  const NOTES_MAX = 250;
+  const notesError = (() => {
+    const t = notes.trim();
+    if (t.length === 0)         return '';
+    if (t.length < NOTES_MIN)   return `Notes must be at least ${NOTES_MIN} characters`;
+    if (notes.length > NOTES_MAX) return `Notes must be ${NOTES_MAX} characters or fewer`;
+    return '';
+  })();
+
   /* Reset on every open */
   useEffect(() => {
     if (!open) return;
@@ -180,6 +193,7 @@ export default function CreateProcurementModal({
     const next: Record<string, string> = {};
     if (!procDate) next.procDate = 'Required';
     if (!assignTo) next.assignTo = 'Required';
+    if (notesError) next.notes = notesError;
     drafts.forEach(d => {
       if (!d.lead_product_id) next[`prod_${d.key}`]  = 'Pick a product';
       if (!d.qty || Number(d.qty) <= 0)               next[`qty_${d.key}`]  = 'Required';
@@ -334,13 +348,17 @@ export default function CreateProcurementModal({
             <div className="cps-field cps-field-full">
               <label className="cps-flabel">NOTES / REMARKS</label>
               <textarea
-                className="cps-textarea"
+                className={`cps-textarea ${notesError ? 'cps-input-err' : ''}`}
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
-                placeholder="Add any notes or remarks…"
+                placeholder={`Add any notes or remarks (${NOTES_MIN}–${NOTES_MAX} characters)…`}
                 rows={3}
-                maxLength={2000}
+                maxLength={NOTES_MAX}
               />
+              <div className="cps-notes-meta">
+                <span className="cps-notes-err">{notesError}</span>
+                <span className="cps-notes-count">{notes.length}/{NOTES_MAX}</span>
+              </div>
             </div>
           </div>
 
@@ -657,6 +675,12 @@ const SCOPED_CSS = `
   transition: border-color .15s, box-shadow .15s;
 }
 .cps-textarea:focus { border-color: #d97706; box-shadow: 0 0 0 3px rgba(217,119,6,.16); }
+.cps-notes-meta {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-top: 4px; min-height: 15px;
+}
+.cps-notes-err   { font-size: 11.5px; font-weight: 600; color: #ef4444; }
+.cps-notes-count { font-size: 10.5px; font-weight: 600; color: #94a3b8; margin-left: auto; }
 
 /* Status locked card */
 .cps-status-locked {

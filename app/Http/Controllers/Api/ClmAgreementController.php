@@ -194,6 +194,7 @@ class ClmAgreementController extends Controller
         $data = $request->validate([
             'agreement_type' => 'required|string|max:255',
             'title'          => 'required|string|max:255',
+            'purpose'        => 'nullable|string|max:1000',
             'party'          => 'required|string|max:255',
             'regulatory'     => ['nullable', Rule::in(ClmAgreementLibrary::REG_VALUES)],
             'signing'        => 'nullable|boolean',
@@ -212,6 +213,7 @@ class ClmAgreementController extends Controller
                 'code'           => $code,
                 'agreement_type' => trim($data['agreement_type']),
                 'title'          => trim($data['title']),
+                'purpose'        => isset($data['purpose']) ? trim($data['purpose']) : null,
                 'party'          => trim($data['party']),
                 'regulatory'     => $data['regulatory'] ?? ClmAgreementLibrary::REG_LESS,
                 'signing'        => $data['signing']     ?? true,
@@ -246,6 +248,7 @@ class ClmAgreementController extends Controller
         $data = $request->validate([
             'agreement_type' => 'sometimes|required|string|max:255',
             'title'          => 'sometimes|required|string|max:255',
+            'purpose'        => 'nullable|string|max:1000',
             'party'          => 'sometimes|required|string|max:255',
             'regulatory'     => ['nullable', Rule::in(ClmAgreementLibrary::REG_VALUES)],
             'signing'        => 'nullable|boolean',
@@ -667,14 +670,36 @@ class ClmAgreementController extends Controller
         $phpWord->setDefaultFontSize(11);
         $section = $phpWord->addSection();
 
-        $title = trim((string) $row->title) ?: 'Agreement';
-        $section->addTitle(htmlspecialchars($title, ENT_QUOTES), 1);
-        $section->addTextBreak(1);
+        // Page-shell header + footer (logo, title, "Confidential", footer text,
+        // page number) from the saved config — so the DOCX matches the editor's
+        // preview / the PDF instead of a bare body. Reflects the latest saved
+        // header_config, including any logo/position changes.
+        $headerCfg = is_array($row->header_config) ? $row->header_config : [];
+        $footerCfg = is_array($row->footer_config) ? $row->footer_config : [];
+        $client    = \App\Models\Client::find($row->client_id);
+        $urlPath   = (isset($headerCfg['logo_url']) && preg_match('#/storage/(.+)$#', (string) $headerCfg['logo_url'], $lm)) ? $lm[1] : null;
+        $logoAbs   = null;
+        foreach (array_filter([$headerCfg['logo_path'] ?? null, $urlPath, $client?->logo]) as $path) {
+            try {
+                if (Storage::disk('public')->exists($path)) { $logoAbs = Storage::disk('public')->path($path); break; }
+            } catch (\Throwable $e) { /* try next candidate */ }
+        }
+        $this->applyDocxHeaderFooter($section, $headerCfg, $footerCfg, $logoAbs);
 
+        // Body = the draft content ONLY. The agreement title used to be printed
+        // as a top heading here, but it duplicated the title the draft body
+        // already carries — so the Word file now starts straight at the draft.
+        // (Logo / header / footer are managed in the editor and ride in the
+        // page-shell above, not in the body.)
         $html = trim((string) $row->content);
         if ($html === '') $html = '<p></p>';
 
         $html    = $this->normaliseEditorHtml($html);
+        // Repair the loose contentEditable HTML into well-formed XHTML first —
+        // without this, PhpWord's strict reader throws on unclosed tags and we
+        // fall into the strip_tags() branch, which flattens the whole agreement
+        // (headings, tables, line breaks) into one run-on paragraph.
+        $html    = $this->toWellFormedHtml($html);
         $wrapped = '<!DOCTYPE html><html><body>' . $html . '</body></html>';
 
         try {

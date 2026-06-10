@@ -105,10 +105,18 @@ type Props = {
   leadId:  number | null;
   onClose: () => void;
   onAddProduct?: () => void;   // header "+ Add Product Master" — opens AddProductModal
+  /* Furthest stage the opportunity has reached (1..6). When Product Sourcing
+   * (Stage 3) is complete — i.e. the lead is at Stage 4+ — the mapped products
+   * feed downstream price/quotation/PI data and may no longer be unmapped. */
+  leadStage?: number;
 };
 
-export default function ProductDirectoryModal({ open, leadId, onClose, onAddProduct }: Props) {
+export default function ProductDirectoryModal({ open, leadId, onClose, onAddProduct, leadStage }: Props) {
   const toast = useToast();
+
+  /* Sourcing complete → product list is locked from unmapping (and the
+   * backend enforces the same rule with a 422). */
+  const sourcingLocked = (leadStage ?? 0) >= 4;
 
   const [rows, setRows]               = useState<DirectoryRow[]>([]);
   const [loading, setLoading]         = useState(false);
@@ -203,13 +211,27 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
     return null;
   }, [rows]);
 
-  /* Whenever the directory is reloaded and a locked currency emerges,
-   * pre-seed the draft's currency field to match so the user doesn't
-   * have to change it manually before saving. */
+  /* A fresh blank draft, but pre-pinned to the lead's locked currency when
+   * one exists. Using this (instead of the raw EMPTY_DRAFT) wherever we open
+   * the "Map Product" form guarantees draft.currency already matches the
+   * locked value — otherwise the form would submit the EMPTY_DRAFT default
+   * ('USD'), which the backend rejects with the "already using INR…" lock
+   * error even though the user never changed the (disabled) picker. */
+  const freshDraft = (): DraftRow => ({
+    ...EMPTY_DRAFT,
+    currency: lockedCurrency ?? EMPTY_DRAFT.currency,
+  });
+
+  /* Pre-seed the draft's currency to the locked value so the user doesn't
+   * have to set it manually. Re-runs on `draftOpen` too: opening the
+   * "+ Map Product" form for a 2nd product resets the draft to EMPTY_DRAFT
+   * (currency 'USD'), but the locked options list only contains the locked
+   * currency — so without re-seeding here the picker showed BLANK (the 'USD'
+   * value had no matching option). */
   useEffect(() => {
     if (!lockedCurrency) return;
     setDraft(p => p.currency === lockedCurrency ? p : { ...p, currency: lockedCurrency });
-  }, [lockedCurrency]);
+  }, [lockedCurrency, draftOpen]);
 
   if (!open) return null;
 
@@ -329,7 +351,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
           <div className="pdm-head-actions">
             <button
               className="pdm-map-btn"
-              onClick={() => { setEditingId(null); setDraft(EMPTY_DRAFT); setDraftOpen(o => !o); }}
+              onClick={() => { setEditingId(null); setDraft(freshDraft()); setDraftOpen(o => !o); }}
               disabled={!leadId}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
@@ -436,7 +458,15 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                           </svg>
                         </button>
-                        <button className="pdm-icon-btn pdm-icon-btn-del" onClick={() => setPendingDelete(r)} aria-label="Unmap" title="Unmap">
+                        <button
+                          className="pdm-icon-btn pdm-icon-btn-del"
+                          onClick={() => setPendingDelete(r)}
+                          disabled={sourcingLocked}
+                          aria-label="Unmap"
+                          title={sourcingLocked
+                            ? "Can't unmap — Product Sourcing (Stage 3) is complete"
+                            : 'Unmap'}
+                        >
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                             <polyline points="3 6 5 6 21 6" />
                             <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
@@ -541,8 +571,10 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                 </div>
                 <div className="pdm-form-field">
                   <label className="pdm-form-label">TARGET PRICE <span className="pdm-form-req">*</span></label>
+                  {/* No currency symbol prefix here — the currency is chosen
+                      separately below, so a hardcoded "$" was both redundant
+                      and misleading (it showed $ even for INR/EUR/etc.). */}
                   <div className="pdm-form-input-wrap">
-                    <span className="pdm-form-input-icon" aria-hidden>$</span>
                     <input
                       type="number" min="0" step="any"
                       className="pdm-form-input"
@@ -835,7 +867,11 @@ const SCOPED_CSS = `
 .pdm-icon-btn-del {
   background: #fef2f2; color: #b91c1c; border-color: #fecaca;
 }
-.pdm-icon-btn-del:hover { background: #fee2e2; border-color: #fca5a5; }
+.pdm-icon-btn-del:hover:not(:disabled) { background: #fee2e2; border-color: #fca5a5; }
+.pdm-icon-btn:disabled {
+  opacity: .45; cursor: not-allowed;
+  background: #f8fafc; color: #94a3b8; border-color: #e2e8f0;
+}
 
 /* ── Footer ── pinned below the body, status text + Close button */
 .pdm-foot {

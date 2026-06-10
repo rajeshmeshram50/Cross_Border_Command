@@ -1,5 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+
+/* Locks <body> scroll while a modal is mounted so the page behind the overlay
+ * can't scroll-chain. Captures the prior overflow and restores it on unmount;
+ * nesting-safe (a nested modal restores to the parent's 'hidden', then the
+ * parent restores the original value). Shared by every CLM modal below. */
+function useBodyScrollLock() {
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+}
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Shared CLM input validators.
@@ -106,6 +118,7 @@ export function SimpleNameModal(props: {
   editingId?: string | number | null;
 }) {
   const { title, placeholder, code, isEdit, initial, headIconSvg, onClose, onSave, existingRows, editingId } = props;
+  useBodyScrollLock();
   const [name, setName]     = useState(initial);
   const [error, setError]   = useState('');
   const [saving, setSaving] = useState(false);
@@ -191,6 +204,7 @@ export function SimpleDescModal(props: {
   editingId?: string | number | null;
 }) {
   const { title, namePlaceholder, descPlaceholder, code, isEdit, initialName, initialDesc, headIconSvg, onClose, onSave, existingRows, editingId } = props;
+  useBodyScrollLock();
   const [name, setName] = useState(initialName);
   const [desc, setDesc] = useState(initialDesc);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -287,6 +301,7 @@ export function ShortCodeNameModal(props: {
   onSave: (form: { short_code: string; name: string }) => void;
 }) {
   const { title, code, isEdit, initialShortCode, onClose, onSave } = props;
+  useBodyScrollLock();
   const [name, setName]     = useState(props.initialName);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -361,6 +376,7 @@ export function ShortCodeNameModal(props: {
  */
 export function LockedConf(props: { title: string; sub: string; onClose: () => void }) {
   const { title, sub, onClose } = props;
+  useBodyScrollLock();
   // Inline styles can't be reached by the [data-bs-theme="dark"] CSS rules, so
   // resolve the theme-dependent colours here. The red header band + Cancel
   // button stay red in both themes; only the card surface, body text and
@@ -418,6 +434,7 @@ export function LockedConf(props: { title: string; sub: string; onClose: () => v
 
 export function DeleteConf(props: { title: string; sub: string; onCancel: () => void; onConfirm: () => void | Promise<void> }) {
   const { title, sub, onCancel, onConfirm } = props;
+  useBodyScrollLock();
   /* Local in-flight guard — prevents duplicate API calls when the
    * user double-clicks Delete (which was causing 404/409 backend
    * errors). Awaits onConfirm so the state stays true until the
