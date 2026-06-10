@@ -622,7 +622,7 @@ const LFM_CSS = `
   display: flex; align-items: center; gap: 10px;
   padding: 7px 14px; border-radius: 9px;
   background: #fff; border: 1px solid #e2e8f0;
-  font: inherit; font-size: 12px; color: #0f172a; font-weight: 500;
+  font: inherit; font-size: 12px; color: #475569; font-weight: 400;
   cursor: pointer;
   transition: border-color .15s, background .15s, box-shadow .15s;
 }
