@@ -184,6 +184,7 @@ class ModuleSeeder extends Seeder
                 ['name' => 'Payroll',            'slug' => 'hr.payroll',            'icon' => 'IndianRupee',  'description' => 'Salary processing, payslips, statutory'],
                 ['name' => 'Attendance',         'slug' => 'hr.attendance',         'icon' => 'CalendarCheck','description' => 'Daily attendance & shift tracking'],
                 ['name' => 'Leave',              'slug' => 'hr.leave',              'icon' => 'CalendarOff',  'description' => 'Leave requests, balance & policy'],
+                ['name' => 'Holiday',            'slug' => 'hr.holiday',            'icon' => 'CalendarDays', 'description' => 'Company holiday calendar'],
                 ['name' => 'Expense Management', 'slug' => 'hr.expense',            'icon' => 'Receipt',      'description' => 'Reimbursable expenses & approvals'],
             ],
             'hr.documents' => [

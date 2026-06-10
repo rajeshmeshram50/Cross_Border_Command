@@ -725,6 +725,14 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get('/announcements/next-code', [AnnouncementController::class, 'nextCode']);
     Route::apiResource('announcements', AnnouncementController::class);
 
+    // HR Holiday calendar — per-tenant company holidays grouped into holiday
+    // groups ("types"). Static routes declared BEFORE apiResource so /import
+    // and /my aren't captured as a {holiday} id.
+    Route::apiResource('holiday-groups', \App\Http\Controllers\Api\HolidayGroupController::class);
+    Route::get ('/holidays/my',     [\App\Http\Controllers\Api\HolidayController::class, 'my']);
+    Route::post('/holidays/import', [\App\Http\Controllers\Api\HolidayController::class, 'import']);
+    Route::apiResource('holidays', \App\Http\Controllers\Api\HolidayController::class);
+
     // HR Document Templates — role-based document templates with lifecycle
     // triggers (sourced from master_trigger_points), signing workflows, and
     // optional MS Word DOCX round-trip. Stats / next-code declared BEFORE
