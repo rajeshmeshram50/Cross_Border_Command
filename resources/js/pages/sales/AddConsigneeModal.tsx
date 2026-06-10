@@ -2131,10 +2131,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 const alreadyMirrored =
                   mirrorCount > 0 && !(consignee?.same_as_customer === true);
                 if (v && alreadyMirrored) {
-                  toast.error(
-                    'Same-as-Customer not allowed',
-                    `${customer?.name ?? 'This customer'} already has a same-as-customer consignee. Only one mirror is allowed per customer — open the existing one to edit it, or save this consignee with its own details.`
-                  );
+                  toast.error('Only one Same-as-Customer allowed', 'This customer already has one.');
                   return;
                 }
 
@@ -2194,13 +2191,37 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 (existingMirrorCount ?? customer?.sameAsCustomerConsigneeCount ?? 0) > 0 &&
                 !(consignee?.same_as_customer === true)
               }
-              /* Never lock the toggle. Even a consignee that was saved as
-                 same-as-customer can be UNTICKED later (e.g. it was ticked
-                 by mistake) — unticking just collapses the linked-customer
-                 detail panel and unlocks the Stage 1 fields for editing.
-                 Re-ticking still respects the "one mirror per customer"
-                 constraint enforced in setSameAsCustomer above. */
-              mirrorLocked={false}
+              /* Lock the toggle once the Consignee Identification Details tab
+                 is COMPLETE (all required fields filled) on a self-entered
+                 consignee — so a later click on "Same as Customer" can't wipe
+                 the details the user already typed. A same-as-customer row
+                 (toggle already on) is NOT locked, so a mistaken mirror can
+                 still be unticked + edited; the "one mirror per customer"
+                 constraint above still guards re-ticking. */
+              mirrorLocked={
+                // Editing a consignee already SAVED as Same-as-Customer → lock
+                // it ON so it can't be unticked here.
+                (sameAsCustomer && consignee?.same_as_customer === true) ||
+                // OR self-entered consignee with completed basic details → lock
+                // it OFF so a later tick can't overwrite the typed details.
+                (!sameAsCustomer &&
+                  !!form1.companyName?.trim() &&
+                  !!form1.legalName?.trim() &&
+                  (form1.segment?.length ?? 0) > 0 &&
+                  !!form1.risk)
+              }
+              /* Clicking the DISABLED toggle still surfaces a short toast so
+                 the user knows why it's locked (a native disabled input is
+                 silent). */
+              onBlockedClick={() => {
+                const alreadyMirrored =
+                  (existingMirrorCount ?? customer?.sameAsCustomerConsigneeCount ?? 0) > 0 &&
+                  !(consignee?.same_as_customer === true);
+                if (!customer) toast.info('Pick a customer first', '');
+                else if (sameAsCustomer) toast.info('Linked as Same as Customer', "This consignee mirrors the customer — you can't untick it here.");
+                else if (alreadyMirrored) toast.error('Only one Same-as-Customer allowed', 'This customer already has one.');
+                else toast.info('Basic details already completed', "You can't mark this consignee as Same as Customer now.");
+              }}
               locations={locations}
               onAddLocation={() => setLocModal({ open: true, editing: null })}
               onEditLocation={(id) => setLocModal({ open: true, editing: id })}
@@ -2663,7 +2684,7 @@ const optsWith = (
 
 const Stage1 = ({
   tab, setTab, form, setForm, masters, errors, clearErr, validateField,
-  sameAsCustomer, setSameAsCustomer, customer, mirrorAlreadyTakenByOther, mirrorLocked,
+  sameAsCustomer, setSameAsCustomer, customer, mirrorAlreadyTakenByOther, mirrorLocked, onBlockedClick,
   locations, onAddLocation, onEditLocation, onDeleteLocation,
 }: {
   tab: IdentityTab;
@@ -2688,6 +2709,9 @@ const Stage1 = ({
    *  Locks the toggle so it can't be unticked from the edit screen — a
    *  saved mirror stays a mirror; change the source on the Customer. */
   mirrorLocked: boolean;
+  /** Fired when the user clicks the toggle while it's disabled, so the parent
+   *  can show a short toast explaining why it can't be ticked. */
+  onBlockedClick?: () => void;
   locations: LocationRow[];
   onAddLocation: () => void;
   onEditLocation: (id: string) => void;
@@ -2739,18 +2763,21 @@ const Stage1 = ({
                           until Save & Next.
               - is-disabled: greyed out, no customer resolved yet */}
         <label
-          className={`acm-same-banner acm-same-banner-inline ${sameAsCustomer ? 'is-on' : ''} ${(!customer || mirrorLocked) ? 'is-disabled' : ''} ${mirrorAlreadyTakenByOther && customer ? 'is-blocked' : ''}`}
-          title={mirrorLocked ? 'This consignee was created as Same as Customer — it stays linked. Edit the source on the Customer.' : undefined}
-          style={mirrorLocked ? { cursor: 'not-allowed' } : undefined}
+          className={`acm-same-banner acm-same-banner-inline ${sameAsCustomer ? 'is-on' : ''} ${(!customer || mirrorLocked || mirrorAlreadyTakenByOther) ? 'is-disabled' : ''} ${mirrorAlreadyTakenByOther && customer ? 'is-blocked' : ''}`}
+          title={mirrorLocked ? (sameAsCustomer ? "This consignee mirrors the customer — you can't untick Same as Customer here." : "You already completed this consignee's basic details, so you can't mark it as Same as Customer.") : undefined}
+          // Native disabled inputs are silent on click — fire a toast via the
+          // label so the user gets feedback on why the toggle is locked.
+          onClick={() => { if (!customer || mirrorLocked || mirrorAlreadyTakenByOther) onBlockedClick?.(); }}
+          style={(!customer || mirrorLocked || mirrorAlreadyTakenByOther) ? { cursor: 'not-allowed' } : undefined}
         >
           <input
             type="checkbox"
             checked={sameAsCustomer}
-            /* Disabled until a customer is resolved, AND locked on when
-               editing a consignee already saved as Same-as-Customer — a
-               saved mirror can't be unticked from the edit screen. */
-            disabled={!customer || mirrorLocked}
-            onChange={e => { if (mirrorLocked) return; setSameAsCustomer(e.target.checked); }}
+            /* Disabled when: no customer yet, identification details already
+               filled (mirrorLocked), OR this customer already has its one
+               allowed mirror — disabled UPFRONT instead of tick-then-toast. */
+            disabled={!customer || mirrorLocked || mirrorAlreadyTakenByOther}
+            onChange={e => { if (mirrorLocked || mirrorAlreadyTakenByOther) return; setSameAsCustomer(e.target.checked); }}
           />
           <span className="acm-same-banner-box" aria-hidden>
             {sameAsCustomer && (
@@ -2767,10 +2794,14 @@ const Stage1 = ({
             </span>
             <span className="acm-same-banner-sub">
               {!customer
-                ? <>Pick a customer first to enable this shortcut.</>
-                : mirrorAlreadyTakenByOther
-                  ? <><strong>{customer.name}</strong> already has a same-as-customer consignee. Only one mirror is allowed per customer — open the existing one to edit it, or save this consignee with its own details.</>
-                  : <>Use <strong>{customer.name}</strong>&rsquo;s company identity, address, and primary contact for this consignee. Untick anytime to edit individual fields.</>}
+                ? <>Pick a customer first.</>
+                : (sameAsCustomer && mirrorLocked)
+                  ? <>Linked as Same as Customer — can&rsquo;t untick here.</>
+                  : mirrorAlreadyTakenByOther
+                    ? <><strong>{customer.name}</strong> already has one — only one allowed per customer.</>
+                    : mirrorLocked
+                      ? <>Basic details already completed — can&rsquo;t mark as Same as Customer.</>
+                      : <>Copy <strong>{customer.name}</strong>&rsquo;s identity, address &amp; contact. Untick to edit.</>}
             </span>
           </span>
         </label>
