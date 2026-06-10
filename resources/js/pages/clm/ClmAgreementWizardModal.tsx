@@ -349,7 +349,13 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   // node only exists in the tree on step 2 so this is the right place
   // to seed its innerHTML.
   useEffect(() => {
-    if (step === 2 && editorRef.current) {
+    // Only re-seed the DOM when it actually differs from `content` — i.e. on
+    // step entry, fullPage toggle (portal remount) or an async load. During
+    // typing, onInput→syncContent already set `content` FROM the DOM, so the
+    // two are equal and we must NOT reassign innerHTML: doing so collapses the
+    // caret to position 0, which made every keystroke land at the start
+    // (text appearing right-to-left) and backspace jump to the first line.
+    if (step === 2 && editorRef.current && editorRef.current.innerHTML !== (content ?? '')) {
       editorRef.current.innerHTML = content ?? '';
     }
     // `fullPage` is a dep because toggling it portals the editor to/from
@@ -832,7 +838,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
         {placeholderOpen && (
           <PlaceholderPicker
             onClose={() => setPlaceholderOpen(false)}
-            onPick={(token) => { insertPlaceholderToken(token); setPlaceholderOpen(false); }}
+            onPick={(token) => { if (/^\s*</.test(token)) insertHtmlAtCaret(token); else insertPlaceholderToken(token); setPlaceholderOpen(false); }}
           />
         )}
 
@@ -1150,7 +1156,37 @@ const PLACEHOLDER_GROUPS: PhGroup[] = [
     { label: 'Category',       token: '{{supplier.category}}' },
     { label: 'Risk Level',     token: '{{supplier.risk_level}}' },
   ] },
+  { id: 'product', label: 'Product', iconEmoji: '🛒', iconColor: '#8b5cf6', fields: [
+    { label: 'Product Code',    token: '{{product.code}}' },
+    { label: 'Product Name',    token: '{{product.name}}' },
+    { label: 'Product Segment', token: '{{product.segment}}' },
+    { label: 'Quantity',        token: '{{product.quantity}}' },
+  ] },
 ];
+
+/* A ready-made product table, identical to the trade-doc picker's. Its single
+ * tbody row carries the {{product.*}} tokens; the agreement render path
+ * (renderAgreementPdf → expandProductTable) repeats that row once per product
+ * on the opportunity at generation time. */
+const PH_TD_CELL = 'border:1px solid #cbd5e1;padding:6px 10px;';
+const PH_TH_CELL = `${PH_TD_CELL}background:#f1f5f9;font-weight:700;text-align:left;`;
+const PRODUCT_TABLE_HTML =
+  `<table style="width:100%;border-collapse:collapse;margin:10px 0;font-size:13px;">` +
+    `<thead><tr>` +
+      `<th style="${PH_TH_CELL}">#</th>` +
+      `<th style="${PH_TH_CELL}">Product Code</th>` +
+      `<th style="${PH_TH_CELL}">Product Name</th>` +
+      `<th style="${PH_TH_CELL}">Segment</th>` +
+      `<th style="${PH_TH_CELL}text-align:right;">Quantity</th>` +
+    `</tr></thead>` +
+    `<tbody><tr>` +
+      `<td style="${PH_TD_CELL}">{{product.sr}}</td>` +
+      `<td style="${PH_TD_CELL}">{{product.code}}</td>` +
+      `<td style="${PH_TD_CELL}">{{product.name}}</td>` +
+      `<td style="${PH_TD_CELL}">{{product.segment}}</td>` +
+      `<td style="${PH_TD_CELL}text-align:right;">{{product.quantity}}</td>` +
+    `</tr></tbody>` +
+  `</table>`;
 
 function PlaceholderPicker({ onClose, onPick }: { onClose: () => void; onPick: (token: string) => void }) {
   const toast = useToast();
@@ -1277,6 +1313,25 @@ function PlaceholderPicker({ onClose, onPick }: { onClose: () => void; onPick: (
             </div>
 
             <div className="agw-ph-grid">
+              {activeId === 'product' && (
+                <div
+                  className="agw-ph-card"
+                  style={{ ['--ph-card-color' as any]: active.iconColor, gridColumn: '1 / -1', borderColor: hexA(active.iconColor, .4), background: hexA(active.iconColor, .05) }}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onPick(PRODUCT_TABLE_HTML)}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(PRODUCT_TABLE_HTML); } }}
+                  title="Insert a product table"
+                >
+                  <span className="agw-ph-card-top">
+                    <span className="agw-ph-card-label" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, color: active.iconColor }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+                      Product Table
+                    </span>
+                  </span>
+                  <span className="agw-ph-card-token" style={{ whiteSpace: 'normal' }}>Inserts a table with Code · Name · Segment · Quantity — one row per product at generation time.</span>
+                </div>
+              )}
               {active.fields.map(f => {
                 const isChecked = selected.has(f.token);
                 return (
