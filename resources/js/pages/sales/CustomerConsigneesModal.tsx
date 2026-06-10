@@ -532,17 +532,17 @@ const SCOPED_CSS = `
 .ccm-pill-high { background: #fef2f2; color: #b91c1c; border-color: #fca5a5; }
 
 .ccm-row-actions { display: inline-flex; gap: 6px; }
-/* Edit action — blue tinted (matches the Customer table's colored icons). */
+/* Edit action — green/teal to match the consignee table theme. */
 .ccm-row-btn {
   width: 28px; height: 28px; border-radius: 8px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #eff6ff, #dbeafe); color: #1d4ed8;
-  border: 1.5px solid #93c5fd;
+  background: #ecfdf5; color: #0d9488;
+  border: 1.5px solid #5eead4;
   cursor: pointer; transition: all .18s cubic-bezier(.22,1,.36,1);
 }
 .ccm-row-btn:hover {
-  background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: #fff; border-color: transparent;
-  box-shadow: 0 4px 14px rgba(29,78,216,.4); transform: translateY(-2px) scale(1.08);
+  background: linear-gradient(135deg, #0d9488, #065f46); color: #fff; border-color: transparent;
+  box-shadow: 0 4px 14px rgba(13,148,136,.4); transform: translateY(-2px) scale(1.08);
 }
 .ccm-row-btn-del:hover { background: #fef2f2; border-color: #ef4444; color: #b91c1c; }
 

@@ -36,6 +36,8 @@ class ClmTncCategorySeeder extends Seeder
         'Domestic Quotation'            => 'DQ',
         'International Proforma Invoice' => 'IPI',
         'Domestic Proforma Invoice'     => 'DPI',
+        'International Purchase Order'   => 'IPO',
+        'Domestic Purchase Order'       => 'DPO',
     ];
 
     public function run(): void

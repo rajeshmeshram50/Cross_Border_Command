@@ -284,7 +284,11 @@ export default function SalesCustomers() {
           className={`smc-act ${variant} d-inline-flex align-items-center justify-content-center`}
           onClick={onClick}
         >
-          <i className={`${icon} fs-14`} />
+          {/* 'edit-svg' → the shared edit-box SVG (same icon used on the
+              Consignee list + Consignees popup); anything else → a remix icon. */}
+          {icon === 'edit-svg'
+            ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+            : <i className={`${icon} fs-14`} />}
         </button>
       </Tooltip>
     );
@@ -364,7 +368,7 @@ export default function SalesCustomers() {
         const c = info.row.original as Customer;
         return (
           <div className="d-inline-flex align-items-center gap-2 justify-content-center">
-            {canEdit && <ActionBtn title="Edit Customer"           icon="ri-pencil-line"     color="primary" onClick={() => {
+            {canEdit && <ActionBtn title="Edit Customer"           icon="edit-svg"           color="primary" onClick={() => {
               /* If the customer has any consignees mapped to it,
                * prompt before opening edit — changes here can
                * affect every downstream consignee. Customers with no
@@ -904,7 +908,7 @@ ${CSTRIP_CSS}
   width: 100%;
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px;
-  padding: 14px 18px;
+  padding: 7px 18px;
   background: transparent;
   border: 0;
   cursor: pointer;
@@ -1314,18 +1318,17 @@ ${CSTRIP_CSS}
    Figma look: soft lavender bar, "Showing…" as a white purple-bordered pill
    on the left, circular nav + light-violet active page on the right. */
 .smc-table-wrap > .row {
-  /* Aligns with the table-responsive above (same inset). */
-  margin: 10px 0 0 !important;
+  margin: 8px 0 0 !important;
   --bs-gutter-x: 0; --bs-gutter-y: 0;
-  padding: 10px 16px;
+  padding: 8px 4px 0;
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 8px;
   /* Sits BELOW the scrolling .table-responsive as a fixed flex row — it
-     never scrolls because the scroll lives inside .table-responsive, not here. */
+     never scrolls (scroll lives inside .table-responsive). FLAT + transparent:
+     no border / no rounded box, so it doesn't read as a second panel nested
+     "inside" the table. The pills below provide all the visual structure. */
   flex-shrink: 0;
-  background: #ffffff;
-  border: 1px solid var(--vz-border-color);
-  border-radius: 10px;
+  background: transparent;
 }
 .smc-table-wrap > .row > [class^="col-"] { padding: 0; width: auto; flex: 0 0 auto; }
 .smc-table-wrap > .row .text-muted {
@@ -1366,8 +1369,9 @@ ${CSTRIP_CSS}
   background: #ffffff; border-color: #e0d9f7;
 }
 [data-bs-theme="dark"] .smc-table-wrap > .row {
-  background: var(--vz-card-bg, #1f2937);
-  border: 1px solid rgba(167,139,250,0.20);
+  /* Flat + transparent (no box) — pills sit cleanly below the table. */
+  background: transparent !important;
+  border: none !important;
 }
 [data-bs-theme="dark"] .smc-table-wrap > .row .text-muted {
   background: rgba(255,255,255,0.05); border-color: rgba(167,139,250,0.30); color: #c4b5fd !important;

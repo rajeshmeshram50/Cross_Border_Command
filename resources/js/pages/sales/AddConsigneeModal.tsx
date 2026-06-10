@@ -269,7 +269,9 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * not the full address/contact details. Detail block expands when
    * the user ticks "Same as Customer" (handled in the setter wired
    * to Stage1's setSameAsCustomer) OR when they click the chevron. */
-  const [linkedHidden, setLinkedHidden] = useState(true);
+  // Expanded by default so the parent-customer recap grid is visible on open
+  // (matches the Figma). User can still collapse it via the bar / chevron.
+  const [linkedHidden, setLinkedHidden] = useState(false);
   /* Live customer list pulled from /api/customers when the modal
    * opens. This is the same endpoint SalesCustomers populates via
    * its Add Customer flow, so a freshly-created customer shows up
@@ -1969,70 +1971,24 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           </div>
           <button className="acm-close" onClick={handleClose} aria-label="Close"><IconClose /></button>
         </div>
-
-        {/* Pinned top — stepper + Linked Customer summary stay
-            visible while the rest of the body scrolls below them.
-            Both elements appear in all three stages so keeping them
-            anchored saves the user from scrolling back up to check
-            which stage they're on or which customer they're linked
-            to. Sits OUTSIDE .acm-wiz-body so the body's overflow
-            scroll only affects the form / table content below. */}
-        <div className="acm-wiz-pinned-top">
-          {/* 3-step indicator — moved above the Linked Customer summary
-              so the wizard progression is the first thing the user
-              sees. Linked Customer context is still right below. */}
-          <div className="acm-steps">
-            {/* Completion 'done' tick removed (user request) — a green ✓ used
-                to appear even with nothing uploaded / trade docs unsent
-                (Evidence Vault is design-only), which read as "done" and
-                confused users. Visited steps now stay neutral ('incomplete')
-                showing just their number; no ✓ on any step. */}
-            <StepNode
-              n={1}
-              title="Consignee Legal Identity"
-              sub="Company, address & contact"
-              status={stage === 1 ? 'active' : 1 <= maxStage ? 'incomplete' : 'idle'}
-              icon={<IconHome />}
-              clickable={stage !== 1 && 1 <= maxStage}
-              onClick={() => gotoStage(1)}
-            />
-            <div className="acm-steps-arrow"><IconChevronRight /></div>
-            <StepNode
-              n={2}
-              title="KYC / Due Diligence"
-              sub="Docs, identity & compliance"
-              status={stage === 2 ? 'active' : 2 <= maxStage ? 'incomplete' : 'idle'}
-              icon={<IconDoc />}
-              clickable={stage !== 2 && 2 <= maxStage}
-              onClick={() => gotoStage(2)}
-            />
-            {/* Stage 3 (Evidence Vault) removed — KYC / Trade-document
-                uploads now live in the standalone ConsigneeEvidenceVaultModal. */}
-          </div>
-
-          {/* Linked Customer summary — uses the same slim collapsible
-              panel + compact 4-col "Label : Value" grid as the "What
-              you did in previous stages" recap, so every read-only
-              data block in the modal looks identical. */}
-          {customer && (
-            <div className={`acg-linked ${linkedHidden ? '' : 'is-open'}`}>
+                  {customer && (
+            <div className={`${linkedHidden ? '' : 'is-open'}`}>
               <div className="acg-linked-bar" onClick={() => setLinkedHidden(h => !h)} role="button">
                 <div className="acg-linked-bar-left">
                   <div className="acg-linked-icon"><IconUser /></div>
-                  <div>
-                    <div className="acg-linked-title">
-                      <span className="acg-linked-tag">LINKED CUSTOMER</span>
-                      <span className="acg-linked-id">{customer.id}</span>
-                      <span className="acg-linked-name">{customer.name}</span>
-                    </div>
-                    <div className="acg-linked-sub">Parent customer this consignee is linked to</div>
+                  <div className="acg-linked-title">
+                    <span className="acg-linked-tag">LINKED CUSTOMER</span>
+                    <span className="acg-linked-id">{customer.id}</span>
+                    <span className="acg-linked-name">{customer.name}</span>
                   </div>
                 </div>
                 <div className="acg-linked-actions">
                   {sameAsCustomer && <span className="acg-linked-badge">Same as Customer</span>}
-                  <div className={`acg-linked-chev ${linkedHidden ? '' : 'is-open'}`}>
-                    <IconChevronDown />
-                  </div>
+                  {/* Figma: a "Show / Hide" pill (text + chevron), not a bare arrow. */}
+                  <span className="acg-linked-toggle">
+                    {linkedHidden ? 'Show' : 'Hide'}
+                    <span className={`acg-linked-chev ${linkedHidden ? '' : 'is-open'}`}><IconChevronDown /></span>
+                  </span>
                 </div>
               </div>
               {!linkedHidden && (
@@ -2094,6 +2050,58 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               )}
             </div>
           )}
+
+        {/* Pinned top — stepper + Linked Customer summary stay
+            visible while the rest of the body scrolls below them.
+            Both elements appear in all three stages so keeping them
+            anchored saves the user from scrolling back up to check
+            which stage they're on or which customer they're linked
+            to. Sits OUTSIDE .acm-wiz-body so the body's overflow
+            scroll only affects the form / table content below. */}
+        <div className="acm-wiz-pinned-top">
+          {/* Linked Customer summary — uses the same slim collapsible
+              panel + compact 4-col "Label : Value" grid as the "What
+              you did in previous stages" recap, so every read-only
+              data block in the modal looks identical. */}
+
+
+          {/* 3-step indicator — sits BELOW the Linked Customer summary so the
+              order matches the Figma: header → customer summary → stepper →
+              tabs. */}
+          <div className="acm-steps">
+            {/* Completion 'done' tick removed (user request) — a green ✓ used
+                to appear even with nothing uploaded / trade docs unsent
+                (Evidence Vault is design-only), which read as "done" and
+                confused users. Visited steps now stay neutral ('incomplete')
+                showing just their number; no ✓ on any step. */}
+            <StepNode
+              n={1}
+              title="Consignee Legal Identity"
+              sub="Company, address & contact"
+              status={stage === 1 ? 'active' : 1 <= maxStage ? 'done' : 'idle'}
+              icon={<IconHome />}
+              clickable={stage !== 1 && 1 <= maxStage}
+              onClick={() => gotoStage(1)}
+            />
+            <div className="acm-steps-arrow"><IconChevronRight /></div>
+            <StepNode
+              n={2}
+              title="KYC / Due Diligence"
+              sub="Docs, identity & compliance"
+              /* 'done' only when we've actually moved PAST this step (stage > 2),
+                 NOT merely because it was completed in a prior session. On the
+                 edit form opened at stage 1, KYC therefore shows as a reachable
+                 (clickable) numbered step — you can jump straight to it, but it
+                 isn't marked complete, which avoided the confusion of both
+                 stages looking done on open. */
+              status={stage === 2 ? 'active' : stage > 2 ? 'done' : 2 <= maxStage ? 'incomplete' : 'idle'}
+              icon={<IconDoc />}
+              clickable={stage !== 2 && 2 <= maxStage}
+              onClick={() => gotoStage(2)}
+            />
+            {/* Stage 3 (Evidence Vault) removed — KYC / Trade-document
+                uploads now live in the standalone ConsigneeEvidenceVaultModal. */}
+          </div>
         </div>
 
         {/* Scrolling body — only the stage-specific form / tables /
@@ -2512,6 +2520,7 @@ const StepNode = ({ n, title, sub, status, icon, clickable = false, onClick }: {
     tabIndex={clickable ? 0 : undefined}
   >
     <div className="acm-step-badge">
+      {/* Figma: completed step shows a white ✓ on the green badge. */}
       {status === 'done' ? <IconCheck /> : status === 'active' ? icon : <span>{n}</span>}
     </div>
     <div className="acm-step-text">
@@ -2522,16 +2531,24 @@ const StepNode = ({ n, title, sub, status, icon, clickable = false, onClick }: {
   </div>
 );
 
-const SectionHeader = ({ icon, title, sub, accent }: { icon: React.ReactNode; title: string; sub: string; accent?: string }) => (
+const SectionHeader = ({ icon, title, sub, accent }: { icon: React.ReactNode; title: string; sub: string; accent?: string }) => {
+  /* Glossy gradient badge (matches the stepper / linked-customer icons)
+     instead of a flat fill. Blue accent → blue gradient; everything else
+     → the brand green gradient. */
+  const iconBg = accent === '#3b82f6'
+    ? 'linear-gradient(135deg, #3b82f6, #1d4ed8)'
+    : 'linear-gradient(135deg, #0d9488, #065f46)';
+  return (
   <div className="acm-sec-header" style={accent ? { borderTopColor: accent } : undefined}>
-    <div className="acm-sec-icon" style={accent ? { background: accent } : undefined}>{icon}</div>
+    <div className="acm-sec-icon" style={{ background: iconBg }}>{icon}</div>
     <div>
       <div className="acm-sec-title">{title}</div>
       <span className="acm-sec-sep">|</span>
       <span className="acm-sec-sub">{sub}</span>
     </div>
   </div>
-);
+  );
+};
 
 /* Truncated table cell. Empty → muted dash. Short → render as-is.
  * Long → trim with an ellipsis and wrap in the project's portal-based
@@ -2749,7 +2766,7 @@ const Stage1 = ({
             <IconTruck size={14} /> Consignee Identification Details
           </button>
           <button className={`acm-id-tab ${tab === 'address-contact' ? 'on' : ''}`} onClick={() => setTab('address-contact')}>
-            <IconPin /> Address &amp; Contact Details
+            <IconUser /> Contact Person Details
           </button>
         </div>
         {/* "Same as Customer" toggle. Three visual states:
@@ -2817,14 +2834,14 @@ const Stage1 = ({
             <Field label="Company Name" required error={errors.companyName} fieldKey="companyName">
               <input
                 className={`acm-input ${errors.companyName ? 'acm-input-error' : ''}`}
-                placeholder="Enter company name (max 30)"
+                placeholder="Enter company name"
                 value={form.companyName}
                 maxLength={30}
                 onChange={e => set('companyName', e.target.value.slice(0, 30))}
                 disabled={lock}
               />
             </Field>
-            <Field label="Consignee Legal Name" required error={errors.legalName} fieldKey="legalName">
+            <Field label="Company Legal Name" required error={errors.legalName} fieldKey="legalName">
               <input className={`acm-input ${errors.legalName ? 'acm-input-error' : ''}`} placeholder="Enter legal name" value={form.legalName} onChange={e => set('legalName', e.target.value)} disabled={lock} />
             </Field>
             </div>
@@ -2870,7 +2887,7 @@ const Stage1 = ({
             </div>
           </div>
 
-          <SectionHeader icon={<IconPin />} title="Primary Address &amp; Contact Person" sub="Registered office and primary contact at this location" />
+          <SectionHeader icon={<IconPin />} title="Company Address &amp; Primary Contact" sub="Registered office location and primary contact details" accent="#3b82f6" />
           <div className="acm-sec-pad">
             <div className="acm-grid-2">
               <Field label="Address Type" required error={errors.addressType} fieldKey="addressType">
@@ -2881,14 +2898,14 @@ const Stage1 = ({
                    Details tab. */}
                 <MasterSelect
                   value="Registered Office"
-                  options={[{ value: 'Registered Office', label: 'Registered Office' }]}
+                  options={[{ value: 'Registered Office', label: 'Register Office Address' }]}
                   placeholder="Select Address Type"
                   disabled
                   onChange={() => { /* locked */ }}
                 />
               </Field>
               <Field label="Address" required error={errors.address} fieldKey="address">
-                <input className={`acm-input ${errors.address ? 'acm-input-error' : ''}`} placeholder="Street, building, area" value={form.address} onChange={e => set('address', e.target.value)} disabled={lock} maxLength={75} />
+                <input className={`acm-input ${errors.address ? 'acm-input-error' : ''}`} placeholder="Enter full address" value={form.address} onChange={e => set('address', e.target.value)} disabled={lock} maxLength={75} />
               </Field>
             </div>
             <div className="acm-grid-4 acm-mt-12">
@@ -2913,12 +2930,12 @@ const Stage1 = ({
                 />
               </Field>
               <Field label="City" required error={errors.city} fieldKey="city">
-                <input className={`acm-input ${errors.city ? 'acm-input-error' : ''}`} placeholder="City name" value={form.city} onChange={e => set('city', e.target.value)} disabled={lock} />
+                <input className={`acm-input ${errors.city ? 'acm-input-error' : ''}`} placeholder="Enter city" value={form.city} onChange={e => set('city', e.target.value)} disabled={lock} />
               </Field>
               <Field label="Pin / Postal Code" required error={errors.pin} fieldKey="pin">
                 <input
                   className={`acm-input ${errors.pin ? 'acm-input-error' : ''}`}
-                  placeholder="6-digit PIN"
+                  placeholder="Enter PIN code"
                   inputMode="numeric"
                   maxLength={6}
                   value={form.pin}
@@ -2927,9 +2944,16 @@ const Stage1 = ({
                 />
               </Field>
             </div>
-            <div className="acm-grid-4 acm-mt-12">
+          </div>
+
+          {/* Primary Contact Details — split into its own section (Figma):
+              the address section above carries only the registered-office
+              fields; the contact person lives here under a green header. */}
+          <SectionHeader icon={<IconUser />} title="Primary Contact Details" sub="Key contact person for this consignee" accent="#10b981" />
+          <div className="acm-sec-pad">
+            <div className="acm-grid-4">
               <Field label="Contact Person Name" required error={errors.contactName} fieldKey="contactName">
-                <input className={`acm-input ${errors.contactName ? 'acm-input-error' : ''}`} placeholder="Full name" value={form.contactName} onChange={e => set('contactName', e.target.value)} disabled={lock} />
+                <input className={`acm-input ${errors.contactName ? 'acm-input-error' : ''}`} placeholder="Enter contact name" value={form.contactName} onChange={e => set('contactName', e.target.value)} disabled={lock} />
               </Field>
               <Field label="Designation" required error={errors.designation} fieldKey="designation">
                 {/* Free-text input — users were asked to type the
@@ -2938,7 +2962,7 @@ const Stage1 = ({
                     runs (harmless) but no longer drives the UI here. */}
                 <input
                   className={`acm-input ${errors.designation ? 'acm-input-error' : ''}`}
-                  placeholder="Type designation (e.g. Compliance Officer)"
+                  placeholder="Enter designation"
                   value={form.designation}
                   onChange={e => set('designation', e.target.value)}
                   disabled={lock}
@@ -2946,10 +2970,10 @@ const Stage1 = ({
                 />
               </Field>
               <Field label="Contact No" required error={errors.contactNo} fieldKey="contactNo">
-                <input className={`acm-input ${errors.contactNo ? 'acm-input-error' : ''}`} type="tel" placeholder="7-15 digit number" value={form.contactNo} onChange={e => set('contactNo', e.target.value)} disabled={lock} />
+                <input className={`acm-input ${errors.contactNo ? 'acm-input-error' : ''}`} type="tel" placeholder="Enter phone number" value={form.contactNo} onChange={e => set('contactNo', e.target.value)} disabled={lock} />
               </Field>
-              <Field label="Email" required error={errors.email} fieldKey="email">
-                <input className={`acm-input ${errors.email ? 'acm-input-error' : ''}`} type="email" placeholder="name@company.com" value={form.email} onChange={e => set('email', e.target.value)} disabled={lock} />
+              <Field label="Email ID" required error={errors.email} fieldKey="email">
+                <input className={`acm-input ${errors.email ? 'acm-input-error' : ''}`} type="email" placeholder="Enter email address" value={form.email} onChange={e => set('email', e.target.value)} disabled={lock} />
               </Field>
             </div>
             <div className="acm-mt-12">
@@ -3032,10 +3056,10 @@ const LocationsTable = ({ primary, locations, onAdd, onEdit, onDel, onEditPrimar
   <div className="acm-loc-card">
     <div className="acm-loc-head">
       <div className="acm-loc-head-row">
-        <div className="acm-loc-head-icon"><IconPin /></div>
+        <div className="acm-loc-head-icon"><IconUser /></div>
         <div className="acm-loc-head-text">
-          <span className="acm-loc-head-title">ADDRESS &amp; CONTACT DETAILS</span>
-          <span className="acm-loc-head-sub">| All addresses with their authorized contact person</span>
+          <span className="acm-loc-head-title">Contact Persons</span>
+          <span className="acm-loc-head-sub">| Authorized contacts associated with this consignee</span>
         </div>
         <Tooltip label={lockedTip} disabled={!locked}>
           <button
@@ -3045,7 +3069,7 @@ const LocationsTable = ({ primary, locations, onAdd, onEdit, onDel, onEditPrimar
             disabled={locked}
             style={locked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
           >
-            <IconPlus /> Add More Address &amp; Contact
+            <IconPlus /> Add More Contact Person
           </button>
         </Tooltip>
       </div>
@@ -3055,31 +3079,26 @@ const LocationsTable = ({ primary, locations, onAdd, onEdit, onDel, onEditPrimar
         <table className="acm-loc-table">
           <thead>
             <tr>
-              <th>SR NO</th><th>ADDRESS TYPE</th><th>ADDRESS</th><th>CITY / STATE / COUNTRY</th>
-              <th>CONTACT PERSON</th><th>PHONE</th><th>EMAIL</th><th>WHATSAPP</th><th>ACTIONS</th>
+              <th>SR NO</th><th>CONTACT PERSON NAME</th><th>DESIGNATION</th><th>ADDRESS DETAILS</th>
+              <th>CONTACT NO</th><th>EMAIL ID</th><th>WHATSAPP ENABLE</th><th>ACTIONS</th>
             </tr>
           </thead>
           <tbody>
             {allRows.map((l, i) => {
               const place = [l.city, l.state, l.country].filter(Boolean).join(' • ');
-              const contact = l.cpName + (l.cpDesignation ? ` (${l.cpDesignation})` : '');
+              // Figma "Address Details" column merges type + line + city/state/country.
+              const addressDetails = [l.type, l.line, place].filter(Boolean).join(', ');
               return (
                 <tr key={l.id} className={l.isPrimary ? 'acm-loc-primary-row' : undefined}>
                   <td>{i + 1}</td>
                   <td>
                     <div className="acm-loc-type-cell">
-                      {/* Long custom address types get truncated to 14
-                          chars with hover tooltip so the column stays
-                          a predictable width. */}
-                      {l.type
-                        ? <TruncatedCell text={l.type} max={14} />
-                        : <span>—</span>}
+                      {l.cpName ? <TruncatedCell text={l.cpName} max={18} /> : <span>—</span>}
                       {l.isPrimary && <span className="acm-loc-primary-tag">Primary</span>}
                     </div>
                   </td>
-                  <td><TruncatedCell text={l.line} max={16} /></td>
-                  <td><TruncatedCell text={place} max={32} /></td>
-                  <td><TruncatedCell text={contact} max={26} /></td>
+                  <td><TruncatedCell text={l.cpDesignation} max={18} /></td>
+                  <td><TruncatedCell text={addressDetails} max={36} /></td>
                   <td><TruncatedCell text={l.cpContact} max={18} mono /></td>
                   <td><TruncatedCell text={l.cpEmail} max={28} /></td>
                   <td>{l.cpWhatsapp === 'yes' ? <span className="acm-pill-yes">✓ Yes</span> : l.cpWhatsapp === 'no' ? <span className="acm-pill-no">✕ No</span> : <span style={{ color: '#9ca3af' }}>—</span>}</td>
@@ -3094,7 +3113,8 @@ const LocationsTable = ({ primary, locations, onAdd, onEdit, onDel, onEditPrimar
                           disabled={locked}
                           style={locked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
                         >
-                          <IconPencil />
+                          {/* Same edit-box icon as the Consignee list page. */}
+                          <i className="ri-edit-box-line" style={{ fontSize: 15 }} />
                         </button>
                       </Tooltip>
                       {l.isPrimary || locked ? (
@@ -5543,7 +5563,9 @@ const SCOPED_CSS = `
    of the consignee chrome. White text + glassy icon on the wash. */
 .acm-pick-header {
   position: relative; padding: 28px 20px 24px;
-  background: linear-gradient(135deg, #047857 0%, #059669 25%, #10b981 55%, #2dd4bf 85%, #5eead4 100%);
+  /* Brighter, more even teal (Figma) — drops the dark emerald corner that
+     made the old 135deg ramp read as a harsh dark-green → light diagonal. */
+  background: linear-gradient(150deg, #0e9f86 0%, #14b8a6 45%, #20c9b6 75%, #2dd4bf 100%);
   color: #fff; text-align: center;
   overflow: hidden;
 }
@@ -5618,7 +5640,7 @@ const SCOPED_CSS = `
 .acm-picker-option:hover { background: #f0fdf4; }
 .acm-pop-avatar {
   width: 36px; height: 36px; border-radius: 10px;
-  background: linear-gradient(135deg, #10b981, #047857);
+  background: linear-gradient(135deg, #0d9488, #065f46);
   color: #fff; font-size: 12px; font-weight: 800;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
@@ -5635,7 +5657,7 @@ const SCOPED_CSS = `
 }
 .acm-picked-avatar {
   width: 40px; height: 40px; border-radius: 10px;
-  background: linear-gradient(135deg, #10b981, #047857);
+  background: linear-gradient(135deg, #0d9488, #065f46);
   color: #fff; font-size: 13px; font-weight: 800;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
@@ -5676,15 +5698,15 @@ const SCOPED_CSS = `
   gap: 12px;
   padding: 10px 16px;
   cursor: pointer;
-  background: linear-gradient(110deg, #ecfdf5 0%, #d1fae5 100%);
-  border-left: 4px solid #10b981;
+  /* Figma: clean white bar — no left accent stripe. */
+  background: #ffffff;
   user-select: none;
 }
-.acg-linked-bar:hover { background: linear-gradient(110deg, #d1fae5, #a7f3d0); }
+.acg-linked-bar:hover { background: #f6fefb; }
 .acg-linked-bar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .acg-linked-icon {
   width: 30px; height: 30px; border-radius: 8px;
-  background: linear-gradient(135deg, #10b981, #047857);
+  background: linear-gradient(135deg, #0d9488, #065f46);
   color: #fff;
   display: inline-flex; align-items: center; justify-content: center;
   flex-shrink: 0;
@@ -5718,17 +5740,25 @@ const SCOPED_CSS = `
 .acg-linked-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .acg-linked-badge {
   padding: 3px 11px; border-radius: 20px;
-  background: linear-gradient(135deg, #10b981, #047857);
+  background: linear-gradient(135deg, #0d9488, #065f46);
   color: #fff;
   font-size: 9.5px; font-weight: 800;
   white-space: nowrap;
   letter-spacing: .04em;
 }
+/* "Show / Hide" pill (Figma) — text + chevron in a light bordered capsule. */
+.acg-linked-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 8px;
+  background: #fff; border: 1px solid #a7f3d0;
+  color: #047857; font-size: 11.5px; font-weight: 700;
+  cursor: pointer; white-space: nowrap;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.acg-linked-toggle:hover { background: #ecfdf5; border-color: #6ee7b7; color: #065f46; }
 .acg-linked-chev {
-  width: 22px; height: 22px; border-radius: 50%;
-  background: rgba(16,185,129,.12);
-  display: flex; align-items: center; justify-content: center;
-  color: #047857;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: inherit;
   transition: transform .3s;
 }
 .acg-linked-chev.is-open { transform: rotate(180deg); }
@@ -5740,11 +5770,13 @@ const SCOPED_CSS = `
   box-shadow: 0 2px 12px rgba(0,0,0,0.35);
 }
 [data-bs-theme="dark"] .acg-linked-bar {
-  background: linear-gradient(110deg, rgba(6,95,70,0.35) 0%, rgba(16,185,129,0.22) 100%);
+  background: transparent;
 }
 [data-bs-theme="dark"] .acg-linked-bar:hover {
-  background: linear-gradient(110deg, rgba(6,95,70,0.45), rgba(16,185,129,0.32));
+  background: rgba(16,185,129,0.10);
 }
+[data-bs-theme="dark"] .acg-linked-toggle { background: rgba(255,255,255,0.04); border-color: rgba(16,185,129,0.35); color: #6ee7b7; }
+[data-bs-theme="dark"] .acg-linked-toggle:hover { background: rgba(16,185,129,0.14); border-color: rgba(110,231,183,0.5); color: #ecfdf5; }
 [data-bs-theme="dark"] .acg-linked-tag  { background: rgba(255,255,255,0.04); border-color: rgba(16,185,129,0.30); color: #6ee7b7; }
 [data-bs-theme="dark"] .acg-linked-id   { color: #6ee7b7; background: rgba(16,185,129,0.18); border-color: rgba(16,185,129,0.30); }
 [data-bs-theme="dark"] .acg-linked-name { color: #d1fae5; }
@@ -5782,7 +5814,7 @@ const SCOPED_CSS = `
   transform: translateY(-1px);
 }
 .acm-btn-primary {
-  background: linear-gradient(135deg, #10b981, #047857);
+  background: linear-gradient(135deg, #0d9488, #065f46);
   color: #fff;
   box-shadow: 0 4px 14px rgba(5,150,105,.30);
   /* Sensible min-width so the primary CTA stays prominent without
@@ -5843,7 +5875,7 @@ const SCOPED_CSS = `
      (single row table), and Stage 3 no longer makes the modal grow
      or shrink. min() caps the height so tall monitors don't get an
      oversized modal; body scrolls internally, header + footer anchored. */
-  height: min(800px, calc(100vh - 24px));
+  height: min(660px, calc(100vh - 64px));
   background: #f0fdf4; border-radius: 16px; overflow: hidden;
   box-shadow: 0 30px 80px rgba(0,0,0,.40);
   display: flex; flex-direction: column;
@@ -5856,7 +5888,9 @@ const SCOPED_CSS = `
   position: relative;
   display: flex; align-items: center; gap: 14px;
   padding: 18px 56px 18px 22px;
-  background: linear-gradient(110deg, #047857 0%, #059669 25%, #10b981 55%, #2dd4bf 85%, #5eead4 100%);
+  /* Brighter, more even teal (Figma) — matches the picker header; drops the
+     dark emerald corner that made the old ramp read dark-green → light. */
+  background: linear-gradient(120deg,#0f766e 0%,#0d9488 45%,#14b8a6 78%,#2dd4bf 100%);
   color: #fff;
   flex-shrink: 0;
   overflow: hidden;
@@ -5866,10 +5900,17 @@ const SCOPED_CSS = `
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background-image:
-    radial-gradient(ellipse at 12% 50%, rgba(255,255,255,0.22) 0%, transparent 55%),
-    radial-gradient(ellipse at 88% 50%, rgba(167,243,208,0.20) 0%, transparent 55%);
-}
+      /* White dot-grid texture (Figma) over teal-tinted glows. The glows were
+         PURPLE (copied from the violet Customer header) which muddied the teal
+         — recolored to soft white + mint so the header reads as clean teal. */
+      background-image:
+      radial-gradient(rgba(255, 255, 255, .18) 1.1px, transparent 1.6px),
+      radial-gradient(circle at 15% 50%, rgba(255, 255, 255, .14) 0%, transparent 55%),
+      radial-gradient(ellipse at 85% 50%, rgba(94, 234, 212, .20) 0%, transparent 55%);
+    background-size: 18px 18px, auto, auto;
+    background-position: 0 0, 0 0, 0 0;
+    }
+
 .acm-wiz-hicon {
   position: relative; z-index: 1;
   width: 38px; height: 38px; border-radius: 11px;
@@ -5923,7 +5964,7 @@ const SCOPED_CSS = `
 .acm-linked-bar-left { display: flex; align-items: center; gap: 10px; }
 .acm-linked-icon {
   width: 26px; height: 26px; border-radius: 7px;
-  background: linear-gradient(135deg, #10b981, #047857);
+  background: linear-gradient(135deg, #0d9488, #065f46);
   color: #fff; display: flex; align-items: center; justify-content: center;
 }
 .acm-linked-label { font-size: 10.5px; font-weight: 800; color: #047857; letter-spacing: 0.10em; }
@@ -5999,10 +6040,11 @@ const SCOPED_CSS = `
   flex-shrink: 0;
 }
 .acm-step-active .acm-step-badge {
-  background: linear-gradient(135deg, #10b981, #047857); color: #fff;
+  background: linear-gradient(135deg, #0d9488, #065f46); color: #fff;
 }
 .acm-step-done .acm-step-badge {
-  background: linear-gradient(135deg, #10b981, #047857); color: #fff;
+  /* Figma: green badge with a white ✓ on the completed step. */
+  background: linear-gradient(135deg, #0d9488, #065f46); color: #fff;
 }
 .acm-step-incomplete .acm-step-badge {
   background: linear-gradient(135deg, #e2e8f0, #cbd5e1); color: #64748b;
@@ -6069,10 +6111,11 @@ const SCOPED_CSS = `
   cursor: pointer; transition: all .18s;
 }
 .acm-id-tab.on {
-  background: linear-gradient(135deg, #10b981, #047857);
+  /* Unified brand gradient (same one used for the icons). */
+  background: linear-gradient(135deg, #0d9488, #065f46);
   color: #fff;
   border-color: transparent;
-  box-shadow: 0 3px 10px rgba(5,150,105,.30);
+  box-shadow: 0 3px 10px rgba(13,148,136,.32);
 }
 
 /* Section header */
@@ -6169,7 +6212,7 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 .acg-history-header-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .acg-history-icon {
   width: 28px; height: 28px; border-radius: 8px;
-  background: linear-gradient(135deg, #10b981, #047857);
+  background: linear-gradient(135deg, #0d9488, #065f46);
   color: #fff;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
@@ -6179,7 +6222,7 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 .acg-history-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .acg-history-badge {
   padding: 3px 11px; border-radius: 20px;
-  background: linear-gradient(135deg, #10b981, #047857);
+  background: linear-gradient(135deg, #0d9488, #065f46);
   color: #fff;
   font-size: 9.5px; font-weight: 800;
   white-space: nowrap;
@@ -6264,7 +6307,7 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 }
 .acg-mirror-note-icon {
   width: 20px; height: 20px; border-radius: 5px;
-  background: linear-gradient(135deg, #10b981, #047857);
+  background: linear-gradient(135deg, #0d9488, #065f46);
   color: #fff;
   display: inline-flex; align-items: center; justify-content: center;
   flex-shrink: 0;
@@ -6288,7 +6331,7 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 .acg-mirror-inline b { color: #064e3b; }
 .acg-mirror-inline-icon {
   width: 20px; height: 20px; border-radius: 5px;
-  background: linear-gradient(135deg, #10b981, #047857);
+  background: linear-gradient(135deg, #0d9488, #065f46);
   color: #fff;
   display: inline-flex; align-items: center; justify-content: center;
   flex-shrink: 0;
@@ -6461,7 +6504,7 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 }
 .acm-vault-tab:hover:not(.on) { background: #ecfdf5; border-color: #10b981; }
 .acm-vault-tab.on {
-  background: linear-gradient(135deg, #10b981, #047857);
+  background: linear-gradient(135deg, #0d9488, #065f46);
   color: #fff; border-color: #10b981;
   box-shadow: 0 3px 10px rgba(16,185,129,.35);
 }
@@ -6784,9 +6827,9 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 }
 .acm-kyc-subtab:hover { border-color: #10b981; color: #047857; }
 .acm-kyc-subtab.on {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  background: linear-gradient(135deg, #0d9488, #065f46);
   border-color: transparent; color: #fff;
-  box-shadow: 0 4px 10px rgba(16,185,129,.30);
+  box-shadow: 0 4px 10px rgba(13,148,136,.32);
 }
 .acm-kyc-card {
   background: #fff;
@@ -6916,7 +6959,7 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   flex: 0 0 auto;
   width: 38px; height: 38px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #10b981, #047857);
+  background: linear-gradient(135deg, #0d9488, #065f46);
   color: #fff;
   border: 1px solid transparent;
   border-radius: 10px;
@@ -7158,22 +7201,30 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 
 /* ─── Dark mode ─── */
 [data-bs-theme="dark"] .acm-overlay { background: rgba(0,0,0,.65); }
-[data-bs-theme="dark"] .acm-pick    { background: #103129; }
-[data-bs-theme="dark"] .acm-pick-body  { background: #103129; }
-[data-bs-theme="dark"] .acm-picker     { background: rgba(255,255,255,.04); border-color: rgba(16,185,129,.30); }
-[data-bs-theme="dark"] .acm-picker input { color: #ecfdf5; }
-[data-bs-theme="dark"] .acm-picker input::placeholder { color: #6b8a7e; }
-[data-bs-theme="dark"] .acm-picker-list { background: #0f2a23; border-color: rgba(16,185,129,.30); }
-[data-bs-theme="dark"] .acm-picker-option { border-bottom-color: rgba(16,185,129,.12); }
-[data-bs-theme="dark"] .acm-picker-option:hover { background: rgba(16,185,129,.10); }
-[data-bs-theme="dark"] .acm-pop-name   { color: #ecfdf5; }
+/* Phase-A "Add New Consignee" picker stays LIGHT/WHITE in dark mode too —
+   the Figma keeps this gate white (only the green header is colored, the
+   body + footer stay white). Only the page behind it dims. So we re-assert
+   the light values here instead of the previous dark-teal body. */
+[data-bs-theme="dark"] .acm-pick    { background: #fff; }
+[data-bs-theme="dark"] .acm-pick-body  { background: #fff; }
+[data-bs-theme="dark"] .acm-picker     { background: #ecfdf5; border-color: #a7f3d0; }
+[data-bs-theme="dark"] .acm-picker input { color: #064e3b; }
+[data-bs-theme="dark"] .acm-picker input::placeholder { color: #6b7280; }
+[data-bs-theme="dark"] .acm-picker-list { background: #fff; border-color: #a7f3d0; }
+[data-bs-theme="dark"] .acm-picker-option { border-bottom-color: #ecfdf5; }
+[data-bs-theme="dark"] .acm-picker-option:hover { background: #f0fdf4; }
+[data-bs-theme="dark"] .acm-pop-name   { color: #064e3b; }
 [data-bs-theme="dark"] .acm-pop-meta,
-[data-bs-theme="dark"] .acm-picker-empty { color: #94a3b8; }
-[data-bs-theme="dark"] .acm-picked     { background: rgba(16,185,129,.12); border-color: #10b981; }
-[data-bs-theme="dark"] .acm-picked-name { color: #ecfdf5; }
-[data-bs-theme="dark"] .acm-picked-meta { color: #94a3b8; }
-[data-bs-theme="dark"] .acm-info       { background: rgba(30,64,175,.20); border-color: rgba(96,165,250,.30); color: #93c5fd; }
-[data-bs-theme="dark"] .acm-pick-footer { border-top-color: rgba(16,185,129,.20); background: #103129; }
+[data-bs-theme="dark"] .acm-picker-empty { color: #6b7280; }
+[data-bs-theme="dark"] .acm-picked     { background: #ecfdf5; border-color: #10b981; }
+[data-bs-theme="dark"] .acm-picked-name { color: #064e3b; }
+[data-bs-theme="dark"] .acm-picked-meta { color: #6b7280; }
+[data-bs-theme="dark"] .acm-info       { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
+[data-bs-theme="dark"] .acm-pick-footer { border-top-color: #e5e7eb; background: #fff; }
+/* Cancel button (scoped to the picker so the main wizard's btn-light is
+   untouched) reads as a clean light button on the white footer. */
+[data-bs-theme="dark"] .acm-pick .acm-btn-light { background: #fff; color: #374151; border-color: #e5e7eb; }
+[data-bs-theme="dark"] .acm-pick .acm-btn-light:hover { background: #f9fafb; border-color: #d1d5db; color: #111827; box-shadow: none; transform: none; }
 [data-bs-theme="dark"] .acm-btn-light  { background: #1a3d34; color: #ecfdf5; border-color: rgba(16,185,129,.30); }
 /* Dark-mode hover — needs a clearly stronger background + border lift
    so the user gets a tactile cue. The previous flat #234d42 was too
@@ -7239,7 +7290,7 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
    invisible. Brighter mint gradient + emerald glow ring makes the
    selection unmistakable against the dark backdrop. */
 [data-bs-theme="dark"] .acm-id-tab.on {
-  background: linear-gradient(135deg, #34d399, #10b981);
+  background: linear-gradient(135deg, #5eead4, #2dd4bf 50%, #14b8a6);
   color: #022c22;
   border-color: rgba(110,231,183,.55);
   box-shadow: 0 0 0 1px rgba(110,231,183,.45), 0 4px 14px rgba(16,185,129,.45);
