@@ -476,6 +476,12 @@ export default function SalesMatrixDetail() {
     data?: {
       total_documents?: number;
       verified_signed?: number;
+      /* CORE tally = Company DD + Owner KYC + Trade Licences only (excludes
+       * Trade Documents, which were removed from the customer/consignee form).
+       * The CLM panel card uses these; falls back to the all-inclusive
+       * total_documents/verified_signed for older API responses. */
+      core_total_documents?: number;
+      core_verified_signed?: number;
     };
   };
 
@@ -495,8 +501,8 @@ export default function SalesMatrixDetail() {
         if (cancelled) return;
         const d = res.data?.data;
         setCustTally({
-          total:    Number(d?.total_documents  ?? 0),
-          verified: Number(d?.verified_signed ?? 0),
+          total:    Number(d?.core_total_documents ?? d?.total_documents ?? 0),
+          verified: Number(d?.core_verified_signed ?? d?.verified_signed ?? 0),
         });
       })
       .catch(() => { if (!cancelled) setCustTally({ total: 0, verified: 0, error: true }); });
@@ -513,8 +519,8 @@ export default function SalesMatrixDetail() {
         if (cancelled) return;
         const d = res.data?.data;
         setConsTally({
-          total:    Number(d?.total_documents  ?? 0),
-          verified: Number(d?.verified_signed ?? 0),
+          total:    Number(d?.core_total_documents ?? d?.total_documents ?? 0),
+          verified: Number(d?.core_verified_signed ?? d?.verified_signed ?? 0),
         });
       })
       .catch(() => { if (!cancelled) setConsTally({ total: 0, verified: 0, error: true }); });
@@ -548,10 +554,34 @@ export default function SalesMatrixDetail() {
    * agreement signature request has completed; drives the row progress bar. */
   const segDocTallies = useMemo(() => {
     const segs = agreementApplicable?.segments ?? [];
+    const buyerEqualsConsignee = !!agreementApplicable?.buyerEqualsConsignee;
+    /* Party bucket for an agreement's `party` CSV — mirrors the agreement
+     * popup's partyBucket(). When buyer == consignee the popup shows ONLY
+     * buyer-only agreements (a Buyer+Consignee or Consignee-only agreement is
+     * redundant with a single party), so the card count must exclude the same
+     * rows — otherwise the card said "0 of 2" while the popup listed 1. */
+    const partyBucket = (party: string | null | undefined): 'buyer' | 'consignee' | 'both' => {
+      const tokens = String(party ?? '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+      const b = tokens.includes('buyer'), c = tokens.includes('consignee');
+      if (b && c) return 'both';
+      if (b) return 'buyer';
+      if (c) return 'consignee';
+      return 'both';
+    };
     let agrTotal = 0, agrDone = 0, tdTotal = 0, tdDone = 0;
     for (const s of segs) {
-      for (const a of s.agreements) { agrTotal++; if (a.signature_request?.status === 'completed') agrDone++; }
-      for (const td of s.trade_documents) { tdTotal++; if (td.status === 'Verified') tdDone++; }
+      for (const a of s.agreements) {
+        if (buyerEqualsConsignee && partyBucket(a.party) !== 'buyer') continue;
+        agrTotal++;
+        if (a.signature_request?.status === 'completed') agrDone++;
+      }
+      // A trade doc counts as "done" when it's uploaded/verified OR signed
+      // (its signature request reached completed) — same way agreements count
+      // a completed e-signature.
+      for (const td of s.trade_documents) {
+        tdTotal++;
+        if (td.status === 'Verified' || td.signature_request?.status === 'completed') tdDone++;
+      }
     }
     return { agrTotal, agrDone, tdTotal, tdDone };
   }, [agreementApplicable]);
@@ -888,8 +918,8 @@ export default function SalesMatrixDetail() {
                 </svg>
               </div>
               <div>
-                <div className="smd-clm-group-title">KYC / DD / Trade License</div>
-                <div className="smd-clm-group-sub">View customer and consignee information</div>
+                <div className="smd-clm-group-title">Standard Documents</div>
+                <div className="smd-clm-group-sub">One Time · KYC, DD & Licenses</div>
               </div>
             </div>
 
@@ -987,8 +1017,8 @@ export default function SalesMatrixDetail() {
                 </svg>
               </div>
               <div>
-                <div className="smd-clm-group-title">Segment Details</div>
-                <div className="smd-clm-group-sub">Agreements & trade documents per segment</div>
+                <div className="smd-clm-group-title">Case to Case Agreements</div>
+                <div className="smd-clm-group-sub">Per Deal · Trade Docs & Agreements</div>
               </div>
             </div>
 
@@ -1225,8 +1255,12 @@ export default function SalesMatrixDetail() {
               await api.put(`/sales/leads/${resolvedLeadId}`, { consignee_id: dbId });
               toast.success('Consignee mapped', 'Linked to this opportunity');
               await reloadLead();
-            } catch {
-              toast.error('Mapping failed', 'Could not link this consignee to the lead');
+            } catch (e: any) {
+              // Surface the backend reason (e.g. the segment "Buyer ≠ Consignee"
+              // block) instead of a generic message, and don't open the edit
+              // form for a consignee that couldn't be mapped.
+              toast.error('Mapping failed', e?.response?.data?.message ?? 'Could not link this consignee to the lead');
+              return;
             }
           }
           setConsigneeEditing(row); setConsigneeAddOpen(true);
@@ -1412,7 +1446,13 @@ export default function SalesMatrixDetail() {
         leadId={resolvedLeadId}
         view={agreementModalView}
         data={agreementApplicable}
-        onClose={() => setAgreementModalOpen(false)}
+        onClose={() => {
+          setAgreementModalOpen(false);
+          // Re-pull so the Segment Details card reflects any status that
+          // changed while the popup was open — e.g. a trade doc / agreement
+          // that got signed via the popup's live Zoho poll.
+          setAgreementRefreshTick(t => t + 1);
+        }}
         onSent={() => setAgreementRefreshTick(t => t + 1)}
       />
 

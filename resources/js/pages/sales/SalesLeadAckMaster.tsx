@@ -396,8 +396,8 @@ export default function SalesLeadAckMaster() {
                 <th style={{ width: tab === 'disqualified' ? '10%' : '12%' }}>Sr No</th>
                 <th style={{ width: tab === 'disqualified' ? '34%' : '44%' }}>{COLUMN_HEADERS[tab]}</th>
                 {tab === 'disqualified' && <th style={{ width: '18%', textAlign: 'center' }}>DQ Status</th>}
-                <th style={{ width: tab === 'disqualified' ? '19%' : '22%', textAlign: 'center' }}>Status</th>
-                <th style={{ width: tab === 'disqualified' ? '19%' : '22%', textAlign: 'center' }}>Actions</th>
+                <th style={{ width: tab === 'disqualified' ? '19%' : '22%', textAlign: 'center', paddingLeft: 70 }}>Status</th>
+                <th style={{ width: tab === 'disqualified' ? '19%' : '22%', textAlign: 'center', paddingLeft: 50 }}>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -410,8 +410,8 @@ export default function SalesLeadAckMaster() {
                   {tab === 'disqualified' && (
                     <td style={{ textAlign: 'center' }}><span className="lam-skel lam-skel-pill" /></td>
                   )}
-                  <td style={{ textAlign: 'center' }}><span className="lam-skel lam-skel-pill" /></td>
-                  <td style={{ textAlign: 'center' }}>
+                  <td style={{ textAlign: 'center', paddingLeft: 70 }}><span className="lam-skel lam-skel-pill" /></td>
+                  <td style={{ textAlign: 'center', paddingLeft: 50 }}>
                     <div className="lam-actions">
                       <span className="lam-skel lam-skel-btn" />
                       <span className="lam-skel lam-skel-btn" />
@@ -432,16 +432,16 @@ export default function SalesLeadAckMaster() {
                   {tab === 'disqualified' && (
                     <td style={{ textAlign: 'center' }}>
                       {r.dq_status === 'positive'
-                        ? <span className="lam-badge lam-positive">Positive</span>
-                        : <span className="lam-badge lam-negative">Negative</span>}
+                        ? <span className="lam-badge lam-positive"><i className="ri-arrow-up-line" />Positive</span>
+                        : <span className="lam-badge lam-negative"><i className="ri-arrow-down-line" />Negative</span>}
                     </td>
                   )}
-                  <td style={{ textAlign: 'center' }}>
+                  <td style={{ textAlign: 'center', paddingLeft: 70 }}>
                     {r.status === 'active'
                       ? <span className="lam-badge lam-active">Active</span>
                       : <span className="lam-badge lam-inactive">Inactive</span>}
                   </td>
-                  <td style={{ textAlign: 'center' }}>
+                  <td style={{ textAlign: 'center', paddingLeft: 50 }}>
                     <div className="lam-actions">
                       {canEdit && (
                         <Tooltip label="Edit reason">
@@ -480,41 +480,61 @@ export default function SalesLeadAckMaster() {
           <span className="lam-pag-info">
             {total === 0
               ? 'No records found'
-              : <>Showing <strong>{rows.length}</strong> of <strong>{total}</strong> Results</>}
+              : <>Showing <strong>{startIdx + 1}</strong>–<strong>{startIdx + rows.length}</strong> of <strong>{total}</strong> Results</>}
           </span>
-          <div className="lam-pag-btns">
-            <button
-              type="button"
-              className="lam-pag-btn"
-              disabled={safePage <= 1}
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              aria-label="Previous page"
-            >
-              <i className="ri-arrow-left-s-line" />
-            </button>
-            {buildPageList(safePage, pages).map((p, idx) => (
-              p === '…'
-                ? <span key={`gap-${idx}`} className="lam-pag-gap">…</span>
-                : <button
-                    key={p}
+          <div className="lam-pag-right">
+            <div className="lam-rows">
+              <span>Rows per page</span>
+              <span className="lam-rows-val">{rpp}</span>
+              <i className="ri-arrow-down-s-line lam-rows-caret" />
+              <select
+                className="lam-rows-sel"
+                value={rpp}
+                onChange={e => { setRpp(Number(e.target.value)); setPage(1); }}
+                aria-label="Rows per page"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={30}>30</option>
+                <option value={40}>40</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
+            {/* Page navigation only appears when there's more than one page —
+                a single-page list shouldn't show a lone "1" button. */}
+            {pages > 1 && (
+              <div className="lam-pag-btns">
+                <button
+                  type="button"
+                  className="lam-pag-btn"
+                  disabled={safePage <= 1}
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  aria-label="Previous page"
+                >
+                  <i className="ri-arrow-left-s-line" />
+                </button>
+                {Array.from({ length: pages }, (_, n) => n + 1).map(n => (
+                  <button
+                    key={n}
                     type="button"
-                    className={`lam-pag-num ${p === safePage ? 'is-active' : ''}`}
-                    onClick={() => setPage(p)}
-                    aria-current={p === safePage ? 'page' : undefined}
-                    aria-label={`Page ${p}`}
+                    className={`lam-pag-btn ${n === safePage ? 'is-active' : ''}`}
+                    onClick={() => setPage(n)}
+                    aria-current={n === safePage ? 'page' : undefined}
                   >
-                    {p}
+                    {n}
                   </button>
-            ))}
-            <button
-              type="button"
-              className="lam-pag-btn"
-              disabled={safePage >= pages || total === 0}
-              onClick={() => setPage(p => Math.min(pages, p + 1))}
-              aria-label="Next page"
-            >
-              <i className="ri-arrow-right-s-line" />
-            </button>
+                ))}
+                <button
+                  type="button"
+                  className="lam-pag-btn"
+                  disabled={safePage >= pages || total === 0}
+                  onClick={() => setPage(p => Math.min(pages, p + 1))}
+                  aria-label="Next page"
+                >
+                  <i className="ri-arrow-right-s-line" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -702,24 +722,6 @@ export default function SalesLeadAckMaster() {
   );
 }
 
-/* ─── Page-button list builder — returns the sequence to render in
- *      the pagination strip. Compact algorithm with ellipsis when
- *      there are too many pages to show all (always shows first,
- *      last, and a window of ±1 around the current page). */
-function buildPageList(current: number, totalPages: number): (number | '…')[] {
-  if (totalPages <= 7) {
-    return Array.from({ length: totalPages }, (_, i) => i + 1);
-  }
-  const pages: (number | '…')[] = [1];
-  const left  = Math.max(2, current - 1);
-  const right = Math.min(totalPages - 1, current + 1);
-  if (left > 2) pages.push('…');
-  for (let p = left; p <= right; p++) pages.push(p);
-  if (right < totalPages - 1) pages.push('…');
-  pages.push(totalPages);
-  return pages;
-}
-
 /* ─── Reason cell — caps the visible text at 30 chars and wraps a
  *      Tooltip so the full reason is available on hover. Short
  *      reasons render as plain text without the tooltip overhead. */
@@ -745,8 +747,13 @@ const SCOPED_CSS = `
   background: linear-gradient(180deg, #faf7ff 0%, #f5f3ff 100%);
   padding: 14px 18px 22px;
   margin: -1rem -0.75rem;
-  min-height: calc(100vh - 70px);
-  display: flex; flex-direction: column; gap: 12px;
+  /* Fixed available height (viewport minus the top header + horizontal menu)
+     so the table card fills the screen, the table scrolls INSIDE it, and the
+     pagination stays pinned at the bottom — no big empty area below the card,
+     no page scroll. */
+  height: calc(100vh - 130px);
+  overflow: hidden;
+  display: flex; flex-direction: column; gap: 8px;
   color: #111827;
   font-size: 13.5px;
 }
@@ -754,7 +761,7 @@ const SCOPED_CSS = `
 
 /* ─── No-access placeholder ─── */
 .lam-no-access {
-  background: #fff; border: 1.5px solid #e9e3ff; border-radius: 16px;
+  background: #fff; border: 1.5px solid #ddd6fe; border-radius: 16px;
   padding: 36px 28px; text-align: center;
   box-shadow: 0 4px 18px rgba(124,58,237,.10);
   max-width: 640px; margin: 24px auto;
@@ -773,23 +780,47 @@ const SCOPED_CSS = `
    the Sales-module palette while keeping the layout flat (no large
    gradient hero card, no orbs). */
 .lam-hero {
-  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  background: linear-gradient(90deg, #ede9fe 0%, #f5f3ff 60%, #faf5ff 100%);
-  border: 1px solid #ddd6fe;
-  border-radius: 14px;
-  padding: 16px 20px;
-  box-shadow: 0 2px 10px rgba(124,58,237,0.06);
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; gap: 13px; flex-wrap: wrap;
+  /* Glassy violet banner — the prototype hero gradient + a white top-sheen
+     (inset) and left accent bar so it reads as glass. */
+  background: linear-gradient(100deg, #f5f3ff 0%, #ede9fe 55%, #ddd6fe 100%);
+  border: 1px solid #c4b5fd;
+  border-radius: 16px;
+  /* Match the My-Workplace banner footprint: compact 58px strip, padding
+     0 20px with content vertically centred. */
+  min-height: 58px;
+  padding: 0 20px;
+  box-shadow: 0 2px 0 rgba(255,255,255,.7) inset, 0 2px 10px rgba(139,92,246,.10), 0 1px 4px rgba(0,0,0,.04);
 }
+/* Decorative corner orb — the faint violet circle the figma tucks into the
+   banner's top-right; clipped by overflow:hidden so it reads as a soft
+   half-circle glow behind the action button. */
+.lam-hero::before {
+  content: ''; position: absolute; right: -10px; top: -10px;
+  width: 80px; height: 80px; border-radius: 50%;
+  background: rgba(139, 92, 246, .07);
+  pointer-events: none;
+}
+[data-bs-theme="dark"] .lam-hero::before { background: rgba(167, 139, 250, .10); }
+/* Top sheen. */
+.lam-hero::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.5), transparent);
+  border-radius: 16px 16px 0 0;
+}
+.lam-hero > * { position: relative; z-index: 1; }
 .lam-hero-icon {
-  width: 46px; height: 46px; border-radius: 12px;
-  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  width: 38px; height: 38px; border-radius: 12px;
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%);
   display: inline-flex; align-items: center; justify-content: center;
-  color: #ffffff; font-size: 22px; flex-shrink: 0;
+  color: #ffffff; font-size: 18px; flex-shrink: 0;
   box-shadow: 0 4px 12px rgba(124,58,237,0.30);
 }
 .lam-hero-text { flex: 1 1 240px; min-width: 0; }
-.lam-hero-title { font-size: 18px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.2; color: #4c1d95; }
-.lam-hero-sub   { font-size: 12.5px; color: #6d28d9; margin-top: 3px; font-weight: 500; line-height: 1.4; opacity: 0.85; }
+.lam-hero-title { font-size: 14.5px; font-weight: 800; letter-spacing: -0.4px; line-height: 1.2; color: #4c1d95; }
+.lam-hero-sub   { font-size: 10.5px; color: #6d28d9; margin-top: 1px; font-weight: 500; line-height: 1.4; opacity: 0.85; }
 
 .lam-hero-actions {
   display: inline-flex; align-items: center; gap: 10px;
@@ -809,22 +840,26 @@ const SCOPED_CSS = `
 .lam-back-btn:hover {
   background: #f8fafc;
   border-color: #cbd5e1;
-  color: #0f172a;
+  color: #1a1530;
   transform: translateX(-2px);
 }
 .lam-add-btn {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 10px 18px; border-radius: 999px; border: none;
-  background: linear-gradient(135deg, #6d28d9, #7c3aed);
-  color: #fff; font-family: inherit; font-size: 12.5px; font-weight: 700;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: 10px; border: none; min-height: 34px;
+  /* Glossy violet CTA — the project's brand gradient + inner white
+     highlight & soft violet glow. Sized to the My-Workplace toolbar button. */
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  color: #fff; font-family: inherit; font-size: 12px; font-weight: 700;
   cursor: pointer; flex-shrink: 0; white-space: nowrap;
-  box-shadow: 0 4px 14px rgba(124,58,237,.40);
-  transition: transform .18s ease, box-shadow .22s ease;
+  text-shadow: 0 1px 2px rgba(0,0,0,.15);
+  box-shadow: 0 4px 16px rgba(139,92,246,.45), 0 2px 6px rgba(124,58,237,.25), 0 1px 0 rgba(255,255,255,.22) inset;
+  transition: transform .18s ease, box-shadow .22s ease, background .18s ease;
 }
 .lam-add-btn i { font-size: 15px; }
 .lam-add-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 22px rgba(124,58,237,.55);
+  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 55%, #7c3aed 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(139,92,246,.55), 0 3px 8px rgba(124,58,237,.30), 0 1px 0 rgba(255,255,255,.22) inset;
 }
 
 /* ─── KPI grid ─── */
@@ -839,7 +874,7 @@ const SCOPED_CSS = `
   border: 1px solid rgba(124,58,237,0.14);
   border-radius: 14px;
   padding: 14px 16px;
-  box-shadow: 0 2px 10px rgba(40,18,80,0.05);
+  box-shadow: 0 2px 10px rgba(124,58,237,0.05);
   overflow: hidden;
   text-align: left;
   font: inherit; color: inherit;
@@ -878,13 +913,18 @@ const SCOPED_CSS = `
 .lam-tabs-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 /* Figma tabs: standalone pills (no shared shell) — inactive read as light
    outlined pills, the active tab is a solid violet gradient pill. */
+/* Figma tabs: a single segmented pill container (soft violet shell) with
+   the tabs inside it — inactive read as flat grey text, the active tab is a
+   solid violet gradient pill within the shell. */
 .lam-tabs {
-  display: inline-flex; align-items: center; gap: 8px;
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  padding: 0;
-  box-shadow: none;
+  display: inline-flex; align-items: center; gap: 2px;
+  /* Figma: a clean, near-white container — light fill + a thin subtle
+     border, no heavy lavender gradient. */
+  background: #f7f5fe;
+  border: 1px solid #ece6fb;
+  border-radius: 12px;
+  padding: 4px;
+  box-shadow: 0 1px 3px rgba(124,58,237,.06);
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -892,25 +932,32 @@ const SCOPED_CSS = `
 .lam-tab {
   flex: 0 0 auto;
   display: inline-flex; align-items: center; gap: 7px;
-  padding: 8px 18px;
-  background: #ffffff;
-  /* Figma inactive: white pill, muted slate text, near-invisible border
-     with a soft shadow for lift (not a visible coloured outline). */
-  border: 1px solid #eef0f4;
-  border-radius: 999px;
+  padding: 5px 14px;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
   color: #64748b;
-  box-shadow: 0 1px 2px rgba(16,24,40,0.06);
-  font-family: inherit; font-size: 12.5px; font-weight: 700;
+  box-shadow: none;
+  font-family: inherit; font-size: 11.5px; font-weight: 600;
   cursor: pointer; white-space: nowrap;
-  transition: color .18s ease, background .18s ease, border-color .18s ease, box-shadow .22s ease;
+  transition: color .18s ease, background .18s ease, box-shadow .22s ease;
 }
 .lam-tab-icon { font-size: 15px; opacity: 0.85; }
-.lam-tab:hover { color: #4c1d95; background: #faf9ff; border-color: #e7e0fb; }
+.lam-tab:hover:not(.is-active) { color: #7c3aed; background: rgba(124,58,237,.10); }
 .lam-tab.is-active {
-  background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%);
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
   border-color: transparent;
   color: #fff;
-  box-shadow: 0 4px 12px rgba(124,58,237,0.40);
+  box-shadow: 0 2px 8px rgba(139,92,246,.38);
+  transition: background .18s ease, color .18s ease, box-shadow .18s ease;
+}
+/* Hovering the selected tab fades it to a faint glossy lavender (matches the
+   reference): light gradient + violet text + soft sheen, then it settles back
+   to the solid violet pill on mouse-out. */
+.lam-tab.is-active:hover {
+  background: linear-gradient(100deg, #f5f3ff 0%, #ede9fe 55%, #ddd6fe 100%);
+  color: #7c3aed;
+  box-shadow: 0 2px 10px rgba(139,92,246,.18), 0 1px 0 rgba(255,255,255,.7) inset;
 }
 .lam-tab.is-active .lam-tab-icon { opacity: 1; }
 .lam-tab-count {
@@ -935,7 +982,7 @@ const SCOPED_CSS = `
   background: var(--vz-card-bg, #ffffff);
   border: 1px solid var(--vz-border-color, #e2e8f0);
   border-radius: 8px;
-  padding: 9px 14px;
+  padding: 6px 14px;
   flex: 1 1 320px; max-width: 380px; min-width: 220px;
   transition: border-color .15s, box-shadow .15s;
 }
@@ -962,19 +1009,43 @@ const SCOPED_CSS = `
   border: 1px solid rgba(124,58,237,0.16);
   border-radius: 14px;
   overflow: hidden;
-  box-shadow: 0 2px 14px rgba(40,18,80,0.07);
+  box-shadow: 0 2px 14px rgba(124,58,237,0.07);
   display: flex; flex-direction: column;
   flex: 1; min-height: 0;
 }
-.lam-table-wrap { flex: 1; overflow: auto; }
+/* Fills the card and scrolls the rows internally; the pagination (the card's
+   last child) stays pinned at the bottom and always visible. */
+.lam-table-wrap {
+  flex: 1; min-height: 0; overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #ddd6fe transparent;
+}
+/* Thin themed scrollbar (replaces the chunky default). */
+.lam-table-wrap::-webkit-scrollbar { width: 9px; height: 9px; }
+.lam-table-wrap::-webkit-scrollbar-track { background: transparent; }
+.lam-table-wrap::-webkit-scrollbar-thumb {
+  background: #c4b5fd; border-radius: 8px;
+  border: 2px solid transparent; background-clip: content-box;
+}
+.lam-table-wrap::-webkit-scrollbar-thumb:hover { background: #a78bfa; background-clip: content-box; }
+[data-bs-theme="dark"] .lam-table-wrap { scrollbar-color: rgba(167,139,250,.4) transparent; }
+[data-bs-theme="dark"] .lam-table-wrap::-webkit-scrollbar-thumb { background: rgba(167,139,250,.4); background-clip: content-box; }
 .lam-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+/* Sticky gradient header — stays fixed while the rows scroll inside the card.
+   The gradient lives on the <tr> so it spans the whole row as one continuous
+   band; making the whole <thead> sticky keeps that band intact (the cells
+   stay transparent, so there's no per-column segmentation). */
+.lam-table thead {
+  position: sticky; top: 0; z-index: 5;
+}
+.lam-table thead tr {
+  background: linear-gradient(90deg, #5b21b6 0%, #6d28d9 25%, #7c3aed 55%, #8b5cf6 80%, #a78bfa 100%);
+  box-shadow: 0 2px 10px rgba(124,58,237,0.30);
+}
+.lam-table thead th { text-shadow: 0 1px 3px rgba(0,0,0,0.20); }
 .lam-table thead th {
-  position: sticky; top: 0; z-index: 3;
   padding: 13px 14px; text-align: left; white-space: nowrap;
-  /* Flat, uniform violet header bar (figma). A flat fill — not a diagonal
-     gradient — so the per-cell backgrounds line up into one continuous bar
-     instead of segmenting at each column boundary. */
-  background: #7c3aed;
+  background: transparent;
   border-bottom: none;
   font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -985,7 +1056,7 @@ const SCOPED_CSS = `
 .lam-table tbody tr:nth-child(even) td { background: #faf7ff; }
 .lam-table tbody tr:hover td { background: #ede9fe !important; }
 .lam-table tbody td {
-  padding: 12px 14px;
+  padding: 5px 14px;
   font-size: 12.5px;
   color: #334155;
   border-bottom: 1px solid #f5f3ff;
@@ -1049,8 +1120,8 @@ const SCOPED_CSS = `
 .lam-sr-badge {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 28px; height: 24px; padding: 0 7px; border-radius: 7px;
-  background: #f5f3ff; color: #6d28d9;
-  border: 1.5px solid #ddd6fe;
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe); color: #7c3aed;
+  border: 1px solid #c4b5fd;
   font-size: 11.5px; font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
@@ -1078,11 +1149,11 @@ const SCOPED_CSS = `
    override block. */
 .lam-actions { display: inline-flex; gap: 4px; justify-content: center; }
 .lam-ab {
-  width: 30px; height: 30px; border-radius: 8px;
+  width: 26px; height: 26px; border-radius: 7px;
   display: inline-flex; align-items: center; justify-content: center;
   border: 1px solid transparent;
   cursor: pointer;
-  font-size: 14px; padding: 0;
+  font-size: 12.5px; padding: 0;
   transition: background .15s ease, border-color .15s ease, color .15s ease, transform .12s ease;
 }
 /* Coloured tiles by default (Figma) — blue edit, red delete. */
@@ -1121,43 +1192,58 @@ const SCOPED_CSS = `
   border-top: 1px solid #ede9fe;
   flex-wrap: wrap; gap: 10px;
 }
-.lam-pag-info {
-  font-size: 12.5px; font-weight: 500; color: #475569;
-}
+/* Footer — plain "Showing N–M of T Results" on the left; uniform 32×32
+   numbered page buttons (active = violet) with prev/next arrows on the
+   right. Matches the project-standard pagination (HR Employees / Customers). */
+.lam-pag-info { font-size: 12.5px; font-weight: 500; color: #475569; }
 .lam-pag-info strong { color: #1f2937; font-weight: 800; }
-.lam-pag-btns { display: inline-flex; align-items: center; gap: 6px; }
-.lam-pag-btn,
-.lam-pag-num {
-  min-width: 30px; height: 30px; padding: 0 8px;
-  border-radius: 8px;
-  border: 1px solid var(--vz-border-color, #e2e8f0);
-  background: #fff;
+.lam-pag-right { display: inline-flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+/* Rows-per-page pill — styled in the page's own violet language (not a raw
+   native control). The <select> is appearance:none and only shows its value;
+   a remix chevron sits on the right. */
+.lam-rows {
+  position: relative; display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 600; color: #6d28d9;
+  background: #fff; border: 1px solid #e0d9f7;
+  padding: 5px 30px 5px 12px; border-radius: 8px;
   cursor: pointer;
-  color: #475569; font-size: 13px; font-weight: 600;
-  display: inline-flex; align-items: center; justify-content: center;
-  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.lam-rows:hover { border-color: #c4b5fd; }
+.lam-rows-val { font-size: 12.5px; font-weight: 800; color: #7c3aed; }
+/* The real <select> overlays the whole pill (transparent) so a click
+   anywhere on it opens the dropdown — only the value text + chevron show. */
+.lam-rows-sel {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer; border: none;
   font-family: inherit;
 }
-.lam-pag-btn { color: #6b7280; font-size: 16px; }
-.lam-pag-btn:hover:not(:disabled),
-.lam-pag-num:hover:not(.is-active) {
-  background: #f5f3ff;
-  border-color: #c4b5fd;
-  color: #6d28d9;
+.lam-rows-caret {
+  position: absolute; right: 9px; top: 50%; transform: translateY(-50%);
+  pointer-events: none; color: #7c3aed; font-size: 16px;
 }
-.lam-pag-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.lam-pag-num.is-active {
-  background: linear-gradient(135deg, #6d28d9, #7c3aed);
-  color: #fff;
-  border-color: transparent;
-  box-shadow: 0 3px 10px rgba(124,58,237,0.32);
+.lam-pag-btns { display: inline-flex; align-items: center; gap: 4px; }
+.lam-pag-btn {
+  height: 32px; min-width: 32px; padding: 0 6px;
+  border-radius: 8px;
+  border: 1px solid #e0d9f7;
+  background: #fff;
+  cursor: pointer;
+  color: #6d28d9; font-size: 13px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .22s ease;
+  font-family: inherit;
+}
+.lam-pag-btn i { font-size: 16px; }
+.lam-pag-btn:hover:not(:disabled):not(.is-active) {
+  background: #f5f3ff; border-color: #c4b5fd; color: #5b21b6;
+}
+.lam-pag-btn.is-active {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  border-color: #7c3aed; color: #fff;
+  box-shadow: 0 2px 6px rgba(109,40,217,.30);
   cursor: default;
 }
-.lam-pag-gap {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 22px; color: #94a3b8; font-size: 13px; font-weight: 700;
-  user-select: none;
-}
+.lam-pag-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ─── Modals (opp selector + form) — overlay scrolls when the
    modal body taller than the viewport (long forms on small
@@ -1331,7 +1417,7 @@ const SCOPED_CSS = `
 .lam-fld + .lam-fld { margin-top: 0; }
 .lam-modal-body > .lam-fld + .lam-row,
 .lam-modal-body > .lam-row + .lam-fld,
-.lam-modal-body > .lam-row + .lam-row { margin-top: 18px; }
+.lam-modal-body > .lam-row + .lam-row { margin-top: 2px; }
 .lam-lbl {
   display: block;
   font-size: 11px; font-weight: 700; color: #4c1d95;
@@ -1358,7 +1444,7 @@ const SCOPED_CSS = `
 }
 .lam-textarea:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.15); }
 .lam-textarea::placeholder { color: #94a3b8; font-weight: 400; }
-.lam-char-count { font-size: 10.5px; color: #94a3b8; text-align: right; margin-top: 5px; transition: color .15s; }
+.lam-char-count { font-size: 10.5px; color: #94a3b8; text-align: right; margin-top: 1px; line-height: 1.1; transition: color .15s; }
 .lam-char-max   { color: #cbd5e1; }
 .lam-cc-warn    { color: #ea580c; font-weight: 700; }
 .lam-cc-warn .lam-char-max { color: #fdba74; }
@@ -1433,7 +1519,7 @@ const SCOPED_CSS = `
 @keyframes lam-spin { to { transform: rotate(360deg); } }
 
 /* ─── DARK MODE ─── */
-[data-bs-theme="dark"] .lam-root { background: linear-gradient(180deg, #14101d 0%, #1a1530 100%); color: #d4d1de; }
+[data-bs-theme="dark"] .lam-root { background: linear-gradient(180deg, #14101d 0%, #1a1530 100%); color: #cbd5e1; }
 
 [data-bs-theme="dark"] .lam-no-access {
   background: #1a1530; border-color: rgba(167,139,250,.30);
@@ -1444,11 +1530,15 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lam-no-access-sub   { color: #9aa0b4; }
 
 [data-bs-theme="dark"] .lam-hero {
-  background: linear-gradient(90deg, rgba(124,58,237,0.18) 0%, rgba(76,29,149,0.14) 60%, rgba(26,21,48,0.30) 100%);
-  border-color: rgba(167,139,250,.28);
-  box-shadow: 0 4px 14px rgba(0,0,0,.30);
+  background:
+    radial-gradient(ellipse at top right, rgba(167,139,250,0.12), transparent 60%),
+    radial-gradient(ellipse at bottom left, rgba(124,58,237,0.10), transparent 60%),
+    linear-gradient(135deg, #2a2150 0%, #241c44 50%, #1d1638 100%);
+  border-color: rgba(167,139,250,0.22);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.35);
 }
-[data-bs-theme="dark"] .lam-hero-icon { background: linear-gradient(135deg, #7c3aed, #6d28d9); }
+[data-bs-theme="dark"] .lam-hero::after { background: linear-gradient(180deg, rgba(255,255,255,.06), transparent); }
+[data-bs-theme="dark"] .lam-hero-icon { background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%); }
 [data-bs-theme="dark"] .lam-hero-title { color: #ede9fe; }
 [data-bs-theme="dark"] .lam-hero-sub   { color: #c4b5fd; opacity: 1; }
 [data-bs-theme="dark"] .lam-back-btn {
@@ -1474,18 +1564,23 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lam-kpi-value { color: #ede9fe; }
 
 [data-bs-theme="dark"] .lam-tabs {
-  background: transparent;
-  border: none;
+  background: rgba(124,58,237,.12);
+  border: 1px solid rgba(167,139,250,.25);
   box-shadow: none;
 }
 [data-bs-theme="dark"] .lam-tab {
-  background: rgba(255,255,255,.03);
-  border-color: rgba(255,255,255,.08);
+  background: transparent;
+  border: none;
   color: #9aa0b4;
   box-shadow: none;
 }
-[data-bs-theme="dark"] .lam-tab:hover { color: #ede9fe; background: rgba(167,139,250,.12); border-color: rgba(167,139,250,.30); }
-[data-bs-theme="dark"] .lam-tab.is-active { background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%); border-color: transparent; color: #fff; }
+[data-bs-theme="dark"] .lam-tab:hover:not(.is-active) { color: #ede9fe; background: rgba(167,139,250,.14); }
+[data-bs-theme="dark"] .lam-tab.is-active { background: linear-gradient(135deg, #8b5cf6, #7c3aed); border-color: transparent; color: #fff; }
+[data-bs-theme="dark"] .lam-tab.is-active:hover {
+  background: linear-gradient(100deg, rgba(167,139,250,.22) 0%, rgba(124,58,237,.20) 100%);
+  color: #ede9fe;
+  box-shadow: 0 2px 10px rgba(0,0,0,.30), 0 1px 0 rgba(255,255,255,.08) inset;
+}
 [data-bs-theme="dark"] .lam-tab-count { background: rgba(255,255,255,.06); color: #c4b5fd; }
 [data-bs-theme="dark"] .lam-tab.is-active .lam-tab-count { background: rgba(0,0,0,.32); color: #fff; }
 
@@ -1504,18 +1599,21 @@ const SCOPED_CSS = `
   background: #1a1530; border-color: rgba(167,139,250,.25);
   box-shadow: 0 8px 32px rgba(0,0,0,.45);
 }
+[data-bs-theme="dark"] .lam-table thead tr {
+  background: linear-gradient(90deg, #7c3aed 0%, #6d28d9 60%, #5b21b6 100%);
+}
 [data-bs-theme="dark"] .lam-table thead th {
-  background: #6d28d9;
+  background: transparent;
   color: #f5f3ff;
   border-bottom-color: transparent;
 }
-[data-bs-theme="dark"] .lam-table tbody td { color: #d4d1de; border-bottom-color: rgba(167,139,250,.10); }
-[data-bs-theme="dark"] .lam-table tbody tr:nth-child(even) td { background: rgba(28,20,50,0.50); }
+[data-bs-theme="dark"] .lam-table tbody td { color: #cbd5e1; border-bottom-color: rgba(167,139,250,.10); }
+[data-bs-theme="dark"] .lam-table tbody tr:nth-child(even) td { background: rgba(15,23,42,0.50); }
 [data-bs-theme="dark"] .lam-table tbody tr:hover td { background: rgba(124,58,237,.10) !important; }
 [data-bs-theme="dark"] .lam-td-sr     { color: #ede9fe; }
 [data-bs-theme="dark"] .lam-sr-badge  { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.30); }
 [data-bs-theme="dark"] .lam-td-reason { color: #ede9fe; }
-[data-bs-theme="dark"] .lam-empty { color: #7a6b9a; }
+[data-bs-theme="dark"] .lam-empty { color: #64748b; }
 [data-bs-theme="dark"] .lam-empty-icon { background: rgba(124,58,237,.16); color: #a78bfa; }
 [data-bs-theme="dark"] .lam-skel {
   background: linear-gradient(90deg, #241c3a 25%, #322750 37%, #241c3a 63%);
@@ -1537,23 +1635,29 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lam-pag-info { color: #9aa0b4; }
 [data-bs-theme="dark"] .lam-pag-info strong { color: #ede9fe; }
 [data-bs-theme="dark"] .lam-select option { background: #1a1530; color: #ede9fe; }
-[data-bs-theme="dark"] .lam-pag-btn,
-[data-bs-theme="dark"] .lam-pag-num {
-  background: rgba(255,255,255,.03);
-  border-color: rgba(167,139,250,.28);
+[data-bs-theme="dark"] .lam-pag-btn {
+  background: rgba(255,255,255,.04);
+  border-color: rgba(167,139,250,.30);
   color: #c4b5fd;
+  box-shadow: none;
 }
-[data-bs-theme="dark"] .lam-pag-btn:hover:not(:disabled),
-[data-bs-theme="dark"] .lam-pag-num:hover:not(.is-active) {
-  background: rgba(124,58,237,.14);
+[data-bs-theme="dark"] .lam-pag-btn:hover:not(:disabled):not(.is-active) {
+  background: rgba(124,58,237,.20);
   border-color: rgba(167,139,250,.50);
   color: #ede9fe;
 }
-[data-bs-theme="dark"] .lam-pag-num.is-active {
-  background: linear-gradient(135deg, #6d28d9, #7c3aed);
-  color: #fff; border-color: transparent;
+[data-bs-theme="dark"] .lam-pag-btn.is-active {
+  background: linear-gradient(135deg, #6d28d9, #4c1d95);
+  border-color: #7c3aed; color: #fff;
+  box-shadow: 0 2px 8px rgba(124,58,237,.45);
 }
-[data-bs-theme="dark"] .lam-pag-gap { color: #6b6480; }
+[data-bs-theme="dark"] .lam-rows {
+  background: rgba(255,255,255,.04); border-color: rgba(167,139,250,.30); color: #c4b5fd;
+}
+[data-bs-theme="dark"] .lam-rows-sel { color: #c4b5fd; }
+[data-bs-theme="dark"] .lam-rows-caret { color: #c4b5fd; }
+[data-bs-theme="dark"] select.lam-rows-sel { color-scheme: dark; }
+[data-bs-theme="dark"] .lam-rows-sel option { background: #1a1530; color: #ede9fe; }
 
 [data-bs-theme="dark"] .lam-modal { background: #1a1530; box-shadow: 0 24px 60px rgba(0,0,0,.55), 0 4px 24px rgba(0,0,0,.30); }
 [data-bs-theme="dark"] .lam-modal-body { background: #221a3a; }
@@ -1562,15 +1666,15 @@ const SCOPED_CSS = `
 
 [data-bs-theme="dark"] .lam-textarea,
 [data-bs-theme="dark"] .lam-select {
-  background: #0f0c19; color: #ede9fe;
+  background: #14101d; color: #ede9fe;
   border-color: rgba(167,139,250,.28);
 }
-[data-bs-theme="dark"] .lam-textarea::placeholder { color: #7a6b9a; }
+[data-bs-theme="dark"] .lam-textarea::placeholder { color: #64748b; }
 [data-bs-theme="dark"] .lam-textarea:focus,
 [data-bs-theme="dark"] .lam-select:focus { border-color: #a78bfa; box-shadow: 0 0 0 4px rgba(167,139,250,.18); }
 [data-bs-theme="dark"] .lam-lbl { color: #c4b5fd; }
-[data-bs-theme="dark"] .lam-char-count { color: #7a6b9a; }
-[data-bs-theme="dark"] .lam-char-max { color: #4a4663; }
+[data-bs-theme="dark"] .lam-char-count { color: #64748b; }
+[data-bs-theme="dark"] .lam-char-max { color: #322750; }
 [data-bs-theme="dark"] .lam-error { background: rgba(239,68,68,.16); color: #fca5a5; border-color: rgba(239,68,68,.40); }
 
 [data-bs-theme="dark"] .lam-btn-light {
@@ -1610,6 +1714,9 @@ const SCOPED_CSS = `
   .lam-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 860px) {
+  /* Hero: icon + text on one row, the action button wraps to its own row
+     below and stays auto-width (right-aligned) rather than stretching. */
+  .lam-hero { min-height: 0; padding: 14px 18px; }
   .lam-hero-actions { width: 100%; justify-content: flex-end; }
   .lam-tabs-row { flex-direction: column; align-items: stretch; }
   .lam-tabs { width: 100%; overflow-x: auto; }
@@ -1622,13 +1729,7 @@ const SCOPED_CSS = `
   .lam-hero-sub   { font-size: 11.5px; }
   .lam-hero-icon  { width: 42px; height: 42px; font-size: 20px; }
   .lam-hero-text  { flex: 1 1 100%; }
-  .lam-back-btn,
-  .lam-add-btn { flex: 1; justify-content: center; }
-  .lam-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .lam-kpi-tile { padding: 12px 14px; }
-  .lam-kpi-value { font-size: 24px; }
-  .lam-kpi-icon  { width: 36px; height: 36px; font-size: 17px; }
-  .lam-pagination { padding: 10px 12px; flex-direction: column; align-items: stretch; gap: 8px; }
+  .lam-pagination { padding: 10px 12px; flex-direction: column; align-items: stretch; gap: 10px; }
   .lam-pag-btns   { justify-content: center; flex-wrap: wrap; }
 }
 @media (max-width: 520px) {

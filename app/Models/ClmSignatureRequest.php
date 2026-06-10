@@ -192,9 +192,20 @@ class ClmSignatureRequest extends Model
     {
         if (!$clientId) return false;
 
+        // Guard against draft-id REUSE. A completed request only locks a draft
+        // if it was created at/after the draft's own creation. Otherwise an
+        // orphaned request left behind by a since-DELETED draft — whose id was
+        // later reused by a brand-new draft — would wrongly mark the new draft
+        // as signed. (Happens when the library is wiped and re-seeded: ids
+        // restart and collide with stale signature requests.)
+        $libModel = $docType === self::DOC_AGREEMENT ? ClmAgreementLibrary::class : ClmTradeDocLibrary::class;
+        $docCreatedAt = $libModel::where('client_id', $clientId)->where('id', $docId)->value('created_at');
+        if (!$docCreatedAt) return false;   // draft gone → nothing to lock
+
         return static::where('client_id', $clientId)
             ->where('document_type', $docType)
             ->where('status', 'completed')
+            ->where('created_at', '>=', $docCreatedAt)
             ->where(function (Builder $q) use ($docId) {
                 $q->where('trade_doc_id', $docId)
                   ->orWhereJsonContains('trade_doc_ids', $docId);
@@ -218,15 +229,41 @@ class ClmSignatureRequest extends Model
         $rows = static::where('client_id', $clientId)
             ->where('document_type', $docType)
             ->where('status', 'completed')
-            ->get(['trade_doc_id', 'trade_doc_ids']);
+            ->get(['trade_doc_id', 'trade_doc_ids', 'created_at']);
 
-        $ids = [];
+        // Candidate draft id => the completed-request timestamps referencing it.
+        $candidates = [];
         foreach ($rows as $r) {
-            if ($r->trade_doc_id) $ids[] = (int) $r->trade_doc_id;
-            foreach ((array) ($r->trade_doc_ids ?? []) as $id) {
-                if ($id) $ids[] = (int) $id;
+            $refIds = is_array($r->trade_doc_ids) && !empty($r->trade_doc_ids)
+                ? $r->trade_doc_ids
+                : [$r->trade_doc_id];
+            foreach ((array) $refIds as $id) {
+                $id = (int) $id;
+                if ($id) $candidates[$id][] = $r->created_at;
             }
         }
-        return array_values(array_unique($ids));
+        if (empty($candidates)) return [];
+
+        // Pull each candidate draft's creation time from the right library
+        // table so we can apply the same id-reuse guard as hasSignedDraft():
+        // a draft is "signed" only when a completed request both references it
+        // AND was created at/after the draft's own creation.
+        $libModel = $docType === self::DOC_AGREEMENT ? ClmAgreementLibrary::class : ClmTradeDocLibrary::class;
+        $docCreated = $libModel::where('client_id', $clientId)
+            ->whereIn('id', array_keys($candidates))
+            ->pluck('created_at', 'id');
+
+        $signed = [];
+        foreach ($candidates as $id => $reqDates) {
+            $docDate = $docCreated[$id] ?? null;
+            if (!$docDate) continue;   // draft no longer exists → not signed
+            foreach ($reqDates as $rd) {
+                if ($rd && \Illuminate\Support\Carbon::parse($rd)->gte(\Illuminate\Support\Carbon::parse($docDate))) {
+                    $signed[] = $id;
+                    break;
+                }
+            }
+        }
+        return array_values(array_unique($signed));
     }
 }

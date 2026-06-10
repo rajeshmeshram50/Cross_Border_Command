@@ -9,7 +9,6 @@ use App\Models\ClmKycDocument;
 use App\Models\ClmQcDocument;
 use App\Models\ClmSegment;
 use App\Models\ClmSegmentRule;
-use App\Models\ClmTradeDocLibrary;
 use App\Models\ClmTradeLicense;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -49,7 +48,8 @@ class ClmSegmentRuleController extends Controller
         $kyc         = $cid ? ClmKycDocument::where('client_id', $cid)->orderBy('id')->get() : collect();
         $dd          = $cid ? ClmDdDocument::where('client_id', $cid)->orderBy('id')->get() : collect();
         $tl          = $cid ? ClmTradeLicense::where('client_id', $cid)->orderBy('id')->get() : collect();
-        $td          = $cid ? ClmTradeDocLibrary::where('client_id', $cid)->orderBy('id')->get() : collect();
+        // Trade Documents (td) was removed from the Document Control Panel — it
+        // is no longer a configurable category, so it isn't shipped here.
         $qc          = $cid ? ClmQcDocument::where('client_id', $cid)->orderBy('id')->get() : collect();
 
         return response()->json([
@@ -60,7 +60,6 @@ class ClmSegmentRuleController extends Controller
                 'kyc'         => $kyc,
                 'dd'          => $dd,
                 'tl'          => $tl,
-                'td'          => $td,
                 'qc'          => $qc,
             ],
         ]);
@@ -162,7 +161,6 @@ class ClmSegmentRuleController extends Controller
      *     "kyc": [ { code, name, authority, requirement: 'M'|'O', … } ],
      *     "dd":  [ … ],
      *     "tl":  [ … ],
-     *     "td":  [ … ],
      *     "qc":  [ … ]
      *   }
      */
@@ -213,7 +211,7 @@ class ClmSegmentRuleController extends Controller
                 'kyc'  => $resolveCat('kyc', ClmKycDocument::class),
                 'dd'   => $resolveCat('dd',  ClmDdDocument::class),
                 'tl'   => $resolveCat('tl',  ClmTradeLicense::class),
-                'td'   => $resolveCat('td',  ClmTradeDocLibrary::class),
+                // Trade Documents (td) removed from the DCP — no longer resolved.
                 'qc'   => $resolveCat('qc',  ClmQcDocument::class),
             ],
         ]);
@@ -221,7 +219,7 @@ class ClmSegmentRuleController extends Controller
 
     private function validatePayload(Request $request): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'segment_code'      => 'required|string|max:16',
             'regulatory_status' => ['required', Rule::in(ClmSegmentRule::REG_VALUES)],
             'auths'             => 'nullable|array',
@@ -230,9 +228,12 @@ class ClmSegmentRuleController extends Controller
             'doc_selections.kyc'          => 'nullable|array',
             'doc_selections.dd'           => 'nullable|array',
             'doc_selections.tl'           => 'nullable|array',
-            'doc_selections.td'           => 'nullable|array',
             'doc_selections.qc'           => 'nullable|array',
         ]);
+        // Trade Documents (td) was removed from the DCP — never persist it, even
+        // if an older client still includes it in the payload.
+        unset($data['doc_selections']['td']);
+        return $data;
     }
 
     /**
@@ -243,7 +244,7 @@ class ClmSegmentRuleController extends Controller
     private function countSelections(array $sel): array
     {
         $mand = 0; $opt = 0;
-        foreach (['kyc', 'dd', 'tl', 'td', 'qc'] as $cat) {
+        foreach (['kyc', 'dd', 'tl', 'qc'] as $cat) {
             foreach ($sel[$cat] ?? [] as $v) {
                 if ($v === 'M') $mand++;
                 elseif ($v === 'O') $opt++;

@@ -120,6 +120,12 @@ class ClmSignatureController extends Controller
             'trade_doc_ids.*'      => 'integer|exists:clm_trade_doc_library,id',
             'party_id'             => 'required|integer',
             'model_name'           => 'nullable|string|in:Customer,Consignee,Vendor',
+            // Optional lead scope. Sent from the Sales-Matrix Trade Documents
+            // popup so the request is tied to the opportunity — without it the
+            // lead-scoped status lookup/poll (and the row's Sent/Signed badge,
+            // Remind + downloads) can't find it. Omitted for the standalone
+            // customer/consignee/vendor vault sends.
+            'lead_id'              => 'nullable|integer|exists:leads,id',
             'signers'              => 'required|array|min:1|max:5',
             'signers.*.email'      => 'required|email',
             'signers.*.name'       => 'required|string|max:255',
@@ -260,6 +266,11 @@ class ClmSignatureController extends Controller
             $sigReq = new ClmSignatureRequest();
             $sigReq->client_id           = $user->client_id;
             $sigReq->branch_id           = $user->branch_id ?? null;
+            // Explicit trade-doc discriminator + optional lead scope so the
+            // Sales-Matrix popup can resolve this request lead-side (mirrors
+            // the agreement-send path).
+            $sigReq->document_type       = ClmSignatureRequest::DOC_TRADE;
+            $sigReq->lead_id             = $data['lead_id'] ?? null;
             $sigReq->trade_doc_id        = $orderedDocs->first()->id;
             $sigReq->trade_doc_ids       = $orderedDocs->pluck('id')->values()->all();
             $sigReq->document_names      = collect($localDocMeta)->pluck('document_name')->values()->all();
