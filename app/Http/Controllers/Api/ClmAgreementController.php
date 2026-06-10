@@ -397,6 +397,31 @@ class ClmAgreementController extends Controller
             }
         }
 
+        // Same lookup for TRADE-DOCUMENT sends, keyed by trade-doc-library id,
+        // so each trade-doc row can surface its live signature status (Sent /
+        // Signed), the Remind button + count, and the signed-PDF / certificate
+        // download links — exactly like the agreement rows.
+        $tdSigRows = $source
+            ? ClmSignatureRequest::where('client_id', $user->client_id)
+                ->where('document_type', ClmSignatureRequest::DOC_TRADE)
+                ->where('lead_id', $lead->id)
+                ->whereNull('deleted_at')
+                ->orderByDesc('id')
+                ->get()
+            : collect();
+        $latestPerTradeDoc = [];
+        foreach ($tdSigRows as $r) {
+            $ids = is_array($r->trade_doc_ids) && !empty($r->trade_doc_ids)
+                ? $r->trade_doc_ids
+                : [$r->trade_doc_id];
+            foreach ((array) $ids as $tid) {
+                $tid = (int) $tid;
+                if ($tid && !isset($latestPerTradeDoc[$tid])) {
+                    $latestPerTradeDoc[$tid] = $r;
+                }
+            }
+        }
+
         // Customer + consignee mapped to this lead. Resolved up-front (it
         // used to sit below the loop) because the per-segment trade-document
         // block now needs both parties' upload state inside the loop.
@@ -490,7 +515,7 @@ class ClmAgreementController extends Controller
                 // Trade documents required for THIS segment, for both the
                 // customer and the consignee — moved here from the per-party
                 // Evidence Vault so they're surfaced segment-wise.
-                'trade_documents' => $this->segmentTradeDocs($seg, (int) $user->client_id, $partyOwners),
+                'trade_documents' => $this->segmentTradeDocs($seg, (int) $user->client_id, $partyOwners, $latestPerTradeDoc),
             ];
         }
 
@@ -572,7 +597,7 @@ class ClmAgreementController extends Controller
      * @param  array<int,array{party:string,model:Model}>  $partyOwners
      * @return array<int,array<string,mixed>>
      */
-    private function segmentTradeDocs($seg, int $cid, array $partyOwners): array
+    private function segmentTradeDocs($seg, int $cid, array $partyOwners, array $latestPerTradeDoc = []): array
     {
         // Trade documents now carry their own `regulatory` + `segment` (CSV)
         // columns — exactly like the Agreement Library — instead of being
@@ -632,6 +657,26 @@ class ClmAgreementController extends Controller
                 if ($hit = $ups->get($docCode)) { $uploaded = $hit; break; }
             }
 
+            // Live signature status for this trade doc (latest Zoho send on
+            // this lead) — drives the Sent/Signed badge, Remind button + count,
+            // and signed-PDF / certificate downloads, same as agreements.
+            $req = $latestPerTradeDoc[(int) $m->id] ?? null;
+            $sigOut = null;
+            if ($req) {
+                $signedPaths = is_array($req->signed_document_paths) ? $req->signed_document_paths : [];
+                $first = $signedPaths[0] ?? [];
+                $sigOut = [
+                    'id'                    => $req->id,
+                    'status'                => $req->status,
+                    'sent_at'               => optional($req->created_at)->toIso8601String(),
+                    'completed_at'          => optional($req->completed_at)->toIso8601String(),
+                    'signed_url'            => $first['file_url'] ?? $first['url'] ?? null,
+                    'certificate_url'       => $req->certificate_path ? file_url($req->certificate_path) : null,
+                    'reminder_count'        => (int) ($req->reminder_count ?? 0),
+                    'last_reminder_sent_at' => optional($req->last_reminder_sent_at)->toIso8601String(),
+                ];
+            }
+
             $out[] = [
                 'db_id'            => $m->id,
                 'name'             => $m->name ?? ($m->title ?? $docCode),
@@ -646,6 +691,7 @@ class ClmAgreementController extends Controller
                 'status'           => $uploaded ? 'Verified' : 'Pending',
                 'attachment'       => $uploaded?->attachment_name,
                 'attachment_url'   => $uploaded?->attachment_url,
+                'signature_request' => $sigOut,
             ];
         }
         return $out;

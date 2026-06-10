@@ -128,6 +128,10 @@ interface Props {
    * preselected agreements so the modal can skip its picker step and
    * dispatch to the agreement preview/send endpoints. */
   agreementContext?: AgreementContext | null;
+  /** Optional lead scope for trade-doc mode. When set, the trade-doc send is
+   * tied to this opportunity (lead_id), so the Sales-Matrix popup can resolve
+   * its signature status, Remind, and signed/certificate downloads. */
+  leadId?: number | null;
 }
 
 export default function SalesCustomerSendForSignatureModal({
@@ -139,6 +143,7 @@ export default function SalesCustomerSendForSignatureModal({
   modelName = 'Customer',
   mode = 'trade-doc',
   agreementContext = null,
+  leadId = null,
 }: Props) {
   const isAgreement = mode === 'agreement';
   const toast = useToast();
@@ -692,6 +697,9 @@ export default function SalesCustomerSendForSignatureModal({
         trade_doc_ids: selectedIds,
         party_id: customer.db_id,
         model_name: modelName,
+        // Lead scope (Sales-Matrix Trade Documents popup) — omitted for the
+        // standalone vault sends so their behaviour is unchanged.
+        ...(leadId ? { lead_id: leadId } : {}),
         signers: signers.map((s, i) => ({ ...s, name: s.name.trim(), email: s.email.trim(), order: s.order ?? i + 1 })),
         is_sequential: isSequential,
         expiry_days: expiryDays,
