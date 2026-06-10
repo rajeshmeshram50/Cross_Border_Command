@@ -218,10 +218,10 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
                 <span className="tm-file-chip-name">{fileLabel}</span>
                 <button
                   type="button"
-                  className="tm-file-chip-btn tm-file-chip-view"
+                  className="tm-file-chip-btn tm-file-chip-view tm-tip"
                   onClick={onViewFile}
                   aria-label="View file"
-                  title="View"
+                  data-tip="View"
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
@@ -230,10 +230,10 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
                 </button>
                 <button
                   type="button"
-                  className="tm-file-chip-btn tm-file-chip-del"
+                  className="tm-file-chip-btn tm-file-chip-del tm-tip"
                   onClick={onDeleteFile}
                   aria-label="Remove file"
-                  title="Remove"
+                  data-tip="Remove"
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
                     <polyline points="3 6 5 6 21 6" />
@@ -413,4 +413,29 @@ const TM_CSS = `
 [data-bs-theme="dark"] .tm-file-chip-view:hover { background: #3b2f6e; border-color: #a78bfa; }
 [data-bs-theme="dark"] .tm-file-chip-del { color: #fca5a5; }
 [data-bs-theme="dark"] .tm-file-chip-del:hover { background: rgba(239,68,68,.18); border-color: #fca5a5; }
+
+/* ── Custom tooltip (replaces native title=) ── */
+.tm-tip { position: relative; }
+.tm-tip::after {
+  content: attr(data-tip);
+  position: absolute; left: 50%; bottom: calc(100% + 7px);
+  transform: translateX(-50%) translateY(3px);
+  background: #2e1065; color: #fff;
+  font-size: 9.5px; font-weight: 700; letter-spacing: .02em;
+  white-space: nowrap; padding: 4px 9px; border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(46,16,101,.35);
+  opacity: 0; pointer-events: none; z-index: 60;
+  transition: opacity .15s ease, transform .15s ease;
+}
+.tm-tip::before {
+  content: ''; position: absolute; left: 50%; bottom: calc(100% + 3px);
+  transform: translateX(-50%);
+  border: 4px solid transparent; border-top-color: #2e1065;
+  opacity: 0; pointer-events: none; z-index: 60;
+  transition: opacity .15s ease;
+}
+.tm-tip:hover::after { opacity: 1; transform: translateX(-50%) translateY(0); }
+.tm-tip:hover::before { opacity: 1; }
+[data-bs-theme="dark"] .tm-tip::after { background: #ede9fe; color: #2e1065; box-shadow: 0 4px 14px rgba(0,0,0,.5); }
+[data-bs-theme="dark"] .tm-tip::before { border-top-color: #ede9fe; }
 `;

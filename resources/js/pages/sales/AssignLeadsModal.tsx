@@ -377,7 +377,7 @@ const ALM_CSS = `
 @keyframes alm-fade { from { opacity: 0; } to { opacity: 1; } }
 .alm-modal {
   width: 560px; max-width: 95vw; background: #fff;
-  border-radius: 14px; box-shadow: 0 18px 48px rgba(15,23,42,.25);
+  border-radius: 20px; box-shadow: 0 18px 48px rgba(15,23,42,.25);
   overflow: visible; display: flex; flex-direction: column;
   animation: alm-pop .18s ease-out;
 }
@@ -386,7 +386,7 @@ const ALM_CSS = `
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 20px; background: linear-gradient(135deg, #0e7490, #0891b2);
-  color: #fff; border-radius: 14px 14px 0 0;
+  color: #fff; border-radius: 20px 20px 0 0;
 }
 /* Decorative bubble orbs (figma) — soft white circles clipped by the header. */
 .alm-head::before {
@@ -453,6 +453,10 @@ const ALM_CSS = `
 .alm-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
 .alm-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .alm-field { display: flex; flex-direction: column; gap: 4px; position: relative; }
+/* Match the figma field curve (10px) on the account / date / salesperson
+   controls (MasterSelect + MasterDatePicker), scoped to this modal. */
+.alm-modal .master-select-wrap .master-select-toggle,
+.alm-modal .master-datepicker-wrap .master-datepicker-toggle { border-radius: 10px; }
 .alm-label { font-size: 11.5px; font-weight: 600; color: #334155; }
 /* Label with a leading icon (Select Salesperson) — uppercase to match Figma. */
 .alm-label-icon {
@@ -469,7 +473,7 @@ const ALM_CSS = `
 .alm-foot {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   padding: 14px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0;
-  border-radius: 0 0 14px 14px;
+  border-radius: 0 0 20px 20px;
 }
 /* "Field is required" hint on the footer's left edge (Figma). */
 .alm-foot-hint {
@@ -481,16 +485,26 @@ const ALM_CSS = `
 .alm-foot-actions { display: flex; align-items: center; gap: 8px; }
 .alm-btn {
   display: inline-flex; align-items: center; gap: 7px;
-  padding: 8px 18px; border-radius: 8px; font-size: 12.5px; font-weight: 600;
-  cursor: pointer; border: 1.5px solid transparent; transition: all .15s;
+  padding: 9px 18px; border-radius: 10px; font-size: 12.5px; font-weight: 600;
+  cursor: pointer; border: 1.5px solid transparent; transition: all .18s ease;
 }
 .alm-btn:disabled { opacity: .55; cursor: not-allowed; }
 .alm-btn-ghost { background: #fff; border-color: #cbd5e1; color: #475569; }
-.alm-btn-ghost:hover:not(:disabled) { background: #f1f5f9; }
+.alm-btn-ghost:hover:not(:disabled) {
+  background: #f1f5f9; border-color: #94a3b8; color: #0f172a;
+  transform: translateY(-1px); box-shadow: 0 4px 12px rgba(15,23,42,.10);
+}
 .alm-btn-primary {
   background: linear-gradient(135deg, #0891b2, #0e7490); color: #fff;
+  box-shadow: 0 4px 14px rgba(8,145,178,.35);
 }
-.alm-btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+.alm-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #06b6d4, #0891b2);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px rgba(8,145,178,.50);
+}
+.alm-btn-primary:active:not(:disabled),
+.alm-btn-ghost:active:not(:disabled) { transform: translateY(0); }
 
 [data-bs-theme="dark"] .alm-modal { background: #0f172a; color: #e2e8f0; }
 [data-bs-theme="dark"] .alm-label { color: #cbd5e1; }
