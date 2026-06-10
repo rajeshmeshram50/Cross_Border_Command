@@ -6,6 +6,7 @@ import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } f
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTheme } from '../../contexts/ThemeContext';
 import api from '../../api';
 import ComingSoonShell from '../../components/ComingSoonShell';
 import HeaderFooterPanel, {
@@ -1298,6 +1299,8 @@ export function VaultModal({
   onTabChange: (t: 'employee' | 'organizational') => void;
   triggerKeyword?: string | null;
 }) {
+  const { theme: vaultTheme } = useTheme();
+  const vaultDark = vaultTheme === 'dark';
   // ── Organizational documents (Document Templates) — pulled from the API.
   // The Document Template Master classifies templates by employee_category
   // (IT / Non-IT / Legal) × role_type (designation level). The Vault's
@@ -2780,14 +2783,16 @@ export function VaultModal({
                       && (auditRun.status === 'Pending' || auditRun.status === 'In Progress');
                     const isLast = i === signers.length - 1;
 
-                    // Color tokens per state
+                    // Color tokens per state. The circular dot keeps its vivid
+                    // fill in both themes; the status pill gets a translucent
+                    // dark variant so it isn't a light pastel block in dark mode.
                     const tone = rejected
-                      ? { bg: '#fee2e2', border: '#fca5a5', icon: '#dc2626', pill: '#dc2626', pillBg: '#fee2e2', pillBorder: '#fca5a5', label: 'Rejected', iconClass: 'ri-close-line' }
+                      ? { bg: '#fee2e2', border: '#fca5a5', icon: '#dc2626', pill: vaultDark ? '#fca5a5' : '#dc2626', pillBg: vaultDark ? 'rgba(239,68,68,0.18)' : '#fee2e2', pillBorder: vaultDark ? 'rgba(239,68,68,0.40)' : '#fca5a5', label: 'Rejected', iconClass: 'ri-close-line' }
                       : done
-                      ? { bg: '#10b981', border: '#10b981', icon: '#fff',    pill: '#10b981', pillBg: '#d1fae5', pillBorder: '#a7f3d0', label: 'Done',     iconClass: 'ri-check-line' }
+                      ? { bg: '#10b981', border: '#10b981', icon: '#fff',    pill: vaultDark ? '#6ee7b7' : '#10b981', pillBg: vaultDark ? 'rgba(16,185,129,0.18)' : '#d1fae5', pillBorder: vaultDark ? 'rgba(16,185,129,0.40)' : '#a7f3d0', label: 'Done',     iconClass: 'ri-check-line' }
                       : isCurrent
-                      ? { bg: '#7c3aed', border: '#7c3aed', icon: '#fff',    pill: '#7c3aed', pillBg: '#ede9fe', pillBorder: '#c4b5fd', label: 'Pending you', iconClass: 'ri-time-line' }
-                      : { bg: '#f3f4f6', border: '#d1d5db', icon: '#9ca3af', pill: '#6b7280', pillBg: '#f3f4f6', pillBorder: '#e5e7eb', label: 'Waiting',  iconClass: 'ri-time-line' };
+                      ? { bg: '#7c3aed', border: '#7c3aed', icon: '#fff',    pill: vaultDark ? '#c4b5fd' : '#7c3aed', pillBg: vaultDark ? 'rgba(124,58,237,0.20)' : '#ede9fe', pillBorder: vaultDark ? 'rgba(124,58,237,0.45)' : '#c4b5fd', label: 'Pending you', iconClass: 'ri-time-line' }
+                      : { bg: '#f3f4f6', border: '#d1d5db', icon: '#9ca3af', pill: vaultDark ? '#9ca3af' : '#6b7280', pillBg: vaultDark ? 'rgba(255,255,255,0.06)' : '#f3f4f6', pillBorder: vaultDark ? 'rgba(255,255,255,0.16)' : '#e5e7eb', label: 'Waiting',  iconClass: 'ri-time-line' };
 
                     return (
                       <div key={i} style={{ position: 'relative', display: 'flex', gap: 16, paddingBottom: isLast ? 0 : 20 }}>
@@ -2863,7 +2868,6 @@ export function VaultModal({
                               flexShrink: 0,
                               whiteSpace: 'nowrap',
                             }}>
-                              <i className={tone.iconClass} style={{ fontSize: 12 }} />
                               {tone.label}
                             </span>
                           </div>
