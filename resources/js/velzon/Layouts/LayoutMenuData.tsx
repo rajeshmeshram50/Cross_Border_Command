@@ -76,6 +76,7 @@ const hrLeafLink = (leafId: string): string => {
     case "hr.custom_fields": return "/hr/custom-fields";
     case "hr.leave":       return "/hr/leave";
     case "hr.leave_approvals": return "/hr/leave-approvals";
+    case "hr.holiday":     return "/hr/holiday";
     case "hr.expense":     return "/hr/expense";
     case "hr.payroll":     return "/hr/payroll";
     case "hr.pip":         return "/hr/pip";

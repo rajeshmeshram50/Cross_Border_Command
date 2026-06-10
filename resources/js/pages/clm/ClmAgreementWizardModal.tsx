@@ -38,6 +38,7 @@ export type AgrLib = {
   code: string;
   agreement_type: string;
   title: string;
+  purpose?: string | null;
   party: string;
   regulatory: 'highly' | 'less';
   signing: boolean;
@@ -91,6 +92,10 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   const editingId = existing?.id ?? null;
 
   const [step, setStep] = useState<1 | 2>(1);
+  // Full-page drafting — expands the Step-2 editor to fill the screen. Lives
+  // here (not in AgrEditor) so the content-restore effect can re-seed the
+  // contentEditable after the portal re-parents it (mirrors Trade Doc).
+  const [fullPage, setFullPage] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -293,13 +298,14 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   useEffect(() => {
     if (!open) return;
     setStep(1);
+    setFullPage(false);
     setErrors({});
     setSaving(false);
     if (existing) {
       setAgreementType(existing.agreement_type ?? '');
       setTitle(existing.title ?? '');
       setRegulatory(existing.regulatory ?? 'less');
-      setPurpose('');
+      setPurpose(existing.purpose ?? '');
       setParties(new Set((existing.party ?? '').split(',').map(s => s.trim()).filter(Boolean)));
       setSegments((existing.segment ?? '').split(',').map(s => s.trim()).filter(Boolean));
       setContent(existing.content ?? '');
@@ -346,7 +352,11 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
     if (step === 2 && editorRef.current) {
       editorRef.current.innerHTML = content ?? '';
     }
-  }, [step, content]);
+    // `fullPage` is a dep because toggling it portals the editor to/from
+    // <body>, remounting the contentEditable — re-push content so the draft
+    // body survives the switch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, content, fullPage]);
 
   useEffect(() => { setTypes(initialTypes); }, [initialTypes]);
 
@@ -457,14 +467,13 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
     // (drafted before the cut) load cleanly without the embedded
     // <!-- AGW-META --> comment leaking back into the editor.
     const raw = (editorRef.current?.innerHTML ?? content ?? '').trim();
-    const strippedContent = stripMetaFromContent(raw);
-    const purposeBlock = purpose.trim()
-      ? `<p><strong>Purpose:</strong> ${escapeHtml(purpose.trim())}</p>`
-      : '';
-    const finalContent = (purposeBlock + strippedContent) || null;
+    // Purpose is now its own persisted column (no longer baked into the
+    // content HTML), so the editor body stays clean — just strip legacy meta.
+    const finalContent = stripMetaFromContent(raw) || null;
     const payload: Omit<AgrLib, 'id' | 'code'> = {
       agreement_type: agreementType.trim(),
       title:          title.trim(),
+      purpose:        purpose.trim() || null,
       party:          Array.from(parties).join(', '),
       regulatory,
       // Backend column still exists but is hard-coded false since the
@@ -771,6 +780,8 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                 setHeaderConfig={setHeaderConfig}
                 footerConfig={footerConfig}
                 setFooterConfig={setFooterConfig}
+                fullPage={fullPage}
+                setFullPage={setFullPage}
               />
             </div>
           )}
@@ -880,6 +891,8 @@ function AgrEditor({
   setHeaderConfig,
   footerConfig,
   setFooterConfig,
+  fullPage,
+  setFullPage,
 }: {
   editorRef: React.MutableRefObject<HTMLDivElement | null>;
   fontSize: string;
@@ -907,9 +920,11 @@ function AgrEditor({
   setHeaderConfig: (h: HeaderConfig) => void;
   footerConfig: FooterConfig;
   setFooterConfig: (f: FooterConfig) => void;
+  fullPage: boolean;
+  setFullPage: (v: boolean | ((p: boolean) => boolean)) => void;
 }) {
-  return (
-    <div className="agw-editor-shell">
+  const shell = (
+    <div className={`agw-editor-shell ${fullPage ? 'agw-editor-shell-full' : ''}`}>
       <div className="agw-editor-head">
         <div className="agw-editor-title">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
@@ -946,6 +961,19 @@ function AgrEditor({
             <button type="button" className="agw-editor-btn" onMouseDown={e => { e.preventDefault(); stashSelection(); }} onClick={onOpenClauseLibrary}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
               Clause Library
+            </button>
+          </Tooltip>
+          {/* Full Page — expands the drafting area to fill the screen (and
+              collapses back) so long agreements can be authored without the
+              modal frame cramping the editor. */}
+          <Tooltip label={fullPage ? 'Exit full page' : 'Edit in full page'}>
+            <button type="button" className={`agw-editor-btn ${fullPage ? 'is-on' : ''}`} onClick={() => setFullPage(v => !v)}>
+              {fullPage ? (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14h6v6" /><path d="M20 10h-6V4" /><path d="M14 10l7-7" /><path d="M3 21l7-7" /></svg>
+              ) : (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="M21 3l-7 7" /><path d="M3 21l7-7" /></svg>
+              )}
+              {fullPage ? 'Exit Full Page' : 'Full Page'}
             </button>
           </Tooltip>
         </div>
@@ -1072,6 +1100,10 @@ function AgrEditor({
       </div>
     </div>
   );
+  // In full page the shell is portalled to <body> so its position:fixed is
+  // relative to the viewport — otherwise the modal's CSS transform traps it
+  // inside the modal box (same approach as the Trade Doc draft editor).
+  return fullPage ? createPortal(shell, document.body) : shell;
 }
 
 /* ── Insert Placeholder picker (modal-within-modal) ──────────────────── */
@@ -1465,6 +1497,19 @@ const AGW_CSS = `
 
 /* Editor */
 .agw-editor-shell { border: 1px solid rgba(6,182,212,.20); border-radius: 14px; overflow: hidden; background: #fff; display: flex; flex-direction: column; }
+/* Full-page drafting — pops the editor out to fill the viewport. Sits above
+   the modal overlay but below the Placeholder/Table/Clause pickers so those
+   still open on top while in full page. */
+.agw-editor-shell-full {
+  position: fixed; inset: 0; z-index: 210000;
+  border: 0; border-radius: 0;
+  height: 100vh; max-height: 100vh;
+}
+.agw-editor-shell-full .agw-editor-scroll { flex: 1; min-height: 0; }
+.agw-editor-shell-full .agw-editor-head { padding: 12px 20px; }
+.agw-editor-btn.is-on { background: linear-gradient(135deg,#06b6d4,#0e7490); border-color: transparent; color: #fff; }
+[data-bs-theme="dark"] .agw-editor-shell-full,
+[data-layout-mode="dark"] .agw-editor-shell-full { background: #0f172a; }
 .agw-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; background: linear-gradient(110deg, #0891b2, #0e7490); padding: 7px 14px; color: #fff; flex-shrink: 0; }
 /* Scrollable page-shell region — sits between the pinned toolbar and the
  * pinned footer; grows/scrolls as the agreement content does. */

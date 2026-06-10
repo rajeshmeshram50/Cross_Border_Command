@@ -63,7 +63,6 @@ const NOTICE_PERIOD_OPTIONS = [
 // Step 3 — Work Details option lists. LEAVE_PLAN_OPTIONS was hardcoded
 // to three plan names; it's now fetched live from /api/leave-plans into
 // component state (see leavePlanOptions inside the component below).
-const HOLIDAY_LIST_OPTIONS  = ['Holiday Calendar','India Holidays 2026','Global Holidays 2026'].map(v => ({ value: v, label: v }));
 const SHIFT_OPTIONS         = ['General Shift','Morning Shift','Evening Shift','Night Shift','Flexible'].map(v => ({ value: v, label: v }));
 const WEEKLY_OFF_OPTIONS    = ['Week Off Policy','Saturday & Sunday','Sunday Only','Rotational'].map(v => ({ value: v, label: v }));
 const TIME_TRACKING_OPTIONS = ['Manual','Biometric'].map(v => ({ value: v, label: v }));
@@ -428,8 +427,13 @@ export default function HrEmployees() {
   const [mLegalEntities, setMLegalEntities] = useState<any[]>([]);
   const [mCountries, setMCountries] = useState<any[]>([]);
   const [mStates, setMStates] = useState<any[]>([]);
+  const [mHolidayGroups, setMHolidayGroups] = useState<any[]>([]);
 
   // Pre-built options derived from the masters above.
+  const holidayGroupOptions = useMemo(
+    () => mHolidayGroups.map(g => ({ value: String(g.id), label: g.name })),
+    [mHolidayGroups],
+  );
   const departmentOptions = useMemo(
     () => mDepts.map(d => ({ value: String(d.id), label: d.name })),
     [mDepts],
@@ -484,6 +488,7 @@ export default function HrEmployees() {
       api.get('/master/designations').then(r => setMDesignations(Array.isArray(r.data) ? r.data : [])),
       api.get('/master/roles').then(r => setMRoles(Array.isArray(r.data) ? r.data : [])),
       api.get('/master/legal_entities').then(r => setMLegalEntities(Array.isArray(r.data) ? r.data : [])),
+      api.get('/holiday-groups').then(r => setMHolidayGroups(Array.isArray(r.data) ? r.data : [])).catch(() => setMHolidayGroups([])),
       api.get('/master/countries').then(r => setMCountries(
         Array.isArray(r.data) ? [...r.data].sort((a: any, b: any) => a.name.localeCompare(b.name)) : []
       )),
@@ -1423,7 +1428,11 @@ export default function HrEmployees() {
 
       // Step 3 — Work Details. Plain hydration — load whatever was saved.
       if (raw.leave_plan !== undefined && raw.leave_plan !== null) setELeavePlan(raw.leave_plan);
-      if (raw.holiday_list !== undefined && raw.holiday_list !== null) setEHolidayList(raw.holiday_list);
+      // eHolidayList now holds the holiday GROUP id (the dropdown lists groups).
+      // Prefer the new holiday_group_id; fall back to the legacy string only so
+      // pre-migration rows don't blow up (they just won't pre-select a group).
+      if (raw.holiday_group_id) setEHolidayList(String(raw.holiday_group_id));
+      else setEHolidayList('');
       if (raw.attendance_tracking !== undefined && raw.attendance_tracking !== null) setEAttendanceTracking(!!raw.attendance_tracking);
       if (raw.shift !== undefined && raw.shift !== null) setEShift(raw.shift);
       if (raw.weekly_off !== undefined && raw.weekly_off !== null) setEWeeklyOff(raw.weekly_off);
@@ -1624,7 +1633,12 @@ export default function HrEmployees() {
     if (leavePlanOptions.length > 0 && !eLeavePlan) {
       e.leave_plan = 'Leave plan is required';
     }
-    if (!eHolidayList)        e.holiday_list        = 'Holiday list is required';
+    // Holiday Group mirrors the Leave Plan rule — only required once at least
+    // one group exists, so a tenant with zero holiday groups can still
+    // onboard employees (and assign a group later from HR › Holiday).
+    if (holidayGroupOptions.length > 0 && !eHolidayList) {
+      e.holiday_list = 'Holiday group is required';
+    }
     if (!eShift)              e.shift               = 'Shift is required';
     if (!eWeeklyOff)          e.weekly_off          = 'Weekly off is required';
     if (!eTimeTracking)       e.time_tracking       = 'Time tracking policy is required';
@@ -1648,7 +1662,7 @@ export default function HrEmployees() {
     }
     return e;
   }, [eAadharFile, ePanFile, eLaptopAssigned, eLaptopMasterAssetId, eMobileAssigned, eMobileMasterAssetId,
-      leavePlanOptions, eLeavePlan, eHolidayList, eShift, eWeeklyOff, eTimeTracking, ePenalizationPolicy, eExpensePolicy]);
+      leavePlanOptions, holidayGroupOptions, eLeavePlan, eHolidayList, eShift, eWeeklyOff, eTimeTracking, ePenalizationPolicy, eExpensePolicy]);
 
   // Step 4 — Compensation. Salary is mandatory whenever payroll is enabled
   // for the employee (the default). The "Enable payroll" toggle is the
@@ -1775,7 +1789,11 @@ export default function HrEmployees() {
       designation_name: mDesignations.find(d => String(d.id) === String(eDesignation))?.name,
 
       leave_plan:           eLeavePlan || null,
-      holiday_list:         eHolidayList || null,
+      // eHolidayList carries the selected holiday GROUP id. Persist it as the
+      // FK payroll reads, and mirror the group name into the legacy
+      // holiday_list string so existing displays keep working.
+      holiday_group_id:     eHolidayList ? Number(eHolidayList) : null,
+      holiday_list:         mHolidayGroups.find(g => String(g.id) === String(eHolidayList))?.name || null,
       attendance_tracking:  !!eAttendanceTracking,
       shift:                eShift || null,
       weekly_off:           eWeeklyOff || null,
@@ -5012,8 +5030,8 @@ export default function HrEmployees() {
                       {eErrors.leave_plan && <small className="emp-err">{eErrors.leave_plan}</small>}
                     </Col>
                     <Col md={6}>
-                      <label className="emp-label">Holiday List<span className="req">*</span></label>
-                      <MasterSelect value={eHolidayList} onChange={(v) => { setEHolidayList(v); clearEErr('holiday_list'); }} options={HOLIDAY_LIST_OPTIONS} placeholder="Select holiday list" invalid={!!eErrors.holiday_list} />
+                      <label className="emp-label">Holiday List (Group)<span className="req">*</span></label>
+                      <MasterSelect value={eHolidayList} onChange={(v) => { setEHolidayList(v); clearEErr('holiday_list'); }} options={holidayGroupOptions} placeholder={holidayGroupOptions.length ? 'Select holiday group' : 'No groups — create in HR › Holiday › Groups'} invalid={!!eErrors.holiday_list} />
                       {eErrors.holiday_list && <small className="emp-err">{eErrors.holiday_list}</small>}
                     </Col>
                     <Col md={6}>

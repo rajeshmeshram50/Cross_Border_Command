@@ -301,7 +301,11 @@ export const CLM_CSS = `
   border: 1.5px solid rgba(6,182,212,.22); border-radius: 8px;
   background: #fff;
   flex: 1 1 240px; min-width: 200px;
-  transition: all .15s;
+  /* Only the focus chrome (border + glow) transitions. Width is deliberately
+     NOT animated — as a flex item this bar's width changes when the page gains
+     a scrollbar on data load, and animating that reflow made the search bar
+     (and the controls beside it) flicker/settle on every load. */
+  transition: border-color .15s ease, box-shadow .15s ease;
   box-shadow: 0 1px 4px rgba(6,182,212,.07);
 }
 .clm-search:focus-within { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.12); }

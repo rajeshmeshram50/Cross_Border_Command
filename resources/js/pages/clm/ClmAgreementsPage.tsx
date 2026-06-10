@@ -12,7 +12,7 @@ import ClmAgreementWizardModal from './ClmAgreementWizardModal';
 
 type AgrType = { id: number; code: string; name: string; description: string };
 type AgrLib = {
-  id: number; code: string; agreement_type: string; title: string; party: string;
+  id: number; code: string; agreement_type: string; title: string; purpose?: string | null; party: string;
   regulatory: 'highly'|'less'; signing: boolean; segment: string | null;
   agr_status: string; content: string | null; is_signed?: boolean;
 };

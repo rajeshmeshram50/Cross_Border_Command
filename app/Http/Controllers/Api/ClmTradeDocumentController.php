@@ -277,6 +277,20 @@ class ClmTradeDocumentController extends Controller
         $phpWord->setDefaultFontSize(11);
         $section = $phpWord->addSection();
 
+        // Page-shell header + footer (logo, title, "Confidential", footer text,
+        // page number) from the saved config so the DOCX matches the preview.
+        $headerCfg = is_array($row->header_config) ? $row->header_config : [];
+        $footerCfg = is_array($row->footer_config) ? $row->footer_config : [];
+        $client    = Client::find($row->client_id);
+        $urlPath   = (isset($headerCfg['logo_url']) && preg_match('#/storage/(.+)$#', (string) $headerCfg['logo_url'], $lm)) ? $lm[1] : null;
+        $logoAbs   = null;
+        foreach (array_filter([$headerCfg['logo_path'] ?? null, $urlPath, $client?->logo]) as $path) {
+            try {
+                if (Storage::disk('public')->exists($path)) { $logoAbs = Storage::disk('public')->path($path); break; }
+            } catch (\Throwable $e) { /* try next candidate */ }
+        }
+        $this->applyDocxHeaderFooter($section, $headerCfg, $footerCfg, $logoAbs);
+
         $title = trim((string) $row->title) ?: ($row->name ?: 'Trade Document');
         $section->addTitle(htmlspecialchars($title, ENT_QUOTES), 1);
         $section->addTextBreak(1);
@@ -376,41 +390,8 @@ class ClmTradeDocumentController extends Controller
      * a file, base64-encoded for inline embedding in the PDF header. Returns
      * '' when none resolve so the blade falls back to a text-only header.
      */
-    /**
-     * Convert the editor's loose HTML (unclosed tags, bare <br>, raw &) into
-     * well-formed XHTML via the lenient DOM HTML parser, so PhpWord's strict
-     * loadXML reader can ingest it without choking (which was collapsing the
-     * document's tables into run-on text). Returns the original on failure.
-     */
-    private function toWellFormedHtml(string $html): string
-    {
-        if (trim($html) === '') return $html;
-        $prev = libxml_use_internal_errors(true);
-        try {
-            $doc = new \DOMDocument('1.0', 'UTF-8');
-            // Wrap in a single root + declare UTF-8 so loadHTML keeps the
-            // encoding and we have a known node to read children back from.
-            $doc->loadHTML(
-                '<?xml encoding="UTF-8"?><div data-root="1">' . $html . '</div>',
-                LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
-            );
-            $root = null;
-            foreach ($doc->childNodes as $node) {
-                if ($node->nodeType === XML_ELEMENT_NODE && $node->nodeName === 'div') { $root = $node; break; }
-            }
-            if (!$root) return $html;
-            $out = '';
-            foreach ($root->childNodes as $child) {
-                $out .= $doc->saveXML($child);
-            }
-            return $out !== '' ? $out : $html;
-        } catch (\Throwable $e) {
-            return $html;
-        } finally {
-            libxml_clear_errors();
-            libxml_use_internal_errors($prev);
-        }
-    }
+    // toWellFormedHtml() now lives in the shared HandlesDocxHtmlRoundtrip
+    // trait so the Agreement DOCX export gets the same table/structure repair.
 
     private function resolveLogoBase64(?string ...$candidates): string
     {

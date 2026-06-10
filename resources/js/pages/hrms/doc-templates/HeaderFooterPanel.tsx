@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 
@@ -412,7 +413,7 @@ function HeaderEditor({
   onChooseLogo: () => void;
 }) {
   return (
-    <div className="tpl-popover" style={popoverStyle}>
+    <PopoverFrame onClose={onClose}>
       <PopoverHeader title="Header Settings" onClose={onClose} />
       <div className="row g-3" style={{ padding: 14 }}>
         <div className="col-md-6">
@@ -516,7 +517,12 @@ function HeaderEditor({
           </div>
         </div>
       </div>
-    </div>
+      <div className="tpl-popover-foot">
+        <button type="button" className="tpl-popover-update" onClick={onClose}>
+          <i className="ri-check-line me-1" />Update
+        </button>
+      </div>
+    </PopoverFrame>
   );
 }
 
@@ -529,7 +535,7 @@ function FooterEditor({
   onClose: () => void;
 }) {
   return (
-    <div className="tpl-popover" style={popoverStyle}>
+    <PopoverFrame onClose={onClose}>
       <PopoverHeader title="Footer Settings" onClose={onClose} />
       <div className="row g-3" style={{ padding: 14 }}>
         <div className="col-md-8">
@@ -605,7 +611,12 @@ function FooterEditor({
           </>
         )}
       </div>
-    </div>
+      <div className="tpl-popover-foot">
+        <button type="button" className="tpl-popover-update" onClick={onClose}>
+          <i className="ri-check-line me-1" />Update
+        </button>
+      </div>
+    </PopoverFrame>
   );
 }
 
@@ -736,6 +747,21 @@ function previewPageNumber(format: PageNumberFormat): string {
 }
 
 const popoverStyle: React.CSSProperties = { borderBottom: '2px solid #6366f1', background: '#fafaff' };
+
+/* Centered modal frame for the Header / Footer Settings editors. Portalled to
+ * <body> so it sits above the (possibly transform-clipped / full-page) editor,
+ * with a click-away backdrop. Both editors render through this so the two
+ * settings panels open as proper popups instead of an inline bottom panel. */
+function PopoverFrame({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  return createPortal(
+    <div className="tpl-popover-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="tpl-popover tpl-popover-modal" style={popoverStyle}>
+        {children}
+      </div>
+    </div>,
+    document.body,
+  );
+}
 const labelStyle: React.CSSProperties = { fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, color: '#6b7280', textTransform: 'uppercase', marginBottom: 4, display: 'block' };
 const inputStyle: React.CSSProperties = { width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 13, background: '#fff' };
 function chipStyle(active: boolean): React.CSSProperties {
@@ -843,6 +869,39 @@ function HfpDarkStyles() {
          We also use explicit hex values instead of var(--vz-card-bg) so
          the dark surface is reliably dark — the Velzon CSS variables
          don't always resolve correctly inside this inline-styled tree. */
+      /* Header / Footer Settings open as a centered modal popup (portalled to
+         <body>) with a click-away backdrop, sitting above the full-page editor
+         (z 210000) and other modals. */
+      .tpl-popover-backdrop {
+        position: fixed; inset: 0; z-index: 260000;
+        background: rgba(15,23,42,0.45);
+        backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+        display: flex; align-items: center; justify-content: center; padding: 20px;
+      }
+      .tpl-popover.tpl-popover-modal {
+        width: 100%; max-width: 660px; max-height: 86vh; overflow-y: auto;
+        border-radius: 14px; box-shadow: 0 24px 64px rgba(8,15,40,0.45);
+        animation: tpl-pop-in .16s ease-out both;
+      }
+      @keyframes tpl-pop-in { from { opacity: 0; transform: translateY(6px) scale(.985); } to { opacity: 1; transform: none; } }
+      /* Sticky action footer with the Update (apply + close) button. Changes
+         already reflect live in the preview; Update simply confirms + closes. */
+      .tpl-popover-foot {
+        position: sticky; bottom: 0;
+        display: flex; justify-content: flex-end;
+        gap: 8px; padding: 12px 14px;
+        background: #fafaff; border-top: 1px solid #e5e7eb;
+      }
+      .tpl-popover-update {
+        display: inline-flex; align-items: center;
+        padding: 8px 20px; border: none; border-radius: 9px;
+        background: linear-gradient(135deg,#6366f1,#8b5cf6); color: #fff;
+        font-size: 12.5px; font-weight: 700; cursor: pointer;
+        box-shadow: 0 3px 10px rgba(99,102,241,0.35); transition: all .15s;
+      }
+      .tpl-popover-update:hover { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 6px 16px rgba(99,102,241,0.45); }
+      [data-bs-theme="dark"] .tpl-popover-foot,
+      [data-layout-mode="dark"] .tpl-popover-foot { background: #111827 !important; border-top-color: rgba(255,255,255,0.08) !important; }
       [data-bs-theme="dark"] .tpl-popover {
         background: #1e293b !important;
         border-bottom-color: #8b5cf6 !important;

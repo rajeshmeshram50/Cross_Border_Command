@@ -90,6 +90,7 @@ import HrAttendance from '../pages/hrms/HrAttendance';
 import HrLeave from '../pages/hrms/HrLeave';
 import HrLeavePlans from '../pages/hrms/HrLeavePlans';
 import HrLeaveApprovals from '../pages/hrms/HrLeaveApprovals';
+import HrHoliday from '../pages/hrms/HrHoliday';
 import HrPIP from '../pages/hrms/HrPIP';
 import HrExpenseManagement from '../pages/hrms/HrExpenseManagement';
 import HrPayroll from '../pages/hrms/HrPayroll';
@@ -138,6 +139,7 @@ const getPagePath = (page: string, data?: any): string => {
     case 'hr-recruitment': return '/hr/recruitment';
     case 'hr-attendance': return '/hr/attendance';
     case 'hr-leave': return '/hr/leave';
+    case 'hr-holiday': return '/hr/holiday';
     case 'hr-expense': return '/hr/expense';
     case 'hr-payroll': return '/hr/payroll';
     case 'hr-broadcast': return '/hr/broadcast';
@@ -756,6 +758,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/hr/leave" element={<HrLeave />} />
               <Route path="/hr/leave-plans" element={<HrLeavePlans />} />
               <Route path="/hr/leave-approvals" element={<HrLeaveApprovals />} />
+              <Route path="/hr/holiday" element={<HrHoliday />} />
               <Route path="/hr/pip" element={<HrPIP />} />
               <Route path="/hr/expense" element={<HrExpenseManagement />} />
               <Route path="/hr/payroll" element={<HrPayroll />} />

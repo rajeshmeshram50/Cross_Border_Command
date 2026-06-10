@@ -44,7 +44,7 @@ class Employee extends Model
         'notice_period', 'notice_period_days',
 
         // Step 3 — Work Details (added 2026-05-01)
-        'leave_plan', 'holiday_list', 'attendance_tracking',
+        'leave_plan', 'holiday_list', 'holiday_group_id', 'attendance_tracking',
         'shift', 'weekly_off', 'attendance_number',
         'time_tracking', 'penalization_policy', 'overtime', 'expense_policy',
         'laptop_assigned', 'laptop_asset_id', 'mobile_device', 'other_assets',
@@ -347,6 +347,11 @@ class Employee extends Model
     public function designation(): BelongsTo
     {
         return $this->belongsTo(Designations::class, 'designation_id');
+    }
+
+    public function holidayGroup(): BelongsTo
+    {
+        return $this->belongsTo(HolidayGroup::class, 'holiday_group_id');
     }
 
     public function primaryRole(): BelongsTo

@@ -580,6 +580,9 @@ class PayrollService
         // ── Rules 2 & 3 — attendance + leave ───────────────────────────────
         $att = $this->attendanceAggregates($employee->id, $winStart, $winEnd);
         $leave = $this->leaveAggregates($employee->id, $winStart, $winEnd);
+        // Holidays from the employee's assigned holiday group that fall on a
+        // working day in the active window — paid like leave, never LOP.
+        $holidayDays = $this->holidayAggregates($employee, $winStart, $winEnd);
 
         $presentDays   = $att['present'];
         $lateMarks     = $att['late'];
@@ -587,8 +590,15 @@ class PayrollService
         $paidLeaveDays = $leave['paid'];
         $unpaidLeaveDays = $leave['unpaid'];
 
-        // Paid days = physically present + paid leave (capped to the window).
-        $paidDays = min($effectiveWorkingDays, $presentDays + $paidLeaveDays);
+        // Paid days = present + paid leave + group holidays (capped to the
+        // window). The min() cap means holidays only ever fill the unpaid gap
+        // up to the working-day ceiling — they can never inflate paid days for
+        // an employee who was already present every working day.
+        $paidDays = min($effectiveWorkingDays, $presentDays + $paidLeaveDays + $holidayDays);
+        if ($holidayDays > 0) {
+            $exceptions = $this->withException($exceptions, 'info',
+                "{$holidayDays} holiday day(s) in this period credited as paid.");
+        }
         // Everything else in the active window is loss-of-pay.
         $lopDays = max(0, round($effectiveWorkingDays - $paidDays, 2));
 
@@ -847,6 +857,48 @@ class PayrollService
     }
 
     // ── Attendance / leave aggregates ──────────────────────────────────────
+
+    /**
+     * Count the company holidays (from the employee's assigned holiday group)
+     * that fall on a WORKING day within the active window. Sundays are already
+     * excluded from working_days, so they're skipped here to avoid crediting a
+     * holiday that lands on an off-day. Recurring holidays are matched by
+     * month/day against the window's year. Returns a whole-day count.
+     */
+    private function holidayAggregates($employee, Carbon $start, Carbon $end): float
+    {
+        if (!Schema::hasTable('holidays')) {
+            return 0.0;
+        }
+        $groupId = $employee->holiday_group_id ?? null;
+        if (!$groupId) {
+            return 0.0;
+        }
+
+        $rows = DB::table('holidays')
+            ->where('holiday_group_id', $groupId)
+            ->whereNull('deleted_at')
+            ->get(['date', 'is_recurring']);
+
+        $dates = [];
+        foreach ($rows as $r) {
+            if (!$r->date) continue;
+            $d = Carbon::parse($r->date);
+
+            // A recurring holiday repeats every year — re-anchor it to the
+            // window's year (use the window start's year) before comparing.
+            if ($r->is_recurring) {
+                $d = Carbon::create($start->year, $d->month, $d->day);
+            }
+
+            if ($d->lt($start) || $d->gt($end)) continue;
+            if ($d->dayOfWeek === Carbon::SUNDAY) continue; // not a working day
+
+            $dates[$d->toDateString()] = true; // dedupe same-day entries
+        }
+
+        return (float) count($dates);
+    }
 
     private function attendanceAggregates(int $employeeId, Carbon $start, Carbon $end): array
     {

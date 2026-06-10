@@ -33,6 +33,7 @@ class EmployeeController extends Controller
         'user:id,name,email,status,last_login_at',
         'department:id,name,code',
         'designation:id,name',
+        'holidayGroup:id,name',
         'primaryRole:id,name',
         'ancillaryRole:id,name',
         'legalEntity:id,entity_name,city,state_id,country_id',
@@ -1220,6 +1221,7 @@ class EmployeeController extends Controller
             // Step 3 — Work Details
             'leave_plan'           => 'nullable|string|max:100',
             'holiday_list'         => 'nullable|string|max:100',
+            'holiday_group_id'     => 'nullable|integer',
             'attendance_tracking'  => 'nullable|boolean',
             'shift'                => 'nullable|string|max:50',
             'weekly_off'           => 'nullable|string|max:100',

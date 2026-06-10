@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -52,10 +52,21 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
    * as pending; the real rows replace them when reloadLead resolves. */
   const [pendingAcks, setPendingAcks] = useState<StageAcknowledgement[]>([]);
   const headerAcks = header.acknowledgements ?? [];
-  const acks = useMemo(
-    () => [...pendingAcks, ...headerAcks],
-    [pendingAcks, headerAcks],
-  );
+  /* Count of server rows captured the moment we add optimistic placeholders.
+   * Lets the memo below detect when reloadLead() has pulled the real rows in
+   * and hide the matching placeholders in the SAME render — without it the
+   * table briefly shows each just-submitted row twice (optimistic + server)
+   * before the placeholders are stripped from state. */
+  const baseAckCountRef = useRef(0);
+  const acks = useMemo(() => {
+    if (pendingAcks.length === 0) return headerAcks;
+    // How many real rows have landed in headerAcks since we added the
+    // placeholders. Those newest server rows already represent the front
+    // (newest) optimistic rows, so drop that many placeholders.
+    const landed = Math.max(0, headerAcks.length - baseAckCountRef.current);
+    const visiblePending = landed >= pendingAcks.length ? [] : pendingAcks.slice(landed);
+    return [...visiblePending, ...headerAcks];
+  }, [pendingAcks, headerAcks]);
   const latest = acks[0] ?? null;
   const latestBucket: Bucket | null = (latest?.opportunity_type as Bucket) ?? null;
 
@@ -102,6 +113,16 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
     return () => window.removeEventListener('keydown', onKey);
   }, [pickerBucket]);
 
+  /* Lock background scroll while the reason picker is open, so the page
+   * behind the overlay stays put instead of scrolling under it. Restores the
+   * previous overflow on close (and on unmount via the cleanup). */
+  useEffect(() => {
+    if (!pickerBucket) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [pickerBucket]);
+
   const submitPicker = async () => {
     if (!pickerBucket || !header.leadId) return;
     if (selected.size === 0) {
@@ -133,6 +154,9 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
      *  SAME render, so the UI swap feels instant. Toast pre-confirms
      *  the save; the rare failure path below rolls these rows back
      *  and re-toasts an error. */
+    // Snapshot the current server-row count so the memo can tell, on reload,
+    // exactly how many placeholders to retire as the real rows arrive.
+    baseAckCountRef.current = headerAcks.length;
     setPendingAcks(prev => [...optimistic, ...prev]);
     closePicker();
     toast.success('Saved', `${optimistic.length} acknowledgement(s) recorded`);
