@@ -770,7 +770,7 @@ const STAGE4_CSS = `
 .s4-search input::placeholder { color: #94a3b8; }
 
 /* ═══════════════════════════════ TABLE ═══════════════════════════════ */
-.s4-table-wrap { overflow: auto; max-height: 58vh; background: #fff; scrollbar-width: thin; scrollbar-color: #c4b5fd #f5f3ff; }
+.s4-table-wrap { overflow: auto; max-height: 380px; background: #fff; scrollbar-width: thin; scrollbar-color: #c4b5fd #f5f3ff; }
 .s4-table-wrap::-webkit-scrollbar { width: 9px; height: 9px; }
 .s4-table-wrap::-webkit-scrollbar-track { background: #f5f3ff; }
 .s4-table-wrap::-webkit-scrollbar-thumb { background: #c4b5fd; border-radius: 6px; border: 2px solid #f5f3ff; }

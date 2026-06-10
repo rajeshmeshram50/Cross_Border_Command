@@ -6,6 +6,7 @@ import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
+import Tooltip from '../../../../components/ui/Tooltip';
 import SalesDocSendForSignatureModal from './SalesDocSendForSignatureModal';
 import ConvertToPiModal, { ConversionBlockedModal } from '../../ConvertToPiModal';
 import {
@@ -500,9 +501,16 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     const consId = header.consigneeId ?? null;
     if (!custId && !consId) { setMandatoryIncomplete(false); return; }
     let cancelled = false;
-    const hasPendingMandatory = (vault: any): boolean =>
-      ['company_dd', 'owner_kyc', 'trade_licenses'].some(b =>
-        (Array.isArray(vault?.[b]) ? vault[b] : []).some((d: any) => d?.requirement === 'M' && d?.status !== 'Verified'));
+    /* A party's Standard Documents are complete when every core (KYC / DD /
+     * Licence) doc has an upload on file — i.e. core_verified_signed reaches
+     * core_total_documents. These are the SAME figures the left "Standard
+     * Documents" panel renders as "X of Y documents / 100%", so the Create PI
+     * button enables exactly when that panel hits 100% for both parties. */
+    const isIncomplete = (d: any): boolean => {
+      const total = Number(d?.core_total_documents ?? d?.total_documents ?? 0);
+      const done  = Number(d?.core_verified_signed ?? d?.verified_signed ?? 0);
+      return total > 0 && done < total;
+    };
     (async () => {
       try {
         const calls: Promise<any>[] = [];
@@ -510,7 +518,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
         if (consId) calls.push(api.get(`/segment-uploads/consignee/${consId}/vault`));
         const res = await Promise.allSettled(calls);
         if (cancelled) return;
-        setMandatoryIncomplete(res.some(r => r.status === 'fulfilled' && hasPendingMandatory((r.value as any).data?.data)));
+        setMandatoryIncomplete(res.some(r => r.status === 'fulfilled' && isIncomplete((r.value as any).data?.data)));
       } catch { /* best-effort gate; backend still enforces on submit */ }
     })();
     return () => { cancelled = true; };
@@ -600,7 +608,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                   return;
                 }
                 if (mandatoryIncomplete) {
-                  toast.warning('Mandatory documents pending', 'Upload all mandatory KYC / Due Diligence / Trade documents for the customer and consignee before creating a PI.');
+                  toast.warning('Standard documents pending', 'Upload all Standard Documents (KYC, Due Diligence & Licences) for the customer and consignee to 100% before creating a PI.');
                   return;
                 }
                 onCreate('pi');
@@ -723,12 +731,16 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               return (
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                                   {/* Sent → View the document that was sent + Remind the signer. */}
-                                  <button type="button" className="s5-icn" title="View sent document" onClick={() => void onViewPdf(docType, r.id, true)} disabled={anyActing}>
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                                  </button>
-                                  <button type="button" className="s5-icn" title="Send signing reminder" onClick={() => void onRemindSig(sig!.id)} disabled={anyActing}>
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                                  </button>
+                                  <Tooltip label="View sent document">
+                                    <button type="button" className="s5-icn" onClick={() => void onViewPdf(docType, r.id, true)} disabled={anyActing}>
+                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                    </button>
+                                  </Tooltip>
+                                  <Tooltip label="Send signing reminder">
+                                    <button type="button" className="s5-icn" onClick={() => void onRemindSig(sig!.id)} disabled={anyActing}>
+                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                                    </button>
+                                  </Tooltip>
                                 </span>
                               );
                             }
@@ -757,45 +769,51 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               stays available after every send (no one-time hide)
                               so the document can be re-emailed to the customer
                               as many times as needed; each send fires a toast. */}
-                          <button type="button"
-                            className={`s5-icn s5-icn-mail${cooldownLeft(docType, r.id) > 0 ? ' s5-icn-cooling' : ''}`}
-                            title={cooldownLeft(docType, r.id) > 0 ? `Please wait ${cooldownLeft(docType, r.id)}s (max 3 per minute)` : 'Send via Email'}
-                            onClick={() => void onEmail(docType, r.id, r.code)} disabled={isEmailing(docType, r.id)}>
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-                          </button>
+                          <Tooltip label={cooldownLeft(docType, r.id) > 0 ? `Please wait ${cooldownLeft(docType, r.id)}s (max 3 per minute)` : 'Send via Email'}>
+                            <button type="button"
+                              className={`s5-icn s5-icn-mail${cooldownLeft(docType, r.id) > 0 ? ' s5-icn-cooling' : ''}`}
+                              onClick={() => void onEmail(docType, r.id, r.code)} disabled={isEmailing(docType, r.id)}>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                            </button>
+                          </Tooltip>
                           {(() => {
                             // A signed doc is locked — show the pencil greyed
                             // out; clicking still explains why (handled in onEdit).
                             const locked = sigByRow[`${docType}:${r.id}`]?.status === 'completed';
                             return (
-                              <button
-                                type="button" className="s5-icn s5-icn-edit"
-                                title={locked ? `${docType === 'pi' ? 'PI' : 'Quotation'} signed — editing locked` : 'Edit'}
-                                onClick={() => onEdit(docType, r.id)} disabled={anyActing}
-                                style={locked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-                              >
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                              </button>
+                              <Tooltip label={locked ? `${docType === 'pi' ? 'PI' : 'Quotation'} signed — editing locked` : 'Edit'}>
+                                <button
+                                  type="button" className="s5-icn s5-icn-edit"
+                                  onClick={() => onEdit(docType, r.id)} disabled={anyActing}
+                                  style={locked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                                >
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                </button>
+                              </Tooltip>
                             );
                           })()}
-                          <button
-                            type="button" className="s5-icn s5-icn-more" title="More Actions"
-                            onClick={(e) => {
-                              const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                              setMoreMenu(prev => prev && prev.id === r.id && prev.kind === docType ? null : { kind: docType, id: r.id, anchor: rect });
-                            }}
-                            disabled={anyActing}
-                          >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/></svg>
-                          </button>
+                          <Tooltip label="More Actions">
+                            <button
+                              type="button" className="s5-icn s5-icn-more"
+                              onClick={(e) => {
+                                const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                                setMoreMenu(prev => prev && prev.id === r.id && prev.kind === docType ? null : { kind: docType, id: r.id, anchor: rect });
+                              }}
+                              disabled={anyActing}
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/></svg>
+                            </button>
+                          </Tooltip>
                           {/* Delete shown for Quotations only — a PI shouldn't be
                               removed once issued. Code kept (docType guard) so it
                               still works for quotations and can be restored for PI. */}
                           {docType !== 'pi' && (
-                            <button type="button" className="s5-icn s5-icn-del" title="Delete"
-                              onClick={() => void onDelete(docType, r.id, r.code)} disabled={anyActing}>
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-                            </button>
+                            <Tooltip label="Delete">
+                              <button type="button" className="s5-icn s5-icn-del"
+                                onClick={() => void onDelete(docType, r.id, r.code)} disabled={anyActing}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                              </button>
+                            </Tooltip>
                           )}
                         </div>
                       </td>
