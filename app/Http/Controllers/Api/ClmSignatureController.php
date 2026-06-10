@@ -2145,7 +2145,11 @@ class ClmSignatureController extends Controller
         );
 
         $products = $lead
-            ? LeadProduct::with(['product:id,product_code,name,segment_id', 'product.segment:id,name'])
+            ? LeadProduct::with([
+                'product:id,product_code,name,segment_id,description,haz_type,hsn_id',
+                'product.segment:id,name',
+                'product.hsn:id,hsn_code',
+            ])
                 ->where('lead_id', $lead->id)
                 ->orderBy('id')
                 ->get()
@@ -2178,11 +2182,14 @@ class ClmSignatureController extends Controller
     private function fillProductTokens(string $snippet, ?LeadProduct $p, int $sr): string
     {
         return strtr($snippet, [
-            '{{product.sr}}'       => (string) $sr,
-            '{{product.code}}'     => e($p?->product?->product_code ?? ''),
-            '{{product.name}}'     => e($p?->product?->name ?? ''),
-            '{{product.segment}}'  => e($p?->product?->segment?->name ?? ''),
-            '{{product.quantity}}' => e((string) ($p?->quantity ?? '')),
+            '{{product.sr}}'          => (string) $sr,
+            '{{product.code}}'        => e($p?->product?->product_code ?? ''),
+            '{{product.name}}'        => e($p?->product?->name ?? ''),
+            '{{product.segment}}'     => e($p?->product?->segment?->name ?? ''),
+            '{{product.quantity}}'    => e((string) ($p?->quantity ?? '')),
+            '{{product.hsn_sac}}'     => e($p?->product?->hsn?->hsn_code ?? ''),
+            '{{product.description}}' => e($p?->product?->description ?? ''),
+            '{{product.haz}}'         => e($p?->product?->haz_type ?? ''),
         ]);
     }
 

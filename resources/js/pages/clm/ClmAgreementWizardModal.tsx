@@ -1158,10 +1158,13 @@ const PLACEHOLDER_GROUPS: PhGroup[] = [
     { label: 'Risk Level',     token: '{{supplier.risk_level}}' },
   ] },
   { id: 'product', label: 'Product', iconEmoji: '🛒', iconColor: '#8b5cf6', fields: [
-    { label: 'Product Code',    token: '{{product.code}}' },
-    { label: 'Product Name',    token: '{{product.name}}' },
-    { label: 'Product Segment', token: '{{product.segment}}' },
-    { label: 'Quantity',        token: '{{product.quantity}}' },
+    { label: 'Product Code',        token: '{{product.code}}' },
+    { label: 'Product Name',        token: '{{product.name}}' },
+    { label: 'Product Segment',     token: '{{product.segment}}' },
+    { label: 'Quantity',            token: '{{product.quantity}}' },
+    { label: 'HSN/SAC Code',        token: '{{product.hsn_sac}}' },
+    { label: 'Product Description', token: '{{product.description}}' },
+    { label: 'Haz / Non-Haz',       token: '{{product.haz}}' },
   ] },
 ];
 
