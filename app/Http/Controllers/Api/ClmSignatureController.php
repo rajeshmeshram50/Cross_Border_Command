@@ -12,6 +12,7 @@ use App\Models\Consignee;
 use App\Models\CtcContract;
 use App\Models\Customer;
 use App\Models\Lead;
+use App\Models\LeadProduct;
 use App\Models\Vendor;
 use App\Services\ZohoSignService;
 use Illuminate\Database\Eloquent\Model;
@@ -65,11 +66,18 @@ class ClmSignatureController extends Controller
             'header_config_override' => 'nullable|array',
             'footer_config_override' => 'nullable|array',
             'content_override'       => 'nullable|string',
+            // Opportunity scope — lets the {{product.*}} table resolve against
+            // the lead's products in the preview. Omitted for standalone
+            // customer/consignee vault previews (table then renders empty).
+            'lead_id'                => 'nullable|integer|exists:leads,id',
         ]);
         $modelName = $data['model_name'] ?? 'Customer';
 
         $doc   = ClmTradeDocLibrary::where('client_id', $user->client_id)->findOrFail($data['trade_doc_id']);
         $party = $this->loadParty($modelName, (int) $data['party_id'], $user);
+        $lead  = !empty($data['lead_id'])
+            ? Lead::where('client_id', $user->client_id)->find($data['lead_id'])
+            : null;
 
         $pdf = $this->renderPdf(
             $doc,
@@ -80,6 +88,7 @@ class ClmSignatureController extends Controller
             $data['header_config_override'] ?? null,
             $data['footer_config_override'] ?? null,
             $data['content_override'] ?? null,
+            $lead,
         );
 
         return response($pdf->output(), 200, [
@@ -147,6 +156,9 @@ class ClmSignatureController extends Controller
 
         $modelName = $data['model_name'] ?? 'Customer';
         $party     = $this->loadParty($modelName, (int) $data['party_id'], $user);
+        $lead      = !empty($data['lead_id'])
+            ? Lead::where('client_id', $user->client_id)->find($data['lead_id'])
+            : null;
 
         $docs = ClmTradeDocLibrary::where('client_id', $user->client_id)
             ->whereIn('id', $data['trade_doc_ids'])
@@ -186,6 +198,7 @@ class ClmSignatureController extends Controller
                     $headerOverride,
                     $footerOverride,
                     $contentOver,
+                    $lead,
                 );
                 $tmp  = storage_path('app/temp/' . Str::uuid()->toString() . '.pdf');
                 file_put_contents($tmp, $pdf->output());
@@ -394,6 +407,7 @@ class ClmSignatureController extends Controller
             $data['footer_config_override'] ?? null,
             array_key_exists('content_override', $data) ? (string) $data['content_override'] : null,
             $allParties,
+            $lead,
         );
 
         return response($pdf->output(), 200, [
@@ -529,6 +543,7 @@ class ClmSignatureController extends Controller
                     is_array($footerOverride) ? $footerOverride : null,
                     $contentOverride !== null ? (string) $contentOverride : null,
                     $allParties,
+                    $lead,
                 );
                 $tmp = storage_path('app/temp/' . Str::uuid()->toString() . '.pdf');
                 file_put_contents($tmp, $pdf->output());
@@ -1457,6 +1472,7 @@ class ClmSignatureController extends Controller
         ?array $footerOverride = null,
         ?string $contentOverride = null,
         array $allParties = [],
+        ?Lead $lead = null,
     ) {
         // Body HTML: per-send override beats the saved row's content.
         // The override path lets the workplace Send-for-Signature flow
@@ -1467,6 +1483,8 @@ class ClmSignatureController extends Controller
         // replacePlaceholders only substitutes the primary's tokens
         // and `{{consignee.name}}` stays as literal text in the PDF.
         $processedHtml = $this->replacePlaceholders($sourceHtml, $party, $modelName, $allParties);
+        // Expand the {{product.*}} table into one row per opportunity product.
+        $processedHtml = $this->expandProductTable($processedHtml, $lead);
         $client        = Client::find($agreement->client_id);
 
         // Read the row's saved page-shell config (Stage 2 wizard) so the
@@ -1873,12 +1891,15 @@ class ClmSignatureController extends Controller
         ?array $headerOverride = null,
         ?array $footerOverride = null,
         ?string $contentOverride = null,
+        ?Lead $lead = null,
     ) {
         // Content override takes precedence over the row's saved HTML —
         // used by the Send-for-Signature modal when the user pastes in
         // a table via Insert Table or otherwise edits the body inline.
         $sourceHtml    = $contentOverride !== null ? $contentOverride : (string) $doc->content;
         $processedHtml = $this->replacePlaceholders($sourceHtml, $party, $modelName);
+        // Expand the {{product.*}} table into one row per opportunity product.
+        $processedHtml = $this->expandProductTable($processedHtml, $lead);
         $client = Client::find($doc->client_id);
 
         // Saved Stage 2 page-shell config — drives the PDF's header/footer
@@ -2097,6 +2118,72 @@ class ClmSignatureController extends Controller
         }
 
         return $html;
+    }
+
+    /**
+     * Expand a {{product.*}} template row into one table row per product on
+     * the opportunity. The Insert Placeholder picker drops a product table
+     * whose single <tr> carries {{product.sr}} / {{product.code}} /
+     * {{product.name}} / {{product.segment}} / {{product.quantity}}. We locate
+     * that row and repeat it for every product mapped to the lead (same source
+     * the Sales-Matrix product tabs use), substituting the real values.
+     *
+     * No lead, no product token, or no products mapped → we still resolve the
+     * tokens (to a single blank/empty row) so raw {{product.*}} text never
+     * leaks into the signed PDF.
+     */
+    private function expandProductTable(string $html, ?Lead $lead): string
+    {
+        if (strpos($html, '{{product.') === false) return $html;
+
+        // Decode entity-encoded braces (Word / Google-Docs paste) so the row
+        // regex below matches — mirrors replacePartyNamespaceTokens().
+        $html = str_replace(
+            ['&#123;', '&#x7B;', '&#125;', '&#x7D;', '&lcub;', '&rcub;'],
+            ['{',      '{',      '}',      '}',      '{',      '}'],
+            $html,
+        );
+
+        $products = $lead
+            ? LeadProduct::with(['product:id,product_code,name,segment_id', 'product.segment:id,name'])
+                ->where('lead_id', $lead->id)
+                ->orderBy('id')
+                ->get()
+            : collect();
+
+        // Locate the single <tr> holding the product tokens. Non-greedy and
+        // guarded with a negative-lookahead so it can't swallow sibling rows.
+        if (!preg_match('/<tr\b[^>]*>(?:(?!<\/tr>).)*?\{\{product\.[^}]*\}\}(?:(?!<\/tr>).)*?<\/tr>/is', $html, $m)) {
+            // Token used inline (not in a row) — fall back to the first product.
+            return $this->fillProductTokens($html, $products->first(), 1);
+        }
+        $templateRow = $m[0];
+
+        if ($products->isEmpty()) {
+            $rows = $this->fillProductTokens($templateRow, null, 1);
+        } else {
+            $rows = '';
+            $i = 1;
+            foreach ($products as $p) {
+                $rows .= $this->fillProductTokens($templateRow, $p, $i++);
+            }
+        }
+
+        // Replace only the first occurrence of the template row.
+        $pos = strpos($html, $templateRow);
+        return substr_replace($html, $rows, $pos, strlen($templateRow));
+    }
+
+    /** Substitute the {{product.*}} tokens inside one row / snippet. */
+    private function fillProductTokens(string $snippet, ?LeadProduct $p, int $sr): string
+    {
+        return strtr($snippet, [
+            '{{product.sr}}'       => (string) $sr,
+            '{{product.code}}'     => e($p?->product?->product_code ?? ''),
+            '{{product.name}}'     => e($p?->product?->name ?? ''),
+            '{{product.segment}}'  => e($p?->product?->segment?->name ?? ''),
+            '{{product.quantity}}' => e((string) ($p?->quantity ?? '')),
+        ]);
     }
 
     /**

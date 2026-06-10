@@ -70,6 +70,31 @@ const TABS: { key: Tab; label: string; icon: string; color: string }[] = [
   { key: 'product',   label: 'Product',   icon: '🛒', color: '#8b5cf6' },
 ];
 
+/* A ready-made product table, mirroring the Proforma Invoice product grid.
+ * Clicking it drops the whole table into the draft; the single tbody row
+ * carries the {{product.*}} tokens and acts as the template the renderer
+ * repeats once per mapped product at generation time. Inline styles keep it
+ * intact through the contenteditable editor and the DOCX/PDF export. */
+const TD_CELL = 'border:1px solid #cbd5e1;padding:6px 10px;';
+const TH_CELL = `${TD_CELL}background:#f1f5f9;font-weight:700;text-align:left;`;
+const PRODUCT_TABLE_HTML =
+  `<table style="width:100%;border-collapse:collapse;margin:10px 0;font-size:13px;">` +
+    `<thead><tr>` +
+      `<th style="${TH_CELL}">#</th>` +
+      `<th style="${TH_CELL}">Product Code</th>` +
+      `<th style="${TH_CELL}">Product Name</th>` +
+      `<th style="${TH_CELL}">Segment</th>` +
+      `<th style="${TH_CELL}text-align:right;">Quantity</th>` +
+    `</tr></thead>` +
+    `<tbody><tr>` +
+      `<td style="${TD_CELL}">{{product.sr}}</td>` +
+      `<td style="${TD_CELL}">{{product.code}}</td>` +
+      `<td style="${TD_CELL}">{{product.name}}</td>` +
+      `<td style="${TD_CELL}">{{product.segment}}</td>` +
+      `<td style="${TD_CELL}text-align:right;">{{product.quantity}}</td>` +
+    `</tr></tbody>` +
+  `</table>`;
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -233,6 +258,17 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert }: P
             </div>
 
             <div className="ipm-grid">
+              {tab === 'product' && (
+                <div className="ipm-card ipm-card-table" role="button" tabIndex={0}
+                     onClick={() => onInsert(PRODUCT_TABLE_HTML)}
+                     onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onInsert(PRODUCT_TABLE_HTML); } }}>
+                  <span className="ipm-card-label">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 7 }}><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+                    Product Table
+                  </span>
+                  <span className="ipm-card-tabledesc">Inserts a table with Code · Name · Segment · Quantity columns — one row per product at generation time.</span>
+                </div>
+              )}
               {fields.map(f => {
                 const isChecked = selected.has(f.token);
                 return (
@@ -401,6 +437,13 @@ const IPM_CSS = `
 .ipm-selbtn-copy:hover:not(:disabled) { background: #0e7490; border-color: #0e7490; color: #fff; }
 
 .ipm-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.ipm-card-table { grid-column: 1 / -1; border-color: rgba(139,92,246,.35); background: linear-gradient(180deg, #fff 0%, #f5f3ff 100%); }
+.ipm-card-table:hover { border-color: #8b5cf6; background: #f5f3ff; box-shadow: 0 8px 20px rgba(139,92,246,.22); }
+.ipm-card-table .ipm-card-label { color: #6d28d9; }
+.ipm-card-tabledesc { font-size: 12px; color: #7c3aed; font-weight: 500; }
+[data-bs-theme="dark"] .ipm-card-table { background: linear-gradient(180deg, #1e293b 0%, rgba(139,92,246,.16) 100%); border-color: rgba(139,92,246,.40); }
+[data-bs-theme="dark"] .ipm-card-table .ipm-card-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .ipm-card-tabledesc { color: #c4b5fd; }
 .ipm-card {
   display: flex; flex-direction: column; gap: 8px;
   padding: 13px 14px; border-radius: 11px;

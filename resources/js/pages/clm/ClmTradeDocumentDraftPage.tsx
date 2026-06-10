@@ -139,6 +139,19 @@ export default function ClmTradeDocumentDraftPage() {
     document.execCommand('insertText', false, text);
     syncContent();
   };
+  /* Same as insertAtCaret but for rich HTML (e.g. the Product Table from
+   * the placeholder picker) — execCommand('insertHTML') parses the markup
+   * into real DOM nodes instead of pasting literal angle-bracket text. */
+  const insertHtmlAtCaret = (html: string) => {
+    editorRef.current?.focus();
+    if (lastRangeRef.current) {
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(lastRangeRef.current);
+    }
+    document.execCommand('insertHTML', false, html);
+    syncContent();
+  };
 
   /* DOCX round-trip — mirrors the HRMS template flow. Requires an
    * existing row so we have an id to scope the upload/download to. */
@@ -633,7 +646,7 @@ export default function ClmTradeDocumentDraftPage() {
       <ClmInsertPlaceholderModal
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
-        onInsert={(token) => { insertAtCaret(token); setPickerOpen(false); }}
+        onInsert={(token) => { if (/^\s*</.test(token)) insertHtmlAtCaret(token); else insertAtCaret(token); setPickerOpen(false); }}
       />
     </div>
   );

@@ -579,6 +579,12 @@ export default function SalesMatrixDetail() {
       // (its signature request reached completed) — same way agreements count
       // a completed e-signature.
       for (const td of s.trade_documents) {
+        // When buyer == consignee the popup lists ONLY buyer-only trade docs
+        // (consignee-only / both rows are redundant with a single party — see
+        // tdBuckets in LeadAgreementSendModal). The card count must exclude the
+        // same rows, otherwise it double-counts the mirrored consignee docs and
+        // shows e.g. "1 of 5" while the popup lists 3.
+        if (buyerEqualsConsignee && !(td.for_buyer && !td.for_consignee)) continue;
         tdTotal++;
         if (td.status === 'Verified' || td.signature_request?.status === 'completed') tdDone++;
       }
@@ -967,8 +973,13 @@ export default function SalesMatrixDetail() {
              *  customer_code/consignee_code passed to the modal is the
              *  REAL value from the eager-loaded row only; we no longer
              *  synthesise a `C-${padStart(3)}` fallback because that
-             *  hard-codes a padding the system doesn't actually use. */}
-            {serverHeader.consigneeId && serverHeader.consigneeRow && (
+             *  hard-codes a padding the system doesn't actually use.
+             *  Hidden when the consignee is same-as-customer: its KYC/DD/
+             *  Licence docs mirror the customer's, so showing a second
+             *  identical row (and counting it) is redundant — the panel
+             *  then lists only the Customer's documents. */}
+            {serverHeader.consigneeId && serverHeader.consigneeRow
+              && !(serverHeader.consigneeRow as { same_as_customer?: boolean }).same_as_customer && (
               <ClmRow
                 icon={<IconTruckSm />}
                 tone="emerald"
