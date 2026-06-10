@@ -575,7 +575,13 @@ export default function SalesMatrixDetail() {
         agrTotal++;
         if (a.signature_request?.status === 'completed') agrDone++;
       }
-      for (const td of s.trade_documents) { tdTotal++; if (td.status === 'Verified') tdDone++; }
+      // A trade doc counts as "done" when it's uploaded/verified OR signed
+      // (its signature request reached completed) — same way agreements count
+      // a completed e-signature.
+      for (const td of s.trade_documents) {
+        tdTotal++;
+        if (td.status === 'Verified' || td.signature_request?.status === 'completed') tdDone++;
+      }
     }
     return { agrTotal, agrDone, tdTotal, tdDone };
   }, [agreementApplicable]);
@@ -1440,7 +1446,13 @@ export default function SalesMatrixDetail() {
         leadId={resolvedLeadId}
         view={agreementModalView}
         data={agreementApplicable}
-        onClose={() => setAgreementModalOpen(false)}
+        onClose={() => {
+          setAgreementModalOpen(false);
+          // Re-pull so the Segment Details card reflects any status that
+          // changed while the popup was open — e.g. a trade doc / agreement
+          // that got signed via the popup's live Zoho poll.
+          setAgreementRefreshTick(t => t + 1);
+        }}
         onSent={() => setAgreementRefreshTick(t => t + 1)}
       />
 
