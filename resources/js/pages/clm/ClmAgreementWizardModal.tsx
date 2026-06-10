@@ -1083,6 +1083,7 @@ function AgrEditor({
             className="agw-editor"
             contentEditable
             suppressContentEditableWarning
+            dir="ltr"
             onInput={syncContent}
             role="textbox"
             aria-multiline="true"
