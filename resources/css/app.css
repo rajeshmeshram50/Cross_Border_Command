@@ -368,11 +368,13 @@ body {
 }
 [data-bs-theme="dark"] .shimmer,
 [data-layout-mode="dark"] .shimmer {
-  background-color: #2a3142;
+  /* Lighter than the dark card surface so the skeleton bars actually read as
+     placeholders (the old #2a3142 was nearly the card colour → looked empty). */
+  background-color: #3a4256;
   background-image: linear-gradient(
     90deg,
     rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.10) 50%,
+    rgba(255, 255, 255, 0.16) 50%,
     rgba(255, 255, 255, 0) 100%
   );
 }

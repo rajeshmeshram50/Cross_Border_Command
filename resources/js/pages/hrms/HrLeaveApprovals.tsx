@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'r
 import { useNavigate } from 'react-router-dom';
 import { Col, Row, Modal, ModalBody } from 'reactstrap';
 import { leaveRequestsApi, ApiLeaveRequest, ApiLeaveApprover } from './leavePlansApi';
+import { useTheme } from '../../contexts/ThemeContext';
 import '../../../css/recruitment.css';
 import '../../../css/leave.css';
 
@@ -19,6 +20,15 @@ const STATUS_TONE: Record<string, { bg: string; fg: string }> = {
   Approved:  { bg: '#d1fae5', fg: '#065f46' },
   Rejected:  { bg: '#fee2e2', fg: '#b91c1c' },
   Cancelled: { bg: '#eef2f6', fg: '#374151' },
+};
+// Dark-mode equivalents — the .lva-tone-card color-mix dark rule doesn't take
+// on every browser, so feed theme-aware tones straight in (translucent tint +
+// lightened text) and the always-applied light CSS rule renders them dark.
+const STATUS_TONE_DARK: Record<string, { bg: string; fg: string }> = {
+  Pending:   { bg: 'rgba(245,158,11,0.18)', fg: '#fcd34d' },
+  Approved:  { bg: 'rgba(16,185,129,0.18)', fg: '#6ee7b7' },
+  Rejected:  { bg: 'rgba(239,68,68,0.18)',  fg: '#fca5a5' },
+  Cancelled: { bg: 'rgba(255,255,255,0.08)', fg: '#cbd5e1' },
 };
 
 function fmtDate(raw: string | null | undefined): string {
@@ -41,6 +51,9 @@ const initialsOf = (name: string) =>
 
 export default function HrLeaveApprovals() {
   const navigate = useNavigate();
+  const { theme } = useTheme();
+  const dark = theme === 'dark';
+  const statusTone = (s: string) => (dark ? STATUS_TONE_DARK : STATUS_TONE)[s] || (dark ? STATUS_TONE_DARK.Pending : STATUS_TONE.Pending);
   const [rows, setRows] = useState<ApiLeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<StatusFilter>('Pending');
@@ -261,7 +274,7 @@ export default function HrLeaveApprovals() {
                   const empName = r.employee
                     ? (r.employee.display_name?.trim() || `${r.employee.first_name} ${r.employee.last_name ?? ''}`.trim())
                     : '—';
-                  const tone = STATUS_TONE[r.status] || STATUS_TONE.Pending;
+                  const tone = statusTone(r.status);
                   const acc = r.employee ? accentFor(r.employee.id) : '#7c5cfc';
                   return (
                     <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => openDetail(r.id)}>
@@ -386,10 +399,10 @@ export default function HrLeaveApprovals() {
                     <div className="text-muted mb-2" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.5 }}>APPROVAL CHAIN</div>
                     <div className="d-flex align-items-stretch gap-2">
                       {chain.map((c, i) => {
-                        const tone = c.status === 'Approved' ? { bg: '#d1fae5', fg: '#065f46', ring: '#10b981' }
-                          : c.status === 'Rejected' ? { bg: '#fee2e2', fg: '#b91c1c', ring: '#ef4444' }
-                          : c.is_current ? { bg: '#ede9fe', fg: '#5a3fd1', ring: '#7c5cfc' }
-                          : { bg: '#f3f4f6', fg: '#6b7280', ring: '#d1d5db' };
+                        const tone = c.status === 'Approved' ? { bg: dark ? 'rgba(16,185,129,0.18)' : '#d1fae5', fg: dark ? '#6ee7b7' : '#065f46', ring: '#10b981' }
+                          : c.status === 'Rejected' ? { bg: dark ? 'rgba(239,68,68,0.18)' : '#fee2e2', fg: dark ? '#fca5a5' : '#b91c1c', ring: '#ef4444' }
+                          : c.is_current ? { bg: dark ? 'rgba(124,92,252,0.20)' : '#ede9fe', fg: dark ? '#c4b5fd' : '#5a3fd1', ring: '#7c5cfc' }
+                          : { bg: dark ? 'rgba(255,255,255,0.06)' : '#f3f4f6', fg: dark ? '#9ca3af' : '#6b7280', ring: dark ? '#4b5563' : '#d1d5db' };
                         return (
                           <div key={i} className="lva-tone-card flex-grow-1 d-flex align-items-center gap-2" style={{
                             ['--lva-bg' as string]: tone.bg, ['--lva-fg' as string]: tone.fg, ['--lva-ring' as string]: tone.ring,
@@ -451,8 +464,8 @@ export default function HrLeaveApprovals() {
                 {/* Already-decided state */}
                 {detail.status !== 'Pending' && (
                   <div className="lva-tone-card mb-3" style={{
-                    ['--lva-bg' as string]: STATUS_TONE[detail.status]?.bg || '#eef2f6',
-                    ['--lva-fg' as string]: STATUS_TONE[detail.status]?.fg || '#374151',
+                    ['--lva-bg' as string]: statusTone(detail.status).bg,
+                    ['--lva-fg' as string]: statusTone(detail.status).fg,
                     ['--lva-ring' as string]: detail.status === 'Approved' ? '#10b981'
                       : detail.status === 'Rejected' ? '#ef4444' : '#9ca3af',
                     borderRadius: 10, padding: 12, fontSize: 13,

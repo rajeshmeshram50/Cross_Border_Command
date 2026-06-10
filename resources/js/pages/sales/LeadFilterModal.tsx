@@ -458,8 +458,8 @@ const LFM_CSS = `
 @keyframes lfm-fade { from { opacity: 0; } to { opacity: 1; } }
 
 .lfm-modal {
-  width: 760px; max-width: 95vw; height: 540px; max-height: 90vh;
-  background: #fff; border-radius: 16px; box-shadow: 0 24px 60px rgba(8,145,178,.18), 0 8px 24px rgba(15,23,42,.20);
+  width: min(94vw, 720px); height: 480px; max-height: 84vh;
+  background: #fff; border-radius: 22px; box-shadow: 0 24px 60px rgba(8,145,178,.18), 0 8px 24px rgba(15,23,42,.20);
   overflow: hidden; display: flex; flex-direction: column;
   animation: lfm-pop .18s ease-out;
 }
@@ -469,20 +469,25 @@ const LFM_CSS = `
 .lfm-head {
   position: relative;
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
-  padding: 18px 22px;
+  padding: 14px 20px;
   background: linear-gradient(135deg, #0e7490 0%, #0891b2 60%, #06b6d4 100%);
   color: #fff;
   overflow: hidden;
 }
+/* Decorative bubble orbs (figma) — soft white circles clipped by the header. */
+.lfm-head::before {
+  content: ''; position: absolute; right: -35px; top: -35px;
+  width: 130px; height: 130px; border-radius: 50%;
+  background: rgba(255,255,255,.06); pointer-events: none;
+}
 .lfm-head::after {
-  content: ''; position: absolute; top: -40%; right: -10%;
-  width: 240px; height: 200px;
-  background: radial-gradient(ellipse, rgba(255,255,255,.18), transparent 70%);
-  pointer-events: none;
+  content: ''; position: absolute; right: 70px; bottom: -45px;
+  width: 90px; height: 90px; border-radius: 50%;
+  background: rgba(255,255,255,.04); pointer-events: none;
 }
 .lfm-head-left { display: flex; align-items: center; gap: 14px; min-width: 0; position: relative; z-index: 1; }
 .lfm-head-ico {
-  width: 42px; height: 42px; border-radius: 11px; flex-shrink: 0;
+  width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0;
   background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.28);
   display: flex; align-items: center; justify-content: center;
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
@@ -509,11 +514,11 @@ const LFM_CSS = `
 
 /* ── Sidebar ── */
 .lfm-left {
-  width: 240px; flex-shrink: 0;
+  width: 178px; flex-shrink: 0;
   background: #fff;
   border-right: 1px solid #e2e8f0;
   display: flex; flex-direction: column;
-  padding: 16px 12px 12px;
+  padding: 12px 12px 6px;
 }
 .lfm-left-label {
   font-size: 10px; font-weight: 700; color: #94a3b8;
@@ -522,17 +527,17 @@ const LFM_CSS = `
 }
 .lfm-menu { display: flex; flex-direction: column; gap: 4px; }
 .lfm-menu-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 12px; border-radius: 10px;
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 11px; border-radius: 8px;
   border: 1.5px solid transparent;
   background: transparent;
-  font: inherit; font-size: 13.5px; font-weight: 600; color: #475569;
+  font: inherit; font-size: 11.5px; font-weight: 600; color: #475569;
   cursor: pointer; text-align: left;
   transition: background .15s, border-color .15s, color .15s;
 }
 .lfm-menu-item:hover { background: #f1f5f9; color: #0f172a; }
 .lfm-menu-ico {
-  width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+  width: 26px; height: 26px; border-radius: 7px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
   background: #fff; border: 1.5px solid #e2e8f0; color: #64748b;
   transition: all .15s;
@@ -566,8 +571,8 @@ const LFM_CSS = `
   display: flex; flex-direction: column; gap: 10px;
 }
 .lfm-btn {
-  padding: 11px 14px; border-radius: 10px;
-  font: inherit; font-size: 13px; font-weight: 700;
+  padding: 9px 14px; border-radius: 10px;
+  font: inherit; font-size: 12.5px; font-weight: 700;
   cursor: pointer; border: none; transition: all .15s;
 }
 .lfm-btn-primary {
@@ -584,16 +589,16 @@ const LFM_CSS = `
 .lfm-btn-reset:hover { color: #0891b2; }
 
 /* ── Right pane ── */
-.lfm-right { flex: 1; display: flex; flex-direction: column; padding: 18px 22px; min-width: 0; gap: 12px; background: #fff; }
+.lfm-right { flex: 1; display: flex; flex-direction: column; padding: 12px 20px; min-width: 0; gap: 10px; background: #fff; }
 .lfm-search-wrap { position: relative; }
 .lfm-search-ico {
   position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
   color: #94a3b8; pointer-events: none;
 }
 .lfm-search {
-  width: 100%; height: 40px; padding: 0 12px 0 36px;
-  font: inherit; font-size: 13px;
-  border: 1px solid #e2e8f0; border-radius: 10px;
+  width: 100%; height: 36px; padding: 0 12px 0 34px;
+  font: inherit; font-size: 12px;
+  border: 1px solid #e2e8f0; border-radius: 9px;
   background: #f8fafc; color: #0f172a; outline: none;
   transition: border-color .15s, background .15s, box-shadow .15s;
 }
@@ -601,17 +606,23 @@ const LFM_CSS = `
 .lfm-search:hover { border-color: #cbd5e1; }
 .lfm-search:focus { background: #fff; border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.15); }
 
-.lfm-options { flex: 1; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 8px; }
+/* Fills the fixed-height modal and scrolls internally — the popup size never
+   changes, however many entries a facet has (e.g. Customer). */
+.lfm-options { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 4px; scrollbar-width: thin; scrollbar-color: #a5f3fc transparent; }
+.lfm-options::-webkit-scrollbar { width: 8px; }
+.lfm-options::-webkit-scrollbar-track { background: transparent; }
+.lfm-options::-webkit-scrollbar-thumb { background: #a5f3fc; border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+.lfm-options::-webkit-scrollbar-thumb:hover { background: #67e8f9; background-clip: content-box; }
 .lfm-empty { text-align: center; color: #94a3b8; font-style: italic; padding: 30px 12px; font-size: 12.5px; }
 
 /* Each radio option is a bordered card. Clicking anywhere on the card
    toggles its radio. The radio uses accent-color so it picks up the
    modal's cyan. */
 .lfm-card {
-  display: flex; align-items: center; gap: 12px;
-  padding: 12px 14px; border-radius: 10px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 14px; border-radius: 9px;
   background: #fff; border: 1px solid #e2e8f0;
-  font: inherit; font-size: 13px; color: #0f172a; font-weight: 500;
+  font: inherit; font-size: 12px; color: #0f172a; font-weight: 500;
   cursor: pointer;
   transition: border-color .15s, background .15s, box-shadow .15s;
 }

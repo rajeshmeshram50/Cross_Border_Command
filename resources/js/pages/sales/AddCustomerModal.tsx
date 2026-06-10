@@ -1732,8 +1732,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 
         {/* FOOTER */}
         <div className="acm-footer">
-          <div className="acm-req-note">           
-         
+          <div className="acm-req-note">
+            <span className="acm-req-dot" />
+            <span>Fields marked with <span className="acm-req-star">*</span> are required</span>
           </div>
           <div className="acm-footer-actions">
             {!atStart && (
@@ -1985,12 +1986,19 @@ function Stepper({ stage, maxStage, onGoto, complete }: { stage: Stage; maxStage
          * confused users. Steps now show only their icon + number —
          * active step highlighted, visited steps neutral, unreached steps
          * locked. No "complete" indication anywhere. */
-        const cls = s.n === stage
+        const isActive = s.n === stage;
+        /* A stage that's behind us AND genuinely complete paints GREEN with a
+         * ✓ (Figma look). Visited-but-incomplete stays neutral gray; unreached
+         * stays locked. `complete` is 0-based (Stage n → complete[n-1]). */
+        const isDone = !isActive && visited && complete[s.n - 1];
+        const cls = isActive
           ? 'acm-step-active'
-          : visited
-            ? 'acm-step-incomplete'
-            : 'acm-step-pending';
-        const showCheck = false;
+          : isDone
+            ? 'acm-step-done'
+            : visited
+              ? 'acm-step-incomplete'
+              : 'acm-step-pending';
+        const showCheck = isDone;
         return (
           <Fragment key={s.n}>
             <div className={`acm-step ${cls}`} onClick={() => onGoto(s.n)}>
@@ -4132,21 +4140,29 @@ const SCOPED_CSS = `
    the modal identity; white text + glassy icon box on top. */
 .acm-header {
   position: relative;
-  background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 45%, #7c3aed 100%);
+  background: linear-gradient(
+135deg, #2e1065 0%, #4c1d95 30%, #6d28d9 65%, #7c3aed 100%);
   padding: 18px 24px;
   display: flex; align-items: center; justify-content: space-between;
   overflow: hidden;
   flex-shrink: 0;
 }
 .acm-header::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image:
-    radial-gradient(ellipse at 15% 50%, rgba(167,139,250,0.30) 0%, transparent 55%),
-    radial-gradient(ellipse at 85% 50%, rgba(139,92,246,0.20) 0%, transparent 55%);
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    /* Three stacked layers:
+         1. white dot-grid texture (the polka-dot effect)
+         2 + 3. soft brand glows left/right for depth. */
+    background-image:
+      radial-gradient(rgba(255, 255, 255, .20) 1.1px, transparent 1.6px),
+      radial-gradient(circle at 15% 50%, rgba(167, 139, 250, .32) 0%, transparent 55%),
+      radial-gradient(ellipse at 85% 50%, rgba(139, 92, 246, .22) 0%, transparent 55%);
+    background-size: 18px 18px, auto, auto;
+    background-position: 0 0, 0 0, 0 0;
 }
+ 
 .acm-header-left { display: flex; align-items: center; gap: 14px; position: relative; z-index: 1; }
 .acm-header-icon {
   width: 42px; height: 42px; border-radius: 12px;
@@ -4213,7 +4229,7 @@ const SCOPED_CSS = `
 }
 
 /* Stepper */
-.acm-stepper { padding: 16px 22px 14px; display: flex; align-items: center; gap: 0; flex-shrink: 0; background: #fff; border-bottom: 1px solid #ede9fe; }
+.acm-stepper { padding: 16px 22px 14px; display: flex; align-items: center; gap: 0; flex-shrink: 0; background: linear-gradient(110deg,#faf5ff 0%,#f0ebff 100%); }
 .acm-step-connector { flex: 0 0 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; z-index: 0; }
 .acm-connector-line { width: 100%; height: 3px; background: #e2e8f0; border-radius: 3px; position: relative; overflow: hidden; }
 .acm-connector-line::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, #8b5cf6, #6d28d9); border-radius: 3px; transform: scaleX(0); transform-origin: left; transition: transform .5s cubic-bezier(.4,0,.2,1); }
@@ -4225,16 +4241,20 @@ const SCOPED_CSS = `
 .acm-step-text { min-width: 0; flex: 1; }
 .acm-step-title { font-size: 12px; font-weight: 800; letter-spacing: -.2px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .acm-step-sub { font-size: 9.5px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.acm-step-active { background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%); border: 2px solid #7c3aed; box-shadow: 0 6px 22px rgba(109,40,217,.22), 0 1px 0 rgba(255,255,255,.85) inset; }
+.acm-step-active {     background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%);
+    border: 3px solid #7c3aed;
+    box-shadow: 0 6px 22px rgba(109, 40, 217, .22), 0 1px 0 rgba(255, 255, 255, .85) inset;}
 .acm-step-active .acm-step-badge { background: linear-gradient(135deg, #7c3aed, #5b21b6); color: #fff; box-shadow: 0 5px 14px rgba(109,40,217,.48); }
 .acm-step-active .acm-step-num { background: linear-gradient(135deg, #6d28d9, #4c1d95); color: #fff; }
 .acm-step-active .acm-step-title { color: #2e1065; }
 .acm-step-active .acm-step-sub { color: #6d28d9; }
-.acm-step-done { background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); border: 2px solid #a78bfa; box-shadow: 0 6px 20px rgba(124,58,237,.18), 0 1px 0 rgba(255,255,255,.85) inset; }
-.acm-step-done .acm-step-badge { background: linear-gradient(135deg, #8b5cf6, #6d28d9); color: #fff; box-shadow: 0 5px 12px rgba(124,58,237,.42); }
-.acm-step-done .acm-step-num { background: linear-gradient(135deg, #7c3aed, #5b21b6); color: #fff; }
-.acm-step-done .acm-step-title { color: #4c1d95; }
-.acm-step-done .acm-step-sub { color: #7c3aed; }
+/* Completed stage — GREEN with a ✓ badge (Figma). Distinct from the
+   purple ACTIVE stage so "done vs current" reads at a glance. */
+.acm-step-done { background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border: 2px solid #34d399; box-shadow: 0 6px 20px rgba(16,185,129,.18), 0 1px 0 rgba(255,255,255,.85) inset; }
+.acm-step-done .acm-step-badge { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; box-shadow: 0 5px 12px rgba(22,163,74,.42); }
+.acm-step-done .acm-step-num { background: #fff; color: #16a34a; box-shadow: 0 1px 3px rgba(22,163,74,.30); }
+.acm-step-done .acm-step-title { color: #065f46; }
+.acm-step-done .acm-step-sub { color: #059669; }
 .acm-step-incomplete { background: #f8fafc; border: 2px solid #e2e8f0; box-shadow: 0 4px 14px rgba(100,116,139,.10), 0 1px 0 rgba(255,255,255,.85) inset; }
 .acm-step-incomplete .acm-step-badge { background: linear-gradient(135deg, #e2e8f0, #cbd5e1); color: #64748b; }
 .acm-step-incomplete .acm-step-num { background: #94a3b8; color: #fff; }
@@ -4247,14 +4267,14 @@ const SCOPED_CSS = `
 .acm-step-pending .acm-step-sub { color: #cbd5e1; }
 
 /* Tabs */
-.acm-tabs { padding: 14px 22px 14px; display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; background: #fff; border-bottom: 1px solid #ede9fe; }
+.acm-tabs { padding: 14px 22px 14px; display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; background: linear-gradient(110deg,#faf5ff 0%,#f0ebff 100%); border-bottom: 1px solid #ede9fe; }
 .acm-tab { padding: 7px 18px; border-radius: 10px; border: 1.5px solid transparent; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .2s; white-space: nowrap; }
 .acm-tab-on { background: linear-gradient(135deg,#7c3aed,#6d28d9); color: #fff; border-color: #7c3aed; box-shadow: 0 3px 10px rgba(109,40,217,.35); }
 .acm-tab-off { background: #fff; color: #6d28d9; border-color: #c4b5fd; }
 .acm-tab-off:hover { background: #ede9fe; border-color: #7c3aed; }
 
 /* Body */
-.acm-body { flex: 1; overflow-y: auto; padding: 16px 22px 20px; background: #fafafd; scrollbar-width: thin; scrollbar-color: #a78bfa #ede9fe; }
+.acm-body { flex: 1; overflow-y: auto; padding: 16px 22px 20px; background: #fff; scrollbar-width: thin; scrollbar-color: #a78bfa #ede9fe; }
 .acm-body::-webkit-scrollbar { width: 6px; }
 .acm-body::-webkit-scrollbar-track { background: #ede9fe; border-radius: 10px; }
 .acm-body::-webkit-scrollbar-thumb { background: #a78bfa; border-radius: 10px; }
@@ -4432,7 +4452,8 @@ const SCOPED_CSS = `
   display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0;
 }
 .acm-req-note { font-size: 11.5px; color: #6d28d9; font-weight: 500; display: inline-flex; align-items: center; gap: 7px; }
-.acm-req-dot { width: 7px; height: 7px; border-radius: 50%; background: linear-gradient(135deg,#a78bfa,#7c3aed); box-shadow: 0 0 0 3px rgba(167,139,250,.18); }
+.acm-req-dot { flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; background: linear-gradient(135deg,#a78bfa,#7c3aed); box-shadow: 0 0 0 3px rgba(167,139,250,.18); }
+.acm-req-star { color: #ef4444; font-weight: 700; }
 .acm-footer-actions { display: inline-flex; align-items: center; gap: 10px; }
 .acm-btn-prev, .acm-btn-next {
   padding: 9px 22px; border-radius: 10px; font-family: inherit; font-size: 12px; font-weight: 700;
@@ -5065,9 +5086,9 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-step-active { background: linear-gradient(135deg, rgba(76,29,149,0.45) 0%, rgba(109,40,217,0.30) 100%); border-color: #a78bfa; box-shadow: 0 6px 22px rgba(0,0,0,.4), 0 0 0 1px rgba(167,139,250,.15) inset; }
 [data-bs-theme="dark"] .acm-step-active .acm-step-title { color: #f1f5f9; }
 [data-bs-theme="dark"] .acm-step-active .acm-step-sub { color: #c4b5fd; }
-[data-bs-theme="dark"] .acm-step-done { background: linear-gradient(135deg, rgba(76,29,149,0.40) 0%, rgba(124,58,237,0.20) 100%); border-color: #a78bfa; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
-[data-bs-theme="dark"] .acm-step-done .acm-step-title { color: #ede9fe; }
-[data-bs-theme="dark"] .acm-step-done .acm-step-sub { color: #c4b5fd; }
+[data-bs-theme="dark"] .acm-step-done { background: linear-gradient(135deg, rgba(6,95,70,0.45) 0%, rgba(16,185,129,0.20) 100%); border-color: #34d399; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+[data-bs-theme="dark"] .acm-step-done .acm-step-title { color: #d1fae5; }
+[data-bs-theme="dark"] .acm-step-done .acm-step-sub { color: #6ee7b7; }
 [data-bs-theme="dark"] .acm-step-incomplete { background: rgba(40,52,70,0.60); border-color: rgba(148,163,184,0.25); box-shadow: 0 4px 14px rgba(0,0,0,.30); }
 [data-bs-theme="dark"] .acm-step-incomplete .acm-step-badge { background: #2b3650; color: #cbd5e1; }
 [data-bs-theme="dark"] .acm-step-incomplete .acm-step-title { color: #cbd5e1; }

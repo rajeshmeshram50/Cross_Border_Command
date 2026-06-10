@@ -887,6 +887,15 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .cps-foot-note { color: #fde68a; }
 [data-bs-theme="dark"] .cps-btn-cancel { background: #1f1845; border-color: rgba(167,139,250,.30); color: #c4b5fd; }
 [data-bs-theme="dark"] .cps-btn-cancel:hover:not(:disabled) { background: #2a2150; }
+/* Status badges — translucent fills so they read on the dark surface instead
+   of sitting as bright light pills. */
+[data-bs-theme="dark"] .cps-st-active   { background: rgba(34,197,94,.18);  color: #86efac; }
+[data-bs-theme="dark"] .cps-st-inactive { background: rgba(239,68,68,.18);  color: #fca5a5; }
+[data-bs-theme="dark"] .cps-st-draft    { background: rgba(245,158,11,.18); color: #fcd34d; }
+/* Delete (remove row) button — tinted border/icon + a dark-friendly hover
+   instead of the bright #fee2e2 wash. */
+[data-bs-theme="dark"] .cps-row-del        { border-color: rgba(239,68,68,.45); color: #fca5a5; }
+[data-bs-theme="dark"] .cps-row-del:hover  { background: rgba(239,68,68,.20); border-color: rgba(239,68,68,.65); }
 
 @media (max-width: 900px) {
   .cps-opp-grid, .cps-basic-grid { grid-template-columns: repeat(2, 1fr); }

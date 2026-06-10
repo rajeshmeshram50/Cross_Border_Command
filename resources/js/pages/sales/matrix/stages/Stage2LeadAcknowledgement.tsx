@@ -277,21 +277,18 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
               className={`smd-st2-pill smd-st2-pill-q ${latestBucket === 'qualified' ? 'active' : ''}`}
               onClick={() => openPicker('qualified')}
             >
-              <svg className="smd-st2-pill-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>
               Qualified Lead
             </button>
             <button
               className={`smd-st2-pill smd-st2-pill-c ${latestBucket === 'clarity_pending' ? 'active' : ''}`}
               onClick={() => openPicker('clarity_pending')}
             >
-              <svg className="smd-st2-pill-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 7 12 12 15.5 14"/></svg>
               Clarity Pending
             </button>
             <button
               className={`smd-st2-pill smd-st2-pill-d ${latestBucket === 'disqualified' ? 'active' : ''}`}
               onClick={() => openPicker('disqualified')}
             >
-              <svg className="smd-st2-pill-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
               Disqualified
             </button>
           </div>
@@ -568,9 +565,11 @@ const STAGE2_CSS = `
   background: linear-gradient(115deg, #f43f5e, #e11d48, #fb7185, #fda4af);
   box-shadow: 0 4px 12px rgba(244,63,94,.28), 0 0 0 3px #fca5a5;
 }
-/* Pills now lead with a status icon (check / clock / cross) instead of a
-   plain dot, so the old active ::before dot is dropped. */
-.smd-st2-pill-ico { flex-shrink: 0; }
+/* Figma: pills are plain text; the active pill leads with a small dot. */
+.smd-st2-pill.active::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor; flex-shrink: 0;
+}
 
 /* Current-status badge per bucket (inactive-style) */
 .smd-st2-status-current.smd-st2-pill-q { background: #faf5ff; border-color: #ede9fe; color: #9b8ec4; }
@@ -645,7 +644,6 @@ const STAGE2_CSS = `
   background: linear-gradient(135deg, #f8f5ff, #ede9fe);
 }
 .smd-st2-table thead th:first-child { padding-left: 12px; }
-.smd-st2-table thead th:nth-child(3) { text-align: center; }
 .smd-st2-table tbody td {
   padding: 7px 8px;
   font-size: 10px; font-weight: 500; color: #7c6f9a;
@@ -703,7 +701,7 @@ const STAGE2_CSS = `
 @keyframes st2-fade { from { opacity: 0; } to { opacity: 1; } }
 .st2-pick-modal {
   width: min(640px, 100%); max-height: 88vh;
-  background: #fff; border-radius: 14px;
+  background: #fff; border-radius: 18px;
   box-shadow: 0 18px 48px rgba(15,23,42,.28);
   overflow: hidden; display: flex; flex-direction: column;
   animation: st2-pop .18s ease-out;
@@ -735,7 +733,18 @@ const STAGE2_CSS = `
 }
 .st2-pick-close:hover { background: rgba(255,255,255,.32); }
 
-.st2-pick-body { padding: 14px 18px; flex: 1; overflow-y: auto; background: #f8fafc; }
+/* Cap the body so the popup stays a consistent compact size (figma) — when
+   there are many reasons the list scrolls INSIDE instead of the modal growing
+   tall. Thin themed scrollbar. */
+.st2-pick-body {
+  padding: 14px 18px; overflow-y: auto; background: #f8fafc;
+  height: min(280px, 44vh);
+  scrollbar-width: thin; scrollbar-color: #ddd6fe transparent;
+}
+.st2-pick-body::-webkit-scrollbar { width: 8px; }
+.st2-pick-body::-webkit-scrollbar-track { background: transparent; }
+.st2-pick-body::-webkit-scrollbar-thumb { background: #ddd6fe; border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+.st2-pick-body::-webkit-scrollbar-thumb:hover { background: #c4b5fd; background-clip: content-box; }
 .st2-pick-empty { text-align: center; color: #94a3b8; font-style: italic; padding: 28px 12px; font-size: 12.5px; }
 
 .st2-pick-row {
@@ -749,7 +758,11 @@ const STAGE2_CSS = `
 .st2-pick-row.on { border-color: #7c3aed; background: #ede9fe; }
 .st2-pick-row input { accent-color: #7c3aed; cursor: pointer; }
 
-.st2-pick-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.st2-pick-cols { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 0; }
+.st2-pick-cols .st2-pick-col { min-width: 0; }
+.st2-pick-cols .st2-pick-col:first-child { padding-right: 18px; border-right: 1.5px solid #e9d5ff; }
+.st2-pick-cols .st2-pick-col:last-child  { padding-left: 18px; }
+.st2-pick-row > span { min-width: 0; overflow-wrap: anywhere; }
 /* Underlined section headers (Figma) — coloured dot + uppercase label
    over a tinted hairline, instead of the old filled pill. */
 .st2-pick-col-head {
@@ -771,14 +784,22 @@ const STAGE2_CSS = `
 }
 .st2-pick-count { font-size: 11.5px; font-weight: 600; color: #64748b; }
 .st2-pick-btn {
-  padding: 8px 18px; border-radius: 9px; border: 1.5px solid transparent;
-  font-size: 12.5px; font-weight: 600; cursor: pointer; transition: all .15s;
+  padding: 10px 28px; border-radius: 11px; border: 1.5px solid transparent;
+  font-size: 13px; font-weight: 600; cursor: pointer; transition: all .18s ease;
 }
 .st2-pick-btn:disabled { opacity: .55; cursor: not-allowed; }
 .st2-pick-btn-ghost { background: #fff; border-color: #e2e8f0; color: #475569; }
-.st2-pick-btn-ghost:hover:not(:disabled) { background: #f1f5f9; border-color: #cbd5e1; }
+.st2-pick-btn-ghost:hover:not(:disabled) {
+  background: #f1f5f9; border-color: #c4b5fd; color: #5b21b6;
+  transform: translateY(-1px); box-shadow: 0 4px 12px rgba(124,58,237,.12);
+}
 .st2-pick-btn-primary { background: linear-gradient(135deg, #7c3aed, #5b21b6); color: #fff; box-shadow: 0 3px 10px rgba(124,58,237,.35); }
-.st2-pick-btn-primary:hover:not(:disabled) { transform: translateY(-1px); }
+.st2-pick-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+  transform: translateY(-1px); box-shadow: 0 8px 20px rgba(124,58,237,.50);
+}
+.st2-pick-btn-primary:active:not(:disabled),
+.st2-pick-btn-ghost:active:not(:disabled) { transform: translateY(0); }
 /* Per-bucket primary tints (header + button match) */
 .st2-pick-foot.smd-st2-pill-c .st2-pick-btn-primary { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 3px 10px rgba(245,158,11,.35); }
 .st2-pick-foot.smd-st2-pill-d .st2-pick-btn-primary { background: linear-gradient(135deg, #f43f5e, #e11d48); box-shadow: 0 3px 10px rgba(244,63,94,.35); }
@@ -847,14 +868,17 @@ const STAGE2_CSS = `
     0 18px 48px rgba(0,0,0,.60),
     0 4px 18px rgba(124,58,237,.20);
 }
-[data-bs-theme="dark"] .st2-pick-body         { background: #1a1538; }
-[data-bs-theme="dark"] .st2-pick-empty        { color: rgba(167,139,250,.45); }
+[data-bs-theme="dark"] .st2-pick-body         { background: #15102e; scrollbar-color: rgba(167,139,250,.45) transparent; }
+[data-bs-theme="dark"] .st2-pick-body::-webkit-scrollbar-thumb       { background: rgba(167,139,250,.45); }
+[data-bs-theme="dark"] .st2-pick-body::-webkit-scrollbar-thumb:hover { background: rgba(167,139,250,.65); }
+[data-bs-theme="dark"] .st2-pick-empty        { color: rgba(167,139,250,.55); }
 [data-bs-theme="dark"] .st2-pick-row {
-  background: #1f1845; border-color: rgba(167,139,250,.25);
-  color: #ede9fe;
+  background: #271f54; border-color: rgba(167,139,250,.38);
+  color: #f1ecff;
 }
-[data-bs-theme="dark"] .st2-pick-row:hover   { background: #2a2150; border-color: rgba(167,139,250,.45); }
-[data-bs-theme="dark"] .st2-pick-row.on      { background: rgba(124,58,237,.32); border-color: #a78bfa; }
+[data-bs-theme="dark"] .st2-pick-row:hover   { background: #322665; border-color: rgba(167,139,250,.60); }
+[data-bs-theme="dark"] .st2-pick-row.on      { background: rgba(124,58,237,.45); border-color: #c4b5fd; color: #fff; }
+[data-bs-theme="dark"] .st2-pick-row input   { accent-color: #a78bfa; }
 [data-bs-theme="dark"] .st2-pick-foot {
   background: #14102a;
   border-top: 1px solid rgba(167,139,250,.25);
@@ -869,6 +893,7 @@ const STAGE2_CSS = `
 [data-bs-theme="dark"] .st2-pick-col-head-neg { color: #fca5a5; border-bottom-color: rgba(239,68,68,.35); }
 [data-bs-theme="dark"] .st2-pick-col-head-pos { color: #86efac; border-bottom-color: rgba(34,197,94,.35); }
 [data-bs-theme="dark"] .st2-pick-col-empty    { color: rgba(167,139,250,.40); }
+[data-bs-theme="dark"] .st2-pick-cols .st2-pick-col:first-child { border-right-color: rgba(167,139,250,.28); }
 
 /* ── Responsive ────────────────────────────────────────────── */
 @media (max-width: 640px) {

@@ -247,6 +247,27 @@ export default function SalesLeadWorksheet() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
+  // ── Auto-fit rows ── show exactly as many rows as fill the scroll area so
+  // big screens don't leave a gap; picking a Rows-per-page value overrides it.
+  const wrapRef    = useRef<HTMLDivElement>(null);
+  const autoFitRef = useRef(true);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const recompute = () => {
+      if (!autoFitRef.current) return;
+      const avail = el.clientHeight;
+      if (avail <= 0) return;
+      const THEAD = 40, ROW = 44;   // worksheet header + row heights (px)
+      const fit = Math.max(5, Math.floor((avail - THEAD) / ROW));
+      setRpp(prev => (prev === fit ? prev : fit));
+    };
+    const ro = new ResizeObserver(recompute);
+    ro.observe(el);
+    recompute();
+    return () => ro.disconnect();
+  }, []);
+
   // CTQ confirmation modal
   const [ctqLead, setCtqLead] = useState<Lead | null>(null);
 
@@ -821,7 +842,7 @@ export default function SalesLeadWorksheet() {
 
       {/* ── Table ── */}
       <div className="lwp-table-card">
-        <div className="lwp-table-wrap">
+        <div className="lwp-table-wrap" ref={wrapRef}>
           <table className="lwp-table">
             <colgroup>
               <col className="c-chk" /><col className="c-type" /><col className="c-date" /><col className="c-source" />
@@ -1014,8 +1035,8 @@ export default function SalesLeadWorksheet() {
           <div className="lwp-pag-right">
             <div className="lwp-rows-sel">
               Rows per page:
-              <select value={rpp} onChange={e => { setRpp(parseInt(e.target.value, 10)); setPage(1); }}>
-                {ROWS_PER_PAGE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+              <select value={rpp} onChange={e => { autoFitRef.current = false; setRpp(parseInt(e.target.value, 10)); setPage(1); }}>
+                {[...new Set([rpp, ...ROWS_PER_PAGE_OPTIONS])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
               </select>
             </div>
             <span className="lwp-pag-range">{safePage} / {pages}</span>
@@ -1245,7 +1266,12 @@ const SCOPED_CSS = `
   background: linear-gradient(160deg, #f0fdfe 0%, #e8fafb 30%, #f5feff 60%, #ffffff 100%);
   padding: 12px 20px 12px;
   margin: -1rem -0.75rem;
-  min-height: calc(100vh - 70px);
+  /* Fixed available height (viewport minus the header + horizontal menu) so
+     the table card fills the screen, the table scrolls INSIDE it, and the
+     pagination stays pinned at the bottom — works on small screens without
+     the whole page scrolling. */
+  height: calc(100vh - 130px);
+  overflow: hidden;
   display: flex; flex-direction: column; gap: 0;
   color: #111827;
   font-size: 13.5px;
@@ -1334,17 +1360,13 @@ const SCOPED_CSS = `
   flex-shrink: 0; z-index: 1;
 }
 .lwp-root .lwp-bact {
-  /* Trimmed by ~25% on every axis — the original 11/20px padding +
-   * 42px min-height pushed all four CTAs into a chunky row that
-   * dwarfed the tab pills below. Compact sizing now matches a
-   * standard toolbar button height while keeping the same gradient
-   * + shadow language. */
+  /* Figma toolbar-button sizing (restored to match the design exactly). */
   position: relative; overflow: hidden;
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 14px; border-radius: 10px;
-  font-family: inherit; font-size: 12px; font-weight: 700;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 11px 20px; border-radius: 12px;
+  font-family: inherit; font-size: 12.5px; font-weight: 700;
   cursor: pointer; white-space: nowrap; transition: all .22s;
-  letter-spacing: .02em; min-height: 34px; border: none;
+  letter-spacing: .02em; min-height: 42px; border: none;
 }
 .lwp-root .lwp-bact-primary {
   background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%);
@@ -1397,8 +1419,8 @@ const SCOPED_CSS = `
    text-bearing siblings. */
 .lwp-root .lwp-bact-icon-only {
   padding: 0;
-  width: 34px;
-  flex: 0 0 34px;
+  width: 42px;
+  flex: 0 0 42px;
   justify-content: center;
 }
 .lwp-root .lwp-bact-sync.is-syncing { cursor: progress; }
@@ -1490,25 +1512,25 @@ const SCOPED_CSS = `
 .lwp-root .lwp-pills {
   display: flex; align-items: center; gap: 4px;
   background: linear-gradient(110deg, #ecfeff 0%, #cffafe 50%, #a5f3fc 100%);
-  padding: 4px; border-radius: 12px;
+  padding: 5px; border-radius: 14px;
   border: 1.5px solid #a5f3fc;
   box-shadow: 0 2px 10px rgba(8,145,178,.12), 0 1px 0 rgba(255,255,255,.9) inset;
-  min-height: 42px;
+  min-height: 50px;
   flex-shrink: 0;
 }
 .lwp-root .lwp-pill {
-  padding: 7px 16px; border-radius: 8px;
-  font-size: 12px; font-weight: 600; cursor: pointer;
+  padding: 9px 20px; border-radius: 10px;
+  font-size: 12.5px; font-weight: 600; cursor: pointer;
   background: transparent; color: #0e7490;
   border: none; transition: all .18s; white-space: nowrap;
-  min-height: 32px; display: inline-flex; align-items: center; gap: 6px;
+  min-height: 40px; display: inline-flex; align-items: center; gap: 6px;
 }
 .lwp-root .lwp-pill:hover { color: #0891b2; background: rgba(255,255,255,.6); }
 .lwp-root .lwp-pill.active {
   background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
   color: #fff;
   box-shadow: 0 3px 12px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset;
-  border-radius: 8px;
+  border-radius: 10px;
 }
 
 /* ─── Key Opportunity sub-tabs ───────────────────────────────────────
@@ -1517,45 +1539,44 @@ const SCOPED_CSS = `
  * cyan primary tabs rather than a competing peer. */
 .lwp-root .lwp-subtabs {
   display: inline-flex; align-items: center; gap: 4px;
-  background: linear-gradient(110deg, #fffbeb 0%, #fef3c7 60%, #fde68a 100%);
+  align-self: flex-start;
+  background: linear-gradient(110deg, #ecfeff 0%, #cffafe 50%, #a5f3fc 100%);
   padding: 4px; border-radius: 10px;
-  border: 1.5px solid #fcd34d;
-  box-shadow: 0 2px 8px rgba(217,119,6,.12);
+  border: 1.5px solid #a5f3fc;
+  box-shadow: 0 2px 8px rgba(8,145,178,.12), 0 1px 0 rgba(255,255,255,.9) inset;
   margin-bottom: 8px; flex-shrink: 0;
 }
 .lwp-root .lwp-subtab {
   padding: 6px 14px; border-radius: 7px;
   font-size: 11.5px; font-weight: 600; cursor: pointer;
-  background: transparent; color: #b45309;
+  background: transparent; color: #0e7490;
   transition: all .18s; white-space: nowrap;
   display: inline-flex; align-items: center; gap: 6px;
 }
-.lwp-root .lwp-subtab:hover { color: #92400e; background: rgba(255,255,255,.6); }
+.lwp-root .lwp-subtab:hover { color: #0891b2; background: rgba(255,255,255,.6); }
 .lwp-root .lwp-subtab.active {
-  background: linear-gradient(135deg, #f59e0b 0%, #d97706 55%, #b45309 100%);
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
   color: #fff;
-  box-shadow: 0 3px 10px rgba(217,119,6,.4), 0 1px 0 rgba(255,255,255,.2) inset;
+  box-shadow: 0 3px 10px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset;
 }
 [data-bs-theme="dark"] .lwp-root .lwp-subtabs {
-  background: linear-gradient(110deg, #1f1611 0%, #28190e 60%, #422006 100%);
-  border-color: #7c2d12;
+  background: rgba(8,145,178,0.12);
+  border-color: rgba(34,211,238,0.18);
+  box-shadow: none;
 }
-[data-bs-theme="dark"] .lwp-root .lwp-subtab { color: #fcd34d; }
-[data-bs-theme="dark"] .lwp-root .lwp-subtab:hover { color: #fde68a; background: rgba(0,0,0,.25); }
+[data-bs-theme="dark"] .lwp-root .lwp-subtab { color: #67e8f9; }
+[data-bs-theme="dark"] .lwp-root .lwp-subtab:hover { color: #cffafe; background: rgba(0,0,0,.25); }
 [data-bs-theme="dark"] .lwp-root .lwp-subtab.active {
-  background: linear-gradient(135deg, #f59e0b 0%, #d97706 55%, #b45309 100%); color: #1c1410;
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%); color: #fff;
 }
 .lwp-root .lwp-search {
   display: flex; align-items: center;
   background: #ffffff;
   border: 1.5px solid #a5f3fc;
-  border-radius: 12px; padding: 0 14px; gap: 8px;
-  /* Sits adjacent to the pills. Was flex:1 1 auto with no cap, so it
-   * stretched edge-to-edge and looked far wider than the Figma. Cap it
-   * at 420px (flex-grow 0) so it stays a modest bar beside the pills
-   * like the design, while still shrinking on narrow viewports. height
-   * matches the trimmed pill height for a clean single-row toolbar. */
-  flex: 0 1 420px; min-width: 220px; max-width: 420px; height: 42px;
+  border-radius: 14px; padding: 0 18px; gap: 10px;
+  /* Figma height/radius (50px / 14px). Kept as a capped flex item so it
+   * still shrinks on narrow viewports instead of the design's fixed 380px. */
+  flex: 0 1 420px; min-width: 220px; max-width: 420px; height: 50px;
   box-shadow: 0 2px 10px rgba(8,145,178,.1), 0 1px 0 rgba(255,255,255,.9) inset;
   transition: all .2s;
 }
@@ -1581,7 +1602,18 @@ const SCOPED_CSS = `
   overflow-x: auto; overflow-y: auto; width: 100%;
   flex: 1; min-height: 0;
   scrollbar-width: thin;
+  scrollbar-color: #a5f3fc transparent;
 }
+/* Clean, thin themed scrollbars (replaces the chunky default with arrows). */
+.lwp-root .lwp-table-wrap::-webkit-scrollbar { width: 9px; height: 9px; }
+.lwp-root .lwp-table-wrap::-webkit-scrollbar-track { background: transparent; }
+.lwp-root .lwp-table-wrap::-webkit-scrollbar-thumb {
+  background: #a5f3fc; border-radius: 8px;
+  border: 2px solid transparent; background-clip: content-box;
+}
+.lwp-root .lwp-table-wrap::-webkit-scrollbar-thumb:hover { background: #67e8f9; background-clip: content-box; }
+[data-bs-theme="dark"] .lwp-root .lwp-table-wrap { scrollbar-color: rgba(34,211,238,.4) transparent; }
+[data-bs-theme="dark"] .lwp-root .lwp-table-wrap::-webkit-scrollbar-thumb { background: rgba(34,211,238,.4); background-clip: content-box; }
 .lwp-root .lwp-table { width: 100%; border-collapse: collapse; font-size: 10.5px; table-layout: fixed; }
 .lwp-root .lwp-table col.c-chk    { width: 42px; }
 .lwp-root .lwp-table col.c-type   { width: 110px; }
@@ -1598,6 +1630,10 @@ const SCOPED_CSS = `
 .lwp-root .lwp-table col.c-country{ width: 56px; }
 .lwp-root .lwp-table col.c-action { width: 130px; }
 
+/* Sticky header — stays fixed while the rows scroll inside the card. */
+.lwp-root .lwp-table thead {
+  position: sticky; top: 0; z-index: 5;
+}
 .lwp-root .lwp-table thead tr {
   background: linear-gradient(90deg, #155e75 0%, #0e7490 25%, #0891b2 55%, #06b6d4 80%, #22d3ee 100%);
   box-shadow: 0 2px 10px rgba(8,145,178,.3);

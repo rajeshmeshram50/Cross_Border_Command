@@ -79,6 +79,10 @@ export type SegmentTradeDoc = {
   status: 'Verified' | 'Pending';
   attachment: string | null;
   attachment_url: string | null;
+  /* Live signature status for the latest Zoho send of this trade doc on the
+   * lead — drives the Sent/Signed badge, Remind button, and signed-PDF /
+   * certificate downloads. Same shape as an agreement's signature_request. */
+  signature_request?: AgreementRowSig;
 };
 
 export type ApplicableSegment = {
@@ -615,6 +619,90 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
     return () => { cancelled = true; window.clearInterval(intervalId); };
   }, [open, leadId, payload?.lead.id]);
 
+  /* Identical 15s status poll for TRADE-DOCUMENT signature requests on this
+   * lead (document_type=trade_doc). Flips each trade-doc row to Signed,
+   * surfaces the signed-PDF / certificate links, and keeps the Remind "× N"
+   * count live — matched to rows by the trade-doc library id (db_id). */
+  useEffect(() => {
+    if (!open || !payload || !leadId) return;
+    let cancelled = false;
+
+    const fetchTd = async (withSync: boolean) => {
+      try {
+        const response = await api.get('/clm/signature-requests', {
+          params: { lead_id: leadId, document_type: 'trade_doc', sync: withSync ? 1 : 0 },
+        });
+        const rows = Array.isArray(response.data?.data) ? response.data.data : [];
+        const infoMap: Record<number, { status: string; signatureRequestId: number; signedUrl?: string; certificateUrl?: string; reminderCount?: number; lastReminderAt?: string | null }> = {};
+        for (const row of rows) {
+          const ids = Array.isArray(row.trade_doc_ids) ? row.trade_doc_ids : [];
+          for (let i = 0; i < ids.length; i += 1) {
+            const docId = Number(ids[i]);
+            if (!docId || infoMap[docId]) continue;
+            const signedArr = row.signed_document_paths;
+            let rawSignedUrl: string | null = null;
+            if (Array.isArray(signedArr)) {
+              const entry = signedArr[i] as { url?: string; path?: string; file_url?: string } | string | undefined;
+              if (typeof entry === 'string') rawSignedUrl = entry;
+              else if (entry && typeof entry === 'object') rawSignedUrl = entry.url || entry.file_url || entry.path || null;
+            }
+            if (!rawSignedUrl) rawSignedUrl = row.signed_document_url || null;
+            if (!rawSignedUrl) rawSignedUrl = row.signed_document_path || null;
+            const rawCertUrl = row.certificate_url || row.certificate_path || null;
+            infoMap[docId] = {
+              status: row.status,
+              signatureRequestId: row.id,
+              signedUrl: rawSignedUrl ? resolveFileUrl(rawSignedUrl) : undefined,
+              certificateUrl: rawCertUrl ? resolveFileUrl(rawCertUrl) : undefined,
+              reminderCount: typeof row.reminder_count === 'number' ? row.reminder_count : undefined,
+              lastReminderAt: row.last_reminder_sent_at ?? null,
+            };
+          }
+        }
+        if (cancelled) return;
+        setPayload((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            segments: prev.segments.map((seg) => ({
+              ...seg,
+              trade_documents: seg.trade_documents.map((td) => {
+                const info = td.db_id != null ? infoMap[td.db_id] : undefined;
+                if (!info) return td;
+                const existing = td.signature_request ?? {
+                  id: info.signatureRequestId,
+                  status: info.status,
+                  signed_url: null,
+                  certificate_url: null,
+                  sent_at: null,
+                  completed_at: null,
+                };
+                return {
+                  ...td,
+                  signature_request: {
+                    ...existing,
+                    id: info.signatureRequestId,
+                    status: info.status,
+                    signed_url: info.signedUrl ?? existing.signed_url,
+                    certificate_url: info.certificateUrl ?? existing.certificate_url,
+                    reminder_count: info.reminderCount ?? existing.reminder_count ?? 0,
+                    last_reminder_sent_at: info.lastReminderAt ?? existing.last_reminder_sent_at ?? null,
+                  },
+                };
+              }),
+            })),
+          };
+        });
+      } catch {
+        // Silent — polling failures shouldn't toast every 15s.
+      }
+    };
+
+    fetchTd(false);
+    const intervalId = window.setInterval(() => fetchTd(true), 15000);
+    return () => { cancelled = true; window.clearInterval(intervalId); };
+  }, [open, leadId, payload?.lead.id]);
+
   /* Resend a Zoho reminder for an existing in-progress signature
    * request. Hits the same /clm/signature-requests/{id}/remind
    * endpoint the customer/consignee/vendor flows use — no doc-type
@@ -705,8 +793,6 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
             tradeDocs.length === 0 ? (
               <div className="lasm-empty">No trade documents configured for this lead's PI segments yet.</div>
             ) : (() => {
-              const custCount = tradeDocs.filter(d => d.for_buyer).length;
-              const consCount = tradeDocs.filter(d => d.for_consignee).length;
               const rows = tdBuckets[tdTab];
               // Library docs (db_id set) are the only sendable rows.
               const selectableIds = Array.from(new Set(rows.filter(r => r.db_id != null).map(r => r.db_id as number)));
@@ -726,11 +812,9 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                 <div className="lasm-party-tabs">
                   {(['customer', 'consignee'] as const).map(p => {
                     const info  = p === 'customer' ? payload.lead.customer : payload.lead.consignee;
-                    const count = p === 'customer' ? custCount : consCount;
                     return (
                       <div key={p} className={`lasm-party-tab lasm-party-tab-readonly lasm-party-tab-${p} is-on`}>
                         <span className="lasm-party-tab-role">{p === 'customer' ? 'Customer' : 'Consignee'}</span>
-                        <span className="lasm-party-tab-count">{count} doc{count === 1 ? '' : 's'}</span>
                         <span className="lasm-party-tab-title-row">
                           <span className="lasm-party-tab-name">{info?.code ? `${info.code}: ` : ''}{info?.name ?? 'Not mapped'}</span>
                           <span className="lasm-party-tab-country">
@@ -785,14 +869,19 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                           <th>Document</th>
                           <th style={{ width: 180 }}>Segment</th>
                           <th style={{ width: 90 }}>Required</th>
-                          <th style={{ width: 110 }}>Status</th>
-                          <th style={{ width: 80 }}>File</th>
-                          <th style={{ width: 120 }}>Actions</th>
+                          <th style={{ width: 130 }}>Status</th>
+                          <th style={{ width: 160 }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {rows.map((td, i) => {
-                          const sendable = td.db_id != null && !!tdSignCustomer;
+                          const tdSig       = td.signature_request;
+                          const tdSigStatus = tdSig?.status ?? null;
+                          // Already out for / back from signature → can't re-send.
+                          const tdSent      = !!tdSigStatus && !['draft', 'recalled', 'superseded'].includes(tdSigStatus);
+                          const tdRemind    = tdSigStatus === 'inprogress';
+                          const tdIsRemind  = !!tdSig && reminderId === tdSig.id;
+                          const sendable = td.db_id != null && !!tdSignCustomer && !tdSent;
                           const checked  = td.db_id != null && tdSelected.has(td.db_id);
                           return (
                           <tr key={`${td.doc_code}-${td.segmentCode}-${i}`} className={checked ? 'lasm-row-selected' : ''}>
@@ -802,7 +891,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                 aria-label={`Select ${td.name}`}
                                 checked={checked}
                                 disabled={!sendable}
-                                title={sendable ? 'Add to bulk send' : 'This document has no template to send'}
+                                title={tdSent ? `Already ${tdSigStatus}` : (sendable ? 'Add to bulk send' : 'This document has no template to send')}
                                 onChange={() => td.db_id != null && toggleOne(td.db_id)}
                               />
                             </td>
@@ -816,24 +905,73 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                               <div className="lasm-doc-sub">{td.segmentCode}</div>
                             </td>
                             <td><span className={`lasm-pill ${td.requirement === 'M' ? 'lasm-pill-req' : 'lasm-pill-opt'}`}>{td.requirement === 'M' ? 'REQ' : 'OPT'}</span></td>
-                            <td><span className={`lasm-td-status ${td.status === 'Verified' ? 'is-ok' : 'is-pending'}`}>{td.status === 'Verified' ? 'Uploaded' : 'Pending'}</span></td>
                             <td>
-                              {td.attachment_url
-                                ? <a className="lasm-td-file" href={td.attachment_url} target="_blank" rel="noopener noreferrer">View</a>
-                                : <span className="lasm-td-dash">—</span>}
+                              {/* Signature status (Sent / Signed) once it's been
+                                  sent for e-signature; otherwise the upload state. */}
+                              {tdSig
+                                ? <StatusPill status={tdSigStatus!} />
+                                : <span className={`lasm-td-status ${td.status === 'Verified' ? 'is-ok' : 'is-pending'}`}>{td.status === 'Verified' ? 'Uploaded' : 'Pending'}</span>}
                             </td>
                             <td>
-                              <Tooltip label={sendable ? `Send to ${tdSignRole} for signature` : 'No template to send'} disabled={false}>
-                                <button
-                                  type="button"
-                                  className="lasm-td-send"
-                                  disabled={!sendable}
-                                  onClick={() => td.db_id != null && setTdSendIds([td.db_id])}
-                                >
-                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                                  Send
-                                </button>
-                              </Tooltip>
+                              <div className="lasm-actions">
+                                {/* Send — only while the doc hasn't been sent yet. */}
+                                {sendable && (
+                                  <Tooltip label={`Send to ${tdSignRole} for signature`}>
+                                    <button
+                                      type="button"
+                                      className="lasm-td-send"
+                                      onClick={() => td.db_id != null && setTdSendIds([td.db_id])}
+                                    >
+                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                                      Send
+                                    </button>
+                                  </Tooltip>
+                                )}
+                                {/* Remind — while out for signature, with a sent-count badge. */}
+                                {tdRemind && tdSig && (() => {
+                                  const remCount = tdSig.reminder_count ?? 0;
+                                  const lastAt   = tdSig.last_reminder_sent_at;
+                                  const tipLine  = remCount > 0
+                                    ? `Reminder sent ${remCount} time${remCount === 1 ? '' : 's'}${lastAt ? ` (last: ${new Date(lastAt).toLocaleString()})` : ''}`
+                                    : 'Resend reminder to the signer(s)';
+                                  return (
+                                    <Tooltip label={tipLine}>
+                                      <button
+                                        type="button"
+                                        className="lasm-btn-remind"
+                                        disabled={tdIsRemind}
+                                        onClick={() => void handleRemind(tdSig.id)}
+                                      >
+                                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+                                        {tdIsRemind ? 'Sending…' : 'Remind'}
+                                        {remCount > 0 && (
+                                          <span className="lasm-remind-count" aria-label={`Sent ${remCount} times`}>× {remCount}</span>
+                                        )}
+                                      </button>
+                                    </Tooltip>
+                                  );
+                                })()}
+                                {/* Signed PDF + Certificate — once the doc is signed. */}
+                                {tdSig?.signed_url && (
+                                  <Tooltip label="View / download signed PDF">
+                                    <a href={tdSig.signed_url} target="_blank" rel="noreferrer" className="lasm-btn-icon" aria-label="Signed PDF" download>
+                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                    </a>
+                                  </Tooltip>
+                                )}
+                                {tdSig?.certificate_url && (
+                                  <Tooltip label="Certificate of Completion">
+                                    <a href={tdSig.certificate_url} target="_blank" rel="noreferrer" className="lasm-btn-cert" aria-label="Certificate" download>
+                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>
+                                    </a>
+                                  </Tooltip>
+                                )}
+                                {/* Sent but no row-level action yet (e.g. completed without a
+                                    resolved signed URL) → keep the cell from collapsing. */}
+                                {!sendable && !tdRemind && !tdSig?.signed_url && !tdSig?.certificate_url && (
+                                  <span className="lasm-td-dash">—</span>
+                                )}
+                              </div>
                             </td>
                           </tr>
                           );
@@ -1201,6 +1339,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
         mode="trade-doc"
         modelName={tdSignRole === 'customer' ? 'Customer' : 'Consignee'}
         customer={tdSignCustomer}
+        leadId={leadId ?? null}
         preselectedDocIds={tdSendIds ?? undefined}
         onClose={() => setTdSendIds(null)}
         onSent={() => { void onTdSent(); }}
@@ -1311,8 +1450,8 @@ const LASM_CSS = `
 .lasm-party-tab-k { font-size: 9px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #94a3b8; }
 .lasm-party-tab-customer.is-on { border-color: #6d28d9; background: linear-gradient(180deg,#faf5ff,#fff); box-shadow: 0 2px 10px rgba(124,58,237,.18); }
 .lasm-party-tab-customer.is-on .lasm-party-tab-role { color: #6d28d9; }
-.lasm-party-tab-consignee.is-on { border-color: #16a34a; background: linear-gradient(180deg,#f0fdf4,#fff); box-shadow: 0 2px 10px rgba(22,163,74,.18); }
-.lasm-party-tab-consignee.is-on .lasm-party-tab-role { color: #16a34a; }
+.lasm-party-tab-consignee.is-on { border-color: #6d28d9; background: linear-gradient(180deg,#faf5ff,#fff); box-shadow: 0 2px 10px rgba(124,58,237,.18); }
+.lasm-party-tab-consignee.is-on .lasm-party-tab-role { color: #6d28d9; }
 .lasm-party-tab.is-on .lasm-party-tab-count { background: rgba(15,23,42,.10); color: #0f172a; }
 
 /* ── Sub-tabs within a segment (e.g. Buyer / Consignee / Both agreements) ── */
@@ -1350,7 +1489,7 @@ const LASM_CSS = `
 .lasm-td-file { color: #6d28d9; font-weight: 700; font-size: 11.5px; text-decoration: none; }
 .lasm-td-file:hover { text-decoration: underline; }
 .lasm-td-dash { color: #cbd5e1; }
-.lasm-status-pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 700; }
+.lasm-status-pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
 .lasm-st-signed   { background: #d1fae5; color: #047857; }
 .lasm-st-progress { background: #dbeafe; color: #1e40af; }
 .lasm-st-declined { background: #fee2e2; color: #b91c1c; }
@@ -1471,7 +1610,7 @@ const LASM_CSS = `
 [data-bs-theme="dark"] .lasm-party-tab-meta > span { color: #cbd5e1; }
 [data-bs-theme="dark"] .lasm-party-tab-count { background: rgba(148,163,184,.18); color: #cbd5e1; }
 [data-bs-theme="dark"] .lasm-party-tab-customer.is-on { border-color: #a78bfa; background: rgba(124,58,237,.16); }
-[data-bs-theme="dark"] .lasm-party-tab-consignee.is-on { border-color: #4ade80; background: rgba(22,163,74,.16); }
+[data-bs-theme="dark"] .lasm-party-tab-consignee.is-on { border-color: #a78bfa; background: rgba(124,58,237,.16); }
 [data-bs-theme="dark"] .lasm-party-tab.is-on .lasm-party-tab-count { background: rgba(255,255,255,.16); color: #f1f5f9; }
 
 [data-bs-theme="dark"] .lasm-subtabs { background: rgba(30,41,59,.55); border-color: rgba(148,163,184,.18); }
