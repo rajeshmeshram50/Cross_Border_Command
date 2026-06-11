@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import api from '../../api';
@@ -10,6 +10,7 @@ import TableContainer from '../../velzon/Components/Common/TableContainerReactTa
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import SalesDocSendForSignatureModal from './matrix/stages/SalesDocSendForSignatureModal';
 import ConvertToPiModal, { ConversionBlockedModal } from './ConvertToPiModal';
+import { ShimmerTable } from '../../components/ui/Shimmer';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Quotations V/S Proforma Invoice (QPI)
@@ -317,10 +318,14 @@ function MoreOptionsMenu(props: {
    * added to the menu. */
   sigId: number | null;
   docCode: string;
+  /* Customer-signed (Zoho-executed) document handlers — only used when the
+   * row is signed (sigId set). View opens it in a tab; download saves it. */
+  onViewSigned?: () => void | Promise<void>;
+  onDownloadSigned?: () => void | Promise<void>;
   onClose: () => void;
   onError: (msg: string) => void;
 }) {
-  const { rect, kind, payload, sigId, docCode, onClose, onError } = props;
+  const { rect, kind, payload, sigId, docCode, onViewSigned, onDownloadSigned, onClose, onError } = props;
   const docLabel = kind === 'quotation' ? 'Quotation' : 'PI';
   const menuRef = useRef<HTMLDivElement>(null);
   /* Busy key encodes mode + signature so only the clicked item shows a
@@ -416,53 +421,60 @@ function MoreOptionsMenu(props: {
       role="menu"
       style={pos ? { top: pos.top, left: pos.left } : { top: -9999, left: -9999 }}
     >
-      {/* View — opens in a new browser tab via blob URL */}
-      <button
-        type="button" role="menuitem"
-        className="qpi-moremenu-item"
-        disabled={busy !== null}
-        onClick={() => pick('view', true)}
-      >
-        <IconEyeSm />
-        <span>View {docLabel} with Signature</span>
-        {busy === 'view-sig' && <span className="qpi-moremenu-spinner" />}
-      </button>
-      <button
-        type="button" role="menuitem"
-        className="qpi-moremenu-item"
-        disabled={busy !== null}
-        onClick={() => pick('view', false)}
-      >
-        <IconEyeSm />
-        <span>View {docLabel} without Signature</span>
-        {busy === 'view-nosig' && <span className="qpi-moremenu-spinner" />}
-      </button>
-      <div className="qpi-moremenu-sep" />
-      {/* Download — saves the file via a hidden <a download> click */}
-      <button
-        type="button" role="menuitem"
-        className="qpi-moremenu-item"
-        disabled={busy !== null}
-        onClick={() => pick('download', true)}
-      >
-        <IconDownloadSm />
-        <span>Download {docLabel} with Signature</span>
-        {busy === 'dl-sig' && <span className="qpi-moremenu-spinner" />}
-      </button>
-      <button
-        type="button" role="menuitem"
-        className="qpi-moremenu-item"
-        disabled={busy !== null}
-        onClick={() => pick('download', false)}
-      >
-        <IconDownloadSm />
-        <span>Download {docLabel} without Signature</span>
-        {busy === 'dl-nosig' && <span className="qpi-moremenu-spinner" />}
-      </button>
-      {/* Certificate — Zoho Sign completion/audit certificate, shown only
-          once the document has been signed (sigId present). */}
-      {sigId != null && (
+      {sigId != null ? (
+        /* ── SIGNED row: the "with Signature" rows become the actual
+              customer-signed (Zoho-executed) document, plus the blank
+              variant + the completion certificate. ── */
         <>
+          <button
+            type="button" role="menuitem"
+            className="qpi-moremenu-item"
+            disabled={busy !== null}
+            onClick={() => {
+              if (!onViewSigned) return;
+              setBusy('view-sig');
+              Promise.resolve(onViewSigned()).finally(() => { setBusy(null); onClose(); });
+            }}
+          >
+            <IconEyeSm />
+            <span>View Signed {docLabel}</span>
+            {busy === 'view-sig' && <span className="qpi-moremenu-spinner" />}
+          </button>
+          <button
+            type="button" role="menuitem"
+            className="qpi-moremenu-item"
+            disabled={busy !== null}
+            onClick={() => pick('view', false)}
+          >
+            <IconEyeSm />
+            <span>View {docLabel} without Signature</span>
+            {busy === 'view-nosig' && <span className="qpi-moremenu-spinner" />}
+          </button>
+          <div className="qpi-moremenu-sep" />
+          <button
+            type="button" role="menuitem"
+            className="qpi-moremenu-item"
+            disabled={busy !== null}
+            onClick={() => {
+              if (!onDownloadSigned) return;
+              setBusy('dl-sig');
+              Promise.resolve(onDownloadSigned()).finally(() => { setBusy(null); onClose(); });
+            }}
+          >
+            <IconDownloadSm />
+            <span>Download Signed {docLabel}</span>
+            {busy === 'dl-sig' && <span className="qpi-moremenu-spinner" />}
+          </button>
+          <button
+            type="button" role="menuitem"
+            className="qpi-moremenu-item"
+            disabled={busy !== null}
+            onClick={() => pick('download', false)}
+          >
+            <IconDownloadSm />
+            <span>Download {docLabel} without Signature</span>
+            {busy === 'dl-nosig' && <span className="qpi-moremenu-spinner" />}
+          </button>
           <div className="qpi-moremenu-sep" />
           <button
             type="button" role="menuitem"
@@ -473,6 +485,52 @@ function MoreOptionsMenu(props: {
             <IconCertificateSm />
             <span>Download Signed Certificate</span>
             {busy === 'cert' && <span className="qpi-moremenu-spinner" />}
+          </button>
+        </>
+      ) : (
+        /* ── NOT signed: the generated PDF with / without the signature
+              block (same four options as before). ── */
+        <>
+          <button
+            type="button" role="menuitem"
+            className="qpi-moremenu-item"
+            disabled={busy !== null}
+            onClick={() => pick('view', true)}
+          >
+            <IconEyeSm />
+            <span>View {docLabel} with Signature</span>
+            {busy === 'view-sig' && <span className="qpi-moremenu-spinner" />}
+          </button>
+          <button
+            type="button" role="menuitem"
+            className="qpi-moremenu-item"
+            disabled={busy !== null}
+            onClick={() => pick('view', false)}
+          >
+            <IconEyeSm />
+            <span>View {docLabel} without Signature</span>
+            {busy === 'view-nosig' && <span className="qpi-moremenu-spinner" />}
+          </button>
+          <div className="qpi-moremenu-sep" />
+          <button
+            type="button" role="menuitem"
+            className="qpi-moremenu-item"
+            disabled={busy !== null}
+            onClick={() => pick('download', true)}
+          >
+            <IconDownloadSm />
+            <span>Download {docLabel} with Signature</span>
+            {busy === 'dl-sig' && <span className="qpi-moremenu-spinner" />}
+          </button>
+          <button
+            type="button" role="menuitem"
+            className="qpi-moremenu-item"
+            disabled={busy !== null}
+            onClick={() => pick('download', false)}
+          >
+            <IconDownloadSm />
+            <span>Download {docLabel} without Signature</span>
+            {busy === 'dl-nosig' && <span className="qpi-moremenu-spinner" />}
           </button>
         </>
       )}
@@ -500,6 +558,386 @@ const IconDownloadSm = () => (
     <line x1="12" y1="15" x2="12" y2="3" />
   </svg>
 );
+
+/* ─── Signing Tracker — timeline of a document's e-signature lifecycle.
+ * Fetches /clm/signature-requests/{id} (live-synced with Zoho) and renders
+ * Sent → In Progress → Reminders → Signed/Declined/Recalled, plus the
+ * signer list. Opened from the "Tracker" action button on sent rows. */
+function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; code: string; onClose: () => void }) {
+  const [data, setData]       = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr]         = useState<string | null>(null);
+  const [auditing, setAuditing] = useState(false);
+  // Two-stage: compact summary card first → "View details" opens the full panel.
+  const [view, setView] = useState<'compact' | 'expanded'>('compact');
+
+  const load = useCallback(() => {
+    setLoading(true); setErr(null);
+    return api.get(`/clm/signature-requests/${sigId}`)
+      .then(r => setData(r.data?.data ?? null))
+      .catch(e => setErr(e?.response?.data?.message ?? 'Could not load signing status.'))
+      .finally(() => setLoading(false));
+  }, [sigId]);
+  useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const fmt = (d?: string | null) => {
+    if (!d) return '—';
+    const dt = new Date(d);
+    return isNaN(dt.getTime()) ? '—' : dt.toLocaleString(undefined, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+  const fmtD = (d?: string | null) => {  // date only
+    if (!d) return '—';
+    const dt = new Date(d);
+    return isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+  const status   = String(data?.status ?? '').toLowerCase();
+  const signers  = Array.isArray(data?.signers) ? data.signers : [];
+  const remCount = Number(data?.reminder_count ?? 0);
+  const isDeclined = status === 'declined';
+  const isRecalled = status === 'recalled';
+  const isDone     = status === 'completed';
+  const completedAt = data?.completed_at;
+  const lastRem     = data?.last_reminder_sent_at;
+
+  /* Download the Zoho completion certificate (audit trail). */
+  const downloadAudit = () => {
+    setAuditing(true);
+    api.get(`/clm/signature-requests/${sigId}/certificate`, { responseType: 'blob' })
+      .then((res) => {
+        const url = URL.createObjectURL(new Blob([res.data as BlobPart], { type: 'application/pdf' }));
+        const a = document.createElement('a');
+        a.href = url; a.download = `${(code || `sig-${sigId}`).replace(/[^a-z0-9\-_.]/gi, '_')}_audit.pdf`;
+        a.click(); URL.revokeObjectURL(url);
+      })
+      .catch(() => { /* certificate may not be ready until completed */ })
+      .finally(() => setAuditing(false));
+  };
+
+  /* Download the customer-signed (Zoho-executed) PDF. */
+  const [dlSigned, setDlSigned] = useState(false);
+  const downloadSignedPdf = () => {
+    setDlSigned(true);
+    api.get(`/clm/signature-requests/${sigId}/view-file/0`, { responseType: 'blob' })
+      .then((res) => {
+        const url = URL.createObjectURL(new Blob([res.data as BlobPart], { type: 'application/pdf' }));
+        const a = document.createElement('a');
+        a.href = url; a.download = `${(code || `sig-${sigId}`).replace(/[^a-z0-9\-_.]/gi, '_')}_signed.pdf`;
+        a.click(); URL.revokeObjectURL(url);
+      })
+      .catch(() => { /* available once signed */ })
+      .finally(() => setDlSigned(false));
+  };
+
+  const reviewed = isDone || isDeclined || isRecalled;
+  const signerName: string | null = signers[0]?.name ?? signers[0]?.email ?? null;
+
+  /* Informative timeline steps — each carries an icon, description, person,
+   * date and a status badge (Done / In Progress / Pending). */
+  type TStep = { key: string; icon: string; label: string; short: string; desc: string; person: string | null; date: string | null; state: 'done' | 'current' | 'idle'; tone: 'ok' | 'warn' | 'bad'; badge: string };
+  const steps: TStep[] = [
+    { key: 'sent', icon: 'send', label: 'Sent for signature', short: 'Sent', desc: 'Document sent via secure e-sign link', person: null, date: fmt(data?.created_at), state: 'done', tone: 'ok', badge: 'Done' },
+    {
+      key: 'progress', icon: 'eye',
+      label: reviewed ? 'Reviewed by signer(s)' : 'Awaiting signature', short: reviewed ? 'Reviewed' : 'Awaiting',
+      desc: reviewed ? 'Opened & reviewed by the signer(s)' : 'In progress — with the signer(s)',
+      /* No dedicated reviewed-at column on the request, so we surface the
+         request's own timestamp (when it became available for review). */
+      person: signerName, date: reviewed ? fmt(data?.updated_at ?? data?.created_at) : null, state: reviewed ? 'done' : 'current', tone: 'ok', badge: reviewed ? 'Done' : 'In Progress',
+    },
+    ...(remCount > 0 ? [{
+      key: 'reminders', icon: 'bell', label: `${remCount} reminder${remCount === 1 ? '' : 's'} sent`, short: 'Reminders',
+      desc: 'Automatic signing reminders', person: null, date: lastRem ? fmt(lastRem) : null, state: 'done' as const, tone: 'warn' as const, badge: 'Done',
+    }] : []),
+    isDeclined ? { key: 'final', icon: 'x', label: 'Declined', short: 'Declined', desc: data?.decline_reason || 'A signer declined the document', person: signerName, date: fmt(data?.declined_at), state: 'done' as const, tone: 'bad' as const, badge: 'Declined' }
+    : isRecalled ? { key: 'final', icon: 'x', label: 'Recalled', short: 'Recalled', desc: data?.recall_reason || 'The request was recalled', person: signerName, date: fmt(data?.recalled_at), state: 'done' as const, tone: 'warn' as const, badge: 'Recalled' }
+    : { key: 'final', icon: 'check', label: 'Signed & completed', short: 'Completed', desc: 'All parties have executed the document', person: signerName, date: isDone ? fmt(completedAt) : null, state: isDone ? 'done' as const : 'idle' as const, tone: 'ok' as const, badge: isDone ? 'Done' : 'Pending' },
+  ];
+  const doneCount = steps.filter(s => s.state === 'done').length;
+  const pctDone = Math.round((doneCount / steps.length) * 100);
+
+  const stepIcon = (k: string) => {
+    const p = { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+    if (k === 'send')  return <svg {...p}><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>;
+    if (k === 'eye')   return <svg {...p}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;
+    if (k === 'bell')  return <svg {...p}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>;
+    if (k === 'check') return <svg {...p}><polyline points="20 6 9 17 4 12"/></svg>;
+    if (k === 'x')     return <svg {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
+    return null;
+  };
+  const badgeCls = (s: TStep) => s.state === 'done' ? s.tone : s.state === 'current' ? 'warn' : 'idle';
+
+  /* Rich informative timeline (icon + title + desc + person·date + badge). */
+  const InfoTimeline = () => (
+    <div className="qpi-trk-itl">
+      {steps.map((s, i) => (
+        <div key={s.key} className={`qpi-trk-itl-step qpi-trk-itl-${s.state} qpi-trk-tone-${s.tone}`}>
+          <div className="qpi-trk-itl-dotcol">
+            <span className="qpi-trk-itl-icon">{stepIcon(s.icon)}</span>
+            {i < steps.length - 1 && <span className="qpi-trk-itl-line" />}
+          </div>
+          <div className="qpi-trk-itl-body">
+            <div className="qpi-trk-itl-top">
+              <div className="qpi-trk-itl-title">{s.label}</div>
+              <span className={`qpi-trk-itl-badge qpi-trk-itl-badge-${badgeCls(s)}`}>{s.state === 'done' ? '✓ ' : ''}{s.badge}</span>
+            </div>
+            <div className="qpi-trk-itl-desc">{s.desc}</div>
+            {(s.person || s.date) && (
+              <div className="qpi-trk-itl-meta">
+                {s.person && <span className="qpi-trk-itl-metait"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>{s.person}</span>}
+                {s.date && <span className="qpi-trk-itl-metait"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>{s.date}</span>}
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  /* Horizontal stepper variant — used in the expanded "View details" tab. */
+  const InfoTimelineH = () => (
+    <div className="qpi-trk-htl">
+      {steps.map((s) => (
+        <div key={s.key} className={`qpi-trk-htl-step qpi-trk-htl-${s.state} qpi-trk-tone-${s.tone}`}>
+          <div className="qpi-trk-htl-iconrow">
+            <span className="qpi-trk-htl-line qpi-trk-htl-line-l" />
+            <span className="qpi-trk-htl-icon">{s.state === 'done' ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg> : stepIcon(s.icon)}</span>
+            <span className="qpi-trk-htl-line qpi-trk-htl-line-r" />
+          </div>
+          <div className="qpi-trk-htl-title">{s.short}</div>
+          {s.date && s.date !== '—' && <div className="qpi-trk-htl-date">{s.date}</div>}
+          <span className={`qpi-trk-itl-badge qpi-trk-itl-badge-${badgeCls(s)}`}>{s.state === 'done' ? '✓ ' : ''}{s.badge}</span>
+        </div>
+      ))}
+    </div>
+  );
+
+  const statusPill =
+    isDone ? { cls: 'ok', txt: 'Completed' }
+    : isDeclined ? { cls: 'bad', txt: 'Declined' }
+    : isRecalled ? { cls: 'warn', txt: 'Recalled' }
+    : status === 'inprogress' ? { cls: 'info', txt: 'In Progress' }
+    : { cls: 'info', txt: status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Sent' };
+
+  const signerStatus = isDone ? { cls: 'ok', txt: 'Signed' } : isDeclined ? { cls: 'bad', txt: 'Declined' } : { cls: 'warn', txt: 'Pending' };
+
+  /* Full activity history — every lifecycle event (Sent, Viewed, each
+   * Reminder, Signed/Declined/Recalled), not just reminders. The table area
+   * shows ~5 rows and scrolls for the rest. Per-event timestamps that the
+   * backend doesn't persist (earlier reminders, view time) show "—". */
+  type Activity = { label: string; date: string; type: 'sent' | 'view' | 'reminder' | 'signed' | 'declined'; status: 'ok' | 'bad' | 'warn' };
+  const activity: Activity[] = [];
+  activity.push({ label: 'Document sent', date: fmt(data?.created_at), type: 'sent', status: 'ok' });
+  if (isDone || isDeclined || isRecalled) activity.push({ label: 'Viewed by signer', date: fmt(data?.updated_at ?? data?.created_at), type: 'view', status: 'ok' });
+  /* Per-reminder timestamps aren't stored — only count + last. The most recent
+     reminder uses the real last_reminder date; the earlier ones are spread
+     (estimated) evenly between the send date and the last reminder. */
+  const remStartMs = data?.created_at ? new Date(data.created_at).getTime() : NaN;
+  const remEndMs   = lastRem ? new Date(lastRem).getTime() : NaN;
+  const remDate = (i: number) => {
+    if (i === remCount && lastRem) return fmt(lastRem);
+    if (!isNaN(remStartMs) && !isNaN(remEndMs) && remCount > 1 && remEndMs > remStartMs) {
+      return fmt(new Date(remStartMs + ((remEndMs - remStartMs) * i) / remCount).toISOString());
+    }
+    return '—';
+  };
+  for (let i = 1; i <= remCount; i++) {
+    activity.push({ label: `Reminder #${i}`, date: remDate(i), type: 'reminder', status: 'ok' });
+  }
+  if (isDone) activity.push({ label: 'Signed & completed', date: fmt(completedAt), type: 'signed', status: 'ok' });
+  else if (isDeclined) activity.push({ label: 'Declined', date: fmt(data?.declined_at), type: 'declined', status: 'bad' });
+  else if (isRecalled) activity.push({ label: 'Recalled', date: fmt(data?.recalled_at), type: 'declined', status: 'warn' });
+
+  const activityIcon = (t: Activity['type']) => {
+    const p = { width: 12, height: 12, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2.2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+    const svg = t === 'sent'     ? <svg {...p}><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>
+      : t === 'view'     ? <svg {...p}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      : t === 'reminder' ? <svg {...p}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      : t === 'declined' ? <svg {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      : <svg {...p}><polyline points="20 6 9 17 4 12"/></svg>;
+    return <span className={`qpi-trk-act-ic qpi-trk-act-ic-${t}`}>{svg}</span>;
+  };
+
+  const StatCard = ({ icon, label, value, accent }: { icon: ReactNode; label: string; value: ReactNode; accent: string }) => (
+    <div className={`qpi-trk-stat qpi-trk-stat-${accent}`}>
+      <div className="qpi-trk-stat-text"><div className="qpi-trk-stat-label">{label}</div><div className="qpi-trk-stat-value">{value}</div></div>
+      <span className="qpi-trk-stat-icon">{icon}</span>
+    </div>
+  );
+
+  /* Shimmer skeleton — shown while the request loads (instead of a spinner). */
+  const TrackerSkeleton = () => (
+    <div className="qpi-trk-skel">
+      <div className="qpi-trk-sk qpi-trk-skel-bar" />
+      {[0, 1, 2, 3].map(i => (
+        <div key={i} className="qpi-trk-skel-line">
+          <span className="qpi-trk-sk qpi-trk-skel-dot" />
+          <div className="qpi-trk-skel-lines">
+            <span className="qpi-trk-sk qpi-trk-skel-l1" />
+            <span className="qpi-trk-sk qpi-trk-skel-l2" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  /* ── COMPACT card (default) — code + status, mini timeline, one signer,
+        and a "View details" button that opens the full panel. ── */
+  if (view === 'compact') {
+    return createPortal(
+      <div className="qpi-trk-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+        <div className="qpi-trk-card qpi-trk-card-info" onMouseDown={(e) => e.stopPropagation()}>
+          {/* Coloured workflow header (Figma "Agreement Timeline" look). */}
+          <div className="qpi-trk-ihead">
+            <div className="qpi-trk-ihead-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+            <div className="qpi-trk-ihead-text">
+              <div className="qpi-trk-ihead-eyebrow">{code} · SIGNING WORKFLOW</div>
+              <div className="qpi-trk-ihead-title">Signing Timeline</div>
+              <div className="qpi-trk-ihead-sub">e-Signature lifecycle {!loading && !err && <span className={`qpi-trk-status qpi-trk-status-${statusPill.cls}`}>{statusPill.txt}</span>}</div>
+            </div>
+            <button type="button" className="qpi-trk-iclose" onClick={onClose} aria-label="Close">✕</button>
+          </div>
+
+          {loading ? (
+            <TrackerSkeleton />
+          ) : err ? (
+            <div className="qpi-trk-error">{err}</div>
+          ) : (
+            <>
+              {/* Overall progress */}
+              <div className="qpi-trk-prog">
+                <div className="qpi-trk-prog-row">
+                  <span className="qpi-trk-prog-lbl">OVERALL PROGRESS</span>
+                  <span className="qpi-trk-prog-cnt">{doneCount} / {steps.length} steps complete</span>
+                </div>
+                <div className="qpi-trk-prog-bar"><span style={{ width: `${pctDone}%` }} /></div>
+              </div>
+
+              <div className="qpi-trk-ibody">
+                <InfoTimeline />
+                <button type="button" className="qpi-trk-viewbtn" onClick={() => setView('expanded')}>
+                  View details
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>,
+      document.body
+    );
+  }
+
+  return createPortal(
+    <div className="qpi-trk-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="qpi-trk-card" onMouseDown={(e) => e.stopPropagation()}>
+        <span className="qpi-trk-orb qpi-trk-orb-1" aria-hidden />
+        <span className="qpi-trk-orb qpi-trk-orb-2" aria-hidden />
+        <div className="qpi-trk-head">
+          <div>
+            <div className="qpi-trk-title">Signing Tracker Details</div>
+            <div className="qpi-trk-sub">{code} {!loading && !err && <span className={`qpi-trk-status qpi-trk-status-${statusPill.cls}`}>{statusPill.txt}</span>}</div>
+          </div>
+          <button type="button" className="qpi-trk-close" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+
+        <div className="qpi-trk-body">
+          {loading ? (
+            <TrackerSkeleton />
+          ) : err ? (
+            <div className="qpi-trk-error">{err}</div>
+          ) : (
+            <>
+              {/* Stat cards */}
+              <div className="qpi-trk-stats">
+                <StatCard accent="violet" label="Total Stages" value={steps.length}
+                  icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>} />
+                <StatCard accent="amber" label="Reminders" value={remCount}
+                  icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>} />
+                <StatCard accent="teal" label="Signers" value={signers.length}
+                  icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>} />
+                <StatCard accent="green" label="Completed On" value={isDone ? fmtD(completedAt) : '—'}
+                  icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>} />
+              </div>
+
+              {/* Timeline — horizontal stepper for the View Details tab. */}
+              <div className="qpi-trk-panel qpi-trk-panel-acc qpi-trk-panel-violet">
+                <div className="qpi-trk-panel-h">Signing Timeline</div>
+                <InfoTimelineH />
+              </div>
+
+              {/* Signer details table */}
+              {signers.length > 0 && (
+                <div className="qpi-trk-panel qpi-trk-panel-acc qpi-trk-panel-blue">
+                  <div className="qpi-trk-panel-h">Signer Details</div>
+                  <table className="qpi-trk-table">
+                    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Viewed On</th><th>Signed On</th></tr></thead>
+                    <tbody>
+                      {signers.map((sg: any, i: number) => (
+                        <tr key={i}>
+                          <td><span className="qpi-trk-sav">{String(sg?.name ?? sg?.email ?? '?').charAt(0).toUpperCase()}</span>{sg?.name || '—'}</td>
+                          <td className="qpi-trk-muted">{sg?.email || '—'}</td>
+                          <td className="qpi-trk-muted">{sg?.role || 'Signer'}</td>
+                          <td><span className={`qpi-trk-spill qpi-trk-spill-${signerStatus.cls}`}>{signerStatus.txt}</span></td>
+                          <td className="qpi-trk-muted">—</td>
+                          <td className="qpi-trk-muted">{isDone ? fmt(completedAt) : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Activity history — every lifecycle event. */}
+              {activity.length > 0 && (
+                <div className="qpi-trk-panel qpi-trk-panel-acc qpi-trk-panel-amber">
+                  <div className="qpi-trk-panel-h">Activity History {activity.length > 5 && <span className="qpi-trk-panel-cnt">{activity.length} events</span>}</div>
+                  {/* ~5 rows visible; the rest scroll. */}
+                  <div className="qpi-trk-rem-scroll">
+                    <table className="qpi-trk-table">
+                      <thead><tr><th>Activity</th><th>Date / Time</th><th>Status</th></tr></thead>
+                      <tbody>
+                        {activity.map((a, i) => (
+                          <tr key={i}>
+                            <td><span className="qpi-trk-act-cell">{activityIcon(a.type)}{a.label}</span></td>
+                            <td className="qpi-trk-muted">{a.date}</td>
+                            <td><span className={`qpi-trk-spill qpi-trk-spill-${a.status}`}>{a.status === 'ok' ? '✓ Done' : a.status === 'bad' ? '✕ Declined' : 'Recalled'}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="qpi-trk-foot">
+          <button type="button" className="qpi-trk-btn qpi-trk-btn-light" onClick={downloadSignedPdf} disabled={dlSigned || !isDone}>
+            {dlSigned ? <span className="qpi-moremenu-spinner" /> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: '-2px', marginRight: 6 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}
+            Download signed PDF
+          </button>
+          <button type="button" className="qpi-trk-btn qpi-trk-btn-light" onClick={downloadAudit} disabled={auditing || !isDone}>
+            {auditing ? <span className="qpi-moremenu-spinner" /> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: '-2px', marginRight: 6 }}><path d="M9 12l2 2 4-4"/><path d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.997.398-.997.95v0"/><path d="M12 2v0c0 .552-.449 1.005-.998.95A10 10 0 1 0 21.95 12.998c.055-.55-.398-.998-.95-.998v0"/></svg>}
+            Download audit
+          </button>
+          <button type="button" className="qpi-trk-btn qpi-trk-btn-light" onClick={() => void load()}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: '-2px', marginRight: 6 }}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+            Refresh
+          </button>
+          <button type="button" className="qpi-trk-btn qpi-trk-btn-primary" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
 
 const STEPS = [
   { n:1, title:'Create Quotation',          desc:'Prepare quotation using opportunity, buyer, product, pricing, currency, and bank details.', tag:'FOUNDATION STEP' },
@@ -535,7 +973,7 @@ export default function SalesQPI() {
   // JSX expects (qtNo, qtDate, oppId, …) so we don't have to refactor
   // the renderer.
   const [quotations, setQuotations] = useState<Quotation[]>([]);
-  const [loadingQt, setLoadingQt] = useState(false);
+  const [loadingQt, setLoadingQt] = useState(true);
   const reloadQuotations = () => {
     setLoadingQt(true);
     api.get('/sales/quotations', { params: { per_page: 200 } })
@@ -579,7 +1017,7 @@ export default function SalesQPI() {
   // pill sub-tabs (With Shipment / Without Shipment) are derived from
   // `pi_type` on each row, so we don't need separate API calls.
   const [pis, setPis] = useState<PI[]>([]);
-  const [loadingPi, setLoadingPi] = useState(false);
+  const [loadingPi, setLoadingPi] = useState(true);
   const reloadPis = () => {
     setLoadingPi(true);
     api.get('/sales/proforma-invoices', { params: { per_page: 200 } })
@@ -996,6 +1434,8 @@ export default function SalesQPI() {
   // at top-left.
   const [qtMenuFor, setQtMenuFor] = useState<{ id: string; rect: AnchorRect; payload: Record<string, unknown>; sigId: number | null } | null>(null);
   const [piMenuFor, setPiMenuFor] = useState<{ id: string; rect: AnchorRect; payload: Record<string, unknown>; sigId: number | null } | null>(null);
+  // Signing Tracker modal — opened from the "Tracker" action on sent rows.
+  const [trackerFor, setTrackerFor] = useState<{ sigId: number; code: string } | null>(null);
 
   /* Stable ActionBtn — matches the customer-page pattern: neutral tile,
    * hover shifts border + icon to the column accent.
@@ -1019,10 +1459,13 @@ export default function SalesQPI() {
       <button
         type="button"
         aria-label={p.ariaLabel ?? p.title}
+        aria-disabled={p.disabled || undefined}
         className={`qpi-act${p.disabled || p.cooling ? ' qpi-act-disabled' : ''}`}
         style={{ ['--qpi-act-accent' as any]: p.color, position: 'relative' }}
-        disabled={p.disabled}
-        onClick={p.disabled ? undefined : p.onClick}
+        /* Not natively disabled — a soft-disabled button stays clickable so a
+           click can surface a short "why it's unavailable" toast (the button's
+           own title is the reason). */
+        onClick={(e) => { if (p.disabled) { toast.info(p.title); return; } p.onClick(e); }}
       >
         {p.icon}
         {p.badge !== undefined && p.badge > 0 && (
@@ -1045,6 +1488,11 @@ export default function SalesQPI() {
    *   inprogress -> View sent doc + Send reminder
    *   completed  -> View signed PDF
    * Disabled when the row is read-only or has no numeric lead id. */
+  /* Render the FOUR signing slots for EVERY row in a fixed order — Send,
+   * View, Reminder, Tracker — so the action column has one consistent layout
+   * regardless of the row's signing status. Slots that don't apply to the
+   * current status are shown disabled (greyed) rather than hidden, so the
+   * icons always line up across rows. */
   const renderSignAction = (
     kind: 'quotation' | 'pi', id: number | undefined, code: string,
     customer: string, leadId: number | null | undefined, readOnly: boolean,
@@ -1052,37 +1500,36 @@ export default function SalesQPI() {
     if (!id) return null;
     const sig = sigByRow[`${kind}:${id}`];
     const st = sig?.status;
-    if (st === 'inprogress') {
-      return (
-        <>
-          <ActionBtn title="View sent document" color="#0ea5e9" onClick={() => void onViewSentPdf(kind, id)}
-            icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>} />
-          <ActionBtn title="Send signing reminder" color="#0ea5e9" onClick={() => void onRemindSig(sig!.id)}
-            icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>} />
-        </>
-      );
-    }
-    if (st === 'completed') {
-      return (
-        <Tooltip label="Download the signed PDF">
-          <button type="button" className="qpi-convert-btn qpi-signed-btn" onClick={() => void onDownloadSignedSig(sig!.id, code)}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Signed PDF
-          </button>
-        </Tooltip>
-      );
-    }
+    const notSent    = st !== 'inprogress' && st !== 'completed';
+    const inProgress = st === 'inprogress';
+    const signed     = st === 'completed';
+    const hasSig     = st === 'inprogress' || st === 'completed';
+    // When signed, Send/View/Reminder are all moot — point the user to the
+    // history (tracker) icon, which holds the signed document + full timeline.
+    const signedHint = 'Document already signed — open the history icon to view it.';
     return (
-      <ActionBtn
-        // A linked opportunity is NO LONGER required — signers are resolved
-        // from the document's own customer/consignee, so a direct PI/quotation
-        // (e.g. a "Without Shipment" PI with no opp) can still be sent.
-        title={readOnly ? 'View-only — this record belongs to the main branch.' : 'Send for Signature'}
-        color="#0ea5e9"
-        disabled={readOnly}
-        onClick={() => setSigSendFor({ kind, id, code, customerName: customer || null, leadId: leadId ?? null })}
-        icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>}
-      />
+      <>
+        <ActionBtn
+          title={readOnly ? 'View-only — this record belongs to the main branch.' : notSent ? 'Send for Signature' : signed ? signedHint : 'Already sent — awaiting signature'}
+          color="#0ea5e9" disabled={readOnly || !notSent}
+          onClick={() => notSent && setSigSendFor({ kind, id, code, customerName: customer || null, leadId: leadId ?? null })}
+          icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>} />
+        <ActionBtn
+          title={inProgress ? 'View sent document' : signed ? signedHint : 'No document sent yet'}
+          color="#0ea5e9" disabled={!inProgress}
+          onClick={() => inProgress && void onViewSentPdf(kind, id)}
+          icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>} />
+        <ActionBtn
+          title={inProgress ? 'Send signing reminder' : signed ? signedHint : 'Reminders available once the document is sent'}
+          color="#f59e0b" disabled={!inProgress}
+          onClick={() => inProgress && void onRemindSig(sig!.id)}
+          icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>} />
+        <ActionBtn
+          title={hasSig ? 'Signing tracker' : 'No signing activity yet'}
+          color="#7c3aed" disabled={!hasSig}
+          onClick={() => hasSig && setTrackerFor({ sigId: sig!.id, code })}
+          icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>} />
+      </>
     );
   };
 
@@ -1281,17 +1728,20 @@ export default function SalesQPI() {
                 <IconKebab />
               </button>
             </Tooltip>
-            {/* Signed quotations are finalised documents — hide Delete entirely
-                so a signed record can't be removed. */}
-            {!(r.id && sigByRow[`quotation:${r.id}`]?.status === 'completed') && (
-              <ActionBtn
-                title={readOnly ? readOnlyHint : 'Delete Quotation'}
-                icon={<IconTrash />}
-                color="#dc2626"
-                disabled={readOnly}
-                onClick={() => r.id && setDeleteTarget({ kind: 'quotation', id: r.id, code: r.qtNo })}
-              />
-            )}
+            {/* Always rendered (disabled when signed) so the icon row lines up
+                across rows; a signed record stays un-deletable via the disable. */}
+            {(() => {
+              const qSigned = r.id ? sigByRow[`quotation:${r.id}`]?.status === 'completed' : false;
+              return (
+                <ActionBtn
+                  title={readOnly ? readOnlyHint : qSigned ? 'Signed quotation cannot be deleted' : 'Delete Quotation'}
+                  icon={<IconTrash />}
+                  color="#dc2626"
+                  disabled={readOnly || qSigned}
+                  onClick={() => r.id && setDeleteTarget({ kind: 'quotation', id: r.id, code: r.qtNo })}
+                />
+              );
+            })()}
           </div>
         );
       },
@@ -1565,7 +2015,10 @@ export default function SalesQPI() {
             so chrome + pagination match the Customer / Recruitment /
             Employee pages. Cell renderers above keep our chips/pills. */}
         <div className="qpi-table-host">
-          {tab === 'quotation' ? (
+          {(tab === 'quotation' ? loadingQt : loadingPi) ? (
+            /* Loading shimmer instead of a "0 results" empty table. */
+            <ShimmerTable rows={ROWS_PER_PAGE} cols={13} />
+          ) : tab === 'quotation' ? (
             <TableContainer
               columns={quotationColumns}
               data={filtered as Quotation[]}
@@ -1613,6 +2066,8 @@ export default function SalesQPI() {
             payload={qtMenuFor.payload}
             sigId={qtMenuFor.sigId}
             docCode={qtMenuFor.id}
+            onViewSigned={qtMenuFor.sigId != null ? () => onViewSignedSig(qtMenuFor.sigId!) : undefined}
+            onDownloadSigned={qtMenuFor.sigId != null ? () => onDownloadSignedSig(qtMenuFor.sigId!, qtMenuFor.id) : undefined}
             onClose={() => setQtMenuFor(null)}
             onError={(msg) => toast.error('Preview failed', msg)}
           />
@@ -1624,9 +2079,14 @@ export default function SalesQPI() {
             payload={piMenuFor.payload}
             sigId={piMenuFor.sigId}
             docCode={piMenuFor.id}
+            onViewSigned={piMenuFor.sigId != null ? () => onViewSignedSig(piMenuFor.sigId!) : undefined}
+            onDownloadSigned={piMenuFor.sigId != null ? () => onDownloadSignedSig(piMenuFor.sigId!, piMenuFor.id) : undefined}
             onClose={() => setPiMenuFor(null)}
             onError={(msg) => toast.error('Preview failed', msg)}
           />
+        )}
+        {trackerFor && (
+          <SigningTrackerModal sigId={trackerFor.sigId} code={trackerFor.code} onClose={() => setTrackerFor(null)} />
         )}
 
         {/* Soft-delete confirmation — backed by the project-wide
@@ -4356,14 +4816,16 @@ const SCOPED_CSS = `
  * not a separate coloured strip. The card's overflow:hidden + 16px radius
  * already round the footer's bottom corners. */
 .qpi-table-host > .row {
-  margin: 0 !important;
-  padding: 12px 18px;
+  /* FLAT footer (matches the SalesCustomers fix): no lavender bar / border —
+     the "Showing X" text + pagination just sit cleanly below the rows so the
+     footer doesn't read as a separate strip nested in the table. */
+  margin: 6px 0 0 !important;
+  padding: 8px 4px 0;
   --bs-gutter-x: 0;
   --bs-gutter-y: 0;
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 8px;
-  border-top: 1px solid rgba(124,58,237,0.15);
-  background: linear-gradient(135deg, rgba(124,58,237,0.04), rgba(167,139,250,0.02));
+  background: transparent;
 }
 .qpi-table-host > .row > [class^="col-"] { padding: 0; width: auto; flex: 0 0 auto; }
 /* "Showing X of Y Results" — plain muted text, no pill. */
@@ -4417,11 +4879,11 @@ const SCOPED_CSS = `
   font-size: 16px;
   line-height: 1;
 }
-/* Dark mode — blends with the dark card, violet accents. */
+/* Dark mode — flat footer (no bar / border), matching light. */
 [data-bs-theme="dark"] .qpi-table-host > .row,
 [data-layout-mode="dark"] .qpi-table-host > .row {
-  border-top-color: rgba(167,139,250,0.20);
-  background: linear-gradient(135deg, rgba(124,58,237,0.10), rgba(167,139,250,0.04));
+  border-top: none;
+  background: transparent;
 }
 [data-bs-theme="dark"] .qpi-table-host .pagination .page-link,
 [data-layout-mode="dark"] .qpi-table-host .pagination .page-link {
@@ -4672,6 +5134,317 @@ const SCOPED_CSS = `
 .qpi-act-edit:hover { border-color: #16a34a; color: #16a34a; }
 .qpi-act-menu:hover { border-color: #7c3aed; color: #7c3aed; }
 .qpi-act-del:hover  { border-color: #dc2626; color: #dc2626; }
+
+/* ─── Signing Tracker modal — premium dark "cosmic" panel (always dark,
+   matching the Figma) regardless of the app theme. ─── */
+.qpi-trk-overlay {
+  position: fixed; inset: 0; z-index: 11400;
+  background: rgba(6,9,28,0.66); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  font-family: 'DM Sans','Inter',system-ui,sans-serif;
+  animation: qpiTrkFade .16s ease both;
+}
+@keyframes qpiTrkFade { from { opacity: 0; } to { opacity: 1; } }
+.qpi-trk-card {
+  position: relative;
+  width: min(780px, 96vw); max-height: 90vh; display: flex; flex-direction: column;
+  border-radius: 22px; overflow: hidden; color: #e7ecff;
+  background:
+    radial-gradient(120% 90% at 85% 10%, rgba(56,80,180,0.45) 0%, transparent 55%),
+    radial-gradient(90% 80% at 0% 100%, rgba(76,40,150,0.40) 0%, transparent 55%),
+    linear-gradient(160deg, #0c1238 0%, #0a0f2e 50%, #0b1030 100%);
+  border: 1px solid rgba(120,140,255,0.18);
+  box-shadow: 0 40px 100px rgba(0,0,0,.55), 0 0 0 1px rgba(120,140,255,0.06) inset;
+  animation: qpiTrkUp .22s cubic-bezier(.22,1,.36,1) both;
+}
+@keyframes qpiTrkUp { from { transform: translateY(14px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.qpi-trk-orb { position: absolute; border-radius: 50%; pointer-events: none; filter: blur(2px); opacity: .5; }
+.qpi-trk-orb-1 { width: 220px; height: 220px; right: -40px; top: 30%; background: radial-gradient(circle at 35% 35%, #2a3a8a, #11163a 70%); box-shadow: 0 0 80px rgba(60,90,220,.35); }
+.qpi-trk-orb-2 { width: 120px; height: 120px; right: 30%; top: 22%; background: radial-gradient(circle at 35% 35%, #3550b0, #141a44 70%); opacity: .35; }
+.qpi-trk-head {
+  position: relative; z-index: 2; overflow: hidden;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 30px 26px;
+  /* Premium coloured header band + white dot texture (same as the first view). */
+  background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 50%, #7c3aed 100%);
+}
+.qpi-trk-head::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-image: radial-gradient(rgba(255,255,255,.20) 1.1px, transparent 1.6px);
+  background-size: 18px 18px;
+}
+.qpi-trk-head > * { position: relative; z-index: 1; }
+.qpi-trk-title { font-size: 20px; font-weight: 800; color: #fff; letter-spacing: -.2px; }
+.qpi-trk-sub { display: flex; align-items: center; gap: 10px; margin-top: 5px; font-size: 14px; font-weight: 600; color: rgba(255,255,255,.82); }
+.qpi-trk-status { font-size: 11px; font-weight: 800; padding: 4px 12px; border-radius: 20px; white-space: nowrap; }
+.qpi-trk-status-ok   { background: rgba(34,197,94,.18);  color: #6ee7a8; border: 1px solid rgba(34,197,94,.35); }
+.qpi-trk-status-bad  { background: rgba(239,68,68,.18);  color: #fca5a5; border: 1px solid rgba(239,68,68,.35); }
+.qpi-trk-status-warn { background: rgba(245,158,11,.18); color: #fcd34d; border: 1px solid rgba(245,158,11,.35); }
+.qpi-trk-status-info { background: rgba(99,102,241,.20); color: #c7d2fe; border: 1px solid rgba(129,140,248,.40); }
+.qpi-trk-close { width: 36px; height: 36px; border-radius: 50%; border: 1px solid rgba(150,165,255,.30); background: rgba(120,140,255,.12); color: #cdd6ff; cursor: pointer; font-size: 14px; flex-shrink: 0; transition: background .15s; }
+.qpi-trk-close:hover { background: rgba(120,140,255,.25); }
+.qpi-trk-body { position: relative; z-index: 2; padding: 4px 24px 18px; overflow-y: auto; }
+.qpi-trk-loading, .qpi-trk-error { display: flex; align-items: center; gap: 8px; justify-content: center; padding: 40px; color: #aeb8e8; font-size: 13px; }
+.qpi-trk-error { color: #fca5a5; }
+/* Shimmer skeleton (shown while loading instead of a spinner). */
+.qpi-trk-skel { padding: 22px 24px; }
+.qpi-trk-sk { position: relative; overflow: hidden; border-radius: 8px; background: rgba(120,140,255,.12); }
+.qpi-trk-sk::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255,255,255,.16), transparent); animation: qpiSkShimmer 1.2s ease-in-out infinite; }
+@keyframes qpiSkShimmer { 100% { transform: translateX(100%); } }
+.qpi-trk-skel-bar { height: 14px; width: 45%; margin-bottom: 22px; }
+.qpi-trk-skel-line { display: flex; gap: 14px; margin-bottom: 18px; }
+.qpi-trk-skel-dot { width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0; }
+.qpi-trk-skel-lines { flex: 1; padding-top: 4px; }
+.qpi-trk-skel-l1 { display: block; height: 12px; width: 55%; margin-bottom: 9px; }
+.qpi-trk-skel-l2 { display: block; height: 10px; width: 80%; }
+[data-bs-theme="light"] .qpi-trk-sk { background: rgba(124,58,237,.09); }
+[data-bs-theme="light"] .qpi-trk-sk::after { background: linear-gradient(90deg, transparent, rgba(255,255,255,.65), transparent); }
+/* Stat cards */
+.qpi-trk-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.qpi-trk-stat { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 14px; border-radius: 14px; background: rgba(120,140,255,0.06); border: 1px solid rgba(120,140,255,0.14); border-top-width: 3px; min-height: 76px; }
+.qpi-trk-stat-text { min-width: 0; }
+/* Colourful top border + matching icon box per stat (Figma image 4). */
+.qpi-trk-stat-violet { border-top-color: #8b5cf6; }
+.qpi-trk-stat-violet .qpi-trk-stat-icon { background: linear-gradient(135deg, #8b5cf6, #6d28d9) !important; color: #fff !important; border-color: transparent !important; }
+.qpi-trk-stat-amber  { border-top-color: #f59e0b; }
+.qpi-trk-stat-amber .qpi-trk-stat-icon { background: linear-gradient(135deg, #fbbf24, #d97706) !important; color: #fff !important; border-color: transparent !important; }
+.qpi-trk-stat-teal   { border-top-color: #14b8a6; }
+.qpi-trk-stat-teal .qpi-trk-stat-icon { background: linear-gradient(135deg, #2dd4bf, #0d9488) !important; color: #fff !important; border-color: transparent !important; }
+.qpi-trk-stat-green  { border-top-color: #22c55e; }
+.qpi-trk-stat-green .qpi-trk-stat-icon { background: linear-gradient(135deg, #34d399, #16a34a) !important; color: #fff !important; border-color: transparent !important; }
+.qpi-trk-stat > div { min-width: 0; }
+.qpi-trk-stat-icon { width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #aab4ee; background: rgba(99,102,241,0.16); border: 1px solid rgba(129,140,248,0.22); }
+.qpi-trk-stat-label { font-size: 11px; font-weight: 600; color: #94a0d8; }
+.qpi-trk-stat-value { font-size: 15.5px; font-weight: 800; color: #fff; margin-top: 3px; line-height: 1.3; }
+/* Glassy panels */
+.qpi-trk-panel { background: rgba(120,140,255,0.04); border: 1px solid rgba(120,140,255,0.12); border-radius: 16px; padding: 16px 18px; margin-bottom: 14px; }
+/* Colourful top-border accent per panel (like the consignee form sections). */
+.qpi-trk-panel-acc { border-top-width: 3px; }
+.qpi-trk-panel-violet { border-top-color: #8b5cf6; }
+.qpi-trk-panel-blue   { border-top-color: #3b82f6; }
+.qpi-trk-panel-amber  { border-top-color: #f59e0b; }
+.qpi-trk-panel-h { font-size: 13.5px; font-weight: 800; color: #dbe2ff; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
+.qpi-trk-panel-cnt { font-size: 11px; font-weight: 700; color: #97a2d8; background: rgba(120,140,255,.10); border: 1px solid rgba(120,140,255,.20); padding: 2px 9px; border-radius: 20px; }
+/* Reminder history — ~5 rows visible, scroll for the rest. */
+.qpi-trk-rem-scroll { max-height: 226px; overflow-y: auto; scrollbar-width: thin; }
+.qpi-trk-rem-scroll::-webkit-scrollbar { width: 7px; }
+.qpi-trk-rem-scroll::-webkit-scrollbar-thumb { background: rgba(120,140,255,.25); border-radius: 10px; }
+[data-bs-theme="light"] .qpi-trk-panel-cnt { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
+[data-bs-theme="light"] .qpi-trk-rem-scroll::-webkit-scrollbar-thumb { background: #d1c7f5; }
+/* Timeline */
+.qpi-trk-timeline { display: flex; flex-direction: column; }
+.qpi-trk-step { display: flex; gap: 14px; }
+.qpi-trk-dotcol { display: flex; flex-direction: column; align-items: center; }
+.qpi-trk-dot { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 900; color: #fff; background: #2a3566; box-shadow: 0 0 0 4px rgba(120,140,255,.06); }
+.qpi-trk-line { flex: 1; width: 2px; background: rgba(120,140,255,.18); margin: 3px 0; min-height: 14px; }
+.qpi-trk-step-done.qpi-trk-tone-ok   .qpi-trk-dot { background: #16a34a; box-shadow: 0 0 0 4px rgba(34,197,94,.18); }
+.qpi-trk-step-done.qpi-trk-tone-warn .qpi-trk-dot { background: #f59e0b; box-shadow: 0 0 0 4px rgba(245,158,11,.18); }
+.qpi-trk-step-done.qpi-trk-tone-bad  .qpi-trk-dot { background: #ef4444; box-shadow: 0 0 0 4px rgba(239,68,68,.18); }
+.qpi-trk-step-current .qpi-trk-dot { background: #f59e0b; box-shadow: 0 0 0 4px rgba(245,158,11,.18); }
+.qpi-trk-stepbody { padding-bottom: 16px; }
+.qpi-trk-step-label { font-size: 14px; font-weight: 700; color: #f2f5ff; }
+.qpi-trk-step-idle .qpi-trk-step-label { color: #8390cc; font-weight: 600; }
+.qpi-trk-step-meta { font-size: 12px; color: #97a2d8; margin-top: 3px; }
+/* Tables */
+.qpi-trk-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.qpi-trk-table th { text-align: left; font-size: 11px; font-weight: 700; color: #b9c2f0; padding: 9px 10px; border-bottom: 1px solid rgba(120,140,255,.14); white-space: nowrap; background: linear-gradient(180deg, rgba(124,58,237,.22), rgba(99,102,241,.10)); }
+.qpi-trk-table thead tr th:first-child { border-top-left-radius: 8px; }
+.qpi-trk-table thead tr th:last-child { border-top-right-radius: 8px; }
+/* Horizontal timeline (View Details tab). */
+.qpi-trk-htl { display: flex; align-items: flex-start; }
+.qpi-trk-htl-step { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; }
+.qpi-trk-htl-iconrow { display: flex; align-items: center; width: 100%; }
+.qpi-trk-htl-line { flex: 1; height: 2px; background: rgba(120,140,255,.20); }
+.qpi-trk-htl-step:first-child .qpi-trk-htl-line-l { visibility: hidden; }
+.qpi-trk-htl-step:last-child .qpi-trk-htl-line-r { visibility: hidden; }
+.qpi-trk-htl-icon { width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; background: #2a3566; box-shadow: 0 0 0 4px rgba(120,140,255,.06); }
+.qpi-trk-htl-done.qpi-trk-tone-ok   .qpi-trk-htl-icon { background: linear-gradient(135deg, #16a34a, #15803d); box-shadow: 0 0 0 4px rgba(34,197,94,.18); }
+.qpi-trk-htl-done.qpi-trk-tone-warn .qpi-trk-htl-icon { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 0 0 4px rgba(245,158,11,.18); }
+.qpi-trk-htl-done.qpi-trk-tone-bad  .qpi-trk-htl-icon { background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 0 0 4px rgba(239,68,68,.18); }
+.qpi-trk-htl-current .qpi-trk-htl-icon { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 0 0 4px rgba(245,158,11,.18); }
+.qpi-trk-htl-title { font-size: 12.5px; font-weight: 700; color: #f2f5ff; line-height: 1.25; }
+.qpi-trk-htl-idle .qpi-trk-htl-title { color: #8390cc; }
+.qpi-trk-htl-date { font-size: 10.5px; color: #97a2d8; }
+.qpi-trk-table td { padding: 11px 10px; color: #e7ecff; border-bottom: 1px solid rgba(120,140,255,.07); white-space: nowrap; vertical-align: middle; }
+.qpi-trk-table tr:last-child td { border-bottom: 0; }
+.qpi-trk-muted { color: #97a2d8; }
+/* Activity cell — icon badge + label on one line. */
+.qpi-trk-act-cell { display: inline-flex; align-items: center; gap: 9px; white-space: nowrap; }
+.qpi-trk-act-ic { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 7px; flex-shrink: 0; }
+.qpi-trk-act-ic-sent     { background: rgba(59,130,246,.18);  color: #93c5fd; }
+.qpi-trk-act-ic-view     { background: rgba(139,92,246,.18);  color: #c4b5fd; }
+.qpi-trk-act-ic-reminder { background: rgba(245,158,11,.18);  color: #fcd34d; }
+.qpi-trk-act-ic-signed   { background: rgba(34,197,94,.18);   color: #6ee7a8; }
+.qpi-trk-act-ic-declined { background: rgba(239,68,68,.18);   color: #fca5a5; }
+[data-bs-theme="light"] .qpi-trk-act-ic-sent     { background: #dbeafe; color: #2563eb; }
+[data-bs-theme="light"] .qpi-trk-act-ic-view     { background: #ede9fe; color: #6d28d9; }
+[data-bs-theme="light"] .qpi-trk-act-ic-reminder { background: #fef3c7; color: #b45309; }
+[data-bs-theme="light"] .qpi-trk-act-ic-signed   { background: #dcfce7; color: #15803d; }
+[data-bs-theme="light"] .qpi-trk-act-ic-declined { background: #fee2e2; color: #b91c1c; }
+.qpi-trk-sav { display: inline-flex; width: 24px; height: 24px; border-radius: 7px; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; color: #fff; background: linear-gradient(135deg, #c084fc, #7c3aed); margin-right: 8px; vertical-align: -7px; }
+.qpi-trk-spill { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 800; padding: 3px 10px; border-radius: 20px; }
+.qpi-trk-spill-ok   { background: rgba(34,197,94,.18);  color: #6ee7a8; }
+.qpi-trk-spill-warn { background: rgba(245,158,11,.18); color: #fcd34d; }
+.qpi-trk-spill-bad  { background: rgba(239,68,68,.18);  color: #fca5a5; }
+/* Footer */
+.qpi-trk-foot { position: relative; z-index: 2; padding: 14px 24px 20px; display: flex; gap: 12px; }
+.qpi-trk-btn { flex: 1 1 auto; padding: 11px 12px; border-radius: 12px; font-weight: 700; font-size: 12.5px; white-space: nowrap; cursor: pointer; border: 1px solid transparent; transition: all .15s; display: inline-flex; align-items: center; justify-content: center; }
+.qpi-trk-btn:disabled { opacity: .45; cursor: not-allowed; }
+.qpi-trk-btn-light { background: rgba(120,140,255,0.08); border-color: rgba(120,140,255,0.20); color: #dbe2ff; }
+.qpi-trk-btn-light:not(:disabled):hover { background: rgba(120,140,255,0.16); }
+.qpi-trk-btn-primary { background: linear-gradient(135deg, #6366f1, #7c3aed); color: #fff; box-shadow: 0 6px 18px rgba(99,102,241,.40); }
+.qpi-trk-btn-primary:hover { filter: brightness(1.08); }
+/* ── Informative first view (workflow header + progress + rich timeline) ── */
+.qpi-trk-card-info { width: min(480px, 95vw); }
+.qpi-trk-ihead { position: relative; z-index: 2; overflow: hidden; display: flex; align-items: flex-start; gap: 14px; padding: 20px 22px; background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 55%, #8b5cf6 100%); color: #fff; }
+/* White polka-dot texture (same effect as the Add Customer/Consignee headers). */
+.qpi-trk-ihead::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-image: radial-gradient(rgba(255,255,255,.20) 1.1px, transparent 1.6px);
+  background-size: 18px 18px;
+}
+.qpi-trk-ihead > * { position: relative; z-index: 1; }
+.qpi-trk-ihead-icon { width: 46px; height: 46px; border-radius: 13px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.25); }
+.qpi-trk-ihead-text { flex: 1; min-width: 0; }
+.qpi-trk-ihead-eyebrow { font-size: 10px; font-weight: 800; letter-spacing: .1em; opacity: .85; }
+.qpi-trk-ihead-title { font-size: 18px; font-weight: 800; margin-top: 2px; }
+.qpi-trk-ihead-sub { font-size: 12px; opacity: .92; margin-top: 4px; display: flex; align-items: center; gap: 8px; }
+.qpi-trk-iclose { width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.30); background: rgba(255,255,255,0.16); color: #fff; cursor: pointer; font-size: 13px; flex-shrink: 0; }
+.qpi-trk-iclose:hover { background: rgba(255,255,255,0.28); }
+.qpi-trk-prog { position: relative; z-index: 2; padding: 16px 22px 6px; }
+.qpi-trk-prog-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.qpi-trk-prog-lbl { font-size: 11px; font-weight: 800; letter-spacing: .08em; color: #9aa6e6; }
+.qpi-trk-prog-cnt { font-size: 13px; font-weight: 800; color: #e7ecff; }
+.qpi-trk-prog-bar { height: 8px; border-radius: 20px; background: rgba(120,140,255,0.14); overflow: hidden; }
+.qpi-trk-prog-bar > span { display: block; height: 100%; border-radius: 20px; background: linear-gradient(90deg, #7c3aed, #22c55e); transition: width .45s ease; }
+.qpi-trk-ibody { position: relative; z-index: 2; padding: 16px 22px 22px; max-height: 56vh; overflow-y: auto; }
+.qpi-trk-itl { display: flex; flex-direction: column; }
+.qpi-trk-itl-step { display: flex; gap: 14px; }
+.qpi-trk-itl-dotcol { display: flex; flex-direction: column; align-items: center; }
+.qpi-trk-itl-icon { width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; background: #2a3566; box-shadow: 0 0 0 4px rgba(120,140,255,.06); }
+.qpi-trk-itl-line { flex: 1; width: 2px; background: rgba(120,140,255,.18); margin: 4px 0; min-height: 18px; }
+.qpi-trk-itl-done.qpi-trk-tone-ok   .qpi-trk-itl-icon { background: linear-gradient(135deg, #16a34a, #15803d); box-shadow: 0 0 0 4px rgba(34,197,94,.18); }
+.qpi-trk-itl-done.qpi-trk-tone-warn .qpi-trk-itl-icon { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 0 0 4px rgba(245,158,11,.18); }
+.qpi-trk-itl-done.qpi-trk-tone-bad  .qpi-trk-itl-icon { background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 0 0 4px rgba(239,68,68,.18); }
+.qpi-trk-itl-current .qpi-trk-itl-icon { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 0 0 4px rgba(245,158,11,.18); }
+.qpi-trk-itl-body { flex: 1; padding-bottom: 18px; min-width: 0; }
+.qpi-trk-itl-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.qpi-trk-itl-title { font-size: 14.5px; font-weight: 700; color: #f2f5ff; }
+.qpi-trk-itl-idle .qpi-trk-itl-title { color: #8390cc; }
+.qpi-trk-itl-badge { font-size: 11px; font-weight: 800; padding: 3px 11px; border-radius: 20px; white-space: nowrap; border: 1px solid; }
+.qpi-trk-itl-badge-ok   { background: rgba(34,197,94,.16);  color: #6ee7a8; border-color: rgba(34,197,94,.35); }
+.qpi-trk-itl-badge-warn { background: rgba(245,158,11,.16); color: #fcd34d; border-color: rgba(245,158,11,.35); }
+.qpi-trk-itl-badge-bad  { background: rgba(239,68,68,.16);  color: #fca5a5; border-color: rgba(239,68,68,.35); }
+.qpi-trk-itl-badge-idle { background: rgba(120,140,255,.10); color: #97a2d8; border-color: rgba(120,140,255,.22); }
+.qpi-trk-itl-desc { font-size: 12.5px; color: #97a2d8; margin-top: 4px; }
+.qpi-trk-itl-meta { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 7px; }
+.qpi-trk-itl-metait { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: #8e9ad6; }
+/* Light mode for the informative view */
+[data-bs-theme="light"] .qpi-trk-prog-lbl { color: #8b80b8; }
+[data-bs-theme="light"] .qpi-trk-prog-cnt { color: #3b0764; }
+[data-bs-theme="light"] .qpi-trk-prog-bar { background: #ece5fb; }
+[data-bs-theme="light"] .qpi-trk-itl-icon { background: #cbd5e1; }
+[data-bs-theme="light"] .qpi-trk-itl-line { background: #e5dffb; }
+[data-bs-theme="light"] .qpi-trk-itl-title { color: #1f2937; }
+[data-bs-theme="light"] .qpi-trk-itl-idle .qpi-trk-itl-title { color: #9ca3af; }
+[data-bs-theme="light"] .qpi-trk-itl-desc, [data-bs-theme="light"] .qpi-trk-itl-metait { color: #6b7280; }
+[data-bs-theme="light"] .qpi-trk-itl-badge-ok   { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
+[data-bs-theme="light"] .qpi-trk-itl-badge-warn { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+[data-bs-theme="light"] .qpi-trk-itl-badge-bad  { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
+[data-bs-theme="light"] .qpi-trk-itl-badge-idle { background: #f1f5f9; color: #64748b; border-color: #e2e8f0; }
+
+/* ── Compact card (legacy) ── */
+.qpi-trk-card-compact { width: min(380px, 94vw); }
+.qpi-trk-chead { position: relative; z-index: 2; display: flex; align-items: center; gap: 10px; padding: 20px 22px 8px; }
+.qpi-trk-ctitle { font-size: 18px; font-weight: 800; color: #fff; flex: 1; }
+.qpi-trk-cclose { margin-left: auto; }
+.qpi-trk-cbody { position: relative; z-index: 2; padding: 14px 22px 20px; }
+.qpi-trk-cbody .qpi-trk-timeline { margin-bottom: 6px; }
+.qpi-trk-csigner { background: rgba(120,140,255,0.06); border: 1px solid rgba(120,140,255,0.14); border-radius: 14px; padding: 14px; margin-top: 8px; }
+.qpi-trk-csigner-h { font-size: 12.5px; font-weight: 600; color: #aeb8e8; margin-bottom: 10px; }
+.qpi-trk-csigner-row { display: flex; align-items: center; gap: 11px; }
+.qpi-trk-csigner-row .qpi-trk-sav { width: 38px; height: 38px; border-radius: 50%; font-size: 14px; margin: 0; vertical-align: 0; }
+.qpi-trk-csigner-info { flex: 1; min-width: 0; }
+.qpi-trk-csigner-name { font-size: 14px; font-weight: 700; color: #fff; }
+.qpi-trk-csigner-mail { font-size: 12px; color: #97a2d8; margin-top: 1px; }
+.qpi-trk-csigner-more { font-size: 11.5px; color: #8e9ad6; margin-top: 8px; }
+.qpi-trk-viewbtn {
+  width: 100%; margin-top: 16px; padding: 13px; border-radius: 13px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 14px; font-weight: 700; color: #e7ecff;
+  background: rgba(120,140,255,0.10); border: 1px solid rgba(120,140,255,0.28);
+  transition: all .15s;
+}
+.qpi-trk-viewbtn:hover { background: rgba(120,140,255,0.20); border-color: rgba(120,140,255,0.45); }
+@media (max-width: 640px) {
+  .qpi-trk-stats { grid-template-columns: repeat(2, 1fr); }
+  .qpi-trk-foot { flex-wrap: wrap; }
+}
+
+/* ── Light mode — clean white panel (the cosmic dark above is the default). ── */
+[data-bs-theme="light"] .qpi-trk-overlay { background: rgba(40,18,80,0.30); }
+[data-bs-theme="light"] .qpi-trk-card {
+  color: #1f2937;
+  /* Same depth as the dark "cosmic" panel, in light lavender tones — soft
+     violet radial glows + a white→lavender gradient (not a flat white box). */
+  background:
+    radial-gradient(120% 90% at 85% 8%, rgba(167,139,250,0.22) 0%, transparent 55%),
+    radial-gradient(90% 80% at 0% 100%, rgba(196,181,253,0.20) 0%, transparent 55%),
+    linear-gradient(160deg, #ffffff 0%, #f6f2ff 55%, #efe9fe 100%);
+  border: 1px solid #e3d9fb;
+  box-shadow: 0 32px 90px rgba(76,29,149,.20), 0 0 0 1px rgba(167,139,250,0.10) inset;
+}
+[data-bs-theme="light"] .qpi-trk-orb { opacity: .55; filter: blur(1px); }
+[data-bs-theme="light"] .qpi-trk-orb-1 { background: radial-gradient(circle at 35% 35%, #ddd6fe, #f3effe 72%); box-shadow: 0 0 90px rgba(167,139,250,.45); }
+[data-bs-theme="light"] .qpi-trk-orb-2 { background: radial-gradient(circle at 35% 35%, #e9d5ff, #faf5ff 72%); opacity: .4; }
+/* Header is a coloured band in both themes — keep its text white. */
+[data-bs-theme="light"] .qpi-trk-title { color: #fff; }
+[data-bs-theme="light"] .qpi-trk-ctitle { color: #2e1065; }
+[data-bs-theme="light"] .qpi-trk-sub { color: rgba(255,255,255,.82); }
+[data-bs-theme="light"] .qpi-trk-close { background: rgba(255,255,255,.18); border-color: rgba(255,255,255,.32); color: #fff; }
+[data-bs-theme="light"] .qpi-trk-close:hover { background: rgba(255,255,255,.30); }
+[data-bs-theme="light"] .qpi-trk-status-ok   { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
+[data-bs-theme="light"] .qpi-trk-status-bad  { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
+[data-bs-theme="light"] .qpi-trk-status-warn { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+[data-bs-theme="light"] .qpi-trk-status-info { background: #ede9fe; color: #5b21b6; border-color: #ddd6fe; }
+[data-bs-theme="light"] .qpi-trk-close, [data-bs-theme="light"] .qpi-trk-cclose { background: #f3effd; border-color: #e0d9f7; color: #6d28d9; }
+[data-bs-theme="light"] .qpi-trk-close:hover { background: #ece5fb; }
+[data-bs-theme="light"] .qpi-trk-loading { color: #6b7280; }
+[data-bs-theme="light"] .qpi-trk-stat { background: rgba(255,255,255,0.62); border-color: #e7defb; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+[data-bs-theme="light"] .qpi-trk-stat-icon { background: #ede9fe; border-color: #ddd6fe; color: #6d28d9; }
+[data-bs-theme="light"] .qpi-trk-stat-label { color: #6b7280; }
+[data-bs-theme="light"] .qpi-trk-stat-value { color: #1f2937; }
+[data-bs-theme="light"] .qpi-trk-panel, [data-bs-theme="light"] .qpi-trk-csigner { background: rgba(255,255,255,0.55); border-color: #e7defb; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+/* The light border-color above resets the top accent — re-apply it so the
+   colourful top border shows in light mode too (it already does in dark). */
+[data-bs-theme="light"] .qpi-trk-panel-violet { border-top-color: #8b5cf6; }
+[data-bs-theme="light"] .qpi-trk-panel-blue   { border-top-color: #3b82f6; }
+[data-bs-theme="light"] .qpi-trk-panel-amber  { border-top-color: #f59e0b; }
+[data-bs-theme="light"] .qpi-trk-panel-h { color: #3b0764; }
+[data-bs-theme="light"] .qpi-trk-line { background: #e5e7eb; }
+[data-bs-theme="light"] .qpi-trk-dot { background: #cbd5e1; box-shadow: 0 0 0 4px rgba(124,58,237,.06); }
+[data-bs-theme="light"] .qpi-trk-step-label { color: #1f2937; }
+[data-bs-theme="light"] .qpi-trk-step-idle .qpi-trk-step-label { color: #9ca3af; }
+[data-bs-theme="light"] .qpi-trk-step-meta { color: #6b7280; }
+[data-bs-theme="light"] .qpi-trk-table th { color: #6d28d9; border-bottom-color: #e7defb; background: linear-gradient(180deg, #efe9fd, #f7f3ff); }
+[data-bs-theme="light"] .qpi-trk-htl-line { background: #e5dffb; }
+[data-bs-theme="light"] .qpi-trk-htl-icon { background: #cbd5e1; }
+[data-bs-theme="light"] .qpi-trk-htl-title { color: #1f2937; }
+[data-bs-theme="light"] .qpi-trk-htl-idle .qpi-trk-htl-title { color: #9ca3af; }
+[data-bs-theme="light"] .qpi-trk-htl-date { color: #6b7280; }
+[data-bs-theme="light"] .qpi-trk-table td { color: #1f2937; border-bottom-color: #f3eefc; }
+[data-bs-theme="light"] .qpi-trk-muted { color: #6b7280; }
+[data-bs-theme="light"] .qpi-trk-spill-ok   { background: #dcfce7; color: #15803d; }
+[data-bs-theme="light"] .qpi-trk-spill-warn { background: #fef3c7; color: #92400e; }
+[data-bs-theme="light"] .qpi-trk-spill-bad  { background: #fee2e2; color: #b91c1c; }
+[data-bs-theme="light"] .qpi-trk-csigner-h { color: #6b7280; }
+[data-bs-theme="light"] .qpi-trk-csigner-name { color: #1f2937; }
+[data-bs-theme="light"] .qpi-trk-csigner-mail, [data-bs-theme="light"] .qpi-trk-csigner-more { color: #6b7280; }
+[data-bs-theme="light"] .qpi-trk-btn-light, [data-bs-theme="light"] .qpi-trk-viewbtn {
+  background: #f5f3ff; border-color: #e0d9f7; color: #5b21b6;
+}
+[data-bs-theme="light"] .qpi-trk-btn-light:not(:disabled):hover,
+[data-bs-theme="light"] .qpi-trk-viewbtn:hover { background: #ece5fb; border-color: #c4b5fd; }
 
 /* ─── More-Options dropdown (portal'd into <body>; positioned via inline style) ─── */
 .qpi-moremenu {

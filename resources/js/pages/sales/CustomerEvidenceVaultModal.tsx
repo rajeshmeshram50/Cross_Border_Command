@@ -536,6 +536,12 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
 
   const tabMeta = TABS.find(t => t.key === tab)!;
 
+  /* Show the skeleton only on the FIRST load (live data not in yet and no
+   * explicit data prop). Re-fetches after that keep the current content
+   * visible — no skeleton flash. Until live data lands we'd otherwise show
+   * the demo fallback, which looked like real data swapping in. */
+  const showSkeleton = loading && !vaultLive && !data;
+
   return createPortal(
     <div className="cev-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <style>{CEV_CSS}</style>
@@ -585,6 +591,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
           </div>
         </div>
 
+        {showSkeleton ? <VaultSkeleton /> : (<>
         {/* ─── KPI STRIP — auto-scrolling ribbon. Drifts continuously,
              pauses on hover/touch, with manual prev/next arrows for
              accessible control. Edge fade-masks soften the boundary
@@ -704,6 +711,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                          onSendTradeDoc={(d) => { if (d.db_id) setSendDocIds([d.db_id]); }}
                          onRemindTradeDoc={handleRemind} />}
         </div>
+        </>)}
 
         {/* ─── FOOTER ─── */}
         <div className="cev-footer">
@@ -770,6 +778,31 @@ function KpiTile({ label, value, icon, gradient }: { label: string; value: numbe
   );
 }
 
+/* ─── Loading skeleton — shimmer placeholders for the whole vault body
+   (KPI ribbon, group cards, tabs, section banner, table). Shown on first
+   load instead of the demo fallback. */
+function VaultSkeleton() {
+  return (
+    <div className="cev-skel">
+      <div className="cev-skel-kpis">
+        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="cev-skel-kpi cev-sk" />)}
+      </div>
+      <div className="cev-skel-groups">
+        <div className="cev-skel-group cev-sk" />
+        <div className="cev-skel-group cev-sk" />
+      </div>
+      <div className="cev-skel-tabs">
+        {Array.from({ length: 3 }).map((_, i) => <div key={i} className="cev-skel-tab cev-sk" />)}
+      </div>
+      <div className="cev-skel-section cev-sk" />
+      <div className="cev-skel-table">
+        <div className="cev-skel-thead cev-sk" />
+        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="cev-skel-row cev-sk" />)}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Docs table — used by 4 of the 5 tabs. */
 function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc }: {
   rows: VaultDoc[];
@@ -786,8 +819,8 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
   return (
     <div className="cev-table-wrap">
       <div className="cev-table-scroll">
-      {/* Columns mirror the Edit Customer form's DD/KYC table:
-          Sr No · Auto Code · Document Name · Issuing Authority · Requirement · Actions. */}
+      {/* Columns: Sr No · Auto Code · Document Name · Issuing Authority ·
+          Requirement · Attachment · Actions. */}
       <table className="cev-table">
         <thead>
           <tr>
@@ -796,12 +829,13 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
             <th>Document Name</th>
             <th>{authorityLbl}</th>
             <th>Requirement</th>
+            <th>Attachment</th>
             <th style={{ width: 140 }}>Actions</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
-            <tr><td colSpan={6} className="cev-empty">No documents in this bucket yet.</td></tr>
+            <tr><td colSpan={7} className="cev-empty">No documents in this bucket yet.</td></tr>
           ) : rows.map((d, i) => (
             <tr key={`${d.doc_code ?? 'doc'}-${i}`}>
               <td>{i + 1}</td>
@@ -814,6 +848,13 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                 ) : (
                   <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
                 )}
+              </td>
+              <td>
+                {d.attachment_url ? (
+                  <a href={d.attachment_url} target="_blank" rel="noreferrer" className="cev-attach"><i className="ri-download-2-line" /> {d.attachment || 'View'}</a>
+                ) : d.attachment ? (
+                  <span className="cev-attach cev-attach-muted"><i className="ri-file-line" /> {d.attachment}</span>
+                ) : <span style={{ color: '#9ca3af' }}>—</span>}
               </td>
               <td>
                 <VaultRowActions doc={d} ownerType={ownerType} ownerId={ownerId} category={category} onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc} />
@@ -1550,6 +1591,23 @@ const CEV_CSS = `
 .cev-section-right { text-align: right; }
 .cev-section-count { font-size: 26px; font-weight: 800; color: #4c1d95; line-height: 1; }
 .cev-section-count-label { font-size: 9.5px; font-weight: 700; letter-spacing: .12em; color: #6d28d9; margin-top: 2px; }
+/* ─── Loading skeleton (shimmer) ─── */
+.cev-skel { flex: 1; min-height: 0; overflow: hidden; padding: 16px 22px; display: flex; flex-direction: column; gap: 16px; }
+.cev-sk { position: relative; overflow: hidden; background: #ece7fb; border-radius: 12px; }
+.cev-sk::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255,255,255,.7), transparent); animation: cevShimmer 1.3s ease-in-out infinite; }
+@keyframes cevShimmer { 100% { transform: translateX(100%); } }
+.cev-skel-kpis { display: flex; gap: 12px; }
+.cev-skel-kpi { flex: 1; height: 74px; }
+.cev-skel-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.cev-skel-group { height: 60px; }
+.cev-skel-tabs { display: flex; gap: 10px; }
+.cev-skel-tab { width: 190px; height: 40px; border-radius: 999px; }
+.cev-skel-section { height: 66px; }
+.cev-skel-table { display: flex; flex-direction: column; gap: 10px; }
+.cev-skel-thead { height: 38px; }
+.cev-skel-row { height: 46px; border-radius: 10px; }
+[data-bs-theme="dark"] .cev-sk { background: rgba(167,139,250,.12); }
+[data-bs-theme="dark"] .cev-sk::after { background: linear-gradient(90deg, transparent, rgba(255,255,255,.10), transparent); }
 
 .cev-filter-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .cev-filter { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; font-size: 11.5px; font-weight: 700; border: 1px solid transparent; }
@@ -1617,7 +1675,16 @@ const CEV_CSS = `
 .cev-table tbody tr:hover td { background: #faf7ff; }
 .cev-doc-name { font-weight: 700; color: #4c1d95; }
 .cev-mono { font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace; font-size: 12px; color: #1f2937; }
+.cev-date { font-size: 12px; color: #475569; white-space: nowrap; }
+.cev-attach { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: #6d28d9; text-decoration: none; padding: 4px 10px; border: 1px solid #ddd6fe; border-radius: 8px; background: #faf7ff; white-space: nowrap; transition: all .15s; }
+.cev-attach:hover { background: #ede9fe; border-color: #c4b5fd; color: #5b21b6; }
+.cev-attach i { font-size: 14px; }
+.cev-attach-muted { color: #94a3b8; background: #f8fafc; border-color: #e2e8f0; cursor: default; }
 .cev-empty { padding: 30px !important; text-align: center; color: #94a3b8; font-style: italic; }
+[data-bs-theme="dark"] .cev-date { color: #94a3b8; }
+[data-bs-theme="dark"] .cev-attach { color: #c4b5fd; background: rgba(124,58,237,.12); border-color: rgba(167,139,250,.30); }
+[data-bs-theme="dark"] .cev-attach:hover { background: rgba(124,58,237,.22); color: #ede9fe; }
+[data-bs-theme="dark"] .cev-attach-muted { color: #64748b; background: rgba(255,255,255,.03); border-color: rgba(255,255,255,.08); }
 .cev-muted { color: #94a3b8; font-style: italic; font-size: 12px; }
 
 .cev-date {

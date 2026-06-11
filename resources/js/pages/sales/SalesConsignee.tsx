@@ -807,10 +807,12 @@ const SCOPED_CSS = `
 .smcg-cstrip-add:active { transform: translateY(0); }
 .smcg-cstrip-add i { font-size: 16px; }
 [data-bs-theme="dark"] .smcg-cstrip {
-  /* Keep the emerald gradient ring; swap the padding-box fill for deep teal. */
+  /* Keep the emerald gradient ring; deep, SUBDUED teal fill (the previous
+     fill ran up to a bright #14a78a which read too loud for a dark theme —
+     now it stays a deep teal, cohesive with the cards + table). */
   border: 1px solid transparent;
   background:
-    linear-gradient(110deg, #0d2f25 0%, #114a3a 35%, #0f6b54 70%, #138671 100%) padding-box,
+    linear-gradient(110deg, #06231c 0%, #0a3528 40%, #0d4636 75%, #0f5847 100%) padding-box,
     linear-gradient(125deg, #059669 0%, #10b981 22%, #14b8a6 48%, #2dd4bf 76%, #5eead4 100%) border-box;
   box-shadow:
     0 1px 0 rgba(255,255,255,0.05) inset,
@@ -1531,12 +1533,13 @@ const SCOPED_CSS = `
    teal accents so the gradient is visible (was too close to pure
    black before, killed the gradient feel). */
 [data-bs-theme="dark"] .smcg-wdh-card {
-  background: linear-gradient(110deg, #0d2f25 0%, #114a3a 30%, #0f6b54 60%, #138671 85%, #14a78a 100%);
-  border-color: rgba(94,234,212,0.35);
+  /* Same deep, subdued teal as the hero strip so the two read as one block. */
+  background: linear-gradient(110deg, #06231c 0%, #0a3528 35%, #0d4636 70%, #0f5847 100%);
+  border-color: rgba(94,234,212,0.30);
   box-shadow:
     0 2px 0 rgba(255,255,255,0.05) inset,
     0 4px 16px rgba(0,0,0,0.35),
-    0 1px 3px rgba(45,212,191,0.12);
+    0 1px 3px rgba(45,212,191,0.10);
 }
 [data-bs-theme="dark"] .smcg-wdh-toggle-row { background: transparent; }
 [data-bs-theme="dark"] .smcg-wdh-toggle-row:hover { background: rgba(255,255,255,0.06); }
@@ -1560,7 +1563,8 @@ const SCOPED_CSS = `
    look by using a slightly translucent dark surface (lets the
    banner gradient peek through) with crisp readable text. */
 [data-bs-theme="dark"] .smcg-step {
-  background: rgba(15, 23, 33, 0.78);
+  /* Teal-tinted dark (was a cool slate-blue that clashed with the teal banner). */
+  background: rgba(5, 28, 22, 0.72);
   border-color: rgba(16,185,129,0.30);
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);

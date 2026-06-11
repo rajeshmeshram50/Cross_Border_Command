@@ -655,6 +655,9 @@ const SCOPED_CSS = `
 /* ── Top card ── */
 .pv2-top { padding: 0; }
 .pv2-top-grid {
+  /* Shared hero height — image (left) and info column (right) both pin to
+     this so they end at the same baseline. Tune here to change both. */
+  --pv2-hero-h: 400px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
   gap: 24px;
@@ -666,8 +669,8 @@ const SCOPED_CSS = `
 .pv2-thumbs {
   display: flex; flex-direction: column; gap: 10px;
   width: 110px;
-  max-height: 380px;
-  overflow-y: scroll;
+  max-height: var(--pv2-hero-h, 400px);
+  overflow-y: auto;
   overflow-x: hidden;
   padding-right: 4px;
   scrollbar-width: thin;
@@ -695,8 +698,10 @@ const SCOPED_CSS = `
 .pv2-thumb-empty { color: #94a3b8; font-size: 22px; font-weight: 800; }
 
 .pv2-main-image {
-  aspect-ratio: 4 / 3;
-  max-height: 380px;
+  /* Fixed hero height — the right-side info column is pinned to this same
+     value (--pv2-hero-h) so the two columns end at the same baseline and
+     the product info is arranged within the image's height. */
+  height: var(--pv2-hero-h, 400px);
   border-radius: 12px; overflow: hidden;
   border: 1.5px solid #e2e8f0;
   background: #f8fafc;
@@ -707,7 +712,13 @@ const SCOPED_CSS = `
 .pv2-main-empty { font-size: 80px; font-weight: 800; color: #c4b5fd; }
 
 /* Head row */
-.pv2-right { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.pv2-right {
+  display: flex; flex-direction: column; gap: 14px; min-width: 0;
+  /* Same height as the hero image so the info column ends at the same
+     baseline; the info-grid below flexes to fill the leftover space. */
+  height: var(--pv2-hero-h, 400px);
+  min-height: 0;
+}
 .pv2-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .pv2-head-text { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .pv2-title {
@@ -780,10 +791,13 @@ const SCOPED_CSS = `
   gap: 20px;
   padding-top: 12px;
   border-top: 1px solid #e2e8f0;
+  /* Fill the space under the head block; no scrollbars — the rows are
+     spaced to fit the hero height naturally. */
+  flex: 1; min-height: 0;
 }
 .pv2-info-block {
   display: flex; flex-direction: column;
-  max-height: 380px;
+  min-height: 0; height: 100%;
   min-width: 0;
 }
 .pv2-info-heading {
@@ -793,32 +807,33 @@ const SCOPED_CSS = `
 }
 .pv2-info-heading-sub { margin-top: 14px; }
 .pv2-info-body {
-  display: flex; flex-direction: column; gap: 4px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
-  padding-right: 4px;
+  display: flex; flex-direction: column; gap: 0;
+  overflow: visible;
 }
-.pv2-info-body::-webkit-scrollbar { width: 5px; }
-.pv2-info-body::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
-.pv2-info-body::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+/* Each label : value pair sits on a row with a faint dotted separator so
+   values line up in a clean right-hand column and the eye can track
+   across long rows. */
 .pv2-info-row {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
   font-size: 12.5px;
-  padding: 1px 0;
+  padding: 4px 0;
+  border-bottom: 1px dashed #eef2f7;
 }
-.pv2-info-key { color: #475569; font-weight: 500; }
+.pv2-info-row:last-child { border-bottom: none; }
+.pv2-info-key { color: #64748b; font-weight: 500; flex-shrink: 0; }
 .pv2-info-val {
-  color: #94a3b8; font-weight: 500;
+  color: #1e293b; font-weight: 700;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  max-width: 55%;
+  max-width: 60%;
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 .pv2-info-val-success { color: #16a34a; font-weight: 700; }
 .pv2-info-val-danger  { color: #dc2626; font-weight: 700; }
 .pv2-info-divider { height: 1px; background: #e2e8f0; margin: 6px 0; }
+.pv2-total-line { border-bottom: none; }
 .pv2-total-line .pv2-info-key { font-weight: 800; color: #1e293b; }
-.pv2-total-strong { color: #5b21b6; font-size: 15px; font-weight: 800; }
+.pv2-total-strong { color: #5b21b6; font-size: 15px; font-weight: 800; text-align: right; }
 
 /* ── Bottom row ── */
 .pv2-bottom {
@@ -984,6 +999,11 @@ const SCOPED_CSS = `
 @media (max-width: 1200px) {
   .pv2-top-grid { grid-template-columns: 1fr; }
   .pv2-bottom   { grid-template-columns: 1fr; }
+  /* Stacked layout — drop the equal-height pin so the info column can grow
+     naturally below the image instead of being clipped/scrolled. */
+  .pv2-right     { height: auto; }
+  .pv2-info-grid { overflow: visible; flex: none; }
+  .pv2-info-block { height: auto; }
 }
 @media (max-width: 720px) {
   .pv2-info-grid { grid-template-columns: 1fr; }
@@ -1027,8 +1047,9 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .pv2-info-grid { border-top-color: rgba(255,255,255,.08); }
 [data-bs-theme="dark"] .pv2-info-heading { color: #c4b5fd; }
-[data-bs-theme="dark"] .pv2-info-row .pv2-info-key { color: #adb5bd; font-weight: 500; }
-[data-bs-theme="dark"] .pv2-info-row .pv2-info-val { color: #a89fc7; }
+[data-bs-theme="dark"] .pv2-info-row { border-bottom-color: rgba(255,255,255,.06); }
+[data-bs-theme="dark"] .pv2-info-row .pv2-info-key { color: #94a3b8; font-weight: 500; }
+[data-bs-theme="dark"] .pv2-info-row .pv2-info-val { color: #f1f5f9; font-weight: 700; }
 [data-bs-theme="dark"] .pv2-info-divider { background: rgba(255,255,255,.08); }
 [data-bs-theme="dark"] .pv2-total-line .pv2-info-key { color: #ede9fe; }
 [data-bs-theme="dark"] .pv2-total-strong { color: #c4b5fd; }
