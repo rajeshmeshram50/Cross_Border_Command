@@ -202,6 +202,16 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
   // Reset to the first page whenever the modal (re)opens.
   useEffect(() => { if (open) setPage(1); }, [open]);
 
+  // Body scroll lock — freeze the page behind the modal so the background
+  // doesn't scroll under the overlay while the directory is open. Same idiom
+  // as AddCustomerModal: stash the prior overflow and restore it on close.
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [open]);
+
   /* Hide products that are already mapped — prevents 422 on save. */
   const mappedIds = useMemo(() => new Set(rows.map(r => r.product_id)), [rows]);
   const availableProducts = useMemo(
@@ -529,8 +539,8 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
           )}
         </div>
 
-        {/* Footer — left status text + right Close button. Pinned below
-            the body so it stays visible while the table scrolls. */}
+        {/* Footer — status text only. The redundant "Close" button was
+            removed; the header ✕ is the single dismiss control. */}
         <div className="pdm-foot">
           <div className="pdm-foot-status">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -544,7 +554,6 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                 ? 'No products mapped yet for this opportunity'
                 : 'Showing all products for this opportunity'}
           </div>
-          <button className="pdm-foot-close" onClick={onClose}>Close</button>
         </div>
       </div>
 

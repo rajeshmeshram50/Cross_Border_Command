@@ -161,7 +161,13 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
                 <th>DOCUMENT CATEGORY NAME</th>
               </tr></thead>
               <tbody>
-                {loading && <tr><td colSpan={3} className="clm-status">Loading…</td></tr>}
+                {loading && Array.from({ length: Math.max(4, slice.length || 5) }).map((_, i) => (
+                  <tr key={`skel-${i}`}>
+                    <td className="clm-skel-cell"><span className="clm-skel" style={{ width: 24, margin: '0 auto' }} /></td>
+                    <td className="clm-skel-cell"><span className="clm-skel clm-skel-pill" style={{ width: 80, margin: '0 auto' }} /></td>
+                    <td className="clm-skel-cell"><span className="clm-skel" style={{ width: '60%' }} /></td>
+                  </tr>
+                ))}
                 {!loading && slice.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
@@ -280,7 +286,16 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {loading && <tr><td colSpan={6} className="clm-status">Loading…</td></tr>}
+                {loading && Array.from({ length: Math.max(4, slice.length || 5) }).map((_, i) => (
+                  <tr key={`skel-${i}`}>
+                    <td className="clm-skel-cell"><span className="clm-skel" style={{ width: 24, margin: '0 auto' }} /></td>
+                    <td className="clm-skel-cell"><span className="clm-skel clm-skel-pill" style={{ width: 64, margin: '0 auto' }} /></td>
+                    <td className="clm-skel-cell"><span className="clm-skel clm-skel-pill" style={{ width: 90, margin: '0 auto' }} /></td>
+                    <td className="clm-skel-cell"><span className="clm-skel" style={{ width: '70%' }} /></td>
+                    <td className="clm-skel-cell"><span className="clm-skel" style={{ width: '85%' }} /></td>
+                    <td className="clm-skel-cell"><span className="clm-skel" style={{ width: 60, margin: '0 auto' }} /></td>
+                  </tr>
+                ))}
                 {!loading && slice.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
