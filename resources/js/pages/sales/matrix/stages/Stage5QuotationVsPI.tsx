@@ -8,6 +8,7 @@ import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 import Tooltip from '../../../../components/ui/Tooltip';
 import SalesDocSendForSignatureModal from './SalesDocSendForSignatureModal';
+import { SigningTrackerModal } from '../../SigningTrackerModal';
 import ConvertToPiModal, { ConversionBlockedModal } from '../../ConvertToPiModal';
 import {
   CreateQuotationModal,
@@ -97,7 +98,7 @@ const ccyCode = (c: string | null): string => {
   return code || '—';
 };
 
-export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead, onPiChange }: StageProps) {
+export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead, onPiChange, mandatoryIncomplete = false }: StageProps) {
   const toast = useToast();
   const confirm = useConfirm();
   const leadId = header.leadId ?? null;
@@ -133,6 +134,9 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     { kind: DocType; id: number; code: string | null; customerName: string | null } | null
   >(null);
   const [sigByRow, setSigByRow] = useState<Record<string, SigStatusRow>>({});
+  // Signing Tracker (shared modal) target — opened from the history icon on any
+  // row that has a signature request (sent or signed).
+  const [trackerFor, setTrackerFor] = useState<{ sigId: number; code: string } | null>(null);
 
   const [createQtOpen, setCreateQtOpen]     = useState(false);
   const [createPiOpen, setCreatePiOpen]     = useState(false);
@@ -492,37 +496,13 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   /* ── Mandatory-doc gate for Create PI ──────────────────────────────
    * A PI can't be created until every MANDATORY KYC / Due-Diligence /
    * Trade-Licence doc for BOTH the customer and the consignee is uploaded.
-   * Trade documents are intentionally EXCLUDED — their upload step (the
-   * Evidence Vault / Stage 3) was removed from the customer/consignee form,
-   * so they can't gate PI creation. The backend gate matches this. */
-  const [mandatoryIncomplete, setMandatoryIncomplete] = useState(false);
-  useEffect(() => {
-    const custId = header.customerId ?? null;
-    const consId = header.consigneeId ?? null;
-    if (!custId && !consId) { setMandatoryIncomplete(false); return; }
-    let cancelled = false;
-    /* A party's Standard Documents are complete when every core (KYC / DD /
-     * Licence) doc has an upload on file — i.e. core_verified_signed reaches
-     * core_total_documents. These are the SAME figures the left "Standard
-     * Documents" panel renders as "X of Y documents / 100%", so the Create PI
-     * button enables exactly when that panel hits 100% for both parties. */
-    const isIncomplete = (d: any): boolean => {
-      const total = Number(d?.core_total_documents ?? d?.total_documents ?? 0);
-      const done  = Number(d?.core_verified_signed ?? d?.verified_signed ?? 0);
-      return total > 0 && done < total;
-    };
-    (async () => {
-      try {
-        const calls: Promise<any>[] = [];
-        if (custId) calls.push(api.get(`/segment-uploads/customer/${custId}/vault`));
-        if (consId) calls.push(api.get(`/segment-uploads/consignee/${consId}/vault`));
-        const res = await Promise.allSettled(calls);
-        if (cancelled) return;
-        setMandatoryIncomplete(res.some(r => r.status === 'fulfilled' && isIncomplete((r.value as any).data?.data)));
-      } catch { /* best-effort gate; backend still enforces on submit */ }
-    })();
-    return () => { cancelled = true; };
-  }, [header.customerId, header.consigneeId, pis.length, quotations.length]);
+   * `mandatoryIncomplete` is derived by the parent (SalesMatrixDetail) from the
+   * SAME vault tallies it already fetches for the left "Customer / Consignee
+   * Details" cards, then passed in as a prop — so this stage no longer makes
+   * its own /segment-uploads/{party}/vault call (it was a duplicate of the
+   * parent's, hence the repeated `vault` requests in the network tab). Trade
+   * documents are intentionally EXCLUDED from this gate; the backend enforces
+   * the same rule on submit. */
 
   const colSpan = docType === 'quotation' ? 7 : 9;
 
@@ -764,6 +744,20 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               </button>
                             );
                           })()}
+                          {/* Signing Tracker — appears once a document has been
+                              sent for signature (sent or signed). Opens the
+                              shared activity-timeline modal. */}
+                          {(() => {
+                            const sig = sigByRow[`${docType}:${r.id}`];
+                            if (!sig?.id) return null;
+                            return (
+                              <Tooltip label="Signing activity tracker">
+                                <button type="button" className="s5-icn" onClick={() => setTrackerFor({ sigId: sig.id, code: r.code ?? `${titleCase(docType)} #${r.id}` })} disabled={anyActing}>
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+                                </button>
+                              </Tooltip>
+                            );
+                          })()}
                           <span className="s5-act-sep" />
                           {/* Email button shown for BOTH Quotations and PIs. It
                               stays available after every send (no one-time hide)
@@ -907,6 +901,15 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
         />
       )}
 
+      {/* Signing activity tracker (shared modal). */}
+      {trackerFor && (
+        <SigningTrackerModal
+          sigId={trackerFor.sigId}
+          code={trackerFor.code}
+          onClose={() => setTrackerFor(null)}
+        />
+      )}
+
       {/* Send for Signature (Zoho Sign) — Quotation / PI */}
       {sigSendFor && leadId && (
         <SalesDocSendForSignatureModal
@@ -927,7 +930,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
         fromQuotation={convertTarget?.code ?? ''}
         newPiCode={convertPreviewCode}
         piDate={new Date().toLocaleDateString('en-GB')}
-        quotationValue={`${convertTarget?.currency || '$'} —`}
+        quotationValue={convertTarget ? `${ccyCode(convertTarget.currency)} ${fmtNum(convertTarget.grand_total)}` : '—'}
         converting={!!convertTarget?.id && actingId === convertTarget.id}
         onCancel={() => { if (actingId === null) setConvertTarget(null); }}
         onConfirm={() => void confirmConvert()}

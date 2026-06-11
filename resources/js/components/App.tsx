@@ -104,6 +104,7 @@ import EmployeePermissions from '../pages/employee/EmployeePermissions';
 import EmployeeProfile from '../pages/employee/EmployeeProfile';
 import PublicOnboarding from '../pages/PublicOnboarding';
 import ClockIn from '../pages/ClockIn';
+import ModuleStubPage from '../pages/ModuleStubPage';
 import MyTeam from '../pages/MyTeam';
 import Inbox from '../pages/Inbox';
 import Gmail from '../pages/Gmail';
@@ -153,6 +154,14 @@ const getPagePath = (page: string, data?: any): string => {
     case 'plan-blocked': return '/plan-blocked';
     case 'payments': return '/payments';
     case 'clock-in': return '/clock-in';
+    // New top-level header modules. P2P reuses the existing Sales P2P
+    // Summary page; the other three render the shared permission-gated stub
+    // until their real pages ship.
+    case 'p2p': return '/p2p';
+    case 'credentials-vault': return '/credentials-vault';
+    case 'project-navigator': return '/project-navigator';
+    case 'gts': return '/gts';
+    case 'inventory': return '/inventory';
     case 'permissions': return '/permissions';
     case 'settings': return '/settings';
     case 'profile': return '/profile';
@@ -715,6 +724,14 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/sales/matrix/:oppId/stage/:stage" element={<SalesMatrixDetail />} />
               <Route path="/sales/qpi" element={<SalesQPI />} />
               <Route path="/sales/p2p-summary" element={<SalesP2PSummary />} />
+              {/* New top-level header modules. P2P reuses the Sales P2P
+                  Summary page; the rest render the shared permission-gated
+                  stub until their real pages are built. */}
+              <Route path="/p2p" element={<SalesP2PSummary />} />
+              <Route path="/credentials-vault" element={<ModuleStubPage />} />
+              <Route path="/project-navigator" element={<ModuleStubPage />} />
+              <Route path="/gts" element={<ModuleStubPage />} />
+              <Route path="/inventory" element={<ModuleStubPage />} />
               <Route path="/products" element={<Products />} />
               <Route path="/products/:id" element={<ProductView />} />
               <Route path="/vendors" element={<Vendors />} />

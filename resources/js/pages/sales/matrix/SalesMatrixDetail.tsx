@@ -459,10 +459,13 @@ export default function SalesMatrixDetail() {
      * count visible while the new fetch is in flight. */
     setCustTally({ total: 0, verified: 0, loading: true });
     let cancelled = false;
-    /* 8s timeout — beyond that the vault is probably stuck (slow query,
-     * server unresponsive). Falling into the catch puts the panel in
-     * error state with a retry CTA instead of showing "Loading…" forever. */
-    api.get<VaultResponse>(`/segment-uploads/customer/${cid}/vault`, { timeout: 8000 })
+    /* No per-request timeout — a cold hard-refresh fires a big burst of API
+     * calls and the single-threaded dev server processes them serially, so this
+     * heavier vault query can sit queued for several seconds. A fixed timeout
+     * (8s) was cutting it off mid-flight (axios aborts → DevTools "(canceled)"),
+     * leaving the card in error state. We rely on the request completing; the
+     * catch still handles a genuine network/server failure. */
+    api.get<VaultResponse>(`/segment-uploads/customer/${cid}/vault`)
       .then(res => {
         if (cancelled) return;
         const d = res.data?.data;
@@ -476,43 +479,22 @@ export default function SalesMatrixDetail() {
   }, [serverHeader.customerId, custRefreshTick]);
 
   useEffect(() => {
-    const custId = serverHeader.customerId;
-    if (!custId) { setConsTally(null); return; }
+    const cid = serverHeader.consigneeId;
+    if (!cid) { setConsTally(null); return; }
     setConsTally({ total: 0, verified: 0, loading: true });
     let cancelled = false;
-    /* The Consignee Details count aggregates the document tally across
-     * EVERY consignee under this lead's customer — not just the lead's
-     * mapped consignee, and it shows as soon as a customer is mapped (even
-     * before any consignee exists). List them, fetch each one's vault, and
-     * sum the totals / verified counts. */
-    api.get('/consignees', { params: { customer_id: custId }, timeout: 8000 })
-      .then(async r => {
-        const rows: Record<string, unknown>[] = Array.isArray(r.data?.data) ? r.data.data : [];
-        const ids = rows
-          .map(row => (typeof row.db_id === 'number' ? row.db_id : null))
-          .filter((x): x is number => x != null);
-        // No consignees under this customer yet → an honest empty tally
-        // (0 of 0) rather than an error state.
-        if (ids.length === 0) { if (!cancelled) setConsTally({ total: 0, verified: 0 }); return; }
-        const vaults = await Promise.allSettled(
-          ids.map(id => api.get<VaultResponse>(`/segment-uploads/consignee/${id}/vault`, { timeout: 8000 })),
-        );
+    api.get<VaultResponse>(`/segment-uploads/consignee/${cid}/vault`)
+      .then(res => {
         if (cancelled) return;
-        let total = 0, verified = 0;
-        let anyOk = false;
-        vaults.forEach(v => {
-          if (v.status !== 'fulfilled') return;
-          anyOk = true;
-          const d = v.value.data?.data;
-          total    += Number(d?.core_total_documents ?? d?.total_documents ?? 0);
-          verified += Number(d?.core_verified_signed ?? d?.verified_signed ?? 0);
+        const d = res.data?.data;
+        setConsTally({
+          total:    Number(d?.core_total_documents ?? d?.total_documents ?? 0),
+          verified: Number(d?.core_verified_signed ?? d?.verified_signed ?? 0),
         });
-        if (!anyOk) { setConsTally({ total: 0, verified: 0, error: true }); return; }
-        setConsTally({ total, verified });
       })
       .catch(() => { if (!cancelled) setConsTally({ total: 0, verified: 0, error: true }); });
     return () => { cancelled = true; };
-  }, [serverHeader.customerId, serverHeader.consigneeId, consRefreshTick]);
+  }, [serverHeader.consigneeId, consRefreshTick]);
 
   /* Applicable agreements for this lead → drives the Segment Details
    * card counts + powers LeadAgreementSendModal. Refetched whenever
@@ -526,7 +508,7 @@ export default function SalesMatrixDetail() {
   useEffect(() => {
     if (!resolvedLeadId) { setAgreementApplicable(null); return; }
     let cancelled = false;
-    api.get(`/clm/leads/${resolvedLeadId}/agreement-applicable`, { timeout: 8000 })
+    api.get(`/clm/leads/${resolvedLeadId}/agreement-applicable`)
       .then(res => {
         if (cancelled) return;
         setAgreementApplicable((res.data?.data ?? null) as AgreementApplicablePayload | null);
@@ -558,7 +540,10 @@ export default function SalesMatrixDetail() {
     let agrTotal = 0, agrDone = 0, tdTotal = 0, tdDone = 0;
     for (const s of segs) {
       for (const a of s.agreements) {
-        if (buyerEqualsConsignee && partyBucket(a.party) !== 'buyer') continue;
+        // buyer == consignee → keep buyer-only AND buyer+consignee "both"
+        // agreements (one signature each); only pure consignee-only rows are
+        // dropped as mirrors. Must match activeAgreements in the send popup.
+        if (buyerEqualsConsignee && partyBucket(a.party) === 'consignee') continue;
         agrTotal++;
         if (a.signature_request?.status === 'completed') agrDone++;
       }
@@ -566,12 +551,12 @@ export default function SalesMatrixDetail() {
       // (its signature request reached completed) — same way agreements count
       // a completed e-signature.
       for (const td of s.trade_documents) {
-        // When buyer == consignee the popup lists ONLY buyer-only trade docs
-        // (consignee-only / both rows are redundant with a single party — see
-        // tdBuckets in LeadAgreementSendModal). The card count must exclude the
-        // same rows, otherwise it double-counts the mirrored consignee docs and
-        // shows e.g. "1 of 5" while the popup lists 3.
-        if (buyerEqualsConsignee && !(td.for_buyer && !td.for_consignee)) continue;
+        // When buyer == consignee the popup lists every trade doc that involves
+        // the buyer (buyer-only AND buyer+consignee "both" docs) — only pure
+        // consignee-only mirror copies are excluded (see tdBuckets.all in
+        // LeadAgreementSendModal). The card count must match: keep anything with
+        // for_buyer, drop pure consignee-only, so a "both" doc still counts once.
+        if (buyerEqualsConsignee && !td.for_buyer) continue;
         tdTotal++;
         if (td.status === 'Verified' || td.signature_request?.status === 'completed') tdDone++;
       }
@@ -1118,6 +1103,14 @@ export default function SalesMatrixDetail() {
             onPrev={goPrev}
             onNext={goNext}
             reloadLead={reloadLead}
+            /* Create-PI gate for Stage 5, derived from the vault tallies this
+               parent already fetches (custTally / consTally) — saves Stage 5
+               from re-calling /segment-uploads/{party}/vault. A party with
+               total>0 and verified<total still has Standard Documents pending. */
+            mandatoryIncomplete={
+              (!!custTally && custTally.total > 0 && custTally.verified < custTally.total) ||
+              (!!consTally && consTally.total > 0 && consTally.verified < consTally.total)
+            }
             // Stage 5 calls this after a PI is created or edited so
             // the Segment Details card unlocks immediately instead of
             // waiting for the user to click Save & Next (the only

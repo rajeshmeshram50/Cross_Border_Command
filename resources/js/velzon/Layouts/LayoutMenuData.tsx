@@ -36,6 +36,11 @@ const iconMap: Record<string, string> = {
   Package: "ri-box-3-line",
   Store:   "ri-store-2-line",
   FileText: "ri-file-text-line",
+  KeyRound: "ri-key-2-line",
+  Compass:  "ri-compass-3-line",
+  ShoppingBag: "ri-shopping-bag-3-line",
+  Globe:    "ri-global-line",
+  Boxes:    "ri-stack-line",
 };
 
 const resolveIcon = (name?: string) => (name && iconMap[name]) || "ri-circle-line";
@@ -56,6 +61,13 @@ const slugToPath = (slug: string): string => {
     case "hr":          return "/hr";
     case "products":    return "/products";
     case "vendors":     return "/vendors";
+    // New top-level header modules. P2P reuses the existing Sales P2P
+    // Summary page; the rest render the shared permission-gated stub.
+    case "p2p":               return "/p2p";
+    case "credentials-vault": return "/credentials-vault";
+    case "project-navigator": return "/project-navigator";
+    case "gts":               return "/gts";
+    case "inventory":         return "/inventory";
     default:            return `/${slug}`;
   }
 };

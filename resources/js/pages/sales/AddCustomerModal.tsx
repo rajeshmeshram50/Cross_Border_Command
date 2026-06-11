@@ -3,7 +3,7 @@ import api from '../../api';
 import { MasterSelect, MasterDatePicker, MasterMultiSelect } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
-import { Shimmer } from '../../components/ui/Shimmer';
+import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import { downloadFile } from '../../utils/downloadFile';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { useToast } from '../../contexts/ToastContext';
@@ -583,6 +583,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   type SegmentDocs = { kyc: SegDocRow[]; dd: SegDocRow[]; tl: SegDocRow[]; td: SegDocRow[]; qc: SegDocRow[] };
   const EMPTY_SEG_DOCS: SegmentDocs = { kyc:[], dd:[], tl:[], td:[], qc:[] };
   const [segmentDocs, setSegmentDocs] = useState<SegmentDocs>(EMPTY_SEG_DOCS);
+  /* True while the Stage 2 segment-rule document catalog is being fetched from
+   * the DB (CLM segment-rules + trade-doc-library). Drives the table shimmer so
+   * the Company-DD / Owner-KYC / Trade-Licence grids don't flash empty while the
+   * call is in flight (it fires after hydration, so showShimmer is already off). */
+  const [segmentDocsLoading, setSegmentDocsLoading] = useState(false);
 
   /* Per-row file uploads against the segment-rule reference rows in
    * Stage 2 (Company DD / Owner KYC / Trade Licence). Key shape is
@@ -975,13 +980,14 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     if (stage < 2 && maxStage < 2) return;
 
     const names = (form.coSeg ?? []).filter(Boolean);
-    if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setTdDocs([]); return; }
+    if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setTdDocs([]); setSegmentDocsLoading(false); return; }
     const segRows = names
       .map(n => masters.segments.find(s => s.name === n))
       .filter((r): r is { id:number; name:string } => !!r);
-    if (segRows.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setTdDocs([]); return; }
+    if (segRows.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setTdDocs([]); setSegmentDocsLoading(false); return; }
 
     let cancelled = false;
+    setSegmentDocsLoading(true);
     Promise.all([
       Promise.all(
         segRows.map(s =>
@@ -1041,7 +1047,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         sent: false,
         status: 'idle' as TdSigStatus,
       })));
-    });
+    }).finally(() => { if (!cancelled) setSegmentDocsLoading(false); });
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1701,6 +1707,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               onAdd={(s) => { setEditDocId(null); setEditOwnerId(null); setDocModal({ open: true, sub: s }); }}
               docs={kycDocs}
               owners={kycOwners}
+              loading={segmentDocsLoading}
               segmentName={(form.coSeg ?? []).join(', ')}
               segmentDocs={segmentDocs}
               segmentRefUploads={segmentRefUploads}
@@ -2498,11 +2505,14 @@ function SegmentRefRowActions({ refKey, docName, uploads, setUploads, persistUpl
 }
 
 /* ───── Stage 2 — KYC sub-tabs + doc table ───── */
-function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs, owners, segmentName, segmentDocs, segmentRefUploads, setSegmentRefUploads, persistSegmentRefUpload, customerSaved, onEditDoc, onDeleteDoc, onEditOwner, onDeleteOwner }:
+function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs, owners, loading, segmentName, segmentDocs, segmentRefUploads, setSegmentRefUploads, persistSegmentRefUpload, customerSaved, onEditDoc, onDeleteDoc, onEditOwner, onDeleteOwner }:
   { sub: KycSubTab; setSub: (s: KycSubTab) => void;
     page: Record<KycSubTab, number>; setPage: (s: KycSubTab, p: number) => void;
     search: string; setSearch: (s: string) => void;
     onAdd: (s: KycSubTab) => void;
+    /** True while the segment-rule document catalog is loading from the DB —
+     *  drives the in-table shimmer. */
+    loading?: boolean;
     /** Live KYC data fetched on edit. `docs` covers both DD + TL — filter by `kind`.  */
     docs: { id:number; kind:'dd'|'tl'; name:string; license_number?:string|null; issuing_authority?:string|null; issue_date?:string|null; expiry_date?:string|null; attachment_path?:string|null; attachment_url?:string|null; attachment_name?:string|null; status?:string }[];
     owners: { id:number; owner_name:string; designation?:string|null; official_email?:string|null; phone_number?:string|null; id_proof_path?:string|null; id_proof_url?:string|null; address_proof_path?:string|null; address_proof_url?:string|null; photograph_path?:string|null; photograph_url?:string|null; status?:string }[];
@@ -2652,7 +2662,27 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
 
         <div className="acm-section-body acm-section-body-table">
           <div className="acm-table-wrap">
-            {showSegmentRef ? (
+            {loading ? (
+              /* Segment-rule catalog still loading from the DB — show a table
+                 shimmer (real headers + shimmer rows) so the grid doesn't flash
+                 empty while the call is in flight. */
+              <table className="acm-table">
+                <thead><tr>
+                  {isOwners ? (
+                    <>
+                      <th>Sr No</th><th>Owner Name</th><th>Designation</th><th>Email</th><th>Phone</th>
+                      <th>ID Proof</th><th>Address Proof</th><th>Photograph</th><th>Actions</th>
+                    </>
+                  ) : (
+                    <>
+                      <th>Sr No</th><th>Auto Code</th><th>Document Name</th>
+                      <th>Issuing Authority</th><th>Requirement</th><th>Actions</th>
+                    </>
+                  )}
+                </tr></thead>
+                <tbody><ShimmerTableRows rows={4} cols={isOwners ? 9 : 6} /></tbody>
+              </table>
+            ) : showSegmentRef ? (
               /* Segment-rule reference table — shared layout for
                  Company DD, Owner KYC, and Trade Licence sub-tabs.
                  Rows come from the segment's configured rule (or the

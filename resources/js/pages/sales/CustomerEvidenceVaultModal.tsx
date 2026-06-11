@@ -8,6 +8,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { signatureRequestsToVaultDocs, mergeTradeDocuments, type SigReqRow } from '../../utils/vaultSignatureRows';
 import { downloadFile } from '../../utils/downloadFile';
 import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
+import { SigningTrackerModal } from './SigningTrackerModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Customer Evidence Vault — read-only compliance archive
@@ -819,6 +820,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
   return (
     <div className="cev-table-wrap">
       <div className="cev-table-scroll">
+
       {/* Columns: Sr No · Auto Code · Document Name · Issuing Authority ·
           Requirement · Attachment · Actions. */}
       <table className="cev-table">
@@ -885,6 +887,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [reminding, setReminding] = useState(false);
+  const [trackerOpen, setTrackerOpen] = useState(false);
   const canViewOrDownload = !!doc.attachment_url;
   const canReupload = !!ownerId && !!doc.doc_code;
   // Signing lifecycle for Trade Document rows:
@@ -897,6 +900,9 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   const isTradeDoc   = category === 'td' && !!ownerId && !!doc.db_id;
   const canSend   = isTradeDoc && !!onSendTradeDoc && !isSigned && !isInProgress;
   const canRemind = isTradeDoc && !!onRemindTradeDoc && isInProgress && !!doc.signature_request_id;
+  // Signing activity tracker — available once a document has been sent for
+  // signature (sent or signed), keyed off its signature request id.
+  const canTrack  = !!doc.signature_request_id;
 
   const remind = async () => {
     if (!onRemindTradeDoc) return;
@@ -981,6 +987,31 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           </button>
         </Tooltip>
+      )}
+      {canTrack && (
+        <Tooltip label="Signing activity tracker">
+          <button
+            type="button"
+            onClick={() => setTrackerOpen(true)}
+            className="cev-row-act cev-row-act-track"
+            aria-label="Signing activity tracker"
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 28, height: 28, borderRadius: 6,
+              background: '#cffafe', color: '#0e7490', border: '1px solid #67e8f9',
+              cursor: 'pointer',
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+          </button>
+        </Tooltip>
+      )}
+      {trackerOpen && doc.signature_request_id && (
+        <SigningTrackerModal
+          sigId={doc.signature_request_id}
+          code={doc.doc_code || doc.name || `Doc #${doc.db_id ?? ''}`}
+          onClose={() => setTrackerOpen(false)}
+        />
       )}
       <Tooltip label={canViewOrDownload ? `View ${doc.attachment}` : 'No attachment yet'}>
         <a

@@ -20,11 +20,19 @@ class ModuleSeeder extends Seeder
             ['name' => 'Payments',    'slug' => 'payments',    'icon' => 'IndianRupee', 'sort_order' => 6,  'is_default' => false, 'description' => 'Payment transactions'],
             ['name' => 'Permissions', 'slug' => 'permissions', 'icon' => 'ShieldCheck', 'sort_order' => 7,  'is_default' => false, 'description' => 'Access control'],
             ['name' => 'Master',      'slug' => 'master',      'icon' => 'Database',    'sort_order' => 8,  'is_default' => false, 'description' => 'Master data control center'],
-            ['name' => 'HR',          'slug' => 'hr',          'icon' => 'Users',       'sort_order' => 9,  'is_default' => false, 'description' => 'Human resources, payroll, attendance & policies'],
+            ['name' => 'HRMS',        'slug' => 'hr',          'icon' => 'Users',       'sort_order' => 9,  'is_default' => false, 'description' => 'Human resources, payroll, attendance & policies'],
             ['name' => 'Sales Matrix','slug' => 'sales',       'icon' => 'TrendingUp',  'sort_order' => 10, 'is_default' => false, 'description' => 'Sales insights, customer masters & opportunity operations'],
-            ['name' => 'Central CLM', 'slug' => 'clm',         'icon' => 'FileText',    'sort_order' => 11, 'is_default' => false, 'description' => 'Contract Lifecycle Management — operations, masters & analytics'],
+            ['name' => 'CLM',         'slug' => 'clm',         'icon' => 'FileText',    'sort_order' => 11, 'is_default' => false, 'description' => 'Contract Lifecycle Management — operations, masters & analytics'],
             ['name' => 'Settings',    'slug' => 'settings',    'icon' => 'Settings',    'sort_order' => 12, 'is_default' => false, 'description' => 'System settings'],
             ['name' => 'Profile',     'slug' => 'profile',     'icon' => 'UserCircle',  'sort_order' => 13, 'is_default' => true],
+            // New top-level header modules — permission-gated, page-less for
+            // now (frontend renders a stub). P2P is promoted from a Sales
+            // Insights leaf to its own module; the rest are new placeholders.
+            ['name' => 'Credentials Vault',            'slug' => 'credentials-vault', 'icon' => 'KeyRound',    'sort_order' => 14, 'is_default' => false, 'description' => 'Central store for tenant credentials, secrets & access keys'],
+            ['name' => 'Project Navigator',            'slug' => 'project-navigator', 'icon' => 'Compass',     'sort_order' => 15, 'is_default' => false, 'description' => 'Cross-module project workspace'],
+            ['name' => 'Procure to Pay (P2P)',         'slug' => 'p2p',               'icon' => 'ShoppingBag', 'sort_order' => 16, 'is_default' => false, 'description' => 'Procure-to-pay summary & operations'],
+            ['name' => 'GTS (E-Docs)',                 'slug' => 'gts',               'icon' => 'Globe',       'sort_order' => 17, 'is_default' => false, 'description' => 'Global trade services & electronic trade documents'],
+            ['name' => 'Inventory Management System',  'slug' => 'inventory',         'icon' => 'Boxes',       'sort_order' => 18, 'is_default' => false, 'description' => 'Stock, warehouse & movement tracking'],
         ];
 
         foreach ($topLevel as $mod) {

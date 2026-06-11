@@ -288,10 +288,11 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
     consignee: activeSegRawAgreements.filter(a => partyBucket(a.party) === 'consignee').length,
     both:      activeSegRawAgreements.filter(a => partyBucket(a.party) === 'both').length,
   };
-  // buyer == consignee → flat list of buyer-ONLY agreements (consignee-only
-  // and buyer+consignee excluded). Otherwise filter by the active sub-tab.
+  // buyer == consignee → flat list of every agreement that involves the buyer
+  // (buyer-only AND buyer+consignee "both"). Only pure consignee-only agreements
+  // are excluded as mirrors. Otherwise filter by the active sub-tab.
   const activeAgreements = buyerEqualsConsignee
-    ? activeSegRawAgreements.filter(a => partyBucket(a.party) === 'buyer')
+    ? activeSegRawAgreements.filter(a => partyBucket(a.party) !== 'consignee')
     : (agrPartyTab === 'all'
         ? activeSegRawAgreements
         : activeSegRawAgreements.filter(a => partyBucket(a.party) === agrPartyTab));
@@ -383,10 +384,12 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
 
   /* Applicable-party buckets driving the Buyer / Consignee / Both tabs.
    * `buyer` / `consignee` / `both` are mutually exclusive. `all` is the flat
-   * list shown when buyer == consignee — only buyer-ONLY docs (consignee-only
-   * and buyer+consignee docs are excluded). */
+   * list shown when buyer == consignee — every doc that involves the buyer
+   * (buyer-only AND buyer+consignee "both" docs). Only pure consignee-only docs
+   * are excluded, since those are the mirror copies redundant with a single
+   * party — a "both" doc is one document that must still be signed once. */
   const tdBuckets = useMemo(() => ({
-    all:       tradeDocs.filter(d => d.for_buyer && !d.for_consignee),
+    all:       tradeDocs.filter(d => d.for_buyer),
     buyer:     tradeDocs.filter(d => d.for_buyer && !d.for_consignee),
     consignee: tradeDocs.filter(d => d.for_consignee && !d.for_buyer),
     both:      tradeDocs.filter(d => d.for_buyer && d.for_consignee),
@@ -502,6 +505,10 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
    * Both / the buyer==consignee flat list) signs as the customer. */
   const tdSignRole: 'customer' | 'consignee' = tdTab === 'consignee' ? 'consignee' : 'customer';
   const tdSignParty = tdSignRole === 'customer' ? payload?.lead.customer : payload?.lead.consignee;
+  /* "Buyer + Consignee" documents are signed by BOTH parties — surface that
+   * in the send affordances instead of the single primary party's name. */
+  const tdIsBothParty = !buyerEqualsConsignee && tdTab === 'both';
+  const tdSignerLabel = tdIsBothParty ? 'Buyer + Consignee' : (tdSignParty?.name ?? tdSignRole);
   const tdSignCustomer = tdSignParty ? {
     id:      tdSignParty.code ?? `${tdSignRole === 'customer' ? 'c' : 'g'}-${tdSignParty.id}`,
     db_id:   tdSignParty.id,
@@ -916,7 +923,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                               <div className="lasm-actions">
                                 {/* Send — only while the doc hasn't been sent yet. */}
                                 {sendable && (
-                                  <Tooltip label={`Send to ${tdSignRole} for signature`}>
+                                  <Tooltip label={`Send to ${tdSignerLabel} for signature`}>
                                     <button
                                       type="button"
                                       className="lasm-td-send"
@@ -984,7 +991,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                     {tdSelected.size > 0 && (
                       <div className="lasm-bulk-bar">
                         <div className="lasm-bulk-info">
-                          <strong>{tdSelected.size}</strong> selected · signer <em>{tdSignParty?.name ?? tdSignRole}</em>
+                          <strong>{tdSelected.size}</strong> selected · signer <em>{tdSignerLabel}</em>
                           <button type="button" className="lasm-bulk-clear" onClick={() => setTdSelected(new Set())}>Clear</button>
                         </div>
                         <button
@@ -1333,7 +1340,14 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
 
       {/* Trade Documents → Send for Signature (Zoho Sign). Reuses the same
           wizard in trade-doc mode; the signer is the active party tab, so
-          modelName + recipient flip between Customer and Consignee. */}
+          modelName + recipient flip between Customer and Consignee.
+
+          The "Buyer + Consignee" tab is special: those documents must be
+          signed by BOTH parties, so we hand the wizard a two-entry
+          `tradeSigners` list (buyer + consignee) and it renders two
+          independent signature boxes + sends to both — exactly like the
+          agreement flow. Single-party tabs (Buyer / Consignee) and the flat
+          buyer==consignee list keep the original single-signer behaviour. */}
       <SalesCustomerSendForSignatureModal
         open={Array.isArray(tdSendIds)}
         mode="trade-doc"
@@ -1341,6 +1355,22 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
         customer={tdSignCustomer}
         leadId={leadId ?? null}
         preselectedDocIds={tdSendIds ?? undefined}
+        tradeSigners={
+          (!buyerEqualsConsignee && tdTab === 'both')
+            ? [
+                {
+                  role:  'buyer',
+                  name:  payload?.lead.customer?.name  ?? '⚠ Customer not mapped',
+                  email: payload?.lead.customer?.email ?? null,
+                },
+                {
+                  role:  'consignee',
+                  name:  payload?.lead.consignee?.name  ?? '⚠ Consignee not mapped',
+                  email: payload?.lead.consignee?.email ?? null,
+                },
+              ]
+            : null
+        }
         onClose={() => setTdSendIds(null)}
         onSent={() => { void onTdSent(); }}
       />

@@ -132,6 +132,13 @@ interface Props {
    * tied to this opportunity (lead_id), so the Sales-Matrix popup can resolve
    * its signature status, Remind, and signed/certificate downloads. */
   leadId?: number | null;
+  /** Trade-doc mode only — the resolved party signers for a multi-party
+   * "Buyer + Consignee" send. When present (≥2 entries), the modal switches
+   * to the same per-role flow agreements use: one draggable signature box per
+   * signer, per-role coordinates, and a multi-signer recipient card. Absent
+   * for single-party buckets and standalone vault sends, which keep the
+   * original single-signer behaviour. Mirrors AgreementContext.signers. */
+  tradeSigners?: AgreementSigner[] | null;
 }
 
 export default function SalesCustomerSendForSignatureModal({
@@ -144,9 +151,22 @@ export default function SalesCustomerSendForSignatureModal({
   mode = 'trade-doc',
   agreementContext = null,
   leadId = null,
+  tradeSigners = null,
 }: Props) {
   const isAgreement = mode === 'agreement';
   const toast = useToast();
+
+  /* Unified per-role signer list. Agreement mode reads it from the
+   * agreementContext; trade-doc mode reads it from the `tradeSigners` prop
+   * (set only for a multi-party "Buyer + Consignee" send). `roleMode` gates
+   * the per-role signature-box UI + per-role coordinate payload — it's true
+   * for every agreement send and for a Buyer+Consignee trade-doc send, and
+   * false for single-signer trade-doc sends (vault + Buyer-only / Consignee-
+   * only buckets), which keep their original single-box behaviour. */
+  const roleSigners: AgreementSigner[] = isAgreement
+    ? (agreementContext?.signers ?? [])
+    : (tradeSigners ?? []);
+  const roleMode = roleSigners.length > 0;
 
   const [step, setStep] = useState<1 | 2>(1);
   const [docs, setDocs] = useState<TradeDoc[]>([]);
@@ -371,16 +391,40 @@ export default function SalesCustomerSendForSignatureModal({
       return;
     }
     const hasPreselected = Array.isArray(preselectedDocIds) && preselectedDocIds.length > 0;
+    const tradeRoleSigners = tradeSigners ?? [];
+    const isTradeRoleMode  = tradeRoleSigners.length > 0;
     setStep(hasPreselected ? 2 : 1);
-    setSelectedIds(hasPreselected ? preselectedDocIds!.slice(0, 10) : []);
-    setSigners(customer
-      ? [{ name: (customer.contact || customer.company || '').trim() || 'Signer 1', email: (customer.email || '').trim(), order: 1 }]
-      : [{ name: '', email: '', order: 1 }],
+    const initialIds = hasPreselected ? preselectedDocIds!.slice(0, 10) : [];
+    setSelectedIds(initialIds);
+    // Multi-party trade send → seed display rows from the resolved role
+    // signers (Buyer / Consignee). Single-party send → the single customer
+    // contact, exactly as before.
+    setSigners(isTradeRoleMode
+      ? tradeRoleSigners.map((s, i) => ({ name: s.name, email: s.email ?? '', order: i + 1 }))
+      : (customer
+          ? [{ name: (customer.contact || customer.company || '').trim() || 'Signer 1', email: (customer.email || '').trim(), order: 1 }]
+          : [{ name: '', email: '', order: 1 }]),
     );
     setIsSequential(false);
     setExpiryDays(30);
     setNotes('Please review and sign these documents.');
     setSettings({});
+    // Per-role coord seeding (Buyer+Consignee trade doc) — one non-
+    // overlapping box per signer, mirroring agreement mode. Empty for the
+    // single-signer path, which keeps using the flat `settings` map.
+    if (isTradeRoleMode) {
+      const seeded: Record<number, Partial<Record<SignerRoleKey, DocSettings>>> = {};
+      initialIds.forEach(id => {
+        const perRole: Partial<Record<SignerRoleKey, DocSettings>> = {};
+        tradeRoleSigners.forEach(s => { perRole[s.role] = { ...SIGNER_DEFAULTS[s.role] }; });
+        seeded[id] = perRole;
+      });
+      setSignerSettings(seeded);
+      setActiveSignerRole(tradeRoleSigners[0]?.role ?? null);
+    } else {
+      setSignerSettings({});
+      setActiveSignerRole(null);
+    }
     setActiveDocId(null);
     setPreviewUrl(null);
     userOverrodeRef.current.clear();
@@ -390,7 +434,7 @@ export default function SalesCustomerSendForSignatureModal({
     setFooterOverrides({});
     setContentOverrides({});
     setEditingShell(false);
-  // preselectedDocIds and customer are read at open-time only —
+  // preselectedDocIds, customer and tradeSigners are read at open-time only —
   // intentionally excluded from deps. db_id captures "different customer".
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, customer?.db_id, isAgreement, agreementContext?.leadId]);
@@ -545,12 +589,13 @@ export default function SalesCustomerSendForSignatureModal({
         // Page count comes out of the loader call — fed into state so
         // the page input can be clamped and "page X of Y" stays accurate.
         try {
-          if (isAgreement) {
-            // Agreement: detect every signer role's marker and seed
-            // signerSettings[docId][role] for each one whose placeholder
-            // we found. Roles the user has already dragged are skipped
-            // so the draft's coord doesn't overwrite their adjustment.
-            const ctxSigners = agreementContext?.signers ?? [];
+          if (roleMode) {
+            // Per-role (agreement OR Buyer+Consignee trade doc): detect every
+            // signer role's marker and seed signerSettings[docId][role] for
+            // each one whose placeholder we found. Roles the user has already
+            // dragged are skipped so the draft's coord doesn't overwrite their
+            // adjustment.
+            const ctxSigners = roleSigners;
             const roles = ctxSigners.map(s => s.role);
             const parties = roles.map(role => ROLE_TO_MARKER_TOKEN[role]);
             const uniqueParties = Array.from(new Set(parties));
@@ -694,6 +739,37 @@ export default function SalesCustomerSendForSignatureModal({
     }
     setSending(true);
     try {
+      /* Signers + signature-box coords branch by mode:
+       *   - role mode (Buyer + Consignee trade doc): one signer per resolved
+       *     role, each carrying its `role` so the backend can tag the Zoho
+       *     action and place that signer's box at its own dragged position.
+       *     document_settings becomes per-role: { [docId]: { buyer:{…},
+       *     consignee:{…} } }.
+       *   - single-signer (vault / Buyer-only / Consignee-only): the original
+       *     flat signer list + flat document_settings, unchanged. */
+      let payloadSigners: Array<{ name: string; email: string; order: number; role?: SignerRoleKey }>;
+      let documentSettings: Record<number, DocSettings | Record<string, DocSettings>>;
+      if (roleMode) {
+        payloadSigners = roleSigners.map((s, i) => ({
+          name:  s.name.trim(),
+          email: (s.email ?? '').trim(),
+          order: i + 1,
+          role:  s.role,
+        }));
+        const perRole: Record<number, Record<string, DocSettings>> = {};
+        selectedIds.forEach(id => {
+          const slice = signerSettings[id] ?? {};
+          const filled: Record<string, DocSettings> = {};
+          roleSigners.forEach(s => {
+            filled[s.role] = slice[s.role] ?? { ...(SIGNER_DEFAULTS[s.role] ?? DEFAULTS) };
+          });
+          perRole[id] = filled;
+        });
+        documentSettings = perRole;
+      } else {
+        payloadSigners = signers.map((s, i) => ({ ...s, name: s.name.trim(), email: s.email.trim(), order: s.order ?? i + 1 }));
+        documentSettings = settings;
+      }
       const payload = {
         trade_doc_ids: selectedIds,
         party_id: customer.db_id,
@@ -701,11 +777,11 @@ export default function SalesCustomerSendForSignatureModal({
         // Lead scope (Sales-Matrix Trade Documents popup) — omitted for the
         // standalone vault sends so their behaviour is unchanged.
         ...(leadId ? { lead_id: leadId } : {}),
-        signers: signers.map((s, i) => ({ ...s, name: s.name.trim(), email: s.email.trim(), order: s.order ?? i + 1 })),
+        signers: payloadSigners,
         is_sequential: isSequential,
         expiry_days: expiryDays,
         notes: notes.trim(),
-        document_settings: settings,
+        document_settings: documentSettings,
         // Per-doc page-shell overrides — keys are trade_doc_id, payloads
         // mirror the saved row's columns. Backend layers them over the
         // saved config when rendering each doc to PDF, so each draft can
@@ -738,7 +814,7 @@ export default function SalesCustomerSendForSignatureModal({
    * trade-doc behaviour stays bit-for-bit unchanged. */
   const activeSettings: DocSettings | null = (() => {
     if (!activeDocId) return null;
-    if (isAgreement) {
+    if (roleMode) {
       if (!activeSignerRole) return null;
       const roleSeed = SIGNER_DEFAULTS[activeSignerRole] ?? DEFAULTS;
       return signerSettings[activeDocId]?.[activeSignerRole] ?? { ...roleSeed };
@@ -747,7 +823,7 @@ export default function SalesCustomerSendForSignatureModal({
   })();
   const updateActiveSettings = (patch: Partial<DocSettings>) => {
     if (!activeDocId) return;
-    if (isAgreement) {
+    if (roleMode) {
       if (!activeSignerRole) return;
       const role = activeSignerRole;
       setSignerSettings(prev => {
@@ -921,7 +997,7 @@ export default function SalesCustomerSendForSignatureModal({
     // we don't fight the user's intent on the next preview load. Agreement
     // mode keys per-role so dragging the buyer overlay doesn't freeze
     // the consignee's auto-detect (and vice versa).
-    const overrideKey = isAgreement && activeSignerRole
+    const overrideKey = roleMode && activeSignerRole
       ? `${activeDocId}:${activeSignerRole}`
       : String(activeDocId);
     userOverrodeRef.current.add(overrideKey);
@@ -995,9 +1071,9 @@ export default function SalesCustomerSendForSignatureModal({
                   ? ((agreementContext?.signers ?? [])[0]?.name || 'Lead Agreements')
                   : (customer?.company || 'Customer')}
               </div>
-              {isAgreement
+              {roleMode
                 ? (() => {
-                    const ctxSigners = agreementContext?.signers ?? [];
+                    const ctxSigners = roleSigners;
                     if (ctxSigners.length === 0) return null;
                     if (ctxSigners.length === 1) {
                       return ctxSigners[0].email ? <div className="ssf-head-sub">{ctxSigners[0].email}</div> : null;
@@ -1144,15 +1220,15 @@ export default function SalesCustomerSendForSignatureModal({
                         lead). Renders unconditionally in agreement
                         mode so a single-signer agreement also gets
                         the visual confirmation. */}
-                    {isAgreement && (
+                    {roleMode && (
                       <div className="ssf-signer-banner">
                         {(() => {
-                          const ctxSigners = agreementContext?.signers ?? [];
+                          const ctxSigners = roleSigners;
                           const unmapped = ctxSigners.filter(s => !s.email);
                           if (ctxSigners.length === 0) {
                             return (
                               <span className="ssf-banner-warn">
-                                ⚠ No applicable parties resolved. Check the agreement's "Applicable Party" setting.
+                                ⚠ No applicable parties resolved. Check the {isAgreement ? "agreement's" : "document's"} "Applicable Party" setting.
                               </span>
                             );
                           }
@@ -1183,9 +1259,9 @@ export default function SalesCustomerSendForSignatureModal({
                         jumps to its saved page, and its overlay
                         becomes draggable while the other signer's
                         box dims to a read-only outline. */}
-                    {isAgreement && (agreementContext?.signers?.length ?? 0) > 1 && (
+                    {roleMode && roleSigners.length > 1 && (
                       <div className="ssf-signer-tabs" role="tablist">
-                        {(agreementContext?.signers ?? []).map(s => (
+                        {roleSigners.map(s => (
                           <button
                             key={s.role}
                             type="button"
@@ -1228,10 +1304,10 @@ export default function SalesCustomerSendForSignatureModal({
                             page; only the active signer is draggable, the
                             rest are dimmed read-only previews so the user
                             can see how the layout looks for the bundle. */}
-                      {isAgreement && wrapWidthPx > 0 && activeDocId && (() => {
+                      {roleMode && wrapWidthPx > 0 && activeDocId && (() => {
                         const pxPerPt = wrapWidthPx / A4_W;
                         const visiblePage = activeSettings?.page ?? 0;
-                        return (agreementContext?.signers ?? []).map(s => {
+                        return roleSigners.map(s => {
                           const ds = signerSettings[activeDocId]?.[s.role]
                             ?? SIGNER_DEFAULTS[s.role]
                             ?? DEFAULTS;
@@ -1286,7 +1362,7 @@ export default function SalesCustomerSendForSignatureModal({
                           );
                         });
                       })()}
-                      {!isAgreement && activeSettings && wrapWidthPx > 0 && (() => {
+                      {!roleMode && activeSettings && wrapWidthPx > 0 && (() => {
                         // Trade-doc single-overlay path — unchanged from
                         // before, kept inside its own IIFE so the agreement
                         // branch above can grow independently.
@@ -1434,14 +1510,14 @@ export default function SalesCustomerSendForSignatureModal({
                 )}
 
                 <div className="ssf-recipient-card">
-                  <div className="ssf-recipient-h">{isAgreement ? 'Signers' : 'Recipient'}</div>
-                  {isAgreement ? (
+                  <div className="ssf-recipient-h">{roleMode ? 'Signers' : 'Recipient'}</div>
+                  {roleMode ? (
                     <>
-                      {(agreementContext?.signers ?? []).length === 0 && (
-                        <div className="ssf-recipient-email">No signers resolved — check the lead's customer/consignee mapping against the agreement's applicable party.</div>
+                      {roleSigners.length === 0 && (
+                        <div className="ssf-recipient-email">No signers resolved — check the lead's customer/consignee mapping against the {isAgreement ? 'agreement' : 'document'}'s applicable party.</div>
                       )}
-                      {(agreementContext?.signers ?? []).map((s, i) => (
-                        <div key={s.role} style={{ marginBottom: i < (agreementContext?.signers ?? []).length - 1 ? 6 : 0 }}>
+                      {roleSigners.map((s, i) => (
+                        <div key={s.role} style={{ marginBottom: i < roleSigners.length - 1 ? 6 : 0 }}>
                           <div className="ssf-recipient-name">
                             <span className={`ssf-signer-dot ssf-signer-dot-${s.role}`} style={{ marginRight: 6 }} />
                             {s.role === 'buyer' ? 'Buyer · ' : s.role === 'consignee' ? 'Consignee · ' : 'Supplier · '}
@@ -1488,11 +1564,11 @@ export default function SalesCustomerSendForSignatureModal({
               // would 422 anyway; client gating gives clearer
               // feedback up front. Trade-doc path isn't affected
               // because `unmapped` is always empty there.
-              const unmapped = isAgreement
-                ? (agreementContext?.signers ?? []).filter(s => !s.email)
+              const unmapped = roleMode
+                ? roleSigners.filter(s => !s.email)
                 : [];
-              const blocked = isAgreement && (
-                (agreementContext?.signers?.length ?? 0) === 0 || unmapped.length > 0
+              const blocked = roleMode && (
+                roleSigners.length === 0 || unmapped.length > 0
               );
               const tooltip = unmapped.length > 0
                 ? `Cannot send — missing: ${unmapped.map(s => s.role === 'buyer' ? 'Customer' : s.role === 'consignee' ? 'Consignee' : 'Supplier').join(', ')}`

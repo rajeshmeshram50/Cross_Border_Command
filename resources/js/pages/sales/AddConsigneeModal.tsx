@@ -5,7 +5,7 @@ import { MasterSelect, MasterDatePicker } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
 import { downloadFile } from '../../utils/downloadFile';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
-import { Shimmer } from '../../components/ui/Shimmer';
+import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
 import { MasterMultiSelect } from '../master/masterFormKit';
@@ -468,6 +468,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   type SegmentDocs = { kyc: SegDocRow[]; dd: SegDocRow[]; tl: SegDocRow[]; td: SegDocRow[]; qc: SegDocRow[] };
   const EMPTY_SEG_DOCS: SegmentDocs = { kyc:[], dd:[], tl:[], td:[], qc:[] };
   const [segmentDocs, setSegmentDocs] = useState<SegmentDocs>(EMPTY_SEG_DOCS);
+  /* True while the Stage 2 segment-rule document catalog is being fetched from
+   * the DB — drives the table shimmer so the Company-DD / Owner-KYC / Trade-
+   * Licence grids don't flash empty while the call is in flight (it fires after
+   * hydration, so the page-level shimmer is already off). Mirrors [[AddCustomerModal]]. */
+  const [segmentDocsLoading, setSegmentDocsLoading] = useState(false);
 
   /* Per-row file uploads against the segment-rule reference rows.
    * Key: `${sub-tab}::${doc.code}`. Value: File + blob URL used by the
@@ -1078,13 +1083,14 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
      * rather than defaulting later stages to a false "done". */
     if (stage < 2 && maxStage < 2) return;
     const names = (form1.segment ?? []).filter(Boolean);
-    if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
+    if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setSegmentDocsLoading(false); return; }
     const segRows = names
       .map(n => mSegmentIds.find(s => s.name === n))
       .filter((r): r is { id:number; name:string } => !!r);
-    if (segRows.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
+    if (segRows.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setSegmentDocsLoading(false); return; }
 
     let cancelled = false;
+    setSegmentDocsLoading(true);
     Promise.all([
       Promise.all(
         segRows.map(s =>
@@ -1139,7 +1145,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         sent: false,
         status: 'idle' as TdSigStatus,
       })));
-    });
+    }).finally(() => { if (!cancelled) setSegmentDocsLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, stage, maxStage, form1.segment, mSegmentIds]);
@@ -2282,6 +2288,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               sameAsCustomer={sameAsCustomer}
               segmentName={(form1.segment ?? []).join(', ')}
               segmentDocs={segmentDocs}
+              loading={segmentDocsLoading}
               segmentRefUploads={segmentRefUploads}
               setSegmentRefUploads={setSegmentRefUploads}
               persistSegmentRefUpload={persistSegmentRefUpload}
@@ -3292,7 +3299,7 @@ function ConsigneeSegmentBanner({ segmentName, label, rows }: {
 const Stage2 = ({
   sub, setSub, search, setSearch, docs, owners,
   onAddDoc, onEditDoc, onDeleteDoc, onAddOwner, onEditOwner, onDeleteOwner,
-  form1, locations, consigneeCode, sameAsCustomer, segmentName, segmentDocs,
+  form1, locations, consigneeCode, sameAsCustomer, segmentName, segmentDocs, loading,
   segmentRefUploads, setSegmentRefUploads, persistSegmentRefUpload,
 }: {
   sub: KycSubTab;
@@ -3317,6 +3324,9 @@ const Stage2 = ({
    *  uses segmentRefUploads for per-row file pickers. */
   segmentName: string;
   segmentDocs: { kyc:any[]; dd:any[]; tl:any[]; td:any[]; qc:any[] };
+  /** True while the segment-rule catalog is loading from the DB — drives the
+   *  in-table shimmer. */
+  loading?: boolean;
   segmentRefUploads: Record<string, { file: File | null; url: string; name: string }>;
   setSegmentRefUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
   persistSegmentRefUpload: (refKey: string, file: File, docName: string) => Promise<void> | void;
@@ -3420,7 +3430,28 @@ const Stage2 = ({
 
         <div className="acm-kyc-body">
           <div className="acm-loc-table-wrap">
-            {isOwners && filteredOwners.length === 0 && segmentDocs.kyc.length > 0 ? (
+            {loading ? (
+              /* Segment-rule catalog still loading from the DB — table shimmer
+                 (real headers + shimmer rows) so the grid doesn't flash empty. */
+              <table className="acm-loc-table">
+                <thead>
+                  <tr>
+                    {isOwners ? (
+                      <>
+                        <th>SR NO</th><th>OWNER NAME</th><th>DESIGNATION</th><th>EMAIL</th><th>PHONE</th>
+                        <th>ID PROOF</th><th>ADDRESS PROOF</th><th>PHOTOGRAPH</th><th>ACTIONS</th>
+                      </>
+                    ) : (
+                      <>
+                        <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
+                        <th>ISSUING AUTHORITY</th><th>REQUIREMENT</th><th>ATTACHMENT</th><th>ACTIONS</th>
+                      </>
+                    )}
+                  </tr>
+                </thead>
+                <tbody><ShimmerTableRows rows={4} cols={isOwners ? 9 : 7} /></tbody>
+              </table>
+            ) : isOwners && filteredOwners.length === 0 && segmentDocs.kyc.length > 0 ? (
               /* Owner KYC sub-tab — segment-rule reference table.
                  Mirrors the Trade Licence + Company DD layout when the
                  segment's rule defines required KYC documents and no
