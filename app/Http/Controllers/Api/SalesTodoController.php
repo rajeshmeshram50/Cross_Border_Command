@@ -289,10 +289,13 @@ class SalesTodoController extends Controller
      * ───────────────────────────────────────────────────────────────── */
 
     /**
-     * Shared content rule for user-facing free-text fields. One rule, one
-     * message: only letters, digits and spaces are allowed. Rejects every
-     * abuse pattern QA reported ("!@#####mdsdsds", "!!!!!", "1234..." etc.)
-     * without forcing the user to memorise a punctuation allowlist.
+     * Shared content rule for user-facing free-text fields. Allows letters,
+     * digits, spaces and common business punctuation ( , . ' - & ( ) / : )
+     * so real subjects / names like "sa, sa." or "O'Brien & Co." pass.
+     * Still rejects the abuse patterns QA reported ("!@#####mdsdsds",
+     * "!!!!!", "1234..." etc.) by (a) blocking out-of-list symbols and
+     * (b) requiring at least one letter, so pure punctuation/number junk
+     * never gets through.
      */
     private function safeTextRule(int $min, int $max): \Closure
     {
@@ -300,7 +303,8 @@ class SalesTodoController extends Controller
             $v = trim((string) $value);
             if ($v === '') { return; } // 'required' is enforced separately
             $label = ucfirst(str_replace('_', ' ', $attribute));
-            if (!preg_match('/^[A-Za-z0-9 ]+$/u', $v)) { $fail("Special characters are not allowed in $label."); return; }
+            if (!preg_match('/^[A-Za-z0-9 ,.\'\-&()\/:]+$/u', $v)) { $fail("Special characters are not allowed in $label."); return; }
+            if (!preg_match('/[A-Za-z]/u', $v)) { $fail("$label must contain letters."); return; }
             if (mb_strlen($v) < $min) { $fail("$label must be at least $min characters."); return; }
             if (mb_strlen($v) > $max) { $fail("$label cannot exceed $max characters."); return; }
         };

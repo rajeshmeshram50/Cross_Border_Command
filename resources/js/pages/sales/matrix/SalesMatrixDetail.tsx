@@ -983,12 +983,9 @@ export default function SalesMatrixDetail() {
              *  REAL value from the eager-loaded row only; we no longer
              *  synthesise a `C-${padStart(3)}` fallback because that
              *  hard-codes a padding the system doesn't actually use.
-             *  Hidden when the consignee is same-as-customer: its KYC/DD/
-             *  Licence docs mirror the customer's, so showing a second
-             *  identical row (and counting it) is redundant — the panel
-             *  then lists only the Customer's documents. */}
-            {serverHeader.consigneeId && serverHeader.consigneeRow
-              && !(serverHeader.consigneeRow as { same_as_customer?: boolean }).same_as_customer && (
+             *  Renders below the Customer row whenever a consignee is
+             *  mapped to this lead — including same-as-customer consignees. */}
+            {serverHeader.consigneeId && serverHeader.consigneeRow && (
               <ClmRow
                 icon={<IconTruckSm />}
                 tone="emerald"

@@ -58,6 +58,10 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
   const [remark, setRemark]   = useState('');
   const [picked, setPicked]   = useState<File | null>(null);
   const [saving, setSaving]   = useState(false);
+  /* Inline field errors shown beneath the required fields. The toast was
+   * the only feedback before, which the user could miss while looking at
+   * the form — now Subject / Set Date show a red message under the box. */
+  const [errors, setErrors]   = useState<{ subject?: string; setDate?: string }>({});
 
   const todayStr = new Date().toISOString().slice(0, 10);
 
@@ -71,6 +75,7 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
     setTat('');
     setRemark('');
     setPicked(null);
+    setErrors({});
     if (fileRef.current) fileRef.current.value = '';
   }, [open]);
 
@@ -91,14 +96,16 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
       toast.warning('No opportunity in context', 'Open this from the Lead Worksheet to enable saving');
       return;
     }
-    if (!subject.trim()) {
-      toast.warning('Subject required', 'Type a reminder subject');
+    // Validate both required fields together so each shows its own inline
+    // message under the box (not one-at-a-time toasts the user can miss).
+    const nextErrors: { subject?: string; setDate?: string } = {};
+    if (!subject.trim()) nextErrors.subject = 'Reminder subject is required';
+    if (!setDate)        nextErrors.setDate = 'Reminder set date is required';
+    if (Object.keys(nextErrors).length) {
+      setErrors(nextErrors);
       return;
     }
-    if (!setDate) {
-      toast.warning('Date required', 'Pick a reminder date');
-      return;
-    }
+    setErrors({});
     setSaving(true);
     try {
       const isoOppDate = toIsoDate(oppDate);
@@ -185,21 +192,24 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
             <div className="rfl-fld">
               <label className="rfl-lbl">REMINDER SUBJECT <span className="rfl-req">*</span></label>
               <input
-                className="rfl-input"
+                className={`rfl-input${errors.subject ? ' is-invalid' : ''}`}
                 placeholder="Subject"
                 value={subject}
-                onChange={e => setSubject(e.target.value)}
+                onChange={e => { setSubject(e.target.value); if (errors.subject) setErrors(p => ({ ...p, subject: undefined })); }}
               />
+              {errors.subject && <div className="rfl-err">{errors.subject}</div>}
             </div>
 
             <div className="rfl-fld">
               <label className="rfl-lbl">REMINDER SET DATE <span className="rfl-req">*</span></label>
               <MasterDatePicker
                 value={setDate}
-                onChange={setSetDate}
+                onChange={(v) => { setSetDate(v); if (errors.setDate) setErrors(p => ({ ...p, setDate: undefined })); }}
                 minDate={todayStr}
                 placeholder="dd-mm-yyyy"
+                invalid={!!errors.setDate}
               />
+              {errors.setDate && <div className="rfl-err">{errors.setDate}</div>}
             </div>
             <div className="rfl-fld">
               <label className="rfl-lbl">TAT</label>
@@ -420,6 +430,20 @@ const RFL_CSS = `
   border-color: #0d9488;
   box-shadow: 0 0 0 3px rgba(20, 184, 166, .18);
 }
+/* Required-field error state — red border on the box + a small red message
+   below it. Matches the inline-validation pattern used in the Customer /
+   Consignee modals so the user gets feedback at the field, not just a toast. */
+.rfl-input.is-invalid {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, .15);
+}
+.rfl-err {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #ef4444;
+  line-height: 1.3;
+}
 
 /* MasterSelect + MasterDatePicker triggers — re-skin to match the rest
  * of the modal's inputs. Default ones use var(--vz-card-bg) which
@@ -444,6 +468,15 @@ const RFL_CSS = `
 .rfl-modal .master-datepicker-toggle.open {
   border-color: #0d9488 !important;
   box-shadow: 0 0 0 3px rgba(20, 184, 166, .18) !important;
+}
+/* Invalid state for the MasterDatePicker trigger. The toggle re-skin above
+   sets border + box-shadow with !important, so the picker's own
+   .master-datepicker-wrap.invalid rule (non-important) never won and the
+   required-date field never turned red. Re-assert the error styling here
+   with !important so the highlight actually shows. */
+.rfl-modal .master-datepicker-wrap.invalid .master-datepicker-toggle {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, .15) !important;
 }
 .rfl-modal .master-select-placeholder,
 .rfl-modal .master-datepicker-placeholder {
