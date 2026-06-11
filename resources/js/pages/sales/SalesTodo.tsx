@@ -750,8 +750,9 @@ export default function SalesTodo() {
 
       // Meeting agenda — REQUIRED for both meeting types.
       const agendaRaw = (form.agenda || '').trim();
-      if (!agendaRaw)              errs.push('Meeting Agenda is required.');
-      else if (agendaRaw.length < 3) errs.push('Meeting Agenda must be at least 3 characters.');
+      if (!agendaRaw)                   errs.push('Meeting Agenda is required.');
+      else if (agendaRaw.length < 2)    errs.push('Meeting Agenda must be at least 2 characters.');
+      else if (agendaRaw.length > 1000) errs.push('Meeting Agenda cannot exceed 1000 characters.');
 
       if (errs.length) { setFormErrors(errs); return; }
 

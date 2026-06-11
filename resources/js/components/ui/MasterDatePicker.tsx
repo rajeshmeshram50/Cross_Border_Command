@@ -50,7 +50,12 @@ export function MasterDatePicker({
       const rect = wrapRef.current.getBoundingClientRect();
       const margin = 8;
       const popupW = 240;   // matches the popup's fixed 240px width
-      const popupH = 320;   // approx — used only to decide flip-above
+      // Use the popup's REAL height once it has rendered (it varies with the
+      // 5- vs 6-week month + which view is open). The 300 fallback is only
+      // for the very first frame before the popup mounts. Over-estimating
+      // here used to flip the calendar above the field unnecessarily and
+      // park it far up over unrelated fields.
+      const popupH = popupRef.current?.offsetHeight || 300;
       // Clamp horizontally so the calendar never spills off the right edge.
       // Critical inside right-side drawers (e.g. Request Leave) where the
       // field sits near the screen edge and the popup would overflow — this
@@ -59,8 +64,8 @@ export function MasterDatePicker({
       if (left + popupW + margin > window.innerWidth) {
         left = Math.max(margin, window.innerWidth - popupW - margin);
       }
-      // Flip above the field when there isn't room below (keeps the whole
-      // calendar on-screen instead of clipping at the bottom).
+      // Flip above the field only when there genuinely isn't room below, and
+      // sit the calendar snug just above the field using its measured height.
       let top = rect.bottom + 5;
       if (top + popupH + margin > window.innerHeight && rect.top - popupH - 5 > margin) {
         top = rect.top - popupH - 5;
@@ -68,8 +73,11 @@ export function MasterDatePicker({
       setPopupPos({ top, left, width: rect.width });
     };
     update();
+    // Re-measure once the popup has actually rendered so the flip decision +
+    // position use its true height (the first pass uses the estimate).
+    const raf = requestAnimationFrame(update);
     window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', update); };
   }, [open]);
 
   useEffect(() => {

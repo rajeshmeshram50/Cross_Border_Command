@@ -217,7 +217,15 @@ export default function MeetingsListModal({
                               Done
                             </button>
                           )}
-                          <button className="mlm-row-btn mlm-row-btn-del" onClick={() => setPendingDelete(m)} title="Delete">
+                          {/* Delete is disabled once a meeting is marked Done —
+                              completed meetings are a record and shouldn't be
+                              removed from the row tools (CBC-184). */}
+                          <button
+                            className="mlm-row-btn mlm-row-btn-del"
+                            onClick={() => { if (m.status !== 'Done') setPendingDelete(m); }}
+                            disabled={m.status === 'Done'}
+                            title={m.status === 'Done' ? 'Completed meetings cannot be deleted' : 'Delete'}
+                          >
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
                               <polyline points="3 6 5 6 21 6" />
                               <path d="M19 6l-1.5 14a2 2 0 0 1-2 2H8.5a2 2 0 0 1-2-2L5 6" />
@@ -396,10 +404,13 @@ const MLM_CSS = `
   font-family: inherit;
 }
 .mlm-row-btn:hover:not(:disabled) { background: #f1f5f9; }
+/* Disabled row button (e.g. Delete on a completed meeting) — greyed, no
+   pointer, no hover feedback. */
+.mlm-row-btn:disabled { opacity: .4; cursor: not-allowed; }
 .mlm-row-btn-done { color: #15803d; border-color: #bbf7d0; background: #f0fdf4; }
 .mlm-row-btn-done:hover { background: #dcfce7; border-color: #86efac; }
 .mlm-row-btn-del  { color: #dc2626; border-color: #fecaca; padding: 5px 8px; }
-.mlm-row-btn-del:hover { background: #fee2e2; }
+.mlm-row-btn-del:hover:not(:disabled) { background: #fee2e2; }
 
 .mlm-status {
   text-align: center; padding: 24px 14px;
@@ -454,7 +465,7 @@ const MLM_CSS = `
 [data-bs-theme="dark"] .mlm-row-btn-del {
   background: rgba(239, 68, 68, .14); border-color: rgba(252, 165, 165, .40); color: #fca5a5;
 }
-[data-bs-theme="dark"] .mlm-row-btn-del:hover { background: rgba(239, 68, 68, .25); border-color: #fca5a5; }
+[data-bs-theme="dark"] .mlm-row-btn-del:hover:not(:disabled) { background: rgba(239, 68, 68, .25); border-color: #fca5a5; }
 
 @media (max-width: 640px) {
   .mlm-backdrop { padding: 0; }
