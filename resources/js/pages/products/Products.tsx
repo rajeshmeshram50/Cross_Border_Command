@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef, type ReactNode } from 'react';
 import { readProductMasterBundle, writeProductMasterBundle } from './productBundleCache';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -489,6 +489,68 @@ export default function Products() {
     return sorted;
   }, [filteredAllStatus, statusTab, sort, filters.topProducts]);
 
+  /* ─── Dynamic pagination ───
+   * Mirrors the Customers / TableContainer behaviour: the page size is
+   * computed to FIT the viewport instead of being a fixed number, so the
+   * card grid (or list) never spills past the bottom of the screen — the
+   * overflow rolls onto the next page. We measure the results container's
+   * top offset, the real card/row height, and (for the grid) how many
+   * columns the CSS auto-fill produced, then pageSize = cols × rows that
+   * fit. Recomputed on resize, view switch, data load, and filter change. */
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(12);
+  /* Auto-fit on by default: the page size is computed to show 2 rows of
+     cards (grid) / a viewport-fit number of rows (list). The moment the
+     user picks an explicit value from the "Rows per page" dropdown we flip
+     this off and respect their choice until the next view switch. */
+  const autoFitRef = useRef(true);
+
+  // Any change to the visible set jumps back to page 1 so the user never
+  // lands on a now-empty trailing page after filtering. Switching view
+  // also re-enables auto-fit (grid and list want different row counts).
+  useEffect(() => { setPage(1); }, [q, segment, statusFilter, statusTab, sort, filters, vendorFilterId, view]);
+  useEffect(() => { autoFitRef.current = true; }, [view]);
+
+  useEffect(() => {
+    if (loading) return;
+    const el = resultsRef.current;
+    if (!el) return;
+    const fit = () => {
+      if (!autoFitRef.current) return;
+      const top = el.getBoundingClientRect().top;
+      // Leave a 70px tail for the pagination footer + page bottom gap.
+      const avail = Math.max(160, window.innerHeight - top - 70);
+      if (view === 'list') {
+        const rowH = (el.querySelector('.prd-row') as HTMLElement | null)?.offsetHeight || 84;
+        const rows = Math.max(4, Math.floor(avail / (rowH + 10)));
+        setPageSize(rows);
+      } else {
+        // Show a fixed 2 ROWS of cards per page; the column count stays
+        // dynamic (CSS auto-fill produces N columns at the current width),
+        // so a page = cols × 2 and everything beyond rolls onto the next
+        // page via the dynamic pager.
+        const cols = Math.max(1, getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean).length || 4);
+        setPageSize(cols * 2);
+      }
+    };
+    fit();
+    const t = window.setTimeout(fit, 120);
+    window.addEventListener('resize', fit);
+    return () => { window.clearTimeout(t); window.removeEventListener('resize', fit); };
+  }, [loading, view, filtered.length]);
+
+  const setRowsPerPage = (n: number) => { autoFitRef.current = false; setPageSize(n); setPage(1); };
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  // Clamp if the page count shrank below the current page.
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+
+  const paged = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, page, pageSize]);
+
   if (!allowed) {
     return (
       <div className="prd-root">
@@ -716,34 +778,40 @@ export default function Products() {
           )}
         </div>
       ) : view === 'grid' ? (
-        <div className="prd-grid">
-          {filtered.map(p => (
-            <ProductCard
-              key={p.apiId}
-              product={p}
-              onAction={(act) => {
-                if (act === 'View')        navigate(`/products/${p.apiId}`);
-                else if (act === 'Edit')   handleEdit(p);
-                else if (act === 'Delete') handleDelete(p);
-                else                       toast.info(act, `${act}: ${p.name}`);
-              }}
-            />
-          ))}
+        <div className="prd-list-card">
+          <div className="prd-grid" ref={resultsRef}>
+            {paged.map(p => (
+              <ProductCard
+                key={p.apiId}
+                product={p}
+                onAction={(act) => {
+                  if (act === 'View')        navigate(`/products/${p.apiId}`);
+                  else if (act === 'Edit')   handleEdit(p);
+                  else if (act === 'Delete') handleDelete(p);
+                  else                       toast.info(act, `${act}: ${p.name}`);
+                }}
+              />
+            ))}
+          </div>
+          <ProductPagination page={page} totalPages={totalPages} pageSize={pageSize} total={filtered.length} onPage={setPage} onRowsPerPage={setRowsPerPage} />
         </div>
       ) : (
-        <div className="prd-list">
-          {filtered.map(p => (
-            <ProductRow
-              key={p.apiId}
-              product={p}
-              onAction={(act) => {
-                if (act === 'View')        navigate(`/products/${p.apiId}`);
-                else if (act === 'Edit')   handleEdit(p);
-                else if (act === 'Delete') handleDelete(p);
-                else                       toast.info(act, `${act}: ${p.name}`);
-              }}
-            />
-          ))}
+        <div className="prd-list-card">
+          <div className="prd-list" ref={resultsRef}>
+            {paged.map(p => (
+              <ProductRow
+                key={p.apiId}
+                product={p}
+                onAction={(act) => {
+                  if (act === 'View')        navigate(`/products/${p.apiId}`);
+                  else if (act === 'Edit')   handleEdit(p);
+                  else if (act === 'Delete') handleDelete(p);
+                  else                       toast.info(act, `${act}: ${p.name}`);
+                }}
+              />
+            ))}
+          </div>
+          <ProductPagination page={page} totalPages={totalPages} pageSize={pageSize} total={filtered.length} onPage={setPage} onRowsPerPage={setRowsPerPage} />
         </div>
       )}
 
@@ -1024,6 +1092,56 @@ function CheckRow(props: { label: string; checked: boolean; onChange: () => void
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
+ * Pagination footer
+ *
+ * Mirrors the Sales Lead Worksheet pager (Showing X–Y of Z · Rows per page ·
+ * page / total pill · circular prev/next arrows), tinted to the Products
+ * page's violet palette. Lives as a footer band inside the same card as the
+ * grid / list, so list + pagination read as one container.
+ * ════════════════════════════════════════════════════════════════════════ */
+const ROWS_PER_PAGE_OPTIONS = [8, 12, 16, 24, 48];
+
+function ProductPagination(props: {
+  page: number; totalPages: number; pageSize: number; total: number;
+  onPage: (p: number) => void; onRowsPerPage: (n: number) => void;
+}) {
+  const { page, totalPages, pageSize, total, onPage, onRowsPerPage } = props;
+  const startIdx = (page - 1) * pageSize;
+  const rowOptions = [...new Set([pageSize, ...ROWS_PER_PAGE_OPTIONS])].sort((a, b) => a - b);
+
+  return (
+    <div className="prd-pagination">
+      <span className="prd-pag-info">
+        {total === 0
+          ? 'No products found'
+          : <>Showing <span className="prd-hl">{startIdx + 1}–{Math.min(startIdx + pageSize, total)}</span> of <span className="prd-hl">{total}</span></>}
+      </span>
+      <div className="prd-pag-right">
+        <div className="prd-rows-sel">
+          Rows per page:
+          <select value={pageSize} onChange={e => onRowsPerPage(parseInt(e.target.value, 10))}>
+            {rowOptions.map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </div>
+        <span className="prd-pag-range">{page} / {totalPages}</span>
+        <div className="prd-page-nav">
+          <button className="prd-pg-btn" disabled={page <= 1} onClick={() => onPage(Math.max(1, page - 1))} aria-label="Previous page">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+          <button className="prd-pg-btn" disabled={page >= totalPages || total === 0} onClick={() => onPage(Math.min(totalPages, page + 1))} aria-label="Next page">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
  * Product Card (Amazon / Flipkart style)
  * ════════════════════════════════════════════════════════════════════════ */
 function ProductCard(props: {
@@ -1283,40 +1401,112 @@ const SCOPED_CSS = `
 .prd-root *, .prd-root *::before, .prd-root *::after { box-sizing: border-box; }
 
 /* Hero header */
-/* Header — white surface card with a blue Velzon-primary gradient icon
-   tile, matching the HR Employees / Clients master shell exactly. */
+/* Header — purple-gradient hero strip, matching the Customers page
+   (.smc-cstrip) so the Sales Matrix top-level pages read as one design
+   language: lavender padding-box fill + violet→blue→pink gradient ring,
+   soft violet glow, and a violet icon tile. */
 .prd-header {
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
-  padding: 18px 20px;
-  background: #fff;
-  border: 1px solid var(--vz-border-color, #e9ebec);
+  padding: 10px 20px;
+  border: 1px solid #c4b5fd;
   border-radius: 16px;
-  box-shadow: 0 2px 12px rgba(0,0,0,.05);
+  background:
+    linear-gradient(110deg, #faf7ff 0%, #f4eeff 45%, #efe8ff 75%, #ece4ff 100%) padding-box,
+    linear-gradient(125deg, #7c3aed 0%, #8b5cf6 22%, #6366f1 48%, #d946ef 76%, #ec4899 100%) border-box;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.70) inset,
+    0 4px 18px rgba(124,58,237,0.16),
+    0 1px 4px rgba(99,102,241,0.10);
 }
 .prd-header-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .prd-header-icon {
-  width: 46px; height: 46px; border-radius: 12px;
-  background: linear-gradient(135deg, #405189 0%, #6691e7 100%);
+  width: 40px; height: 40px; border-radius: 11px;
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
   display: inline-flex; align-items: center; justify-content: center;
   color: #fff; font-size: 21px;
-  box-shadow: 0 4px 10px rgba(64,81,137,.25);
+  box-shadow: 0 4px 14px rgba(91,33,182,.40), 0 0 0 3px rgba(255,255,255,.50);
   flex-shrink: 0;
 }
-.prd-header-title { font-size: 17px; font-weight: 700; color: #1e293b; margin: 0; letter-spacing: -.01em; }
+.prd-header-title { font-size: 17px; font-weight: 700; color: #2e1065; margin: 0; letter-spacing: -.01em; }
 .prd-header-sub   { font-size: 12.5px; color: #6b7280; margin-top: 2px; font-weight: 500; }
 
 .prd-add-btn {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 9px 18px; border-radius: 99px; border: none;
-  background: linear-gradient(120deg, #405189 0%, #6691e7 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 45%, #6d28d9 100%);
   color: #fff;
   font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
-  box-shadow: 0 4px 12px rgba(64,81,137,.3);
-  transition: transform .15s, box-shadow .15s;
+  box-shadow: 0 5px 16px rgba(124,58,237,.40), 0 1px 0 rgba(255,255,255,.22) inset;
+  transition: transform .15s, box-shadow .15s, filter .18s;
 }
 .prd-add-btn i { font-size: 16px; }
-.prd-add-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(64,81,137,.4); }
+.prd-add-btn:hover { transform: translateY(-1px); filter: brightness(1.05); box-shadow: 0 9px 24px rgba(124,58,237,.48), 0 1px 0 rgba(255,255,255,.22) inset; }
 .prd-add-btn:active { transform: translateY(0); }
+
+/* ─── List card — grid / list + its pagination footer in ONE container,
+   matching the leads-list layout (rounded card, violet ring, footer band). */
+.prd-list-card {
+  display: flex; flex-direction: column;
+  background: var(--vz-card-bg, #fff);
+  border: 1px solid #ddd6fe;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(124,58,237,.08), 0 1px 3px rgba(124,58,237,.06);
+}
+.prd-list-card .prd-grid,
+.prd-list-card .prd-list { padding: 16px; margin: 0; }
+
+/* Pagination footer — violet version of the leads-list pager: soft
+   lavender gradient band, a top accent border, pill "Showing X–Y of Z",
+   a Rows-per-page selector, the page/total pill, and round nav arrows. */
+.prd-pagination {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; border-top: 2px solid #c4b5fd;
+  flex-wrap: wrap; gap: 8px; flex-shrink: 0;
+  background: linear-gradient(90deg, #f5f3ff 0%, #ede9fe 40%, #f5f3ff 100%);
+}
+.prd-pag-info {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px; font-weight: 500; color: #6d28d9;
+  background: rgba(255,255,255,.85); border: 1.5px solid #c4b5fd;
+  padding: 5px 14px; border-radius: 20px;
+  box-shadow: 0 1px 4px rgba(124,58,237,.1), 0 1px 0 rgba(255,255,255,.9) inset;
+}
+.prd-pag-info .prd-hl { color: #7c3aed; font-weight: 800; font-size: 12px; }
+.prd-pag-right { display: flex; align-items: center; gap: 8px; }
+.prd-rows-sel {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11.5px; color: #6d28d9; font-weight: 500;
+  background: rgba(255,255,255,.85); border: 1.5px solid #c4b5fd;
+  padding: 4px 12px; border-radius: 20px;
+  box-shadow: 0 1px 4px rgba(124,58,237,.1), 0 1px 0 rgba(255,255,255,.9) inset;
+}
+.prd-rows-sel select {
+  border: none; background: transparent; font-family: inherit;
+  font-size: 11.5px; color: #7c3aed; font-weight: 700; cursor: pointer; outline: none;
+}
+.prd-pag-range {
+  font-size: 11.5px; font-weight: 800; color: #fff;
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 55%, #6d28d9 100%);
+  border: none; padding: 5px 18px; border-radius: 20px;
+  box-shadow: 0 3px 12px rgba(124,58,237,.4), 0 1px 0 rgba(255,255,255,.2) inset;
+  white-space: nowrap;
+}
+.prd-page-nav { display: flex; gap: 5px; }
+.prd-pg-btn {
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 1.5px solid #c4b5fd;
+  background: rgba(255,255,255,.85);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  color: #7c3aed;
+  transition: all .18s;
+}
+.prd-pg-btn:hover:not(:disabled) {
+  background: #fff; border-color: #7c3aed;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(124,58,237,.25);
+}
+.prd-pg-btn:disabled { opacity: .4; cursor: not-allowed; }
 
 /* Status tabs */
 .prd-status-tabs {
@@ -2082,14 +2272,46 @@ const SCOPED_CSS = `
   color: #e9e5ff;
 }
 
-/* Header — dark */
+/* Header — dark (keep the gradient ring; deep violet padding-box fill) */
 [data-bs-theme="dark"] .prd-header {
-  background: #1c2531;
-  border-color: rgba(255,255,255,.08);
-  box-shadow: 0 2px 12px rgba(0,0,0,.4);
+  border: 1px solid transparent;
+  background:
+    linear-gradient(110deg, #1e1b4b 0%, #2e1065 35%, #3b1675 70%, #4c1d95 100%) padding-box,
+    linear-gradient(125deg, #7c3aed 0%, #8b5cf6 22%, #6366f1 48%, #d946ef 76%, #ec4899 100%) border-box;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.05) inset,
+    0 6px 22px rgba(0,0,0,0.45),
+    0 2px 8px rgba(124,58,237,0.20);
 }
-[data-bs-theme="dark"] .prd-header-title { color: #ede9fe; }
-[data-bs-theme="dark"] .prd-header-sub   { color: #a8a8a8; }
+[data-bs-theme="dark"] .prd-header-icon {
+  background: linear-gradient(135deg, #a78bfa, #7c3aed);
+  box-shadow: 0 4px 14px rgba(124,58,237,0.50), 0 0 0 3px rgba(167,139,250,0.18);
+}
+[data-bs-theme="dark"] .prd-header-title { color: #f5f3ff; }
+[data-bs-theme="dark"] .prd-header-sub   { color: #ede9fe; }
+
+/* List card + pagination — dark */
+[data-bs-theme="dark"] .prd-list-card {
+  background: #1a1430; border-color: #3b2a6b;
+  box-shadow: 0 4px 16px rgba(0,0,0,.45);
+}
+[data-bs-theme="dark"] .prd-pagination {
+  border-top-color: #3b2a6b;
+  background: linear-gradient(90deg, #1f1640 0%, #271a4e 40%, #1f1640 100%);
+}
+[data-bs-theme="dark"] .prd-pag-info,
+[data-bs-theme="dark"] .prd-rows-sel {
+  background: rgba(255,255,255,.05); border-color: #4c1d95; color: #ddd6fe;
+}
+[data-bs-theme="dark"] .prd-pag-info .prd-hl,
+[data-bs-theme="dark"] .prd-rows-sel select { color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-rows-sel select option { color: #1a1430; }
+[data-bs-theme="dark"] .prd-pg-btn {
+  background: rgba(255,255,255,.05); border-color: #4c1d95; color: #c4b5fd;
+}
+[data-bs-theme="dark"] .prd-pg-btn:hover:not(:disabled) {
+  background: rgba(255,255,255,.1); border-color: #a78bfa;
+}
 
 /* Status tabs — dark */
 [data-bs-theme="dark"] .prd-status-tabs { background: #1a1430; border-color: #3b2a6b; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
