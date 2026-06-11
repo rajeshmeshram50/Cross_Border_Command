@@ -1235,7 +1235,7 @@ class SalesPdfController extends Controller
         if ($q->port_of_loading) {
             // Try to split a "CODE-Name" or "CODE - Name" label into the
             // {code, name} pair the template renders. Fall back to plain name.
-            if (preg_match('#^([A-Z0-9]+)\s*[-–]\s*(.+)$#', (string) $q->port_of_loading, $m)) {
+            if (preg_match('#^([A-Z0-9]+)\s*[-–]\s*(.+)$#u', (string) $q->port_of_loading, $m)) {
                 $port = (object) ['code' => $m[1], 'name' => trim($m[2]), 'address' => ''];
             } else {
                 $port = (object) ['code' => '', 'name' => (string) $q->port_of_loading, 'address' => ''];

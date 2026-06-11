@@ -55,6 +55,19 @@
             color: #4d4d4d;
         }
 
+        /* Centered company compliance strip: "Name | CIN | GST | IEC | PAN".
+           Only the fields that have a value are rendered (built server-side),
+           so there are never empty "| |" gaps. Sits above the "Page X of Y"
+           line that page_text() draws. */
+        .pdf-footer .pf-company {
+            font-size: 7.5px;
+            line-height: 1.2;
+            /* Colour is set inline to the tenant's primary brand colour
+               (same as the table headers); this is only a fallback. */
+            color: #7CB342;
+            font-weight: 400;
+        }
+
         body {
             margin-bottom: 10px;
             /* Helvetica is what the reference PDF metadata reports for every
@@ -218,6 +231,27 @@
 
 <body>
 
+    @php
+        // Sanitiser for any DB free-text printed in the PDF. dompdf's core
+        // Helvetica font can't draw characters outside the Latin range, and
+        // invalid/garbled bytes in the data surface as "??" or □ boxes (e.g. a
+        // stray character saved in a Port Of Loading name). This drops invalid
+        // UTF-8 byte sequences and the replacement / control characters so only
+        // clean, renderable text reaches the page. Normal letters, digits,
+        // punctuation and accented Latin characters are preserved.
+        $pdfClean = function ($s) {
+            $s = (string) $s;
+            $s = mb_convert_encoding($s, 'UTF-8', 'UTF-8'); // strip invalid byte sequences
+            // Keep ONLY what DomPDF's core fonts can draw: printable ASCII +
+            // Latin-1 (plus tab/newlines). Everything else — the replacement
+            // char, en/em dashes, CJK, emoji, control bytes — is removed so it
+            // can never surface as a "?" or box (DomPDF substitutes "?" for any
+            // glyph the font lacks; stripping it pre-render avoids that).
+            $s = preg_replace('/[^\x09\x0A\x0D\x20-\x7E\x{00A0}-\x{00FF}]/u', '', $s);
+            return trim((string) $s);
+        };
+    @endphp
+
     <!-- GLOBAL FOOTER — corporate export-document style, per spec.
      One white block, two rows, one shared background.
      ROW 1: barcode + URL centered beneath it (LEFT, rowspan=2 so it
@@ -230,21 +264,40 @@
             ({PAGE_COUNT} only resolves there). The empty cell holds
             the vertical space so the page indicator lands on the same
             white background as the rest of the footer. -->
+    @php
+        // Company compliance strip for the footer — only the fields that
+        // actually carry a value are included, joined by " | ", so there are
+        // never empty "| |" gaps when (say) IEC isn't set.
+        $__footerParts = [];
+        if (trim((string) ($companyDetails->name ?? '')) !== '')
+            $__footerParts[] = $companyDetails->name;
+        if (trim((string) ($companyDetails->cin ?? '')) !== '')
+            $__footerParts[] = 'CIN: ' . $companyDetails->cin;
+        if (trim((string) ($companyDetails->gst_no ?? '')) !== '')
+            $__footerParts[] = 'GST: ' . $companyDetails->gst_no;
+        if (trim((string) ($companyDetails->iec ?? '')) !== '')
+            $__footerParts[] = 'IEC: ' . $companyDetails->iec;
+        if (trim((string) ($companyDetails->pan_no ?? '')) !== '')
+            $__footerParts[] = 'PAN: ' . $companyDetails->pan_no;
+        $__footerStrip = implode('  |  ', $__footerParts);
+    @endphp
     <div class="pdf-footer">
-        {{-- Footer on every page. Top line: barcode (LEFT) + date (RIGHT).
-        The page number is drawn CENTER and slightly BELOW this line by
-        the page_text() script at the bottom (it needs {PAGE_COUNT}). --}}
+        {{-- Footer on every page: barcode (LEFT) + dynamic company compliance
+        strip (CENTER, page-centered via equal-width side cells). The
+        "Page X of Y" line is drawn CENTER and BELOW this by the page_text()
+        script at the bottom (it needs {PAGE_COUNT}). --}}
         <table class="pf-row">
             <tr>
-                <td style="width:40%; text-align:left; padding-left:8px;">
+                <td style="width:15%; text-align:left; padding-left:8px;">
                     @if(!empty($barcodeData))
                         <img src="{{ $barcodeData }}" alt="" class="pf-barcode">
                     @endif
                 </td>
-                <td style="width:20%;">&nbsp;</td>
-                <td class="pf-date" style="width:40%; text-align:right; padding-right:8px;">
-                    {{ date('d/m/Y') }}
+                <td class="pf-company"
+                    style="width:70%; text-align:center; color:{{ $companyDetails->primary_color ?? '#7CB342' }};">
+                    {{ $__footerStrip }}
                 </td>
+                <td style="width:15%;">&nbsp;</td>
             </tr>
         </table>
     </div>
@@ -421,15 +474,15 @@
                             <!-- LEFT SIDE: LOGO AND COMPANY INFO -->
                             <td style="width:45%; vertical-align:top; font-size:9px; padding:0; margin:0;">
                                 {{-- Logo sits in a fixed-height band so the letterhead
-                                     below it starts on the SAME line as the right column's
-                                     detail block (which uses a matching band). --}}
+                                below it starts on the SAME line as the right column's
+                                detail block (which uses a matching band). --}}
                                 <div style="height:80px;">
-                                @if($logoData)
-                                    <img src="{{ $logoData }}" alt="Logo" width="200" height="80"
-                                        style="width:200px; height:auto; max-width:200px; max-height:78px; display:block; object-fit:contain;">
-                                @else
-                                    {!! $logoFallbackHtml !!}
-                                @endif
+                                    @if($logoData)
+                                        <img src="{{ $logoData }}" alt="Logo" width="200" height="80"
+                                            style="width:200px; height:auto; max-width:200px; max-height:78px; display:block; object-fit:contain;">
+                                    @else
+                                        {!! $logoFallbackHtml !!}
+                                    @endif
                                 </div>
 
                                 {{-- Letterhead block — each row only renders when the
@@ -511,52 +564,53 @@
                                         <td style="width:35%;"></td>
                                         <td style="width:65%; text-align:left;">
                                             {{-- Title + No/Date + barcode sit in a fixed-height
-                                                 band matching the left logo band, so the
-                                                 International detail block below starts on the
-                                                 SAME line as the left letterhead. --}}
+                                            band matching the left logo band, so the
+                                            International detail block below starts on the
+                                            SAME line as the left letterhead. --}}
                                             <div style="height:80px;">
-                                            @if (Str::wordCount($pdf_title) > 3)
-                                                <h4
-                                                    style="margin:0; padding:0; font-weight:bold; font-size:20px; line-height:1; color:#777777; font-family: Helvetica, 'DejaVu Sans', sans-serif;">
-                                                    {{ strtoupper($pdf_title) }}
-                                                </h4>
-                                            @else
-                                                <h3
-                                                    style="margin:0; padding:0; font-weight:bold; font-size:20px; line-height:1; color:#777777; letter-spacing:-0.3px; white-space:nowrap; font-family: Helvetica, 'DejaVu Sans', sans-serif;">
-                                                    {{ strtoupper($pdf_title) }}
-                                                </h3>
-                                            @endif
+                                                @if (Str::wordCount($pdf_title) > 3)
+                                                    <h4
+                                                        style="margin:0; padding:0; font-weight:bold; font-size:20px; line-height:1; color:#777777; font-family: Helvetica, 'DejaVu Sans', sans-serif;">
+                                                        {{ strtoupper($pdf_title) }}
+                                                    </h4>
+                                                @else
+                                                    <h3
+                                                        style="margin:0; padding:0; font-weight:bold; font-size:20px; line-height:1; color:#777777; letter-spacing:-0.3px; white-space:nowrap; font-family: Helvetica, 'DejaVu Sans', sans-serif;">
+                                                        {{ strtoupper($pdf_title) }}
+                                                    </h3>
+                                                @endif
 
-                                            <table style="width:100%; border-collapse:collapse; margin-top:5px;">
-                                                <tr>
-                                                    <td style="width:60%; font-size:9px;">
-                                                        <div><strong>{{ $doc_label_short ?? 'PI' }} No :</strong>
-                                                            {{ $quotation->pi_number }}</div>
-                                                        <div><strong>{{ $doc_label_short ?? 'PI' }} Date :</strong>
-                                                            {{ date('d/m/Y', strtotime($quotation->pi_date)) }}</div>
-                                                    </td>
-                                                    <td style="width:40%; text-align:right;">
-                                                        @if(!empty($barcodeData))
-                                                            {{-- Branch has a website → render real scannable Code128
-                                                            + the URL below in a clean PDF font. --}}
-                                                            <img src="{{ $barcodeData }}" alt="Barcode" width="130" height="30"
-                                                                style="width:130px; height:30px; display:block; margin-left:auto;">
-                                                            <div
-                                                                style="font-size:7.5px; color:#333; text-align:center; word-break:break-all; line-height:9px; margin-top:2px; max-width:140px; margin-left:auto;">
-                                                                {{ $barcodeText ?? ($companyDetails->website ?? '') }}
-                                                            </div>
-                                                        @else
-                                                            {{-- No website on the branch → branch name takes the slot.
-                                                            Same right-aligned, ~140px wide, so the header strip
-                                                            stays balanced. --}}
-                                                            <div
-                                                                style="font-size:11px; font-weight:bold; color:#666666; text-align:right; line-height:13px; max-width:140px; margin-left:auto; font-family: Helvetica, 'DejaVu Sans', sans-serif;">
-                                                                {{ $companyDetails->name ?? '' }}
-                                                            </div>
-                                                        @endif
-                                                    </td>
-                                                </tr>
-                                            </table>
+                                                <table style="width:100%; border-collapse:collapse; margin-top:5px;">
+                                                    <tr>
+                                                        <td style="width:60%; font-size:9px;">
+                                                            <div><strong>{{ $doc_label_short ?? 'PI' }} No :</strong>
+                                                                {{ $quotation->pi_number }}</div>
+                                                            <div><strong>{{ $doc_label_short ?? 'PI' }} Date :</strong>
+                                                                {{ date('d/m/Y', strtotime($quotation->pi_date)) }}</div>
+                                                        </td>
+                                                        <td style="width:40%; text-align:right;">
+                                                            @if(!empty($barcodeData))
+                                                                {{-- Branch has a website → render real scannable Code128
+                                                                + the URL below in a clean PDF font. --}}
+                                                                <img src="{{ $barcodeData }}" alt="Barcode" width="130"
+                                                                    height="30"
+                                                                    style="width:130px; height:30px; display:block; margin-left:auto;">
+                                                                <div
+                                                                    style="font-size:7.5px; color:#333; text-align:center; word-break:break-all; line-height:9px; margin-top:2px; max-width:140px; margin-left:auto;">
+                                                                    {{ $barcodeText ?? ($companyDetails->website ?? '') }}
+                                                                </div>
+                                                            @else
+                                                                {{-- No website on the branch → branch name takes the slot.
+                                                                Same right-aligned, ~140px wide, so the header strip
+                                                                stays balanced. --}}
+                                                                <div
+                                                                    style="font-size:11px; font-weight:bold; color:#666666; text-align:right; line-height:13px; max-width:140px; margin-left:auto; font-family: Helvetica, 'DejaVu Sans', sans-serif;">
+                                                                    {{ $companyDetails->name ?? '' }}
+                                                                </div>
+                                                            @endif
+                                                        </td>
+                                                    </tr>
+                                                </table>
                                             </div>
 
                                             @if($quotation->document_type == "International")
@@ -581,7 +635,8 @@
                                                         {{ $quotation->currency->name ?? '' }}</div>
                                                     @if($quotation->portOfLoading ?? null)
                                                         <div style="margin-bottom:6px;"><strong>Port Of Loading :</strong>
-                                                            {{ $quotation->portOfLoading->code }}-{{ $quotation->portOfLoading->name }}{{ $quotation->portOfLoading->address ? ', ' . $quotation->portOfLoading->address : '' }}
+                                                            {{ $pdfClean($quotation->portOfLoading->code) }}
+                                                            {{ $pdfClean($quotation->portOfLoading->name) }}{{ $quotation->portOfLoading->address ? ', ' . $pdfClean($quotation->portOfLoading->address) : '' }}
                                                         </div>
                                                     @else
                                                         <div style="margin-bottom:6px;"><strong>Port Of Loading :</strong></div>
@@ -745,14 +800,16 @@
                                     {{ !empty($product['product_description']) ? $product['product_description'] : '-' }}
                                 </td>
                                 <td style="width:6%;  text-align: center;">
-                                    {{ rtrim(rtrim(number_format($product['quantity'], 3, '.', ','), '0'), '.') }}</td>
+                                    {{ rtrim(rtrim(number_format($product['quantity'], 3, '.', ','), '0'), '.') }}
+                                </td>
                                 <td style="width:9%;  text-align: right;">{{ number_format($product['rate'], 2) }}</td>
                                 <td style="width:7%;  text-align: center;">{{ number_format($product['tax_pct'] ?? 0, 2) }}%
                                 </td>
                                 <td style="width:9%;  text-align: right;">{{ number_format($product['tax_amt'] ?? 0, 2) }}
                                 </td>
                                 <td style="width:10%; text-align: right;">
-                                    {{ number_format($product['rate_with_tax'] ?? $product['rate'], 2) }}</td>
+                                    {{ number_format($product['rate_with_tax'] ?? $product['rate'], 2) }}
+                                </td>
                                 <td style="width:10%; text-align: right;">{{ number_format($product['amount'], 2) }}</td>
                             </tr>
                         @endforeach
@@ -830,17 +887,20 @@
                                 <tr>
                                     <td style="padding:3px 0; color:#555;">IGST</td>
                                     <td style="text-align:right; padding:3px 0;">
-                                        {{ number_format($quotation->igst, 2) }}</td>
+                                        {{ number_format($quotation->igst, 2) }}
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td style="padding:3px 0; color:#555;">CGST</td>
                                     <td style="text-align:right; padding:3px 0;">
-                                        {{ number_format($quotation->cgst, 2) }}</td>
+                                        {{ number_format($quotation->cgst, 2) }}
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td style="padding:3px 0; color:#555;">SGST</td>
                                     <td style="text-align:right; padding:3px 0;">
-                                        {{ number_format($quotation->sgst, 2) }}</td>
+                                        {{ number_format($quotation->sgst, 2) }}
+                                    </td>
                                 </tr>
                                 {{-- Grand Total highlighted — larger font, bolder, with a top
                                 border separator so the eye lands on it as the row that
@@ -848,7 +908,8 @@
                                 <tr>
                                     <td
                                         style="padding:8px 0 0 0; font-size:12px; color:#333; border-top:1px solid #ddd; white-space:nowrap;">
-                                        <strong>Grand Total:</strong></td>
+                                        <strong>Grand Total:</strong>
+                                    </td>
                                     <td
                                         style="text-align:right; padding:8px 0 0 0; font-size:12px; color:#333; border-top:1px solid #ddd; white-space:nowrap;">
                                         <strong>{{ $__ccyCode }}
@@ -1207,7 +1268,9 @@ if (isset($pdf)) {
     $text  = "Page {PAGE_NUM} of {PAGE_COUNT}";
     $width = $fontMetrics->get_text_width("Page 99 of 99", $font, $size);
     $x     = ($pdf->get_width() - $width) / 2 + 2;
-    $y     = $pdf->get_height() - 28;
+    // Sits just under the footer strip. Larger subtraction = higher up (closer
+    // to the footer line), which tightens the gap below the barcode/company row.
+    $y     = $pdf->get_height() - 36;
     $pdf->page_text($x, $y, $text, $font, $size, [0.30, 0.30, 0.30]);
 }
 </script>
