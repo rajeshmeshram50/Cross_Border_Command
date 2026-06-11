@@ -1174,23 +1174,27 @@ const PLACEHOLDER_GROUPS: PhGroup[] = [
  * on the opportunity at generation time. */
 const PH_TD_CELL = 'border:1px solid #cbd5e1;padding:6px 10px;';
 const PH_TH_CELL = `${PH_TD_CELL}background:#f1f5f9;font-weight:700;text-align:left;`;
-const PRODUCT_TABLE_HTML =
-  `<table style="width:100%;border-collapse:collapse;margin:10px 0;font-size:13px;">` +
-    `<thead><tr>` +
-      `<th style="${PH_TH_CELL}">#</th>` +
-      `<th style="${PH_TH_CELL}">Product Code</th>` +
-      `<th style="${PH_TH_CELL}">Product Name</th>` +
-      `<th style="${PH_TH_CELL}">Segment</th>` +
-      `<th style="${PH_TH_CELL}text-align:right;">Quantity</th>` +
-    `</tr></thead>` +
-    `<tbody><tr>` +
-      `<td style="${PH_TD_CELL}">{{product.sr}}</td>` +
-      `<td style="${PH_TD_CELL}">{{product.code}}</td>` +
-      `<td style="${PH_TD_CELL}">{{product.name}}</td>` +
-      `<td style="${PH_TD_CELL}">{{product.segment}}</td>` +
-      `<td style="${PH_TD_CELL}text-align:right;">{{product.quantity}}</td>` +
-    `</tr></tbody>` +
-  `</table>`;
+type PhProductCol = { key: string; label: string; token: string; align?: 'right' };
+const PH_PRODUCT_COLUMNS: PhProductCol[] = [
+  { key: 'code',        label: 'Code',        token: '{{product.code}}' },
+  { key: 'name',        label: 'Name',        token: '{{product.name}}' },
+  { key: 'segment',     label: 'Segment',     token: '{{product.segment}}' },
+  { key: 'quantity',    label: 'Quantity',    token: '{{product.quantity}}', align: 'right' },
+  { key: 'hsn_sac',     label: 'HSN/SAC',     token: '{{product.hsn_sac}}' },
+  { key: 'description', label: 'Description', token: '{{product.description}}' },
+  { key: 'haz',         label: 'Haz/Non-Haz', token: '{{product.haz}}' },
+];
+const PH_DEFAULT_TABLE_COLS = ['code', 'name', 'segment', 'quantity'];
+
+function buildPhProductTableHtml(keys: string[]): string {
+  const cols = PH_PRODUCT_COLUMNS.filter(c => keys.includes(c.key));   // preserves column order
+  const th = (txt: string, right?: boolean) => `<th style="${PH_TH_CELL}${right ? 'text-align:right;' : ''}">${txt}</th>`;
+  const td = (content: string, right?: boolean) => `<td style="${PH_TD_CELL}${right ? 'text-align:right;' : ''}">${content}</td>`;
+  const head = th('#') + cols.map(c => th(c.label, c.align === 'right')).join('');
+  const body = td('{{product.sr}}') + cols.map(c => td(c.token, c.align === 'right')).join('');
+  return `<table style="width:100%;border-collapse:collapse;margin:10px 0;font-size:13px;">`
+    + `<thead><tr>${head}</tr></thead><tbody><tr>${body}</tr></tbody></table>`;
+}
 
 function PlaceholderPicker({ onClose, onPick }: { onClose: () => void; onPick: (token: string) => void }) {
   const toast = useToast();
@@ -1198,6 +1202,13 @@ function PlaceholderPicker({ onClose, onPick }: { onClose: () => void; onPick: (
   // Multi-select set — tokens ticked across ALL groups so one "Copy
   // selected" can grab a mix of buyer + consignee + supplier placeholders.
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Which columns the Product Table should include (ticked in the builder).
+  const [tableCols, setTableCols] = useState<Set<string>>(new Set(PH_DEFAULT_TABLE_COLS));
+  const toggleCol = (k: string) => setTableCols(prev => {
+    const next = new Set(prev);
+    if (next.has(k)) next.delete(k); else next.add(k);
+    return next;
+  });
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
     window.addEventListener('keydown', onKey, true);
@@ -1320,12 +1331,7 @@ function PlaceholderPicker({ onClose, onPick }: { onClose: () => void; onPick: (
               {activeId === 'product' && (
                 <div
                   className="agw-ph-card"
-                  style={{ ['--ph-card-color' as any]: active.iconColor, gridColumn: '1 / -1', borderColor: hexA(active.iconColor, .4), background: hexA(active.iconColor, .05) }}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => onPick(PRODUCT_TABLE_HTML)}
-                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(PRODUCT_TABLE_HTML); } }}
-                  title="Insert a product table"
+                  style={{ ['--ph-card-color' as any]: active.iconColor, gridColumn: '1 / -1', borderColor: hexA(active.iconColor, .4), background: hexA(active.iconColor, .05), cursor: 'default' }}
                 >
                   <span className="agw-ph-card-top">
                     <span className="agw-ph-card-label" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, color: active.iconColor }}>
@@ -1333,7 +1339,23 @@ function PlaceholderPicker({ onClose, onPick }: { onClose: () => void; onPick: (
                       Product Table
                     </span>
                   </span>
-                  <span className="agw-ph-card-token" style={{ whiteSpace: 'normal' }}>Inserts a table with Code · Name · Segment · Quantity — one row per product at generation time.</span>
+                  <span className="agw-ph-card-token" style={{ whiteSpace: 'normal' }}>Tick the columns to include, then insert — one row per product at generation time.</span>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                    {PH_PRODUCT_COLUMNS.map(c => {
+                      const on = tableCols.has(c.key);
+                      return (
+                        <label key={c.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 7, cursor: 'pointer', userSelect: 'none', fontSize: 11.5, fontWeight: 600, color: active.iconColor, border: `1.5px solid ${hexA(active.iconColor, on ? 1 : .35)}`, background: on ? hexA(active.iconColor, .1) : '#fff' }}>
+                          <input type="checkbox" checked={on} onChange={() => toggleCol(c.key)} style={{ accentColor: active.iconColor, margin: 0, cursor: 'pointer' }} />
+                          {c.label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <button type="button" disabled={tableCols.size === 0}
+                    onClick={() => onPick(buildPhProductTableHtml([...tableCols]))}
+                    style={{ marginTop: 11, alignSelf: 'flex-start', padding: '7px 16px', borderRadius: 8, border: 'none', cursor: tableCols.size === 0 ? 'not-allowed' : 'pointer', background: active.iconColor, color: '#fff', fontSize: 12, fontWeight: 700, opacity: tableCols.size === 0 ? .5 : 1 }}>
+                    Insert Table ({tableCols.size} column{tableCols.size === 1 ? '' : 's'})
+                  </button>
                 </div>
               )}
               {active.fields.map(f => {

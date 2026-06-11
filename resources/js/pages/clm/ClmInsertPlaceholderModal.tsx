@@ -73,30 +73,34 @@ const TABS: { key: Tab; label: string; icon: string; color: string }[] = [
   { key: 'product',   label: 'Product',   icon: '🛒', color: '#8b5cf6' },
 ];
 
-/* A ready-made product table, mirroring the Proforma Invoice product grid.
- * Clicking it drops the whole table into the draft; the single tbody row
- * carries the {{product.*}} tokens and acts as the template the renderer
+/* The Product Table is column-configurable: the user ticks which columns to
+ * include and we build the table HTML from that selection. The single tbody
+ * row carries the {{product.*}} tokens and acts as the template the renderer
  * repeats once per mapped product at generation time. Inline styles keep it
  * intact through the contenteditable editor and the DOCX/PDF export. */
 const TD_CELL = 'border:1px solid #cbd5e1;padding:6px 10px;';
 const TH_CELL = `${TD_CELL}background:#f1f5f9;font-weight:700;text-align:left;`;
-const PRODUCT_TABLE_HTML =
-  `<table style="width:100%;border-collapse:collapse;margin:10px 0;font-size:13px;">` +
-    `<thead><tr>` +
-      `<th style="${TH_CELL}">#</th>` +
-      `<th style="${TH_CELL}">Product Code</th>` +
-      `<th style="${TH_CELL}">Product Name</th>` +
-      `<th style="${TH_CELL}">Segment</th>` +
-      `<th style="${TH_CELL}text-align:right;">Quantity</th>` +
-    `</tr></thead>` +
-    `<tbody><tr>` +
-      `<td style="${TD_CELL}">{{product.sr}}</td>` +
-      `<td style="${TD_CELL}">{{product.code}}</td>` +
-      `<td style="${TD_CELL}">{{product.name}}</td>` +
-      `<td style="${TD_CELL}">{{product.segment}}</td>` +
-      `<td style="${TD_CELL}text-align:right;">{{product.quantity}}</td>` +
-    `</tr></tbody>` +
-  `</table>`;
+type ProductCol = { key: string; label: string; token: string; align?: 'right' };
+const PRODUCT_COLUMNS: ProductCol[] = [
+  { key: 'code',        label: 'Code',        token: '{{product.code}}' },
+  { key: 'name',        label: 'Name',        token: '{{product.name}}' },
+  { key: 'segment',     label: 'Segment',     token: '{{product.segment}}' },
+  { key: 'quantity',    label: 'Quantity',    token: '{{product.quantity}}', align: 'right' },
+  { key: 'hsn_sac',     label: 'HSN/SAC',     token: '{{product.hsn_sac}}' },
+  { key: 'description', label: 'Description', token: '{{product.description}}' },
+  { key: 'haz',         label: 'Haz/Non-Haz', token: '{{product.haz}}' },
+];
+const DEFAULT_TABLE_COLS = ['code', 'name', 'segment', 'quantity'];
+
+function buildProductTableHtml(keys: string[]): string {
+  const cols = PRODUCT_COLUMNS.filter(c => keys.includes(c.key));   // preserves column order
+  const th = (txt: string, right?: boolean) => `<th style="${TH_CELL}${right ? 'text-align:right;' : ''}">${txt}</th>`;
+  const td = (content: string, right?: boolean) => `<td style="${TD_CELL}${right ? 'text-align:right;' : ''}">${content}</td>`;
+  const head = th('#') + cols.map(c => th(c.label, c.align === 'right')).join('');
+  const body = td('{{product.sr}}') + cols.map(c => td(c.token, c.align === 'right')).join('');
+  return `<table style="width:100%;border-collapse:collapse;margin:10px 0;font-size:13px;">`
+    + `<thead><tr>${head}</tr></thead><tbody><tr>${body}</tr></tbody></table>`;
+}
 
 interface Props {
   open: boolean;
@@ -111,6 +115,13 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert }: P
   // while the modal is open so a single "Copy selected" can grab a mix of
   // customer + consignee + supplier placeholders in one go.
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Which columns the Product Table should include (ticked in the builder).
+  const [tableCols, setTableCols] = useState<Set<string>>(new Set(DEFAULT_TABLE_COLS));
+  const toggleCol = (k: string) => setTableCols(prev => {
+    const next = new Set(prev);
+    if (next.has(k)) next.delete(k); else next.add(k);
+    return next;
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -262,14 +273,24 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert }: P
 
             <div className="ipm-grid">
               {tab === 'product' && (
-                <div className="ipm-card ipm-card-table" role="button" tabIndex={0}
-                     onClick={() => onInsert(PRODUCT_TABLE_HTML)}
-                     onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onInsert(PRODUCT_TABLE_HTML); } }}>
+                <div className="ipm-card ipm-card-table">
                   <span className="ipm-card-label">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 7 }}><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
                     Product Table
                   </span>
-                  <span className="ipm-card-tabledesc">Inserts a table with Code · Name · Segment · Quantity columns — one row per product at generation time.</span>
+                  <span className="ipm-card-tabledesc">Tick the columns to include, then insert — one row per product at generation time.</span>
+                  <div className="ipm-tablecols">
+                    {PRODUCT_COLUMNS.map(c => (
+                      <label key={c.key} className={`ipm-tablecol ${tableCols.has(c.key) ? 'on' : ''}`}>
+                        <input type="checkbox" checked={tableCols.has(c.key)} onChange={() => toggleCol(c.key)} />
+                        {c.label}
+                      </label>
+                    ))}
+                  </div>
+                  <button type="button" className="ipm-table-insert" disabled={tableCols.size === 0}
+                    onClick={() => onInsert(buildProductTableHtml([...tableCols]))}>
+                    Insert Table ({tableCols.size} column{tableCols.size === 1 ? '' : 's'})
+                  </button>
                 </div>
               )}
               {fields.map(f => {
@@ -447,6 +468,25 @@ const IPM_CSS = `
 [data-bs-theme="dark"] .ipm-card-table { background: linear-gradient(180deg, #1e293b 0%, rgba(139,92,246,.16) 100%); border-color: rgba(139,92,246,.40); }
 [data-bs-theme="dark"] .ipm-card-table .ipm-card-label { color: #c4b5fd; }
 [data-bs-theme="dark"] .ipm-card-tabledesc { color: #c4b5fd; }
+.ipm-tablecols { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.ipm-tablecol {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: 7px; cursor: pointer; user-select: none;
+  font-size: 11.5px; font-weight: 600; color: #6d28d9;
+  border: 1.5px solid rgba(139,92,246,.3); background: #fff;
+}
+.ipm-tablecol.on { background: #f5f3ff; border-color: #8b5cf6; }
+.ipm-tablecol input { accent-color: #8b5cf6; cursor: pointer; margin: 0; }
+.ipm-table-insert {
+  margin-top: 11px; align-self: flex-start;
+  padding: 7px 16px; border-radius: 8px; border: none; cursor: pointer;
+  background: #8b5cf6; color: #fff; font-size: 12px; font-weight: 700;
+  transition: background .15s;
+}
+.ipm-table-insert:hover:not(:disabled) { background: #7c3aed; }
+.ipm-table-insert:disabled { opacity: .5; cursor: not-allowed; }
+[data-bs-theme="dark"] .ipm-tablecol { background: #1e293b; color: #c4b5fd; border-color: rgba(139,92,246,.4); }
+[data-bs-theme="dark"] .ipm-tablecol.on { background: rgba(139,92,246,.22); border-color: #a78bfa; }
 .ipm-card {
   display: flex; flex-direction: column; gap: 8px;
   padding: 13px 14px; border-radius: 11px;
