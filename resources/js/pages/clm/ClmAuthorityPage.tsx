@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
@@ -53,6 +53,11 @@ export default function ClmAuthorityPage() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch]   = useState('');
   const [page, setPage]       = useState(1);
+  // Dynamic pagination: rows-per-page auto-fits the visible table height.
+  const [rpp, setRpp]         = useState(PER_PAGE);
+  const [fillH, setFillH]     = useState<number | undefined>(undefined);
+  const scrollRef             = useRef<HTMLDivElement | null>(null);
+  const rootRef               = useRef<HTMLDivElement | null>(null);
 
   const [editing, setEditing]     = useState<Authority | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -73,7 +78,32 @@ export default function ClmAuthorityPage() {
     const s = search.toLowerCase();
     return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.description.toLowerCase().includes(s));
   }, [rows, search]);
-  const { slice, start, pageCount, safePage } = paginate(filtered, page);
+  const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
+
+  // Dynamic pagination: pick the rows-per-page that fits between the table's
+  // top and the bottom of the viewport, so the page fills the screen and
+  // spills the rest onto further pages. Layout stays natural; only the row
+  // count changes. Mirrors the Segment Master page.
+  useEffect(() => {
+    const recompute = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;     // viewport-relative top of table
+      const THEAD = 40, ROW = 46, FOOTER = 96;         // header row + pagination/footer reserve
+      const avail = window.innerHeight - top - THEAD - FOOTER;
+      const fit = Math.max(4, Math.floor(avail / ROW));
+      setRpp(prev => (prev === fit ? prev : fit));
+      // Stretch the table card down to cover the page even when rows are few.
+      const fh = Math.max(0, window.innerHeight - top - 64);
+      setFillH(prev => (prev === fh ? prev : fh));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    const ro = new ResizeObserver(recompute);
+    if (rootRef.current) ro.observe(rootRef.current);
+    window.addEventListener('resize', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+  }, [filtered.length]);
 
   const onSave = async (form: { name: string; description: string }, id?: number) => {
     try {
@@ -96,8 +126,19 @@ export default function ClmAuthorityPage() {
   };
 
   return (
-    <div className="clm-root">
+    <div className="clm-root" ref={rootRef}>
       <style>{CLM_CSS}</style>
+      <style>{`
+        /* Figma-match: fixed-width search on the left (not flex-grow); the
+           Total badge stays right via the toolbar's space-between. */
+        .clm-root .clm-tabs-bar .auth-search {
+          flex: 0 0 auto; width: 500px; max-width: 100%;
+          transition: width .18s ease, border-color .15s ease, box-shadow .15s ease;
+        }
+        .clm-root .clm-tabs-bar .auth-search:focus-within { width: 580px; }
+        @media (max-width: 1280px) { .clm-root .clm-tabs-bar .auth-search { width: 360px; } }
+        @media (max-width: 760px)  { .clm-root .clm-tabs-bar .auth-search { width: 100%; } }
+      `}</style>
 
       <ClmPageHeader
         icon={ICO.hAuth}
@@ -122,7 +163,7 @@ export default function ClmAuthorityPage() {
       {/* ── Card 3: Toolbar + Table ── */}
       <div className="clm-page-card">
         <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
-          <div className="clm-search clm-search-grow">
+          <div className="clm-search auth-search">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
             <input type="text" placeholder="Search by authority name, ID or description…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
           </div>
@@ -141,7 +182,7 @@ export default function ClmAuthorityPage() {
               <div className="clm-empty-sub">{rows.length === 0 ? 'Click + Add Authority to create the first record.' : 'No results match the current search.'}</div>
             </div>
           ) : (
-            <div className="clm-table-wrap">
+            <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
               <table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -178,7 +219,7 @@ export default function ClmAuthorityPage() {
               </table>
               {!loading && filtered.length > 0 && (
                 <div className="clm-pag">
-                  <span className="clm-pag-info">Showing <b>{start + 1}–{Math.min(start + PER_PAGE, filtered.length)}</b> of <b>{filtered.length}</b> record{filtered.length === 1 ? '' : 's'}</span>
+                  <span className="clm-pag-info">Showing <b>{start + 1}–{start + slice.length}</b> of <b>{filtered.length}</b> record{filtered.length === 1 ? '' : 's'}</span>
                   <div className="clm-pag-btns">
                     {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
                       <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>

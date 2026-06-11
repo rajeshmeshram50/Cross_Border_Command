@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
-import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
+import { CLM_CSS, PER_PAGE } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
@@ -22,6 +22,11 @@ export default function ClmKycPage() {
   const [loading, setLoading]   = useState(false);
   const [search, setSearch]     = useState('');
   const [page, setPage]         = useState(1);
+  // Dynamic pagination: rows-per-page auto-fits the visible table height.
+  const [rpp, setRpp]           = useState(PER_PAGE);
+  const [fillH, setFillH]       = useState<number | undefined>(undefined);
+  const scrollRef               = useRef<HTMLDivElement | null>(null);
+  const rootRef                 = useRef<HTMLDivElement | null>(null);
   const [editing, setEditing]   = useState<Kyc | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Kyc | null>(null);
@@ -44,7 +49,33 @@ export default function ClmKycPage() {
     const s = search.toLowerCase();
     return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.authority.toLowerCase().includes(s));
   }, [rows, search]);
-  const { slice, start, pageCount, safePage } = paginate(filtered, page);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / rpp));
+  const safePage  = Math.min(Math.max(1, page), pageCount);
+  const start     = (safePage - 1) * rpp;
+  const slice     = filtered.slice(start, start + rpp);
+
+  // Dynamic pagination: pick the rows-per-page that fits between the table's
+  // top and the bottom of the viewport, and stretch the card to cover the page.
+  // Mirrors the Segment / Authority / QC pages.
+  useEffect(() => {
+    const recompute = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const THEAD = 40, ROW = 46, FOOTER = 96;
+      const avail = window.innerHeight - top - THEAD - FOOTER;
+      const fit = Math.max(4, Math.floor(avail / ROW));
+      setRpp(prev => (prev === fit ? prev : fit));
+      const fh = Math.max(0, window.innerHeight - top - 64);
+      setFillH(prev => (prev === fh ? prev : fh));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    const ro = new ResizeObserver(recompute);
+    if (rootRef.current) ro.observe(rootRef.current);
+    window.addEventListener('resize', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+  }, [filtered.length]);
 
   const onSave = async (form: { name: string; authority: string }, id?: number) => {
     try {
@@ -67,7 +98,7 @@ export default function ClmKycPage() {
   };
 
   return (
-    <div className="clm-root">
+    <div className="clm-root" ref={rootRef}>
       <style>{CLM_CSS}</style>
 
       <ClmPageHeader
@@ -85,13 +116,14 @@ export default function ClmKycPage() {
         steps={[
           { n: '01', title: 'Create KYC Record', desc: 'Add KYC and verification documents.',            icon: ICO.grid },
           { n: '02', title: 'Map Authority',     desc: 'Define issuing authority details.',              icon: ICO.shield },
-          { n: '03', title: 'Enable Usage',      desc: 'Use KYC documents across onboarding workflows.', icon: ICO.check },
+          { n: '03', title: 'Set Expiry Rules',  desc: 'Define expiry applicability and validity.',      icon: ICO.calendar },
+          { n: '04', title: 'Enable Usage',      desc: 'Use KYC documents across onboarding workflows.', icon: ICO.check },
         ]}
       />
 
       <div className="clm-page-card">
         <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
-          <div className="clm-search clm-search-grow">
+          <div className="clm-search clm-search-fixed">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
             <input type="text" placeholder="Search KYC documents…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
           </div>
@@ -110,7 +142,7 @@ export default function ClmKycPage() {
               <div className="clm-empty-sub">{rows.length === 0 ? 'Click + Add KYC Document to create the first record.' : 'No results match the current search.'}</div>
             </div>
           ) : (
-            <div className="clm-table-wrap">
+            <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
               <table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -139,7 +171,7 @@ export default function ClmKycPage() {
               </table>
               {!loading && filtered.length > 0 && (
                 <div className="clm-pag">
-                  <span className="clm-pag-info">Showing <b>{start + 1}–{Math.min(start + PER_PAGE, filtered.length)}</b> of <b>{filtered.length}</b> record{filtered.length === 1 ? '' : 's'}</span>
+                  <span className="clm-pag-info">Showing <b>{start + 1}–{start + slice.length}</b> of <b>{filtered.length}</b> record{filtered.length === 1 ? '' : 's'}</span>
                   <div className="clm-pag-btns">
                     {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
                       <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
@@ -166,7 +198,7 @@ export default function ClmKycPage() {
   );
 }
 
-function KycModal(props: { existing: Kyc | null; authorities: Authority[]; nextCode: string; onClose: () => void; onSave: (f: { name: string; authority: string }) => void; }) {
+export function KycModal(props: { existing: Kyc | null; authorities: Authority[]; nextCode: string; onClose: () => void; onSave: (f: { name: string; authority: string }) => void; }) {
   const { existing, authorities: initialAuthorities, nextCode, onClose, onSave } = props;
   const toast = useToast();
   const isEdit = !!existing;

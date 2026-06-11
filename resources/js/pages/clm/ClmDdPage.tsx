@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
@@ -22,6 +22,11 @@ export default function ClmDdPage() {
   const [loading, setLoading]   = useState(false);
   const [search, setSearch]     = useState('');
   const [page, setPage]         = useState(1);
+  // Dynamic pagination: rows-per-page auto-fits the visible table height.
+  const [rpp, setRpp]           = useState(PER_PAGE);
+  const [fillH, setFillH]       = useState<number | undefined>(undefined);
+  const scrollRef               = useRef<HTMLDivElement | null>(null);
+  const rootRef                 = useRef<HTMLDivElement | null>(null);
   const [editing, setEditing]   = useState<Dd | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Dd | null>(null);
@@ -43,7 +48,30 @@ export default function ClmDdPage() {
     const s = search.toLowerCase();
     return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.authority.toLowerCase().includes(s));
   }, [rows, search]);
-  const { slice, start, pageCount, safePage } = paginate(filtered, page);
+  const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
+
+  // Dynamic pagination: pick the rows-per-page that fits between the table's
+  // top and the bottom of the viewport, and stretch the card to cover the page.
+  // Mirrors the Segment / Authority / QC / KYC pages.
+  useEffect(() => {
+    const recompute = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const THEAD = 40, ROW = 46, FOOTER = 96;
+      const avail = window.innerHeight - top - THEAD - FOOTER;
+      const fit = Math.max(4, Math.floor(avail / ROW));
+      setRpp(prev => (prev === fit ? prev : fit));
+      const fh = Math.max(0, window.innerHeight - top - 64);
+      setFillH(prev => (prev === fh ? prev : fh));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    const ro = new ResizeObserver(recompute);
+    if (rootRef.current) ro.observe(rootRef.current);
+    window.addEventListener('resize', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+  }, [filtered.length]);
 
   const onSave = async (form: { name: string; authority: string }, id?: number) => {
     try {
@@ -66,7 +94,7 @@ export default function ClmDdPage() {
   };
 
   return (
-    <div className="clm-root">
+    <div className="clm-root" ref={rootRef}>
       <style>{CLM_CSS}</style>
       {/* Add DD Document — same springy hover affordance as the Add Client button:
           lift + slight scale + brightness on hover, press-down on active. */}
@@ -99,15 +127,16 @@ export default function ClmDdPage() {
         label="Due Diligence Master"
         sub="Manage due diligence document structures and risk verification requirements."
         steps={[
-          { n: '01', title: 'Create DD Record', desc: 'Add due diligence and verification documents.',     icon: ICO.doc },
-          { n: '02', title: 'Map Authority',    desc: 'Define document issuing authority details.',         icon: ICO.shield },
-          { n: '03', title: 'Enable Usage',     desc: 'Use DD documents across onboarding and compliance.', icon: ICO.check },
+          { n: '01', title: 'Create DD Record', desc: 'Add due diligence and verification documents.',               icon: ICO.doc },
+          { n: '02', title: 'Map Authority',    desc: 'Define document issuing authority details.',                  icon: ICO.shield },
+          { n: '03', title: 'Set Expiry Rules', desc: 'Define expiry applicability and validity.',                   icon: ICO.calendar },
+          { n: '04', title: 'Enable Usage',     desc: 'Use DD documents across onboarding and compliance workflows.', icon: ICO.check },
         ]}
       />
 
       <div className="clm-page-card">
         <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
-          <div className="clm-search clm-search-grow">
+          <div className="clm-search clm-search-fixed">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
             <input type="text" placeholder="Search DD documents…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
           </div>
@@ -126,11 +155,11 @@ export default function ClmDdPage() {
               <div className="clm-empty-sub">{rows.length === 0 ? 'Click + Add DD Document to create the first record.' : 'No results match the current search.'}</div>
             </div>
           ) : (
-            <div className="clm-table-wrap">
+            <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
               <table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
-                  <th style={{ width: 110, textAlign: 'center' }}>DD ID</th>
+                  <th style={{ width: 110, textAlign: 'center' }}>DD CODE</th>
                   <th>DD DOCUMENT NAME</th>
                   <th>ISSUING AUTHORITY</th>
                   <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
@@ -155,7 +184,7 @@ export default function ClmDdPage() {
               </table>
               {!loading && filtered.length > 0 && (
                 <div className="clm-pag">
-                  <span className="clm-pag-info">Showing <b>{start + 1}–{Math.min(start + PER_PAGE, filtered.length)}</b> of <b>{filtered.length}</b> record{filtered.length === 1 ? '' : 's'}</span>
+                  <span className="clm-pag-info">Showing <b>{start + 1}–{start + slice.length}</b> of <b>{filtered.length}</b> record{filtered.length === 1 ? '' : 's'}</span>
                   <div className="clm-pag-btns">
                     {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
                       <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
@@ -182,7 +211,7 @@ export default function ClmDdPage() {
   );
 }
 
-function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCode: string; onClose: () => void; onSave: (f: { name: string; authority: string }) => void; }) {
+export function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCode: string; onClose: () => void; onSave: (f: { name: string; authority: string }) => void; }) {
   const { existing, authorities: initialAuthorities, nextCode, onClose, onSave } = props;
   const toast = useToast();
   const isEdit = !!existing;

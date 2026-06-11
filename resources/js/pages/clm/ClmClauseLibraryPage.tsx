@@ -116,7 +116,33 @@ function TypesPane({ rows, loading, reload }: { rows: ClType[]; loading: boolean
     const s = search.toLowerCase();
     return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s));
   }, [rows, search]);
-  const { slice, start, pageCount, safePage } = paginate(filtered, page);
+  const [rpp, setRpp]     = useState(PER_PAGE);
+  const [fillH, setFillH] = useState<number | undefined>(undefined);
+  const scrollRef         = useRef<HTMLDivElement | null>(null);
+  const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
+
+  // Dynamic pagination: rows-per-page auto-fits the visible table height and
+  // the card stretches to cover the page. Anchored via closest('.clm-root').
+  useEffect(() => {
+    const recompute = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const THEAD = 40, ROW = 46, FOOTER = 96;
+      const avail = window.innerHeight - top - THEAD - FOOTER;
+      const fit = Math.max(4, Math.floor(avail / ROW));
+      setRpp(prev => (prev === fit ? prev : fit));
+      const fh = Math.max(0, window.innerHeight - top - 64);
+      setFillH(prev => (prev === fh ? prev : fh));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    const ro = new ResizeObserver(recompute);
+    const rootEl = scrollRef.current?.closest('.clm-root');
+    if (rootEl) ro.observe(rootEl);
+    window.addEventListener('resize', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+  }, [filtered.length]);
 
   const onSave = async (form: { name: string; description: string }, id?: number) => {
     try {
@@ -156,7 +182,7 @@ function TypesPane({ rows, loading, reload }: { rows: ClType[]; loading: boolean
             <div className="clm-empty-sub">Click + Add Clause Type to create the first record.</div>
           </div>
         ) : (
-          <div className="clm-table-wrap">
+          <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
             <table className="clm-table">
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -183,7 +209,7 @@ function TypesPane({ rows, loading, reload }: { rows: ClType[]; loading: boolean
             </table>
             {!loading && filtered.length > 0 && (
               <div className="clm-pag">
-                <span className="clm-pag-info">Showing <b>{start + 1}–{Math.min(start + PER_PAGE, filtered.length)}</b> of <b>{filtered.length}</b></span>
+                <span className="clm-pag-info">Showing <b>{start + 1}–{start + slice.length}</b> of <b>{filtered.length}</b></span>
                 <div className="clm-pag-btns">
                   {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
                     <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
@@ -214,7 +240,33 @@ function LibraryPane({ rows, types, loading, reload }: { rows: ClLib[]; types: C
     const s = search.toLowerCase();
     return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.clause_type.toLowerCase().includes(s));
   }, [rows, search]);
-  const { slice, start, pageCount, safePage } = paginate(filtered, page);
+  const [rpp, setRpp]     = useState(PER_PAGE);
+  const [fillH, setFillH] = useState<number | undefined>(undefined);
+  const scrollRef         = useRef<HTMLDivElement | null>(null);
+  const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
+
+  // Dynamic pagination: rows-per-page auto-fits the visible table height and
+  // the card stretches to cover the page. Anchored via closest('.clm-root').
+  useEffect(() => {
+    const recompute = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const THEAD = 40, ROW = 46, FOOTER = 96;
+      const avail = window.innerHeight - top - THEAD - FOOTER;
+      const fit = Math.max(4, Math.floor(avail / ROW));
+      setRpp(prev => (prev === fit ? prev : fit));
+      const fh = Math.max(0, window.innerHeight - top - 64);
+      setFillH(prev => (prev === fh ? prev : fh));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    const ro = new ResizeObserver(recompute);
+    const rootEl = scrollRef.current?.closest('.clm-root');
+    if (rootEl) ro.observe(rootEl);
+    window.addEventListener('resize', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+  }, [filtered.length]);
 
   const onSave = async (form: Omit<ClLib, 'id'|'code'>, id?: number) => {
     try {
@@ -263,7 +315,7 @@ function LibraryPane({ rows, types, loading, reload }: { rows: ClLib[]; types: C
             <div className="clm-empty-sub">Click + Add Clause to create the first record.</div>
           </div>
         ) : (
-          <div className="clm-table-wrap">
+          <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
             <table className="clm-table">
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -292,7 +344,7 @@ function LibraryPane({ rows, types, loading, reload }: { rows: ClLib[]; types: C
             </table>
             {!loading && filtered.length > 0 && (
               <div className="clm-pag">
-                <span className="clm-pag-info">Showing <b>{start + 1}–{Math.min(start + PER_PAGE, filtered.length)}</b> of <b>{filtered.length}</b></span>
+                <span className="clm-pag-info">Showing <b>{start + 1}–{start + slice.length}</b> of <b>{filtered.length}</b></span>
                 <div className="clm-pag-btns">
                   {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
                     <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
