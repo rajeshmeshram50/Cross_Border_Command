@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
@@ -69,6 +69,11 @@ export default function ClmSegmentPage() {
   const [tab, setTab]         = useState<'all'|'highly'|'less'>('all');
   const [search, setSearch]   = useState('');
   const [page, setPage]       = useState(1);
+  // Dynamic pagination: rows-per-page auto-fits the visible table height.
+  const [rpp, setRpp]         = useState(PER_PAGE);
+  const [fillH, setFillH]     = useState<number | undefined>(undefined);
+  const scrollRef             = useRef<HTMLDivElement | null>(null);
+  const rootRef               = useRef<HTMLDivElement | null>(null);
 
   const [editing, setEditing]     = useState<Segment | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -90,7 +95,34 @@ export default function ClmSegmentPage() {
     const s = search.toLowerCase();
     return base.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s));
   }, [rows, tab, search]);
-  const { slice, start, pageCount, safePage } = paginate(filtered, page);
+  const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
+
+  // Dynamic pagination: pick the rows-per-page that fits between the table's
+  // top and the bottom of the viewport, so the page fills the screen and
+  // spills the rest onto further pages — without forcing a fixed-height
+  // layout. The layout stays natural; we only change how many rows render.
+  useEffect(() => {
+    const recompute = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;     // viewport-relative top of table
+      const THEAD = 40, ROW = 46, FOOTER = 96;         // header row + pagination/footer reserve
+      const avail = window.innerHeight - top - THEAD - FOOTER;
+      const fit = Math.max(4, Math.floor(avail / ROW));
+      setRpp(prev => (prev === fit ? prev : fit));
+      // Stretch the table card down to cover the page even when rows are few.
+      const fh = Math.max(0, window.innerHeight - top - 64);
+      setFillH(prev => (prev === fh ? prev : fh));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    // The "What We Are Doing Here" box can collapse/expand and shift the table
+    // down; observing the root's size change re-triggers the measurement.
+    const ro = new ResizeObserver(recompute);
+    if (rootRef.current) ro.observe(rootRef.current);
+    window.addEventListener('resize', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+  }, [filtered.length, tab]);
 
   const onSave = async (form: SegmentForm, id?: number): Promise<SaveResult> => {
     try {
@@ -124,7 +156,7 @@ export default function ClmSegmentPage() {
   };
 
   return (
-    <div className="clm-root">
+    <div className="clm-root" ref={rootRef}>
       <style>{CLM_CSS}</style>
 
       <ClmPageHeader
@@ -157,21 +189,16 @@ export default function ClmSegmentPage() {
             </button>
             <button className={`clm-tab ${tab === 'highly' ? 'active' : ''}`} onClick={() => { setTab('highly'); setPage(1); }}>
               <span className="clm-tab-dot" style={{ background: '#ef4444', boxShadow: '0 0 5px rgba(239,68,68,.5)' }} />
-              Highly Regulated <span className="clm-tab-count">{counts.highly}</span>
+              Highly Regulated Segments <span className="clm-tab-count">{counts.highly}</span>
             </button>
             <button className={`clm-tab ${tab === 'less' ? 'active' : ''}`} onClick={() => { setTab('less'); setPage(1); }}>
               <span className="clm-tab-dot" style={{ background: '#0d9488', boxShadow: '0 0 5px rgba(13,148,136,.5)' }} />
-              Less Regulated <span className="clm-tab-count">{counts.less}</span>
+              Less Regulated Segments <span className="clm-tab-count">{counts.less}</span>
             </button>
               <div className="clm-search">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
                 <input type="text" placeholder="Search segments…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
               </div>
-              <div className="clm-total">
-            <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg></div>
-            <div className="clm-total-lbl">Total Segments</div>
-            <div className="clm-total-num">{counts.all}</div>
-          </div>
           </div>
 
           <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
@@ -186,7 +213,7 @@ export default function ClmSegmentPage() {
                 <div className="clm-empty-sub">{rows.length === 0 ? 'Click "+ Add Segment" to create your first segment entry.' : 'No segments match the current tab / search.'}</div>
               </div>
             ) : (
-              <div className="clm-table-wrap">
+              <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
                 <table className="clm-table">
                   <thead><tr>
                     <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -235,7 +262,7 @@ export default function ClmSegmentPage() {
                 </table>
                 {!loading && filtered.length > 0 && (
                   <div className="clm-pag">
-                    <span className="clm-pag-info">Showing <b>{start + 1}–{Math.min(start + PER_PAGE, filtered.length)}</b> of <b>{filtered.length}</b> record{filtered.length === 1 ? '' : 's'}</span>
+                    <span className="clm-pag-info">Showing <b>{start + 1}–{start + slice.length}</b> of <b>{filtered.length}</b> record{filtered.length === 1 ? '' : 's'}</span>
                     <div className="clm-pag-btns">
                       {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
                         <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
@@ -364,6 +391,8 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
             </div>
             <div className={`clm-autocode-badge ${isEdit ? 'edit' : ''}`}><span className="clm-autocode-dot" />{isEdit ? 'Edit' : 'Auto'}</div>
           </div>
+
+          <div className="clm-modal-divider" />
 
           <div className="clm-field">
             <label className="clm-field-label">Segment Name <span className="clm-req">*</span></label>

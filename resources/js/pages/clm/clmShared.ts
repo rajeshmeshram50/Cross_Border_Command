@@ -23,12 +23,13 @@
 export const CLM_CSS = `
 .clm-root {
   padding: 0;
+  margin-top: -8px;
   width: 100%;
   font-family: 'Rubik', system-ui, sans-serif;
   font-size: 14px;
   letter-spacing: normal;
   color: #0F172A;
-  display: flex; flex-direction: column; gap: 14px;
+  display: flex; flex-direction: column; gap: 10px;
   background: transparent;
   box-sizing: border-box;
 }
@@ -370,9 +371,14 @@ export const CLM_CSS = `
 .clm-tab-body.has-data { display: block; }
 
 .clm-table-wrap { overflow-x: auto; background: #fff; }
+/* Fill mode: the wrap stretches to a computed min-height (set inline) so the
+ * card covers the page even with few rows, and the pagination is pushed to the
+ * bottom. Opt-in via the .clm-table-fill class so other pages are unaffected. */
+.clm-table-fill { display: flex; flex-direction: column; }
+.clm-table-fill > .clm-pag { margin-top: auto; }
 .clm-table { width: 100%; border-collapse: collapse; min-width: 880px; }
 .clm-table thead th {
-  padding: 13px 16px;
+  padding: 10px 16px;
   background: linear-gradient(110deg, #f0fdff, #e8fbfd);
   border-bottom: 1.5px solid rgba(6,182,212,.20);
   font-size: 11px; font-weight: 500; letter-spacing: .08em;
@@ -385,7 +391,7 @@ export const CLM_CSS = `
 }
 .clm-table tbody tr:nth-child(even) { background: rgba(240,253,255,.5); }
 .clm-table tbody tr:hover { background: rgba(6,182,212,.06); box-shadow: inset 3px 0 0 #0891b2; }
-.clm-table tbody td { padding: 13px 16px; font-size: 13px; color: #0c4a6e; vertical-align: middle; }
+.clm-table tbody td { padding: 11px 16px; font-size: 13px; color: #0c4a6e; vertical-align: middle; }
 .clm-td-num  { text-align: center; color: #94a3b8; font-weight: 700; width: 48px; }
 /* Wrap long, space-less names/descriptions instead of letting the cell grow
    and stretch the whole table past its container. */
@@ -593,8 +599,8 @@ body > .dropdown-menu.master-select-menu,
 
 .clm-modal-body {
   background: linear-gradient(160deg, #f0fdff 0%, #e8f9fd 50%, #f0f9ff 100%);
-  padding: 12px 16px 10px;
-  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 16px 8px;
+  display: flex; flex-direction: column; gap: 6px;
   overflow-y: auto;
 }
 
@@ -655,17 +661,20 @@ body > .dropdown-menu.master-select-menu,
 .clm-autocode-badge.edit { background: rgba(245,158,11,.10); border-color: rgba(245,158,11,.22); color: #d97706; }
 .clm-autocode-dot { width: 5px; height: 5px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 4px rgba(34,197,94,.5); }
 .clm-autocode-badge.edit .clm-autocode-dot { background: #f59e0b; box-shadow: 0 0 4px rgba(245,158,11,.5); }
+/* Hairline divider under the auto-code strip (matches Figma seg-modal-divider).
+ * Inter-field spacing comes from .clm-modal-body's flex gap, so no margin here. */
+.clm-modal-divider { height: 1px; background: linear-gradient(90deg, transparent, rgba(6,182,212,.2), transparent); }
 
 /* Form field — relies on .clm-modal-body's flex gap for inter-field
  * spacing (no margin-bottom) so we don't stack double space between rows. */
-.clm-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 0; }
+.clm-field { display: flex; flex-direction: column; gap: 1px; margin-bottom: 0; }
 .clm-field-label {
   font-size: 8.5px; font-weight: 500; letter-spacing: .13em; text-transform: uppercase;
   color: #0e7490; display: flex; align-items: center; gap: 5px;
 }
 .clm-req { color: #EF4444; font-size: 13px; line-height: 1; font-weight: 700; }
 .clm-input, .clm-textarea, .clm-select {
-  width: 100%; padding: 8px 12px;
+  width: 100%; padding: 7px 12px;
   border: 1.5px solid rgba(6,182,212,.25); border-radius: 9px;
   background: #fff; font-family: inherit;
   font-size: 12.5px; color: #0c4a6e;
@@ -673,7 +682,7 @@ body > .dropdown-menu.master-select-menu,
   box-shadow: 0 1px 4px rgba(6,182,212,.08), inset 0 1px 0 rgba(255,255,255,.9);
   box-sizing: border-box;
 }
-.clm-textarea { resize: vertical; line-height: 1.5; min-height: 70px; }
+.clm-textarea { resize: vertical; line-height: 1.45; min-height: 50px; }
 .clm-input:focus, .clm-textarea:focus, .clm-select:focus {
   border-color: #0891b2; box-shadow: 0 0 0 3.5px rgba(8,145,178,.14), inset 0 1px 0 rgba(255,255,255,.9);
 }
@@ -710,14 +719,14 @@ body > .dropdown-menu.master-select-menu,
   flex-shrink: 0;
 }
 .clm-btn-cancel {
-  padding: 10px 24px; border-radius: 10px;
+  padding: 7px 18px; border-radius: 9px;
   /* Border lifted from #d1d5db to a stronger slate + a subtle shadow — the
      old border was too faint to identify against the white modal surface in
      light mode (QA report). Matches the .apm-btn-ghost / .avm-btn-ghost
      cancel-button treatment in the product & vendor modals. */
   border: 1.5px solid #94a3b8;
   background: #fff; font-family: inherit;
-  font-size: 13px; font-weight: 700; color: #334155;
+  font-size: 12px; font-weight: 700; color: #334155;
   cursor: pointer;
   box-shadow: 0 1px 2px rgba(15,23,42,.06);
   transition: background .18s ease, border-color .18s ease, color .18s ease, transform .18s ease, box-shadow .22s ease;
@@ -731,10 +740,10 @@ body > .dropdown-menu.master-select-menu,
 }
 .clm-btn-save {
   position: relative; overflow: hidden;
-  padding: 10px 26px; border-radius: 10px;
+  padding: 7px 20px; border-radius: 9px;
   border: none; cursor: pointer; font-family: inherit;
   background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%);
-  font-size: 13px; font-weight: 700; color: #fff;
+  font-size: 12px; font-weight: 700; color: #fff;
   box-shadow: 0 4px 14px rgba(8,145,178,.40), inset 0 1px 0 rgba(255,255,255,.18);
   display: inline-flex; align-items: center; gap: 7px;
   transition: transform .18s ease, box-shadow .22s ease;
@@ -1186,6 +1195,7 @@ body > .dropdown-menu.master-select-menu,
 [data-bs-theme="dark"] .clm-field-label { color: #67e8f9; }
 [data-bs-theme="dark"] .clm-field-hint  { color: #7dd3fc; }
 [data-bs-theme="dark"] .clm-autocode-label { color: #67e8f9; }
+[data-bs-theme="dark"] .clm-modal-divider { background: linear-gradient(90deg, transparent, rgba(6,182,212,.32), transparent); }
 [data-bs-theme="dark"] .clm-autocode-badge { background: rgba(8,145,178,.20); border-color: rgba(8,145,178,.32); color: #67e8f9; }
 [data-bs-theme="dark"] .clm-tab-body  { background: #0f172a; }
 [data-bs-theme="dark"] .clm-modal-bd  { background: rgba(2,8,23,.78); }
@@ -1385,9 +1395,10 @@ body > .dropdown-menu.master-select-menu,
 
 export const PER_PAGE = 10;
 
-export function paginate<T>(rows: T[], page: number): { slice: T[]; start: number; pageCount: number; safePage: number } {
-  const pageCount = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+export function paginate<T>(rows: T[], page: number, perPage: number = PER_PAGE): { slice: T[]; start: number; pageCount: number; safePage: number; perPage: number } {
+  const pp = Math.max(1, perPage);
+  const pageCount = Math.max(1, Math.ceil(rows.length / pp));
   const safePage = Math.min(Math.max(1, page), pageCount);
-  const start = (safePage - 1) * PER_PAGE;
-  return { slice: rows.slice(start, start + PER_PAGE), start, pageCount, safePage };
+  const start = (safePage - 1) * pp;
+  return { slice: rows.slice(start, start + pp), start, pageCount, safePage, perPage: pp };
 }

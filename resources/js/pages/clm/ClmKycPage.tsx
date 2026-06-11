@@ -85,7 +85,8 @@ export default function ClmKycPage() {
         steps={[
           { n: '01', title: 'Create KYC Record', desc: 'Add KYC and verification documents.',            icon: ICO.grid },
           { n: '02', title: 'Map Authority',     desc: 'Define issuing authority details.',              icon: ICO.shield },
-          { n: '03', title: 'Enable Usage',      desc: 'Use KYC documents across onboarding workflows.', icon: ICO.check },
+          { n: '03', title: 'Set Expiry Rules',  desc: 'Define expiry applicability and validity.',      icon: ICO.calendar },
+          { n: '04', title: 'Enable Usage',      desc: 'Use KYC documents across onboarding workflows.', icon: ICO.check },
         ]}
       />
 

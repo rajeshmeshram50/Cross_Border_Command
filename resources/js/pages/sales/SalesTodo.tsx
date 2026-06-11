@@ -3482,6 +3482,16 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .td-cal-popover-row:hover { background: rgba(20,184,166,.10); }
 [data-bs-theme="dark"] .td-cal-popover-row-title { color: #e2e8f0; }
 [data-bs-theme="dark"] .td-cal-popover-pill-muted { color:#94a3b8; background:rgba(148,163,184,.12); border-color:rgba(148,163,184,.22); }
+/* Code chip (M-026 etc.) gets a light pastel fill inline — glares in dark.
+   Override only the coloured chip, not the muted ones. */
+[data-bs-theme="dark"] .td-cal-popover-pill:not(.td-cal-popover-pill-muted) {
+  background: rgba(94,234,212,.14) !important;
+  color: #5eead4 !important;
+  border-color: rgba(94,234,212,.30) !important;
+}
+/* Status badges: light tints → translucent dark tint + light ink */
+[data-bs-theme="dark"] .td-cal-popover-status-inprog { background: rgba(59,130,246,.22); color:#93c5fd; }
+[data-bs-theme="dark"] .td-cal-popover-status-done   { background: rgba(34,197,94,.20);  color:#86efac; }
 [data-bs-theme="dark"] .td-cal-popover-list::-webkit-scrollbar-thumb { border-color:#0e1726; }
 
 /* ════════════════════════════════════════════════════════════════════
