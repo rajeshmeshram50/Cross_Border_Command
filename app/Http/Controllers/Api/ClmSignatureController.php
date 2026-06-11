@@ -1753,11 +1753,19 @@ class ClmSignatureController extends Controller
             // frontend's polling loop (and any future consumer) can read
             // them directly without re-resolving against another origin.
             // Single-doc convenience pointer mirrors the multi array shape.
+            // NOTE: the signed-document URLs must NOT fall back to the
+            // certificate. The completion certificate is a different artifact
+            // (audit trail), exposed separately via `certificate_url`. When
+            // the actual signed PDF hasn't been fetched yet (e.g. the Zoho
+            // refresh token lacks the ZohoSign.documents.READ scope), these
+            // stay null so the UI shows "signed PDF unavailable" instead of
+            // silently serving the certificate as if it were the document.
             $firstSignedFromDisk = $resolvedMulti[0]['file_url'] ?? null;
-            $row->setAttribute('signed_document_url',  file_url($row->signed_document_path) ?: $firstSignedFromDisk);
+            $signedUrl = file_url($row->signed_document_path) ?: $firstSignedFromDisk;
+            $row->setAttribute('signed_document_url',  $signedUrl);
             $row->setAttribute('certificate_url',      file_url($row->certificate_path));
             $row->setAttribute('signed_document_paths', $resolvedMulti);
-            $row->setAttribute('file_url', file_url($row->signed_document_path) ?: $firstSignedFromDisk ?: file_url($row->certificate_path));
+            $row->setAttribute('file_url', $signedUrl);
             return $row;
         });
 
