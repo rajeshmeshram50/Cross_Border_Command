@@ -872,6 +872,12 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
             // derive from its mapped products), so refresh the parent's
             // agreement-applicable fetch.
             onPiChange?.();
+            // The FIRST quotation maps its picked consignee onto the lead
+            // (CreateQuotationModal PUTs /sales/leads when the lead had
+            // none). Reload the lead header so `initialOpp.consigneeId` is
+            // now populated — locking the consignee field (read-only,
+            // auto-fetched) in every subsequent quotation / PI form.
+            void reloadLead?.();
           }}
         />
       )}
@@ -887,6 +893,10 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
             setPiSource(null);
             void fetchAll(true);
             onPiChange?.();
+            // Same as the quotation path: a PI created before any consignee
+            // was mapped writes it back to the lead, so refresh the header
+            // to lock the consignee in later forms.
+            void reloadLead?.();
           }}
         />
       )}

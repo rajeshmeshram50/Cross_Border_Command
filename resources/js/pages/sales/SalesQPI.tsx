@@ -577,9 +577,10 @@ export default function SalesQPI() {
   const [piSub, setPiSub] = useState<PISubTab>('with');
   const [wdhOpen, setWdhOpen] = useState(true);
   const [q, setQ] = useState('');
-  // Pagination is owned by TableContainer (TanStack) now, so we don't
-  // track page / rowsPerPage here. ROWS_PER_PAGE is passed straight to
-  // customPageSize.
+  // Pagination is owned here now (the project "apna wala" footer — Showing
+  // X–Y of Z + numbered chips) instead of TableContainer's built-in bar.
+  // We slice the data ourselves and feed a single page to TableContainer.
+  const [page, setPage] = useState(1);
 
   const [createQtOpen, setCreateQtOpen] = useState(false);
   const [createPiOpen, setCreatePiOpen] = useState(false);
@@ -738,10 +739,61 @@ export default function SalesQPI() {
     ));
   }, [tab, piSub, q, quotations, pis, piWithShipment, piWithoutShipment]);
 
+  /* ─── Dynamic page size ───
+   * Rows-per-page auto-fits the space between the table header and the
+   * footer so the table fills the viewport (same behaviour as the Customer
+   * page). `rpp` starts at ROWS_PER_PAGE and grows on taller screens; the
+   * remaining rows spill onto the next page (no internal scroll). */
+  const tableHostRef = useRef<HTMLDivElement>(null);
+  const [rpp, setRpp] = useState(ROWS_PER_PAGE);
+  useEffect(() => {
+    const host = tableHostRef.current;
+    if (!host) return;
+    const fit = () => {
+      const top    = host.getBoundingClientRect().top;
+      const theadH = (host.querySelector('thead') as HTMLElement | null)?.offsetHeight || 44;
+      const rowH   = (host.querySelector('tbody tr') as HTMLElement | null)?.offsetHeight || 48;
+      const FOOTER  = 56;   // .qpi-pag height
+      const HOSTPAD = 26;   // .qpi-table-host vertical padding (14 top + 12 bottom)
+      const avail   = window.innerHeight - top - theadH - FOOTER - HOSTPAD - 16;
+      const rowsFit = Math.max(ROWS_PER_PAGE, Math.floor(avail / rowH));
+      setRpp(prev => (prev === rowsFit ? prev : rowsFit));
+    };
+    fit();
+    // Re-fit after the layout settles (banner animation / async rows).
+    const t = window.setTimeout(fit, 130);
+    window.addEventListener('resize', fit);
+    // The "What We Are Doing Here" banner expands/collapses with a transition;
+    // observe it so the table grows into the freed space as it settles.
+    let ro: ResizeObserver | undefined;
+    const banner = document.querySelector('.qpi-wdh');
+    if (banner && typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => fit());
+      ro.observe(banner);
+    }
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener('resize', fit);
+      ro?.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wdhOpen, loadingQt, loadingPi, tab, piSub]);
+
+  /* ─── Pagination (our own footer) ───
+   * Slice `filtered` into pages of `rpp`. `pageRows` is what we hand to
+   * TableContainer so its internal bar collapses to a single page; the
+   * visible Showing X–Y of Z + numbered chips footer is rendered below. */
+  const totalRows = filtered.length;
+  const pageCount = Math.max(1, Math.ceil(totalRows / rpp));
+  const safePage  = Math.min(Math.max(1, page), pageCount);
+  const pageStart = (safePage - 1) * rpp;
+  const pageRows  = filtered.slice(pageStart, pageStart + rpp);
+  // Snap back to page 1 whenever the active dataset changes (tab, sub-tab or
+  // search), so we never sit on an out-of-range empty page.
+  useEffect(() => { setPage(1); }, [tab, piSub, q]);
+
   /* ─── Helpers ─── */
   // Clear the search box on tab switch so the new tab starts unfiltered.
-  // Page reset is no longer needed — TableContainer drops back to page 1
-  // automatically when its `data` array changes.
   const switchTab = (next: QPITab) => { setTab(next); setQ(''); };
   const switchPiSub = (next: PISubTab) => { setPiSub(next); setQ(''); };
 
@@ -1590,11 +1642,15 @@ export default function SalesQPI() {
 
       {/* ─── Table card ─── */}
       <div className="qpi-card">
-        {/* Row 1 — search + create button (mirrors .smc-toolbar on the
-            Customer page). The redundant "Quotation List" pill is gone:
-            the active page is already indicated by the Quotation /
-            Proforma Invoice toggle in the page header. */}
+        {/* Row 1 — "<Tab> List" pill + search + create button (matches the
+            Figma reference, which keeps the list pill on the left of the
+            toolbar). Label follows the active tab so it reads correctly on
+            both the Quotation and Proforma Invoice views. */}
         <div className="qpi-tablebar">
+          <div className="qpi-listpill">
+            <span className="qpi-listpill-ico"><IconFile /></span>
+            {tab === 'quotation' ? 'Quotation List' : 'Proforma Invoice List'}
+          </div>
           <div className="qpi-search">
             <IconSearch />
             <input
@@ -1635,16 +1691,16 @@ export default function SalesQPI() {
         {/* Table — uses the project-standard TableContainer (TanStack)
             so chrome + pagination match the Customer / Recruitment /
             Employee pages. Cell renderers above keep our chips/pills. */}
-        <div className="qpi-table-host">
+        <div className="qpi-table-host" ref={tableHostRef}>
           {(tab === 'quotation' ? loadingQt : loadingPi) ? (
             /* Loading shimmer instead of a "0 results" empty table. */
-            <ShimmerTable rows={ROWS_PER_PAGE} cols={13} />
+            <ShimmerTable rows={rpp} cols={13} />
           ) : tab === 'quotation' ? (
             <TableContainer
               columns={quotationColumns}
-              data={filtered as Quotation[]}
+              data={pageRows as Quotation[]}
               isGlobalFilter={false}
-              customPageSize={ROWS_PER_PAGE}
+              customPageSize={rpp}
               tableClass="table align-middle table-nowrap mb-0"
               theadClass="table-light"
               divClass="table-responsive table-card"
@@ -1654,9 +1710,9 @@ export default function SalesQPI() {
           ) : piSub === 'with' ? (
             <TableContainer
               columns={piWithColumns}
-              data={filtered as PI[]}
+              data={pageRows as PI[]}
               isGlobalFilter={false}
-              customPageSize={ROWS_PER_PAGE}
+              customPageSize={rpp}
               tableClass="table align-middle table-nowrap mb-0"
               theadClass="table-light"
               divClass="table-responsive table-card"
@@ -1666,9 +1722,9 @@ export default function SalesQPI() {
           ) : (
             <TableContainer
               columns={piWithoutColumns}
-              data={filtered as PI[]}
+              data={pageRows as PI[]}
               isGlobalFilter={false}
-              customPageSize={ROWS_PER_PAGE}
+              customPageSize={rpp}
               tableClass="table align-middle table-nowrap mb-0"
               theadClass="table-light"
               divClass="table-responsive table-card"
@@ -1677,6 +1733,44 @@ export default function SalesQPI() {
             />
           )}
         </div>
+
+        {/* ─── Pagination footer (our own) — Showing X–Y of Z on the left,
+            numbered chips + prev/next on the right. Hidden while loading or
+            when the active dataset is empty. */}
+        {!(tab === 'quotation' ? loadingQt : loadingPi) && totalRows > 0 && (
+          <div className="qpi-pag">
+            <span className="qpi-pag-info">
+              Showing <b>{pageStart + 1}–{pageStart + pageRows.length}</b> of <b>{totalRows}</b>
+            </span>
+            <div className="qpi-pag-btns">
+              <button
+                className="qpi-pag-btn qpi-pag-arrow"
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={safePage === 1}
+                aria-label="Previous page"
+              >
+                <IconChevronLeft />
+              </button>
+              {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
+                <button
+                  key={p}
+                  onClick={() => setPage(p)}
+                  className={`qpi-pag-btn ${p === safePage ? 'on' : ''}`}
+                >
+                  {p}
+                </button>
+              ))}
+              <button
+                className="qpi-pag-btn qpi-pag-arrow"
+                onClick={() => setPage(p => Math.min(pageCount, p + 1))}
+                disabled={safePage === pageCount}
+                aria-label="Next page"
+              >
+                <IconChevronRight />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Portal'd More-Options menu — rendered once outside the table
             since the column cell-renderer only sets anchor state. */}
@@ -2302,11 +2396,12 @@ export function CreateQuotationModal(props: {
   const onSaveNext = () => {
     const errs = new Set<string>();
     const labels: Record<string, string> = {
-      customer: 'Customer', incoTerm: 'INCO Term', portOfLoading: 'Port of Loading',
+      customer: 'Customer', consignee: 'Consignee', incoTerm: 'INCO Term', portOfLoading: 'Port of Loading',
       portOfDischarge: 'Port of Discharge', finalDestination: 'Final Destination',
       originCountry: 'Origin Country', stateCode: 'State Code',
     };
     if (!form.customerId)            errs.add('customer');
+    if (!form.consigneeId)           errs.add('consignee');
     if (form.docType === 'International') {
       if (!form.incoTerm)            errs.add('incoTerm');
       if (!form.portOfLoading)       errs.add('portOfLoading');
@@ -2422,6 +2517,7 @@ export function CreateQuotationModal(props: {
   const submit = async () => {
     if (saving) return;
     if (!form.customerId) { toast.error('Customer required', 'Pick a customer before saving.'); return; }
+    if (!form.consigneeId) { setStep1Errors(prev => new Set(prev).add('consignee')); setStep(1); toast.error('Consignee required', 'Select a consignee before saving.'); return; }
     if (products.length === 0) { toast.error('No products', 'Add at least one line item.'); return; }
     setSaving(true);
     try {
@@ -2566,7 +2662,11 @@ export function CreateQuotationModal(props: {
               masters={masters} theme="teal"
               titleLabel="Basic Quotation Details" partyKind="Quotation"
               lockParty={!!initialOpp}
-              lockConsignee={!!initialOpp?.consigneeId}
+              /* Lock the consignee whenever the lead already has one mapped
+               * (initialOpp carries it) OR we're editing an existing
+               * quotation — the lead's FINAL consignee is fixed by the
+               * first quotation and must not drift on later create/edit. */
+              lockConsignee={isEdit || !!initialOpp?.consigneeId}
               errors={step1Errors}
               clearError={(k) => setStep1Errors(prev => {
                 if (!prev.has(k)) return prev;
@@ -2687,11 +2787,12 @@ export function CreatePIModal(props: {
   const onSaveNext = () => {
     const errs = new Set<string>();
     const labels: Record<string, string> = {
-      customer: 'Customer', incoTerm: 'INCO Term', portOfLoading: 'Port of Loading',
+      customer: 'Customer', consignee: 'Consignee', incoTerm: 'INCO Term', portOfLoading: 'Port of Loading',
       portOfDischarge: 'Port of Discharge', finalDestination: 'Final Destination',
       originCountry: 'Origin Country', stateCode: 'State Code',
     };
     if (!form.customerId)            errs.add('customer');
+    if (!form.consigneeId)           errs.add('consignee');
     if (form.docType === 'International') {
       if (!form.incoTerm)            errs.add('incoTerm');
       if (!form.portOfLoading)       errs.add('portOfLoading');
@@ -2780,6 +2881,7 @@ export function CreatePIModal(props: {
   const submitPi = async () => {
     if (saving) return;
     if (!form.customerId) { toast.error('Customer required', 'Pick a customer before saving.'); return; }
+    if (!form.consigneeId) { setStep1Errors(prev => new Set(prev).add('consignee')); setStep(1); toast.error('Consignee required', 'Select a consignee before saving.'); return; }
     if (products.length === 0) { toast.error('No products', 'Add at least one line item.'); return; }
     setSaving(true);
     try {
@@ -3465,7 +3567,7 @@ function BasicForm(props: {
             />
           )}
         </Field>
-        <Field label="Consignee" required>
+        <Field label="Consignee" required error={hasError('consignee')}>
           {lockConsignee ? (
             <input className="qpi-input qpi-input-readonly" value={form.consignee} readOnly title="Fixed by the lead this was opened from" />
           ) : (
@@ -3479,7 +3581,7 @@ function BasicForm(props: {
                     : '— Select Consignee —')
                 : '— Select Consignee —'}
               options={withCurrent(filteredConsignees, form.consignee)}
-              onChange={onConsigneeChange}
+              onChange={(v) => { onConsigneeChange(v); if (v) clearError?.('consignee'); }}
             />
           )}
         </Field>
@@ -4011,6 +4113,11 @@ const IconChevronRight = () => (
     <polyline points="9 18 15 12 9 6" />
   </svg>
 );
+const IconChevronLeft = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+    <polyline points="15 18 9 12 15 6" />
+  </svg>
+);
 const IconPlus = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8">
     <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -4142,41 +4249,69 @@ const SCOPED_CSS = `
 .qpi-sig-signed { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
 
 /* ─── What We Are Doing Here ─── */
+/* Matches the Customer page .smc-wdh-card design: lavender gradient card,
+   40px gradient bulb icon, circular tinted chevron, white step tiles with a
+   purple left-accent stripe + hover lift, and white arrow circles. */
 .qpi-wdh {
   position: relative;
-  background: linear-gradient(110deg, #f5f3ff 0%, #ede9fe 50%, #ddd6fe 100%);
-  border: 1px solid #c4b5fd; border-radius: 14px;
+  background: linear-gradient(135deg, #faf5ff 0%, #f3eaff 45%, #ede1ff 100%);
+  border: 1px solid #d6c5ff; border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(139,92,246,.1);
+  box-shadow: 0 4px 16px rgba(124,58,237,.10), 0 1px 3px rgba(124,58,237,.06);
 }
-.qpi-wdh-header { display: flex; align-items: center; justify-content: space-between; padding: 9px 14px; cursor: pointer; user-select: none; }
-.qpi-wdh-title { display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 800; color: #3b0764; }
-.qpi-wdh-icon { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, #8b5cf6, #7c3aed); display: flex; align-items: center; justify-content: center; color: #fff; }
-.qpi-wdh-toggle { width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid rgba(124,58,237,.25); background: rgba(255,255,255,.75); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.qpi-wdh-header { display: flex; align-items: center; justify-content: space-between; padding: 7px 18px; cursor: pointer; user-select: none; transition: background .2s ease; }
+.qpi-wdh-header:hover { background: rgba(124,58,237,.05); }
+.qpi-wdh-title { display: flex; align-items: center; gap: 12px; font-size: 15px; font-weight: 700; color: #3b0764; line-height: 1.2; }
+.qpi-wdh-icon {
+  width: 40px; height: 40px; border-radius: 12px;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  box-shadow: 0 4px 10px rgba(124,58,237,.25);
+  display: flex; align-items: center; justify-content: center; color: #fff;
+  flex-shrink: 0;
+}
+.qpi-wdh-toggle {
+  width: 32px; height: 32px; border-radius: 50%; border: 0;
+  background: rgba(124,58,237,.10);
+  color: #6d28d9;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  flex-shrink: 0;
+  transition: background .2s ease;
+}
+.qpi-wdh-toggle:hover { background: rgba(124,58,237,.18); }
 
 .qpi-wdh-body {
   display: grid;
   grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
   align-items: stretch;
-  gap: 6px; padding: 6px 14px 12px;
+  gap: 8px; padding: 14px 18px 18px;
 }
 .qpi-wdh-step {
-  background: #fff; border: 1.5px solid #e8e4f9;
-  border-radius: 10px;
-  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid rgba(124,58,237,.18);
+  border-left: 4px solid #7c3aed;
+  border-radius: 12px;
+  padding: 14px 16px;
   display: flex; flex-direction: column; gap: 6px;
   min-height: 110px;
+  box-shadow: 0 2px 8px rgba(18,38,63,.04);
+  cursor: default;
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.qpi-wdh-step:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(124,58,237,.18), 0 2px 6px rgba(124,58,237,.10);
 }
 .qpi-wdh-step-head { display: flex; align-items: center; gap: 8px; }
 .qpi-wdh-step-num {
-  width: 22px; height: 22px; border-radius: 50%;
-  background: linear-gradient(135deg, #a78bfa, #7c3aed); color: #fff;
-  font-size: 11px; font-weight: 800;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: linear-gradient(135deg, #7c3aed, #a78bfa); color: #fff;
+  font-size: 12px; font-weight: 700;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
+  box-shadow: 0 3px 8px rgba(124,58,237,.30);
 }
-.qpi-wdh-step-title { font-size: 12px; font-weight: 800; color: #3b0764; }
-.qpi-wdh-step-desc { font-size: 10.5px; color: #6b7280; line-height: 1.45; margin: 0; flex: 1; }
+.qpi-wdh-step-title { font-size: 14px; font-weight: 700; color: #6d28d9; line-height: 1.2; }
+.qpi-wdh-step-desc { font-size: 12px; color: var(--vz-secondary-color, #6b7280); line-height: 1.45; margin: 0; flex: 1; }
 .qpi-wdh-step-tag {
   display: inline-flex; align-items: center; gap: 5px;
   font-size: 9.5px; font-weight: 800; color: #7c3aed;
@@ -4187,10 +4322,11 @@ const SCOPED_CSS = `
 
 .qpi-wdh-arrow { display: flex; align-items: center; justify-content: center; }
 .qpi-wdh-arrow-dot {
-  width: 22px; height: 22px; border-radius: 50%;
-  background: rgba(255,255,255,.7); border: 1.5px solid #c4b5fd;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: #fff; border: 1px solid rgba(124,58,237,.22);
   display: flex; align-items: center; justify-content: center;
   color: #7c3aed;
+  box-shadow: 0 1px 4px rgba(124,58,237,.12);
 }
 
 /* ─── Table card ─── Clean neutral card. The 3px violet accent stripe
@@ -4216,8 +4352,31 @@ const SCOPED_CSS = `
   border-bottom: 1px solid rgba(124,58,237,0.15);
   position: relative; z-index: 1;
 }
-/* (removed: legacy .qpi-listpill rules — the toolbar no longer renders
-    a separate "Quotation List" pill; the page-header tab switch covers it.) */
+/* "<Tab> List" pill on the left of the toolbar — re-added to match the
+   Figma. White rounded chip with a purple gradient icon box, echoing the
+   page-header icon styling so the two read as the same design language. */
+.qpi-listpill {
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 6px 14px 6px 7px; border-radius: 10px;
+  background: #fff;
+  border: 1px solid rgba(124,58,237,.2);
+  color: #3b0764; font-size: 12.5px; font-weight: 800;
+  white-space: nowrap; flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(124,58,237,.08);
+}
+.qpi-listpill-ico {
+  width: 30px; height: 30px; border-radius: 8px;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; flex-shrink: 0;
+}
+.qpi-listpill-ico svg { width: 15px; height: 15px; }
+[data-bs-theme="dark"] .qpi-listpill,
+[data-layout-mode="dark"] .qpi-listpill {
+  background: rgba(124,58,237,.10);
+  border-color: rgba(167,139,250,.30);
+  color: #e9e3ff;
+}
 
 /* Tabs bar (row 2) — mirrors .smc-tabs-bar on the Customer page.
    Light violet wash + same horizontal padding as the toolbar above,
@@ -4360,23 +4519,24 @@ const SCOPED_CSS = `
   margin-bottom: 0 !important;
 }
 .qpi-table-host .table thead.table-light tr {
-  background: linear-gradient(90deg, #f5f0ff 0%, #ede4fc 50%, #e0d7fc 100%) !important;
+  /* Solid violet header band (matches the Figma + the Customer page's
+   * create-button gradient) — seamless across columns because the gradient
+   * lives on the row, not the individual cells. */
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important;
 }
 .qpi-table-host .table thead.table-light th {
-  /* Header sizing matches SalesCustomers.smc-table-wrap — lighter
-   * weight (600), 12px text, narrower letter-spacing, deeper violet
-   * color. Reads as a muted label row above the body cells instead
-   * of the bolder banner the page had before. */
+  /* White uppercase labels on the violet band, matching the Figma. */
   --bs-table-bg: transparent !important;
   --bs-table-accent-bg: transparent !important;
   background: transparent !important;
-  color: #5b21b6 !important;
+  color: #fff !important;
   font-size: 12px !important;
-  font-weight: 600 !important;
-  letter-spacing: .02em !important;
+  font-weight: 700 !important;
+  letter-spacing: .03em !important;
   text-transform: uppercase;
-  padding: 10px 14px !important;
-  border-bottom: 1px solid rgba(124,58,237,.18) !important;
+  /* Match SalesCustomers .smc-table-wrap th padding exactly. */
+  padding: 11px 14px !important;
+  border-bottom: 0 !important;
   white-space: nowrap;
   vertical-align: middle !important;
   line-height: 1.3 !important;
@@ -4409,11 +4569,15 @@ const SCOPED_CSS = `
   background: transparent;
   transition: background .14s ease;
 }
-/* Hover — solid soft lavender wash matches SalesCustomers (which is
- * the design baseline the user asked us to match). The earlier
- * gradient looked subtly different from the customer page. */
+/* Zebra striping — alternating two-tone rows like the Figma. Odd rows stay
+ * white (the card background); even rows get a soft lavender tint. Targeting
+ * the cells (not the row) with !important also recolours the pinned ACTION
+ * cell so it matches its row's stripe instead of showing through white. */
+.qpi-table-host .table tbody tr:nth-child(even) td { background: #f4f0ff !important; }
+/* Hover wins over the stripe (declared after) — a deeper lavender so the
+ * active row stands out from both stripe tones. */
 .qpi-table-host .table tbody tr:hover td {
-  background: #faf7ff !important;
+  background: #ece5fb !important;
 }
 .qpi-table-host .table tbody td {
   --bs-table-bg: transparent !important;
@@ -4431,22 +4595,103 @@ const SCOPED_CSS = `
 }
 .qpi-table-host .table tbody tr:last-child td { border-bottom: 0 !important; }
 
+/* ── Pin the ACTION column (last) ──
+   The table carries 13 columns and a wide action cluster (Convert to PI +
+   the row tools), so it scrolls horizontally. Pinning the last column to the
+   right keeps the actions aligned under their header and always reachable,
+   instead of scrolling out of view / breaking past the header band. */
+.qpi-table-host .table thead.table-light th:last-child,
+.qpi-table-host .table tbody td:last-child {
+  position: sticky; right: 0;
+}
+.qpi-table-host .table thead.table-light th:last-child {
+  /* Solid fill — the header gradient lives on the <tr> and can't ride a
+     sticky cell; the gradient's end colour keeps it seamless with the band. */
+  background: #6d28d9 !important;
+  z-index: 4;
+}
+.qpi-table-host .table tbody td:last-child {
+  background: #fff !important;
+  z-index: 2;
+  box-shadow: -10px 0 12px -10px rgba(15,23,42,.18);
+}
+.qpi-table-host .table tbody tr:hover td:last-child { background: #ece5fb !important; }
+/* Dark-mode zebra + pinned-cell tints. */
+[data-bs-theme="dark"] .qpi-table-host .table tbody tr:nth-child(even) td { background: rgba(124,58,237,.06) !important; }
+[data-bs-theme="dark"] .qpi-table-host .table tbody td:last-child {
+  background: var(--vz-card-bg, #1a1d21) !important;
+}
+[data-bs-theme="dark"] .qpi-table-host .table tbody tr:nth-child(even) td:last-child {
+  background: #1d1830 !important;
+}
+[data-bs-theme="dark"] .qpi-table-host .table tbody tr:hover td:last-child {
+  background: rgba(134,92,226,.12) !important;
+}
+
 /* TableContainer's built-in pagination strip — styled as a proper card
  * footer that MIRRORS the toolbar above (same soft lavender wash + violet
  * hairline border + violet pagination), so it reads as part of .qpi-card,
  * not a separate coloured strip. The card's overflow:hidden + 16px radius
  * already round the footer's bottom corners. */
-.qpi-table-host > .row {
-  /* FLAT footer (matches the SalesCustomers fix): no lavender bar / border —
-     the "Showing X" text + pagination just sit cleanly below the rows so the
-     footer doesn't read as a separate strip nested in the table. */
-  margin: 6px 0 0 !important;
-  padding: 8px 4px 0;
-  --bs-gutter-x: 0;
-  --bs-gutter-y: 0;
+/* TableContainer's built-in pagination Row is hidden — we render our own
+   "apna wala" footer (.qpi-pag) below the table instead. */
+.qpi-table-host > .row { display: none !important; }
+
+/* ─── Our pagination footer — Showing X–Y of Z + numbered chips. Mirrors
+   the CLM .clm-pag footer but in the QPI violet palette. */
+.qpi-pag {
   display: flex; align-items: center; justify-content: space-between;
-  flex-wrap: wrap; gap: 8px;
-  background: transparent;
+  flex-wrap: wrap; gap: 10px;
+  padding: 10px 18px;
+  border-top: 1px solid rgba(124,58,237,.15);
+  background: linear-gradient(135deg, rgba(124,58,237,.04), rgba(167,139,250,.02));
+}
+.qpi-pag-info {
+  font-size: 12px; font-weight: 600; color: #6d28d9;
+  background: #fff; border: 1px solid rgba(124,58,237,.25);
+  padding: 4px 12px; border-radius: 20px;
+  font-variant-numeric: tabular-nums;
+}
+.qpi-pag-info b { color: #3b0764; font-weight: 800; }
+.qpi-pag-btns { display: inline-flex; align-items: center; gap: 6px; }
+.qpi-pag-btn {
+  min-width: 30px; height: 30px; padding: 0 8px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(124,58,237,.25);
+  background: #fff;
+  color: #6d28d9;
+  font-size: 12.5px; font-weight: 700; cursor: pointer;
+  font-family: inherit;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background .15s, border-color .15s, color .15s, box-shadow .2s;
+}
+.qpi-pag-btn:hover:not(:disabled):not(.on) {
+  background: rgba(124,58,237,.08);
+  border-color: rgba(124,58,237,.45);
+  color: #5b21b6;
+}
+.qpi-pag-btn.on {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(124,58,237,.30);
+  cursor: default;
+}
+.qpi-pag-btn:disabled { opacity: .45; cursor: not-allowed; }
+.qpi-pag-arrow { color: #7c3aed; }
+[data-bs-theme="dark"] .qpi-pag,
+[data-layout-mode="dark"] .qpi-pag {
+  border-top-color: rgba(167,139,250,.20);
+  background: rgba(124,58,237,.06);
+}
+[data-bs-theme="dark"] .qpi-pag-info,
+[data-layout-mode="dark"] .qpi-pag-info {
+  background: rgba(124,58,237,.12); border-color: rgba(167,139,250,.30); color: #c4b5fd;
+}
+[data-bs-theme="dark"] .qpi-pag-info b { color: #e9e3ff; }
+[data-bs-theme="dark"] .qpi-pag-btn,
+[data-layout-mode="dark"] .qpi-pag-btn {
+  background: rgba(124,58,237,.10); border-color: rgba(167,139,250,.30); color: #c4b5fd;
 }
 .qpi-table-host > .row > [class^="col-"] { padding: 0; width: auto; flex: 0 0 auto; }
 /* "Showing X of Y Results" — plain muted text, no pill. */
@@ -4713,28 +4958,40 @@ const SCOPED_CSS = `
   box-shadow: 0 0 0 3px rgba(22,163,74,.28), 0 3px 10px rgba(22,163,74,.28);
 }
 
-/* Action tiles — mirror the customer page ActionBtn: neutral background,
-   neutral border, hover shifts border + icon to the column accent. */
+/* Action tiles — colour-coded like the Customer page ActionBtn: each tile
+   shows a soft tint of its per-action accent (--qpi-act-accent) with a
+   matching border + icon, and fills solid with a lift on hover. The accent
+   is set inline per button (email = blue, edit = green, delete = red, etc.). */
 .qpi-act {
   width: 30px; height: 30px; border-radius: 8px;
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer; flex-shrink: 0; padding: 0;
-  background: var(--vz-secondary-bg, #f3f3f9);
-  border: 1px solid var(--vz-border-color, #e9ecef);
-  color: var(--vz-secondary-color, #878a99);
-  transition: border-color .15s ease, color .15s ease,
+  /* Fallbacks first for browsers without color-mix; modern browsers use the
+     accent-derived tint below. */
+  background: #f6f4ff;
+  background: color-mix(in srgb, var(--qpi-act-accent, #7c3aed) 10%, #fff);
+  border: 1px solid #e5e0f5;
+  border: 1px solid color-mix(in srgb, var(--qpi-act-accent, #7c3aed) 38%, #fff);
+  color: var(--qpi-act-accent, #7c3aed);
+  transition: background .15s ease, border-color .15s ease, color .15s ease,
               transform .15s ease, box-shadow .15s ease;
 }
-.qpi-act:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(15,23,42,.06); }
-.qpi-act:active { transform: translateY(0); }
+.qpi-act:hover {
+  background: var(--qpi-act-accent, #7c3aed);
+  border-color: transparent;
+  color: #fff;
+  transform: translateY(-2px) scale(1.08);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--qpi-act-accent, #7c3aed) 45%, transparent);
+}
+.qpi-act:active { transform: translateY(0) scale(1); }
 /* Disabled state for action tiles (e.g. Email after first send, or
    Reminder before first send). Greyed out, no hover lift, no pointer. */
 .qpi-act-disabled,
 .qpi-act:disabled,
 .qpi-act[disabled] {
   cursor: not-allowed;
-  opacity: 0.45;
-  background: var(--vz-secondary-bg, #f3f3f9);
+  opacity: 0.5;
+  background: var(--vz-secondary-bg, #f3f3f9) !important;
   color: var(--vz-secondary-color, #878a99) !important;
   border-color: var(--vz-border-color, #e9ecef) !important;
 }
@@ -4743,18 +5000,14 @@ const SCOPED_CSS = `
 .qpi-act[disabled]:hover {
   transform: none;
   box-shadow: none;
+  background: var(--vz-secondary-bg, #f3f3f9) !important;
+  color: var(--vz-secondary-color, #878a99) !important;
 }
 .qpi-act:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(124,58,237,.18);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--qpi-act-accent, #7c3aed) 25%, transparent);
 }
 .qpi-act svg { width: 14px; height: 14px; }
-/* Hover-accent per action type — only the border + icon recolor, the
-   background stays neutral (matches Customer page hover treatment). */
-.qpi-act-mail:hover { border-color: #2563eb; color: #2563eb; }
-.qpi-act-edit:hover { border-color: #16a34a; color: #16a34a; }
-.qpi-act-menu:hover { border-color: #7c3aed; color: #7c3aed; }
-.qpi-act-del:hover  { border-color: #dc2626; color: #dc2626; }
 
 /* ─── More-Options dropdown (portal'd into <body>; positioned via inline style) ─── */
 .qpi-moremenu {
@@ -5344,6 +5597,8 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .qpi-wdh-step {
   background: #1a1530;
   border-color: rgba(167,139,250,.25);
+  /* Keep the accent stripe visible on the dark tile (brighter violet). */
+  border-left-color: #a78bfa;
 }
 [data-bs-theme="dark"] .qpi-wdh-step-title { color: #e9d5ff; }
 [data-bs-theme="dark"] .qpi-wdh-step-desc  { color: #9aa0b4; }
@@ -5391,14 +5646,11 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .qpi-table-host .table-responsive::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.20); }
 [data-bs-theme="dark"] .qpi-table-host .table { color: var(--vz-body-color); }
 [data-bs-theme="dark"] .qpi-table-host .table thead.table-light tr {
-  background: linear-gradient(90deg,
-    rgba(124,58,237,.22) 0%,
-    rgba(167,139,250,.18) 50%,
-    rgba(196,181,253,.15) 100%) !important;
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important;
 }
 [data-bs-theme="dark"] .qpi-table-host .table thead.table-light th {
-  color: #d8c8ff !important;
-  border-bottom-color: rgba(167,139,250,.30) !important;
+  color: #fff !important;
+  border-bottom: 0 !important;
 }
 [data-bs-theme="dark"] .qpi-table-host .table tbody tr:hover td {
   background: rgba(134,92,226,.08) !important;
@@ -5459,14 +5711,18 @@ const SCOPED_CSS = `
 /* Action tiles — slate base with lavender hover accent. */
 [data-bs-theme="dark"] .qpi-act {
   background: #1c2531;
+  background: color-mix(in srgb, var(--qpi-act-accent, #7c3aed) 20%, #141a26);
   border-color: rgba(167,139,250,.30);
+  border-color: color-mix(in srgb, var(--qpi-act-accent, #7c3aed) 45%, transparent);
   color: #c4b5fd;
+  color: color-mix(in srgb, var(--qpi-act-accent, #7c3aed) 70%, #fff);
+}
+[data-bs-theme="dark"] .qpi-act:hover {
+  background: var(--qpi-act-accent, #7c3aed);
+  border-color: transparent;
+  color: #fff;
 }
 [data-bs-theme="dark"] .qpi-act:focus-visible { box-shadow: 0 0 0 3px rgba(167,139,250,.30); }
-[data-bs-theme="dark"] .qpi-act-mail:hover { border-color: #60a5fa; color: #93c5fd; }
-[data-bs-theme="dark"] .qpi-act-edit:hover { border-color: #4ade80; color: #86efac; }
-[data-bs-theme="dark"] .qpi-act-menu:hover { border-color: #a78bfa; color: #e9d5ff; }
-[data-bs-theme="dark"] .qpi-act-del:hover  { border-color: #f87171; color: #fca5a5; }
 /* Disabled-state action tile in dark mode — keep the muted look that
    reads as "not interactive" without going invisible against the dark
    table row background. Targets both the explicit class (.qpi-act-disabled)

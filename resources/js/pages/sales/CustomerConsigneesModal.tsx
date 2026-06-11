@@ -32,11 +32,14 @@ interface Props {
   open: boolean;
   customer: CustomerLite | null;
   onClose: () => void;
+  /* Header title — defaults to "Consignees". The Sales Matrix opens
+   * this same popup with "Manage Consignees" from its toolbar button. */
+  title?: string;
 }
 
 const ROWS_PER_PAGE = 5;
 
-export default function CustomerConsigneesModal({ open, customer, onClose }: Props) {
+export default function CustomerConsigneesModal({ open, customer, onClose, title = 'Consignees' }: Props) {
   const toast = useToast();
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<ConsigneeRow[]>([]);
@@ -131,7 +134,7 @@ export default function CustomerConsigneesModal({ open, customer, onClose }: Pro
                 </svg>
               </div>
               <div className="ccm-header-text">
-                <div className="ccm-title">Consignees</div>
+                <div className="ccm-title">{title}</div>
                 <div className="ccm-sub">Manage consignee identity, shipment delivery ownership, compliance readiness &amp; customer-linked destination mapping</div>
               </div>
             </div>
