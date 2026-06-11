@@ -468,6 +468,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   type SegmentDocs = { kyc: SegDocRow[]; dd: SegDocRow[]; tl: SegDocRow[]; td: SegDocRow[]; qc: SegDocRow[] };
   const EMPTY_SEG_DOCS: SegmentDocs = { kyc:[], dd:[], tl:[], td:[], qc:[] };
   const [segmentDocs, setSegmentDocs] = useState<SegmentDocs>(EMPTY_SEG_DOCS);
+  /* True while the Stage 2 segment-rule document catalog is being fetched from
+   * the DB — drives the table shimmer so the Company-DD / Owner-KYC / Trade-
+   * Licence grids don't flash empty while the call is in flight (it fires after
+   * hydration, so the page-level shimmer is already off). Mirrors [[AddCustomerModal]]. */
+  const [segmentDocsLoading, setSegmentDocsLoading] = useState(false);
 
   /* Per-row file uploads against the segment-rule reference rows.
    * Key: `${sub-tab}::${doc.code}`. Value: File + blob URL used by the
@@ -1078,13 +1083,14 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
      * rather than defaulting later stages to a false "done". */
     if (stage < 2 && maxStage < 2) return;
     const names = (form1.segment ?? []).filter(Boolean);
-    if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
+    if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setSegmentDocsLoading(false); return; }
     const segRows = names
       .map(n => mSegmentIds.find(s => s.name === n))
       .filter((r): r is { id:number; name:string } => !!r);
-    if (segRows.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
+    if (segRows.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setSegmentDocsLoading(false); return; }
 
     let cancelled = false;
+    setSegmentDocsLoading(true);
     Promise.all([
       Promise.all(
         segRows.map(s =>
@@ -1139,7 +1145,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         sent: false,
         status: 'idle' as TdSigStatus,
       })));
-    });
+    }).finally(() => { if (!cancelled) setSegmentDocsLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, stage, maxStage, form1.segment, mSegmentIds]);
@@ -2282,6 +2288,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               sameAsCustomer={sameAsCustomer}
               segmentName={(form1.segment ?? []).join(', ')}
               segmentDocs={segmentDocs}
+              loading={segmentDocsLoading}
               segmentRefUploads={segmentRefUploads}
               setSegmentRefUploads={setSegmentRefUploads}
               persistSegmentRefUpload={persistSegmentRefUpload}
@@ -3292,7 +3299,7 @@ function ConsigneeSegmentBanner({ segmentName, label, rows }: {
 const Stage2 = ({
   sub, setSub, search, setSearch, docs, owners,
   onAddDoc, onEditDoc, onDeleteDoc, onAddOwner, onEditOwner, onDeleteOwner,
-  form1, locations, consigneeCode, sameAsCustomer, segmentName, segmentDocs,
+  form1, locations, consigneeCode, sameAsCustomer, segmentName, segmentDocs, loading,
   segmentRefUploads, setSegmentRefUploads, persistSegmentRefUpload,
 }: {
   sub: KycSubTab;
@@ -3317,6 +3324,9 @@ const Stage2 = ({
    *  uses segmentRefUploads for per-row file pickers. */
   segmentName: string;
   segmentDocs: { kyc:any[]; dd:any[]; tl:any[]; td:any[]; qc:any[] };
+  /** True while the segment-rule catalog is loading from the DB — drives the
+   *  in-table shimmer. */
+  loading?: boolean;
   segmentRefUploads: Record<string, { file: File | null; url: string; name: string }>;
   setSegmentRefUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
   persistSegmentRefUpload: (refKey: string, file: File, docName: string) => Promise<void> | void;

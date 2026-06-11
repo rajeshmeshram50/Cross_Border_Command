@@ -493,10 +493,13 @@ export default function SalesMatrixDetail() {
      * count visible while the new fetch is in flight. */
     setCustTally({ total: 0, verified: 0, loading: true });
     let cancelled = false;
-    /* 8s timeout — beyond that the vault is probably stuck (slow query,
-     * server unresponsive). Falling into the catch puts the panel in
-     * error state with a retry CTA instead of showing "Loading…" forever. */
-    api.get<VaultResponse>(`/segment-uploads/customer/${cid}/vault`, { timeout: 8000 })
+    /* No per-request timeout — a cold hard-refresh fires a big burst of API
+     * calls and the single-threaded dev server processes them serially, so this
+     * heavier vault query can sit queued for several seconds. A fixed timeout
+     * (8s) was cutting it off mid-flight (axios aborts → DevTools "(canceled)"),
+     * leaving the card in error state. We rely on the request completing; the
+     * catch still handles a genuine network/server failure. */
+    api.get<VaultResponse>(`/segment-uploads/customer/${cid}/vault`)
       .then(res => {
         if (cancelled) return;
         const d = res.data?.data;
@@ -514,7 +517,7 @@ export default function SalesMatrixDetail() {
     if (!cid) { setConsTally(null); return; }
     setConsTally({ total: 0, verified: 0, loading: true });
     let cancelled = false;
-    api.get<VaultResponse>(`/segment-uploads/consignee/${cid}/vault`, { timeout: 8000 })
+    api.get<VaultResponse>(`/segment-uploads/consignee/${cid}/vault`)
       .then(res => {
         if (cancelled) return;
         const d = res.data?.data;
@@ -539,7 +542,7 @@ export default function SalesMatrixDetail() {
   useEffect(() => {
     if (!resolvedLeadId) { setAgreementApplicable(null); return; }
     let cancelled = false;
-    api.get(`/clm/leads/${resolvedLeadId}/agreement-applicable`, { timeout: 8000 })
+    api.get(`/clm/leads/${resolvedLeadId}/agreement-applicable`)
       .then(res => {
         if (cancelled) return;
         setAgreementApplicable((res.data?.data ?? null) as AgreementApplicablePayload | null);
@@ -1114,6 +1117,14 @@ export default function SalesMatrixDetail() {
             onPrev={goPrev}
             onNext={goNext}
             reloadLead={reloadLead}
+            /* Create-PI gate for Stage 5, derived from the vault tallies this
+               parent already fetches (custTally / consTally) — saves Stage 5
+               from re-calling /segment-uploads/{party}/vault. A party with
+               total>0 and verified<total still has Standard Documents pending. */
+            mandatoryIncomplete={
+              (!!custTally && custTally.total > 0 && custTally.verified < custTally.total) ||
+              (!!consTally && consTally.total > 0 && consTally.verified < consTally.total)
+            }
             // Stage 5 calls this after a PI is created or edited so
             // the Segment Details card unlocks immediately instead of
             // waiting for the user to click Save & Next (the only

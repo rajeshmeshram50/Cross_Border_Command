@@ -26,6 +26,12 @@ export type StageProps = {
    * quick-action view, not a pipeline step. All in-table actions still
    * persist immediately, so nothing is lost by hiding the footer. */
   embedded?: boolean;
+  /* Stage 5: whether either party still has incomplete Standard Documents
+   * (core KYC/DD/Licence uploads). Derived by the parent from the SAME vault
+   * tallies it already fetches for the left "Customer/Consignee Details"
+   * cards, then passed down — so Stage 5 no longer re-fetches the vault
+   * itself (the call was a duplicate of the parent's). Gates Create PI. */
+  mandatoryIncomplete?: boolean;
 };
 
 /* Shared stage shell styles — each stage imports SHARED_STAGE_CSS once. */
