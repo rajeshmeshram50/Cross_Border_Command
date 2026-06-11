@@ -98,9 +98,23 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
     }
     // Validate both required fields together so each shows its own inline
     // message under the box (not one-at-a-time toasts the user can miss).
+    // The Subject content rules mirror the backend safeTextRule so the same
+    // "special characters / must contain letters" feedback shows INLINE under
+    // the field instead of coming back as a toast after a failed save.
     const nextErrors: { subject?: string; setDate?: string } = {};
-    if (!subject.trim()) nextErrors.subject = 'Reminder subject is required';
-    if (!setDate)        nextErrors.setDate = 'Reminder set date is required';
+    const subj = subject.trim();
+    if (!subj) {
+      nextErrors.subject = 'Reminder subject is required';
+    } else if (!/^[A-Za-z0-9 ,.'\-&()\/:]+$/.test(subj)) {
+      nextErrors.subject = 'Special characters are not allowed in Subject.';
+    } else if (!/[A-Za-z]/.test(subj)) {
+      nextErrors.subject = 'Subject must contain letters.';
+    } else if (subj.length < 3) {
+      nextErrors.subject = 'Subject must be at least 3 characters.';
+    } else if (subj.length > 255) {
+      nextErrors.subject = 'Subject cannot exceed 255 characters.';
+    }
+    if (!setDate) nextErrors.setDate = 'Reminder set date is required';
     if (Object.keys(nextErrors).length) {
       setErrors(nextErrors);
       return;
@@ -125,9 +139,18 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
       toast.success('Reminder added', 'Saved to this opportunity');
       onClose();
     } catch (e: any) {
-      const errors = e?.response?.data?.errors as Record<string, string[]> | undefined;
-      const firstErr = errors ? Object.values(errors)[0]?.[0] : undefined;
-      toast.error('Save failed', firstErr ?? e?.response?.data?.message ?? 'Could not save reminder');
+      const errs = e?.response?.data?.errors as Record<string, string[]> | undefined;
+      // Route field errors (subject / set_date) to their inline message under
+      // the box; only non-field errors fall back to a toast.
+      const fieldErrs: { subject?: string; setDate?: string } = {};
+      if (errs?.subject?.[0])  fieldErrs.subject = errs.subject[0];
+      if (errs?.set_date?.[0]) fieldErrs.setDate = errs.set_date[0];
+      if (Object.keys(fieldErrs).length) {
+        setErrors(p => ({ ...p, ...fieldErrs }));
+      } else {
+        const firstErr = errs ? Object.values(errs)[0]?.[0] : undefined;
+        toast.error('Save failed', firstErr ?? e?.response?.data?.message ?? 'Could not save reminder');
+      }
     } finally {
       setSaving(false);
     }

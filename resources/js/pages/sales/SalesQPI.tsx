@@ -41,6 +41,9 @@ export type Quotation = {
   consignee: string;
   docType: 'International' | 'Domestic';
   currency: string;    // $, ₹, €
+  // Quotation grand total — shown as the "Quotation Value" in the
+  // Convert-to-PI confirmation popup.
+  grandTotal?: number | null;
   salesManager: string;
   // Drives the "Convert to PI" button state. When the quotation has
   // already been flipped to converted_to_pi (either via direct convert
@@ -613,6 +616,7 @@ export default function SalesQPI() {
           consignee:    r.consignee_name ?? r.consignee?.company_name ?? '',
           docType:      (r.doc_type ?? 'International') as 'International' | 'Domestic',
           currency:     r.currency ?? '',
+          grandTotal:   r.grand_total != null ? Number(r.grand_total) : null,
           salesManager: r.sales_manager_name ?? r.salesManager?.name ?? '—',
           status:       r.status ?? 'draft',
           emailedAt:    r.emailed_at ?? null,
@@ -1831,7 +1835,9 @@ export default function SalesQPI() {
           fromQuotation={convertTarget?.qtNo ?? ''}
           newPiCode={convertPreviewCode}
           piDate={new Date().toLocaleDateString('en-GB')}
-          quotationValue={`${convertTarget?.currency || '$'} —`}
+          quotationValue={`${convertTarget?.currency || '$'} ${
+            convertTarget?.grandTotal != null ? convertTarget.grandTotal.toFixed(2) : '—'
+          }`}
           converting={!!convertTarget?.id && convertingId === convertTarget.id}
           onCancel={() => { if (!convertingId) setConvertTarget(null); }}
           onConfirm={() => void confirmConvert()}

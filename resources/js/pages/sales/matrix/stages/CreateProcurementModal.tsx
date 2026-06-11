@@ -79,6 +79,20 @@ const mkDraft = (sp?: SelectedProduct): Draft => ({
   attachments:     [],
 });
 
+/* Numeric field validator — shared by the live per-row errors and the submit
+ * validation. Returns '' when the value is empty or a valid positive number,
+ * else a human message. Empty is treated as valid here; the "required" case is
+ * enforced separately at submit time. Keeping the typed value (rather than
+ * letting a type=number input silently blank it) is what lets us SHOW the
+ * message instead of wiping the field. */
+function numError(raw: string): string {
+  if (raw.trim() === '') return '';
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 'Enter a valid number';
+  if (n <= 0)              return 'Must be greater than 0';
+  return '';
+}
+
 function formatDdMmYyyy(s: string | undefined): string {
   if (!s) return '—';
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
@@ -111,6 +125,10 @@ export default function CreateProcurementModal({
   const [submitting, setSubmitting]  = useState(false);
   const [errors, setErrors]          = useState<Record<string, string>>({});
 
+  // Procurement TAT can't be in the past — disable earlier dates in the picker
+  // so a "wrong" (past) date can't be chosen in the first place.
+  const todayStr = new Date().toISOString().slice(0, 10);
+
   /* Notes / Remarks length bounds. The field is optional, but once filled it
    * must sit within [min, max] characters. Max is also enforced as a hard
    * maxLength on the textarea. */
@@ -139,7 +157,13 @@ export default function CreateProcurementModal({
     api.get<{ status: boolean; data: { next_code: string } }>('/procurements/next-number')
       .then(({ data }) => setNextCode(data.data?.next_code ?? 'PROC-NEW'))
       .catch(() => { /* silent — preview only */ });
-  }, [open, preSelectedProducts, toast]);
+    // Reset ONLY when the modal opens — NOT on every render. `toast` and
+    // `preSelectedProducts` were in the deps before, so showing a validation
+    // toast (or any parent re-render that recreated the props) re-ran this
+    // effect and wiped everything the user had typed. Gating on `open` alone
+    // keeps the typed data intact through validation + re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const spOptions = useMemo(
     () => salespeople.map(sp => ({ value: String(sp.id), label: `${sp.code} · ${sp.name}` })),
@@ -195,9 +219,11 @@ export default function CreateProcurementModal({
     if (!assignTo) next.assignTo = 'Required';
     if (notesError) next.notes = notesError;
     drafts.forEach(d => {
-      if (!d.lead_product_id) next[`prod_${d.key}`]  = 'Pick a product';
-      if (!d.qty || Number(d.qty) <= 0)               next[`qty_${d.key}`]  = 'Required';
-      if (!d.target_price || Number(d.target_price) <= 0) next[`price_${d.key}`] = 'Required';
+      if (!d.lead_product_id) next[`prod_${d.key}`] = 'Pick a product';
+      const qtyMsg   = d.qty.trim() === ''          ? 'Qty is required'   : numError(d.qty);
+      const priceMsg = d.target_price.trim() === '' ? 'Price is required' : numError(d.target_price);
+      if (qtyMsg)   next[`qty_${d.key}`]   = qtyMsg;
+      if (priceMsg) next[`price_${d.key}`] = priceMsg;
     });
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -255,6 +281,14 @@ export default function CreateProcurementModal({
     if (!first?.lead_product_id) return '—';
     return productById.get(first.lead_product_id)?.product_name ?? '—';
   }, [drafts, productById]);
+
+  // Body scroll lock — keep the page behind the modal from scrolling while open.
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [open]);
 
   if (!open) return null;
 
@@ -321,6 +355,7 @@ export default function CreateProcurementModal({
                   value={procDate}
                   onChange={setProcDate}
                   invalid={!!errors.procDate}
+                  minDate={todayStr}
                   placeholder="dd-mm-yyyy"
                 />
               </div>
@@ -414,25 +449,41 @@ export default function CreateProcurementModal({
                           ) : <span className="cps-muted">—</span>}
                         </td>
                         <td>
-                          <input
-                            type="number" min="0" step="any"
-                            className={`cps-row-input ${errors[`qty_${d.key}`] ? 'cps-input-err' : ''}`}
-                            value={d.qty}
-                            onChange={e => setDraft(d.key, { qty: e.target.value })}
-                            placeholder="Qty"
-                          />
+                          {(() => {
+                            const qtyMsg = errors[`qty_${d.key}`] || numError(d.qty);
+                            return (
+                              <>
+                                <input
+                                  type="text" inputMode="decimal"
+                                  className={`cps-row-input ${qtyMsg ? 'cps-input-err' : ''}`}
+                                  value={d.qty}
+                                  onChange={e => setDraft(d.key, { qty: e.target.value.replace(/[^0-9.\-]/g, '') })}
+                                  placeholder="Qty"
+                                />
+                                {qtyMsg && <div className="cps-row-err">{qtyMsg}</div>}
+                              </>
+                            );
+                          })()}
                         </td>
                         <td>
-                          <div className="cps-price-wrap">
-                            <span className="cps-price-prefix">$</span>
-                            <input
-                              type="number" min="0" step="any"
-                              className={`cps-row-input cps-row-price ${errors[`price_${d.key}`] ? 'cps-input-err' : ''}`}
-                              value={d.target_price}
-                              onChange={e => setDraft(d.key, { target_price: e.target.value })}
-                              placeholder="Price"
-                            />
-                          </div>
+                          {(() => {
+                            const priceMsg = errors[`price_${d.key}`] || numError(d.target_price);
+                            return (
+                              <>
+                                <div className="cps-price-wrap">
+                                  <span className="cps-price-prefix">$</span>
+                                  <input
+                                    type="text" inputMode="decimal"
+                                    className={`cps-row-input cps-row-price ${priceMsg ? 'cps-input-err' : ''}`}
+                                    value={d.target_price}
+                                    onChange={e => setDraft(d.key, { target_price: e.target.value.replace(/[^0-9.\-]/g, '') })}
+                                    placeholder="Price"
+                                  />
+                                </div>
+                                {priceMsg && <div className="cps-row-err">{priceMsg}</div>}
+                              </>
+                            );
+                          })()}
                         </td>
                         <td>
                           <RowAttach
@@ -735,6 +786,9 @@ const SCOPED_CSS = `
   outline: none; font-family: inherit;
 }
 .cps-row-input:focus { border-color: #d97706; box-shadow: 0 0 0 3px rgba(217,119,6,.16); }
+/* Per-row validation message under QTY / TARGET PRICE — keeps the typed value
+   visible and explains why it's invalid (negative / non-numeric / empty). */
+.cps-row-err { margin-top: 3px; font-size: 10px; font-weight: 600; color: #ef4444; line-height: 1.25; }
 .cps-price-wrap { position: relative; }
 .cps-price-prefix {
   position: absolute; left: 10px; top: 50%; transform: translateY(-50%);

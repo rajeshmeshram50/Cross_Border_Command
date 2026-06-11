@@ -5,6 +5,7 @@ import withRouter from '../Components/Common/withRouter';
 //import Components
 import Header from './Header';
 import Sidebar from './Sidebar';
+import IdimsHeader from './IdimsHeader';
 import Footer from './Footer';
 import RightSidebar from '../Components/Common/RightSidebar';
 
@@ -124,13 +125,37 @@ const Layout = (props : any) => {
     }
 
     useEffect(() => {
-        const humberIcon = document.querySelector(".hamburger-icon") as HTMLElement;
+        // The IDIMS horizontal header has no .hamburger-icon, so this query is
+        // null in horizontal mode — guard before touching classList.
+        const humberIcon = document.querySelector(".hamburger-icon") as HTMLElement | null;
+        if (!humberIcon) return;
         if (sidebarVisibilitytype === 'show' || layoutType === "vertical" || layoutType === "twocolumn") {
             humberIcon.classList.remove('open');
         } else {
-            humberIcon && humberIcon.classList.add('open');
+            humberIcon.classList.add('open');
         }
     }, [sidebarVisibilitytype, layoutType]);
+
+    // Horizontal layout uses the ported IDIMS two-row header (logo + search +
+    // branch switcher + controls on top, nav items below). It fully replaces
+    // the stock Velzon Header + horizontal Sidebar nav. The `idims-active`
+    // class neutralises the Velzon topbar/sidebar offsets on .main-content so
+    // the page content flows directly under the sticky header.
+    if (layoutType === 'horizontal') {
+        return (
+            <React.Fragment>
+                <div id="layout-wrapper" className="idims-active">
+                    <style>{'.idims-active .main-content{margin-left:0!important;margin-top:0!important;padding-top:0!important;}.idims-active .page-content{margin-top:0!important;padding-top:1rem!important;}'}</style>
+                    <IdimsHeader />
+                    <div className="main-content mb-2">
+                        {props.children}
+                        <Footer />
+                    </div>
+                </div>
+                <RightSidebar />
+            </React.Fragment>
+        );
+    }
 
     return (
         <React.Fragment>
