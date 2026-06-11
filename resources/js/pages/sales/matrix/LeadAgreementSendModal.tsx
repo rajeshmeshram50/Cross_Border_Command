@@ -288,10 +288,11 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
     consignee: activeSegRawAgreements.filter(a => partyBucket(a.party) === 'consignee').length,
     both:      activeSegRawAgreements.filter(a => partyBucket(a.party) === 'both').length,
   };
-  // buyer == consignee → flat list of buyer-ONLY agreements (consignee-only
-  // and buyer+consignee excluded). Otherwise filter by the active sub-tab.
+  // buyer == consignee → flat list of every agreement that involves the buyer
+  // (buyer-only AND buyer+consignee "both"). Only pure consignee-only agreements
+  // are excluded as mirrors. Otherwise filter by the active sub-tab.
   const activeAgreements = buyerEqualsConsignee
-    ? activeSegRawAgreements.filter(a => partyBucket(a.party) === 'buyer')
+    ? activeSegRawAgreements.filter(a => partyBucket(a.party) !== 'consignee')
     : (agrPartyTab === 'all'
         ? activeSegRawAgreements
         : activeSegRawAgreements.filter(a => partyBucket(a.party) === agrPartyTab));
@@ -383,10 +384,12 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
 
   /* Applicable-party buckets driving the Buyer / Consignee / Both tabs.
    * `buyer` / `consignee` / `both` are mutually exclusive. `all` is the flat
-   * list shown when buyer == consignee — only buyer-ONLY docs (consignee-only
-   * and buyer+consignee docs are excluded). */
+   * list shown when buyer == consignee — every doc that involves the buyer
+   * (buyer-only AND buyer+consignee "both" docs). Only pure consignee-only docs
+   * are excluded, since those are the mirror copies redundant with a single
+   * party — a "both" doc is one document that must still be signed once. */
   const tdBuckets = useMemo(() => ({
-    all:       tradeDocs.filter(d => d.for_buyer && !d.for_consignee),
+    all:       tradeDocs.filter(d => d.for_buyer),
     buyer:     tradeDocs.filter(d => d.for_buyer && !d.for_consignee),
     consignee: tradeDocs.filter(d => d.for_consignee && !d.for_buyer),
     both:      tradeDocs.filter(d => d.for_buyer && d.for_consignee),

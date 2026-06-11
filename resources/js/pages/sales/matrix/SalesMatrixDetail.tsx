@@ -571,7 +571,10 @@ export default function SalesMatrixDetail() {
     let agrTotal = 0, agrDone = 0, tdTotal = 0, tdDone = 0;
     for (const s of segs) {
       for (const a of s.agreements) {
-        if (buyerEqualsConsignee && partyBucket(a.party) !== 'buyer') continue;
+        // buyer == consignee → keep buyer-only AND buyer+consignee "both"
+        // agreements (one signature each); only pure consignee-only rows are
+        // dropped as mirrors. Must match activeAgreements in the send popup.
+        if (buyerEqualsConsignee && partyBucket(a.party) === 'consignee') continue;
         agrTotal++;
         if (a.signature_request?.status === 'completed') agrDone++;
       }
@@ -579,12 +582,12 @@ export default function SalesMatrixDetail() {
       // (its signature request reached completed) — same way agreements count
       // a completed e-signature.
       for (const td of s.trade_documents) {
-        // When buyer == consignee the popup lists ONLY buyer-only trade docs
-        // (consignee-only / both rows are redundant with a single party — see
-        // tdBuckets in LeadAgreementSendModal). The card count must exclude the
-        // same rows, otherwise it double-counts the mirrored consignee docs and
-        // shows e.g. "1 of 5" while the popup lists 3.
-        if (buyerEqualsConsignee && !(td.for_buyer && !td.for_consignee)) continue;
+        // When buyer == consignee the popup lists every trade doc that involves
+        // the buyer (buyer-only AND buyer+consignee "both" docs) — only pure
+        // consignee-only mirror copies are excluded (see tdBuckets.all in
+        // LeadAgreementSendModal). The card count must match: keep anything with
+        // for_buyer, drop pure consignee-only, so a "both" doc still counts once.
+        if (buyerEqualsConsignee && !td.for_buyer) continue;
         tdTotal++;
         if (td.status === 'Verified' || td.signature_request?.status === 'completed') tdDone++;
       }

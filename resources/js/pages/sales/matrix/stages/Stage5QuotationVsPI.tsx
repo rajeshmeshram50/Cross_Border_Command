@@ -8,6 +8,7 @@ import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 import Tooltip from '../../../../components/ui/Tooltip';
 import SalesDocSendForSignatureModal from './SalesDocSendForSignatureModal';
+import { SigningTrackerModal } from '../../SigningTrackerModal';
 import ConvertToPiModal, { ConversionBlockedModal } from '../../ConvertToPiModal';
 import {
   CreateQuotationModal,
@@ -133,6 +134,9 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     { kind: DocType; id: number; code: string | null; customerName: string | null } | null
   >(null);
   const [sigByRow, setSigByRow] = useState<Record<string, SigStatusRow>>({});
+  // Signing Tracker (shared modal) target — opened from the history icon on any
+  // row that has a signature request (sent or signed).
+  const [trackerFor, setTrackerFor] = useState<{ sigId: number; code: string } | null>(null);
 
   const [createQtOpen, setCreateQtOpen]     = useState(false);
   const [createPiOpen, setCreatePiOpen]     = useState(false);
@@ -764,6 +768,20 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               </button>
                             );
                           })()}
+                          {/* Signing Tracker — appears once a document has been
+                              sent for signature (sent or signed). Opens the
+                              shared activity-timeline modal. */}
+                          {(() => {
+                            const sig = sigByRow[`${docType}:${r.id}`];
+                            if (!sig?.id) return null;
+                            return (
+                              <Tooltip label="Signing activity tracker">
+                                <button type="button" className="s5-icn" onClick={() => setTrackerFor({ sigId: sig.id, code: r.code ?? `${titleCase(docType)} #${r.id}` })} disabled={anyActing}>
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+                                </button>
+                              </Tooltip>
+                            );
+                          })()}
                           <span className="s5-act-sep" />
                           {/* Email button shown for BOTH Quotations and PIs. It
                               stays available after every send (no one-time hide)
@@ -897,6 +915,15 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
         />
       )}
 
+      {/* Signing activity tracker (shared modal). */}
+      {trackerFor && (
+        <SigningTrackerModal
+          sigId={trackerFor.sigId}
+          code={trackerFor.code}
+          onClose={() => setTrackerFor(null)}
+        />
+      )}
+
       {/* Send for Signature (Zoho Sign) — Quotation / PI */}
       {sigSendFor && leadId && (
         <SalesDocSendForSignatureModal
@@ -917,7 +944,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
         fromQuotation={convertTarget?.code ?? ''}
         newPiCode={convertPreviewCode}
         piDate={new Date().toLocaleDateString('en-GB')}
-        quotationValue={`${convertTarget?.currency || '$'} —`}
+        quotationValue={convertTarget ? `${ccyCode(convertTarget.currency)} ${fmtNum(convertTarget.grand_total)}` : '—'}
         converting={!!convertTarget?.id && actingId === convertTarget.id}
         onCancel={() => { if (actingId === null) setConvertTarget(null); }}
         onConfirm={() => void confirmConvert()}
