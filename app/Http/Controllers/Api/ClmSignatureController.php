@@ -1775,6 +1775,21 @@ class ClmSignatureController extends Controller
         if (!$user) abort(401);
         $row  = ClmSignatureRequest::query()->forUser($user)->findOrFail($id);
 
+        // Per-recipient status from Zoho's `actions` array, keyed by email.
+        // Lets the tracker show each signer individually (one "Signed", one
+        // "Viewed", one "Pending") instead of painting every row with the
+        // single overall request status.
+        $perSigner = [];
+        $pickTimeMs = function (array $a, array $keys): ?string {
+            foreach ($keys as $k) {
+                $v = $a[$k] ?? null;
+                if (is_numeric($v) && (int) $v > 0) {
+                    return \Illuminate\Support\Carbon::createFromTimestampMs((int) $v)->toIso8601String();
+                }
+            }
+            return null;
+        };
+
         try {
             $details   = $this->zoho->getRequest($row->zoho_request_id);
             $zohoState = strtolower((string) data_get($details, 'requests.request_status', $row->status));
@@ -1790,13 +1805,54 @@ class ClmSignatureController extends Controller
                     $this->fetchSignedArtifacts($row, $details);
                 }
             }
+
+            foreach (data_get($details, 'requests.actions', []) as $a) {
+                $email = strtolower((string) ($a['recipient_email'] ?? ''));
+                if ($email === '') continue;
+                $perSigner[$email] = [
+                    'raw'       => strtolower((string) ($a['action_status'] ?? '')),
+                    'signed_at' => $pickTimeMs((array) $a, ['signed_time']),
+                    'viewed_at' => $pickTimeMs((array) $a, ['viewed_time', 'delivered_time', 'verify_time']),
+                ];
+            }
         } catch (\Throwable $e) {
             Log::warning('Zoho status sync failed: ' . $e->getMessage());
         }
 
+        $fresh   = $row->fresh();
+        $overall = strtolower((string) $fresh->status);
+        // Normalise a raw Zoho action_status (or fall back to the overall
+        // request state when an action carries no explicit per-signer signal).
+        $normalize = function (string $raw) use ($overall): string {
+            if (in_array($raw, ['signed', 'completed', 'approved'], true))  return 'signed';
+            if (in_array($raw, ['declined', 'rejected', 'recalled'], true)) return 'declined';
+            if ($raw === 'viewed')                                          return 'viewed';
+            // No explicit signal — a completed request means everyone signed.
+            if ($overall === 'completed') return 'signed';
+            return 'pending';
+        };
+
+        $signersOut = collect($fresh->signers ?? [])->map(function ($s) use ($perSigner, $normalize, $fresh) {
+            $s     = (array) $s;
+            $email = strtolower((string) ($s['email'] ?? ''));
+            $info  = $perSigner[$email] ?? ['raw' => '', 'signed_at' => null, 'viewed_at' => null];
+            $status = $normalize((string) $info['raw']);
+            $s['status']        = $status;
+            $s['action_status'] = $info['raw'];
+            // Fall back to the request completion time for a signed signer when
+            // Zoho didn't return a per-action timestamp.
+            $s['signed_at'] = $info['signed_at']
+                ?? ($status === 'signed' ? optional($fresh->completed_at)->toIso8601String() : null);
+            $s['viewed_at'] = $info['viewed_at'];
+            return $s;
+        })->values()->all();
+
+        $payload = $fresh->toArray();
+        $payload['signers'] = $signersOut;
+
         return response()->json([
             'status' => true,
-            'data'   => $row->fresh(),
+            'data'   => $payload,
         ]);
     }
 

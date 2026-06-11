@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../api';import { resolveFileUrl } from '../../../utils/resolveFileUrl';import { useToast } from '../../../contexts/ToastContext';
 import Tooltip from '../../../components/ui/Tooltip';
+import { SigningTrackerModal } from '../SigningTrackerModal';
 import SalesCustomerSendForSignatureModal, {
   type AgreementSendRow,
   type AgreementSigner,
@@ -175,6 +176,9 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
    * clears the selection. */
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [reminderId, setReminderId]   = useState<number | null>(null);
+  // Signing activity tracker (shared modal) target — opened from the history
+  // icon on any trade-doc / agreement row that has a signature request.
+  const [trackerFor, setTrackerFor]   = useState<{ sigId: number; code: string } | null>(null);
 
   /* Normalise the agreement's `party` CSV into a stable key so
    * "Buyer, Consignee" and "buyer,consignee" group together. Matches
@@ -958,6 +962,19 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                     </Tooltip>
                                   );
                                 })()}
+                                {/* Signing activity tracker — once the doc has been sent. */}
+                                {tdSig?.id && (
+                                  <Tooltip label="Signing activity tracker">
+                                    <button
+                                      type="button"
+                                      className="lasm-btn-icon"
+                                      aria-label="Signing activity tracker"
+                                      onClick={() => setTrackerFor({ sigId: tdSig.id, code: td.reference || td.name })}
+                                    >
+                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+                                    </button>
+                                  </Tooltip>
+                                )}
                                 {/* Signed PDF + Certificate — once the doc is signed. */}
                                 {tdSig?.signed_url && (
                                   <Tooltip label="View / download signed PDF">
@@ -975,7 +992,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                 )}
                                 {/* Sent but no row-level action yet (e.g. completed without a
                                     resolved signed URL) → keep the cell from collapsing. */}
-                                {!sendable && !tdRemind && !tdSig?.signed_url && !tdSig?.certificate_url && (
+                                {!sendable && !tdRemind && !tdSig?.id && !tdSig?.signed_url && !tdSig?.certificate_url && (
                                   <span className="lasm-td-dash">—</span>
                                 )}
                               </div>
@@ -1193,6 +1210,19 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                 </Tooltip>
                                 );
                               })()}
+                              {/* Signing activity tracker — once the agreement has been sent. */}
+                              {sig?.id && (
+                                <Tooltip label="Signing activity tracker">
+                                  <button
+                                    type="button"
+                                    className="lasm-btn-icon"
+                                    aria-label="Signing activity tracker"
+                                    onClick={() => setTrackerFor({ sigId: sig.id, code: a.code || a.title })}
+                                  >
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+                                  </button>
+                                </Tooltip>
+                              )}
                               <Tooltip label="Preview agreement PDF">
                                 <button
                                   type="button"
@@ -1258,6 +1288,16 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
           )}
         </div>
       </div>
+
+      {/* Signing activity tracker (shared modal) — opened from the history
+          icon on any sent trade-doc / agreement row. */}
+      {trackerFor && (
+        <SigningTrackerModal
+          sigId={trackerFor.sigId}
+          code={trackerFor.code}
+          onClose={() => setTrackerFor(null)}
+        />
+      )}
 
       {/* Send-for-Signature modal — reuses the customer/consignee
           trade-doc preview UI (mode="agreement") so the workplace

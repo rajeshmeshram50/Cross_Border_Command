@@ -10,7 +10,7 @@ const TRACKER_CSS = `
 /* ─── Signing Tracker modal — premium dark "cosmic" panel (always dark,
    matching the Figma) regardless of the app theme. ─── */
 .qpi-trk-overlay {
-  position: fixed; inset: 0; z-index: 11400;
+  position: fixed; inset: 0; z-index: 12000;
   background: rgba(6,9,28,0.66); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
   display: flex; align-items: center; justify-content: center; padding: 20px;
   font-family: 'DM Sans','Inter',system-ui,sans-serif;
@@ -158,6 +158,7 @@ const TRACKER_CSS = `
 .qpi-trk-spill-ok   { background: rgba(34,197,94,.18);  color: #6ee7a8; }
 .qpi-trk-spill-warn { background: rgba(245,158,11,.18); color: #fcd34d; }
 .qpi-trk-spill-bad  { background: rgba(239,68,68,.18);  color: #fca5a5; }
+.qpi-trk-spill-info { background: rgba(96,165,250,.18); color: #93c5fd; }
 /* Footer */
 .qpi-trk-foot { position: relative; z-index: 2; padding: 14px 24px 20px; display: flex; gap: 12px; }
 .qpi-trk-btn { flex: 1 1 auto; padding: 11px 12px; border-radius: 12px; font-weight: 700; font-size: 12.5px; white-space: nowrap; cursor: pointer; border: 1px solid transparent; transition: all .15s; display: inline-flex; align-items: center; justify-content: center; }
@@ -209,7 +210,7 @@ const TRACKER_CSS = `
 .qpi-trk-itl-badge-bad  { background: rgba(239,68,68,.16);  color: #fca5a5; border-color: rgba(239,68,68,.35); }
 .qpi-trk-itl-badge-idle { background: rgba(120,140,255,.10); color: #97a2d8; border-color: rgba(120,140,255,.22); }
 .qpi-trk-itl-desc { font-size: 12.5px; color: #97a2d8; margin-top: 4px; }
-.qpi-trk-itl-meta { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 7px; }
+.qpi-trk-itl-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; margin-top: 7px; }
 .qpi-trk-itl-metait { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: #8e9ad6; }
 /* Light mode for the informative view */
 [data-bs-theme="light"] .qpi-trk-prog-lbl { color: #8b80b8; }
@@ -309,6 +310,7 @@ const TRACKER_CSS = `
 [data-bs-theme="light"] .qpi-trk-spill-ok   { background: #dcfce7; color: #15803d; }
 [data-bs-theme="light"] .qpi-trk-spill-warn { background: #fef3c7; color: #92400e; }
 [data-bs-theme="light"] .qpi-trk-spill-bad  { background: #fee2e2; color: #b91c1c; }
+[data-bs-theme="light"] .qpi-trk-spill-info { background: #dbeafe; color: #1d4ed8; }
 [data-bs-theme="light"] .qpi-trk-csigner-h { color: #6b7280; }
 [data-bs-theme="light"] .qpi-trk-csigner-name { color: #1f2937; }
 [data-bs-theme="light"] .qpi-trk-csigner-mail, [data-bs-theme="light"] .qpi-trk-csigner-more { color: #6b7280; }
@@ -392,11 +394,21 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
   };
 
   const reviewed = isDone || isDeclined || isRecalled;
-  const signerName: string | null = signers[0]?.name ?? signers[0]?.email ?? null;
+  /* Label covering ALL recipients (not just the first) so a multi-signer
+   * document reads e.g. "Oceanic Spices Co, OceanicSpicesCo" on the timeline,
+   * matching the Signer Details table. Collapses to "Name +N" past 2 to keep
+   * the compact card from overflowing. */
+  const signerNamesArr: string[] = signers
+    .map((s: any) => s?.name ?? s?.email)
+    .filter((v: any): v is string => !!v);
+  const signerName: string | null =
+    signerNamesArr.length === 0 ? null
+    : signerNamesArr.length <= 2 ? signerNamesArr.join(', ')
+    : `${signerNamesArr[0]} +${signerNamesArr.length - 1} more`;
 
   /* Informative timeline steps — each carries an icon, description, person,
    * date and a status badge (Done / In Progress / Pending). */
-  type TStep = { key: string; icon: string; label: string; short: string; desc: string; person: string | null; date: string | null; state: 'done' | 'current' | 'idle'; tone: 'ok' | 'warn' | 'bad'; badge: string };
+  type TStep = { key: string; icon: string; label: string; short: string; desc: string; person: string | null; persons?: string[] | null; date: string | null; state: 'done' | 'current' | 'idle'; tone: 'ok' | 'warn' | 'bad'; badge: string };
   const steps: TStep[] = [
     { key: 'sent', icon: 'send', label: 'Sent for signature', short: 'Sent', desc: 'Document sent via secure e-sign link', person: null, date: fmt(data?.created_at), state: 'done', tone: 'ok', badge: 'Done' },
     {
@@ -405,15 +417,15 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
       desc: reviewed ? 'Opened & reviewed by the signer(s)' : 'In progress — with the signer(s)',
       /* No dedicated reviewed-at column on the request, so we surface the
          request's own timestamp (when it became available for review). */
-      person: signerName, date: reviewed ? fmt(data?.updated_at ?? data?.created_at) : null, state: reviewed ? 'done' : 'current', tone: 'ok', badge: reviewed ? 'Done' : 'In Progress',
+      person: signerName, persons: signerNamesArr, date: reviewed ? fmt(data?.updated_at ?? data?.created_at) : null, state: reviewed ? 'done' : 'current', tone: 'ok', badge: reviewed ? 'Done' : 'In Progress',
     },
     ...(remCount > 0 ? [{
       key: 'reminders', icon: 'bell', label: `${remCount} reminder${remCount === 1 ? '' : 's'} sent`, short: 'Reminders',
       desc: 'Automatic signing reminders', person: null, date: lastRem ? fmt(lastRem) : null, state: 'done' as const, tone: 'warn' as const, badge: 'Done',
     }] : []),
-    isDeclined ? { key: 'final', icon: 'x', label: 'Declined', short: 'Declined', desc: data?.decline_reason || 'A signer declined the document', person: signerName, date: fmt(data?.declined_at), state: 'done' as const, tone: 'bad' as const, badge: 'Declined' }
-    : isRecalled ? { key: 'final', icon: 'x', label: 'Recalled', short: 'Recalled', desc: data?.recall_reason || 'The request was recalled', person: signerName, date: fmt(data?.recalled_at), state: 'done' as const, tone: 'warn' as const, badge: 'Recalled' }
-    : { key: 'final', icon: 'check', label: 'Signed & completed', short: 'Completed', desc: 'All parties have executed the document', person: signerName, date: isDone ? fmt(completedAt) : null, state: isDone ? 'done' as const : 'idle' as const, tone: 'ok' as const, badge: isDone ? 'Done' : 'Pending' },
+    isDeclined ? { key: 'final', icon: 'x', label: 'Declined', short: 'Declined', desc: data?.decline_reason || 'A signer declined the document', person: signerName, persons: signerNamesArr, date: fmt(data?.declined_at), state: 'done' as const, tone: 'bad' as const, badge: 'Declined' }
+    : isRecalled ? { key: 'final', icon: 'x', label: 'Recalled', short: 'Recalled', desc: data?.recall_reason || 'The request was recalled', person: signerName, persons: signerNamesArr, date: fmt(data?.recalled_at), state: 'done' as const, tone: 'warn' as const, badge: 'Recalled' }
+    : { key: 'final', icon: 'check', label: 'Signed & completed', short: 'Completed', desc: 'All parties have executed the document', person: signerName, persons: signerNamesArr, date: isDone ? fmt(completedAt) : null, state: isDone ? 'done' as const : 'idle' as const, tone: 'ok' as const, badge: isDone ? 'Done' : 'Pending' },
   ];
   const doneCount = steps.filter(s => s.state === 'done').length;
   const pctDone = Math.round((doneCount / steps.length) * 100);
@@ -444,9 +456,15 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
               <span className={`qpi-trk-itl-badge qpi-trk-itl-badge-${badgeCls(s)}`}>{s.state === 'done' ? '✓ ' : ''}{s.badge}</span>
             </div>
             <div className="qpi-trk-itl-desc">{s.desc}</div>
-            {(s.person || s.date) && (
+            {(s.person || (s.persons && s.persons.length) || s.date) && (
               <div className="qpi-trk-itl-meta">
-                {s.person && <span className="qpi-trk-itl-metait"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>{s.person}</span>}
+                {/* Signers stacked one-per-line (not inline) so a multi-signer
+                    document lists each recipient on its own row. */}
+                {s.persons && s.persons.length > 0
+                  ? s.persons.map((p, idx) => (
+                      <span key={idx} className="qpi-trk-itl-metait"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>{p}</span>
+                    ))
+                  : s.person && <span className="qpi-trk-itl-metait"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>{s.person}</span>}
                 {s.date && <span className="qpi-trk-itl-metait"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>{s.date}</span>}
               </div>
             )}
@@ -482,6 +500,19 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
     : { cls: 'info', txt: status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Sent' };
 
   const signerStatus = isDone ? { cls: 'ok', txt: 'Signed' } : isDeclined ? { cls: 'bad', txt: 'Declined' } : { cls: 'warn', txt: 'Pending' };
+
+  /* Per-signer status pill — backend enriches each signer with its own Zoho
+   * action_status, so a multi-signer document shows each recipient's real
+   * state (Signed / Viewed / Declined / Pending) rather than the overall one.
+   * Falls back to the request-level status for older payloads without it. */
+  const signerPill = (sg: any): { cls: string; txt: string } => {
+    const s = String(sg?.status ?? '').toLowerCase();
+    if (s === 'signed')   return { cls: 'ok',   txt: 'Signed' };
+    if (s === 'declined') return { cls: 'bad',  txt: 'Declined' };
+    if (s === 'viewed')   return { cls: 'info', txt: 'Viewed' };
+    if (s === 'pending')  return { cls: 'warn', txt: 'Pending' };
+    return signerStatus; // legacy payload — no per-signer field
+  };
 
   /* Full activity history — every lifecycle event (Sent, Viewed, each
    * Reminder, Signed/Declined/Recalled), not just reminders. The table area
@@ -635,16 +666,19 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
                   <table className="qpi-trk-table">
                     <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Viewed On</th><th>Signed On</th></tr></thead>
                     <tbody>
-                      {signers.map((sg: any, i: number) => (
+                      {signers.map((sg: any, i: number) => {
+                        const pill = signerPill(sg);
+                        return (
                         <tr key={i}>
                           <td><span className="qpi-trk-sav">{String(sg?.name ?? sg?.email ?? '?').charAt(0).toUpperCase()}</span>{sg?.name || '—'}</td>
                           <td className="qpi-trk-muted">{sg?.email || '—'}</td>
                           <td className="qpi-trk-muted">{sg?.role || 'Signer'}</td>
-                          <td><span className={`qpi-trk-spill qpi-trk-spill-${signerStatus.cls}`}>{signerStatus.txt}</span></td>
-                          <td className="qpi-trk-muted">—</td>
-                          <td className="qpi-trk-muted">{isDone ? fmt(completedAt) : '—'}</td>
+                          <td><span className={`qpi-trk-spill qpi-trk-spill-${pill.cls}`}>{pill.txt}</span></td>
+                          <td className="qpi-trk-muted">{sg?.viewed_at ? fmt(sg.viewed_at) : '—'}</td>
+                          <td className="qpi-trk-muted">{sg?.signed_at ? fmt(sg.signed_at) : (isDone ? fmt(completedAt) : '—')}</td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
