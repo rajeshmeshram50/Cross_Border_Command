@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
+import Tooltip from '../../../../components/ui/Tooltip';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 import CreateProcurementModal, { type SelectedProduct } from './CreateProcurementModal';
 import ProcurementDetailsModal from './ProcurementDetailsModal';
@@ -703,7 +704,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                   <div className="s3-card-title">
                     Sourcing Not Required <span className="s3-card-count s3-card-count-mint">{notRequiredRows.length}</span>
                   </div>
-                  <div className="s3-card-sub">Read-only — these products skip procurement</div>
+                  <div className="s3-card-sub">These products skip procurement — use “Convert to Sourcing Required” to send one back into sourcing.</div>
                 </div>
               </div>
             </div>
@@ -721,6 +722,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                     <th style={{ width: 80 }}>CURRENCY</th>
                     <th style={{ width: 100 }}>VENDOR COUNT</th>
                     <th style={{ width: 120 }}>STATUS</th>
+                    <th style={{ width: 90, textAlign: 'center' }}>ACTION</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -735,10 +737,11 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                       <td><span className="smd-skel smd-skel-chip" /></td>
                       <td><span className="smd-skel smd-skel-num" /></td>
                       <td><span className="smd-skel smd-skel-pill" /></td>
+                      <td><span className="smd-skel smd-skel-btn" /></td>
                     </tr>
                   ))}
                   {!loading && notRequiredRows.length === 0 && (
-                    <tr><td colSpan={9} className="s3-empty">No products marked Not Required.</td></tr>
+                    <tr><td colSpan={10} className="s3-empty">No products marked Not Required.</td></tr>
                   )}
                   {!loading && notRequiredRows.map((r, idx) => {
                     const statusLc = (r.product_status ?? '').toLowerCase();
@@ -776,6 +779,28 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                           )}
                         </td>
                         <td><span className="s3-skip">Ready</span></td>
+                        <td style={{ textAlign: 'center' }}>
+                          {/* Send the product back into sourcing — flips
+                              sourcing_status to 'required' so it reappears on
+                              the Sourcing Required tab. */}
+                          <Tooltip label="Convert to Sourcing Required">
+                            <button
+                              type="button"
+                              className="s3-convert-btn"
+                              onClick={() => void onSourcingChange(r, 'required')}
+                              disabled={updatingId === r.id}
+                              aria-label="Convert to Sourcing Required"
+                            >
+                              {updatingId === r.id ? (
+                                <span className="s3-convert-spin" />
+                              ) : (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                                  <line x1="7" y1="17" x2="17" y2="7" /><polyline points="8 7 17 7 17 16" />
+                                </svg>
+                              )}
+                            </button>
+                          </Tooltip>
+                        </td>
                       </tr>
                     );
                   })}
@@ -1253,6 +1278,31 @@ const STAGE3_CSS = `
   background: #d1fae5; color: #047857;
   font-size: 10.5px; font-weight: 800;
 }
+
+/* Convert-to-Sourcing-Required — compact icon tile, amber (the colour of the
+   Required tab it sends the row to). Tooltip carries the label. */
+.s3-convert-btn {
+  width: 30px; height: 30px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid #fcd34d; cursor: pointer;
+  background: linear-gradient(135deg, #fffbeb, #fef3c7);
+  color: #b45309;
+  border-radius: 8px;
+  transition: all .12s;
+}
+.s3-convert-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  border-color: #d97706; color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(217,119,6,.35);
+}
+.s3-convert-btn:disabled { opacity: .6; cursor: wait; }
+.s3-convert-spin {
+  width: 13px; height: 13px; border-radius: 50%;
+  border: 2px solid rgba(180,83,9,.30); border-top-color: #b45309;
+  animation: s3-convert-rotate .6s linear infinite;
+}
+@keyframes s3-convert-rotate { to { transform: rotate(360deg); } }
 
 /* ═══════════════════════════════ PROGRESS BAR ═══════════════════════════════ */
 .s3-progress {

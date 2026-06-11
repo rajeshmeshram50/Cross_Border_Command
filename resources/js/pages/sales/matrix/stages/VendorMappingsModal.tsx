@@ -71,6 +71,14 @@ export default function VendorMappingsModal({ open, productId, productCode, prod
     return best?.id ?? null;
   }, [maps]);
 
+  // Body scroll lock — keep the page behind the modal from scrolling while open.
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [open]);
+
   if (!open) return null;
 
   const leadSym = sym(currency);
