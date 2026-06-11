@@ -1221,17 +1221,10 @@ function ProductCard(props: {
             <span className="prd-card-meta-label">HSN/SAC</span>
             <span className="prd-card-meta-value">{product.hsn}</span>
           </div>
-          <div className="prd-card-meta-line">
+          <div className="prd-card-meta-line prd-card-meta-line-split">
             <span className="prd-card-meta-label">GST</span>
             <span className="prd-card-meta-value">{product.gstRate}%</span>
-          </div>
-          <div className="prd-card-meta-line">
-            <span className="prd-card-meta-label">Segment</span>
-            <span className="prd-card-meta-value" title={product.segment}>{product.segment}</span>
-          </div>
-          <div className="prd-card-meta-line">
-            <span className="prd-card-meta-label">Suppliers</span>
-            <span className="prd-card-meta-value prd-card-vendor-cell" title={`${product.vendorCount} linked supplier${product.vendorCount === 1 ? '' : 's'}`}>
+            <span className="prd-card-vendor-cell" title={`${product.vendorCount} linked supplier${product.vendorCount === 1 ? '' : 's'}`}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
                 <circle cx="9" cy="7" r="4" />
@@ -1240,6 +1233,10 @@ function ProductCard(props: {
               </svg>
               {product.vendorCount}
             </span>
+          </div>
+          <div className="prd-card-meta-line">
+            <span className="prd-card-meta-label">Segment</span>
+            <span className="prd-card-meta-value" title={product.segment}>{product.segment}</span>
           </div>
         </div>
 
@@ -1743,7 +1740,7 @@ const SCOPED_CSS = `
 }
 .prd-card-thumb {
   position: relative;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 2 / 1;
   display: flex; align-items: center; justify-content: center;
   overflow: hidden;
 }
@@ -1825,7 +1822,7 @@ const SCOPED_CSS = `
   z-index: 2;
 }
 
-.prd-card-body { padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 7px; flex: 1; }
+.prd-card-body { padding: 9px 14px 11px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
 
 /* Aligned label : value meta rows. The labels share a fixed column so
    every value lines up regardless of label length. */
@@ -1844,7 +1841,17 @@ const SCOPED_CSS = `
 .prd-card-meta-value.prd-card-vendor-cell {
   display: inline-flex; align-items: center; gap: 5px; color: #16a34a; font-weight: 800;
 }
-.prd-card-meta-value.prd-card-vendor-cell svg { color: #16a34a; flex-shrink: 0; }
+.prd-card-vendor-cell {
+  display: inline-flex; align-items: center; gap: 5px;
+  color: #16a34a; font-weight: 800; font-size: 11.5px;
+  font-variant-numeric: tabular-nums; flex-shrink: 0;
+}
+.prd-card-vendor-cell svg { color: #16a34a; flex-shrink: 0; }
+/* GST + supplier count share one line: fixed label column, GST value, then
+   the supplier count pushed to the right edge. */
+.prd-card-meta-line-split { display: flex; align-items: center; gap: 8px; }
+.prd-card-meta-line-split .prd-card-meta-label { width: 74px; flex-shrink: 0; }
+.prd-card-meta-line-split .prd-card-vendor-cell { margin-left: auto; }
 
 /* Hazard tag row */
 .prd-card-tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -1938,7 +1945,7 @@ const SCOPED_CSS = `
    prices align across a row of cards regardless of name length. */
 .prd-card-buyrow {
   display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
-  margin-top: auto; padding-top: 10px;
+  margin-top: auto; padding-top: 8px;
   border-top: 1px dashed #d6c9ff;
 }
 .prd-card-price-block { display: flex; flex-direction: column; gap: 1px; }

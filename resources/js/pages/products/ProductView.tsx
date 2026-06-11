@@ -793,7 +793,7 @@ const SCOPED_CSS = `
 }
 .pv2-info-heading-sub { margin-top: 14px; }
 .pv2-info-body {
-  display: flex; flex-direction: column; gap: 4px;
+  display: flex; flex-direction: column; gap: 0;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 transparent;
@@ -802,23 +802,30 @@ const SCOPED_CSS = `
 .pv2-info-body::-webkit-scrollbar { width: 5px; }
 .pv2-info-body::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
 .pv2-info-body::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+/* Each label : value pair sits on a row with a faint dotted separator so
+   values line up in a clean right-hand column and the eye can track
+   across long rows. */
 .pv2-info-row {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
   font-size: 12.5px;
-  padding: 1px 0;
+  padding: 6px 0;
+  border-bottom: 1px dashed #eef2f7;
 }
-.pv2-info-key { color: #475569; font-weight: 500; }
+.pv2-info-row:last-child { border-bottom: none; }
+.pv2-info-key { color: #64748b; font-weight: 500; flex-shrink: 0; }
 .pv2-info-val {
-  color: #94a3b8; font-weight: 500;
+  color: #1e293b; font-weight: 700;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  max-width: 55%;
+  max-width: 60%;
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 .pv2-info-val-success { color: #16a34a; font-weight: 700; }
 .pv2-info-val-danger  { color: #dc2626; font-weight: 700; }
 .pv2-info-divider { height: 1px; background: #e2e8f0; margin: 6px 0; }
+.pv2-total-line { border-bottom: none; }
 .pv2-total-line .pv2-info-key { font-weight: 800; color: #1e293b; }
-.pv2-total-strong { color: #5b21b6; font-size: 15px; font-weight: 800; }
+.pv2-total-strong { color: #5b21b6; font-size: 15px; font-weight: 800; text-align: right; }
 
 /* ── Bottom row ── */
 .pv2-bottom {
@@ -1027,8 +1034,9 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .pv2-info-grid { border-top-color: rgba(255,255,255,.08); }
 [data-bs-theme="dark"] .pv2-info-heading { color: #c4b5fd; }
-[data-bs-theme="dark"] .pv2-info-row .pv2-info-key { color: #adb5bd; font-weight: 500; }
-[data-bs-theme="dark"] .pv2-info-row .pv2-info-val { color: #a89fc7; }
+[data-bs-theme="dark"] .pv2-info-row { border-bottom-color: rgba(255,255,255,.06); }
+[data-bs-theme="dark"] .pv2-info-row .pv2-info-key { color: #94a3b8; font-weight: 500; }
+[data-bs-theme="dark"] .pv2-info-row .pv2-info-val { color: #f1f5f9; font-weight: 700; }
 [data-bs-theme="dark"] .pv2-info-divider { background: rgba(255,255,255,.08); }
 [data-bs-theme="dark"] .pv2-total-line .pv2-info-key { color: #ede9fe; }
 [data-bs-theme="dark"] .pv2-total-strong { color: #c4b5fd; }
