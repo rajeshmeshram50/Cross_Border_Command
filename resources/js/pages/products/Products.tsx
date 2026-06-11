@@ -1214,59 +1214,51 @@ function ProductCard(props: {
           <span className="prd-card-name-inline">{product.name}</span>
         </button>
 
-        {/* HSN / GST / vendor count row */}
-        <div className="prd-card-info-row">
-          <span className="prd-card-info-cell">
-            <span className="prd-card-info-key">HSN/SAC:</span>
-            <span className="prd-card-info-val">{product.hsn}</span>
-          </span>
-          <span className="prd-card-info-cell">
-            <span className="prd-card-info-key">GST:</span>
-            <span className="prd-card-info-val">{product.gstRate}%</span>
-          </span>
-          <span className="prd-card-info-cell prd-card-vendor-cell" title={`${product.vendorCount} linked supplier${product.vendorCount === 1 ? '' : 's'}`}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-              <circle cx="9" cy="7" r="4" />
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-            </svg>
-            <span>{product.vendorCount}</span>
-          </span>
-        </div>
-
-        {/* Haz status as text — green for safe, red for hazardous (with class) */}
-        <div className={`prd-card-haz-text ${product.hazClass === 'HAZ' ? 'is-haz' : 'is-nonhaz'}`}>
-          {product.hazClass === 'HAZ'
-            ? (product.hazClassName ? `Hazardous: ${product.hazClassName}` : 'Hazardous')
-            : 'Non-Hazardous'}
-        </div>
-
-        {/* Segment — small grey "Segment: Rice" line */}
-        <div className="prd-card-segment">
-          <span className="prd-card-info-key">Segment:</span>
-          <span className="prd-card-info-val">{product.segment}</span>
-        </div>
-
-        {/* (kept for hazClassName chip slot, hidden) */}
-        <div className="prd-card-haz-row" style={{ display: 'none' }}>
-          <span className={`prd-card-haz-pill ${product.hazClass === 'HAZ' ? 'is-haz' : 'is-nonhaz'}`}>
-            {product.hazClass === 'HAZ' ? 'HAZ' : 'Non-Haz'}
-          </span>
-          {product.hazClass === 'HAZ' && product.hazClassName && (
-            <span className="prd-card-haz-class">
-              <span className="prd-card-haz-class-key">Haz:</span>
-              <span className="prd-card-haz-class-val">{product.hazClassName}</span>
-            </span>
-          )}
-        </div>
-
-        {/* Selling price */}
-        <div className="prd-card-buyrow">
-          <div className="prd-card-price-block">
-            <span className="prd-card-price-label">Selling Price:</span>
-            <span className="prd-card-price">{product.currency}{product.price.toLocaleString()}</span>
+        {/* Meta block — aligned label : value rows for the key product
+            attributes, so every card reads on the same grid. */}
+        <div className="prd-card-meta-list">
+          <div className="prd-card-meta-line">
+            <span className="prd-card-meta-label">HSN/SAC</span>
+            <span className="prd-card-meta-value">{product.hsn}</span>
           </div>
+          <div className="prd-card-meta-line">
+            <span className="prd-card-meta-label">GST</span>
+            <span className="prd-card-meta-value">{product.gstRate}%</span>
+          </div>
+          <div className="prd-card-meta-line">
+            <span className="prd-card-meta-label">Segment</span>
+            <span className="prd-card-meta-value" title={product.segment}>{product.segment}</span>
+          </div>
+          <div className="prd-card-meta-line">
+            <span className="prd-card-meta-label">Suppliers</span>
+            <span className="prd-card-meta-value prd-card-vendor-cell" title={`${product.vendorCount} linked supplier${product.vendorCount === 1 ? '' : 's'}`}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+              {product.vendorCount}
+            </span>
+          </div>
+        </div>
+
+        {/* Hazard tag */}
+        <div className="prd-card-tags">
+          <span className={`prd-card-haz-pill ${product.hazClass === 'HAZ' ? 'is-haz' : 'is-nonhaz'}`}>
+            <span className="prd-card-haz-dot" />
+            {product.hazClass === 'HAZ'
+              ? (product.hazClassName ? `Hazardous · ${product.hazClassName}` : 'Hazardous')
+              : 'Non-Hazardous'}
+          </span>
+        </div>
+
+        {/* Selling price footer — label left, value right */}
+        <div className="prd-card-buyrow">
+          <span className="prd-card-price-label">Selling Price</span>
+          <span className="prd-card-price">
+            {product.currency}{product.price.toLocaleString()}
+          </span>
         </div>
       </div>
     </div>
@@ -1751,12 +1743,12 @@ const SCOPED_CSS = `
 }
 .prd-card-thumb {
   position: relative;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 16 / 9;
   display: flex; align-items: center; justify-content: center;
   overflow: hidden;
 }
 .prd-card-thumb-letter {
-  font-size: 64px; font-weight: 800; color: rgba(255,255,255,.92);
+  font-size: 48px; font-weight: 800; color: rgba(255,255,255,.92);
   text-shadow: 0 4px 14px rgba(0,0,0,.15);
   letter-spacing: -1px;
 }
@@ -1833,7 +1825,30 @@ const SCOPED_CSS = `
   z-index: 2;
 }
 
-.prd-card-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 8px; }
+.prd-card-body { padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 7px; flex: 1; }
+
+/* Aligned label : value meta rows. The labels share a fixed column so
+   every value lines up regardless of label length. */
+.prd-card-meta-list { display: flex; flex-direction: column; gap: 4px; }
+.prd-card-meta-line {
+  display: grid; grid-template-columns: 74px 1fr; align-items: center;
+  gap: 8px; font-size: 11.5px; min-width: 0;
+}
+.prd-card-meta-label {
+  color: #7c3aed; font-weight: 700; letter-spacing: .01em;
+}
+.prd-card-meta-value {
+  color: #1e1b4b; font-weight: 700; font-variant-numeric: tabular-nums;
+  min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.prd-card-meta-value.prd-card-vendor-cell {
+  display: inline-flex; align-items: center; gap: 5px; color: #16a34a; font-weight: 800;
+}
+.prd-card-meta-value.prd-card-vendor-cell svg { color: #16a34a; flex-shrink: 0; }
+
+/* Hazard tag row */
+.prd-card-tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.prd-card-haz-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
 
 /* ID|Name link */
 .prd-card-title-link {
@@ -1871,12 +1886,14 @@ const SCOPED_CSS = `
 /* Haz pill */
 .prd-card-haz-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .prd-card-haz-pill {
-  display: inline-flex; align-items: center;
-  padding: 2px 9px; border-radius: 6px;
-  font-size: 10.5px; font-weight: 800; letter-spacing: .04em;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px; border-radius: 99px;
+  font-size: 11px; font-weight: 700; letter-spacing: .01em;
+  max-width: 100%; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.prd-card-haz-pill.is-haz    { background: #fecaca; color: #b91c1c; border: 1px solid #f87171; }
-.prd-card-haz-pill.is-nonhaz { background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd; }
+.prd-card-haz-pill.is-haz    { background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }
+.prd-card-haz-pill.is-nonhaz { background: #dcfce7; color: #16a34a; border: 1px solid #bbf7d0; }
 
 .prd-card-haz-class { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; min-width: 0; }
 .prd-card-haz-class-key { color: #b91c1c; font-weight: 800; letter-spacing: .02em; flex-shrink: 0; }
@@ -1916,14 +1933,17 @@ const SCOPED_CSS = `
 .prd-card-status-pill.status-inactive { background: #fff; color: #b45309; border: 1px solid #fde68a; }
 .prd-card-status-pill.status-draft    { background: #fff; color: #475569; border: 1px solid #e2e8f0; }
 
-/* Buy row */
+/* Price footer — label on the left, the price (with /uom) on the right,
+   separated from the meta by a dashed rule. Pushed to the card bottom so
+   prices align across a row of cards regardless of name length. */
 .prd-card-buyrow {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  margin-top: 4px; padding-top: 10px;
-  border-top: 1px dashed #ede9fe;
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  margin-top: auto; padding-top: 10px;
+  border-top: 1px dashed #d6c9ff;
 }
 .prd-card-price-block { display: flex; flex-direction: column; gap: 1px; }
-.prd-card-price-label { font-size: 10.5px; font-weight: 700; color: #6b7280; letter-spacing: .02em; }
+.prd-card-price-label { font-size: 11.5px; font-weight: 700; color: #6b7280; letter-spacing: .01em; }
+.prd-card-price-uom { font-size: 11px; font-weight: 600; color: #6b7280; margin-left: 2px; }
 
 
 .prd-card-id { font-size: 9.5px; font-weight: 800; letter-spacing: .06em; color: #94a3b8; text-transform: uppercase; }
@@ -2455,14 +2475,17 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .prd-card-name-inline { color: #ede9fe; }
 [data-bs-theme="dark"] .prd-card-info-key { color: #a78bfa; }
 [data-bs-theme="dark"] .prd-card-info-val { color: #ede9fe; }
+[data-bs-theme="dark"] .prd-card-meta-label { color: #a78bfa; }
+[data-bs-theme="dark"] .prd-card-meta-value { color: #ede9fe; }
 [data-bs-theme="dark"] .prd-card-vendor-cell,
 [data-bs-theme="dark"] .prd-card-vendor-cell svg { color: #4ade80; }
 [data-bs-theme="dark"] .prd-card-haz-pill.is-nonhaz {
-  background: #2a1d5c; color: #c4b5fd; border-color: #4c1d95;
+  background: #14241a; color: #4ade80; border-color: #14532d;
 }
 [data-bs-theme="dark"] .prd-card-haz-pill.is-haz {
   background: #3f1d1d; color: #fca5a5; border-color: #7f1d1d;
 }
+[data-bs-theme="dark"] .prd-card-price-uom { color: #a89fc7; }
 [data-bs-theme="dark"] .prd-card-haz-class-key { color: #fca5a5; }
 [data-bs-theme="dark"] .prd-card-haz-class-val { color: #ede9fe; }
 [data-bs-theme="dark"] .prd-card-haz-text.is-nonhaz { color: #4ade80; }
