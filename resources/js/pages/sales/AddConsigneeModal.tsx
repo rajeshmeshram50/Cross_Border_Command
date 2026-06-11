@@ -2848,7 +2848,7 @@ const Stage1 = ({
                 disabled={lock}
               />
             </Field>
-            <Field label="Company Legal Name" required error={errors.legalName} fieldKey="legalName">
+            <Field label="Consignee Legal Name" required error={errors.legalName} fieldKey="legalName">
               <input className={`acm-input ${errors.legalName ? 'acm-input-error' : ''}`} placeholder="Enter legal name" value={form.legalName} onChange={e => set('legalName', e.target.value)} disabled={lock} />
             </Field>
             </div>
