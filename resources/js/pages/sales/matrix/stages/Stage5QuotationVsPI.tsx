@@ -221,15 +221,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     }
   };
 
-  const onViewSignedSig = async (sigId: number) => {
-    try {
-      const r = await api.get(`/clm/signature-requests/${sigId}/view-file/0`, { responseType: 'blob' });
-      window.open(URL.createObjectURL(r.data as Blob), '_blank');
-    } catch (e: any) {
-      toast.error('Open failed', e?.response?.data?.message ?? 'Could not open the signed document.');
-    }
-  };
-
   /* Download the Zoho Sign completion certificate (the audit-trail PDF).
    * Only meaningful once the document is signed — `sigByRow` carries the
    * signature-request id + 'completed' status that the certificate endpoint
@@ -271,10 +262,26 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
 
   /* ── Per-row actions ─────────────────────────────────────────────── */
   const onViewPdf = async (kind: DocType, id: number, signature: boolean) => {
+    // "With Signature" opens ONLY the actual Zoho-signed PDF — never the
+    // locally rendered preview. If the doc hasn't been signed through Zoho
+    // yet there's nothing to show, so warn and stop.
+    if (signature) {
+      const sig = sigByRow[`${kind}:${id}`];
+      if (!sig?.id || sig.status !== 'completed') {
+        toast.warning('Not signed yet', 'The signed PDF is available only after the document has been signed via Zoho.');
+        return;
+      }
+    }
     setActingId(id);
     try {
-      const url = kind === 'quotation' ? `/sales/quotations/${id}/preview-pdf` : `/sales/proforma-invoices/${id}/preview-pdf`;
-      const res = await api.post(url, { signature }, { responseType: 'blob' });
+      const sig = sigByRow[`${kind}:${id}`];
+      let res;
+      if (signature && sig?.id) {
+        res = await api.get(`/clm/signature-requests/${sig.id}/view-file/0`, { responseType: 'blob' });
+      } else {
+        const url = kind === 'quotation' ? `/sales/quotations/${id}/preview-pdf` : `/sales/proforma-invoices/${id}/preview-pdf`;
+        res = await api.post(url, { signature }, { responseType: 'blob' });
+      }
       const blob = new Blob([res.data as BlobPart], { type: 'application/pdf' });
       const blobUrl = URL.createObjectURL(blob);
       window.open(blobUrl, '_blank', 'noopener,noreferrer');
@@ -287,10 +294,25 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   };
 
   const onDownloadPdf = async (kind: DocType, id: number, code: string | null, signature: boolean) => {
+    // "With Signature" downloads ONLY the actual Zoho-signed PDF — never the
+    // re-rendered preview. Warn and stop if the doc isn't Zoho-signed yet.
+    if (signature) {
+      const sig = sigByRow[`${kind}:${id}`];
+      if (!sig?.id || sig.status !== 'completed') {
+        toast.warning('Not signed yet', 'The signed PDF is available only after the document has been signed via Zoho.');
+        return;
+      }
+    }
     setActingId(id);
     try {
-      const url = kind === 'quotation' ? `/sales/quotations/${id}/preview-pdf` : `/sales/proforma-invoices/${id}/preview-pdf`;
-      const res = await api.post(url, { signature }, { responseType: 'blob' });
+      const sig = sigByRow[`${kind}:${id}`];
+      let res;
+      if (signature && sig?.id) {
+        res = await api.get(`/clm/signature-requests/${sig.id}/download-file/0`, { responseType: 'blob' });
+      } else {
+        const url = kind === 'quotation' ? `/sales/quotations/${id}/preview-pdf` : `/sales/proforma-invoices/${id}/preview-pdf`;
+        res = await api.post(url, { signature }, { responseType: 'blob' });
+      }
       const blob = new Blob([res.data as BlobPart], { type: 'application/pdf' });
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -725,12 +747,10 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               );
                             }
                             if (st === 'completed') {
-                              return (
-                                <button type="button" className="s5-convert2" title="View the signed PDF" onClick={() => void onViewSignedSig(sig!.id)} disabled={anyActing} style={{ background: 'linear-gradient(135deg,#16a34a,#15803d)' }}>
-                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><polyline points="20 6 9 17 4 12"/></svg>
-                                  Signed PDF
-                                </button>
-                              );
+                              // Signed: no separate "Signed PDF" button — the 3-dot
+                              // More Actions menu already handles Download / View
+                              // (With Signature) and the signed certificate.
+                              return null;
                             }
                             return (
                               <button
