@@ -735,9 +735,8 @@ export default function Products() {
         </div>
       )}
 
-      {/* Result count */}
+      {/* Active-filter chips (product count badge removed per request) */}
       <div className="prd-meta">
-        <span className="prd-meta-count">{filtered.length} {filtered.length === 1 ? 'product' : 'products'}</span>
         {q && <span className="prd-meta-chip">Search: <strong>{q}</strong></span>}
         {segment !== 'All Segments' && <span className="prd-meta-chip">Segment: <strong>{segment}</strong></span>}
         {statusFilter !== 'All Status' && <span className="prd-meta-chip">Status: <strong>{statusFilter}</strong></span>}
