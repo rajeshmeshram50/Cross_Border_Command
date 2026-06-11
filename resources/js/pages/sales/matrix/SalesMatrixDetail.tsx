@@ -1465,6 +1465,7 @@ export default function SalesMatrixDetail() {
         open={!!leadVaultTarget}
         target={leadVaultTarget}
         consignees={leadVaultConsignees}
+        mappedConsigneeId={serverHeader.consigneeId}
         onClose={() => {
           if (leadVaultTarget?.ownerType === 'consignee') setConsRefreshTick(t => t + 1);
           else setCustRefreshTick(t => t + 1);

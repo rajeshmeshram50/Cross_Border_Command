@@ -43,6 +43,10 @@ interface Props {
    * tab strip so the user can switch which consignee's vault is shown. When
    * null / single, only `target` is shown. */
   consignees?: LeadVaultTarget[] | null;
+  /* db_id of the consignee actually mapped to the lead / quotation. Its tab
+   * in the strip gets a "Mapped" badge so the user can tell it apart from the
+   * customer's other consignees. */
+  mappedConsigneeId?: number | null;
 }
 
 /* Trade Documents are no longer shown here — they now live segment-wise in
@@ -71,7 +75,7 @@ function TabSvg({ name }: { name: TabIcon }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>;
 }
 
-export default function LeadEvidenceVaultModal({ open, target, onClose, consignees }: Props) {
+export default function LeadEvidenceVaultModal({ open, target, onClose, consignees, mappedConsigneeId }: Props) {
   const toast = useToast();
   const [tab, setTab] = useState<TabKey>('company-dd');
   const [vaultLive, setVaultLive] = useState<VaultData | null>(null);
@@ -291,20 +295,29 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
             <div className="lev-cons-strip" role="tablist" aria-label="Consignees">
               <span className="lev-cons-strip-lbl">Consignees</span>
               <div className="lev-cons-strip-tabs">
-                {consigneeTabs.map(c => (
-                  <button
-                    key={c.db_id ?? c.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={view.db_id === c.db_id}
-                    className={`lev-cons-tab ${view.db_id === c.db_id ? 'active' : ''}`}
-                    onClick={() => setActiveConsId(c.db_id ?? null)}
-                    title={c.company || c.id}
-                  >
-                    <span className="lev-cons-code">{c.id}</span>
-                    <span className="lev-cons-name">{c.company || '—'}</span>
-                  </button>
-                ))}
+                {consigneeTabs.map(c => {
+                  const isMapped = mappedConsigneeId != null && c.db_id === mappedConsigneeId;
+                  return (
+                    <button
+                      key={c.db_id ?? c.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={view.db_id === c.db_id}
+                      className={`lev-cons-tab ${view.db_id === c.db_id ? 'active' : ''} ${isMapped ? 'mapped' : ''}`}
+                      onClick={() => setActiveConsId(c.db_id ?? null)}
+                      title={isMapped ? `${c.company || c.id} — mapped to this quotation` : (c.company || c.id)}
+                    >
+                      <span className="lev-cons-code">{c.id}</span>
+                      <span className="lev-cons-name">{c.company || '—'}</span>
+                      {isMapped && (
+                        <span className="lev-cons-mapped" aria-label="Mapped to this quotation">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                          Mapped
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -604,7 +617,20 @@ const LEV_CSS = `
   letter-spacing: .02em; flex-shrink: 0;
 }
 .lev-cons-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* "Mapped" badge — marks the consignee tied to the lead/quotation. Green so
+   it reads on both the white inactive tab and the violet active tab. */
+.lev-cons-mapped {
+  display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0;
+  padding: 2px 7px; border-radius: 999px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  background: #10b981; color: #fff; border: 1px solid rgba(255,255,255,.4);
+}
+.lev-cons-mapped svg { width: 9px; height: 9px; }
+/* Inactive-but-mapped tab gets an emerald ring so it stands out even when
+   another consignee tab is the one being viewed. */
+.lev-cons-tab.mapped:not(.active) { border-color: #10b981; box-shadow: 0 0 0 1px rgba(16,185,129,.35); }
 [data-bs-theme="dark"] .lev-cons-strip { background: rgba(124,58,237,.10); border-bottom-color: rgba(167,139,250,.30); }
+[data-bs-theme="dark"] .lev-cons-tab.mapped:not(.active) { border-color: #34d399; box-shadow: 0 0 0 1px rgba(52,211,153,.40); }
 [data-bs-theme="dark"] .lev-cons-strip-lbl { color: #c4b5fd; }
 [data-bs-theme="dark"] .lev-cons-tab { background: #1e293b; border-color: rgba(167,139,250,.30); color: #c4b5fd; }
 [data-bs-theme="dark"] .lev-cons-tab:hover:not(.active) { border-color: rgba(167,139,250,.55); background: rgba(124,58,237,.18); }
