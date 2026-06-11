@@ -158,6 +158,18 @@ export default function ClmSegmentPage() {
   return (
     <div className="clm-root" ref={rootRef}>
       <style>{CLM_CSS}</style>
+      <style>{`
+        /* Figma-match: fixed-width, right-aligned search (not flex-grow).
+           Expands on focus, shrinks on narrow screens. */
+        .clm-root .clm-tabs-bar .seg-search {
+          flex: 0 0 auto; width: 520px; max-width: 100%;
+          margin-left: auto;
+          transition: width .18s ease, border-color .15s ease, box-shadow .15s ease;
+        }
+        .clm-root .clm-tabs-bar .seg-search:focus-within { width: 600px; }
+        @media (max-width: 1280px) { .clm-root .clm-tabs-bar .seg-search { width: 380px; } }
+        @media (max-width: 760px)  { .clm-root .clm-tabs-bar .seg-search { width: 100%; margin-left: 0; } }
+      `}</style>
 
       <ClmPageHeader
         icon={ICO.hSeg}
@@ -195,7 +207,7 @@ export default function ClmSegmentPage() {
               <span className="clm-tab-dot" style={{ background: '#0d9488', boxShadow: '0 0 5px rgba(13,148,136,.5)' }} />
               Less Regulated Segments <span className="clm-tab-count">{counts.less}</span>
             </button>
-              <div className="clm-search">
+              <div className="clm-search seg-search">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
                 <input type="text" placeholder="Search segments…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
               </div>

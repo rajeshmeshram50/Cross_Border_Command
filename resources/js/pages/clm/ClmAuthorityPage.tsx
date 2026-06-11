@@ -128,6 +128,17 @@ export default function ClmAuthorityPage() {
   return (
     <div className="clm-root" ref={rootRef}>
       <style>{CLM_CSS}</style>
+      <style>{`
+        /* Figma-match: fixed-width search on the left (not flex-grow); the
+           Total badge stays right via the toolbar's space-between. */
+        .clm-root .clm-tabs-bar .auth-search {
+          flex: 0 0 auto; width: 500px; max-width: 100%;
+          transition: width .18s ease, border-color .15s ease, box-shadow .15s ease;
+        }
+        .clm-root .clm-tabs-bar .auth-search:focus-within { width: 580px; }
+        @media (max-width: 1280px) { .clm-root .clm-tabs-bar .auth-search { width: 360px; } }
+        @media (max-width: 760px)  { .clm-root .clm-tabs-bar .auth-search { width: 100%; } }
+      `}</style>
 
       <ClmPageHeader
         icon={ICO.hAuth}
@@ -152,7 +163,7 @@ export default function ClmAuthorityPage() {
       {/* ── Card 3: Toolbar + Table ── */}
       <div className="clm-page-card">
         <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
-          <div className="clm-search clm-search-grow">
+          <div className="clm-search auth-search">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
             <input type="text" placeholder="Search by authority name, ID or description…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
           </div>
