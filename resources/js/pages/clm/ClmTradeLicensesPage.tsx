@@ -164,7 +164,7 @@ export default function ClmTradeLicensesPage() {
   );
 }
 
-function TlModal(props: { existing: Tl | null; authorities: Authority[]; nextCode: string; onClose: () => void; onSave: (f: { name: string; authority: string }) => void; }) {
+export function TlModal(props: { existing: Tl | null; authorities: Authority[]; nextCode: string; onClose: () => void; onSave: (f: { name: string; authority: string }) => void; }) {
   const { existing, authorities: initialAuthorities, nextCode, onClose, onSave } = props;
   const toast = useToast();
   const isEdit = !!existing;

@@ -7,6 +7,10 @@ import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import { MasterMultiSelect } from '../master/masterFormKit';
 import { ShimmerTableRows } from '../../components/ui/Shimmer';
+import { KycModal } from './ClmKycPage';
+import { DdModal } from './ClmDdPage';
+import { QcModal } from './ClmQcPage';
+import { TlModal } from './ClmTradeLicensesPage';
 
 /* Central CLM → Document Control Panel.
  *
@@ -45,6 +49,12 @@ const CAT_KEYS: Array<keyof DocSelections> = ['kyc', 'dd', 'tl', 'qc'];
 const CAT_LABELS: Record<keyof DocSelections, string> = {
   kyc: 'KYC', dd: 'Due Diligence', tl: 'Trade Licenses', qc: 'Quality & Compliance',
 };
+/* Short labels for the quick-add buttons (+ Add KYC / DD / TL / QC) and the
+ * master endpoint each category's quick-add POSTs to. */
+const CAT_SHORT: Record<keyof DocSelections, string> = { kyc: 'KYC', dd: 'DD', tl: 'TL', qc: 'QC' };
+const CAT_ENDPOINT: Record<keyof DocSelections, string> = {
+  kyc: '/clm/kyc-documents', dd: '/clm/dd-documents', tl: '/clm/trade-licenses', qc: '/clm/qc-documents',
+};
 
 /* Hardcoded segment→authority mapping mirrors the prototype's
  * _srGetAuthsForSeg lookup so the auto-mapping behavior is identical. */
@@ -73,6 +83,37 @@ function authsForSegment(segCode: string, allAuths: Authority[]): Authority[] {
   return allAuths.filter(a => codes.includes(a.code));
 }
 
+/* Tab bar restyled to match the My Workplace (Sales Lead Worksheet) pills —
+ * a cyan gradient bar of pills with the count inline as "(N)". */
+const DCP_TABS_CSS = `
+.dcp-pre-table { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.dcp-pills {
+  display: flex; align-items: center; gap: 4px;
+  background: linear-gradient(110deg, #ecfeff 0%, #cffafe 50%, #a5f3fc 100%);
+  padding: 5px; border-radius: 14px;
+  border: 1.5px solid #a5f3fc;
+  box-shadow: 0 2px 10px rgba(8,145,178,.12), 0 1px 0 rgba(255,255,255,.9) inset;
+  flex-shrink: 0; flex-wrap: wrap;
+}
+.dcp-pill {
+  padding: 9px 20px; border-radius: 10px;
+  font-size: 12.5px; font-weight: 600; cursor: pointer;
+  background: transparent; color: #0e7490;
+  border: none; transition: all .18s; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.dcp-pill:hover { color: #0891b2; background: rgba(255,255,255,.6); }
+.dcp-pill.active {
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
+  color: #fff;
+  box-shadow: 0 3px 12px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset;
+}
+[data-bs-theme="dark"] .dcp-pills { background: linear-gradient(110deg, rgba(8,145,178,.18), rgba(8,145,178,.10)); border-color: rgba(34,211,238,.30); box-shadow: 0 2px 10px rgba(0,0,0,.25) inset; }
+[data-bs-theme="dark"] .dcp-pill { color: #67e8f9; }
+[data-bs-theme="dark"] .dcp-pill:hover { background: rgba(8,145,178,.22); color: #a5f3fc; }
+[data-bs-theme="dark"] .dcp-pill.active { background: linear-gradient(135deg, #0891b2, #155e75); color: #fff; }
+`;
+
 export default function ClmDcpPage() {
   const toast = useToast();
 
@@ -100,10 +141,35 @@ export default function ClmDcpPage() {
   };
   useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Refresh just the document masters (KYC/DD/TL/QC catalog) without touching
+  // the rules table — used after the modal's "+ Add KYC/DD/TL/QC" quick-add so
+  // the new document immediately shows in the configure list.
+  const reloadBootstrap = async () => {
+    try {
+      const b = await api.get<{ status: boolean; data: Bootstrap }>('/clm/segment-rules/bootstrap');
+      setBoot(b.data.data);
+    } catch {
+      toast.error('Refresh failed', 'Could not reload document masters');
+    }
+  };
+
   // A segment's regulatory tier is owned by the Segment Master — use that as
   // the source of truth so the list never shows a stale tier the rule was
   // saved with (bug: Rice showed "High" though it's a less-regulated segment).
   const regOf = (r: SegRule) => boot?.segments.find(seg => seg.code === r.segment_code)?.regulatory_status ?? r.regulatory_status;
+
+  // Resolve an authority reference (stored in auths_json) to its display name.
+  // Rules persist authority *ids*, so the table mapped raw ids before — look
+  // them up against the bootstrap authority master and fall back to code → name
+  // (and finally the raw value) so nothing renders a bare numeric id.
+  const authName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const a of boot?.authorities ?? []) {
+      m.set(String(a.id), a.name);
+      if (a.code) m.set(a.code, a.name);
+    }
+    return m;
+  }, [boot]);
 
   // Tab counts derived from the segment-master tier (matches the badges).
   const tierCounts = useMemo<Counts>(() => ({
@@ -188,23 +254,23 @@ export default function ClmDcpPage() {
       />
 
       <div className="clm-page-card">
-        <div className="clm-tabs-bar">
-          <button className={`clm-tab ${tab === 'all' ? 'active' : ''}`} onClick={() => { setTab('all'); setPage(1); }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-            All Segments <span className="clm-tab-count">{tierCounts.all}</span>
-          </button>
-          <button className={`clm-tab ${tab === 'highly' ? 'active' : ''}`} onClick={() => { setTab('highly'); setPage(1); }}>
-            <span className="clm-tab-dot" style={{ background: '#ef4444', boxShadow: '0 0 5px rgba(239,68,68,.5)' }} />
-            Highly Regulated <span className="clm-tab-count">{tierCounts.highly}</span>
-          </button>
-          <button className={`clm-tab ${tab === 'less' ? 'active' : ''}`} onClick={() => { setTab('less'); setPage(1); }}>
-            <span className="clm-tab-dot" style={{ background: '#22c55e', boxShadow: '0 0 5px rgba(34,197,94,.5)' }} />
-            Less Regulated <span className="clm-tab-count">{tierCounts.less}</span>
-          </button>
-            <div className="clm-search">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-              <input type="text" placeholder="Search segment rules…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+        <style>{DCP_TABS_CSS}</style>
+        <div className="dcp-pre-table">
+          <div className="dcp-pills">
+            <div className={`dcp-pill ${tab === 'all' ? 'active' : ''}`} onClick={() => { setTab('all'); setPage(1); }}>
+              All Segments ({tierCounts.all})
             </div>
+            <div className={`dcp-pill ${tab === 'highly' ? 'active' : ''}`} onClick={() => { setTab('highly'); setPage(1); }}>
+              Highly Regulated ({tierCounts.highly})
+            </div>
+            <div className={`dcp-pill ${tab === 'less' ? 'active' : ''}`} onClick={() => { setTab('less'); setPage(1); }}>
+              Less Regulated ({tierCounts.less})
+            </div>
+          </div>
+          <div className="clm-search">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input type="text" placeholder="Search segment rules…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+          </div>
         </div>
 
         <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
@@ -219,16 +285,16 @@ export default function ClmDcpPage() {
               <table className="clm-table" style={{ minWidth: 1100 }}>
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
-                  <th style={{ width: 90, textAlign: 'center' }}>RULE ID</th>
-                  <th style={{ width: 90, textAlign: 'center' }}>SEGMENT</th>
+                  <th style={{ width: 110, textAlign: 'center' }}>SEGMENT ID</th>
                   <th>SEGMENT NAME</th>
-                  <th style={{ width: 110, textAlign: 'center' }}>REGULATORY</th>
+                  <th style={{ width: 130, textAlign: 'center' }}>REGULATORY STATUS</th>
+                  <th style={{ width: 140, textAlign: 'center' }}>BUYER ≠ CONSIGNEE</th>
+                  <th style={{ width: 180, textAlign: 'center' }}>AUTHORITIES</th>
                   <th style={{ width: 60, textAlign: 'center' }}>KYC</th>
-                  <th style={{ width: 60, textAlign: 'center' }}>DD</th>
-                  <th style={{ width: 60, textAlign: 'center' }}>TL</th>
+                  <th style={{ width: 90, textAlign: 'center' }}>DUE DILIGENCE</th>
+                  <th style={{ width: 95, textAlign: 'center' }}>TRADE LICENSES</th>
                   <th style={{ width: 60, textAlign: 'center' }}>QC</th>
-                  <th style={{ width: 80, textAlign: 'center' }}>TOTAL</th>
-                  <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
+                  <th style={{ width: 90, textAlign: 'center' }}>ACTION</th>
                 </tr></thead>
                 <tbody>
                   {loading && <ShimmerTableRows rows={6} cols={11} cellClassName="" keyPrefix="dcp-shim" />}
@@ -239,11 +305,22 @@ export default function ClmDcpPage() {
                     return (
                       <tr key={r.id}>
                         <td className="clm-td-num">{start + i + 1}</td>
-                        <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.rule_code}</span></td>
                         <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.segment_code}</span></td>
                         <td className="clm-td-name">{seg?.name ?? r.segment_code}</td>
                         <td style={{ textAlign: 'center' }}>
                           <span className={`clm-badge ${isHigh ? 'clm-badge-red' : 'clm-badge-green'}`}><span className="clm-badge-dot" />{isHigh ? 'High' : 'Less'}</span>
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          {seg?.buyer_consignee === 'allowed'
+                            ? <span style={{ color: '#16a34a', fontWeight: 700, fontSize: 12 }}>✓ Yes</span>
+                            : <span style={{ color: '#dc2626', fontWeight: 700, fontSize: 12 }}>✗ No</span>}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          {(r.auths_json && r.auths_json.length > 0) ? (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
+                              {r.auths_json.map(a => <span key={a} className="clm-code-pill">{authName.get(String(a)) ?? a}</span>)}
+                            </div>
+                          ) : <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>}
                         </td>
                         {CAT_KEYS.map(c => {
                           const n = segCount(c);
@@ -262,22 +339,6 @@ export default function ClmDcpPage() {
                             </td>
                           );
                         })}
-                        <td style={{ textAlign: 'center' }}>
-                          {(r.mandatory_count + r.optional_count) > 0 ? (
-                            <button
-                              type="button"
-                              className="clm-total-btn"
-                              onClick={() => setViewDocs({ rule: r, cat: 'all' })}
-                              title="View all documents"
-                            >
-                              <span style={{ color: '#dc2626' }}>{r.mandatory_count}M</span>
-                              <span style={{ opacity: .5, margin: '0 3px' }}>·</span>
-                              <span style={{ color: '#d97706' }}>{r.optional_count}O</span>
-                            </button>
-                          ) : (
-                            <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>
-                          )}
-                        </td>
                         <td style={{ textAlign: 'center' }}>
                           <div className="clm-actions">
                             <button className="clm-act clm-act-edit" title="Edit rule" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
@@ -311,6 +372,7 @@ export default function ClmDcpPage() {
           onClose={() => { setModalOpen(false); setEditing(null); }}
           onSave={(form, ruleId) => onSave(form, ruleId ?? editing?.id)}
           onBulkSave={onBulkSave}
+          onDocAdded={reloadBootstrap}
         />
       )}
       {viewDocs && boot && (
@@ -336,8 +398,10 @@ function SegmentRuleModal(props: {
    *  reload + close on completion. Optional: when omitted the modal
    *  falls back to looping the single onSave (with N reloads). */
   onBulkSave?: (rows: Array<{ form: { segment_code: string; regulatory_status: 'highly'|'less'; auths: string[]; doc_selections: DocSelections }; ruleId?: number }>) => void;
+  /** Refresh the document masters after a quick-add so the new doc appears. */
+  onDocAdded?: () => Promise<void> | void;
 }) {
-  const { existing, existingRules, boot, onClose, onSave, onBulkSave } = props;
+  const { existing, existingRules, boot, onClose, onSave, onBulkSave, onDocAdded } = props;
   const toast = useToast();
   const [stage, setStage]     = useState<1 | 2>(1);
   const [reg, setReg]         = useState<'highly'|'less'|null>(existing?.regulatory_status ?? null);
@@ -407,6 +471,30 @@ function SegmentRuleModal(props: {
   const catData: Record<keyof DocSelections, DocItem[]> = {
     kyc: boot.kyc, dd: boot.dd, tl: boot.tl, qc: boot.qc,
   };
+
+  /* Quick-add: opens the SAME master document form used on the KYC / DD / TL /
+   * QC master pages (KycModal / DdModal / TlModal / QcModal), reused here so
+   * the user can add a brand-new compliance document without leaving the rule
+   * form. The modal's onSave hands back the form fields; we POST them to the
+   * matching master endpoint, refresh the catalog, and pre-tick the new doc as
+   * Mandatory. */
+  const [addOpen, setAddOpen] = useState(false);
+  const openAddDoc = () => setAddOpen(true);
+  const addDocViaModal = async (f: Record<string, unknown> & { name?: unknown }) => {
+    const cat = activeCat;
+    try {
+      const { data } = await api.post(CAT_ENDPOINT[cat], f);
+      await onDocAdded?.();
+      const created = (data?.data ?? null) as { code?: string } | null;
+      if (created?.code) setDocReq(cat, created.code, 'M');
+      toast.success('Added', `${String(f.name ?? 'Document')} added to ${CAT_LABELS[cat]}.`);
+      setAddOpen(false);
+    } catch (e: any) {
+      // Keep the modal open so the user can correct + retry.
+      toast.error('Add failed', e?.response?.data?.message ?? 'Could not add the document.');
+    }
+  };
+
   const totalSel = (cat: keyof DocSelections) => Object.values(docSel[cat] ?? {}).filter(Boolean).length;
   const mandCount = (cat: keyof DocSelections) => Object.values(docSel[cat] ?? {}).filter(v => v === 'M').length;
   const optCount  = (cat: keyof DocSelections) => Object.values(docSel[cat] ?? {}).filter(v => v === 'O').length;
@@ -619,9 +707,13 @@ function SegmentRuleModal(props: {
                     <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.25px' }}>{CAT_LABELS[activeCat]} Documents</div>
                     <div style={{ fontSize: 9.5, opacity: .7 }}>{catData[activeCat].length} documents available to configure</div>
                   </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     {mandCount(activeCat) > 0 && <span className="clm-badge" style={{ background: 'rgba(6,182,212,.25)', color: '#fff', border: '1px solid rgba(255,255,255,.28)' }}>Mandatory · {mandCount(activeCat)}</span>}
                     {optCount(activeCat) > 0 && <span className="clm-badge" style={{ background: 'rgba(251,191,36,.28)', color: '#fff', border: '1px solid rgba(251,191,36,.35)' }}>Optional · {optCount(activeCat)}</span>}
+                    <button type="button" onClick={openAddDoc} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 13px', borderRadius: 8, background: '#fff', color: '#0e7490', border: 'none', fontFamily: 'inherit', fontSize: 11, fontWeight: 800, cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.12)' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                      Add {CAT_SHORT[activeCat]}
+                    </button>
                   </div>
                 </div>
                 <div style={{ maxHeight: 360, overflowY: 'auto' }}>
@@ -693,6 +785,27 @@ function SegmentRuleModal(props: {
           </div>
         </div>
       </div>
+
+      {addOpen && activeCat === 'kyc' && (
+        <KycModal existing={null} authorities={boot.authorities}
+          nextCode={`KYC-${String(boot.kyc.length + 1).padStart(3, '0')}`}
+          onClose={() => setAddOpen(false)} onSave={(f) => addDocViaModal(f)} />
+      )}
+      {addOpen && activeCat === 'dd' && (
+        <DdModal existing={null} authorities={boot.authorities}
+          nextCode={`DD-${String(boot.dd.length + 1).padStart(3, '0')}`}
+          onClose={() => setAddOpen(false)} onSave={(f) => addDocViaModal(f)} />
+      )}
+      {addOpen && activeCat === 'tl' && (
+        <TlModal existing={null} authorities={boot.authorities}
+          nextCode={`TL-${String(boot.tl.length + 1).padStart(3, '0')}`}
+          onClose={() => setAddOpen(false)} onSave={(f) => addDocViaModal(f)} />
+      )}
+      {addOpen && activeCat === 'qc' && (
+        <QcModal existing={null} authorities={boot.authorities}
+          nextCode={`QC-${String(boot.qc.length + 1).padStart(3, '0')}`}
+          onClose={() => setAddOpen(false)} onSave={(f) => addDocViaModal(f)} />
+      )}
     </div>
   ), document.body);
 }

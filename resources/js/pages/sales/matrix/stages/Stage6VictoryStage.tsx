@@ -154,11 +154,25 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
   useEffect(() => {
     if (!leadId) return;
     void fetchAll(false);
-    if (!celebratedLeads.has(leadId)) {
-      celebratedLeads.add(leadId);
-      persistCelebrated(celebratedLeads);
+    // A one-shot session flag set by Save & Next on Stage 5 forces the
+    // celebration EVERY time the deal is freshly won — even for a lead that
+    // already burst confetti before (the localStorage gate only fires once
+    // per lead ever). Consume it so a later revisit / refresh doesn't re-fire.
+    let forced = false;
+    try {
+      forced = sessionStorage.getItem('cbc_celebrate_victory') === String(leadId);
+      if (forced) sessionStorage.removeItem('cbc_celebrate_victory');
+    } catch { /* private mode → ignore */ }
+
+    if (forced || !celebratedLeads.has(leadId)) {
+      // Keep the once-per-lead gate in sync so the first-visit path doesn't
+      // double-fire alongside a forced celebration.
+      if (!celebratedLeads.has(leadId)) {
+        celebratedLeads.add(leadId);
+        persistCelebrated(celebratedLeads);
+      }
       setConfetti(true);
-      setTimeout(() => setConfetti(false), 5_000);
+      setTimeout(() => setConfetti(false), 10_000);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leadId]);
@@ -198,7 +212,7 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
     /* Burst confetti again to celebrate the Shipment ID being created
      * (reuses the same one-shot effect as the initial victory landing). */
     setConfetti(true);
-    setTimeout(() => setConfetti(false), 5_000);
+    setTimeout(() => setConfetti(false), 10_000);
   };
 
   return (
@@ -225,13 +239,26 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
       <div className="smd-stg-body s6-body">
         {confetti && (
           <div className="s6-confetti" aria-hidden="true">
-            {Array.from({ length: 60 }).map((_, i) => (
-              <span key={i} style={{
-                left: `${(i * 1.7) % 100}%`,
-                animationDelay: `${(i % 12) * 0.12}s`,
-                background: ['#fbbf24','#a78bfa','#34d399','#f87171','#60a5fa','#f59e0b','#ec4899','#06b6d4'][i % 8],
-              }} />
-            ))}
+            {Array.from({ length: 170 }).map((_, i) => {
+              const size  = 9 + (i % 5) * 4;            // 9…25px — bigger pieces
+              const round = i % 3 === 0;                // every 3rd is a dot
+              return (
+                <span key={i} style={{
+                  left: `${(i * 4.27) % 100}%`,
+                  width: `${size}px`,
+                  height: `${round ? size : size + (i % 4) * 5}px`,
+                  borderRadius: round ? '50%' : '2px',
+                  // Spread starts across ~5.4s and let each piece fall for
+                  // ~3.6–5s so the burst keeps raining for the full 10s.
+                  animationDelay: `${(i % 27) * 0.2}s`,
+                  animationDuration: `${3.6 + (i % 5) * 0.5}s`,
+                  background: ['#fbbf24','#a78bfa','#34d399','#f87171','#60a5fa','#f59e0b','#ec4899','#06b6d4','#fde047','#c084fc'][i % 10],
+                }} />
+              );
+            })}
+            <div className="s6-burst"><span className="s6-burst-emoji">🎉</span></div>
+            <CornerCannon side="left" />
+            <CornerCannon side="right" />
           </div>
         )}
 
@@ -496,6 +523,39 @@ function Cell({ label, value, amber, blue, emerald }: {
   );
 }
 
+/* Corner confetti cannon — a party-popper that keeps bursting from a bottom
+ * corner, shooting particles diagonally up-inward in an arc. `left` fires
+ * toward the upper-right, `right` toward the upper-left. Each particle's
+ * trajectory (--tx / --ty) is fanned out by index; the burst repeats for the
+ * lifetime of the confetti container (~10s). */
+function CornerCannon({ side }: { side: 'left' | 'right' }) {
+  const COLORS = ['#fbbf24', '#a78bfa', '#34d399', '#f87171', '#60a5fa', '#f59e0b', '#ec4899', '#06b6d4', '#fde047', '#c084fc'];
+  const N = 46;
+  return (
+    <div className={`s6-cannon s6-cannon-${side}`} aria-hidden="true">
+      {Array.from({ length: N }).map((_, i) => {
+        const angle = ((12 + (i / N) * 76) * Math.PI) / 180;   // 12°…88° fan
+        const dist  = 170 + (i % 6) * 52;                       // 170…430px
+        const dx    = Math.cos(angle) * dist * (side === 'left' ? 1 : -1);
+        const dy    = -Math.sin(angle) * dist;                  // up = negative
+        const size  = 8 + (i % 4) * 4;
+        return (
+          <span key={i} style={{
+            ['--tx' as string]: `${dx.toFixed(0)}px`,
+            ['--ty' as string]: `${dy.toFixed(0)}px`,
+            width: `${size}px`,
+            height: `${i % 3 === 0 ? size : size + 4}px`,
+            borderRadius: i % 3 === 0 ? '50%' : '2px',
+            background: COLORS[i % COLORS.length],
+            animationDelay: `${(i % 5) * 0.06}s`,
+            animationDuration: `${1.5 + (i % 4) * 0.28}s`,
+          } as React.CSSProperties} />
+        );
+      })}
+    </div>
+  );
+}
+
 const STAGE6_CSS = `
 /* Lavender header — matches the figma + the rest of the stage chrome /
    side panels (was a one-off green). */
@@ -515,17 +575,52 @@ const STAGE6_CSS = `
 }
 
 @keyframes s6-confetti-fall {
-  0%   { transform: translateY(-20px) rotate(0deg); opacity: 0; }
-  10%  { opacity: 1; }
-  100% { transform: translateY(620px) rotate(720deg); opacity: 0; }
+  0%   { transform: translateY(-30px) translateX(0) rotate(0deg); opacity: 0; }
+  8%   { opacity: 1; }
+  92%  { opacity: 1; }
+  100% { transform: translateY(760px) translateX(46px) rotate(900deg); opacity: 0; }
 }
 .s6-confetti { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 10; }
 .s6-confetti span {
-  position: absolute; top: 0;
-  width: 8px; height: 14px; border-radius: 2px;
-  animation: s6-confetti-fall 3.6s cubic-bezier(.21,.62,.42,1) forwards;
+  position: absolute; top: -12px;
+  width: 10px; height: 16px; border-radius: 2px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.10);
+  /* Base duration; per-piece overrides come from inline animationDuration so
+     the rain staggers and keeps falling for the full ~10s celebration. */
+  animation: s6-confetti-fall 4s cubic-bezier(.21,.62,.42,1) forwards;
 }
-.s6-confetti span:nth-child(odd) { width: 6px; height: 6px; border-radius: 50%; }
+/* Center burst emoji — a big pop that scales in then gently fades. */
+@keyframes s6-burst-pop {
+  0%   { transform: scale(.2) rotate(-12deg); opacity: 0; }
+  18%  { transform: scale(1.3) rotate(7deg);  opacity: 1; }
+  34%  { transform: scale(1)   rotate(0deg);  opacity: 1; }
+  82%  { transform: scale(1)   rotate(0deg);  opacity: 1; }
+  100% { transform: scale(1.15) rotate(0deg); opacity: 0; }
+}
+.s6-burst { position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: center; pointer-events: none; }
+.s6-burst-emoji {
+  margin-top: 36px; font-size: 78px; line-height: 1;
+  animation: s6-burst-pop 2.6s ease-out forwards;
+  filter: drop-shadow(0 6px 14px rgba(0,0,0,.18));
+}
+
+/* ── Corner cannons — bottom-left + bottom-right party-poppers ── */
+.s6-cannon { position: absolute; bottom: 8px; width: 0; height: 0; z-index: 11; pointer-events: none; }
+.s6-cannon-left  { left: 18px; }
+.s6-cannon-right { right: 18px; }
+.s6-cannon span {
+  position: absolute; bottom: 0; left: 0;
+  width: 10px; height: 12px; border-radius: 2px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.12);
+  animation: s6-cannon-burst 1.8s cubic-bezier(.15,.7,.35,1) infinite;
+}
+.s6-cannon-right span { left: auto; right: 0; }
+@keyframes s6-cannon-burst {
+  0%   { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; }
+  10%  { opacity: 1; }
+  55%  { transform: translate(calc(var(--tx) * .92), var(--ty)) rotate(360deg) scale(.95); opacity: 1; }
+  100% { transform: translate(var(--tx), calc(var(--ty) * .25)) rotate(680deg) scale(.55); opacity: 0; }
+}
 
 .s6-celebrate {
   position: relative; z-index: 1;

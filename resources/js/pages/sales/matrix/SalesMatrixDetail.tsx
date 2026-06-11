@@ -652,7 +652,16 @@ export default function SalesMatrixDetail() {
 
   // Save & Next  /  Previous helpers (bypass the tracker lock).
   const goPrev = () => stage > 1 && navStage((stage - 1) as StageNum);
-  const goNext = () => stage < 6 && navStage((stage + 1) as StageNum);
+  const goNext = () => {
+    if (stage >= 6) return;
+    // Crossing 5 → 6 via Save & Next is a "deal won" moment — drop a one-shot
+    // session flag so the Victory stage celebrates EVERY time it's reached this
+    // way (its localStorage gate otherwise only confetti's once per lead ever).
+    if (stage === 5 && resolvedLeadId) {
+      try { sessionStorage.setItem('cbc_celebrate_victory', String(resolvedLeadId)); } catch { /* private mode → skip */ }
+    }
+    navStage((stage + 1) as StageNum);
+  };
 
   const goBack = () => navigate('sales.lead_worksheet');
 

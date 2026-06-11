@@ -182,7 +182,7 @@ export default function ClmDdPage() {
   );
 }
 
-function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCode: string; onClose: () => void; onSave: (f: { name: string; authority: string }) => void; }) {
+export function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCode: string; onClose: () => void; onSave: (f: { name: string; authority: string }) => void; }) {
   const { existing, authorities: initialAuthorities, nextCode, onClose, onSave } = props;
   const toast = useToast();
   const isEdit = !!existing;

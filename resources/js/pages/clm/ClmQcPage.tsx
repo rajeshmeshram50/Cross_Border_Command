@@ -202,7 +202,7 @@ export default function ClmQcPage() {
   );
 }
 
-function QcModal(props: { existing: Qc | null; authorities: Authority[]; nextCode: string; onClose: () => void; onSave: (f: Omit<Qc, 'id'|'code'|'status'>) => void; }) {
+export function QcModal(props: { existing: Qc | null; authorities: Authority[]; nextCode: string; onClose: () => void; onSave: (f: Omit<Qc, 'id'|'code'|'status'>) => void; }) {
   const { existing, authorities: initialAuthorities, nextCode, onClose, onSave } = props;
   const toast = useToast();
   const isEdit = !!existing;

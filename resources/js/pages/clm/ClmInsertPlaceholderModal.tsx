@@ -56,10 +56,13 @@ const FIELDS: Record<Tab, Field[]> = {
   // (code · name · segment · quantity). The renderer expands {{product.*}}
   // tokens into a row per mapped product at generation time.
   product: [
-    { label: 'Product Code',    token: '{{product.code}}' },
-    { label: 'Product Name',    token: '{{product.name}}' },
-    { label: 'Product Segment', token: '{{product.segment}}' },
-    { label: 'Quantity',        token: '{{product.quantity}}' },
+    { label: 'Product Code',        token: '{{product.code}}' },
+    { label: 'Product Name',        token: '{{product.name}}' },
+    { label: 'Product Segment',     token: '{{product.segment}}' },
+    { label: 'Quantity',            token: '{{product.quantity}}' },
+    { label: 'HSN/SAC Code',        token: '{{product.hsn_sac}}' },
+    { label: 'Product Description', token: '{{product.description}}' },
+    { label: 'Haz / Non-Haz',       token: '{{product.haz}}' },
   ],
 };
 
