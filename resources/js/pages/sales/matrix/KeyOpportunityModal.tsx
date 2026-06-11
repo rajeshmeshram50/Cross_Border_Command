@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -17,6 +18,14 @@ export default function KeyOpportunityModal(props: {
   onConfirm: () => void;
 }) {
   const { open, isKey = false, onClose, onConfirm } = props;
+
+  // Body scroll lock — keep the page behind the modal from scrolling while open.
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [open]);
 
   if (!open) return null;
 

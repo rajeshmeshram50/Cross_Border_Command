@@ -465,6 +465,29 @@ export const CLM_CSS = `
 
 /* Empty / loading */
 .clm-status { text-align: center; padding: 24px 12px; color: #94a3b8; font-style: italic; font-size: 12.5px; }
+
+/* Shimmer skeleton — shown while the table (re)loads, e.g. right after a
+   T&C is saved and the list is being refetched. A grey bar with a moving
+   light sweep reads as "loading" far better than the old static "Loading…"
+   text. Each cell can drop a <span class="clm-skel"> sized to its column. */
+.clm-skel {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #eef2f6 0%, #f6f9fb 40%, #eef2f6 80%);
+  background-size: 200% 100%;
+  animation: clmShimmer 1.2s ease-in-out infinite;
+}
+.clm-skel-pill { height: 20px; border-radius: 999px; }
+.clm-skel-cell { padding: 13px 14px !important; }
+@keyframes clmShimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+[data-bs-theme="dark"] .clm-skel {
+  background: linear-gradient(90deg, #1e293b 0%, #28384d 40%, #1e293b 80%);
+  background-size: 200% 100%;
+}
 .clm-empty {
   text-align: center; padding: 28px 16px;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
