@@ -98,7 +98,10 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
     ],
     content: '<p></p>',
-    onUpdate({ editor }) { setContent(editor.getHTML()); },
+    onUpdate({ editor }) {
+      setContent(editor.getHTML());
+      if (editor.getText().trim()) setErrors(p => (p.content ? { ...p, content: '' } : p));
+    },
   });
 
   const [quickAddCatOpen,     setQuickAddCatOpen]     = useState(false);
@@ -217,6 +220,16 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
   const handleSave = async () => {
     if (!validateStep1()) {
       setStep(1);
+      return;
+    }
+    // T&C content is mandatory — an empty editor still serialises to
+    // "<p></p>", so check the plain text (not the HTML) before saving.
+    const plainContent = (editor?.getText() ?? content.replace(/<[^>]*>/g, ''))
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!plainContent) {
+      setErrors(p => ({ ...p, content: 'T&C content is required' }));
+      toast.error('Content required', 'Enter the T&C content before saving.');
       return;
     }
     setSaving(true);
@@ -529,6 +542,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
                 onCloseSignature={() => setSignatureOpen(false)}
                 onOpenDrawSignature={() => { setDrawSigOpen(true); setSignatureOpen(false); setClauseOpen(false); }}
               />
+              {errors.content && <div className="tnw-err" style={{ marginTop: 8 }}>{errors.content}</div>}
               {drawSigOpen && (
                 <SignaturePad
                   onClose={() => setDrawSigOpen(false)}
@@ -554,13 +568,31 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (!file || !editor) return;
+                  e.target.value = '';
+                  const lower = file.name.toLowerCase();
+                  // Word documents are ZIP-packed XML — reading them as text
+                  // yields binary garbage. Convert server-side (PhpWord) via
+                  // the shared /clm/docx-to-html endpoint, then insert the
+                  // returned HTML. Plain .txt / .html stay client-side.
+                  if (lower.endsWith('.docx') || lower.endsWith('.doc')) {
+                    const fd = new FormData();
+                    fd.append('docx', file);
+                    api.post<{ status: boolean; html: string }>('/clm/docx-to-html', fd, {
+                      headers: { 'Content-Type': 'multipart/form-data' },
+                    })
+                      .then(({ data }) => {
+                        const html = (data?.html ?? '').trim();
+                        if (!html) { toast.warning('Nothing to import', 'The document appears to be empty.'); return; }
+                        editor.chain().focus().insertContent(html).run();
+                        toast.success('Imported', `${file.name} loaded into the editor.`);
+                      })
+                      .catch((err: any) => toast.error('Import failed', err?.response?.data?.message ?? 'Could not read this Word document.'));
+                    return;
+                  }
                   const reader = new FileReader();
                   reader.onload = () => {
                     const txt = String(reader.result ?? '');
-                    // Lightweight import — wrap each line in a paragraph. For
-                    // .docx the user gets the raw text since we don't have a
-                    // mammoth parser wired here; works fine for .txt / .html.
-                    if (file.name.toLowerCase().endsWith('.html')) {
+                    if (lower.endsWith('.html')) {
                       editor.chain().focus().insertContent(txt).run();
                     } else {
                       const html = txt.split(/\r?\n/).map(line => `<p>${line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`).join('');
@@ -570,7 +602,6 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
                   };
                   reader.onerror = () => toast.error('Read failed', 'Could not read the selected file.');
                   reader.readAsText(file);
-                  e.target.value = '';
                 }}
               />
             </div>
