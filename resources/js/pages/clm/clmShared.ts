@@ -329,6 +329,16 @@ export const CLM_CSS = `
 }
 .clm-search-grow:focus-within { width: 480px; }
 
+/* Figma-match: fixed-width search box (not flex-grow). Pairs with the toolbar's
+   space-between so a Total badge sits at the far right. Expands on focus. */
+.clm-tabs-bar .clm-search-fixed {
+  flex: 0 0 auto; width: 500px; max-width: 100%;
+  transition: width .18s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.clm-tabs-bar .clm-search-fixed:focus-within { width: 580px; }
+@media (max-width: 1280px) { .clm-tabs-bar .clm-search-fixed { width: 360px; } }
+@media (max-width: 760px)  { .clm-tabs-bar .clm-search-fixed { width: 100%; } }
+
 /* Compound Total badge — icon block + label + count number */
 .clm-total {
   display: inline-flex; align-items: center; gap: 0;

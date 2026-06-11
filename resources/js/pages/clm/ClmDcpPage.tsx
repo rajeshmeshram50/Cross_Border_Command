@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
@@ -191,7 +191,34 @@ export default function ClmDcpPage() {
         || regLabel.includes(s);
     });
   }, [rows, tab, search, boot]); // eslint-disable-line react-hooks/exhaustive-deps
-  const { slice, start, pageCount, safePage } = paginate(filtered, page);
+  const [rpp, setRpp]     = useState(PER_PAGE);
+  const [fillH, setFillH] = useState<number | undefined>(undefined);
+  const scrollRef         = useRef<HTMLDivElement | null>(null);
+  const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
+
+  // Dynamic pagination: rows-per-page auto-fits the visible table height and
+  // the card stretches to cover the page. Anchored via closest('.clm-root')
+  // so it works inside sub-panes too.
+  useEffect(() => {
+    const recompute = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const THEAD = 40, ROW = 46, FOOTER = 96;
+      const avail = window.innerHeight - top - THEAD - FOOTER;
+      const fit = Math.max(4, Math.floor(avail / ROW));
+      setRpp(prev => (prev === fit ? prev : fit));
+      const fh = Math.max(0, window.innerHeight - top - 64);
+      setFillH(prev => (prev === fh ? prev : fh));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    const ro = new ResizeObserver(recompute);
+    const rootEl = scrollRef.current?.closest('.clm-root');
+    if (rootEl) ro.observe(rootEl);
+    window.addEventListener('resize', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+  }, [filtered.length]);
 
   const onSave = async (form: { segment_code: string; regulatory_status: 'highly'|'less'; auths: string[]; doc_selections: DocSelections }, id?: number) => {
     try {
@@ -281,7 +308,7 @@ export default function ClmDcpPage() {
               <div className="clm-empty-sub">Click "+ Add Segment Rule" to create your first rule.</div>
             </div>
           ) : (
-            <div className="clm-table-wrap">
+            <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
               <table className="clm-table" style={{ minWidth: 1100 }}>
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -351,7 +378,7 @@ export default function ClmDcpPage() {
               </table>
               {!loading && filtered.length > 0 && (
                 <div className="clm-pag">
-                  <span className="clm-pag-info">Showing <b>{start + 1}–{Math.min(start + PER_PAGE, filtered.length)}</b> of <b>{filtered.length}</b> rule{filtered.length === 1 ? '' : 's'}</span>
+                  <span className="clm-pag-info">Showing <b>{start + 1}–{start + slice.length}</b> of <b>{filtered.length}</b> rule{filtered.length === 1 ? '' : 's'}</span>
                   <div className="clm-pag-btns">
                     {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
                       <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
