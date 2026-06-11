@@ -5,7 +5,7 @@ import { MasterSelect, MasterDatePicker } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
 import { downloadFile } from '../../utils/downloadFile';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
-import { Shimmer } from '../../components/ui/Shimmer';
+import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
 import { MasterMultiSelect } from '../master/masterFormKit';
@@ -3430,7 +3430,28 @@ const Stage2 = ({
 
         <div className="acm-kyc-body">
           <div className="acm-loc-table-wrap">
-            {isOwners && filteredOwners.length === 0 && segmentDocs.kyc.length > 0 ? (
+            {loading ? (
+              /* Segment-rule catalog still loading from the DB — table shimmer
+                 (real headers + shimmer rows) so the grid doesn't flash empty. */
+              <table className="acm-loc-table">
+                <thead>
+                  <tr>
+                    {isOwners ? (
+                      <>
+                        <th>SR NO</th><th>OWNER NAME</th><th>DESIGNATION</th><th>EMAIL</th><th>PHONE</th>
+                        <th>ID PROOF</th><th>ADDRESS PROOF</th><th>PHOTOGRAPH</th><th>ACTIONS</th>
+                      </>
+                    ) : (
+                      <>
+                        <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
+                        <th>ISSUING AUTHORITY</th><th>REQUIREMENT</th><th>ATTACHMENT</th><th>ACTIONS</th>
+                      </>
+                    )}
+                  </tr>
+                </thead>
+                <tbody><ShimmerTableRows rows={4} cols={isOwners ? 9 : 7} /></tbody>
+              </table>
+            ) : isOwners && filteredOwners.length === 0 && segmentDocs.kyc.length > 0 ? (
               /* Owner KYC sub-tab — segment-rule reference table.
                  Mirrors the Trade Licence + Company DD layout when the
                  segment's rule defines required KYC documents and no
