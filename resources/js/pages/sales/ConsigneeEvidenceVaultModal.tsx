@@ -491,6 +491,10 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
 
   const tabMeta = TABS.find(t => t.key === tab)!;
 
+  /* Show the skeleton only on the FIRST load (live data not in yet, no
+   * explicit data prop). Re-fetches keep the current content visible. */
+  const showSkeleton = loading && !vaultLive && !data;
+
   return createPortal(
     <div className="cnev-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <style>{CNEV_CSS}</style>
@@ -540,6 +544,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           </div>
         </div>
 
+        {showSkeleton ? <VaultSkeleton /> : (<>
         {/* ─── KPI STRIP ─── */}
         <div
           className="cnev-kpi-outer"
@@ -650,6 +655,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                          onSendTradeDoc={(d) => { if (d.db_id) setSendDocIds([d.db_id]); }}
                          onRemindTradeDoc={handleRemind} />}
         </div>
+        </>)}
 
         {/* ─── FOOTER ─── */}
         <div className="cnev-footer">
@@ -708,6 +714,31 @@ function KpiTile({ label, value, icon, gradient }: { label: string; value: numbe
         <div className="cnev-kpi-icon" style={{ background: gradient }}>
           <i className={icon} aria-hidden />
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Loading skeleton — shimmer placeholders for the whole vault body
+   (KPI ribbon, group cards, tabs, section banner, table). Shown on first
+   load instead of the demo fallback. */
+function VaultSkeleton() {
+  return (
+    <div className="cnev-skel">
+      <div className="cnev-skel-kpis">
+        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="cnev-skel-kpi cnev-sk" />)}
+      </div>
+      <div className="cnev-skel-groups">
+        <div className="cnev-skel-group cnev-sk" />
+        <div className="cnev-skel-group cnev-sk" />
+      </div>
+      <div className="cnev-skel-tabs">
+        {Array.from({ length: 3 }).map((_, i) => <div key={i} className="cnev-skel-tab cnev-sk" />)}
+      </div>
+      <div className="cnev-skel-section cnev-sk" />
+      <div className="cnev-skel-table">
+        <div className="cnev-skel-thead cnev-sk" />
+        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="cnev-skel-row cnev-sk" />)}
       </div>
     </div>
   );
@@ -1512,6 +1543,23 @@ const CNEV_CSS = `
 .cnev-doc-name { font-weight: 700; color: #064e3b; }
 .cnev-mono { font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace; font-size: 12px; color: #1f2937; }
 .cnev-empty { padding: 30px !important; text-align: center; color: #94a3b8; font-style: italic; }
+/* ─── Loading skeleton (shimmer) — emerald-tinted to match the consignee theme. */
+.cnev-skel { flex: 1; min-height: 0; overflow: hidden; padding: 16px 22px; display: flex; flex-direction: column; gap: 16px; }
+.cnev-sk { position: relative; overflow: hidden; background: #d8f5e6; border-radius: 12px; }
+.cnev-sk::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255,255,255,.7), transparent); animation: cnevShimmer 1.3s ease-in-out infinite; }
+@keyframes cnevShimmer { 100% { transform: translateX(100%); } }
+.cnev-skel-kpis { display: flex; gap: 12px; }
+.cnev-skel-kpi { flex: 1; height: 74px; }
+.cnev-skel-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.cnev-skel-group { height: 60px; }
+.cnev-skel-tabs { display: flex; gap: 10px; }
+.cnev-skel-tab { width: 190px; height: 40px; border-radius: 999px; }
+.cnev-skel-section { height: 66px; }
+.cnev-skel-table { display: flex; flex-direction: column; gap: 10px; }
+.cnev-skel-thead { height: 38px; }
+.cnev-skel-row { height: 46px; border-radius: 10px; }
+[data-bs-theme="dark"] .cnev-sk { background: rgba(16,185,129,.14); }
+[data-bs-theme="dark"] .cnev-sk::after { background: linear-gradient(90deg, transparent, rgba(255,255,255,.10), transparent); }
 .cnev-muted { color: #94a3b8; font-style: italic; font-size: 12px; }
 
 .cnev-date {

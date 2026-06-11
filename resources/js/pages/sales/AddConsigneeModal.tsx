@@ -1857,7 +1857,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   };
 
   /* ─── Render: phase A — customer picker ─── */
-  if (phase === 'pick-customer') {
+  /* Never show the picker in edit mode (or the Map-Consignee preselect flow):
+     `phase` initialises to 'pick-customer' and only flips to 'wizard' in a
+     post-render effect, which briefly flashed the picker before the wizard.
+     Guarding the render here goes straight to the wizard (its hydration
+     shimmer covers the moment before the customer resolves). */
+  if (phase === 'pick-customer' && !consignee && !preselectedCustomerId && !preselectedCustomerDbId) {
     return (
       <div className="acm-overlay">
         <style>{SCOPED_CSS}</style>
@@ -1872,6 +1877,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             <label className="acm-label">
               <IconUser /> CUSTOMER ACCOUNT <span className="acm-req">*</span>
             </label>
+            <div className="acm-picker-wrap">
             <div className="acm-picker" onClick={() => setSearchOpen(true)}>
               <IconSearch />
               <input
@@ -1910,6 +1916,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 ))}
               </div>
             )}
+            </div>
 
             {customer && (
               <div className="acm-picked">
@@ -5568,6 +5575,9 @@ const SCOPED_CSS = `
   background: linear-gradient(150deg, #0e9f86 0%, #14b8a6 45%, #20c9b6 75%, #2dd4bf 100%);
   color: #fff; text-align: center;
   overflow: hidden;
+  /* Never let the body's growth (when the search dropdown opens) squeeze the
+     header — it would clip the subtitle. Header stays fixed; body scrolls. */
+  flex-shrink: 0;
 }
 .acm-pick-header::before {
   content: '';
@@ -5602,10 +5612,10 @@ const SCOPED_CSS = `
 }
 .acm-pick-body  {
   padding: 22px 20px 18px; display: flex; flex-direction: column; gap: 12px;
-  /* Body absorbs the variable space between the fixed header / footer.
-     Internal scroll handles a long customer list without pushing the
-     popup itself taller. */
-  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  /* overflow VISIBLE so the absolutely-positioned search dropdown can float
+     over the picked-customer card + info below it (the dropdown has its own
+     internal scroll). Body content itself is small and fixed. */
+  flex: 1 1 auto; min-height: 0; overflow: visible;
 }
 .acm-label {
   display: inline-flex; align-items: center; gap: 6px;
@@ -5624,10 +5634,18 @@ const SCOPED_CSS = `
   font-family: inherit; font-size: 13px; color: #064e3b; font-weight: 500;
 }
 .acm-picker input::placeholder { color: #6b7280; }
+.acm-picker-wrap { position: relative; }
+/* Float the dropdown as an OVERLAY over the picked-customer card + info note
+   below it, so it always shows even after a customer is selected (it used to
+   get pushed off the bottom of the fixed-height popup). */
 .acm-picker-list {
+  position: absolute;
+  top: calc(100% + 8px); left: 0; right: 0;
+  z-index: 40;
   border: 1.5px solid #a7f3d0; border-radius: 12px;
   max-height: 280px; overflow-y: auto;
   background: #fff;
+  box-shadow: 0 14px 36px rgba(13,148,136,.22), 0 4px 12px rgba(0,0,0,.08);
 }
 .acm-picker-option {
   display: flex; align-items: center; gap: 10px;
@@ -5791,6 +5809,7 @@ const SCOPED_CSS = `
   display: flex; align-items: center; justify-content: flex-end; gap: 10px;
   padding: 14px 20px 18px;
   border-top: 1px solid #f0fdf4;
+  flex-shrink: 0;
 }
 .acm-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
@@ -7201,30 +7220,28 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 
 /* ─── Dark mode ─── */
 [data-bs-theme="dark"] .acm-overlay { background: rgba(0,0,0,.65); }
-/* Phase-A "Add New Consignee" picker stays LIGHT/WHITE in dark mode too —
-   the Figma keeps this gate white (only the green header is colored, the
-   body + footer stay white). Only the page behind it dims. So we re-assert
-   the light values here instead of the previous dark-teal body. */
-[data-bs-theme="dark"] .acm-pick    { background: #fff; }
-[data-bs-theme="dark"] .acm-pick-body  { background: #fff; }
-[data-bs-theme="dark"] .acm-picker     { background: #ecfdf5; border-color: #a7f3d0; }
-[data-bs-theme="dark"] .acm-picker input { color: #064e3b; }
-[data-bs-theme="dark"] .acm-picker input::placeholder { color: #6b7280; }
-[data-bs-theme="dark"] .acm-picker-list { background: #fff; border-color: #a7f3d0; }
-[data-bs-theme="dark"] .acm-picker-option { border-bottom-color: #ecfdf5; }
-[data-bs-theme="dark"] .acm-picker-option:hover { background: #f0fdf4; }
-[data-bs-theme="dark"] .acm-pop-name   { color: #064e3b; }
+/* Phase-A "Add New Consignee" picker — dark theme (the teal header stays
+   colored; the body / list / footer go dark to match the rest of the app). */
+[data-bs-theme="dark"] .acm-pick       { background: #0a1f1a; }
+[data-bs-theme="dark"] .acm-pick-body  { background: #0a1f1a; }
+[data-bs-theme="dark"] .acm-label      { color: #6ee7b7; }
+[data-bs-theme="dark"] .acm-picker     { background: rgba(16,185,129,.08); border-color: rgba(16,185,129,.30); }
+[data-bs-theme="dark"] .acm-picker input { color: #ecfdf5; }
+[data-bs-theme="dark"] .acm-picker input::placeholder { color: #6b8a7e; }
+[data-bs-theme="dark"] .acm-picker-list { background: #103129; border-color: rgba(16,185,129,.30); box-shadow: 0 14px 36px rgba(0,0,0,.55), 0 4px 12px rgba(0,0,0,.4); }
+[data-bs-theme="dark"] .acm-picker-option { border-bottom-color: rgba(16,185,129,.12); }
+[data-bs-theme="dark"] .acm-picker-option:hover { background: rgba(16,185,129,.12); }
+[data-bs-theme="dark"] .acm-pop-name   { color: #ecfdf5; }
 [data-bs-theme="dark"] .acm-pop-meta,
-[data-bs-theme="dark"] .acm-picker-empty { color: #6b7280; }
-[data-bs-theme="dark"] .acm-picked     { background: #ecfdf5; border-color: #10b981; }
-[data-bs-theme="dark"] .acm-picked-name { color: #064e3b; }
-[data-bs-theme="dark"] .acm-picked-meta { color: #6b7280; }
-[data-bs-theme="dark"] .acm-info       { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
-[data-bs-theme="dark"] .acm-pick-footer { border-top-color: #e5e7eb; background: #fff; }
-/* Cancel button (scoped to the picker so the main wizard's btn-light is
-   untouched) reads as a clean light button on the white footer. */
-[data-bs-theme="dark"] .acm-pick .acm-btn-light { background: #fff; color: #374151; border-color: #e5e7eb; }
-[data-bs-theme="dark"] .acm-pick .acm-btn-light:hover { background: #f9fafb; border-color: #d1d5db; color: #111827; box-shadow: none; transform: none; }
+[data-bs-theme="dark"] .acm-picker-empty { color: #94a3b8; }
+[data-bs-theme="dark"] .acm-picked     { background: rgba(16,185,129,.12); border-color: #10b981; }
+[data-bs-theme="dark"] .acm-picked-name { color: #ecfdf5; }
+[data-bs-theme="dark"] .acm-picked-meta { color: #94a3b8; }
+[data-bs-theme="dark"] .acm-info       { background: rgba(30,64,175,.20); border-color: rgba(96,165,250,.30); color: #93c5fd; }
+[data-bs-theme="dark"] .acm-pick-footer { border-top-color: rgba(16,185,129,.20); background: #0a1f1a; }
+/* Cancel button (scoped to the picker) — dark surface to match. */
+[data-bs-theme="dark"] .acm-pick .acm-btn-light { background: #14241f; color: #ecfdf5; border-color: rgba(16,185,129,.30); }
+[data-bs-theme="dark"] .acm-pick .acm-btn-light:hover { background: #1c3329; border-color: rgba(110,231,183,.50); color: #f0fdf4; box-shadow: none; transform: none; }
 [data-bs-theme="dark"] .acm-btn-light  { background: #1a3d34; color: #ecfdf5; border-color: rgba(16,185,129,.30); }
 /* Dark-mode hover — needs a clearly stronger background + border lift
    so the user gets a tactile cue. The previous flat #234d42 was too
@@ -7306,6 +7323,14 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 [data-bs-theme="dark"] .acm-input:disabled { background: #14241f; color: #6b8a7e; }
 [data-bs-theme="dark"] .acm-radio       { color: #ecfdf5; }
 [data-bs-theme="dark"] .acm-radio span  { border-color: rgba(255,255,255,.30); }
+
+/* Segment multi-select chips → emerald, to match the consignee form. The
+   shared master chip is violet (inline styles), which read as an out-of-theme
+   sticker on the green form. Scoped to .acm-wiz so other pages are untouched. */
+.acm-wiz .master-multi-chip { background: #ecfdf5 !important; color: #047857 !important; border: 1px solid #a7f3d0 !important; }
+.acm-wiz .master-multi-chip [role="button"] { color: #059669 !important; }
+[data-bs-theme="dark"] .acm-wiz .master-multi-chip { background: rgba(16,185,129,0.14) !important; color: #6ee7b7 !important; border-color: rgba(110,231,183,0.40) !important; }
+[data-bs-theme="dark"] .acm-wiz .master-multi-chip [role="button"] { color: #d1fae5 !important; }
 
 [data-bs-theme="dark"] .acm-recap      { background: rgba(16,185,129,.10); border-color: rgba(16,185,129,.25); }
 [data-bs-theme="dark"] .acm-recap-card { background: #103129; border-color: rgba(16,185,129,.20); }
