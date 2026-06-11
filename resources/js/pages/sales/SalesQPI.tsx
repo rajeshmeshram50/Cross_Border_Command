@@ -2681,11 +2681,12 @@ export function CreateQuotationModal(props: {
   const onSaveNext = () => {
     const errs = new Set<string>();
     const labels: Record<string, string> = {
-      customer: 'Customer', incoTerm: 'INCO Term', portOfLoading: 'Port of Loading',
+      customer: 'Customer', consignee: 'Consignee', incoTerm: 'INCO Term', portOfLoading: 'Port of Loading',
       portOfDischarge: 'Port of Discharge', finalDestination: 'Final Destination',
       originCountry: 'Origin Country', stateCode: 'State Code',
     };
     if (!form.customerId)            errs.add('customer');
+    if (!form.consigneeId)           errs.add('consignee');
     if (form.docType === 'International') {
       if (!form.incoTerm)            errs.add('incoTerm');
       if (!form.portOfLoading)       errs.add('portOfLoading');
@@ -2801,6 +2802,7 @@ export function CreateQuotationModal(props: {
   const submit = async () => {
     if (saving) return;
     if (!form.customerId) { toast.error('Customer required', 'Pick a customer before saving.'); return; }
+    if (!form.consigneeId) { setStep1Errors(prev => new Set(prev).add('consignee')); setStep(1); toast.error('Consignee required', 'Select a consignee before saving.'); return; }
     if (products.length === 0) { toast.error('No products', 'Add at least one line item.'); return; }
     setSaving(true);
     try {
@@ -3070,11 +3072,12 @@ export function CreatePIModal(props: {
   const onSaveNext = () => {
     const errs = new Set<string>();
     const labels: Record<string, string> = {
-      customer: 'Customer', incoTerm: 'INCO Term', portOfLoading: 'Port of Loading',
+      customer: 'Customer', consignee: 'Consignee', incoTerm: 'INCO Term', portOfLoading: 'Port of Loading',
       portOfDischarge: 'Port of Discharge', finalDestination: 'Final Destination',
       originCountry: 'Origin Country', stateCode: 'State Code',
     };
     if (!form.customerId)            errs.add('customer');
+    if (!form.consigneeId)           errs.add('consignee');
     if (form.docType === 'International') {
       if (!form.incoTerm)            errs.add('incoTerm');
       if (!form.portOfLoading)       errs.add('portOfLoading');
@@ -3163,6 +3166,7 @@ export function CreatePIModal(props: {
   const submitPi = async () => {
     if (saving) return;
     if (!form.customerId) { toast.error('Customer required', 'Pick a customer before saving.'); return; }
+    if (!form.consigneeId) { setStep1Errors(prev => new Set(prev).add('consignee')); setStep(1); toast.error('Consignee required', 'Select a consignee before saving.'); return; }
     if (products.length === 0) { toast.error('No products', 'Add at least one line item.'); return; }
     setSaving(true);
     try {
@@ -3848,7 +3852,7 @@ function BasicForm(props: {
             />
           )}
         </Field>
-        <Field label="Consignee" required>
+        <Field label="Consignee" required error={hasError('consignee')}>
           {lockConsignee ? (
             <input className="qpi-input qpi-input-readonly" value={form.consignee} readOnly title="Fixed by the lead this was opened from" />
           ) : (
@@ -3862,7 +3866,7 @@ function BasicForm(props: {
                     : '— Select Consignee —')
                 : '— Select Consignee —'}
               options={withCurrent(filteredConsignees, form.consignee)}
-              onChange={onConsigneeChange}
+              onChange={(v) => { onConsigneeChange(v); if (v) clearError?.('consignee'); }}
             />
           )}
         </Field>
