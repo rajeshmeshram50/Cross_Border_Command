@@ -233,7 +233,8 @@ export const SALES_GROUPS: MenuGroup[] = [
     children: [
       { id: 'sales.analytics',            icon: 'BarChart3',      label: 'Sales Analytics' },
       { id: 'sales.productivity_tracker', icon: 'ClipboardCheck', label: 'Productivity Tracker' },
-      { id: 'sales.p2p_summary',          icon: 'ShoppingBag',    label: 'Procure to Pay (P2P) Summary' },
+      /* Procure to Pay (P2P) Summary was promoted to its own top-level
+       * module (slug `p2p`); it no longer lives under Sales Insights. */
     ],
   },
   {
@@ -351,22 +352,21 @@ export const MENU_ITEMS: MenuItem[] = [
   { id: 'my-plan', icon: 'CreditCard', label: 'My Plan', roles: ['client_admin'] },
 
   { id: '', section: 'MASTER DATA', label: '', icon: '', roles: ALL_TENANT_ROLES },
-  {
-    id: 'master',
-    icon: 'Database',
-    label: 'Master',
-    roles: ALL_TENANT_ROLES,
-    groups: MASTER_GROUPS,
-  },
+  // Credentials Vault — top-level module. No dedicated page yet (renders a
+  // permission-gated stub); surfaces for any tenant role that holds
+  // can_view, granted from the Permissions sheet like every other module.
+  { id: 'credentials-vault', icon: 'KeyRound', label: 'Credentials Vault', roles: ALL_TENANT_ROLES },
+  // Project Navigator — top-level module (stub for now).
+  { id: 'project-navigator', icon: 'Compass', label: 'Project Navigator', roles: ALL_TENANT_ROLES },
   {
     id: 'hr',
     icon: 'Users',
-    label: 'HR',
+    label: 'HRMS',
     // Branch users + employees — super_admin and client_admin manage at the
     // tenant level (Clients / Plans / Settings) and don't need the day-to-day
     // employee / leave / payroll menus, so the sidebar entry is hidden for
-    // them (direct URLs still work). Employees see HR only when a branch admin
-    // has granted them can_view on at least one hr.* leaf: hasAnyHrView()
+    // them (direct URLs still work). Employees see HRMS only when a branch
+    // admin has granted them can_view on at least one hr.* leaf: hasAnyHrView()
     // gates the group and buildHrSubItems() filters to the granted leaves —
     // identical to how the Sales Matrix and CLM groups already work.
     roles: ['branch_user', 'employee'],
@@ -387,13 +387,27 @@ export const MENU_ITEMS: MenuItem[] = [
   {
     id: 'clm',
     icon: 'FileText',
-    label: 'Central CLM',
+    label: 'CLM',
     // Same role gate as Sales Matrix — operational module surfaces only on
     // branch_user + employee; the higher tiers grant down. Per-leaf
     // visibility flows from `perms[id].can_view` in Sidebar.canView, so
     // branch admins decide which CLM modules each employee sees.
     roles: ['branch_user', 'employee'],
     groups: CLM_GROUPS,
+  },
+  // Procure to Pay (P2P) — promoted from a Sales Insights leaf to its own
+  // top-level module. Links to the existing P2P Summary page.
+  { id: 'p2p', icon: 'ShoppingBag', label: 'Procure to Pay (P2P)', roles: ALL_TENANT_ROLES },
+  // GTS (E-Docs) — top-level module (stub for now).
+  { id: 'gts', icon: 'Globe', label: 'GTS (E-Docs)', roles: ALL_TENANT_ROLES },
+  // Inventory Management System — top-level module (stub for now).
+  { id: 'inventory', icon: 'Boxes', label: 'Inventory Management System', roles: ALL_TENANT_ROLES },
+  {
+    id: 'master',
+    icon: 'Database',
+    label: 'Master',
+    roles: ALL_TENANT_ROLES,
+    groups: MASTER_GROUPS,
   },
 
   // Products catalog — branch + employee only. Amazon/Flipkart-style card

@@ -147,7 +147,9 @@
 }
 [data-bs-theme="dark"] .master-timepicker-col-head { color: #a78bfa; }
 .master-timepicker-col-list {
-  max-height: 180px;
+  /* Shorter list keeps the whole popup compact so it fits BELOW the field
+     more often (less flipping above and covering the form). Still scrolls. */
+  max-height: 150px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;

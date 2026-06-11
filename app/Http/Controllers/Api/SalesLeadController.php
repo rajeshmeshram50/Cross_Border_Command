@@ -357,7 +357,13 @@ class SalesLeadController extends Controller
             // still-mapped customer / consignee surfaces (showing its
             // legacy company_name) instead of returning a NULL relation
             // that breaks the toolbar + CLM panel display.
-            'customer'  => fn ($r) => $r->withTrashed(),
+            'customer'  => fn ($r) => $r->withTrashed()->with([
+                // Primary address carries the contact person's phone
+                // (cp_contact) — surfaced as customer.primary_address.cp_contact
+                // so the Add Meeting form can auto-fill the customer's primary
+                // contact number alongside its name + email.
+                'primaryAddress' => fn ($a) => $a->select('id', 'customer_id', 'cp_contact'),
+            ]),
             'consignee' => fn ($r) => $r->withTrashed(),
             'ackReason',
             // Stage 1 form pre-populates from this. One-to-one row created

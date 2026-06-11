@@ -70,6 +70,11 @@ export default function MeetingsForLeadModal({
   const [status, setStatus]       = useState<MeetingStatus>('In Progress');
   const [saving, setSaving]       = useState(false);
   const [formError, setFormError] = useState('');
+  /* Per-field inline errors — every empty/invalid required field is flagged
+   * together (red border + message under the box) instead of one toast/banner
+   * at a time, so the user sees ALL the missing fields in one go. */
+  const [errors, setErrors]       = useState<Record<string, string>>({});
+  const clearErr = (k: string) => setErrors(p => (p[k] ? { ...p, [k]: '' } : p));
 
   /* Reset every time the modal opens. */
   useEffect(() => {
@@ -87,6 +92,7 @@ export default function MeetingsForLeadModal({
     setAgenda('');
     setStatus('In Progress');
     setFormError('');
+    setErrors({});
   }, [open, defaultCustomer, defaultContact, defaultEmail]);
 
   if (!open) return null;
@@ -95,51 +101,56 @@ export default function MeetingsForLeadModal({
     setFormError('');
     if (!oppId) { setFormError('No opportunity in context.'); return; }
 
-    const cust = customer.trim();
-    if (!cust) { setFormError('Customer Name is required.'); return; }
-    if (!/[A-Za-z]/.test(cust)) { setFormError('Customer Name must contain letters.'); return; }
-    if (!/^[A-Za-z][A-Za-z0-9 .,'&()\-]{1,99}$/.test(cust)) { setFormError('Customer Name has invalid characters or length.'); return; }
+    // Collect EVERY field problem in one pass so all bad/empty required
+    // fields light up together instead of one-at-a-time.
+    const e: Record<string, string> = {};
 
-    if (!date)      { setFormError('Meeting Date is required.'); return; }
-    if (!startTime) { setFormError('Start Time is required.'); return; }
-    if (!endTime)   { setFormError('End Time is required.'); return; }
+    const cust = customer.trim();
+    if (!cust) e.customer = 'Customer Name is required.';
+    else if (!/[A-Za-z]/.test(cust)) e.customer = 'Customer Name must contain letters.';
+    else if (!/^[A-Za-z][A-Za-z0-9 .,'&()\-]{1,99}$/.test(cust)) e.customer = 'Invalid characters or length.';
 
     const contactRaw = contact.trim();
-    if (!contactRaw) { setFormError('Contact Number is required.'); return; }
-    const digits = contactRaw.replace(/\D/g, '');
-    if (digits.length < 10) { setFormError('Contact Number must be at least 10 digits.'); return; }
-    if (digits.length > 15) { setFormError('Contact Number cannot be more than 15 digits.'); return; }
-    if (!/^\+?[\d\s\-]+$/.test(contactRaw)) {
-      setFormError('Contact Number can only contain digits, spaces, dashes and a leading +.'); return;
+    if (!contactRaw) e.contact = 'Contact Number is required.';
+    else {
+      const digits = contactRaw.replace(/\D/g, '');
+      if (digits.length < 10) e.contact = 'Must be at least 10 digits.';
+      else if (digits.length > 15) e.contact = 'Cannot be more than 15 digits.';
+      else if (!/^\+?[\d\s\-]+$/.test(contactRaw)) e.contact = 'Only digits, spaces, dashes and a leading +.';
     }
-    if (!platform) {
-      setFormError(type === 'physical' ? 'Meeting Type is required.' : 'Platform is required.'); return;
-    }
+
+    if (!platform) e.platform = type === 'physical' ? 'Meeting Type is required.' : 'Platform is required.';
 
     const isVirtual = type === 'virtual';
     const linkRaw   = link.trim();
     const venueRaw  = venue.trim();
     if (isVirtual) {
-      if (!linkRaw) { setFormError('Meeting Link is required.'); return; }
-      try {
-        const u = new URL(linkRaw);
-        if (!/^https?:$/.test(u.protocol)) throw new Error();
-      } catch {
-        setFormError('Meeting Link must be a valid http(s) URL (e.g. https://meet.google.com/abc-def-ghi).'); return;
+      if (!linkRaw) e.link = 'Meeting Link is required.';
+      else {
+        try {
+          const u = new URL(linkRaw);
+          if (!/^https?:$/.test(u.protocol)) throw new Error();
+        } catch { e.link = 'Must be a valid http(s) URL (e.g. https://meet.google.com/abc-def-ghi).'; }
       }
     } else {
-      if (!venueRaw) { setFormError('Place / Venue is required.'); return; }
-      if (!/[A-Za-z]/.test(venueRaw)) { setFormError('Venue must contain letters, not just symbols or digits.'); return; }
-      if (venueRaw.length < 3 || venueRaw.length > 200) { setFormError('Venue must be between 3 and 200 characters.'); return; }
+      if (!venueRaw) e.venue = 'Place / Venue is required.';
+      else if (!/[A-Za-z]/.test(venueRaw)) e.venue = 'Must contain letters, not just symbols or digits.';
+      else if (venueRaw.length < 3 || venueRaw.length > 200) e.venue = 'Must be between 3 and 200 characters.';
     }
+
+    if (!date)      e.date = 'Meeting Date is required.';
+    if (!startTime) e.startTime = 'Start Time is required.';
+    if (!endTime)   e.endTime = 'End Time is required.';
 
     const agendaRaw = agenda.trim();
-    if (!agendaRaw) { setFormError('Meeting Agenda is required.'); return; }
-    if (agendaRaw.length < 3) { setFormError('Meeting Agenda must be at least 3 characters.'); return; }
+    if (!agendaRaw) e.agenda = 'Meeting Agenda is required.';
+    else if (agendaRaw.length < 2) e.agenda = 'Must be at least 2 characters.';
+    else if (agendaRaw.length > 1000) e.agenda = 'Cannot exceed 1000 characters.';
 
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      setFormError('Email is invalid.'); return;
-    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) e.email = 'Email is invalid.';
+
+    if (Object.keys(e).length) { setErrors(e); return; }
+    setErrors({});
 
     setSaving(true);
     try {
@@ -217,10 +228,6 @@ export default function MeetingsForLeadModal({
                 <polygon points="23 7 16 12 23 17 23 7" />
                 <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
               </svg>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="3" width="20" height="14" rx="2" />
-                <line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" />
-              </svg>
               Virtual Meeting
             </button>
             <button
@@ -228,11 +235,6 @@ export default function MeetingsForLeadModal({
               className={`mfl-toggle-btn ${type === 'physical' ? 'active' : ''}`}
               onClick={() => { setType('physical'); setPlatform(''); }}
             >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
                 <circle cx="12" cy="10" r="3" />
@@ -265,17 +267,19 @@ export default function MeetingsForLeadModal({
           <div className="mfl-grid">
             <div className="mfl-fld">
               <label className="mfl-lbl">CUSTOMER NAME <span className="mfl-req">*</span></label>
-              <input className="mfl-input" value={customer} onChange={e => setCustomer(e.target.value)} placeholder="Customer name" />
+              <input className={`mfl-input${errors.customer ? ' is-invalid' : ''}`} value={customer} onChange={e => { setCustomer(e.target.value); clearErr('customer'); }} placeholder="Customer name" />
+              {errors.customer && <div className="mfl-err">{errors.customer}</div>}
             </div>
             <div className="mfl-fld">
               <label className="mfl-lbl">CUSTOMER EMAIL</label>
-              <input className="mfl-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email address" />
+              <input className={`mfl-input${errors.email ? ' is-invalid' : ''}`} type="email" value={email} onChange={e => { setEmail(e.target.value); clearErr('email'); }} placeholder="Email address" />
+              {errors.email && <div className="mfl-err">{errors.email}</div>}
             </div>
 
             <div className="mfl-fld">
               <label className="mfl-lbl">CONTACT NO <span className="mfl-req">*</span></label>
               <input
-                className="mfl-input"
+                className={`mfl-input${errors.contact ? ' is-invalid' : ''}`}
                 type="tel"
                 inputMode="tel"
                 maxLength={20}
@@ -285,9 +289,11 @@ export default function MeetingsForLeadModal({
                     .replace(/[^\d\s+\-]/g, '')
                     .replace(/(?!^)\+/g, '');
                   setContact(cleaned);
+                  clearErr('contact');
                 }}
                 placeholder="e.g. +91 98765 43210"
               />
+              {errors.contact && <div className="mfl-err">{errors.contact}</div>}
             </div>
             <div className="mfl-fld">
               <label className="mfl-lbl">
@@ -295,10 +301,12 @@ export default function MeetingsForLeadModal({
               </label>
               <MasterSelect
                 value={platform}
-                onChange={setPlatform}
+                onChange={(v) => { setPlatform(v); clearErr('platform'); }}
                 options={(type === 'physical' ? PHYSICAL_PLATFORMS : VIRTUAL_PLATFORMS).map(p => ({ value: p, label: p }))}
                 placeholder={type === 'physical' ? 'Select type' : 'Select platform'}
+                invalid={!!errors.platform}
               />
+              {errors.platform && <div className="mfl-err">{errors.platform}</div>}
             </div>
           </div>
 
@@ -307,12 +315,14 @@ export default function MeetingsForLeadModal({
             {type === 'virtual' ? (
               <>
                 <label className="mfl-lbl">MEETING LINK <span className="mfl-req">*</span></label>
-                <input className="mfl-input" value={link} onChange={e => setLink(e.target.value)} placeholder="https://meet.google.com/abc-def-ghi" />
+                <input className={`mfl-input${errors.link ? ' is-invalid' : ''}`} value={link} onChange={e => { setLink(e.target.value); clearErr('link'); }} placeholder="https://meet.google.com/abc-def-ghi" />
+                {errors.link && <div className="mfl-err">{errors.link}</div>}
               </>
             ) : (
               <>
                 <label className="mfl-lbl">PLACE / VENUE <span className="mfl-req">*</span></label>
-                <input className="mfl-input" value={venue} onChange={e => setVenue(e.target.value)} placeholder="e.g. Mumbai Head Office, BKC" />
+                <input className={`mfl-input${errors.venue ? ' is-invalid' : ''}`} value={venue} onChange={e => { setVenue(e.target.value); clearErr('venue'); }} placeholder="e.g. Mumbai Head Office, BKC" />
+                {errors.venue && <div className="mfl-err">{errors.venue}</div>}
               </>
             )}
           </div>
@@ -321,15 +331,18 @@ export default function MeetingsForLeadModal({
           <div className="mfl-grid mfl-grid-3">
             <div className="mfl-fld">
               <label className="mfl-lbl">MEETING DATE <span className="mfl-req">*</span></label>
-              <MasterDatePicker value={date} onChange={setDate} placeholder="dd-mm-yyyy" />
+              <MasterDatePicker value={date} onChange={(v) => { setDate(v); clearErr('date'); }} placeholder="dd-mm-yyyy" invalid={!!errors.date} />
+              {errors.date && <div className="mfl-err">{errors.date}</div>}
             </div>
             <div className="mfl-fld">
               <label className="mfl-lbl">START TIME <span className="mfl-req">*</span></label>
-              <MasterTimePicker value={startTime} onChange={setStartTime} placeholder="--:--" />
+              <MasterTimePicker value={startTime} onChange={(v) => { setStartTime(v); clearErr('startTime'); }} placeholder="--:--" invalid={!!errors.startTime} />
+              {errors.startTime && <div className="mfl-err">{errors.startTime}</div>}
             </div>
             <div className="mfl-fld">
               <label className="mfl-lbl">END TIME <span className="mfl-req">*</span></label>
-              <MasterTimePicker value={endTime} onChange={setEndTime} placeholder="--:--" />
+              <MasterTimePicker value={endTime} onChange={(v) => { setEndTime(v); clearErr('endTime'); }} placeholder="--:--" invalid={!!errors.endTime} />
+              {errors.endTime && <div className="mfl-err">{errors.endTime}</div>}
             </div>
           </div>
 
@@ -337,12 +350,14 @@ export default function MeetingsForLeadModal({
           <div className="mfl-fld mfl-fld-full">
             <label className="mfl-lbl">MEETING AGENDA <span className="mfl-req">*</span></label>
             <textarea
-              className="mfl-input mfl-textarea"
+              className={`mfl-input mfl-textarea${errors.agenda ? ' is-invalid' : ''}`}
               rows={3}
+              maxLength={1000}
               value={agenda}
-              onChange={e => setAgenda(e.target.value)}
+              onChange={e => { setAgenda(e.target.value); clearErr('agenda'); }}
               placeholder="Meeting agenda..."
             />
+            {errors.agenda && <div className="mfl-err">{errors.agenda}</div>}
           </div>
 
           {formError && <div className="mfl-form-error">{formError}</div>}
@@ -543,6 +558,20 @@ const MFL_CSS = `
   border-color: #0E7490;
   box-shadow: 0 0 0 3px rgba(14, 116, 144, .18);
 }
+/* Required-field error state — red border on the box + a small red message
+   below it. Same inline-validation pattern as the Reminder / Customer modals
+   so every missing required field is flagged at once. */
+.mfl-input.is-invalid {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, .15);
+}
+.mfl-err {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #ef4444;
+  line-height: 1.3;
+}
 
 /* MasterSelect + MasterDatePicker + MasterTimePicker triggers — re-skin
  * inside this modal so they pick up the teal palette instead of the
@@ -570,6 +599,15 @@ const MFL_CSS = `
 .mfl-modal .master-timepicker-toggle.open {
   border-color: #0E7490 !important;
   box-shadow: 0 0 0 3px rgba(14, 116, 144, .18) !important;
+}
+/* Invalid state for the Master pickers — the toggle re-skin above sets the
+   border with !important, so the pickers' own .invalid rule never won. Re-
+   assert the red error border here so Platform / Date / Times highlight. */
+.mfl-modal .master-select-wrap.invalid .master-select-toggle,
+.mfl-modal .master-datepicker-wrap.invalid .master-datepicker-toggle,
+.mfl-modal .master-timepicker-wrap.invalid .master-timepicker-toggle {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, .15) !important;
 }
 .mfl-modal .master-select-placeholder,
 .mfl-modal .master-datepicker-placeholder,
@@ -711,10 +749,35 @@ const MFL_CSS = `
 }
 [data-bs-theme="dark"] .mfl-btn-ghost:hover:not(:disabled) { background: #243b3a; }
 
-@media (max-width: 720px) {
-  .mfl-grid, .mfl-grid-3 { grid-template-columns: 1fr; }
+/* ─── Responsive ───
+   The modal is capped at 820px and centered on large screens. As the
+   viewport narrows it adapts in stages so it stays readable on tablets and
+   phones instead of one abrupt single-column jump. */
+
+/* Tablet — the 3-up Date / Start / End row gets cramped first, so collapse
+   it to a single column while the 2-up rows stay side by side. */
+@media (max-width: 680px) {
+  .mfl-grid-3 { grid-template-columns: 1fr; }
+}
+
+/* Small tablet / large phone — stack the 2-up rows too and let the footer
+   buttons go full width. */
+@media (max-width: 560px) {
+  .mfl-grid { grid-template-columns: 1fr; }
   .mfl-foot { flex-direction: column-reverse; align-items: stretch; gap: 10px; }
   .mfl-foot-actions { width: 100%; }
   .mfl-foot-actions .mfl-btn { flex: 1; justify-content: center; }
+}
+
+/* Phone — edge-to-edge sheet: full width/height, tighter padding, stacked
+   Virtual / Physical toggle so neither label is clipped. */
+@media (max-width: 440px) {
+  .mfl-backdrop { padding: 8px; }
+  .mfl-modal { width: 100%; max-height: 96vh; border-radius: 12px; }
+  .mfl-head { padding: 12px 16px; }
+  .mfl-body { padding: 14px 16px; }
+  .mfl-foot { padding: 12px 16px; }
+  .mfl-toggle { flex-direction: column; gap: 6px; }
+  .mfl-toggle-btn { width: 100%; }
 }
 `;

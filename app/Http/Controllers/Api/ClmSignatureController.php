@@ -139,6 +139,11 @@ class ClmSignatureController extends Controller
             'signers.*.email'      => 'required|email',
             'signers.*.name'       => 'required|string|max:255',
             'signers.*.order'      => 'nullable|integer|min:1',
+            // Optional signer role (buyer / consignee). Supplied by the
+            // Sales-Matrix "Buyer + Consignee" send so each signer's box can
+            // land at its own dragged position (per-role document_settings).
+            // Absent on the legacy single-signer vault sends.
+            'signers.*.role'       => 'nullable|string|max:32',
             'expiry_days'          => 'nullable|integer|min:1|max:180',
             'is_sequential'        => 'nullable|boolean',
             'notes'                => 'nullable|string|max:1000',
@@ -174,6 +179,32 @@ class ClmSignatureController extends Controller
             ->map(fn($id) => $docs->get($id))
             ->filter()
             ->values();
+
+        // Same-party constraint — mirrors agreementSend(). A single signature
+        // request must not mix a Buyer-only document with a Consignee-only or
+        // a Buyer+Consignee document: the signer set is tied to the document's
+        // applicable party, so a mixed bundle would route the wrong papers to
+        // the wrong parties. Each doc's `party` CSV is reduced to just its
+        // signer-bearing tokens (Buyer / Consignee — Supplier-* and any others
+        // don't change who signs) and they must all collapse to the same key.
+        $normaliseParty = function (?string $p): string {
+            return collect(explode(',', (string) $p))
+                ->map(fn($s) => strtolower(trim($s)))
+                ->filter(fn($t) => in_array($t, ['buyer', 'consignee'], true))
+                ->unique()
+                ->sort()
+                ->values()
+                ->implode(',');
+        };
+        $partyKeys = $orderedDocs->map(fn($d) => $normaliseParty($d->party))->unique()->values();
+        if ($partyKeys->count() > 1) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'A single signature request can only contain documents for the same applicable party. '
+                    . 'Found a mix of: ' . $orderedDocs->pluck('party')->filter()->unique()->implode(' | ')
+                    . '. Send each party group separately.',
+            ], 422);
+        }
 
         $tempPaths    = [];
         $localDocMeta = [];   // parallel meta we'll use after Zoho returns
@@ -251,7 +282,29 @@ class ClmSignatureController extends Controller
             $zohoActions      = data_get($details, 'requests.actions',       []);
             $zohoDocumentIds  = data_get($details, 'requests.document_ids',  []);
 
+            // Tag each Zoho action with its CBC signer role (buyer / consignee)
+            // by matching its recipient_email against the resolved signers. On a
+            // Buyer+Consignee trade document submitWithFields uses `cbc_role` to
+            // place each signer's signature box at the position the user dragged
+            // for THAT role — instead of both signers sharing one coord and
+            // visually stacking. Single-signer sends carry no role and fall back
+            // to the flat coord shape. Mirrors agreementSend().
+            $signersByEmail = collect($data['signers'])
+                ->keyBy(fn($s) => strtolower((string) ($s['email'] ?? '')));
+            foreach ($zohoActions as &$zohoAction) {
+                $email = strtolower((string) ($zohoAction['recipient_email'] ?? ''));
+                $match = $signersByEmail->get($email);
+                if (is_array($match) && !empty($match['role'])) {
+                    $zohoAction['cbc_role'] = (string) $match['role'];
+                }
+            }
+            unset($zohoAction);
+
             // 5. Build the per-document signature field coords and submit.
+            //    document_settings is keyed by trade_doc_id; its value is either
+            //    a flat { x,y,page,width,height } (single signer) or a per-role
+            //    map { buyer:{…}, consignee:{…} } (Buyer+Consignee). Both shapes
+            //    pass straight through — submitWithFields resolves the role.
             $perDocCoords = $this->mapClientCoordsToZohoDocIds(
                 (array) ($data['document_settings'] ?? []),
                 $orderedDocs->pluck('id')->all(),

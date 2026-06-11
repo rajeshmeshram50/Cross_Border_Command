@@ -50,15 +50,29 @@ export function MasterTimePicker({
     const update = () => {
       if (!wrapRef.current) return;
       const rect = wrapRef.current.getBoundingClientRect();
-      setPopupPos({
-        top: rect.bottom + 5,
-        left: rect.left,
-        width: Math.max(rect.width, 180),
-      });
+      const margin = 8;
+      const popupW = Math.max(rect.width, 180);
+      // Real popup height once rendered; 300 fallback for the first frame.
+      const popupH = popupRef.current?.offsetHeight || 300;
+      // Clamp horizontally so the popup never spills off the right edge.
+      let left = rect.left;
+      if (left + popupW + margin > window.innerWidth) {
+        left = Math.max(margin, window.innerWidth - popupW - margin);
+      }
+      // Flip ABOVE the field only when there genuinely isn't room below, and
+      // sit it snug above the field using the measured height (keeps the whole
+      // picker — including the Clear/Now/Done footer — on screen).
+      let top = rect.bottom + 5;
+      if (top + popupH + margin > window.innerHeight && rect.top - popupH - 5 > margin) {
+        top = rect.top - popupH - 5;
+      }
+      setPopupPos({ top, left, width: popupW });
     };
     update();
+    // Re-measure after the popup mounts so the flip uses its true height.
+    const raf = requestAnimationFrame(update);
     window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', update); };
   }, [open]);
 
   /* After the popup mounts, scroll the selected hour/minute into view so
@@ -82,7 +96,14 @@ export function MasterTimePicker({
       if (!inWrap && !inPopup) setOpen(false);
     };
     const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    const onScroll = () => setOpen(false);
+    // Close on scroll of an ANCESTOR (page / modal body) so the portalled
+    // popup doesn't float in a stale spot — but IGNORE scrolls that happen
+    // INSIDE the popup (the HH / MM columns), otherwise scrolling the list
+    // closed the picker before the user could reach a value.
+    const onScroll = (e: Event) => {
+      if (popupRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
     document.addEventListener('mousedown', handler);
     document.addEventListener('keydown', key);
     window.addEventListener('scroll', onScroll, true);

@@ -1387,7 +1387,7 @@ export default function SalesMatrixDetail() {
         oppId={header.oppId}
         oppDate={header.oppDate}
         /* Pre-fill the Add form with the lead's mapped customer + their
-         * primary email so the user doesn't have to retype them. */
+         * primary email and primary contact so the user doesn't retype them. */
         defaultCustomer={
           (serverHeader.customerRow as Record<string, unknown> | null | undefined)?.company_name as string | undefined
           ?? header.customer
@@ -1396,6 +1396,12 @@ export default function SalesMatrixDetail() {
           (serverHeader.customerRow as Record<string, unknown> | null | undefined)?.primary_email as string | undefined
           ?? undefined
         }
+        defaultContact={(() => {
+          const row = serverHeader.customerRow as Record<string, unknown> | null | undefined;
+          // Relation may serialize as primary_address (snake) or primaryAddress.
+          const addr = (row?.primary_address ?? row?.primaryAddress) as Record<string, unknown> | null | undefined;
+          return (addr?.cp_contact as string | undefined) ?? undefined;
+        })()}
         onClose={() => setMeetingsOpen(false)}
       />
 

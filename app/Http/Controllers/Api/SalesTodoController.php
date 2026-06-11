@@ -353,7 +353,7 @@ class SalesTodoController extends Controller
                                       $closure($attribute, $value, $fail);
                                   }
                               }],
-            'agenda'     => ['required','string','max:2000', $this->safeTextRule(3, 2000)],
+            'agenda'     => ['required','string','max:1000', $this->safeTextRule(2, 1000)],
             'status'     => ['nullable', Rule::in(SalesMeeting::STATUSES)],
         ]);
     }

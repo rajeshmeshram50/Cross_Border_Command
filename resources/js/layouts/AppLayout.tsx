@@ -84,6 +84,12 @@ const getPageFromPath = (pathname: string): string => {
     'profile': 'profile',
     'my-plan': 'my-plan',
     'plan-blocked': 'plan-blocked',
+    // New top-level header modules.
+    'p2p': 'p2p',
+    'credentials-vault': 'credentials-vault',
+    'project-navigator': 'project-navigator',
+    'gts': 'gts',
+    'inventory': 'inventory',
   };
 
   return pathToPage[page] || 'dashboard';
