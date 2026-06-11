@@ -6,7 +6,7 @@ import { decodeOppId, decodeStage } from '../../../utils/oppCrypto';
 import { useToast } from '../../../contexts/ToastContext';
 import EntityPickerModal, { type PickerOption } from '../EntityPickerModal';
 import AddCustomerModal, { type EditCustomer } from '../AddCustomerModal';
-import AddConsigneeModal from '../AddConsigneeModal';
+import CustomerConsigneesModal, { type CustomerLite } from '../CustomerConsigneesModal';
 import LeadEvidenceVaultModal, { type LeadVaultTarget } from '../LeadEvidenceVaultModal';
 import AddProductModal from '../../products/AddProductModal';
 import ProductDirectoryModal from './ProductDirectoryModal';
@@ -177,14 +177,10 @@ export default function SalesMatrixDetail() {
   const [customerEditing, setCustomerEditing] = useState<EditCustomer | null>(null);
   const [customerAddOpen, setCustomerAddOpen] = useState(false);
 
-  const [consigneePickerOpen, setConsigneePickerOpen] = useState(false);
-  const [consigneeOpts, setConsigneeOpts] = useState<PickerOption[]>([]);
-  const [consigneeLoading, setConsigneeLoading] = useState(false);
-  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-  const [consigneeRows, setConsigneeRows] = useState<Record<string, any>>({});
-  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-  const [consigneeEditing, setConsigneeEditing] = useState<any | null>(null);
-  const [consigneeAddOpen, setConsigneeAddOpen] = useState(false);
+  /* "Manage Consignees" popup — lists every consignee mapped to the
+   * lead's customer (same CustomerConsigneesModal used on the Sales
+   * Customers list). Opened from the Consignee toolbar button. */
+  const [manageConsigneesTarget, setManageConsigneesTarget] = useState<CustomerLite | null>(null);
 
   /* Evidence Vault popups — opened from the left CLM card's Customer /
    * Consignee rows. Same standalone vault modal used on the Sales
@@ -193,6 +189,11 @@ export default function SalesMatrixDetail() {
    * License / Trade Documents in tabs, and lets the user send any
    * missing / unsigned document for e-signature. */
   const [leadVaultTarget, setLeadVaultTarget] = useState<LeadVaultTarget | null>(null);
+  /* Every consignee mapped to the lead's customer — handed to the Lead
+   * Evidence Vault so it can render a consignee-wise tab strip when the
+   * customer has more than one. Null/single ⇒ the modal shows just the
+   * one `leadVaultTarget`. */
+  const [leadVaultConsignees, setLeadVaultConsignees] = useState<LeadVaultTarget[] | null>(null);
 
   const [productAddOpen, setProductAddOpen] = useState(false);
   const [productDirectoryOpen, setProductDirectoryOpen] = useState(false);
@@ -302,41 +303,6 @@ export default function SalesMatrixDetail() {
       toast.error('Failed to load customers', 'Could not reach the Customer API');
     } finally {
       setCustomerLoading(false);
-    }
-  };
-
-  const fetchConsignees = async () => {
-    // Always refetch — the picker is scoped by the lead's mapped
-    // customer, so a session cache from one lead would leak rows to
-    // the next.
-    setConsigneeLoading(true);
-    try {
-      // Scope the picker to this lead's mapped customer when one
-      // exists so the dropdown only shows relevant rows. The /consignees
-      // index accepts ?customer_id=N for the same filter the legacy
-      // ConsigneeDirectory used.
-      const params: Record<string, unknown> = {};
-      if (serverHeader.customerId) params.customer_id = serverHeader.customerId;
-
-      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-      const res = await api.get<{ data?: any[] } | any[]>('/consignees', { params });
-      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-      const rows: any[] = Array.isArray(res.data) ? res.data : ((res.data as { data?: any[] })?.data ?? []);
-      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-      const cache: Record<string, any> = {};
-      const opts: PickerOption[] = [];
-      rows.forEach(r => {
-        const pid = String(r.id ?? r.public_id ?? '');
-        if (!pid) return;
-        cache[pid] = r;
-        opts.push({ value: pid, label: `${pid} — ${r.consignee ?? r.company ?? r.name ?? '—'}` });
-      });
-      setConsigneeRows(cache);
-      setConsigneeOpts(opts);
-    } catch {
-      toast.error('Failed to load consignees', 'Could not reach the Consignee API');
-    } finally {
-      setConsigneeLoading(false);
     }
   };
 
@@ -510,22 +476,43 @@ export default function SalesMatrixDetail() {
   }, [serverHeader.customerId, custRefreshTick]);
 
   useEffect(() => {
-    const cid = serverHeader.consigneeId;
-    if (!cid) { setConsTally(null); return; }
+    const custId = serverHeader.customerId;
+    if (!custId) { setConsTally(null); return; }
     setConsTally({ total: 0, verified: 0, loading: true });
     let cancelled = false;
-    api.get<VaultResponse>(`/segment-uploads/consignee/${cid}/vault`, { timeout: 8000 })
-      .then(res => {
+    /* The Consignee Details count aggregates the document tally across
+     * EVERY consignee under this lead's customer — not just the lead's
+     * mapped consignee, and it shows as soon as a customer is mapped (even
+     * before any consignee exists). List them, fetch each one's vault, and
+     * sum the totals / verified counts. */
+    api.get('/consignees', { params: { customer_id: custId }, timeout: 8000 })
+      .then(async r => {
+        const rows: Record<string, unknown>[] = Array.isArray(r.data?.data) ? r.data.data : [];
+        const ids = rows
+          .map(row => (typeof row.db_id === 'number' ? row.db_id : null))
+          .filter((x): x is number => x != null);
+        // No consignees under this customer yet → an honest empty tally
+        // (0 of 0) rather than an error state.
+        if (ids.length === 0) { if (!cancelled) setConsTally({ total: 0, verified: 0 }); return; }
+        const vaults = await Promise.allSettled(
+          ids.map(id => api.get<VaultResponse>(`/segment-uploads/consignee/${id}/vault`, { timeout: 8000 })),
+        );
         if (cancelled) return;
-        const d = res.data?.data;
-        setConsTally({
-          total:    Number(d?.core_total_documents ?? d?.total_documents ?? 0),
-          verified: Number(d?.core_verified_signed ?? d?.verified_signed ?? 0),
+        let total = 0, verified = 0;
+        let anyOk = false;
+        vaults.forEach(v => {
+          if (v.status !== 'fulfilled') return;
+          anyOk = true;
+          const d = v.value.data?.data;
+          total    += Number(d?.core_total_documents ?? d?.total_documents ?? 0);
+          verified += Number(d?.core_verified_signed ?? d?.verified_signed ?? 0);
         });
+        if (!anyOk) { setConsTally({ total: 0, verified: 0, error: true }); return; }
+        setConsTally({ total, verified });
       })
       .catch(() => { if (!cancelled) setConsTally({ total: 0, verified: 0, error: true }); });
     return () => { cancelled = true; };
-  }, [serverHeader.consigneeId, consRefreshTick]);
+  }, [serverHeader.customerId, serverHeader.consigneeId, consRefreshTick]);
 
   /* Applicable agreements for this lead → drives the Segment Details
    * card counts + powers LeadAgreementSendModal. Refetched whenever
@@ -684,46 +671,82 @@ export default function SalesMatrixDetail() {
     await fetchCustomers();
     setCustomerPickerOpen(true);
   };
-  const onConsigneeClick = async () => {
+  const onConsigneeClick = () => {
     if (!serverHeader.customerId) {
-      toast.warning('Customer required first', 'Pick or add a customer before mapping a consignee');
+      toast.warning('Customer required first', 'Pick or add a customer before managing consignees');
       return;
     }
-    if (serverHeader.consigneeId && serverHeader.consigneeRow) {
-      // The eager-loaded consignee row is the raw Eloquent shape
-      // (snake_case keys, numeric ids). AddConsigneeModal expects the
-      // /consignees-index shape with camelCase fields + `db_id` + a
-      // string `customerId` matching the customer's display code.
-      // Re-key here so the modal's lookups (linked customer, doc fetch)
-      // all hit. Falls back to a computed customer_code when the
-      // server didn't surface it.
+    // Open the "Manage Consignees" popup — lists every consignee mapped
+    // to this lead's customer (and lets the user add / edit them). Same
+    // CustomerConsigneesModal used on the Sales Customers list.
+    const row = (serverHeader.customerRow ?? {}) as Record<string, unknown>;
+    setManageConsigneesTarget({
+      id:      (row.customer_code as string | undefined)
+                 ?? `C-${String(serverHeader.customerId).padStart(3, '0')}`,
+      db_id:   serverHeader.customerId,
+      company: (row.company_name as string | undefined) ?? header.customer ?? '',
+      country: (row.country as string | undefined) ?? header.country ?? undefined,
+    });
+  };
+
+  /* Open the Consignee Evidence Vault from the CLM card's Consignee Details
+   * row. Opens on the lead's mapped consignee when there is one (immediately,
+   * from the eager-loaded row); otherwise it lists the customer's consignees
+   * and opens on the first. A consignee-wise tab strip is shown when the
+   * customer has more than one. */
+  const openConsigneeVault = () => {
+    if (customerAddOpen || manageConsigneesTarget) return;
+    const custId = serverHeader.customerId;
+    if (!custId) return;
+
+    const toTarget = (d: Record<string, unknown>): LeadVaultTarget => ({
+      ownerType:   'consignee',
+      id:          String(d.id ?? d.consignee_code ?? ''),
+      db_id:       typeof d.db_id === 'number' ? d.db_id : undefined,
+      company:     (d.company as string | undefined) ?? '',
+      segment:     (d.segment as string | undefined) ?? undefined,
+      country:     (d.country as string | undefined) ?? header.country,
+      risk:        (d.riskLevel as string | undefined) ?? undefined,
+      contact:     (d.contact as string | undefined) ?? undefined,
+      contactCity: (d.city as string | undefined) ?? undefined,
+    });
+
+    // Lead already has a mapped consignee → open on it right away.
+    const hasMapped = !!(serverHeader.consigneeId && serverHeader.consigneeRow);
+    if (hasMapped) {
       const raw = serverHeader.consigneeRow as Record<string, unknown>;
-      const customerCode =
-        (serverHeader.customerRow as Record<string, unknown> | null | undefined)?.customer_code as string | undefined
-        ?? (serverHeader.customerId ? `C-${String(serverHeader.customerId).padStart(3, '0')}` : undefined);
-      const consigneeCode =
-        (raw.consignee_code as string | undefined)
-        ?? (typeof raw.id === 'number' ? `CN-${String(raw.id).padStart(3, '0')}` : '');
-      // Cast through unknown because the modal's ConsigneeRow type is
-      // strict and we're hydrating from a different shape; the modal
-      // only consumes db_id + customerId + a few labels for the bar.
-      setConsigneeEditing({
-        id:             consigneeCode,
-        db_id:          serverHeader.consigneeId,
-        customerId:     customerCode ?? '',
-        customer_db_id: serverHeader.customerId ?? undefined,
-        initials:       String(raw.company_name ?? '?').slice(0, 2).toUpperCase(),
-        name:           (raw.company_name as string | undefined) ?? '',
-        legalName:      (raw.legal_name   as string | undefined) ?? '',
-        segment:        (raw.segment      as string | undefined) ?? '',
-        type:           (raw.type         as string | undefined) ?? '',
-        classification: (raw.classification as string | undefined) ?? '',
-      } as unknown as Parameters<typeof setConsigneeEditing>[0]);
-      setConsigneeAddOpen(true);
-      return;
+      setLeadVaultTarget({
+        ownerType:   'consignee',
+        id:          (raw.consignee_code as string | undefined) ?? `CN-${String(serverHeader.consigneeId).padStart(3, '0')}`,
+        db_id:       serverHeader.consigneeId ?? undefined,
+        company:     (raw.company_name as string | undefined) ?? '',
+        type:        (raw.type    as string | undefined) ?? undefined,
+        segment:     (raw.segment as string | undefined) ?? undefined,
+        country:     (raw.country as string | undefined) ?? header.country,
+        risk:        (raw.risk    as string | undefined) ?? undefined,
+        contact:     (raw.contact_person as string | undefined) ?? undefined,
+        contactCity: (raw.city as string | undefined) ?? undefined,
+      });
     }
-    await fetchConsignees();
-    setConsigneePickerOpen(true);
+
+    /* Fetch all consignees under the customer — for the tab strip, and (when
+     * none is mapped) to pick the first one to open the vault on. */
+    setLeadVaultConsignees(null);
+    api.get('/consignees', { params: { customer_id: custId } })
+      .then(r => {
+        const rows: Record<string, unknown>[] = Array.isArray(r.data?.data) ? r.data.data : [];
+        if (rows.length === 0) {
+          if (!hasMapped) toast.warning('No consignees yet', 'Add a consignee for this customer to track its documents.');
+          setLeadVaultConsignees(null);
+          return;
+        }
+        const targets = rows.map(toTarget);
+        // No mapped consignee → open on the first one.
+        if (!hasMapped) setLeadVaultTarget(targets[0]);
+        // Strip only when there's more than one to switch between.
+        setLeadVaultConsignees(targets.length > 1 ? targets : null);
+      })
+      .catch(() => setLeadVaultConsignees(null));
   };
 
   // Render the active stage in the middle column.
@@ -846,7 +869,7 @@ export default function SalesMatrixDetail() {
         <div className="smd-toolbar">
         <ActionBtn icon={<IconUser />}     label="Customer" trailing="edit"
           onClick={onCustomerClick} />
-        <ActionBtn icon={<IconTruck />}    label="Consignee" trailing="edit"
+        <ActionBtn icon={<IconTruck />}    label="Consignees" trailing="edit"
           className={!serverHeader.customerId ? 'smd-act-disabled' : ''}
           onClick={onConsigneeClick} />
         <span className="smd-act-sep" aria-hidden="true" />
@@ -955,9 +978,9 @@ export default function SalesMatrixDetail() {
                 progress={renderClmProgress(custTally)}
                 state={custTally?.error ? 'error' : custTally?.loading ? 'loading' : 'ready'}
                 onRetry={custTally?.error ? () => setCustRefreshTick(t => t + 1) : undefined}
-                disabled={customerAddOpen || consigneeAddOpen}
+                disabled={customerAddOpen || !!manageConsigneesTarget}
                 onClick={() => {
-                  if (customerAddOpen || consigneeAddOpen) return;
+                  if (customerAddOpen || manageConsigneesTarget) return;
                   /* Open the standalone Evidence Vault popup — DD / KYC /
                    * Trade License / Trade Documents in tabs with the
                    * send-for-signature action for any missing / unsigned
@@ -978,14 +1001,15 @@ export default function SalesMatrixDetail() {
                 }}
               />
             )}
-            {/* Consignee row — same gating + Stage 3 deep-link. The
-             *  customer_code/consignee_code passed to the modal is the
-             *  REAL value from the eager-loaded row only; we no longer
-             *  synthesise a `C-${padStart(3)}` fallback because that
-             *  hard-codes a padding the system doesn't actually use.
-             *  Renders below the Customer row whenever a consignee is
-             *  mapped to this lead — including same-as-customer consignees. */}
-            {serverHeader.consigneeId && serverHeader.consigneeRow && (
+            {/* Consignee row — renders as soon as a CUSTOMER is mapped,
+             *  regardless of whether a consignee is mapped to the lead yet.
+             *  The count aggregates every consignee under the customer (see
+             *  consTally effect). Clicking opens the vault on the lead's
+             *  mapped consignee when there is one, else on the customer's
+             *  first consignee — with a tab strip when there's more than
+             *  one. consignee_code fallbacks use the REAL value from the
+             *  eager-loaded row only. */}
+            {serverHeader.customerId && (
               <ClmRow
                 icon={<IconTruckSm />}
                 tone="emerald"
@@ -994,33 +1018,16 @@ export default function SalesMatrixDetail() {
                 progress={renderClmProgress(consTally)}
                 state={consTally?.error ? 'error' : consTally?.loading ? 'loading' : 'ready'}
                 onRetry={consTally?.error ? () => setConsRefreshTick(t => t + 1) : undefined}
-                disabled={customerAddOpen || consigneeAddOpen}
-                onClick={() => {
-                  if (customerAddOpen || consigneeAddOpen) return;
-                  /* Same standalone Evidence Vault popup as the customer
-                   * row, scoped to the mapped consignee. */
-                  const raw = serverHeader.consigneeRow as Record<string, unknown>;
-                  setLeadVaultTarget({
-                    ownerType:   'consignee',
-                    id:          (raw.consignee_code as string | undefined) ?? `CN-${String(serverHeader.consigneeId).padStart(3, '0')}`,
-                    db_id:       serverHeader.consigneeId ?? undefined,
-                    company:     (raw.company_name as string | undefined) ?? '',
-                    type:        (raw.type    as string | undefined) ?? undefined,
-                    segment:     (raw.segment as string | undefined) ?? undefined,
-                    country:     (raw.country as string | undefined) ?? header.country,
-                    risk:        (raw.risk    as string | undefined) ?? undefined,
-                    contact:     (raw.contact_person as string | undefined) ?? undefined,
-                    contactCity: (raw.city as string | undefined) ?? undefined,
-                  });
-                }}
+                disabled={customerAddOpen || !!manageConsigneesTarget}
+                onClick={openConsigneeVault}
               />
             )}
-            {/* Empty-state hint — shown only when NEITHER party is
-             *  mapped yet, so the user knows what unlocks this panel.
-             *  Once either is mapped, the row(s) replace it. */}
-            {!serverHeader.customerId && !serverHeader.consigneeId && (
+            {/* Empty-state hint — shown only when no customer is mapped yet,
+             *  so the user knows what unlocks this panel. Once a customer is
+             *  mapped, the Customer + Consignee rows replace it. */}
+            {!serverHeader.customerId && (
               <div className="smd-clm-empty">
-                Map a customer or consignee from the toolbar above to track their KYC + Trade documents here.
+                Map a customer from the toolbar above to track its KYC + Trade documents here.
               </div>
             )}
           </div>
@@ -1242,71 +1249,18 @@ export default function SalesMatrixDetail() {
         }}
       />
 
-      {/* ── Consignee picker + edit/create modal ── */}
-      <EntityPickerModal
-        open={consigneePickerOpen}
-        title="Consignee"
-        subtitle="Pick an existing consignee to edit, or click + to register a new one"
-        fieldLabel="Select Consignee"
-        placeholder="Choose a consignee"
-        emptyHint="No consignees yet — click + to add the first"
-        addLabel="Add new consignee"
-        options={consigneeOpts}
-        loading={consigneeLoading}
-        onClose={() => setConsigneePickerOpen(false)}
-        onAdd={() => {
-          setConsigneePickerOpen(false);
-          setConsigneeEditing(null);
-          setConsigneeAddOpen(true);
-        }}
-        onEdit={async (opt) => {
-          setConsigneePickerOpen(false);
-          const row = consigneeRows[opt.value];
-          if (!row) {
-            toast.error('Consignee missing', 'Could not load the picked consignee');
-            return;
-          }
-          const dbId = (row as { db_id?: number; id?: number }).db_id ?? (row as { id?: number }).id;
-          if (resolvedLeadId && dbId) {
-            try {
-              await api.put(`/sales/leads/${resolvedLeadId}`, { consignee_id: dbId });
-              toast.success('Consignee mapped', 'Linked to this opportunity');
-              await reloadLead();
-            } catch (e: any) {
-              // Surface the backend reason (e.g. the segment "Buyer ≠ Consignee"
-              // block) instead of a generic message, and don't open the edit
-              // form for a consignee that couldn't be mapped.
-              toast.error('Mapping failed', e?.response?.data?.message ?? 'Could not link this consignee to the lead');
-              return;
-            }
-          }
-          setConsigneeEditing(row); setConsigneeAddOpen(true);
-        }}
-      />
-      <AddConsigneeModal
-        open={consigneeAddOpen}
-        consignee={consigneeEditing}
-        /* When the lead already has a mapped customer, pre-select it so
-         * the Add Consignee picker is skipped (and disabled). We pass
-         * BOTH the display code (customer_code, e.g. C-001) and the
-         * numeric DB id — the modal tries them in that order against
-         * its loaded /customers list. The db_id fallback covers cases
-         * where the eager-loaded customer is missing customer_code or
-         * the field is stored in a non-default format. */
-        preselectedCustomerId={
-          !consigneeEditing && serverHeader.customerRow
-            ? (((serverHeader.customerRow as Record<string, unknown>).customer_code as string | undefined) ?? undefined)
-            : undefined
-        }
-        preselectedCustomerDbId={
-          !consigneeEditing ? (serverHeader.customerId ?? undefined) : undefined
-        }
-        initialStage={clmInitialStage}
-        /* See AddCustomerModal note above — no tick bump on plain close. */
-        onClose={() => { setConsigneeAddOpen(false); setConsigneeEditing(null); setClmInitialStage(undefined); }}
-        onSaved={() => {
-          setConsigneeOpts([]); setConsigneeRows({});
-          setConsigneeAddOpen(false); setConsigneeEditing(null); setClmInitialStage(undefined);
+      {/* ── Manage Consignees popup ──
+          Opened from the Consignee toolbar button. Lists every consignee
+          mapped to this lead's customer and lets the user add / edit them
+          (it embeds AddConsigneeModal internally, pre-locked to the
+          customer). On close we refresh the lead header + Consignee
+          Details tally in case the set changed. */}
+      <CustomerConsigneesModal
+        open={!!manageConsigneesTarget}
+        customer={manageConsigneesTarget}
+        title="Manage Consignees"
+        onClose={() => {
+          setManageConsigneesTarget(null);
           setConsRefreshTick(t => t + 1);
           void reloadLead();
         }}
@@ -1510,10 +1464,12 @@ export default function SalesMatrixDetail() {
       <LeadEvidenceVaultModal
         open={!!leadVaultTarget}
         target={leadVaultTarget}
+        consignees={leadVaultConsignees}
         onClose={() => {
           if (leadVaultTarget?.ownerType === 'consignee') setConsRefreshTick(t => t + 1);
           else setCustRefreshTick(t => t + 1);
           setLeadVaultTarget(null);
+          setLeadVaultConsignees(null);
         }}
       />
     </div>

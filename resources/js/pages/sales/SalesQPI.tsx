@@ -2945,7 +2945,11 @@ export function CreateQuotationModal(props: {
               masters={masters} theme="teal"
               titleLabel="Basic Quotation Details" partyKind="Quotation"
               lockParty={!!initialOpp}
-              lockConsignee={!!initialOpp?.consigneeId}
+              /* Lock the consignee whenever the lead already has one mapped
+               * (initialOpp carries it) OR we're editing an existing
+               * quotation — the lead's FINAL consignee is fixed by the
+               * first quotation and must not drift on later create/edit. */
+              lockConsignee={isEdit || !!initialOpp?.consigneeId}
               errors={step1Errors}
               clearError={(k) => setStep1Errors(prev => {
                 if (!prev.has(k)) return prev;

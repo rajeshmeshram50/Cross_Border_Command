@@ -38,6 +38,11 @@ interface Props {
   open: boolean;
   target: LeadVaultTarget | null;
   onClose: () => void;
+  /* Every consignee under the lead's customer. When this has more than one
+   * entry (and the target is a consignee), the modal renders a consignee-wise
+   * tab strip so the user can switch which consignee's vault is shown. When
+   * null / single, only `target` is shown. */
+  consignees?: LeadVaultTarget[] | null;
 }
 
 /* Trade Documents are no longer shown here — they now live segment-wise in
@@ -66,7 +71,7 @@ function TabSvg({ name }: { name: TabIcon }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>;
 }
 
-export default function LeadEvidenceVaultModal({ open, target, onClose }: Props) {
+export default function LeadEvidenceVaultModal({ open, target, onClose, consignees }: Props) {
   const toast = useToast();
   const [tab, setTab] = useState<TabKey>('company-dd');
   const [vaultLive, setVaultLive] = useState<VaultData | null>(null);
@@ -74,8 +79,26 @@ export default function LeadEvidenceVaultModal({ open, target, onClose }: Props)
   const [exporting, setExporting] = useState(false);
   const [signatureRows, setSignatureRows] = useState<SigReqRow[]>([]);
   const [page, setPage] = useState(1);
+  /* Which consignee tab is active (its db_id). Only meaningful when the
+   * consignee strip is shown; defaults to the lead's mapped consignee. */
+  const [activeConsId, setActiveConsId] = useState<number | null>(null);
 
-  const ownerType = target?.ownerType ?? 'customer';
+  /* Consignee-wise tab strip — only when the target is a consignee AND the
+   * customer has more than one. */
+  const consigneeTabs = useMemo(
+    () => (target?.ownerType === 'consignee' && consignees && consignees.length > 1 ? consignees : null),
+    [target?.ownerType, consignees],
+  );
+
+  /* The party actually being shown. With a consignee strip it's the active
+   * tab; otherwise it's the passed `target`. Everything below (fetches,
+   * hero, table, export) keys off `view`, not `target`. */
+  const view: LeadVaultTarget | null = useMemo(() => {
+    if (!consigneeTabs) return target;
+    return consigneeTabs.find(c => c.db_id === activeConsId) ?? consigneeTabs[0];
+  }, [consigneeTabs, activeConsId, target]);
+
+  const ownerType = view?.ownerType ?? 'customer';
   const modelName = ownerType === 'consignee' ? 'Consignee' : 'Customer';
 
   /* Escape-to-close. Kept separate from the tab-reset effect below so a
@@ -88,45 +111,52 @@ export default function LeadEvidenceVaultModal({ open, target, onClose }: Props)
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  /* Reset to the first tab ONLY when the modal opens for a new party —
-   * NOT on every re-render. Previously this lived in the Escape effect
-   * and depended on `onClose`, so an upload's refetch (which re-rendered
-   * the parent → new onClose) yanked the user back to Due Diligence. */
+  /* When the modal opens, default the active consignee tab to the lead's
+   * mapped consignee (the `target`). */
+  useEffect(() => {
+    if (open) setActiveConsId(target?.db_id ?? null);
+  }, [open, target?.db_id]);
+
+  /* Reset to the first tab ONLY when the shown party changes (open for a
+   * new party, OR the user switches consignee tab) — NOT on every
+   * re-render. Previously this lived in the Escape effect and depended on
+   * `onClose`, so an upload's refetch (which re-rendered the parent → new
+   * onClose) yanked the user back to Due Diligence. */
   useEffect(() => {
     if (open) { setTab('company-dd'); setPage(1); }
-  }, [open, target?.db_id]);
+  }, [open, view?.db_id]);
 
   /* New tab → back to page 1. */
   useEffect(() => { setPage(1); }, [tab]);
 
   const reloadVault = useCallback(() => {
-    if (!target?.db_id) return Promise.resolve();
+    if (!view?.db_id) return Promise.resolve();
     setLoading(true);
-    return api.get(`/segment-uploads/${ownerType}/${target.db_id}/vault`)
+    return api.get(`/segment-uploads/${ownerType}/${view.db_id}/vault`)
       .then(r => { setVaultLive((r.data?.data ?? null) as VaultData | null); })
       .catch(() => { /* keep previous state on transient failures */ })
       .finally(() => setLoading(false));
-  }, [target?.db_id, ownerType]);
+  }, [view?.db_id, ownerType]);
 
   useEffect(() => {
-    if (!open || !target?.db_id) { setVaultLive(null); return; }
+    if (!open || !view?.db_id) { setVaultLive(null); return; }
     let cancelled = false;
     setLoading(true);
-    api.get(`/segment-uploads/${ownerType}/${target.db_id}/vault`)
+    api.get(`/segment-uploads/${ownerType}/${view.db_id}/vault`)
       .then(r => { if (!cancelled) setVaultLive((r.data?.data ?? null) as VaultData | null); })
       .catch(() => { if (!cancelled) setVaultLive(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [open, target?.db_id, ownerType]);
+  }, [open, view?.db_id, ownerType]);
 
   useEffect(() => {
-    if (!open || !target?.db_id) { setSignatureRows([]); return; }
+    if (!open || !view?.db_id) { setSignatureRows([]); return; }
     let cancelled = false;
-    api.get('/clm/signature-requests', { params: { party_id: target.db_id, model_name: modelName, sync: 1 } })
+    api.get('/clm/signature-requests', { params: { party_id: view.db_id, model_name: modelName, sync: 1 } })
       .then(r => { if (!cancelled) setSignatureRows(Array.isArray(r.data?.data) ? (r.data.data as SigReqRow[]) : []); })
       .catch(() => { if (!cancelled) setSignatureRows([]); });
     return () => { cancelled = true; };
-  }, [open, target?.db_id, modelName]);
+  }, [open, view?.db_id, modelName]);
 
   const vault: VaultData | null = useMemo(() => {
     if (!vaultLive) return null;
@@ -154,7 +184,7 @@ export default function LeadEvidenceVaultModal({ open, target, onClose }: Props)
    * still appear (with a placeholder note) so all four folders are
    * present. Files are fetched same-origin from their attachment_url. */
   const onExportAll = async () => {
-    if (!vault || !target) return;
+    if (!vault || !view) return;
     setExporting(true);
     try {
       const zip = new JSZip();
@@ -191,7 +221,7 @@ export default function LeadEvidenceVaultModal({ open, target, onClose }: Props)
 
       const content = await zip.generateAsync({ type: 'blob' });
       const stamp = new Date().toISOString().slice(0, 10);
-      const safeId = (target.id || ownerType).replace(/[^A-Za-z0-9_-]/g, '_');
+      const safeId = (view.id || ownerType).replace(/[^A-Za-z0-9_-]/g, '_');
       saveAs(content, `EvidenceVault_${safeId}_${stamp}.zip`);
       toast.success(
         'Exported',
@@ -212,7 +242,7 @@ export default function LeadEvidenceVaultModal({ open, target, onClose }: Props)
   const firstRow = docsForTab.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
   const lastRow = Math.min(safePage * PAGE_SIZE, docsForTab.length);
 
-  if (!open || !target) return null;
+  if (!open || !view) return null;
 
   return createPortal(
     <>
@@ -232,18 +262,18 @@ export default function LeadEvidenceVaultModal({ open, target, onClose }: Props)
                 </div>
                 <div className="lev-hero-text">
                   <div className="lev-hero-eyebrow">EVIDENCE VAULT</div>
-                  <h1 className="lev-hero-name">{target.company || target.id}</h1>
+                  <h1 className="lev-hero-name">{view.company || view.id}</h1>
                   <div className="lev-hero-meta">
-                    <span className="lev-hero-id">{target.id}</span>
+                    <span className="lev-hero-id">{view.id}</span>
                     {sameAsCustomer && (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 11px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: 'rgba(255,255,255,.22)', color: '#fff', border: '1px solid rgba(255,255,255,.4)', whiteSpace: 'nowrap' }}>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                         Same as Customer
                       </span>
                     )}
-                    {target.risk && <span className="lev-hero-risk">{target.risk}</span>}
-                    {target.contact && (<><span className="lev-dot" /><span>{target.contact}</span></>)}
-                    {target.contactCity && (<><span className="lev-dot" /><span>{target.contactCity}</span></>)}
+                    {view.risk && <span className="lev-hero-risk">{view.risk}</span>}
+                    {view.contact && (<><span className="lev-dot" /><span>{view.contact}</span></>)}
+                    {view.contactCity && (<><span className="lev-dot" /><span>{view.contactCity}</span></>)}
                   </div>
                 </div>
               </div>
@@ -252,6 +282,32 @@ export default function LeadEvidenceVaultModal({ open, target, onClose }: Props)
               </button>
             </div>
           </div>
+
+          {/* ── CONSIGNEE STRIP ──
+              Only when the lead's customer has more than one consignee.
+              Switching a tab swaps `view`, which re-fetches that
+              consignee's vault + signatures. */}
+          {consigneeTabs && (
+            <div className="lev-cons-strip" role="tablist" aria-label="Consignees">
+              <span className="lev-cons-strip-lbl">Consignees</span>
+              <div className="lev-cons-strip-tabs">
+                {consigneeTabs.map(c => (
+                  <button
+                    key={c.db_id ?? c.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={view.db_id === c.db_id}
+                    className={`lev-cons-tab ${view.db_id === c.db_id ? 'active' : ''}`}
+                    onClick={() => setActiveConsId(c.db_id ?? null)}
+                    title={c.company || c.id}
+                  >
+                    <span className="lev-cons-code">{c.id}</span>
+                    <span className="lev-cons-name">{c.company || '—'}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* ── TABS ── */}
           <div className="lev-tabs">
@@ -306,7 +362,7 @@ export default function LeadEvidenceVaultModal({ open, target, onClose }: Props)
                         )}
                       </td>
                       <td>
-                        <LeadVaultRowActions doc={d} ownerType={ownerType} ownerId={target.db_id ?? null} tab={tab} onReload={reloadVault} sameAsCustomer={sameAsCustomer} />
+                        <LeadVaultRowActions doc={d} ownerType={ownerType} ownerId={view.db_id ?? null} tab={tab} onReload={reloadVault} sameAsCustomer={sameAsCustomer} />
                       </td>
                     </tr>
                   ))}
@@ -521,6 +577,38 @@ const LEV_CSS = `
 }
 .lev-hero-close:hover { background: rgba(255,255,255,.30); transform: rotate(90deg); }
 .lev-hero-close svg { width: 16px; height: 16px; }
+
+/* ── Consignee strip ── */
+.lev-cons-strip {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 30px; background: #F5F3FF; border-bottom: 1px solid #E9D5FF;
+}
+.lev-cons-strip-lbl {
+  font-size: 9.5px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+  color: #7c3aed; flex-shrink: 0;
+}
+.lev-cons-strip-tabs { display: flex; align-items: center; gap: 8px; overflow-x: auto; flex: 1 1 auto; padding-bottom: 2px; }
+.lev-cons-tab {
+  display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;
+  padding: 6px 14px; border-radius: 999px; cursor: pointer; font-family: inherit;
+  background: #fff; border: 1.5px solid #DDD6FE; color: #5b21b6; transition: all .15s ease;
+  max-width: 260px;
+}
+.lev-cons-tab:hover:not(.active) { border-color: #a78bfa; background: #faf5ff; }
+.lev-cons-tab.active {
+  background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%); border-color: #6d28d9; color: #fff;
+  box-shadow: 0 3px 8px rgba(124,58,237,.30);
+}
+.lev-cons-code {
+  font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace; font-weight: 800; font-size: 11px;
+  letter-spacing: .02em; flex-shrink: 0;
+}
+.lev-cons-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+[data-bs-theme="dark"] .lev-cons-strip { background: rgba(124,58,237,.10); border-bottom-color: rgba(167,139,250,.30); }
+[data-bs-theme="dark"] .lev-cons-strip-lbl { color: #c4b5fd; }
+[data-bs-theme="dark"] .lev-cons-tab { background: #1e293b; border-color: rgba(167,139,250,.30); color: #c4b5fd; }
+[data-bs-theme="dark"] .lev-cons-tab:hover:not(.active) { border-color: rgba(167,139,250,.55); background: rgba(124,58,237,.18); }
+[data-bs-theme="dark"] .lev-cons-tab.active { background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%); border-color: #6d28d9; color: #fff; }
 
 /* ── Tabs ── */
 .lev-tabs { background: #fff; display: flex; align-items: center; gap: 0; padding: 0 30px; border-bottom: 1px solid #ECEEF3; flex-wrap: wrap; }
