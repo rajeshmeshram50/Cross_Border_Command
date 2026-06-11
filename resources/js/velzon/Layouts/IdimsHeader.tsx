@@ -495,10 +495,10 @@ export default function IdimsHeader() {
                 <button type="button" className="idims-action-btn" title="Toggle theme" onClick={() => toggleTheme()}>
                   {theme === 'dark' ? IC.sun : IC.moon}
                 </button>
-                <button type="button" className="idims-action-btn" title="Fullscreen" onClick={toggleFs}>
+                <button type="button" className="idims-action-btn idims-fs-btn" title="Fullscreen" onClick={toggleFs}>
                   {isFs ? IC.minimize : IC.maximize}
                 </button>
-                <button type="button" className="idims-action-btn" title="Gmail" onClick={() => go('/gmail')}>
+                <button type="button" className="idims-action-btn idims-mail-btn" title="Gmail" onClick={() => go('/gmail')}>
                   {IC.mail}
                 </button>
                 <button type="button" className="idims-action-btn" title="Inbox" onClick={() => go('/inbox')}>
@@ -979,32 +979,65 @@ const IDIMS_CSS = `
 .idims-dark .idims-mob-sub { border-left-color: #2C3242; }
 .idims-dark .idims-mob-sub-item { color: #9CA3AF; }
 
-/* ── Responsive ── */
+/* ── Responsive ──────────────────────────────────────────────────────────
+   Four tiers:
+   · ≥1281        full two-row desktop bar
+   · 1025–1280    laptop — same two rows, search narrows, nav row scrolls if tight
+   · 641–1024     tablet — single compact row, nav moves into hamburger panel
+   · ≤640         phone  — search + branch hidden; just logo + icons + profile
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Laptop: keep the two-row layout but tighten the top row so nothing clips. */
 @media (max-width: 1280px) {
-  .idims-search { width: 320px; }
-  .idims-branch-btn { width: 240px; }
+  .idims-search { width: 300px; }
+  .idims-branch-btn { width: auto; min-width: 0; max-width: 230px; }
+  .idims-nav-right { gap: 9px; }
 }
+@media (max-width: 1120px) {
+  .idims-search { width: 240px; }
+  .idims-theme-switch-label { display: none; }
+  .idims-theme-switch { padding: 4px 8px; }
+}
+
+/* Tablet + phone share the collapse to a hamburger-driven single bar. */
 @media (max-width: 1024px) {
-  /* Single-row compact bar; nav items move into the hamburger panel. */
-  .idims-nav { height: auto; padding: 8px 12px; gap: 8px; }
+  .idims-nav { height: auto; padding: 9px 12px; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
   .idims-divider { display: none; }
-  .idims-logo-full { height: 40px; }
-  .idims-nav-stack { gap: 6px; }
-  .idims-row-top { border-bottom: none; padding: 0; gap: 8px; flex-wrap: wrap; }
+  .idims-logo { order: 0; }
+  .idims-logo-full { height: 38px; }
+  .idims-nav-stack { gap: 8px; }
+  .idims-row-top { border-bottom: none; padding: 0; gap: 8px 10px; flex-wrap: wrap; align-items: center; }
   .idims-row-bottom { display: none; }
-  .idims-hamburger { display: flex; }
-  .idims-search { order: 5; width: 100%; }
-  .idims-branch-wrap { margin-left: auto; }
-  .idims-branch-btn { width: auto; max-width: 200px; }
-  .idims-branch-name { max-width: 130px; }
+  .idims-hamburger { display: flex; order: 0; }
+  /* line 1: controls pinned to the right of the hamburger */
+  .idims-nav-right { order: 1; margin-left: auto; gap: 8px; }
+  /* line 2: search grows, branch sits beside it */
+  .idims-search { order: 5; flex: 1 1 60%; min-width: 170px; width: auto; }
+  .idims-branch-wrap { order: 6; margin-left: 0; flex: 0 0 auto; }
+  .idims-branch-btn { width: auto; min-width: 0; max-width: 210px; }
+  .idims-branch-name { max-width: 140px; }
+  .idims-theme-switch-label { display: inline; }
+  .idims-theme-switch { padding: 4px 10px 4px 11px; }
 }
+
+/* Phone: too narrow for a usable search box or branch pill, so hide both —
+   the header becomes one clean row (logo · hamburger · icons · profile).
+   Branch switching stays reachable on tablet/desktop; search via the menu. */
 @media (max-width: 640px) {
+  .idims-nav { padding: 9px 12px; gap: 8px; align-items: center; }
+  .idims-search { display: none; }
+  .idims-branch-wrap { display: none; }
   .idims-theme-switch { display: none; }
-  .idims-actions { gap: 0; }
-  .idims-action-btn { width: 32px; height: 32px; }
-  .idims-branch-btn { max-width: 150px; }
-  .idims-branch-name { max-width: 90px; }
-  .idims-branch-tag { display: none; }
+  .idims-fs-btn { display: none; }
+  .idims-row-top { gap: 8px; }
+  .idims-actions { gap: 2px; }
+  .idims-action-btn { width: 36px; height: 36px; }
   .idims-action-sep { display: none; }
+  .idims-profile-panel { width: min(290px, calc(100vw - 24px)); }
+}
+@media (max-width: 380px) {
+  .idims-logo-full { height: 32px; }
+  .idims-action-btn { width: 33px; height: 33px; }
+  .idims-action-btn svg { width: 17px; height: 17px; }
 }
 `;

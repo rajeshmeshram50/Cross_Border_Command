@@ -1532,6 +1532,20 @@ const SCOPED_CSS = `
   box-shadow: 0 3px 12px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset;
   border-radius: 10px;
 }
+/* Dark mode — drop the light cyan gradient container for a translucent tonal
+   panel; inactive pills read cyan-on-dark, active pill keeps the cyan fill. */
+[data-bs-theme="dark"] .lwp-root .lwp-pills {
+  background: rgba(8,145,178,0.12);
+  border-color: rgba(34,211,238,0.18);
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-pill { color: #67e8f9; }
+[data-bs-theme="dark"] .lwp-root .lwp-pill:hover { color: #cffafe; background: rgba(0,0,0,.25); }
+[data-bs-theme="dark"] .lwp-root .lwp-pill.active {
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
+  color: #fff;
+  box-shadow: 0 3px 12px rgba(8,145,178,.35);
+}
 
 /* ─── Key Opportunity sub-tabs ───────────────────────────────────────
  * Secondary strip shown only under the Key Opportunity tab. Amber tonal
