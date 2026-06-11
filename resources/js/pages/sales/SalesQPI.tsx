@@ -4628,41 +4628,69 @@ const SCOPED_CSS = `
 .qpi-sig-signed { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
 
 /* ─── What We Are Doing Here ─── */
+/* Matches the Customer page .smc-wdh-card design: lavender gradient card,
+   40px gradient bulb icon, circular tinted chevron, white step tiles with a
+   purple left-accent stripe + hover lift, and white arrow circles. */
 .qpi-wdh {
   position: relative;
-  background: linear-gradient(110deg, #f5f3ff 0%, #ede9fe 50%, #ddd6fe 100%);
-  border: 1px solid #c4b5fd; border-radius: 14px;
+  background: linear-gradient(135deg, #faf5ff 0%, #f3eaff 45%, #ede1ff 100%);
+  border: 1px solid #d6c5ff; border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(139,92,246,.1);
+  box-shadow: 0 4px 16px rgba(124,58,237,.10), 0 1px 3px rgba(124,58,237,.06);
 }
-.qpi-wdh-header { display: flex; align-items: center; justify-content: space-between; padding: 9px 14px; cursor: pointer; user-select: none; }
-.qpi-wdh-title { display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 800; color: #3b0764; }
-.qpi-wdh-icon { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, #8b5cf6, #7c3aed); display: flex; align-items: center; justify-content: center; color: #fff; }
-.qpi-wdh-toggle { width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid rgba(124,58,237,.25); background: rgba(255,255,255,.75); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.qpi-wdh-header { display: flex; align-items: center; justify-content: space-between; padding: 7px 18px; cursor: pointer; user-select: none; transition: background .2s ease; }
+.qpi-wdh-header:hover { background: rgba(124,58,237,.05); }
+.qpi-wdh-title { display: flex; align-items: center; gap: 12px; font-size: 15px; font-weight: 700; color: #3b0764; line-height: 1.2; }
+.qpi-wdh-icon {
+  width: 40px; height: 40px; border-radius: 12px;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  box-shadow: 0 4px 10px rgba(124,58,237,.25);
+  display: flex; align-items: center; justify-content: center; color: #fff;
+  flex-shrink: 0;
+}
+.qpi-wdh-toggle {
+  width: 32px; height: 32px; border-radius: 50%; border: 0;
+  background: rgba(124,58,237,.10);
+  color: #6d28d9;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  flex-shrink: 0;
+  transition: background .2s ease;
+}
+.qpi-wdh-toggle:hover { background: rgba(124,58,237,.18); }
 
 .qpi-wdh-body {
   display: grid;
   grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
   align-items: stretch;
-  gap: 6px; padding: 6px 14px 12px;
+  gap: 8px; padding: 14px 18px 18px;
 }
 .qpi-wdh-step {
-  background: #fff; border: 1.5px solid #e8e4f9;
-  border-radius: 10px;
-  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid rgba(124,58,237,.18);
+  border-left: 4px solid #7c3aed;
+  border-radius: 12px;
+  padding: 14px 16px;
   display: flex; flex-direction: column; gap: 6px;
   min-height: 110px;
+  box-shadow: 0 2px 8px rgba(18,38,63,.04);
+  cursor: default;
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.qpi-wdh-step:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(124,58,237,.18), 0 2px 6px rgba(124,58,237,.10);
 }
 .qpi-wdh-step-head { display: flex; align-items: center; gap: 8px; }
 .qpi-wdh-step-num {
-  width: 22px; height: 22px; border-radius: 50%;
-  background: linear-gradient(135deg, #a78bfa, #7c3aed); color: #fff;
-  font-size: 11px; font-weight: 800;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: linear-gradient(135deg, #7c3aed, #a78bfa); color: #fff;
+  font-size: 12px; font-weight: 700;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
+  box-shadow: 0 3px 8px rgba(124,58,237,.30);
 }
-.qpi-wdh-step-title { font-size: 12px; font-weight: 800; color: #3b0764; }
-.qpi-wdh-step-desc { font-size: 10.5px; color: #6b7280; line-height: 1.45; margin: 0; flex: 1; }
+.qpi-wdh-step-title { font-size: 14px; font-weight: 700; color: #6d28d9; line-height: 1.2; }
+.qpi-wdh-step-desc { font-size: 12px; color: var(--vz-secondary-color, #6b7280); line-height: 1.45; margin: 0; flex: 1; }
 .qpi-wdh-step-tag {
   display: inline-flex; align-items: center; gap: 5px;
   font-size: 9.5px; font-weight: 800; color: #7c3aed;
@@ -4673,10 +4701,11 @@ const SCOPED_CSS = `
 
 .qpi-wdh-arrow { display: flex; align-items: center; justify-content: center; }
 .qpi-wdh-arrow-dot {
-  width: 22px; height: 22px; border-radius: 50%;
-  background: rgba(255,255,255,.7); border: 1.5px solid #c4b5fd;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: #fff; border: 1px solid rgba(124,58,237,.22);
   display: flex; align-items: center; justify-content: center;
   color: #7c3aed;
+  box-shadow: 0 1px 4px rgba(124,58,237,.12);
 }
 
 /* ─── Table card ─── Clean neutral card. The 3px violet accent stripe
@@ -6258,6 +6287,8 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .qpi-wdh-step {
   background: #1a1530;
   border-color: rgba(167,139,250,.25);
+  /* Keep the accent stripe visible on the dark tile (brighter violet). */
+  border-left-color: #a78bfa;
 }
 [data-bs-theme="dark"] .qpi-wdh-step-title { color: #e9d5ff; }
 [data-bs-theme="dark"] .qpi-wdh-step-desc  { color: #9aa0b4; }
