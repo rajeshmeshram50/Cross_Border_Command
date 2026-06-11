@@ -378,7 +378,7 @@ export const CLM_CSS = `
 .clm-table-fill > .clm-pag { margin-top: auto; }
 .clm-table { width: 100%; border-collapse: collapse; min-width: 880px; }
 .clm-table thead th {
-  padding: 10px 16px;
+  padding: 8px 16px;
   background: linear-gradient(110deg, #f0fdff, #e8fbfd);
   border-bottom: 1.5px solid rgba(6,182,212,.20);
   font-size: 11px; font-weight: 500; letter-spacing: .08em;
@@ -391,7 +391,7 @@ export const CLM_CSS = `
 }
 .clm-table tbody tr:nth-child(even) { background: rgba(240,253,255,.5); }
 .clm-table tbody tr:hover { background: rgba(6,182,212,.06); box-shadow: inset 3px 0 0 #0891b2; }
-.clm-table tbody td { padding: 11px 16px; font-size: 13px; color: #0c4a6e; vertical-align: middle; }
+.clm-table tbody td { padding: 7px 16px; font-size: 13px; color: #0c4a6e; vertical-align: middle; }
 .clm-td-num  { text-align: center; color: #94a3b8; font-weight: 700; width: 48px; }
 /* Wrap long, space-less names/descriptions instead of letting the cell grow
    and stretch the whole table past its container. */
@@ -436,7 +436,7 @@ export const CLM_CSS = `
 /* Actions */
 .clm-actions { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .clm-act {
-  width: 32px; height: 32px; border-radius: 8px; cursor: pointer;
+  width: 30px; height: 30px; border-radius: 7px; cursor: pointer;
   border: 1px solid; background: transparent; padding: 0;
   display: inline-flex; align-items: center; justify-content: center;
   transition: background .18s ease, border-color .18s ease, color .18s ease, transform .18s ease, box-shadow .22s ease;

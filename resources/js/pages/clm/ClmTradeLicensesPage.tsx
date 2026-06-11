@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
@@ -22,6 +22,11 @@ export default function ClmTradeLicensesPage() {
   const [loading, setLoading]   = useState(false);
   const [search, setSearch]     = useState('');
   const [page, setPage]         = useState(1);
+  // Dynamic pagination: rows-per-page auto-fits the visible table height.
+  const [rpp, setRpp]           = useState(PER_PAGE);
+  const [fillH, setFillH]       = useState<number | undefined>(undefined);
+  const scrollRef               = useRef<HTMLDivElement | null>(null);
+  const rootRef                 = useRef<HTMLDivElement | null>(null);
   const [editing, setEditing]   = useState<Tl | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Tl | null>(null);
@@ -43,7 +48,30 @@ export default function ClmTradeLicensesPage() {
     const s = search.toLowerCase();
     return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.authority.toLowerCase().includes(s));
   }, [rows, search]);
-  const { slice, start, pageCount, safePage } = paginate(filtered, page);
+  const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
+
+  // Dynamic pagination: pick the rows-per-page that fits between the table's
+  // top and the bottom of the viewport, and stretch the card to cover the page.
+  // Mirrors the Segment / Authority / QC / KYC / DD pages.
+  useEffect(() => {
+    const recompute = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const THEAD = 40, ROW = 46, FOOTER = 96;
+      const avail = window.innerHeight - top - THEAD - FOOTER;
+      const fit = Math.max(4, Math.floor(avail / ROW));
+      setRpp(prev => (prev === fit ? prev : fit));
+      const fh = Math.max(0, window.innerHeight - top - 64);
+      setFillH(prev => (prev === fh ? prev : fh));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    const ro = new ResizeObserver(recompute);
+    if (rootRef.current) ro.observe(rootRef.current);
+    window.addEventListener('resize', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+  }, [filtered.length]);
 
   const onSave = async (form: { name: string; authority: string }, id?: number) => {
     try {
@@ -65,7 +93,7 @@ export default function ClmTradeLicensesPage() {
   };
 
   return (
-    <div className="clm-root">
+    <div className="clm-root" ref={rootRef}>
       <style>{CLM_CSS}</style>
 
       <ClmPageHeader
@@ -81,9 +109,10 @@ export default function ClmTradeLicensesPage() {
         label="Trade Licences Master"
         sub="Manage trade licence structures and regulatory approval requirements."
         steps={[
-          { n: '01', title: 'Create Licence Record',     desc: 'Add statutory and regulatory licences.',           icon: ICO.doc },
-          { n: '02', title: 'Map Authority',             desc: 'Define licence issuing authority details.',         icon: ICO.shield },
-          { n: '03', title: 'Enable Usage',              desc: 'Use licences across compliance and trade workflows.', icon: ICO.check },
+          { n: '01', title: 'Create Licence Record',  desc: 'Add statutory and regulatory licences.',              icon: ICO.doc },
+          { n: '02', title: 'Map Authority',          desc: 'Define licence issuing authority details.',           icon: ICO.shield },
+          { n: '03', title: 'Set Validity & Renewal', desc: 'Define licence validity and renewal period.',         icon: ICO.calendar },
+          { n: '04', title: 'Enable Usage',           desc: 'Use licences across compliance and trade workflows.', icon: ICO.check },
         ]}
       />
 
@@ -108,7 +137,7 @@ export default function ClmTradeLicensesPage() {
               <div className="clm-empty-sub">{rows.length === 0 ? 'Click + Add Trade Licence to create the first record.' : 'No results match.'}</div>
             </div>
           ) : (
-            <div className="clm-table-wrap">
+            <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
               <table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -137,7 +166,7 @@ export default function ClmTradeLicensesPage() {
               </table>
               {!loading && filtered.length > 0 && (
                 <div className="clm-pag">
-                  <span className="clm-pag-info">Showing <b>{start + 1}–{Math.min(start + PER_PAGE, filtered.length)}</b> of <b>{filtered.length}</b> licence{filtered.length === 1 ? '' : 's'}</span>
+                  <span className="clm-pag-info">Showing <b>{start + 1}–{start + slice.length}</b> of <b>{filtered.length}</b> licence{filtered.length === 1 ? '' : 's'}</span>
                   <div className="clm-pag-btns">
                     {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
                       <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
