@@ -19,6 +19,59 @@
 .swiper:has(.swiper-wrapper.swiper-transitioning) .cp-current-dot { animation-play-state: paused; }
 
 /* ───────── Page surface (container behind the swiper) ───────── */
+/* Header strip — same shape/parts as the Clients (.cl-cstrip) header:
+   white container, 1px violet border, left accent strip, violet icon. */
+.pl-cstrip {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  min-height: 70px; padding: 12px 18px;
+  background: #ffffff;
+  border: 1px solid #c4b5fd;
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+.pl-cstrip-accent {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
+  border-radius: 16px 0 0 16px;
+}
+.pl-cstrip-left { display: flex; align-items: center; gap: 16px; position: relative; z-index: 1; min-width: 0; flex: 1; }
+.pl-cstrip-icon {
+  position: relative; width: 46px; height: 46px; border-radius: 12px;
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 22px; flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(91, 33, 182, 0.40), 0 0 0 3px rgba(124, 58, 237, 0.10);
+}
+.pl-cstrip-title { font-size: 18px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
+.pl-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; margin-top: 4px; line-height: 1.5; }
+.pl-cstrip-add {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 0 22px; height: 44px; border: none; border-radius: 14px;
+  font-family: inherit; font-size: 13px; font-weight: 700; color: #fff;
+  white-space: nowrap; cursor: pointer; flex-shrink: 0;
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 45%, #6d28d9 100%);
+  box-shadow: 0 5px 16px rgba(124, 58, 237, .40), 0 2px 5px rgba(91, 33, 182, .25), 0 1px 0 rgba(255, 255, 255, .22) inset;
+  transition: background .18s, transform .18s, box-shadow .18s, filter .18s;
+}
+.pl-cstrip-add:hover { transform: translateY(-2px); filter: brightness(1.05); background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 45%, #5b21b6 100%); }
+.pl-cstrip-add:active { transform: translateY(0); }
+.pl-cstrip-add i { font-size: 16px; }
+.pl-cstrip-back {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 0 18px; height: 44px; border-radius: 14px;
+  border: 1px solid color-mix(in srgb, #7c3aed 30%, var(--vz-border-color));
+  background: #fff; color: #6d28d9;
+  font-family: inherit; font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; flex-shrink: 0;
+  transition: background .15s, border-color .15s, transform .15s;
+}
+.pl-cstrip-back:hover { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }
+.pl-cstrip-back i { font-size: 15px; }
+[data-bs-theme="dark"] .pl-cstrip { background: var(--vz-card-bg); border-color: rgba(167, 139, 250, 0.40); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.30); }
+[data-bs-theme="dark"] .pl-cstrip-back { background: transparent; color: #c4b5fd; }
+[data-bs-theme="dark"] .pl-cstrip-back:hover { background: rgba(124, 58, 237, .14); }
+
 .plans-surface {
   background: #eef1f7;
   border: 1px solid rgba(15, 23, 42, 0.06);
