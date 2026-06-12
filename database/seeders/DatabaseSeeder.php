@@ -40,21 +40,33 @@ class DatabaseSeeder extends Seeder
             MasterDataSeeder::class       => fn () => $this->call(MasterDataSeeder::class),
         ];
 
-        $hasLedger = Schema::hasTable('seeder_runs');
+        $hasLedger   = Schema::hasTable('seeder_runs');
+        $hasChecksum = $hasLedger && Schema::hasColumn('seeder_runs', 'checksum');
         $ran = 0;
 
         foreach ($tasks as $key => $task) {
-            if ($hasLedger && DB::table('seeder_runs')->where('seeder', $key)->exists()) {
-                continue;   // already applied — skip silently
+            $checksum = $this->taskChecksum($key);
+
+            if ($hasLedger) {
+                $row = DB::table('seeder_runs')->where('seeder', $key)->first();
+                // Skip ONLY when the seeder has run before AND its file is
+                // unchanged (recorded checksum matches the current one). A
+                // null checksum = a legacy row from before this column existed
+                // → re-run once to backfill it. A different checksum = the
+                // seeder file was edited → re-run so its NEW entries land
+                // (re-running is safe: every seeder upserts by key, so nothing
+                // is duplicated — only the new rows insert).
+                if ($row && $checksum !== null && ($row->checksum ?? null) === $checksum) {
+                    continue;
+                }
             }
 
             $task();
 
             if ($hasLedger) {
-                DB::table('seeder_runs')->updateOrInsert(
-                    ['seeder' => $key],
-                    ['ran_at' => now()]
-                );
+                $payload = ['ran_at' => now()];
+                if ($hasChecksum) $payload['checksum'] = $checksum;
+                DB::table('seeder_runs')->updateOrInsert(['seeder' => $key], $payload);
             }
             $ran++;
         }
@@ -70,6 +82,30 @@ class DatabaseSeeder extends Seeder
                 . 'Use `php artisan db:seed --class=Foo` to force-run one.'
             );
         }
+    }
+
+    /**
+     * Content fingerprint for a seeder task, used to detect file edits.
+     *
+     * Class-based tasks hash their seeder file so any change to the file
+     * (e.g. adding a module/permission entry) flips the checksum and triggers
+     * a re-run. Closure tasks (e.g. the 'SuperAdminUser' key) have no backing
+     * file and are inherently idempotent + run-once, so they get a constant
+     * sentinel that never changes.
+     */
+    private function taskChecksum(string $key): ?string
+    {
+        if (class_exists($key)) {
+            try {
+                $file = (new \ReflectionClass($key))->getFileName();
+                if ($file && is_file($file)) {
+                    return md5_file($file) ?: 'static';
+                }
+            } catch (\Throwable $e) {
+                // fall through to the sentinel
+            }
+        }
+        return 'static';
     }
 
     /** Platform super-admin (idempotent by email). */

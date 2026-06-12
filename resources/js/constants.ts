@@ -261,6 +261,9 @@ export const SALES_GROUPS: MenuGroup[] = [
     children: [
       { id: 'sales.workplace',       icon: 'Activity', label: 'My Workplace' },
       { id: 'sales.quotation_vs_pi', icon: 'FileText', label: 'Quotation Vs PI History' },
+      // NOTE: Sign Document Tracker is intentionally NOT a nav-menu leaf —
+      // it's an internal-only tool reached via the top-right header button
+      // (see IdimsHeader). The route /sales/sign-tracker still exists.
     ],
   },
 ];

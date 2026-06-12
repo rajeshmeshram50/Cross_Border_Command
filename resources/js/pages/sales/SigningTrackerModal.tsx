@@ -118,7 +118,12 @@ const TRACKER_CSS = `
 .qpi-trk-step-idle .qpi-trk-step-label { color: #8390cc; font-weight: 600; }
 .qpi-trk-step-meta { font-size: 12px; color: #97a2d8; margin-top: 3px; }
 /* Tables */
-.qpi-trk-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+/* Horizontal scroll safety net so the right-most columns (Viewed/Signed On)
+   are never clipped when the modal is narrow. */
+.qpi-trk-table-scroll { width: 100%; overflow-x: auto; }
+.qpi-trk-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 12.5px; }
+/* Long emails truncate with an ellipsis instead of stretching the table. */
+.qpi-trk-email { display: inline-block; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 .qpi-trk-table th { text-align: left; font-size: 11px; font-weight: 700; color: #b9c2f0; padding: 9px 10px; border-bottom: 1px solid rgba(120,140,255,.14); white-space: nowrap; background: linear-gradient(180deg, rgba(124,58,237,.22), rgba(99,102,241,.10)); }
 .qpi-trk-table thead tr th:first-child { border-top-left-radius: 8px; }
 .qpi-trk-table thead tr th:last-child { border-top-right-radius: 8px; }
@@ -153,7 +158,12 @@ const TRACKER_CSS = `
 [data-bs-theme="light"] .qpi-trk-act-ic-reminder { background: #fef3c7; color: #b45309; }
 [data-bs-theme="light"] .qpi-trk-act-ic-signed   { background: #dcfce7; color: #15803d; }
 [data-bs-theme="light"] .qpi-trk-act-ic-declined { background: #fee2e2; color: #b91c1c; }
-.qpi-trk-sav { display: inline-flex; width: 24px; height: 24px; border-radius: 7px; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; color: #fff; background: linear-gradient(135deg, #c084fc, #7c3aed); margin-right: 8px; vertical-align: -7px; }
+.qpi-trk-sav { display: inline-flex; width: 28px; height: 28px; border-radius: 50%; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; color: #fff; background: linear-gradient(135deg, #c084fc, #7c3aed); flex-shrink: 0; box-shadow: 0 2px 6px rgba(124,58,237,.35); }
+/* Signer name cell — avatar + name on one vertically-centred line. */
+.qpi-trk-signer-cell { display: inline-flex; align-items: center; gap: 9px; }
+.qpi-trk-signer-name { font-weight: 700; color: #f3f4ff; }
+/* Role chip — subtle pill so the role reads as a tag, not plain text. */
+.qpi-trk-role { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 20px; font-size: 10.5px; font-weight: 700; text-transform: capitalize; background: rgba(120,140,255,.14); color: #b9c2f0; }
 .qpi-trk-spill { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 800; padding: 3px 10px; border-radius: 20px; }
 .qpi-trk-spill-ok   { background: rgba(34,197,94,.18);  color: #6ee7a8; }
 .qpi-trk-spill-warn { background: rgba(245,158,11,.18); color: #fcd34d; }
@@ -307,6 +317,9 @@ const TRACKER_CSS = `
 [data-bs-theme="light"] .qpi-trk-htl-date { color: #6b7280; }
 [data-bs-theme="light"] .qpi-trk-table td { color: #1f2937; border-bottom-color: #f3eefc; }
 [data-bs-theme="light"] .qpi-trk-muted { color: #6b7280; }
+[data-bs-theme="light"] .qpi-trk-signer-name { color: #1f2937; }
+[data-bs-theme="light"] .qpi-trk-role { background: #f1ecfe; color: #6d28d9; }
+[data-bs-theme="light"] .qpi-trk-table tbody tr:hover td { background: #faf7ff; }
 [data-bs-theme="light"] .qpi-trk-spill-ok   { background: #dcfce7; color: #15803d; }
 [data-bs-theme="light"] .qpi-trk-spill-warn { background: #fef3c7; color: #92400e; }
 [data-bs-theme="light"] .qpi-trk-spill-bad  { background: #fee2e2; color: #b91c1c; }
@@ -394,6 +407,15 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
   };
 
   const reviewed = isDone || isDeclined || isRecalled;
+  /* Real "Viewed" signal — backend stamps signers[].viewed_at from Zoho's
+   * action_status (UNOPENED → VIEWED → SIGNED). Earliest view across signers
+   * drives the timeline so an opened-but-unsigned doc reads "Viewed on …". */
+  const viewedDates: string[] = signers
+    .map((s: any) => s?.viewed_at)
+    .filter((v: any): v is string => !!v)
+    .sort();
+  const anyViewed  = viewedDates.length > 0;
+  const firstViewed = anyViewed ? viewedDates[0] : null;
   /* Label covering ALL recipients (not just the first) so a multi-signer
    * document reads e.g. "Oceanic Spices Co, OceanicSpicesCo" on the timeline,
    * matching the Signer Details table. Collapses to "Name +N" past 2 to keep
@@ -413,11 +435,18 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
     { key: 'sent', icon: 'send', label: 'Sent for signature', short: 'Sent', desc: 'Document sent via secure e-sign link', person: null, date: fmt(data?.created_at), state: 'done', tone: 'ok', badge: 'Done' },
     {
       key: 'progress', icon: 'eye',
-      label: reviewed ? 'Reviewed by signer(s)' : 'Awaiting signature', short: reviewed ? 'Reviewed' : 'Awaiting',
-      desc: reviewed ? 'Opened & reviewed by the signer(s)' : 'In progress — with the signer(s)',
-      /* No dedicated reviewed-at column on the request, so we surface the
-         request's own timestamp (when it became available for review). */
-      person: signerName, persons: signerNamesArr, date: reviewed ? fmt(data?.updated_at ?? data?.created_at) : null, state: reviewed ? 'done' : 'current', tone: 'ok', badge: reviewed ? 'Done' : 'In Progress',
+      // Three states: reviewed (signed/declined/recalled) → "Reviewed",
+      // opened-but-unsigned → "Viewed document" with the real view time,
+      // not-yet-opened → "Awaiting signature".
+      label: reviewed ? 'Reviewed by signer(s)' : anyViewed ? 'Viewed document' : 'Awaiting signature',
+      short: reviewed ? 'Reviewed' : anyViewed ? 'Viewed' : 'Awaiting',
+      desc: reviewed ? 'Opened & reviewed by the signer(s)'
+        : anyViewed ? 'Opened by the signer(s) — awaiting signature'
+        : 'In progress — with the signer(s)',
+      person: signerName, persons: signerNamesArr,
+      date: reviewed ? fmt(firstViewed ?? data?.updated_at ?? data?.created_at) : (anyViewed ? fmt(firstViewed) : null),
+      state: reviewed ? 'done' : 'current', tone: 'ok',
+      badge: reviewed ? 'Done' : anyViewed ? 'Viewed' : 'In Progress',
     },
     ...(remCount > 0 ? [{
       key: 'reminders', icon: 'bell', label: `${remCount} reminder${remCount === 1 ? '' : 's'} sent`, short: 'Reminders',
@@ -506,11 +535,16 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
    * state (Signed / Viewed / Declined / Pending) rather than the overall one.
    * Falls back to the request-level status for older payloads without it. */
   const signerPill = (sg: any): { cls: string; txt: string } => {
+    // Backend stores Zoho's per-recipient `action_status` (UNOPENED →
+    // VIEWED → SIGNED). Read that first; fall back to a legacy `status`
+    // field and the captured viewed_at/signed_at timestamps as hints.
+    const a = String(sg?.action_status ?? '').toUpperCase();
     const s = String(sg?.status ?? '').toLowerCase();
-    if (s === 'signed')   return { cls: 'ok',   txt: 'Signed' };
-    if (s === 'declined') return { cls: 'bad',  txt: 'Declined' };
-    if (s === 'viewed')   return { cls: 'info', txt: 'Viewed' };
-    if (s === 'pending')  return { cls: 'warn', txt: 'Pending' };
+    if (a === 'SIGNED'   || s === 'signed'   || sg?.signed_at) return { cls: 'ok',   txt: 'Signed' };
+    if (a === 'DECLINED' || s === 'declined')                  return { cls: 'bad',  txt: 'Declined' };
+    const opened = (a !== '' && !['UNOPENED', 'NOTVIEWED', 'UNRECEIVED'].includes(a)) || s === 'viewed' || !!sg?.viewed_at;
+    if (opened)          return { cls: 'info', txt: 'Viewed' };
+    if (s === 'pending') return { cls: 'warn', txt: 'Pending' };
     return signerStatus; // legacy payload — no per-signer field
   };
 
@@ -521,7 +555,17 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
   type Activity = { label: string; date: string; type: 'sent' | 'view' | 'reminder' | 'signed' | 'declined'; status: 'ok' | 'bad' | 'warn' };
   const activity: Activity[] = [];
   activity.push({ label: 'Document sent', date: fmt(data?.created_at), type: 'sent', status: 'ok' });
-  if (isDone || isDeclined || isRecalled) activity.push({ label: 'Viewed by signer', date: fmt(data?.updated_at ?? data?.created_at), type: 'view', status: 'ok' });
+  // Per-signer label, e.g. "Radhika (buyer)" — lets a multi-signer document
+  // track each recipient individually in the activity log.
+  const sigLabel = (sg: any) => `${sg?.name || sg?.email || 'signer'}${sg?.role ? ` (${sg.role})` : ''}`;
+  // Per-signer "Viewed by …" events — each recipient who has opened the
+  // document shows here, so a 2-signer doc reads exactly who reviewed it.
+  const viewedSigners = signers.filter((sg: any) => sg?.viewed_at);
+  if (viewedSigners.length > 0) {
+    viewedSigners.forEach((sg: any) => activity.push({ label: `Viewed by ${sigLabel(sg)}`, date: fmt(sg.viewed_at), type: 'view', status: 'ok' }));
+  } else if (isDone || isDeclined || isRecalled) {
+    activity.push({ label: 'Viewed by signer', date: fmt(data?.updated_at ?? data?.created_at), type: 'view', status: 'ok' });
+  }
   /* Per-reminder timestamps aren't stored — only count + last. The most recent
      reminder uses the real last_reminder date; the earlier ones are spread
      (estimated) evenly between the send date and the last reminder. */
@@ -537,6 +581,11 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
   for (let i = 1; i <= remCount; i++) {
     activity.push({ label: `Reminder #${i}`, date: remDate(i), type: 'reminder', status: 'ok' });
   }
+  // Per-signer "Signed by …" events — tracks PARTIAL signing: each recipient
+  // who has already signed shows here even while the document as a whole is
+  // still awaiting the other signer(s).
+  signers.filter((sg: any) => sg?.signed_at).forEach((sg: any) =>
+    activity.push({ label: `Signed by ${sigLabel(sg)}`, date: fmt(sg.signed_at), type: 'signed', status: 'ok' }));
   if (isDone) activity.push({ label: 'Signed & completed', date: fmt(completedAt), type: 'signed', status: 'ok' });
   else if (isDeclined) activity.push({ label: 'Declined', date: fmt(data?.declined_at), type: 'declined', status: 'bad' });
   else if (isRecalled) activity.push({ label: 'Recalled', date: fmt(data?.recalled_at), type: 'declined', status: 'warn' });
@@ -663,6 +712,7 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
               {signers.length > 0 && (
                 <div className="qpi-trk-panel qpi-trk-panel-acc qpi-trk-panel-blue">
                   <div className="qpi-trk-panel-h">Signer Details</div>
+                  <div className="qpi-trk-table-scroll">
                   <table className="qpi-trk-table">
                     <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Viewed On</th><th>Signed On</th></tr></thead>
                     <tbody>
@@ -670,9 +720,14 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
                         const pill = signerPill(sg);
                         return (
                         <tr key={i}>
-                          <td><span className="qpi-trk-sav">{String(sg?.name ?? sg?.email ?? '?').charAt(0).toUpperCase()}</span>{sg?.name || '—'}</td>
-                          <td className="qpi-trk-muted">{sg?.email || '—'}</td>
-                          <td className="qpi-trk-muted">{sg?.role || 'Signer'}</td>
+                          <td>
+                            <div className="qpi-trk-signer-cell">
+                              <span className="qpi-trk-sav">{String(sg?.name ?? sg?.email ?? '?').charAt(0).toUpperCase()}</span>
+                              <span className="qpi-trk-signer-name">{sg?.name || '—'}</span>
+                            </div>
+                          </td>
+                          <td className="qpi-trk-muted"><span className="qpi-trk-email" title={sg?.email || ''}>{sg?.email || '—'}</span></td>
+                          <td className="qpi-trk-muted"><span className="qpi-trk-role">{sg?.role || 'Signer'}</span></td>
                           <td><span className={`qpi-trk-spill qpi-trk-spill-${pill.cls}`}>{pill.txt}</span></td>
                           <td className="qpi-trk-muted">{sg?.viewed_at ? fmt(sg.viewed_at) : '—'}</td>
                           <td className="qpi-trk-muted">{sg?.signed_at ? fmt(sg.signed_at) : (isDone ? fmt(completedAt) : '—')}</td>
@@ -681,6 +736,7 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
                       })}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               )}
 
