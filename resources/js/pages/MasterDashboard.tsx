@@ -534,8 +534,13 @@ export default function MasterDashboard() {
             </div>
 
             {/* ── Expanded master cards ── */}
+            {/* gx-3 keeps the 16px horizontal gutter; gy-2 sets an 8px
+                vertical gutter between wrapped card rows. marginTop:0
+                cancels the row's default negative top margin so the first
+                card row also sits 8px under the strip — equal spacing all
+                round (strip→cards and row→row). */}
             {!isCollapsed && (
-              <Row className="g-3" style={{ marginTop: 10 }}>
+              <Row className="gx-3 gy-2" style={{ marginTop: 0 }}>
                 {group.children.map(leaf => (
                   <Col key={leaf.id} xl={3} lg={4} md={6}>
                     <MasterCard
