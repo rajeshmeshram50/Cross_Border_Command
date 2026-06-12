@@ -183,8 +183,8 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
   };
 
   // Persist the agreement + push it into the approval queue (Submit & Send for Approval).
-  const submitForApproval = async (approval: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => {
-    if (!agTitle.trim()) { toast.error('Missing title', 'Enter an agreement title in Step 2.'); return; }
+  const submitForApproval = async (approval: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }): Promise<boolean> => {
+    if (!agTitle.trim()) { toast.error('Missing title', 'Enter an agreement title in Step 2.'); return false; }
     const payload = {
       title: agTitle, agreement_type: agType || null,
       org_name: org?.name ?? null, org_short_code: org?.shortCode ?? null, org_state: org?.state ?? null, org_country: org?.country ?? null,
@@ -213,9 +213,24 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
         await refreshRecord(newId);
         goStage(2);
       }
+      return true;
     } catch (e) {
       toast.error('Could not submit', errMsg(e) || 'Please try again.');
+      return false;
     }
+  };
+
+  // Sender replies to an approver's clarification query (from the Stage-2
+  // review panel). Keeps the contract in the clarification state until the
+  // approver acts again, so the query + reply stay visible to both sides.
+  const respondToClarification = async (response: string): Promise<boolean> => {
+    if (!workingId) return false;
+    try {
+      await api.post(`/clm/ctc-contracts/${workingId}/respond`, { response });
+      toast.success('Response sent', 'Your reply was sent to the approver.');
+      await refreshRecord();
+      return true;
+    } catch (e) { toast.error('Could not send', errMsg(e) || 'Please try again.'); return false; }
   };
 
   // ── Lifecycle transitions (sender side) ──
@@ -349,7 +364,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
               onNext={() => goStage(2)}
             />
           )}
-          {!hydrating && stage > 1 && <StageReview t={t} stage={stage} cps={cps} org={org} agTitle={agTitle} agType={agType} effDate={effDate} endDate={endDate} draft={draft} header={header} footer={footer} sentForApproval={sentForApproval} workingId={workingId} record={record} approval={approval} onResubmitEdit={() => goStage(1)} onSendForSigning={sendForSigning} onRecordSignature={recordSignature} onMoveToRepository={moveToRepository} onRefresh={refreshRecord} onRemind={remindSigning} onExit={onClose} onBack={() => goStage(stage - 1)} onNext={() => goStage(stage + 1)} onSave={save} />}
+          {!hydrating && stage > 1 && <StageReview t={t} stage={stage} cps={cps} org={org} agTitle={agTitle} agType={agType} effDate={effDate} endDate={endDate} draft={draft} header={header} footer={footer} sentForApproval={sentForApproval} workingId={workingId} record={record} approval={approval} onResubmitEdit={() => goStage(1)} onSendForSigning={sendForSigning} onRecordSignature={recordSignature} onMoveToRepository={moveToRepository} onRefresh={refreshRecord} onRemind={remindSigning} onRespondClarification={respondToClarification} onExit={onClose} onBack={() => goStage(stage - 1)} onNext={() => goStage(stage + 1)} onSave={save} />}
         </div>
       </div>
 
@@ -406,7 +421,7 @@ function Stage1(p: {
   draft: string; setDraft: (s: string) => void;
   header: HeaderConfig; setHeader: (h: HeaderConfig) => void; footer: FooterConfig; setFooter: (f: FooterConfig) => void;
   isEditing: boolean; onUpdate: () => void;
-  onSubmitForApproval: (approval: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => void;
+  onSubmitForApproval: (approval: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => Promise<boolean>;
   resubmitMode: boolean; onResubmit: () => void;
   declineReason?: string; declinedBy?: string;
   onNext: () => void;
@@ -779,7 +794,7 @@ function Stage1(p: {
           </div>
         </Panel>
       </div>
-      {approvalOpen && <ApprovalWorkflowModal t={t} orgName={p.org?.name ?? 'Our Organisation'} onClose={() => setApprovalOpen(false)} onSubmit={(data) => { setApprovalOpen(false); p.onSubmitForApproval(data); }} />}
+      {approvalOpen && <ApprovalWorkflowModal t={t} orgName={p.org?.name ?? 'Our Organisation'} onClose={() => setApprovalOpen(false)} onSubmit={(data) => p.onSubmitForApproval(data)} />}
 
       {/* RIGHT — Summary */}
       <div style={{ flex: rightOpen ? 2.5 : '0 0 48px', minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', transition: 'flex .25s cubic-bezier(.22,1,.36,1)' }}>
@@ -795,18 +810,21 @@ function Stage1(p: {
 /* ── Stages 2–4: shared LEFT (read-only counterparty) + RIGHT (review) panels, changing MIDDLE ── */
 type SignRecipient = { name: string; email: string; role: string; contact: string; signed: boolean; signed_at: string | null; declined?: boolean; decline_reason?: string };
 
-function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, draft, header, footer, sentForApproval, workingId, record, approval, onResubmitEdit, onSendForSigning, onRecordSignature, onMoveToRepository, onRefresh, onRemind, onExit, onBack, onNext, onSave }: {
+function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, draft, header, footer, sentForApproval, workingId, record, approval, onResubmitEdit, onSendForSigning, onRecordSignature, onMoveToRepository, onRefresh, onRemind, onRespondClarification, onExit, onBack, onNext, onSave }: {
   t: OpsTokens; stage: number; cps: CP[]; org: Org | null; agTitle: string; agType: string; effDate: string; endDate: string; draft: string; header: HeaderConfig; footer: FooterConfig; sentForApproval: boolean;
   workingId: number | null; record: Record<string, unknown> | null; approval: string;
   onResubmitEdit: () => void;
   onSendForSigning: (recipients: { name: string; email: string; role: string; contact: string }[], days: number | null) => void;
   onRecordSignature: (payload: { index?: number; all?: boolean }) => void;
   onMoveToRepository: () => void; onRefresh: () => void; onRemind: () => void; onExit: () => void;
+  onRespondClarification: (response: string) => Promise<boolean>;
   onBack: () => void; onNext: () => void; onSave: () => void;
 }) {
   const [reminded, setReminded] = useState(false);
   const [signingOpen, setSigningOpen] = useState(false);
   const [vhOpen, setVhOpen] = useState(false);
+  const [clarReply, setClarReply] = useState('');     // sender's reply to an open clarification
+  const [clarSending, setClarSending] = useState(false);
   const versions = (Array.isArray(record?.versions) ? record!.versions : []) as CtcVersion[];
   const draftCount = versions.filter(v => (v.status || '').toLowerCase() === 'under review').length;
   const signers = (Array.isArray(record?.signing_recipients) ? record!.signing_recipients : []) as SignRecipient[];
@@ -815,6 +833,20 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
   const isDeclined = !!declinedSigner;
   const code = String((record?.code as string) ?? 'CTC');
   const rejReason = String((record?.rejection_reason as string) ?? '');
+  // Clarification thread raised by an approver from "Agreements To Approve".
+  // Surfaced here so the sender sees the query in Stage 2 and can reply without
+  // leaving the form. Stays visible while the contract sits in 'clarification'
+  // (i.e. until the sender resubmits a fresh draft or the approver decides).
+  const clarifications = (Array.isArray(record?.clarifications) ? record!.clarifications : []) as { query?: string; date?: string; response?: string; resolved?: boolean }[];
+  const inClarification = approval === 'clarification';
+  const openClar = inClarification ? clarifications[clarifications.length - 1] ?? null : null;
+  const sendClarReply = async () => {
+    if (clarSending || !clarReply.trim()) return;
+    setClarSending(true);
+    const ok = await onRespondClarification(clarReply.trim());
+    setClarSending(false);
+    if (ok) setClarReply('');
+  };
   const apprName = String((record?.primary_approver_name as string) ?? 'Approver');
   const apprInit = apprName.trim().split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || 'AP';
   // Multi-approver gate: the contract only becomes "approved" (and can advance
@@ -940,7 +972,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                 <button onClick={() => setSigningOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(8,145,178,.35)' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg> Send for Signing &amp; Negotiation</button>
               )}
               {stage === 2 && approval !== 'approved' && approval !== 'rejected' && (
-                <button disabled title={approverCount > 1 ? `All ${approverCount} approvers must approve before this can be sent for signing` : "Waiting for the approver's decision"} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: t.dark ? 'rgba(255,255,255,.04)' : '#F1F5F9', border: `1.5px solid ${t.dark ? 'rgba(148,163,184,.2)' : '#E2E8F0'}`, cursor: 'not-allowed', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: t.textMuted }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> Awaiting Approval{approverCount > 1 ? ` · ${approvedCount} of ${approverCount} approved` : ''}</button>
+                <button disabled title={inClarification ? 'Reply to the clarification in the review panel — the approver decides after you respond' : approverCount > 1 ? `All ${approverCount} approvers must approve before this can be sent for signing` : "Waiting for the approver's decision"} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: t.dark ? 'rgba(255,255,255,.04)' : '#F1F5F9', border: `1.5px solid ${t.dark ? 'rgba(148,163,184,.2)' : '#E2E8F0'}`, cursor: 'not-allowed', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: t.textMuted }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> {inClarification ? 'Clarification Requested' : `Awaiting Approval${approverCount > 1 ? ` · ${approvedCount} of ${approverCount} approved` : ''}`}</button>
               )}
               {/* Stage 3 — declined → must re-run internal approval before it can
                   go back to the counterparty, so route to Stage 1 / resubmit. */}
@@ -982,6 +1014,33 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                   <span style={{ fontSize: 8.5, fontWeight: 800, color: t.dark ? '#fca5a5' : '#DC2626', textTransform: 'uppercase', letterSpacing: '.08em' }}>Returned by Approver</span>
                 </div>
                 <div style={{ fontSize: 9, color: t.dark ? '#fecaca' : '#991B1B', lineHeight: 1.5 }}>{rejReason || 'The approver requested changes before this agreement can proceed.'}</div>
+              </div>
+            )}
+            {/* Clarification banner — an approver asked for clarification before
+                deciding. Shows the query (reason) + a reply box; persists until
+                the contract leaves the clarification state. */}
+            {inClarification && openClar && (
+              <div style={{ borderRadius: 11, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.45)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.1)' : '#F5F3FF', padding: '9px 11px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+                  <span style={{ fontSize: 8.5, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#7C3AED', textTransform: 'uppercase', letterSpacing: '.08em' }}>Clarification Requested{apprName ? ` · ${apprName}` : ''}</span>
+                </div>
+                <div style={{ fontSize: 9, color: t.dark ? '#ddd6fe' : '#4C1D95', lineHeight: 1.5 }}>{openClar.query || 'The approver requested clarification before deciding.'}</div>
+                {openClar.response
+                  ? <div style={{ marginTop: 7, padding: '6px 9px', borderRadius: 8, background: t.dark ? 'rgba(16,185,129,.12)' : '#ECFDF5', border: `1px solid ${t.dark ? 'rgba(16,185,129,.38)' : '#A7F3D0'}` }}>
+                      <div style={{ fontSize: 7.5, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#059669', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 2 }}>Your Response</div>
+                      <div style={{ fontSize: 9, color: t.dark ? '#a7f3d0' : '#065F46', lineHeight: 1.5 }}>{openClar.response}</div>
+                      <div style={{ fontSize: 8, color: t.dark ? '#a78bfa' : '#7C3AED', marginTop: 4, fontWeight: 600 }}>Awaiting the approver's decision.</div>
+                    </div>
+                  : <div style={{ marginTop: 7 }}>
+                      <textarea value={clarReply} onChange={e => setClarReply(e.target.value)} placeholder="Type your reply to the approver…" style={{ width: '100%', height: 52, padding: '7px 9px', borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : '#DDD6FE'}`, background: t.surface, color: t.text, fontFamily: 'inherit', fontSize: 9, resize: 'none', outline: 'none', boxSizing: 'border-box', lineHeight: 1.5 }} />
+                      <button disabled={!clarReply.trim() || clarSending} onClick={sendClarReply} style={{ width: '100%', marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px', borderRadius: 8, border: 'none', background: (!clarReply.trim() || clarSending) ? (t.dark ? 'rgba(124,58,237,.25)' : '#C4B5FD') : 'linear-gradient(135deg,#6D28D9,#7C3AED)', color: '#fff', fontFamily: 'inherit', fontSize: 9, fontWeight: 800, cursor: (!clarReply.trim() || clarSending) ? 'not-allowed' : 'pointer', opacity: (!clarReply.trim() || clarSending) ? .65 : 1 }}>
+                        {clarSending
+                          ? <svg className="ctc-spin" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                          : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}
+                        {clarSending ? 'Sending…' : 'Send Response'}
+                      </button>
+                    </div>}
               </div>
             )}
             {/* Version History trigger */}
@@ -1045,10 +1104,10 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
               <div style={{ padding: '6px 10px', background: t.dark ? 'rgba(124,58,237,.14)' : 'linear-gradient(110deg,#EDE9FE,#F3F0FF)', borderBottom: `1px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#DDD6FE'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 7, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#6D28D9', letterSpacing: '.1em', textTransform: 'uppercase' }}>Approvers &amp; Review Status</span>
                 {(() => {
-                  const lbl = approval === 'approved' ? 'Approved' : approval === 'rejected' ? 'Rejected' : stage === 4 ? 'Completed' : 'Pending';
+                  const lbl = approval === 'approved' ? 'Approved' : approval === 'rejected' ? 'Rejected' : inClarification ? 'Clarification' : stage === 4 ? 'Completed' : 'Pending';
                   const ok = approval === 'approved' || stage === 4, bad = approval === 'rejected';
-                  const bg = ok ? (t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5') : bad ? (t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2') : (t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7');
-                  const fg = ok ? (t.dark ? '#6ee7b7' : '#059669') : bad ? (t.dark ? '#fca5a5' : '#DC2626') : (t.dark ? '#fcd34d' : '#D97706');
+                  const bg = ok ? (t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5') : bad ? (t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2') : inClarification ? (t.dark ? 'rgba(124,58,237,.18)' : '#F5F3FF') : (t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7');
+                  const fg = ok ? (t.dark ? '#6ee7b7' : '#059669') : bad ? (t.dark ? '#fca5a5' : '#DC2626') : inClarification ? (t.dark ? '#c4b5fd' : '#7C3AED') : (t.dark ? '#fcd34d' : '#D97706');
                   return <span style={{ padding: '2px 7px', borderRadius: 10, background: bg, border: `1px solid ${fg}33`, fontSize: 7, fontWeight: 700, color: fg }}>● {lbl}</span>;
                 })()}
               </div>
@@ -1627,12 +1686,22 @@ function Field({ t, label, green, children }: { t: OpsTokens; label: string; gre
 /* ── Counterparty picker modal ── */
 /* ── Stage-1 Step-3 "Submit & Send for Approval" → Review & Approval Workflow popup ── */
 type Approver = { name: string; email: string; initials: string; grad: string; tags: [string, string][]; locked: boolean };
-function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens; orgName: string; onClose: () => void; onSubmit: (data: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => void }) {
+function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens; orgName: string; onClose: () => void; onSubmit: (data: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => Promise<boolean> }) {
   const [approvers, setApprovers] = useState<Approver[]>([]);
   const [days, setDays] = useState(7);
   const [reminder, setReminder] = useState(5);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);   // in-flight guard — blocks duplicate submits
   const addApprover = () => setPickerOpen(true);
+  // Single-flight submit: disable + show a loader the moment it's clicked so
+  // rapid repeat clicks can't fire multiple approval requests. On failure we
+  // re-enable; on success the parent advances to Stage 2 and unmounts us.
+  const submit = async () => {
+    if (submitting || approvers.length === 0) return;
+    setSubmitting(true);
+    const ok = await onSubmit({ approvers: approvers.map(a => ({ name: a.name, email: a.email, role: a.tags[0]?.[0] ?? '', mandatory: a.locked || a.tags.some(tg => tg[0] === 'Mandatory') })), days, reminder });
+    if (!ok) setSubmitting(false);
+  };
   const mergeApprovers = (picked: Approver[]) => {
     setApprovers(list => { const have = new Set(list.map(a => a.email || a.name)); return [...list, ...picked.filter(p => !have.has(p.email || p.name))]; });
     setPickerOpen(false);
@@ -1703,9 +1772,11 @@ function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens
             {stepper('Reminder', reminder, setReminder, 'd', <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#a78bfa' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>)}
           </div>
           {/* submit */}
-          <button disabled={approvers.length === 0} onClick={() => onSubmit({ approvers: approvers.map(a => ({ name: a.name, email: a.email, role: a.tags[0]?.[0] ?? '', mandatory: a.locked || a.tags.some(tg => tg[0] === 'Mandatory') })), days, reminder })} title={approvers.length === 0 ? 'Add at least one approver' : ''} style={{ width: '100%', padding: 11, borderRadius: 11, border: 'none', background: approvers.length === 0 ? (t.dark ? 'rgba(124,58,237,.25)' : '#C4B5FD') : 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', color: '#fff', fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800, cursor: approvers.length === 0 ? 'not-allowed' : 'pointer', opacity: approvers.length === 0 ? .6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, boxShadow: approvers.length === 0 ? 'none' : '0 4px 14px rgba(109,40,217,.4)' }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
-            Submit for Approval
+          <button disabled={approvers.length === 0 || submitting} onClick={submit} title={approvers.length === 0 ? 'Add at least one approver' : ''} style={{ width: '100%', padding: 11, borderRadius: 11, border: 'none', background: (approvers.length === 0 || submitting) ? (t.dark ? 'rgba(124,58,237,.25)' : '#C4B5FD') : 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', color: '#fff', fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800, cursor: (approvers.length === 0 || submitting) ? 'not-allowed' : 'pointer', opacity: (approvers.length === 0 || submitting) ? .6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, boxShadow: (approvers.length === 0 || submitting) ? 'none' : '0 4px 14px rgba(109,40,217,.4)' }}>
+            {submitting
+              ? <svg className="ctc-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+              : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}
+            {submitting ? 'Submitting…' : 'Submit for Approval'}
           </button>
         </div>
       </div>
@@ -1903,4 +1974,6 @@ const CTC_FORM_CSS = `
 .ctc-editor:empty:before { content: attr(data-ph); color: #94a3b8; pointer-events: none; white-space: pre-wrap; }
 .ctc-editor h1, .ctc-editor h2, .ctc-editor h3 { font-weight: 800; margin: 8px 0 4px; }
 .ctc-editor ul, .ctc-editor ol { padding-left: 22px; margin: 6px 0; }
+.ctc-spin { animation: ctcSpin .7s linear infinite; }
+@keyframes ctcSpin { to { transform: rotate(360deg); } }
 `;

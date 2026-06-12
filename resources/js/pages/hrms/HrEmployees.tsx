@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
 import Tooltip from '../../components/ui/Tooltip';
+import WorklistPager from '../../components/ui/WorklistPager';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
@@ -2692,21 +2693,14 @@ export default function HrEmployees() {
           overflow: hidden;
         }
         [data-bs-theme="dark"] .hr-emp-kpi-card {
-          /* Same recipe as the Plan cards in dark mode — fresh deep
-             black with a crisp accent-tinted glow. Avoids the smoky
-             "fog" look the previous radial-on-slate produced. The
-             --card-accent variable is set per-card inline so each
-             tile gets its own accent shadow + faint accent wash. */
-          background:
-            linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, transparent 18%),
-            linear-gradient(180deg, color-mix(in srgb, var(--card-accent, #7c5cfc) 14%, transparent) 0%, transparent 38%),
-            #0f1216 !important;
-          border-color: color-mix(in srgb, var(--card-accent, #7c5cfc) 40%, transparent) !important;
+          /* Match the Recruitment KPI card background in dark mode — a soft
+             theme card surface (var(--vz-card-bg)) instead of the deep-black
+             accent-glow "Plan card" recipe, so both pages read the same. The
+             per-card top accent ribbon is kept for colour identity. */
+          background: var(--vz-card-bg) !important;
+          border-color: var(--vz-border-color) !important;
           color: rgba(255, 255, 255, 0.96);
-          box-shadow:
-            inset 0 1px 0 0 rgba(255, 255, 255, 0.10),
-            0 4px 10px rgba(0, 0, 0, 0.50),
-            0 14px 32px -10px color-mix(in srgb, var(--card-accent, #7c5cfc) 45%, transparent) !important;
+          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.30) !important;
         }
         /* Top ribbon — bump to 4px in dark mode so the accent stripe
            reads as a clean lit edge against the deep black surface
@@ -2725,14 +2719,10 @@ export default function HrEmployees() {
           color: #f8fafc !important;
         }
         [data-bs-theme="dark"] .hr-emp-kpi-card:hover {
-          /* Keep the layered black surface — only deepen the accent
-             tint so the panel reads as "leaning in" on hover instead
-             of flipping to a different colour entirely. */
-          background:
-            linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, transparent 18%),
-            linear-gradient(180deg, color-mix(in srgb, var(--card-accent, #7c5cfc) 22%, transparent) 0%, transparent 42%),
-            #0f1216 !important;
-          border-color: color-mix(in srgb, var(--card-accent, #7c5cfc) 70%, transparent) !important;
+          /* Hover keeps the recruitment-style surface; just lift the border
+             toward the card accent so it reads as "leaning in". */
+          background: var(--vz-card-bg) !important;
+          border-color: color-mix(in srgb, var(--card-accent, #7c5cfc) 55%, var(--vz-border-color)) !important;
         }
         /* Page-level text legibility in dark mode — the page subtitle and
            any other text-muted body copy under this surface default to a
@@ -2922,33 +2912,17 @@ export default function HrEmployees() {
               table, search box, dark mode — are scoped to it) but its card
               chrome (border / shadow / padding / white fill) is stripped. */}
           <div className="hr-employees-surface" style={{ background: 'transparent' }}>
-            {/* ── Header row ── */}
-            <div className="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-2">
-              <div className="d-flex align-items-center gap-3 min-w-0">
-                {/* Icon tile — gradient square with white glyph and a soft
-                    primary shadow, matching the master "What you are doing
-                    here" card on the Department Master. */}
-                <span
-                  className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-                  style={{
-                    width: 46, height: 46,
-                    background: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)',
-                    boxShadow: '0 4px 10px rgba(64,81,137,0.25)',
-                  }}
-                >
-                  <i className="ri-team-line" style={{ color: '#fff', fontSize: 21 }} />
-                </span>
+            {/* ── Header strip — same shape as the Clients / Branches headers. ── */}
+            <div className="frm-cstrip mb-3">
+              <span className="frm-cstrip-accent" />
+              <div className="frm-cstrip-left">
+                <div className="frm-cstrip-icon"><i className="ri-team-line" /></div>
                 <div className="min-w-0">
-                  <div className="d-flex align-items-center gap-2 flex-wrap">
-                    <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Employee </h5>
-                    
-                  </div>
-                  <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
-                    Employee directory, profiles, and employment records
-                  </div>
+                  <div className="frm-cstrip-title">Employee</div>
+                  <div className="frm-cstrip-sub">Employee directory, profiles, and employment records</div>
                 </div>
               </div>
-              <div className="d-flex align-items-center gap-2 flex-wrap">
+              <div className="d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
                 <Button
                   onClick={handleExportEmployees}
                   disabled={exporting}
@@ -2992,7 +2966,7 @@ export default function HrEmployees() {
             {/* KPI strip — same Swiper-based carousel pattern as the
                 Plans page (PlanSelection.tsx). Autoplay at 2s loop, pause
                 on hover, manual nav arrows that don't fight the autoplay. */}
-            <div className="hr-emp-kpi-outer mb-2">
+            <div className="hr-emp-kpi-outer mb-3">
               <button
                 ref={kpiPrevRef}
                 type="button"
@@ -3084,7 +3058,7 @@ export default function HrEmployees() {
             </div>
 
             {/* ── Tabs (Active / Disabled) ── */}
-            <Row className="g-2 mb-2">
+            <Row className="g-2 mb-3">
               <Col xs={12}>
                 <div
                   className="d-flex"
@@ -3448,58 +3422,7 @@ export default function HrEmployees() {
                     always visible (chevrons go disabled when there's
                     only one page) so the affordance never disappears
                     on lists with few rows. */}
-                <div className="d-flex align-items-center justify-content-between mt-3 pt-2 border-top flex-wrap gap-2">
-                  {/* Wrap the "Showing …" text in a flex row that's the
-                      same height as the pagination buttons (32px) so its
-                      baseline lines up exactly with the right-side
-                      buttons. Without min-height, the small 12px text
-                      box was shorter than the button strip and got
-                      visually centred at a different y than the buttons,
-                      making the left edge of the footer look like it
-                      was "sinking" below the right. */}
-                  <div
-                    className="text-muted d-inline-flex align-items-center"
-                    style={{ fontSize: 12, minHeight: 32, lineHeight: 1 }}
-                  >
-                    {filtered.length === 0 ? (
-                      <span>Showing <span className="fw-bold text-body">0</span> {tab === 'active' ? 'Active' : 'Disabled'} Employees</span>
-                    ) : (
-                      <span>
-                        Showing <span className="fw-bold text-body">{(page - 1) * ROWS_PER_PAGE + 1}</span>–<span className="fw-bold text-body">{Math.min(page * ROWS_PER_PAGE, filtered.length)}</span> of <span className="fw-bold text-body">{filtered.length}</span> {tab === 'active' ? 'Active' : 'Disabled'} Employees
-                      </span>
-                    )}
-                  </div>
-                  <div className="hr-emp-pag">
-                    <button
-                      type="button"
-                      className="hr-emp-pag-btn"
-                      onClick={() => setPage(p => Math.max(1, p - 1))}
-                      disabled={page === 1}
-                      aria-label="Previous page"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-                    </button>
-                    {Array.from({ length: totalPages }, (_, n) => n + 1).map(n => (
-                      <button
-                        key={n}
-                        type="button"
-                        className={`hr-emp-pag-btn ${n === page ? 'is-active' : ''}`}
-                        onClick={() => setPage(n)}
-                      >
-                        {n}
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      className="hr-emp-pag-btn"
-                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                      disabled={page === totalPages}
-                      aria-label="Next page"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-                    </button>
-                  </div>
-                </div>
+                <WorklistPager total={filtered.length} page={page} pageSize={ROWS_PER_PAGE} onPage={setPage} />
             </div>
             </div>
           </div>

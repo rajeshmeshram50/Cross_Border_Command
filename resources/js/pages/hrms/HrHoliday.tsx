@@ -6,6 +6,7 @@ import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { ShimmerTableRows } from '../../components/ui/Shimmer';
 import Tooltip from '../../components/ui/Tooltip';
+import WorklistPager from '../../components/ui/WorklistPager';
 import '../../../css/recruitment.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -241,19 +242,17 @@ export default function HrHoliday() {
       <Row>
         <Col xs={12}>
           <div className="rec-page">
-            {/* Header */}
-            <div className="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
-              <div className="d-flex align-items-center gap-3 min-w-0">
-                <span className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-                  style={{ width: 46, height: 46, background: 'linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%)', boxShadow: '0 4px 10px rgba(14,165,233,0.30)' }}>
-                  <i className="ri-calendar-event-line" style={{ color: '#fff', fontSize: 21 }} />
-                </span>
+            {/* Header strip — same shape as the Clients / Branches headers. */}
+            <div className="frm-cstrip mb-3">
+              <span className="frm-cstrip-accent" />
+              <div className="frm-cstrip-left">
+                <div className="frm-cstrip-icon"><i className="ri-calendar-event-line" /></div>
                 <div className="min-w-0">
-                  <h5 className="fw-bold mb-0">
-                    Holiday Calendar
-                    <span className="ms-2 rec-pill" style={{ background: 'rgba(56,189,248,0.16)', color: '#0284c7', fontSize: 11 }}>Time Off</span>
-                  </h5>
-                  <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
+                  <div className="d-flex align-items-center gap-2 flex-wrap">
+                    <span className="frm-cstrip-title">Holiday Calendar</span>
+                    <span className="rec-pill" style={{ background: 'rgba(56,189,248,0.16)', color: '#0284c7', fontSize: 11 }}>Time Off</span>
+                  </div>
+                  <div className="frm-cstrip-sub">
                     Create holiday groups (e.g. “Indian Employees”), add holidays to them, then assign a group to each employee
                   </div>
                 </div>
@@ -380,24 +379,13 @@ export default function HrHoliday() {
                     </table>
                   </div>
 
-                  <div className="rec-list-footer">
-                    <div className="d-flex align-items-center gap-2">
-                      <span className="text-muted" style={{ fontSize: 12 }}>Rows per page:</span>
-                      <div style={{ width: 80 }}>
-                        <MasterSelect value={String(pageSize)} onChange={(v) => { setPageSize(Number(v) || 10); setPage(1); }} options={['10','25','50'].map(v => ({ value: v, label: v }))} placeholder="10" />
-                      </div>
-                      <span className="text-muted" style={{ fontSize: 12, marginLeft: 16 }}>
-                        Showing {filtered.length === 0 ? 0 : (sliceFrom + 1)}–{Math.min(sliceFrom + pageSize, filtered.length)} of {filtered.length}
-                      </span>
-                    </div>
-                    <div className="d-flex align-items-center gap-1">
-                      <button className="rec-pagebtn" onClick={() => goto(safePage - 1)} disabled={safePage <= 1}>‹ Prev</button>
-                      {Array.from({ length: pageCount }).map((_, i) => (
-                        <button key={i} className={`rec-pagebtn${safePage === i + 1 ? ' is-active' : ''}`} onClick={() => goto(i + 1)}>{i + 1}</button>
-                      ))}
-                      <button className="rec-pagebtn" onClick={() => goto(safePage + 1)} disabled={safePage >= pageCount}>Next ›</button>
-                    </div>
-                  </div>
+                  <WorklistPager
+                    total={filtered.length}
+                    page={safePage}
+                    pageSize={pageSize}
+                    onPage={goto}
+                    onPageSize={(n) => { setPageSize(n); setPage(1); }}
+                  />
                 </div>
               </CardBody>
             </Card>

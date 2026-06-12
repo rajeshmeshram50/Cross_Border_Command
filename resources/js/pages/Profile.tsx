@@ -886,21 +886,6 @@ export default function Profile() {
 
   return (
     <>
-      {/* ── Page title ── */}
-      <Row>
-        <Col xs={12}>
-          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <h4 className="mb-sm-0">Profile</h4>
-            <div className="page-title-right">
-              <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#">IGC</a></li>
-                <li className="breadcrumb-item active">Profile</li>
-              </ol>
-            </div>
-          </div>
-        </Col>
-      </Row>
-
       {/* ── Hero banner ── */}
       <Card className="overflow-hidden mb-0 border-0" style={{ borderRadius: 20 }}>
         <div
@@ -1080,7 +1065,7 @@ export default function Profile() {
       `}</style>
 
       {/* ── Row 1: compact pair ── */}
-      <Row className="mt-1 g-3 align-items-stretch">
+      <Row className="mt-0 g-3 align-items-stretch">
         <Col xl={4}>{row1LeftCard}</Col>
         <Col xl={8}>{personalInfoCard}</Col>
       </Row>
@@ -1092,7 +1077,7 @@ export default function Profile() {
           <Col xl={8}>{changePasswordCard}</Col>
         </Row>
       ) : (
-        <Row className="mt-3 g-3">
+        <Row className="mt-0 g-3">
           <Col xs={12}>{changePasswordCard}</Col>
         </Row>
       )}

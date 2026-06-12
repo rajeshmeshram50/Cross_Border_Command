@@ -139,7 +139,9 @@ export default function PermissionMatrix({
   useEffect(() => {
     if (modules.length === 0) return;
     const next: Record<number, boolean> = {};
-    tree.roots.forEach(r => { next[r.id] = r.slug === 'master'; });
+    // Master root auto-expands only when category auto-expand is on; pages
+    // that want a fully-collapsed matrix pass autoExpandMasterCategories={false}.
+    tree.roots.forEach(r => { next[r.id] = autoExpandMasterCategories && r.slug === 'master'; });
     if (autoExpandMasterCategories) {
       modules.forEach(m => {
         if (m.slug.startsWith('master.') && tree.children.has(m.id)) next[m.id] = true;

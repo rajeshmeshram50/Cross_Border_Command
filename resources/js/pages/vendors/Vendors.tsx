@@ -614,26 +614,19 @@ useEffect(() => {
             }}
           >
             {/* Header row */}
-            <div className="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
-              <div className="d-flex align-items-center gap-3 min-w-0">
-                <span
-                  className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-                  style={{
-                    width: 46, height: 46,
-                    background: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)',
-                    boxShadow: '0 4px 10px rgba(64,81,137,.25)',
-                  }}
-                >
-                  <i className="ri-store-2-line" style={{ color: '#fff', fontSize: 21 }} />
-                </span>
+            {/* Header strip — same shape as the Clients / Branches headers. */}
+            <div className="frm-cstrip mb-3">
+              <span className="frm-cstrip-accent" />
+              <div className="frm-cstrip-left">
+                <div className="frm-cstrip-icon"><i className="ri-store-2-line" /></div>
                 <div className="min-w-0">
-                  <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Suppliers</h5>
-                  <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
+                  <div className="frm-cstrip-title">Suppliers</div>
+                  <div className="frm-cstrip-sub">
                     Supplier directory — companies you buy product from, with compliance and contact details
                   </div>
                 </div>
               </div>
-              <div className="d-flex align-items-center gap-2 flex-wrap">
+              <div className="d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
                 <Button
                   onClick={() => setAddOpen(true)}
                   className="btn-label waves-effect waves-light rounded-pill v-add-btn"

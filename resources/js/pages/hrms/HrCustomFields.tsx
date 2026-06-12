@@ -346,31 +346,28 @@ export default function HrCustomFields() {
           }
         `}</style>
         <div className="rec-page cf-page">
-          {/* Header */}
-          <Card className="mb-3 cf-header-card" style={{ borderRadius: 14 }}>
-            <CardBody className="d-flex align-items-center gap-3 flex-wrap">
-              <button type="button" onClick={goBack}
-                title="Back"
-                className="cf-back-btn"
-                style={{ width: 36, height: 36, borderRadius: 10, background: '#f3f4f6', border: '1px solid #e5e7eb', color: '#4338ca', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                <i className="ri-arrow-left-line" style={{ fontSize: 18 }} />
-              </button>
-              <span style={{ width: 44, height: 44, borderRadius: 10, background: 'linear-gradient(135deg,#eef2ff,#e0e7ff)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                <i className="ri-star-fill" style={{ fontSize: 22, color: '#6366f1' }} />
-              </span>
-              <div className="me-auto">
-                <h4 className="mb-0 fw-bold d-flex align-items-center gap-2 cf-title">
-                  Custom Fields
+          {/* Header strip — same shape as the Clients / Branches headers. */}
+          <div className="frm-cstrip mb-3">
+            <span className="frm-cstrip-accent" />
+            <div className="frm-cstrip-left">
+              <div className="frm-cstrip-icon"><i className="ri-star-fill" /></div>
+              <div className="min-w-0">
+                <div className="d-flex align-items-center gap-2 flex-wrap">
+                  <span className="frm-cstrip-title">Custom Fields</span>
                   <span style={{ fontSize: 11.5, color: '#6d28d9', background: '#ede9fe', padding: '3px 10px', borderRadius: 999, fontWeight: 700 }}>
                     Master Data
                   </span>
-                </h4>
-                <div className="text-muted cf-subtle" style={{ fontSize: 12.5 }}>
+                </div>
+                <div className="frm-cstrip-sub">
                   Define custom variables used in document templates — filled manually at document generation time
                 </div>
               </div>
-            </CardBody>
-          </Card>
+            </div>
+            <button type="button" className="frm-cstrip-back flex-shrink-0" onClick={goBack}>
+              <i className="ri-arrow-left-line" />
+              Back
+            </button>
+          </div>
 
           {/* KPI strip */}
           <div className="row g-2 mb-3">

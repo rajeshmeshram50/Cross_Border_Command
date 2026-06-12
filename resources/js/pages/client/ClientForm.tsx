@@ -1016,24 +1016,19 @@ export default function ClientForm({ onBack, editId }: Props) {
       <div className="cf-wrap">
       <Row className="mb-0">
         <Col xs={12}>
-          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <h4 className="mb-sm-0 d-flex align-items-center gap-2">
-              <button
-                className="btn btn-sm btn-soft-secondary rounded-circle d-inline-flex align-items-center justify-content-center"
-                style={{ width: 32, height: 32 }}
-                onClick={onBack}
-                type="button"
-              >
-                <i className="ri-arrow-left-line" />
-              </button>
-              {isEdit ? 'Edit Client' : 'Register New Client'}
-            </h4>
-            <div className="page-title-right">
-              <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#" onClick={e => { e.preventDefault(); onBack(); }}>Clients</a></li>
-                <li className="breadcrumb-item active">{isEdit ? 'Edit' : 'New'}</li>
-              </ol>
+          <div className="frm-cstrip mb-3">
+            <span className="frm-cstrip-accent" />
+            <div className="frm-cstrip-left">
+              <div className="frm-cstrip-icon"><i className="ri-building-2-line" /></div>
+              <div className="min-w-0">
+                <div className="frm-cstrip-title">{isEdit ? 'Edit Client' : 'Register New Client'}</div>
+                <div className="frm-cstrip-sub">{isEdit ? 'Update client organization details' : 'Onboard a new client organization'}</div>
+              </div>
             </div>
+            <button type="button" className="frm-cstrip-back" onClick={onBack}>
+              <i className="ri-arrow-left-line" />
+              Back
+            </button>
           </div>
         </Col>
       </Row>

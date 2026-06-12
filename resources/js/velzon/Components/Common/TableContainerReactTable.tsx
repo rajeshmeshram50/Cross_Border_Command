@@ -98,6 +98,12 @@ interface TableContainerProps {
    *  (e.g. "1 / 2") between the prev/next arrows instead of numbered page
    *  buttons. Opt-in per list page; default keeps the numbered view. */
   pageOfTotalPagination?: boolean;
+  /** When true, renders the "My Workplace" style footer: a "Showing X–Y of Z"
+   *  range, a Rows-per-page selector, a "page / pages" indicator and ‹ ›
+   *  arrow buttons — instead of the default Showing/numbered-pagination bar. */
+  worklistPagination?: boolean;
+  /** Page-size options for the worklist Rows-per-page selector. */
+  pageSizeOptions?: number[];
 }
 
 const TableContainer = ({
@@ -114,6 +120,8 @@ const TableContainer = ({
   isBordered,
   condensedPagination = false,
   pageOfTotalPagination = false,
+  worklistPagination = false,
+  pageSizeOptions = [10, 25, 50],
 
 }: TableContainerProps) => {
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -266,6 +274,40 @@ const TableContainer = ({
         </Table>
       </div>
 
+      {worklistPagination ? (() => {
+        // "My Workplace" style footer: range + rows-per-page + page/pages + ‹ ›.
+        const pageSize = getState().pagination.pageSize;
+        const pageIndex = getState().pagination.pageIndex;
+        const total = data.length;
+        const pages = Math.max(getPageOptions().length, 1);
+        const start = pageIndex * pageSize;
+        return (
+          <div className="tc-wl-pag">
+            <span className="tc-wl-info">
+              {total === 0
+                ? 'No records'
+                : <>Showing <span className="tc-wl-hl">{start + 1}–{Math.min(start + pageSize, total)}</span> of <span className="tc-wl-hl">{total}</span></>}
+            </span>
+            <div className="tc-wl-right">
+              <span className="tc-wl-rows">
+                Rows per page:
+                <select value={pageSize} onChange={e => setPageSize(parseInt(e.target.value, 10))}>
+                  {[...new Set([pageSize, ...pageSizeOptions])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </span>
+              <span className="tc-wl-range">{pageIndex + 1} / {pages}</span>
+              <div className="tc-wl-nav">
+                <button type="button" className="tc-wl-btn" disabled={!getCanPreviousPage()} onClick={previousPage} aria-label="Previous page">
+                  <i className="ri-arrow-left-s-line"></i>
+                </button>
+                <button type="button" className="tc-wl-btn" disabled={!getCanNextPage()} onClick={nextPage} aria-label="Next page">
+                  <i className="ri-arrow-right-s-line"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })() : (
       <Row className="align-items-center mt-2 g-3 text-center text-sm-start">
         <div className="col-sm">
           <div className="text-muted">Showing<span className="fw-semibold ms-1">{getRowModel().rows.length}</span> of <span className="fw-semibold">{data.length}</span> Results
@@ -352,6 +394,7 @@ const TableContainer = ({
           </ul>
         </div>
       </Row>
+      )}
     </Fragment>
   );
 };

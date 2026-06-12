@@ -173,20 +173,20 @@ export default function HrDashboard() {
       [data-bs-theme="dark"] .hr-kpi-card:hover { box-shadow: 0 12px 32px rgba(0,0,0,0.45) !important; }
     `}</style>
     <div>
-      {/* ── Page Header ── */}
-      <div className="page-title-box d-sm-flex align-items-center justify-content-between mb-2">
-        <div>
-          <h4 className="mb-0">Human Resources Center</h4>
-          <p className="text-muted fs-12 mb-0 mt-1">{totals.total} modules across {totals.categories} categories</p>
+      {/* ── Page Header strip — same shape as the Clients / Branches headers. ── */}
+      <div className="frm-cstrip mb-3">
+        <span className="frm-cstrip-accent" />
+        <div className="frm-cstrip-left">
+          <div className="frm-cstrip-icon"><i className="ri-team-line" /></div>
+          <div className="min-w-0">
+            <div className="frm-cstrip-title">Human Resources Center</div>
+            <div className="frm-cstrip-sub">{totals.total} modules across {totals.categories} categories</div>
+          </div>
         </div>
-        <ol className="breadcrumb m-0 fs-12">
-          <li className="breadcrumb-item"><a href="#">HR</a></li>
-          <li className="breadcrumb-item active">Overview</li>
-        </ol>
       </div>
 
       {/* ── KPI Stat Cards ── */}
-      <Row className="g-3 mb-4">
+      <Row className="g-3 mb-3">
         {STAT_CARDS.map((sc, i) => (
           <Col key={sc.label} xl={2} md={4} sm={6} xs={12}>
             <div className="hr-surface hr-kpi-card" style={{ borderRadius: 14, border: '1px solid var(--vz-border-color)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)', overflow: 'hidden', position: 'relative', padding: '16px 18px 14px', height: '100%' }}>

@@ -132,29 +132,26 @@ export default function HrDocumentTemplates() {
       <Col xs={12}>
         <div className="rec-page dtm-page">
           <DtmDarkStyles />
-          {/* Header */}
-          <Card className="mb-3" style={{ borderRadius: 14 }}>
-            <CardBody className="d-flex align-items-center justify-content-between gap-3 flex-wrap">
-              <div className="d-flex align-items-center gap-3">
-                <span className="dtm-header-icon" style={{ width: 44, height: 44, borderRadius: 10, background: 'linear-gradient(135deg,#eef2ff,#e0e7ff)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <i className="ri-file-text-line" style={{ fontSize: 22, color: '#4338ca' }} />
-                </span>
-                <div>
-                  <h4 className="mb-0 fw-bold d-flex align-items-center gap-2">
-                    Document Template Management
-                    <span className="dtm-active-badge" style={{ fontSize: 11.5, color: '#15803d', background: '#dcfce7', padding: '3px 10px', borderRadius: 999, fontWeight: 700 }}>
-                      <i className="ri-checkbox-circle-fill me-1" style={{ fontSize: 12 }} />Active
-                    </span>
-                  </h4>
-                  <div className="text-muted" style={{ fontSize: 12.5 }}>Role-based document templates — versions, variables &amp; approval flows</div>
+          {/* Header strip — same shape as the Clients / Branches headers. */}
+          <div className="frm-cstrip mb-3">
+            <span className="frm-cstrip-accent" />
+            <div className="frm-cstrip-left">
+              <div className="frm-cstrip-icon"><i className="ri-file-text-line" /></div>
+              <div className="min-w-0">
+                <div className="d-flex align-items-center gap-2 flex-wrap">
+                  <span className="frm-cstrip-title">Document Template Management</span>
+                  <span className="dtm-active-badge" style={{ fontSize: 11.5, color: '#15803d', background: '#dcfce7', padding: '3px 10px', borderRadius: 999, fontWeight: 700 }}>
+                    <i className="ri-checkbox-circle-fill me-1" style={{ fontSize: 12 }} />Active
+                  </span>
                 </div>
+                <div className="frm-cstrip-sub">Role-based document templates — versions, variables &amp; approval flows</div>
               </div>
-              <button type="button" className="dtm-add-tpl-btn" onClick={() => navigate('/hr/doc-templates/new')}
-                style={{ padding: '8px 16px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', border: 0, borderRadius: 10, fontWeight: 700, fontSize: 13.5, cursor: 'pointer', boxShadow: '0 4px 12px rgba(99,102,241,0.3)', transition: 'transform .15s ease, box-shadow .2s ease, filter .15s ease' }}>
-                <i className="ri-add-line me-1" /> Add Template
-              </button>
-            </CardBody>
-          </Card>
+            </div>
+            <button type="button" className="dtm-add-tpl-btn flex-shrink-0" onClick={() => navigate('/hr/doc-templates/new')}
+              style={{ padding: '8px 16px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', border: 0, borderRadius: 10, fontWeight: 700, fontSize: 13.5, cursor: 'pointer', boxShadow: '0 4px 12px rgba(99,102,241,0.3)', transition: 'transform .15s ease, box-shadow .2s ease, filter .15s ease' }}>
+              <i className="ri-add-line me-1" /> Add Template
+            </button>
+          </div>
 
           {/* KPI strip — surfaces the count totals first so users see scale
               before drilling into a category. */}

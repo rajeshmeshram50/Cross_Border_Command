@@ -652,32 +652,19 @@ export default function HrLeavePlans() {
       <Row>
         <Col xs={12}>
           <div className="lp-shell">
-            {/* Header */}
-            <div className="lp-header">
-              <div className="d-flex align-items-center gap-3 min-w-0">
-                <span
-                  className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-                  style={{
-                    width: 44, height: 44,
-                    background: 'linear-gradient(135deg, #7c5cfc 0%, #5a3fd1 100%)',
-                    boxShadow: '0 8px 18px rgba(124,92,252,0.32)',
-                  }}
-                >
-                  <i className="ri-calendar-2-line" style={{ color: '#fff', fontSize: 20 }} />
-                </span>
+            {/* Header strip — same shape as the Clients / Branches headers. */}
+            <div className="frm-cstrip mb-3">
+              <span className="frm-cstrip-accent" />
+              <div className="frm-cstrip-left">
+                <div className="frm-cstrip-icon"><i className="ri-calendar-2-line" /></div>
                 <div className="min-w-0">
-                  <h5 className="fw-bold mb-0">Leave Plans</h5>
-                  <div className="text-muted fs-13 mt-1">Configure leave policies for employee groups</div>
+                  <div className="frm-cstrip-title">Leave Plans</div>
+                  <div className="frm-cstrip-sub">Configure leave policies for employee groups</div>
                 </div>
               </div>
-              <button
-                type="button"
-                className="lp-close-btn"
-                onClick={() => navigate('/hr/leave')}
-                aria-label="Back to leave management"
-                title="Back to leave management"
-              >
-                <i className="ri-close-line" />
+              <button type="button" className="frm-cstrip-back" onClick={() => navigate('/hr/leave')}>
+                <i className="ri-arrow-left-line" />
+                Back
               </button>
             </div>
 

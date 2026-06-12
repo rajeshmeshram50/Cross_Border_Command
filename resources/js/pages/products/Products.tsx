@@ -613,18 +613,17 @@ export default function Products() {
     <div className="prd-root">
       <style>{SCOPED_CSS}</style>
 
-      {/* Header — white surface card matching the HR Employees page style */}
-      <div className="prd-header">
-        <div className="prd-header-left">
-          <span className="prd-header-icon">
-            <i className="ri-box-3-line" />
-          </span>
-          <div>
-            <h5 className="prd-header-title">Products</h5>
-            <div className="prd-header-sub">Manage your product catalog — pricing, compliance, suppliers and documents in one place</div>
+      {/* Header strip — same shape as the Clients / Branches headers. */}
+      <div className="frm-cstrip mb-3">
+        <span className="frm-cstrip-accent" />
+        <div className="frm-cstrip-left">
+          <div className="frm-cstrip-icon"><i className="ri-box-3-line" /></div>
+          <div className="min-w-0">
+            <div className="frm-cstrip-title">Products</div>
+            <div className="frm-cstrip-sub">Manage your product catalog — pricing, compliance, suppliers and documents in one place</div>
           </div>
         </div>
-        <button className="prd-add-btn" onClick={() => { setEditingId(null); setAddOpen(true); }}>
+        <button className="prd-add-btn flex-shrink-0" onClick={() => { setEditingId(null); setAddOpen(true); }}>
           <i className="ri-add-line" />
           Add Product
         </button>

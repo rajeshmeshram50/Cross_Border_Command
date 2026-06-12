@@ -5,6 +5,7 @@ import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { ShimmerTableRows } from '../../components/ui/Shimmer';
 import Tooltip from '../../components/ui/Tooltip';
+import WorklistPager from '../../components/ui/WorklistPager';
 import '../../../css/recruitment.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -196,19 +197,17 @@ export default function HrBroadcastCentre() {
       <Row>
         <Col xs={12}>
           <div className="rec-page">
-            {/* Header */}
-            <div className="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-2">
-              <div className="d-flex align-items-center gap-3 min-w-0">
-                <span className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-                  style={{ width: 46, height: 46, background: 'linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%)', boxShadow: '0 4px 10px rgba(14,165,233,0.30)' }}>
-                  <i className="ri-send-plane-line" style={{ color: '#fff', fontSize: 21 }} />
-                </span>
+            {/* Header strip — same shape as the Clients / Branches headers. */}
+            <div className="frm-cstrip mb-3">
+              <span className="frm-cstrip-accent" />
+              <div className="frm-cstrip-left">
+                <div className="frm-cstrip-icon"><i className="ri-send-plane-line" /></div>
                 <div className="min-w-0">
-                  <h5 className="fw-bold mb-0">
-                    Broadcast Centre
-                    <span className="ms-2 rec-pill" style={{ background: 'rgba(56,189,248,0.16)', color: '#0284c7', fontSize: 11 }}>Communication</span>
-                  </h5>
-                  <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
+                  <div className="d-flex align-items-center gap-2 flex-wrap">
+                    <span className="frm-cstrip-title">Broadcast Centre</span>
+                    <span className="rec-pill" style={{ background: 'rgba(56,189,248,0.16)', color: '#0284c7', fontSize: 11 }}>Communication</span>
+                  </div>
+                  <div className="frm-cstrip-sub">
                     Create, schedule and manage company-wide announcements with audience targeting and acknowledgement tracking
                   </div>
                 </div>
@@ -219,7 +218,7 @@ export default function HrBroadcastCentre() {
                 stretch the full width (default Col xl=2 leaves 16.67%
                 empty on the right since 5 × 2/12 = 10/12). Drops to
                 3 at md, 2 at sm, 1 at xs. */}
-            <Row className="g-2 mb-2 align-items-stretch rec-page-kpis row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-xl-5">
+            <Row className="g-2 mb-3 align-items-stretch rec-page-kpis row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-xl-5">
               {KPI_CARDS.map(k => (
                 <Col key={k.label}>
                   <div className="rec-kpi-card h-100">
@@ -354,24 +353,13 @@ export default function HrBroadcastCentre() {
                     </table>
                   </div>
 
-                  <div className="rec-list-footer">
-                    <div className="d-flex align-items-center gap-2">
-                      <span className="text-muted" style={{ fontSize: 12 }}>Rows per page:</span>
-                      <div style={{ width: 80 }}>
-                        <MasterSelect value={String(pageSize)} onChange={(v) => { setPageSize(Number(v) || 10); setPage(1); }} options={['10','25','50'].map(v => ({ value: v, label: v }))} placeholder="10" />
-                      </div>
-                      <span className="text-muted" style={{ fontSize: 12, marginLeft: 16 }}>
-                        Showing {filtered.length === 0 ? 0 : (sliceFrom + 1)}–{Math.min(sliceFrom + pageSize, filtered.length)} of {filtered.length}
-                      </span>
-                    </div>
-                    <div className="d-flex align-items-center gap-1">
-                      <button className="rec-pagebtn" onClick={() => goto(safePage - 1)} disabled={safePage <= 1}>‹ Prev</button>
-                      {Array.from({ length: pageCount }).map((_, i) => (
-                        <button key={i} className={`rec-pagebtn${safePage === i + 1 ? ' is-active' : ''}`} onClick={() => goto(i + 1)}>{i + 1}</button>
-                      ))}
-                      <button className="rec-pagebtn" onClick={() => goto(safePage + 1)} disabled={safePage >= pageCount}>Next ›</button>
-                    </div>
-                  </div>
+                  <WorklistPager
+                    total={filtered.length}
+                    page={safePage}
+                    pageSize={pageSize}
+                    onPage={goto}
+                    onPageSize={(n) => { setPageSize(n); setPage(1); }}
+                  />
                 </div>
               </CardBody>
             </Card>

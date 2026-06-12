@@ -14,6 +14,7 @@ import HeaderFooterPanel, {
   type HeaderConfig, type FooterConfig,
 } from '../hrms/doc-templates/HeaderFooterPanel';
 import Tooltip from '../../components/ui/Tooltip';
+import WorklistPager from '../../components/ui/WorklistPager';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
@@ -700,31 +701,19 @@ export default function HrEmployeeOnboarding() {
     <>
       <MasterFormStyles />
 
-      {/* ── Hero card (purple-tinted, separate container) ── */}
-      <div className="onb-hero-card mb-3">
-        <div className="d-flex align-items-center gap-3 min-w-0">
-          <span
-            className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-            style={{
-              width: 46, height: 46,
-              background: 'linear-gradient(135deg, #7c5cfc 0%, #5a3fd1 100%)',
-              boxShadow: '0 4px 10px rgba(124,92,252,0.30)',
-            }}
-          >
-            <i className="ri-user-add-line" style={{ color: '#fff', fontSize: 21 }} />
-          </span>
+      {/* ── Header strip — same shape as the Clients / Branches headers. ── */}
+      <div className="frm-cstrip mb-3">
+        <span className="frm-cstrip-accent" />
+        <div className="frm-cstrip-left">
+          <div className="frm-cstrip-icon"><i className="ri-user-add-line" /></div>
           <div className="min-w-0">
-            <div className="d-flex align-items-center gap-2 flex-wrap">
-              <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Employee Onboarding Hub</h5>
-            </div>
-            <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
-              Track newly joined employees, onboarding progress, and completed onboarding records
-            </div>
+            <div className="frm-cstrip-title">Employee Onboarding Hub</div>
+            <div className="frm-cstrip-sub">Track newly joined employees, onboarding progress, and completed onboarding records</div>
           </div>
         </div>
         <Button
           onClick={() => setChecklistOpen(true)}
-          className="onb-checklist-cta rounded-pill"
+          className="onb-checklist-cta rounded-pill flex-shrink-0"
         >
           <i className="ri-checkbox-multiple-line me-2" style={{ fontSize: 16 }} />
           Onboarding Checklist
@@ -811,7 +800,7 @@ export default function HrEmployeeOnboarding() {
       {/* ── Filters + Table — own card, like Employee list ── */}
       <Card>
         <CardBody>
-          <Row className="g-2 align-items-center mb-3">
+          <Row className="g-2 align-items-center mb-2">
             <Col md={5} sm={12}>
               <div className="search-box">
                 <Input
@@ -1055,37 +1044,8 @@ export default function HrEmployeeOnboarding() {
                   </table>
                 </div>
 
-          {/* Pagination — same layout as master TableContainer */}
-          <Row className="align-items-center mt-2 g-3 text-center text-sm-start">
-            <div className="col-sm">
-              <div className="text-muted">
-                Showing
-                <span className="fw-semibold ms-1">{visible.length}</span>
-                {' '}of <span className="fw-semibold">{filtered.length}</span> Results
-              </div>
-            </div>
-            <div className="col-sm-auto">
-              <ul className="pagination pagination-separated pagination-md justify-content-center justify-content-sm-start mb-0">
-                <li className={safePage <= 1 ? 'page-item disabled' : 'page-item'}>
-                  <a href="#" className="page-link" onClick={(e) => { e.preventDefault(); goto(safePage - 1); }}>Previous</a>
-                </li>
-                {Array.from({ length: pageCount }).map((_, i) => (
-                  <li key={i} className="page-item">
-                    <a
-                      href="#"
-                      className={safePage === i + 1 ? 'page-link active' : 'page-link'}
-                      onClick={(e) => { e.preventDefault(); goto(i + 1); }}
-                    >
-                      {i + 1}
-                    </a>
-                  </li>
-                ))}
-                <li className={safePage >= pageCount ? 'page-item disabled' : 'page-item'}>
-                  <a href="#" className="page-link" onClick={(e) => { e.preventDefault(); goto(safePage + 1); }}>Next</a>
-                </li>
-              </ul>
-            </div>
-          </Row>
+          {/* Pagination — My Workplace / Client-table style */}
+          <WorklistPager total={filtered.length} page={safePage} pageSize={PAGE_SIZE} onPage={goto} />
         </CardBody>
       </Card>
 

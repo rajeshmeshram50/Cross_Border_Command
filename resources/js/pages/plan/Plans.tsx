@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardBody, Badge, Button, Spinner, Modal, ModalBody } from 'reactstrap';
+import { Card, CardBody, Badge, Spinner, Modal, ModalBody } from 'reactstrap';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, Pagination, Autoplay } from 'swiper/modules';
 import { useToast } from '../../contexts/ToastContext';
@@ -113,63 +113,34 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
   return (
     <>
 
-      <div className="plans-surface">
-        {/* ── Compact Page Header ── */}
-        <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3 pb-2">
-          <div className="d-flex align-items-center gap-2">
-            <div
-              className="d-inline-flex align-items-center justify-content-center rounded-2 flex-shrink-0"
-              style={{
-                width: 36, height: 36,
-                background: '#40518918',
-                border: '1px solid #40518928',
-              }}
-            >
-              <i className="ri-bank-card-line" style={{ color: '#405189', fontSize: 17 }} />
+      {/* ── Header strip — same shape as the Clients / Branches module
+            headers: white container + violet border + left accent strip +
+            violet icon, with Back + Add Plan on the right. ── */}
+      <div className="pl-cstrip mb-3">
+        <span className="pl-cstrip-accent" />
+        <div className="pl-cstrip-left">
+          <div className="pl-cstrip-icon"><i className="ri-bank-card-line" /></div>
+          <div className="min-w-0">
+            <div className="pl-cstrip-title">Subscription Plans</div>
+            <div className="pl-cstrip-sub">
+              Manage pricing, limits and features · <strong style={{ color: '#7c3aed', fontWeight: 800 }}>{plans.length}</strong> plans
             </div>
-            <div>
-              <h5 className="mb-0 fw-bold" style={{ fontSize: 15, letterSpacing: '-0.01em' }}>Subscription Plans</h5>
-              <p className="mb-0 text-muted" style={{ fontSize: 11.5 }}>
-                Manage pricing, limits and features ·{' '}
-                <span style={{ color: '#405189', fontWeight: 700 }}>{plans.length}</span> plans
-              </p>
-            </div>
-          </div>
-          <div className="d-flex align-items-center gap-2 flex-wrap">
-            <button
-              type="button"
-              onClick={() => navigate(-1)}
-              title="Back"
-              className="d-inline-flex align-items-center justify-content-center gap-2 rounded-pill"
-              style={{
-                height: 38,
-                padding: '0 18px',
-                background: 'color-mix(in srgb, #405189 8%, #ffffff)',
-                color: '#405189',
-                border: '1px solid color-mix(in srgb, #405189 22%, transparent)',
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'background 0.18s ease',
-                whiteSpace: 'nowrap',
-              }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 14%, #ffffff)'; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 8%, #ffffff)'; }}
-            >
-              <i className="ri-arrow-left-line" style={{ fontSize: 15 }}></i>
-              Back
-            </button>
-            <Button
-              color="secondary"
-              className="btn-label waves-effect waves-light rounded-pill"
-              onClick={() => onNavigate?.('add-plan')}
-            >
-              <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
-              Add Plan
-            </Button>
           </div>
         </div>
+        <div className="d-flex align-items-center gap-2 flex-shrink-0">
+          <button type="button" className="pl-cstrip-back" onClick={() => navigate(-1)}>
+            <i className="ri-arrow-left-line" />
+            Back
+          </button>
+          <button type="button" className="pl-cstrip-add" onClick={() => onNavigate?.('add-plan')}>
+            <i className="ri-add-line" />
+            Add Plan
+          </button>
+        </div>
+      </div>
 
+      {/* ── Cards container ── */}
+      <div className="plans-surface">
       {loading ? (
         <ShimmerPlanCards count={4} />
       ) : plans.length === 0 ? (

@@ -5,6 +5,7 @@ import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/mast
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
+import WorklistPager from '../../components/ui/WorklistPager';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import '../../../css/recruitment.css';
 
@@ -578,47 +579,25 @@ export default function HrRecruitment() {
       <Row>
         <Col xs={12}>
           <div className="rec-page">
-            {/* ── Header ── */}
-            <div className="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-2">
-              <div className="d-flex align-items-center gap-3 min-w-0">
-                <span
-                  className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0 position-relative"
-                  style={{
-                    width: 48, height: 48,
-                    background: 'linear-gradient(135deg, #a855f7 0%, #9333ea 60%, #7c3aed 100%)',
-                    boxShadow:
-                      '0 8px 18px rgba(147,51,234,0.38), 0 2px 4px rgba(124,58,237,0.22), inset 0 1px 0 rgba(255,255,255,0.30), inset 0 -1px 0 rgba(0,0,0,0.10)',
-                    border: '1px solid rgba(255,255,255,0.18)',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <span
-                    aria-hidden
-                    style={{
-                      position: 'absolute', inset: 0,
-                      background: 'linear-gradient(180deg, rgba(255,255,255,0.22) 0%, transparent 45%)',
-                      pointerEvents: 'none',
-                    }}
-                  />
-                  <i
-                    className="ri-briefcase-4-fill"
-                    style={{ color: '#fff', fontSize: 24, position: 'relative', lineHeight: 1 }}
-                  />
-                </span>
+            {/* ── Header strip — same shape as the Clients / Branches headers. ── */}
+            <div className="frm-cstrip mb-3">
+              <span className="frm-cstrip-accent" />
+              <div className="frm-cstrip-left">
+                <div className="frm-cstrip-icon"><i className="ri-briefcase-4-fill" /></div>
                 <div className="min-w-0">
                   <div className="d-flex align-items-center gap-2 flex-wrap">
-                    <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Recruitment Management</h5>
+                    <span className="frm-cstrip-title">Recruitment Management</span>
                     <span className="rec-header-count">
                       <span className="dot" />
                       {recruitments.length} recruitment{recruitments.length === 1 ? '' : 's'}
                     </span>
                   </div>
-                  <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
+                  <div className="frm-cstrip-sub">
                     Create recruitments, track candidates, and manage the end-to-end hiring pipeline
                   </div>
                 </div>
               </div>
-              <div className="d-flex align-items-center gap-2 flex-wrap">
+              <div className="d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
                 <button
                   type="button"
                   className="rec-btn-primary"
@@ -643,7 +622,7 @@ export default function HrRecruitment() {
             </div>
 
             {/* ── KPI cards (6 tiles) — master-style with top accent strip ── */}
-            <Row className="g-3 mb-2 align-items-stretch rec-page-kpis">
+            <Row className="g-3 mb-3 align-items-stretch rec-page-kpis">
               {KPI_CARDS.map(k => (
                 <Col key={k.key} xl={2} md={4} sm={6} xs={12}>
                   <div className="rec-kpi-card h-100">
@@ -665,7 +644,7 @@ export default function HrRecruitment() {
             </Row>
 
             {/* ── Tabs (In Progress / Completed / Cancelled) — segmented control ── */}
-            <div className="rec-tab-track mb-2">
+            <div className="rec-tab-track mb-3">
               {([
                 { key: 'In Progress' as const, label: 'In Progress', count: counts.tabs['In Progress'], icon: 'ri-time-line',           variant: 'in-progress' },
                 { key: 'Completed'   as const, label: 'Completed',   count: counts.tabs.Completed,     icon: 'ri-checkbox-circle-line',variant: 'completed'   },
@@ -847,39 +826,13 @@ export default function HrRecruitment() {
                   </div>
 
                   {/* Pagination footer — sits inside the same elevated frame */}
-                  <div className="rec-list-footer">
-                    <div className="d-flex align-items-center gap-2">
-                      <span className="text-muted" style={{ fontSize: 12 }}>Rows per page:</span>
-                      <div style={{ width: 80 }}>
-                        <MasterSelect
-                          value={String(pageSize)}
-                          onChange={(v) => { setPageSize(Number(v) || 10); setPage(1); }}
-                          options={['10', '25', '50'].map(v => ({ value: v, label: v }))}
-                          placeholder="10"
-                        />
-                      </div>
-                      <span className="text-muted" style={{ fontSize: 12, marginLeft: 16 }}>
-                        Showing {filtered.length === 0 ? 0 : (sliceFrom + 1)}–{Math.min(sliceFrom + pageSize, filtered.length)} of {filtered.length}
-                      </span>
-                    </div>
-                    <div className="d-flex align-items-center gap-1">
-                      <button className="rec-pagebtn" onClick={() => goto(safePage - 1)} disabled={safePage <= 1}>
-                        ‹ Prev
-                      </button>
-                      {Array.from({ length: pageCount }).map((_, i) => (
-                        <button
-                          key={i}
-                          className={`rec-pagebtn${safePage === i + 1 ? ' is-active' : ''}`}
-                          onClick={() => goto(i + 1)}
-                        >
-                          {i + 1}
-                        </button>
-                      ))}
-                      <button className="rec-pagebtn" onClick={() => goto(safePage + 1)} disabled={safePage >= pageCount}>
-                        Next ›
-                      </button>
-                    </div>
-                  </div>
+                  <WorklistPager
+                    total={filtered.length}
+                    page={safePage}
+                    pageSize={pageSize}
+                    onPage={goto}
+                    onPageSize={(n) => { setPageSize(n); setPage(1); }}
+                  />
                 </div>
               </CardBody>
             </Card>
