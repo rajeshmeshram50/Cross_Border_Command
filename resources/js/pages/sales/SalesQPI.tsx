@@ -499,7 +499,7 @@ function MoreOptionsMenu(props: {
             type="button" role="menuitem"
             className="qpi-moremenu-item"
             disabled={busy !== null}
-            onClick={() => pick('view', true)}
+            onClick={() => { onError(`Not signed yet — sign this ${docLabel} via Zoho to view the signed PDF.`); onClose(); }}
           >
             <IconEyeSm />
             <span>View {docLabel} with Signature</span>
@@ -520,7 +520,7 @@ function MoreOptionsMenu(props: {
             type="button" role="menuitem"
             className="qpi-moremenu-item"
             disabled={busy !== null}
-            onClick={() => pick('download', true)}
+            onClick={() => { onError(`Not signed yet — sign this ${docLabel} via Zoho to download the signed PDF.`); onClose(); }}
           >
             <IconDownloadSm />
             <span>Download {docLabel} with Signature</span>
