@@ -2501,6 +2501,26 @@ export default function HrEmployees() {
           -webkit-overflow-scrolling: touch;
         }
 
+        /* Unified list frame (search + table + pagination) — mirrors the
+           Recruitment page's .rec-list-frame so the list reads as one clean
+           bordered panel now that the whole-page card container is gone. */
+        .hr-emp-list-frame {
+          background: #ffffff;
+          border: 1px solid #ececf2;
+          border-radius: 14px;
+          overflow: hidden;
+          box-shadow: 0 1px 0 rgba(15,23,42,0.04), 0 4px 14px rgba(15,23,42,0.05);
+        }
+        .hr-emp-list-frame .hr-emp-frame-filter {
+          border-bottom: 1px solid var(--vz-border-color);
+        }
+        [data-bs-theme="dark"] .hr-emp-list-frame,
+        [data-layout-mode="dark"] .hr-emp-list-frame {
+          background: var(--vz-card-bg);
+          border-color: var(--vz-border-color);
+          box-shadow: 0 6px 18px rgba(0,0,0,0.30);
+        }
+
         /* Tablet portrait — ≤ 991.98px */
         @media (max-width: 991.98px) {
           /* Header buttons keep their width but the whole right-side
@@ -2896,17 +2916,14 @@ export default function HrEmployees() {
 
       <Row>
         <Col xs={12}>
-          <div
-            className="hr-employees-surface"
-            style={{
-              borderRadius: 16,
-              border: '1px solid var(--vz-border-color)',
-              boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
-              padding: '20px',
-            }}
-          >
+          {/* Whole-page card container removed — content sits flush on the
+              page background (matches the Recruitment page layout). The
+              `hr-employees-surface` class is kept (many descendant styles —
+              table, search box, dark mode — are scoped to it) but its card
+              chrome (border / shadow / padding / white fill) is stripped. */}
+          <div className="hr-employees-surface" style={{ background: 'transparent' }}>
             {/* ── Header row ── */}
-            <div className="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
+            <div className="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-2">
               <div className="d-flex align-items-center gap-3 min-w-0">
                 {/* Icon tile — gradient square with white glyph and a soft
                     primary shadow, matching the master "What you are doing
@@ -2975,7 +2992,7 @@ export default function HrEmployees() {
             {/* KPI strip — same Swiper-based carousel pattern as the
                 Plans page (PlanSelection.tsx). Autoplay at 2s loop, pause
                 on hover, manual nav arrows that don't fight the autoplay. */}
-            <div className="hr-emp-kpi-outer mb-3">
+            <div className="hr-emp-kpi-outer mb-2">
               <button
                 ref={kpiPrevRef}
                 type="button"
@@ -3067,7 +3084,7 @@ export default function HrEmployees() {
             </div>
 
             {/* ── Tabs (Active / Disabled) ── */}
-            <Row className="g-2 mb-3">
+            <Row className="g-2 mb-2">
               <Col xs={12}>
                 <div
                   className="d-flex"
@@ -3124,8 +3141,11 @@ export default function HrEmployees() {
               </Col>
             </Row>
 
-            {/* ── Search + Filters (Clients-style row) ── */}
-            <Row className="g-2 align-items-center mb-3">
+            {/* ── Search + Filters + Table — one bordered frame (matches the
+                Recruitment list frame, now that the page container is gone) ── */}
+            <div className="hr-emp-list-frame">
+            <div className="hr-emp-frame-filter p-3">
+            <Row className="g-2 align-items-center mb-0">
               <Col md={6} sm={12}>
                 <div className="search-box">
                   <Input
@@ -3157,11 +3177,11 @@ export default function HrEmployees() {
                 </div>
               </Col>
             </Row>
+            </div>
 
-            {/* ── Table (Clients-style: table-card border rounded + table-light thead) ── */}
-            <Card className="border-0 shadow-none mb-0">
-              <CardBody className="p-3">
-                <div className="table-responsive table-card border rounded">
+            {/* ── Table — flows inside the same frame as the search row ── */}
+            <div className="p-3">
+                <div className="table-responsive">
                   <table className="table align-middle table-nowrap mb-0">
                     <thead className="table-light">
                       <tr>
@@ -3480,8 +3500,8 @@ export default function HrEmployees() {
                     </button>
                   </div>
                 </div>
-              </CardBody>
-            </Card>
+            </div>
+            </div>
           </div>
         </Col>
       </Row>

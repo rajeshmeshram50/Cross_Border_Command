@@ -292,7 +292,7 @@ export default function MasterDashboard() {
           headers (Legal Entities, etc.): gradient icon + title on the left,
           a pill "Back" button on the right. */}
       <div
-        className="dsn-page-strip d-sm-flex align-items-center justify-content-between flex-wrap gap-3 mb-4"
+        className="dsn-page-strip d-sm-flex align-items-center justify-content-between flex-wrap gap-3 mb-2"
         style={{ padding: '9px 18px', borderRadius: 12 }}
       >
         <div className="d-flex align-items-center gap-3 min-w-0">
@@ -346,7 +346,7 @@ export default function MasterDashboard() {
       </div>
 
       {/* ── KPI Stat Cards ── */}
-   <Row className="g-3 mb-4">
+   <Row className="g-3 mb-2">
   {STAT_CARDS.map((sc, i) => (
     <Col key={sc.label} xl={3} md={6} xs={12}>
       <div
@@ -438,7 +438,7 @@ export default function MasterDashboard() {
 </Row>
 
       {/* ── Search Bar ── */}
-      <div className="master-surface" style={{ border: '1px solid var(--vz-border-color)', borderRadius: 12, padding: '10px 14px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div className="master-surface" style={{ border: '1px solid var(--vz-border-color)', borderRadius: 12, padding: '10px 14px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
         <i className="ri-search-line" style={{ color: 'var(--vz-secondary-color)', fontSize: 17 }} />
         <input
           type="text"
@@ -473,7 +473,7 @@ export default function MasterDashboard() {
         const isCollapsed = hasSearch ? false : closedGroups.has(group.id);
 
         return (
-          <div key={group.id} style={{ marginBottom: 12 }}>
+          <div key={group.id} style={{ marginBottom: 8 }}>
 
             {/* ── Category Header — single white row, clickable to toggle ── */}
             <div
