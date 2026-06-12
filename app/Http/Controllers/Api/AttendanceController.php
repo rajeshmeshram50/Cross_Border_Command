@@ -171,7 +171,10 @@ class AttendanceController extends Controller
 
         // Access check — self OR admin in same tenant OR super_admin.
         $isSelf = Employee::where('id', $emp->id)->where('user_id', $user->id)->exists();
-        $sameTenant = $emp->client_id === null || (int) $emp->client_id === (int) $user->client_id;
+        // A14: strict tenant match. The self-path is already covered by $isSelf,
+        // so a null client_id must NOT count as "same tenant" for admins (that
+        // let any tenant read a client-less employee's attendance).
+        $sameTenant = (int) $emp->client_id === (int) $user->client_id;
         if (!$isSelf && $user->user_type !== 'super_admin' && !(
             in_array($user->user_type, ['client_admin', 'client_user', 'branch_user'], true) && $sameTenant
         )) {
@@ -269,18 +272,31 @@ class AttendanceController extends Controller
 
         if ($user->user_type !== 'super_admin') {
             $q->where('client_id', $user->client_id);
-            $branchFilter = $request->integer('branch_id') ?: null;
-            if ($branchFilter !== null) {
-                $belongs = Branch::where('id', $branchFilter)
-                    ->where('client_id', $user->client_id)
-                    ->exists();
-                if ($belongs) $q->where('branch_id', $branchFilter);
-            } elseif ($user->user_type === 'branch_user' && !optional($user->branch)->is_main) {
+            // A13: a sub-branch user is HARD-pinned to their own branch — pin
+            // first, so passing a sibling branch_id can't leak other branches'
+            // attendance. Only main-branch / client admins may use the filter.
+            if ($user->user_type === 'branch_user' && !optional($user->branch)->is_main) {
                 $q->where('branch_id', $user->branch_id);
+            } else {
+                $branchFilter = $request->integer('branch_id') ?: null;
+                if ($branchFilter !== null) {
+                    $belongs = Branch::where('id', $branchFilter)
+                        ->where('client_id', $user->client_id)
+                        ->exists();
+                    if ($belongs) $q->where('branch_id', $branchFilter);
+                }
             }
         } elseif ($branchFilter = $request->integer('branch_id') ?: null) {
             $q->where('branch_id', $branchFilter);
         }
+
+        // A17: validate date filters so a malformed value returns 422 instead of
+        // silently passing junk to whereDate and yielding a confusing empty list.
+        $request->validate([
+            'date' => ['nullable', 'date'],
+            'from' => ['nullable', 'date'],
+            'to'   => ['nullable', 'date', 'after_or_equal:from'],
+        ]);
 
         if ($date   = $request->query('date'))        $q->whereDate('attendance_date', $date);
         if ($from   = $request->query('from'))        $q->whereDate('attendance_date', '>=', $from);
@@ -436,7 +452,12 @@ class AttendanceController extends Controller
                     $late = $this->minutesBetween($shiftStart, $localIn);
                     if ($late > 10 && $st === 'present') $lateMarks++;
                 }
-                $tracked++;
+                // A22: sanctioned days (Leave / Holiday / Weekly Off) are NOT
+                // non-compliant absences — keep them out of the denominator so
+                // compliance % isn't unfairly dragged down by approved leave.
+                $isSanctioned = str_contains($st, 'leave') || str_contains($st, 'holiday')
+                    || str_contains($st, 'week off') || $st === 'weekly off';
+                if (!$isSanctioned) $tracked++;
             }
             // Compliance = share of MTD attendance days the employee was
             // actually marked Present (or a present-equivalent status).
@@ -762,7 +783,9 @@ class AttendanceController extends Controller
     {
         $data = $request->validate([
             'descriptor'   => 'required|array|size:' . self::DESCRIPTOR_LEN,
-            'descriptor.*' => 'required|numeric',
+            // A7: face-api descriptors are normalised floats (~[-1,1]); bound them
+            // generously so crafted extreme/garbage vectors are rejected up front.
+            'descriptor.*' => 'required|numeric|between:-5,5',
             'label'        => 'nullable|string|max:50',
             'lat'          => 'nullable|numeric|between:-90,90',
             'lng'          => 'nullable|numeric|between:-180,180',

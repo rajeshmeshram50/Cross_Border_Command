@@ -116,6 +116,18 @@ class FaceBiometricController extends Controller
             'biometric_status'         => 'Not Registered',
         ]);
 
+        // A26: consent governs ALL biometric-derived data, not just the live
+        // descriptor. Anonymise the historical face-match distances so revoking
+        // consent actually erases the biometric footprint (attendance rows
+        // themselves stay — only the match metric is cleared).
+        \Illuminate\Support\Facades\DB::table('attendance_punches')
+            ->where('employee_id', $employee->id)
+            ->whereNotNull('match_distance')
+            ->update(['match_distance' => null]);
+        \Illuminate\Support\Facades\DB::table('attendances')
+            ->where('employee_id', $employee->id)
+            ->update(['check_in_match_distance' => null, 'check_out_match_distance' => null]);
+
         return response()->json(['message' => 'Face data deleted.']);
     }
 

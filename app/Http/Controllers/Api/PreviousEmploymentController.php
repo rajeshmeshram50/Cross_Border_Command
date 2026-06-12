@@ -56,8 +56,11 @@ class PreviousEmploymentController extends Controller
         return $request->validate([
             'company_name'   => 'required|string|max:255',
             'job_title'      => 'nullable|string|max:255',
-            'start_date'     => 'nullable|date',
-            'end_date'       => 'nullable|date|after_or_equal:start_date',
+            // A PRIOR job can't lie in the future. Cap both ends at today; the
+            // before_or_equal on end_date also makes the after_or_equal guard
+            // meaningful even when start_date is null.
+            'start_date'     => 'nullable|date|before_or_equal:today',
+            'end_date'       => 'nullable|date|before_or_equal:today|after_or_equal:start_date',
             'hr_email_1'     => 'nullable|email|max:191',
             'hr_email_2'     => 'nullable|email|max:191|different:hr_email_1',
             'contact_number' => 'nullable|string|max:30',

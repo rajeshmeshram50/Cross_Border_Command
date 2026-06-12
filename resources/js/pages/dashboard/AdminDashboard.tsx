@@ -20,6 +20,13 @@ interface DashboardData {
     success_payments: number; pending_payments: number; failed_payments: number;
   };
   revenue: { total: number; monthly: number };
+  saas?: {
+    mrr: number; arr: number; arpu: number;
+    paying_clients: number; free_clients: number; active_subscriptions: number;
+    new_this_month: number; new_last_month: number; signup_growth: number;
+    expiring_soon: number; expired: number; churn_rate: number;
+    mrr_by_plan: { plan: string; mrr: number }[];
+  };
   plan_breakdown: { plan_name: string; count: number }[];
   revenue_trend: { month: string; short: string; revenue: number; count: number }[];
   client_growth: { month: string; clients: number }[];
@@ -86,19 +93,19 @@ function KpiCard({ label, value, iconClass, color, gradient, changeText, trend =
   return (
     <div className="dashboard-surface admin-kpi-card" style={{
       borderRadius: 16,
-      padding: '20px 20px 16px',
-      boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
+      padding: '18px 20px 14px',
+      boxShadow: '0 1px 2px rgba(16,24,40,0.05), 0 14px 30px -16px rgba(64,81,137,0.28)',
       border: '1px solid var(--vz-border-color)',
       position: 'relative',
       overflow: 'hidden',
       height: '100%',
       cursor: 'default',
     }}>
-      <div style={{
-        position: 'absolute', top: 0, left: 0, right: 0, height: 3,
-        background: gradient,
-      }} />
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+      {/* Subtle corner glow + left accent rail — matches the Client / Branch /
+          Employee KPI tiles so all four dashboards share one card style. */}
+      <div style={{ position: 'absolute', top: -48, right: -42, width: 96, height: 96, borderRadius: '50%', background: gradient, opacity: 0.06, filter: 'blur(6px)', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', top: 11, bottom: 11, left: 0, width: 3, borderRadius: '0 4px 4px 0', background: gradient }} />
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, position: 'relative', zIndex: 1 }}>
         <div style={{ flex: 1, minWidth: 0 /* allow flex item to shrink so long values still render full */ }}>
           <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>{label}</p>
           {/* Render full value — earlier we ellipsised long INR figures like
@@ -133,6 +140,7 @@ function KpiCard({ label, value, iconClass, color, gradient, changeText, trend =
         <div className="admin-kpi-icon" style={{
           width: 42, height: 42, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: gradient, flexShrink: 0,
+          boxShadow: '0 7px 14px -6px rgba(64,81,137,0.45), inset 0 1px 0 rgba(255,255,255,0.25)',
         }}>
           <i className={iconClass} style={{ fontSize: 19, color: '#fff' }}></i>
         </div>
@@ -193,6 +201,11 @@ export default function AdminDashboard() {
   if (!data) return null;
 
   const { counts, revenue } = data;
+  const saas = data.saas ?? {
+    mrr: 0, arr: 0, arpu: 0, paying_clients: 0, free_clients: 0, active_subscriptions: 0,
+    new_this_month: 0, new_last_month: 0, signup_growth: 0, expiring_soon: 0, expired: 0, churn_rate: 0,
+    mrr_by_plan: [],
+  };
   const successRate = counts.total_payments > 0
     ? Math.round((counts.success_payments / counts.total_payments) * 100) : 0;
   const activeRate = counts.total_clients > 0
@@ -386,38 +399,80 @@ export default function AdminDashboard() {
           fake percentage. */}
       <Row className="g-3 mb-3">
         <Col xl={2} md={4} xs={6}>
-          <KpiCard label="Total Clients" value={<AnimatedNumber value={counts.total_clients} />}
-            iconClass="ri-building-line" color="#405189" gradient="linear-gradient(135deg,#3a4b85,#6691e7)"
-            trend={pctTrend(clientChangePct)}
-            change={clientChangePct == null ? '' : fmtPct(clientChangePct)}
-            changeText={clientChangePct == null ? `${counts.total_clients} total` : 'new clients · mom'} />
+          <KpiCard label="MRR" value={<>₹{formatCompact(saas.mrr)}</>}
+            iconClass="ri-repeat-2-line" color="#0ab39c" gradient="linear-gradient(135deg,#0a8f7e,#16d3b8)"
+            trend="up" change={`₹${formatCompact(saas.arr)}`} changeText="ARR" />
         </Col>
         <Col xl={2} md={4} xs={6}>
-          <KpiCard label="Active Clients" value={<AnimatedNumber value={counts.active_clients} />}
-            iconClass="ri-checkbox-circle-line" color="#0ab39c" gradient="linear-gradient(135deg,#0a8f7e,#16d3b8)"
+          <KpiCard label="Active Subscriptions" value={<AnimatedNumber value={saas.active_subscriptions} />}
+            iconClass="ri-vip-crown-2-line" color="#9b72cf" gradient="linear-gradient(135deg,#7c4dd1,#b794f6)"
+            trend="up" change={`${saas.paying_clients}`} changeText="paying tenants" />
+        </Col>
+        <Col xl={2} md={4} xs={6}>
+          <KpiCard label="New Signups" value={<AnimatedNumber value={saas.new_this_month} />}
+            iconClass="ri-user-add-line" color="#299cdb" gradient="linear-gradient(135deg,#2186c2,#5fc8ff)"
+            trend={pctTrend(saas.signup_growth)}
+            change={saas.new_last_month === 0 && saas.new_this_month === 0 ? '' : fmtPct(saas.signup_growth)}
+            changeText="this month · mom" />
+        </Col>
+        <Col xl={2} md={4} xs={6}>
+          <KpiCard label="ARPU" value={<>₹{formatCompact(saas.arpu)}</>}
+            iconClass="ri-money-rupee-circle-line" color="#f7b84b" gradient="linear-gradient(135deg,#e89a2e,#ffce6e)"
+            changeText="avg revenue / tenant" />
+        </Col>
+        <Col xl={2} md={4} xs={6}>
+          <KpiCard label="Total Clients" value={<AnimatedNumber value={counts.total_clients} />}
+            iconClass="ri-building-line" color="#405189" gradient="linear-gradient(135deg,#3a4b85,#6691e7)"
             trend="up" change={`${activeRate}%`} changeText="active rate" />
         </Col>
         <Col xl={2} md={4} xs={6}>
-          <KpiCard label="Total Users" value={<AnimatedNumber value={counts.total_users} />}
-            iconClass="ri-user-3-line" color="#299cdb" gradient="linear-gradient(135deg,#2186c2,#5fc8ff)"
-            trend="up" change={`${counts.total_users}`} changeText="users on platform" />
-        </Col>
-        <Col xl={2} md={4} xs={6}>
-          <KpiCard label="Branches" value={<AnimatedNumber value={counts.total_branches} />}
-            iconClass="ri-git-branch-line" color="#f7b84b" gradient="linear-gradient(135deg,#e89a2e,#ffce6e)"
-            trend="up" change={`${counts.total_branches}`} changeText="across clients" />
-        </Col>
-        <Col xl={2} md={4} xs={6}>
-          <KpiCard label="Revenue" value={<>₹{formatCompact(revenue.total)}</>}
+          <KpiCard label="Total Revenue" value={<>₹{formatCompact(revenue.total)}</>}
             iconClass="ri-money-dollar-circle-line" color="#22c55e" gradient="linear-gradient(135deg,#16a34a,#4ade80)"
             trend={pctTrend(revenueChangePct)}
             change={revenueChangePct == null ? '' : fmtPct(revenueChangePct)}
-            changeText={revenueChangePct == null ? 'total revenue' : 'vs last month'} />
+            changeText={revenueChangePct == null ? 'all-time' : 'vs last month'} />
         </Col>
-        <Col xl={2} md={4} xs={6}>
-          <KpiCard label="Payments" value={<AnimatedNumber value={counts.total_payments} />}
-            iconClass="ri-bank-card-line" color="#9b72cf" gradient="linear-gradient(135deg,#7c4dd1,#b794f6)"
-            trend={successRate > 80 ? 'up' : 'down'} change={`${successRate}%`} changeText="success rate" />
+      </Row>
+
+      {/* Subscription Health — the SaaS renewal view: active subscriptions,
+          renewals at risk (expiring ≤30d), lapsed, and churn. */}
+      <Row className="g-3 mb-3">
+        <Col xs={12}>
+          <Card style={cardStyle}>
+            <CardBody style={{ padding: '16px 20px' }}>
+              <Row className="g-3 align-items-center">
+                <Col xs={12} md={3}>
+                  <div className="d-flex align-items-center gap-2">
+                    <div style={{ width: 42, height: 42, borderRadius: 12, flexShrink: 0, background: 'linear-gradient(135deg,#7c5cfc,#a78bfa)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 18px -8px rgba(124,92,252,0.6)' }}>
+                      <i className="ri-shield-check-line" style={{ fontSize: 20 }} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>Subscription Health</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)' }}>Renewals & churn at a glance</div>
+                    </div>
+                  </div>
+                </Col>
+                {[
+                  { label: 'Active', value: saas.active_subscriptions, sub: 'paying subscriptions', color: '#0ab39c', icon: 'ri-checkbox-circle-line' },
+                  { label: 'Expiring ≤30d', value: saas.expiring_soon, sub: 'renewals at risk', color: '#f7b84b', icon: 'ri-time-line' },
+                  { label: 'Expired', value: saas.expired, sub: 'lapsed plans', color: '#f06548', icon: 'ri-close-circle-line' },
+                  { label: 'Churn Rate', value: `${saas.churn_rate}%`, sub: 'of all tenants', color: '#9b72cf', icon: 'ri-arrow-down-circle-line' },
+                ].map((s, i) => (
+                  <Col key={i} xs={6} md={2}>
+                    <div className="d-flex align-items-center gap-2">
+                      <div style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: `${s.color}18`, color: s.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
+                        <i className={s.icon} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 19, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1 }}>{s.value}</div>
+                        <div style={{ fontSize: 10, color: 'var(--vz-secondary-color)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: 3 }}>{s.label}</div>
+                      </div>
+                    </div>
+                  </Col>
+                ))}
+              </Row>
+            </CardBody>
+          </Card>
         </Col>
       </Row>
 
@@ -674,6 +729,85 @@ export default function AdminDashboard() {
                   );
                 })}
               </div>
+            </CardBody>
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Top tenants by revenue + MRR by plan — where the money comes from. */}
+      <Row className="g-3 mb-3">
+        <Col xl={6}>
+          <Card style={cardStyle}>
+            <div style={cardHeaderStyle}>
+              <div>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Top Tenants by Revenue</h5>
+                <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Highest-paying clients all-time</p>
+              </div>
+              <i className="ri-vip-crown-2-line" style={{ fontSize: 18, color: '#f7b84b' }} />
+            </div>
+            <CardBody style={{ padding: 0 }}>
+              {(data.top_clients && data.top_clients.length > 0) ? data.top_clients.map((tc: any, i: number) => {
+                const max = Number(data.top_clients[0]?.total_revenue || 1);
+                const rev = Number(tc.total_revenue || 0);
+                const pct = Math.max(4, Math.round((rev / max) * 100));
+                const medal = ['linear-gradient(135deg,#fbc763,#e89a1d)', 'linear-gradient(135deg,#cdd4e1,#8b97b3)', 'linear-gradient(135deg,#dca074,#b06f3f)', 'linear-gradient(135deg,#9aa7c4,#5b6da3)', 'linear-gradient(135deg,#b58fe0,#7c5fb8)'][i % 5];
+                return (
+                  <div key={tc.client_id} className="ad-list-row" style={{ padding: '11px 20px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                        <div style={{ width: 26, height: 26, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: medal, color: '#fff', fontWeight: 800, fontSize: 11, flexShrink: 0 }}>{i + 1}</div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tc.client?.org_name || 'Unknown'}</div>
+                          <div style={{ fontSize: 10.5, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>{tc.payments_count} payment{tc.payments_count === 1 ? '' : 's'}</div>
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 13.5, fontWeight: 800, color: '#0ab39c', flexShrink: 0 }}>₹{rev.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div style={{ height: 5, background: 'var(--vz-border-color)', borderRadius: 999, overflow: 'hidden' }}>
+                      <div style={{ width: `${pct}%`, height: '100%', background: medal, borderRadius: 999 }} />
+                    </div>
+                  </div>
+                );
+              }) : <div className="text-center text-muted py-4">No revenue yet</div>}
+            </CardBody>
+          </Card>
+        </Col>
+
+        <Col xl={6}>
+          <Card style={cardStyle}>
+            <div style={cardHeaderStyle}>
+              <div>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>MRR by Plan</h5>
+                <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Recurring revenue per plan tier</p>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: '#0ab39c' }}>₹{formatCompact(saas.mrr)}</div>
+                <div style={{ fontSize: 10, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>TOTAL MRR</div>
+              </div>
+            </div>
+            <CardBody style={{ padding: '16px 20px' }}>
+              {(saas.mrr_by_plan && saas.mrr_by_plan.length > 0) ? saas.mrr_by_plan.map((p, i) => {
+                const share = saas.mrr > 0 ? Math.round((p.mrr / saas.mrr) * 100) : 0;
+                const c1 = COLORS[i % COLORS.length];
+                const c2 = COLORS[(i + 1) % COLORS.length];
+                return (
+                  <div key={p.plan} style={{ marginBottom: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ width: 30, height: 30, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `linear-gradient(135deg,${c1},${c2})`, color: '#fff', fontWeight: 800, fontSize: 12 }}>{(p.plan || '?').charAt(0)}</div>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{p.plan}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>{share}%</span>
+                        <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>₹{Number(p.mrr).toLocaleString('en-IN')}</span>
+                      </div>
+                    </div>
+                    <div style={{ height: 6, borderRadius: 999, background: 'var(--vz-border-color)', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', borderRadius: 999, width: `${Math.max(share, 4)}%`, background: `linear-gradient(90deg,${c1},${c2})`, transition: 'width 0.8s ease' }} />
+                    </div>
+                  </div>
+                );
+              }) : <div className="text-center text-muted py-4">No active subscriptions yet</div>}
             </CardBody>
           </Card>
         </Col>

@@ -64,7 +64,7 @@ export default function ClmAgreementsSentPage() {
     approved: sent.filter(c => c.status === 'approved').length,
     pending:  sent.filter(c => c.status === 'pending').length,
     rejected: sent.filter(c => c.status === 'rejected').length,
-    clarify:  sent.filter(c => c.status === 'clarify' && c.clarifications.some(cl => !cl.response)).length,
+    clarify:  sent.filter(c => c.status === 'clarify').length,
   }), [sent]);
 
   const filtered = useMemo(() => {
@@ -77,8 +77,11 @@ export default function ClmAgreementsSentPage() {
     return list;
   }, [search, tab, sent]);
 
+  // Every agreement currently in clarification — both those awaiting our reply
+  // AND those we've already answered (awaiting the approver's next decision) —
+  // so the full conversation stays checkable here until the round closes.
   const clarifyList = useMemo(
-    () => sent.filter(c => c.status === 'clarify' && c.clarifications.some(cl => !cl.response)),
+    () => sent.filter(c => c.status === 'clarify'),
     [sent],
   );
 
@@ -452,6 +455,7 @@ function RejectedTable({ rows, ata, page, setPage, dlOpen, setDlOpen, toast, t }
 
 /* ── Clarifications table (sender responds) ── */
 function ClarifyTable({ rows, onRespond, t }: { rows: SentRow[]; onRespond: (id: string) => void; t: OpsTokens }) {
+  const awaiting = rows.filter(c => c.clarifications.some(cl => !cl.response)).length;
   if (!rows.length) {
     return (
       <div style={{ background: t.dark ? t.tableBg : '#F0FDFF', minHeight: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 20px' }}>
@@ -481,7 +485,8 @@ function ClarifyTable({ rows, onRespond, t }: { rows: SentRow[]; onRespond: (id:
           <tbody>
             {rows.map((c, i) => {
               const pending = c.clarifications.filter(cl => !cl.response);
-              const latest = pending[pending.length - 1];
+              const hasPending = pending.length > 0;
+              const latest = hasPending ? pending[pending.length - 1] : c.clarifications[c.clarifications.length - 1];
               const round = c.clarifications.length;
               const bg = (i + 1) % 2 === 0 ? t.rowAlt : t.tableBg;
               return (
@@ -497,15 +502,23 @@ function ClarifyTable({ rows, onRespond, t }: { rows: SentRow[]; onRespond: (id:
                   <td style={{ ...TD_L, maxWidth: 210 }}>
                     {round > 1 && <span style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 20, background: '#F5F0FF', border: '1px solid #DDD6FE', fontSize: 7.5, fontWeight: 700, color: '#7C3AED', marginBottom: 3 }}>Round {round}</span>}
                     <Tooltip label={latest?.query ?? ''}><div style={{ fontSize: 11, color: t.textSub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 210 }}>{latest?.query ?? '—'}</div></Tooltip>
-                    <div style={{ fontSize: 8.5, color: '#F59E0B', fontWeight: 600, marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> Awaiting your response · raised by {c.approver} on {latest?.date}</div>
+                    {hasPending
+                      ? <div style={{ fontSize: 8.5, color: '#F59E0B', fontWeight: 600, marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> Awaiting your response · raised by {c.approver} on {latest?.date}</div>
+                      : <div style={{ fontSize: 8.5, color: t.dark ? '#67e8f9' : '#0891b2', fontWeight: 600, marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2.4" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg> You responded · awaiting {c.approver}'s decision</div>}
                   </td>
                   <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub }}>{c.expDate}</span></td>
                   <td style={TD_C}>
-                    <button onClick={() => onRespond(c.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg,#0891b2,#0e7490)', color: '#fff', fontFamily: 'inherit', fontSize: 10, fontWeight: 800, cursor: 'pointer', boxShadow: '0 3px 10px rgba(8,145,178,.4)', whiteSpace: 'nowrap' }}
-                      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; }} onMouseLeave={e => { e.currentTarget.style.transform = ''; }}>
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
-                      Respond
-                    </button>
+                    {hasPending
+                      ? <button onClick={() => onRespond(c.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg,#0891b2,#0e7490)', color: '#fff', fontFamily: 'inherit', fontSize: 10, fontWeight: 800, cursor: 'pointer', boxShadow: '0 3px 10px rgba(8,145,178,.4)', whiteSpace: 'nowrap' }}
+                          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; }} onMouseLeave={e => { e.currentTarget.style.transform = ''; }}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+                          Respond
+                        </button>
+                      : <button onClick={() => onRespond(c.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 9, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.45)' : '#C4B5FD'}`, background: t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF', color: t.dark ? '#c4b5fd' : '#6D28D9', fontFamily: 'inherit', fontSize: 10, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; }} onMouseLeave={e => { e.currentTarget.style.transform = ''; }}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></svg>
+                          View Conversation
+                        </button>}
                   </td>
                 </tr>
               );
@@ -514,7 +527,7 @@ function ClarifyTable({ rows, onRespond, t }: { rows: SentRow[]; onRespond: (id:
         </table>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: t.pagerBg, borderTop: `1.5px solid ${t.dark ? t.border : '#A5F3FC'}` }}>
-        <span style={{ fontSize: 11.5, color: t.dark ? '#67e8f9' : '#0e7490', fontWeight: 500 }}><b style={{ color: t.dark ? '#cffafe' : '#164e63', fontWeight: 800 }}>{rows.length}</b> pending clarification{rows.length !== 1 ? 's' : ''} awaiting your response</span>
+        <span style={{ fontSize: 11.5, color: t.dark ? '#67e8f9' : '#0e7490', fontWeight: 500 }}><b style={{ color: t.dark ? '#cffafe' : '#164e63', fontWeight: 800 }}>{awaiting}</b> awaiting your response · <b style={{ color: t.dark ? '#cffafe' : '#164e63', fontWeight: 800 }}>{rows.length}</b> in clarification</span>
       </div>
     </div>
   );
@@ -525,31 +538,65 @@ function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; o
   const [text, setText] = useState('');
   const [err, setErr] = useState(false);
   const pending = contract.clarifications.filter(cl => !cl.response);
-  const cl = pending[pending.length - 1];
+  const hasPending = pending.length > 0;
   return (
     <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(12,5,38,.75)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: "'Rubik', system-ui, sans-serif" }}>
       <div style={{ width: '100%', maxWidth: 500, borderRadius: 20, overflow: 'hidden', boxShadow: '0 40px 80px rgba(12,5,38,.35)', animation: 'awsSlideUp .22s cubic-bezier(.22,1,.36,1) both' }}>
         <div style={{ background: 'linear-gradient(118deg,#5B21B6,#7C3AED,#8B5CF6)', padding: '16px 20px', position: 'relative', overflow: 'hidden' }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.14),transparent)', pointerEvents: 'none' }} />
           <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div><div style={{ fontSize: 8.5, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 2 }}>{contract.id} · Clarification Response</div><div style={{ fontSize: 15, fontWeight: 900, color: '#fff', letterSpacing: '-.3px', maxWidth: 330, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contract.title}</div></div>
+            <div><div style={{ fontSize: 8.5, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 2 }}>{contract.id} · {hasPending ? 'Clarification Response' : 'Clarification Conversation'}</div><div style={{ fontSize: 15, fontWeight: 900, color: '#fff', letterSpacing: '-.3px', maxWidth: 330, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contract.title}</div></div>
             <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)', color: '#fff', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
           </div>
         </div>
-        <div style={{ padding: '16px 20px', background: t.dark ? '#1c1733' : '#FAF5FF', borderBottom: `1px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}` }}>
-          <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.dark ? '#c4b5fd' : '#7C3AED', marginBottom: 8 }}>Approver's Clarification Query</div>
-          <div style={{ background: t.surface, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, borderRadius: 10, padding: '12px 14px', fontSize: 12, color: t.textSub, lineHeight: 1.6 }}>{cl?.query}</div>
-          <div style={{ fontSize: 9, color: t.textMuted, marginTop: 5 }}>Raised by {contract.approver} on {cl?.date}</div>
-        </div>
-        <div style={{ padding: '16px 20px', background: t.surface }}>
-          <div style={{ fontSize: 9, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 8 }}>Your Response <span style={{ color: '#EF4444' }}>*</span></div>
-          <textarea value={text} onChange={e => { setText(e.target.value); setErr(false); }} placeholder="Provide your clarification response to the approver…"
-            style={{ width: '100%', height: 90, padding: '10px 12px', border: `1.5px solid ${err ? '#EF4444' : (t.dark ? t.border : '#E2E8F0')}`, borderRadius: 10, fontFamily: 'inherit', fontSize: 12, color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', resize: 'none', outline: 'none', boxSizing: 'border-box' }} />
-          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-            <button onClick={onClose} style={{ flex: 1, padding: 10, borderRadius: 10, border: `1.5px solid ${t.dark ? t.border : '#E2E8F0'}`, background: t.dark ? 'rgba(255,255,255,.05)' : '#F8F9FA', color: t.dark ? '#cbd5e1' : '#64748B', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-            <button onClick={() => { if (!text.trim()) { setErr(true); return; } onSubmit(contract.id, text.trim()); }} style={{ flex: 2, padding: 10, borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', color: '#fff', fontFamily: 'inherit', fontSize: 11, fontWeight: 800, cursor: 'pointer', boxShadow: '0 3px 10px rgba(109,40,217,.35)' }}>Submit Clarification Response</button>
+        {/* Full conversation thread — every query + response in order, so the
+            sender reads the whole back-and-forth, not just the latest query. */}
+        <div style={{ padding: '14px 20px', background: t.dark ? '#1c1733' : '#FAF5FF', borderBottom: `1px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, maxHeight: 300, overflowY: 'auto' }}>
+          <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.dark ? '#c4b5fd' : '#7C3AED', marginBottom: 11 }}>Conversation</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {contract.clarifications.map((cl, i) => (
+              <div key={i}>
+                {/* Approver query (left) */}
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(contract.approver)}</span></div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted, marginBottom: 3 }}>{contract.approver} · Approver · {cl.date}</div>
+                    <div style={{ background: t.surface, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, borderRadius: '4px 12px 12px 12px', padding: '9px 12px', fontSize: 11.5, color: t.textSub, lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.query}</div>
+                  </div>
+                </div>
+                {/* Sender response (right) or awaiting note */}
+                {cl.response
+                  ? <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'flex-start', marginTop: 7 }}>
+                      <div style={{ maxWidth: '80%', minWidth: 0 }}>
+                        <div style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted, marginBottom: 3, textAlign: 'right' }}>You · {contract.createdBy}</div>
+                        <div style={{ background: t.dark ? 'rgba(8,145,178,.16)' : '#E0F7FA', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.42)' : '#A5F3FC'}`, borderRadius: '12px 4px 12px 12px', padding: '9px 12px', fontSize: 11.5, color: t.dark ? '#a5f3fc' : '#0e7490', lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.response}</div>
+                      </div>
+                      <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(contract.createdBy)}</span></div>
+                    </div>
+                  : <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 6, marginLeft: 34, fontSize: 9, fontWeight: 600, color: '#F59E0B' }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> Awaiting your response</div>}
+              </div>
+            ))}
           </div>
         </div>
+        {hasPending ? (
+          <div style={{ padding: '16px 20px', background: t.surface }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 8 }}>Your Response <span style={{ color: '#EF4444' }}>*</span></div>
+            <textarea value={text} onChange={e => { setText(e.target.value); setErr(false); }} placeholder="Provide your clarification response to the approver…"
+              style={{ width: '100%', height: 90, padding: '10px 12px', border: `1.5px solid ${err ? '#EF4444' : (t.dark ? t.border : '#E2E8F0')}`, borderRadius: 10, fontFamily: 'inherit', fontSize: 12, color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', resize: 'none', outline: 'none', boxSizing: 'border-box' }} />
+            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+              <button onClick={onClose} style={{ flex: 1, padding: 10, borderRadius: 10, border: `1.5px solid ${t.dark ? t.border : '#E2E8F0'}`, background: t.dark ? 'rgba(255,255,255,.05)' : '#F8F9FA', color: t.dark ? '#cbd5e1' : '#64748B', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => { if (!text.trim()) { setErr(true); return; } onSubmit(contract.id, text.trim()); }} style={{ flex: 2, padding: 10, borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', color: '#fff', fontFamily: 'inherit', fontSize: 11, fontWeight: 800, cursor: 'pointer', boxShadow: '0 3px 10px rgba(109,40,217,.35)' }}>Submit Clarification Response</button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ padding: '14px 20px', background: t.surface, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <span style={{ fontSize: 10.5, fontWeight: 600, color: t.textMuted, display: 'flex', alignItems: 'center', gap: 6, lineHeight: 1.4 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2.2" strokeLinecap="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12" /></svg>
+              You've responded — awaiting {contract.approver}'s decision.
+            </span>
+            <button onClick={onClose} style={{ padding: '10px 22px', borderRadius: 10, border: `1.5px solid ${t.dark ? t.border : '#E2E8F0'}`, background: t.dark ? 'rgba(255,255,255,.05)' : '#F8F9FA', color: t.dark ? '#cbd5e1' : '#64748B', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>Close</button>
+          </div>
+        )}
       </div>
     </div>
   );

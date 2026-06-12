@@ -206,6 +206,15 @@ class OnboardingController extends Controller
             // allocateEmpCode row lock) open for the full ~15s SMTP round-trip,
             // which is what made this endpoint slow. See the queue() call below.
             $result = DB::transaction(function () use ($invite, $data) {
+                // OB-08: re-fetch + row-lock the invite INSIDE the transaction and
+                // re-check it's still pending. Without this, a double-click / two
+                // tabs both passed the earlier status check and provisioned two
+                // Users + Employees from a single invite.
+                $invite = EmployeeOnboardingInvite::whereKey($invite->id)->lockForUpdate()->first();
+                if (!$invite || $invite->status !== 'pending') {
+                    abort(409, 'This onboarding link has already been completed.');
+                }
+
                 // Provision the User row first (login account). Same shape as
                 // EmployeeController::store but tenant comes from the invite,
                 // not the request user (which doesn't exist on this public
@@ -265,7 +274,11 @@ class OnboardingController extends Controller
             // running to actually dispatch the mail.
             if (Settings::shouldSendMail('newUser')) try {
                 $orgName = Client::find($invite->client_id)?->org_name ?? 'Your Organization';
-                Mail::to($invite->invitee_email)->queue(new WelcomeCredentialsMail(
+                // OB-12: send SYNCHRONOUSLY — there is no queue worker running, so
+                // a ->queue()'d credentials mail would sit undelivered forever and
+                // the new employee could never log in. Costs a little request
+                // latency, but the credentials actually arrive.
+                Mail::to($invite->invitee_email)->send(new WelcomeCredentialsMail(
                     $loginUser->name,
                     $invite->invitee_email,
                     $rawPassword,
@@ -328,7 +341,20 @@ class OnboardingController extends Controller
         // and finally APP_URL as a last-resort floor inside frontend_url's
         // env() chain. The candidate opens this in a browser, so it MUST
         // resolve to the SPA host, not the Laravel API host.
-        $base = rtrim($appOrigin ?: config('app.frontend_url'), '/');
+        // OB-21: only honour a caller-supplied origin if its host is one we
+        // trust (the configured frontend / app URL). Otherwise an attacker who
+        // can reach createInvite could plant a phishing host in the emailed link.
+        $base = rtrim((string) config('app.frontend_url'), '/');
+        if ($appOrigin) {
+            $allowedHosts = array_filter([
+                parse_url((string) config('app.frontend_url'), PHP_URL_HOST),
+                parse_url((string) config('app.url'), PHP_URL_HOST),
+            ]);
+            $originHost = parse_url($appOrigin, PHP_URL_HOST);
+            if ($originHost && in_array($originHost, $allowedHosts, true)) {
+                $base = rtrim($appOrigin, '/');
+            }
+        }
         return "{$base}/onboarding/{$token}";
     }
 
@@ -419,6 +445,13 @@ class OnboardingController extends Controller
         // which would wrongly reject legitimate values like "123 Drop Lane".
         $noTags = ['not_regex:/[<>]/'];
 
+        // OB-01 fix: every FK below must reference a master that belongs to THIS
+        // invite's tenant (or a global/null-client row), so a public submitter
+        // can't inject another tenant's department/legal-entity/role/geography id.
+        $tenantFk = fn (string $table) => Rule::exists($table, 'id')->where(function ($q) use ($invite) {
+            $q->whereNull('client_id')->orWhere('client_id', $invite->client_id);
+        });
+
         return $request->validate([
             'first_name'   => array_merge(['required', 'string', 'max:100'], $nameRule),
             'middle_name'  => array_merge(['nullable', 'string', 'max:100'], $nameRule),
@@ -426,33 +459,33 @@ class OnboardingController extends Controller
             'gender'       => 'nullable|in:Male,Female,Other',
             // Onboardee must be at least 18 (matches the frontend validator).
             'date_of_birth' => 'nullable|date|before_or_equal:' . now()->subYears(18)->toDateString(),
-            'nationality_country_id' => 'nullable|integer',
-            'work_country_id'        => 'nullable|integer',
+            'nationality_country_id' => ['nullable', 'integer', $tenantFk('master_countries')],
+            'work_country_id'        => ['nullable', 'integer', $tenantFk('master_countries')],
             'mobile'       => array_merge(['nullable', 'string', 'max:30'], $mobileRule),
             'alt_mobile'   => array_merge(['nullable', 'string', 'max:30'], $mobileRule),
 
             // Current address
-            'country_id'   => 'nullable|integer',
-            'state_id'     => 'nullable|integer',
+            'country_id'   => ['nullable', 'integer', $tenantFk('master_countries')],
+            'state_id'     => ['nullable', 'integer', $tenantFk('master_states')],
             'city'         => array_merge(['nullable', 'string', 'max:100'], $noTags),
             'address_line1' => array_merge(['nullable', 'string', 'max:255'], $noTags),
             'address_line2' => array_merge(['nullable', 'string', 'max:255'], $noTags),
             'pincode'      => array_merge(['nullable', 'string', 'max:20'], $pincodeRule),
 
             // Permanent address
-            'perm_country_id'    => 'nullable|integer',
-            'perm_state_id'      => 'nullable|integer',
+            'perm_country_id'    => ['nullable', 'integer', $tenantFk('master_countries')],
+            'perm_state_id'      => ['nullable', 'integer', $tenantFk('master_states')],
             'perm_city'          => array_merge(['nullable', 'string', 'max:100'], $noTags),
             'perm_address_line1' => array_merge(['nullable', 'string', 'max:255'], $noTags),
             'perm_address_line2' => array_merge(['nullable', 'string', 'max:255'], $noTags),
             'perm_pincode'       => array_merge(['nullable', 'string', 'max:20'], $pincodeRule),
 
             // Job — defaults from invite when omitted
-            'department_id'   => 'nullable|integer',
-            'designation_id'  => 'nullable|integer',
-            'primary_role_id' => 'nullable|integer',
-            'ancillary_role_id' => 'nullable|integer',
-            'legal_entity_id' => 'nullable|integer',
+            'department_id'   => ['nullable', 'integer', $tenantFk('master_departments')],
+            'designation_id'  => ['nullable', 'integer', $tenantFk('master_designations')],
+            'primary_role_id' => ['nullable', 'integer', $tenantFk('master_roles')],
+            'ancillary_role_id' => ['nullable', 'integer', $tenantFk('master_roles')],
+            'legal_entity_id' => ['nullable', 'integer', $tenantFk('master_legal_entities')],
             'location'        => 'nullable|string|max:191',
             // Joining date must be realistic for a NEW joiner — not an absurd
             // historical date (e.g. 1900) and not far in the future. Window:

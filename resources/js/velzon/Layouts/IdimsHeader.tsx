@@ -1129,7 +1129,7 @@ const IDIMS_CSS = `
 /* Dropdown / mega menu.
    position: fixed + centered so the panel escapes the .idims-nav-items
    horizontal scroll container (which would otherwise clip it vertically). */
-.idims-dropdown { position: fixed; top: 116px; left: 50%; transform: translateX(-50%); width: min(1060px, calc(100vw - 48px)); background: #fff; border: 1.5px solid #E8ECF5; border-radius: 18px; box-shadow: 0 24px 70px rgba(15,23,42,.28); z-index: 1050; overflow: hidden; animation: idimsDD .18s cubic-bezier(.22,1,.36,1) both; }
+.idims-dropdown { position: fixed; top: 116px; left: 50%; transform: translateX(-50%); width: min(1060px, calc(100vw - 48px)); max-height: calc(100vh - 128px); display: flex; flex-direction: column; background: #fff; border: 1.5px solid #E8ECF5; border-radius: 18px; box-shadow: 0 24px 70px rgba(15,23,42,.28); z-index: 1050; overflow: hidden; animation: idimsDD .18s cubic-bezier(.22,1,.36,1) both; }
 .idims-dd-wide { width: min(1480px, calc(100vw - 28px)); }
 .idims-dd-med { width: min(620px, calc(100vw - 28px)); }
 /* CLM mega layout — 3 sections; Operations + Master Management each split into
@@ -1151,8 +1151,15 @@ const IDIMS_CSS = `
 .idims-dark .idims-clm-child-label { color: #E5E7EB; }
 .idims-dark .idims-clm-child-ico { background: rgba(148,163,184,.14) !important; }
 @keyframes idimsDD { from { opacity: 0; transform: translateX(-50%) translateY(-10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
-.idims-dd-topbar { height: 4px; background: linear-gradient(90deg,#7C3AED 0%,#A78BFA 28%,#0EA5E9 52%,#38BDF8 68%,#0D9488 84%,#2DD4BF 100%); }
-.idims-dd-inner { padding: 8px 12px 14px; }
+.idims-dd-topbar { height: 4px; flex-shrink: 0; background: linear-gradient(90deg,#7C3AED 0%,#A78BFA 28%,#0EA5E9 52%,#38BDF8 68%,#0D9488 84%,#2DD4BF 100%); }
+/* flex:1 + min-height:0 lets the content scroll within the height-capped panel
+   so a tall mega-menu (CLM) never spills below the viewport and gets clipped. */
+.idims-dd-inner { padding: 8px 12px 14px; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
+.idims-dd-inner::-webkit-scrollbar { width: 9px; }
+.idims-dd-inner::-webkit-scrollbar-track { background: transparent; }
+.idims-dd-inner::-webkit-scrollbar-thumb { background: #D7DBEA; border-radius: 8px; border: 2px solid #fff; background-clip: padding-box; }
+.idims-dd-inner::-webkit-scrollbar-thumb:hover { background: #C0C6DC; background-clip: padding-box; }
+.idims-dark .idims-dd-inner::-webkit-scrollbar-thumb { background: #3A4150; border-color: #171A23; }
 /* align-items: stretch so every column fills the tallest column's height —
    then the border-right dividers run the full panel height (like the
    prototype) instead of stopping at each column's own content. */

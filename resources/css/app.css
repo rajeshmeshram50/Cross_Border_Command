@@ -1062,6 +1062,18 @@ tbody tr:nth-child(10) {
 [data-bs-theme="dark"] .tc-wl-info .tc-wl-hl { color: #ddd6fe; }
 [data-bs-theme="dark"] .tc-wl-rows select { color: #ddd6fe; }
 
+/* Non-bleed band for the reusable WorklistPager (used in HR tables). Same
+   look as .tc-wl-pag but without the full-bleed negative margins. */
+.wl-pager {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px;
+  margin-top: 12px; padding: 10px 14px;
+  border-top: 2px solid #ddd6fe;
+  background: linear-gradient(90deg, #faf7ff 0%, #f1ecfd 40%, #faf7ff 100%);
+  border-radius: 0 0 12px 12px;
+}
+[data-bs-theme="dark"] .wl-pager { background: linear-gradient(90deg, rgba(124, 58, 237, .08), rgba(124, 58, 237, .14), rgba(124, 58, 237, .08)); border-top-color: rgba(167, 139, 250, .30); }
+
 /* Unified list frame (search + filters + table) — mirrors the Clients frame. */
 .pmt-list-frame {
   background: #ffffff;
