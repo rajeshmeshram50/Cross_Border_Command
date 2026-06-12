@@ -7,6 +7,9 @@ import type { MenuChild, MenuGroup } from '../types';
 import api from '../api';
 import { getMasterConfig, masterEndpoint } from './master/masterConfigs';
 import './MasterDashboard.css';
+// Shared master card-strip styling (.dsn-page-strip) — reused so the
+// overview header matches the per-master page headers (Legal Entities, etc.).
+import '../../css/master.css';
 
 type CountEntry = { active: number; inactive: number; total: number };
 
@@ -283,40 +286,78 @@ export default function MasterDashboard() {
       .master-surface { background: #ffffff; }
       [data-bs-theme="dark"] .master-surface { background: #1c2531; }
       @keyframes mc-spin { to { transform: rotate(360deg); } }
+
+      /* Header strip — same shape/parts as the Clients (.cl-cstrip) header:
+         white container, 1px violet border, left accent strip, violet icon. */
+      .ms-cstrip {
+        position: relative; overflow: hidden;
+        display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+        min-height: 70px; padding: 12px 18px;
+        background: #ffffff;
+        border: 1px solid #c4b5fd;
+        border-radius: 16px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+        font-family: 'DM Sans', system-ui, sans-serif;
+      }
+      .ms-cstrip-accent {
+        position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+        background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
+        border-radius: 16px 0 0 16px;
+      }
+      .ms-cstrip-left { display: flex; align-items: center; gap: 16px; position: relative; z-index: 1; min-width: 0; flex: 1; }
+      .ms-cstrip-icon {
+        position: relative; width: 46px; height: 46px; border-radius: 12px;
+        background: linear-gradient(135deg, #7c3aed, #5b21b6);
+        display: inline-flex; align-items: center; justify-content: center;
+        color: #fff; font-size: 22px; flex-shrink: 0;
+        box-shadow: 0 4px 14px rgba(91,33,182,0.40), 0 0 0 3px rgba(124,58,237,0.10);
+      }
+      .ms-cstrip-title { font-size: 18px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
+      .ms-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; margin-top: 4px; line-height: 1.5; }
+      .ms-cstrip-back {
+        display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+        padding: 0 18px; height: 44px; border-radius: 14px;
+        border: 1px solid color-mix(in srgb, #7c3aed 30%, var(--vz-border-color));
+        background: #fff; color: #6d28d9;
+        font-family: inherit; font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; flex-shrink: 0;
+        transition: background .15s, border-color .15s, transform .15s;
+      }
+      .ms-cstrip-back:hover { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }
+      .ms-cstrip-back i { font-size: 15px; }
+      [data-bs-theme="dark"] .ms-cstrip { background: var(--vz-card-bg); border-color: rgba(167,139,250,0.40); box-shadow: 0 6px 18px rgba(0,0,0,0.30); }
+      [data-bs-theme="dark"] .ms-cstrip-back { background: transparent; color: #c4b5fd; }
+      [data-bs-theme="dark"] .ms-cstrip-back:hover { background: rgba(124,58,237,.14); }
     `}</style>
     <div>
-      {/* ── Page Header ── */}
-      <div className="page-title-box d-sm-flex align-items-center justify-content-between mb-4">
-        <div className="d-flex align-items-center gap-2">
-          {/* Back button — uses history.back() when there's a prior
-              entry, otherwise lands on /dashboard so a direct-link
-              visit still has somewhere coherent to go. */}
-          <button
-            type="button"
-            onClick={() => {
-              if (window.history.length > 1) navigate(-1);
-              else                            navigate('/dashboard');
-            }}
-            aria-label="Back"
-            className="btn btn-soft-secondary btn-icon rounded-circle"
-            style={{ width: 36, height: 36 }}
-            title="Back"
-          >
-            <i className="ri-arrow-left-line fs-16" />
-          </button>
-          <div>
-            <h4 className="mb-0">Master Control Center</h4>
-            <p className="text-muted fs-12 mb-0 mt-1">{totals.total} masters across {groups.length} categories</p>
+      {/* ── Page Header ── card-strip styled to match the per-master page
+          headers (Legal Entities, etc.): gradient icon + title on the left,
+          a pill "Back" button on the right. */}
+      <div className="ms-cstrip mb-3">
+        <span className="ms-cstrip-accent" />
+        <div className="ms-cstrip-left">
+          <div className="ms-cstrip-icon"><i className="ri-stack-line" /></div>
+          <div className="min-w-0">
+            <div className="ms-cstrip-title">Master Control Center</div>
+            <div className="ms-cstrip-sub">Manage every master — companies, geography, trade, parties and more.</div>
           </div>
         </div>
-        {/* Breadcrumb intentionally omitted on the Master overview —
-            it's the top of the master hierarchy ("Master Data > Overview"
-            was a tautology), the back button on the left already gives
-            the user a one-click escape route. */}
+        {/* Back — history.back() when there's a prior entry, otherwise
+            /dashboard so a direct-link visit still has somewhere to go. */}
+        <button
+          type="button"
+          className="ms-cstrip-back"
+          onClick={() => {
+            if (window.history.length > 1) navigate(-1);
+            else                            navigate('/dashboard');
+          }}
+        >
+          <i className="ri-arrow-left-line" />
+          Back to Dashboard
+        </button>
       </div>
 
       {/* ── KPI Stat Cards ── */}
-   <Row className="g-3 mb-4">
+   <Row className="g-3 mb-3">
   {STAT_CARDS.map((sc, i) => (
     <Col key={sc.label} xl={3} md={6} xs={12}>
       <div
@@ -408,7 +449,7 @@ export default function MasterDashboard() {
 </Row>
 
       {/* ── Search Bar ── */}
-      <div className="master-surface" style={{ border: '1px solid var(--vz-border-color)', borderRadius: 12, padding: '10px 14px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div className="master-surface" style={{ border: '1px solid var(--vz-border-color)', borderRadius: 12, padding: '10px 14px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
         <i className="ri-search-line" style={{ color: 'var(--vz-secondary-color)', fontSize: 17 }} />
         <input
           type="text"
@@ -443,7 +484,7 @@ export default function MasterDashboard() {
         const isCollapsed = hasSearch ? false : closedGroups.has(group.id);
 
         return (
-          <div key={group.id} style={{ marginBottom: 12 }}>
+          <div key={group.id} style={{ marginBottom: 8 }}>
 
             {/* ── Category Header — single white row, clickable to toggle ── */}
             <div
@@ -504,8 +545,13 @@ export default function MasterDashboard() {
             </div>
 
             {/* ── Expanded master cards ── */}
+            {/* gx-3 keeps the 16px horizontal gutter; gy-2 sets an 8px
+                vertical gutter between wrapped card rows. marginTop:0
+                cancels the row's default negative top margin so the first
+                card row also sits 8px under the strip — equal spacing all
+                round (strip→cards and row→row). */}
             {!isCollapsed && (
-              <Row className="g-3" style={{ marginTop: 10 }}>
+              <Row className="gx-3 gy-2" style={{ marginTop: 0 }}>
                 {group.children.map(leaf => (
                   <Col key={leaf.id} xl={3} lg={4} md={6}>
                     <MasterCard

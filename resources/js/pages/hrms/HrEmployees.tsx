@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
 import Tooltip from '../../components/ui/Tooltip';
+import WorklistPager from '../../components/ui/WorklistPager';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
@@ -2501,6 +2502,26 @@ export default function HrEmployees() {
           -webkit-overflow-scrolling: touch;
         }
 
+        /* Unified list frame (search + table + pagination) — mirrors the
+           Recruitment page's .rec-list-frame so the list reads as one clean
+           bordered panel now that the whole-page card container is gone. */
+        .hr-emp-list-frame {
+          background: #ffffff;
+          border: 1px solid #ececf2;
+          border-radius: 14px;
+          overflow: hidden;
+          box-shadow: 0 1px 0 rgba(15,23,42,0.04), 0 4px 14px rgba(15,23,42,0.05);
+        }
+        .hr-emp-list-frame .hr-emp-frame-filter {
+          border-bottom: 1px solid var(--vz-border-color);
+        }
+        [data-bs-theme="dark"] .hr-emp-list-frame,
+        [data-layout-mode="dark"] .hr-emp-list-frame {
+          background: var(--vz-card-bg);
+          border-color: var(--vz-border-color);
+          box-shadow: 0 6px 18px rgba(0,0,0,0.30);
+        }
+
         /* Tablet portrait — ≤ 991.98px */
         @media (max-width: 991.98px) {
           /* Header buttons keep their width but the whole right-side
@@ -2672,21 +2693,14 @@ export default function HrEmployees() {
           overflow: hidden;
         }
         [data-bs-theme="dark"] .hr-emp-kpi-card {
-          /* Same recipe as the Plan cards in dark mode — fresh deep
-             black with a crisp accent-tinted glow. Avoids the smoky
-             "fog" look the previous radial-on-slate produced. The
-             --card-accent variable is set per-card inline so each
-             tile gets its own accent shadow + faint accent wash. */
-          background:
-            linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, transparent 18%),
-            linear-gradient(180deg, color-mix(in srgb, var(--card-accent, #7c5cfc) 14%, transparent) 0%, transparent 38%),
-            #0f1216 !important;
-          border-color: color-mix(in srgb, var(--card-accent, #7c5cfc) 40%, transparent) !important;
+          /* Match the Recruitment KPI card background in dark mode — a soft
+             theme card surface (var(--vz-card-bg)) instead of the deep-black
+             accent-glow "Plan card" recipe, so both pages read the same. The
+             per-card top accent ribbon is kept for colour identity. */
+          background: var(--vz-card-bg) !important;
+          border-color: var(--vz-border-color) !important;
           color: rgba(255, 255, 255, 0.96);
-          box-shadow:
-            inset 0 1px 0 0 rgba(255, 255, 255, 0.10),
-            0 4px 10px rgba(0, 0, 0, 0.50),
-            0 14px 32px -10px color-mix(in srgb, var(--card-accent, #7c5cfc) 45%, transparent) !important;
+          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.30) !important;
         }
         /* Top ribbon — bump to 4px in dark mode so the accent stripe
            reads as a clean lit edge against the deep black surface
@@ -2705,14 +2719,10 @@ export default function HrEmployees() {
           color: #f8fafc !important;
         }
         [data-bs-theme="dark"] .hr-emp-kpi-card:hover {
-          /* Keep the layered black surface — only deepen the accent
-             tint so the panel reads as "leaning in" on hover instead
-             of flipping to a different colour entirely. */
-          background:
-            linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, transparent 18%),
-            linear-gradient(180deg, color-mix(in srgb, var(--card-accent, #7c5cfc) 22%, transparent) 0%, transparent 42%),
-            #0f1216 !important;
-          border-color: color-mix(in srgb, var(--card-accent, #7c5cfc) 70%, transparent) !important;
+          /* Hover keeps the recruitment-style surface; just lift the border
+             toward the card accent so it reads as "leaning in". */
+          background: var(--vz-card-bg) !important;
+          border-color: color-mix(in srgb, var(--card-accent, #7c5cfc) 55%, var(--vz-border-color)) !important;
         }
         /* Page-level text legibility in dark mode — the page subtitle and
            any other text-muted body copy under this surface default to a
@@ -2896,42 +2906,23 @@ export default function HrEmployees() {
 
       <Row>
         <Col xs={12}>
-          <div
-            className="hr-employees-surface"
-            style={{
-              borderRadius: 16,
-              border: '1px solid var(--vz-border-color)',
-              boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
-              padding: '20px',
-            }}
-          >
-            {/* ── Header row ── */}
-            <div className="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
-              <div className="d-flex align-items-center gap-3 min-w-0">
-                {/* Icon tile — gradient square with white glyph and a soft
-                    primary shadow, matching the master "What you are doing
-                    here" card on the Department Master. */}
-                <span
-                  className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-                  style={{
-                    width: 46, height: 46,
-                    background: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)',
-                    boxShadow: '0 4px 10px rgba(64,81,137,0.25)',
-                  }}
-                >
-                  <i className="ri-team-line" style={{ color: '#fff', fontSize: 21 }} />
-                </span>
+          {/* Whole-page card container removed — content sits flush on the
+              page background (matches the Recruitment page layout). The
+              `hr-employees-surface` class is kept (many descendant styles —
+              table, search box, dark mode — are scoped to it) but its card
+              chrome (border / shadow / padding / white fill) is stripped. */}
+          <div className="hr-employees-surface" style={{ background: 'transparent' }}>
+            {/* ── Header strip — same shape as the Clients / Branches headers. ── */}
+            <div className="frm-cstrip mb-3">
+              <span className="frm-cstrip-accent" />
+              <div className="frm-cstrip-left">
+                <div className="frm-cstrip-icon"><i className="ri-team-line" /></div>
                 <div className="min-w-0">
-                  <div className="d-flex align-items-center gap-2 flex-wrap">
-                    <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Employee </h5>
-                    
-                  </div>
-                  <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
-                    Employee directory, profiles, and employment records
-                  </div>
+                  <div className="frm-cstrip-title">Employee</div>
+                  <div className="frm-cstrip-sub">Employee directory, profiles, and employment records</div>
                 </div>
               </div>
-              <div className="d-flex align-items-center gap-2 flex-wrap">
+              <div className="d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
                 <Button
                   onClick={handleExportEmployees}
                   disabled={exporting}
@@ -3124,8 +3115,11 @@ export default function HrEmployees() {
               </Col>
             </Row>
 
-            {/* ── Search + Filters (Clients-style row) ── */}
-            <Row className="g-2 align-items-center mb-3">
+            {/* ── Search + Filters + Table — one bordered frame (matches the
+                Recruitment list frame, now that the page container is gone) ── */}
+            <div className="hr-emp-list-frame">
+            <div className="hr-emp-frame-filter p-3">
+            <Row className="g-2 align-items-center mb-0">
               <Col md={6} sm={12}>
                 <div className="search-box">
                   <Input
@@ -3157,11 +3151,11 @@ export default function HrEmployees() {
                 </div>
               </Col>
             </Row>
+            </div>
 
-            {/* ── Table (Clients-style: table-card border rounded + table-light thead) ── */}
-            <Card className="border-0 shadow-none mb-0">
-              <CardBody className="p-3">
-                <div className="table-responsive table-card border rounded">
+            {/* ── Table — flows inside the same frame as the search row ── */}
+            <div className="p-3">
+                <div className="table-responsive">
                   <table className="table align-middle table-nowrap mb-0">
                     <thead className="table-light">
                       <tr>
@@ -3428,60 +3422,9 @@ export default function HrEmployees() {
                     always visible (chevrons go disabled when there's
                     only one page) so the affordance never disappears
                     on lists with few rows. */}
-                <div className="d-flex align-items-center justify-content-between mt-3 pt-2 border-top flex-wrap gap-2">
-                  {/* Wrap the "Showing …" text in a flex row that's the
-                      same height as the pagination buttons (32px) so its
-                      baseline lines up exactly with the right-side
-                      buttons. Without min-height, the small 12px text
-                      box was shorter than the button strip and got
-                      visually centred at a different y than the buttons,
-                      making the left edge of the footer look like it
-                      was "sinking" below the right. */}
-                  <div
-                    className="text-muted d-inline-flex align-items-center"
-                    style={{ fontSize: 12, minHeight: 32, lineHeight: 1 }}
-                  >
-                    {filtered.length === 0 ? (
-                      <span>Showing <span className="fw-bold text-body">0</span> {tab === 'active' ? 'Active' : 'Disabled'} Employees</span>
-                    ) : (
-                      <span>
-                        Showing <span className="fw-bold text-body">{(page - 1) * ROWS_PER_PAGE + 1}</span>–<span className="fw-bold text-body">{Math.min(page * ROWS_PER_PAGE, filtered.length)}</span> of <span className="fw-bold text-body">{filtered.length}</span> {tab === 'active' ? 'Active' : 'Disabled'} Employees
-                      </span>
-                    )}
-                  </div>
-                  <div className="hr-emp-pag">
-                    <button
-                      type="button"
-                      className="hr-emp-pag-btn"
-                      onClick={() => setPage(p => Math.max(1, p - 1))}
-                      disabled={page === 1}
-                      aria-label="Previous page"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-                    </button>
-                    {Array.from({ length: totalPages }, (_, n) => n + 1).map(n => (
-                      <button
-                        key={n}
-                        type="button"
-                        className={`hr-emp-pag-btn ${n === page ? 'is-active' : ''}`}
-                        onClick={() => setPage(n)}
-                      >
-                        {n}
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      className="hr-emp-pag-btn"
-                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                      disabled={page === totalPages}
-                      aria-label="Next page"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-                    </button>
-                  </div>
-                </div>
-              </CardBody>
-            </Card>
+                <WorklistPager total={filtered.length} page={page} pageSize={ROWS_PER_PAGE} onPage={setPage} />
+            </div>
+            </div>
           </div>
         </Col>
       </Row>

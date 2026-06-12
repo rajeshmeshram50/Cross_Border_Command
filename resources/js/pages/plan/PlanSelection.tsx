@@ -263,7 +263,40 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
   const hasPlan = user?.plan?.has_plan && !user?.plan?.expired;
 
   return (
-    <div className="plans-surface">
+    <>
+      {/* Header strip — same shape as the Clients / Plans module headers. */}
+      <div className="pl-cstrip mb-3">
+        <span className="pl-cstrip-accent" />
+        <div className="pl-cstrip-left">
+          <div className="pl-cstrip-icon"><i className="ri-bank-card-line" /></div>
+          <div className="min-w-0">
+            <div className="pl-cstrip-title">Choose Your Plan</div>
+            <div className="pl-cstrip-sub">Select the perfect plan to power your organization.</div>
+          </div>
+        </div>
+        {hasPlan && (
+          <span
+            className="cp-current-pill d-inline-flex align-items-center gap-2 rounded-pill flex-shrink-0"
+            style={{
+              background: 'linear-gradient(135deg, rgba(10,179,156,0.18) 0%, rgba(10,179,156,0.10) 100%)',
+              color: '#0ab39c',
+              border: '1px solid #0ab39c',
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              padding: '5px 14px',
+            }}
+            title={`Valid until ${user?.plan?.expires_at}`}
+          >
+            <span className="rounded-circle" style={{ width: 6, height: 6, background: '#0ab39c', flexShrink: 0 }} />
+            CURRENT: {user?.plan?.plan_name?.toUpperCase()}
+            <span className="ms-1" style={{ opacity: 0.8 }}>· {user?.plan?.expires_at}</span>
+          </span>
+        )}
+      </div>
+
+      {/* ── Cards container ── */}
+      <div className="plans-surface">
       {/* Pulse animation for the Super-Admin-suggested plan card — the amber
           ring softly grows and fades on a 2s loop so the eye is drawn to it
           even while the carousel cycles through other plans. */}
@@ -284,56 +317,6 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
           animation: plan-suggest-badge-bob 1.6s ease-in-out infinite;
         }
       `}</style>
-      <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-0">
-        <div className="d-flex align-items-center gap-2 flex-shrink-1 min-w-0">
-          <div
-            className="d-inline-flex align-items-center justify-content-center rounded-2 flex-shrink-0"
-            style={{
-              width: 36, height: 36,
-              background: '#40518918',
-              border: '1px solid #40518928',
-            }}
-          >
-            <i className="ri-bank-card-line" style={{ color: '#405189', fontSize: 17 }} />
-          </div>
-          <div className="min-w-0">
-            <h5 className="mb-0 fw-bold" style={{ fontSize: 15, letterSpacing: '-0.01em' }}>Choose Your Plan</h5>
-            {hasPlan ? (
-              /* CURRENT plan pill takes the place of the subtitle */
-              <span
-                className="cp-current-pill d-inline-flex align-items-center gap-2 rounded-pill mt-2"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(10,179,156,0.18) 0%, rgba(10,179,156,0.10) 100%)',
-                  color: '#0ab39c',
-                  border: '1px solid #0ab39c',
-                  fontSize: 10,
-                  fontWeight: 500,
-                  letterSpacing: '0.04em',
-                  padding: '3px 10px',
-                }}
-                title={`Valid until ${user?.plan?.expires_at}`}
-              >
-                <span
-                  className="rounded-circle cp-current-dot"
-                  style={{
-                    width: 6, height: 6,
-                    background: '#0ab39c',
-                    flexShrink: 0,
-                  }}
-                />
-                CURRENT: {user?.plan?.plan_name?.toUpperCase()}
-                <span className="ms-1" style={{ opacity: 0.8 }}>· {user?.plan?.expires_at}</span>
-              </span>
-            ) : (
-              <p className="mb-0 text-muted" style={{ fontSize: 11.5 }}>
-                Select the perfect plan to power your organization
-              </p>
-            )}
-          </div>
-        </div>
-
-      </div>
-
       {/* ── Expired alert (only shown when urgent action needed) ── */}
       {user?.plan?.expired && (
         <div
@@ -1001,5 +984,6 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
         )}
       </Modal>
     </div>
+    </>
   );
 }

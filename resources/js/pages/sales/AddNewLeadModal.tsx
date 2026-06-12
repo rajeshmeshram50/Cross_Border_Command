@@ -50,7 +50,8 @@ const EMPTY_LEAD: LeadFormValues = {
 type CustomerOption = {
   id: string;        // public id e.g. "CUST-001"
   dbId: number;      // primary key — used for the show() call
-  company: string;
+  company: string;   // trade / company name
+  legalName: string; // registered legal name — shown as the "Customer Name"
 };
 
 const COUNTRY_OPTIONS = ['India', 'United States', 'United Kingdom', 'Australia', 'Italy', 'Pakistan', 'China', 'Saudi Arabia', 'Nigeria'];
@@ -109,9 +110,10 @@ export default function AddNewLeadModal(props: {
         const rows = Array.isArray(r.data) ? r.data : (r.data?.data ?? []);
         const opts: CustomerOption[] = rows
           .map(c => ({
-            id:      String((c as Record<string, unknown>).id ?? ''),
-            dbId:    Number((c as Record<string, unknown>).db_id ?? (c as Record<string, unknown>).id_pk ?? 0),
-            company: String((c as Record<string, unknown>).company ?? (c as Record<string, unknown>).company_name ?? ''),
+            id:        String((c as Record<string, unknown>).id ?? ''),
+            dbId:      Number((c as Record<string, unknown>).db_id ?? (c as Record<string, unknown>).id_pk ?? 0),
+            company:   String((c as Record<string, unknown>).company ?? (c as Record<string, unknown>).company_name ?? ''),
+            legalName: String((c as Record<string, unknown>).legal_name ?? (c as Record<string, unknown>).legalName ?? (c as Record<string, unknown>).legal ?? ''),
           }))
           .filter(c => c.dbId > 0 && c.company);
         setCustomerOpts(opts);
@@ -155,10 +157,12 @@ export default function AddNewLeadModal(props: {
       const raw = (res.data as { data?: Record<string, unknown> }).data ?? (res.data as Record<string, unknown>);
       const pa = (raw.primary_address as Record<string, unknown> | undefined) ?? null;
       setValues({
-        customerName:    String(raw.company ?? picked.company ?? ''),
+        // Customer Name = registered LEGAL name; Company Name = trade/company
+        // name (mirrors the Customer master's two fields, no longer swapped).
+        customerName:    String(raw.legalName ?? picked.legalName ?? raw.company ?? picked.company ?? ''),
         mobileNumber:    String(pa?.cp_contact ?? raw.phone ?? ''),
         customerEmail:   String(pa?.cp_email   ?? raw.email ?? ''),
-        companyName:     String(raw.legalName  ?? raw.company ?? picked.company ?? ''),
+        companyName:     String(raw.company ?? picked.company ?? ''),
         customerAddress: String(pa?.address_line ?? raw.addr ?? ''),
         customerCity:    String(pa?.city ?? raw.city ?? ''),
         pincode:         String(pa?.pin  ?? raw.pin  ?? ''),
@@ -320,7 +324,7 @@ export default function AddNewLeadModal(props: {
                     value={pickedCustomerId}
                     onChange={(v) => { void onPickExisting(v); }}
                     placeholder={customersLoading ? 'Loading customers…' : 'Select a customer'}
-                    options={customerOpts.map(c => ({ value: c.id, label: `${c.id} — ${c.company}` }))}
+                    options={customerOpts.map(c => ({ value: c.id, label: `${c.id} — ${c.legalName || c.company}` }))}
                     disabled={customersLoading || customerFetching}
                   />
                 </div>

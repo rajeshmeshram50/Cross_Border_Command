@@ -5,6 +5,7 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
+import WorklistPager from '../../components/ui/WorklistPager';
 import '../../../css/recruitment.css';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -314,21 +315,16 @@ export default function HrExitManagement() {
             {/* ── Header — Exit-themed banner card (red accent), distinct from
                  Recruitment's purple. Uses the original .exit-page-head /
                  .exit-head-icon / .exit-head-badge / .exit-checklist-btn CSS. ── */}
-            <div className="exit-page-head">
-              <div className="d-flex align-items-center gap-3 min-w-0">
-                <span className="exit-head-icon">
-                  <i className="ri-logout-box-r-line" />
-                </span>
+            <div className="frm-cstrip mb-3">
+              <span className="frm-cstrip-accent" />
+              <div className="frm-cstrip-left">
+                <div className="frm-cstrip-icon"><i className="ri-logout-box-r-line" /></div>
                 <div className="min-w-0">
-                  <div className="d-flex align-items-center gap-2 flex-wrap">
-                    <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Exit Management Hub</h5>
-                  </div>
-                  <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
-                    Track active employees, ongoing exit cases, and completed employee exits
-                  </div>
+                  <div className="frm-cstrip-title">Exit Management Hub</div>
+                  <div className="frm-cstrip-sub">Track active employees, ongoing exit cases, and completed employee exits</div>
                 </div>
               </div>
-              <button type="button" className="exit-checklist-btn" onClick={() => setChecklistOpen(true)}>
+              <button type="button" className="exit-checklist-btn flex-shrink-0" onClick={() => setChecklistOpen(true)}>
                 <i className="ri-clipboard-line" />Exit Checklist
               </button>
             </div>
@@ -336,7 +332,7 @@ export default function HrExitManagement() {
             {/* ── KPI cards — 5 across at xl, reflowing to 3 / 2 / 1 at smaller
                  breakpoints. row-cols-* divides the row evenly regardless of
                  card count, so all 5 always fill the full width. ── */}
-            <Row className="g-3 mb-2 align-items-stretch rec-page-kpis row-cols-xl-5 row-cols-md-3 row-cols-sm-2 row-cols-1">
+            <Row className="g-3 mb-3 align-items-stretch rec-page-kpis row-cols-xl-5 row-cols-md-3 row-cols-sm-2 row-cols-1">
               {KPI_CARDS.map(k => (
                 <Col key={k.key}>
                   <div className="rec-kpi-card h-100">
@@ -601,35 +597,13 @@ export default function HrExitManagement() {
                   </div>
 
                   {/* Pagination footer */}
-                  <div className="rec-list-footer">
-                    <div className="d-flex align-items-center gap-2">
-                      <span className="text-muted" style={{ fontSize: 12 }}>Rows per page:</span>
-                      <div style={{ width: 80 }}>
-                        <MasterSelect
-                          value={String(pageSize)}
-                          onChange={(v) => { setPageSize(Number(v) || 10); setPage(1); }}
-                          options={['10', '25', '50'].map(v => ({ value: v, label: v }))}
-                          placeholder="10"
-                        />
-                      </div>
-                      <span className="text-muted" style={{ fontSize: 12, marginLeft: 16 }}>
-                        Showing {filtered.length === 0 ? 0 : (sliceFrom + 1)}–{Math.min(sliceFrom + pageSize, filtered.length)} of {filtered.length}
-                      </span>
-                    </div>
-                    <div className="d-flex align-items-center gap-1">
-                      <button className="rec-pagebtn" onClick={() => goto(safePage - 1)} disabled={safePage <= 1}>‹ Prev</button>
-                      {Array.from({ length: pageCount }).map((_, i) => (
-                        <button
-                          key={i}
-                          className={`rec-pagebtn${safePage === i + 1 ? ' is-active' : ''}`}
-                          onClick={() => goto(i + 1)}
-                        >
-                          {i + 1}
-                        </button>
-                      ))}
-                      <button className="rec-pagebtn" onClick={() => goto(safePage + 1)} disabled={safePage >= pageCount}>Next ›</button>
-                    </div>
-                  </div>
+                  <WorklistPager
+                    total={filtered.length}
+                    page={safePage}
+                    pageSize={pageSize}
+                    onPage={goto}
+                    onPageSize={(n) => { setPageSize(n); setPage(1); }}
+                  />
                 </div>
               </CardBody>
             </Card>

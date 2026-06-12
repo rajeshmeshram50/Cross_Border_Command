@@ -9,14 +9,18 @@ interface LightDarkProps {
 }
 const LightDark = ({ layoutMode, onChangeLayoutMode } : LightDarkProps) => {
 
-    const mode = layoutMode === LAYOUT_MODE_TYPES['DARKMODE'] ? LAYOUT_MODE_TYPES['LIGHTMODE'] : LAYOUT_MODE_TYPES['DARKMODE'];
+    const isDark = layoutMode === LAYOUT_MODE_TYPES['DARKMODE'];
+    const mode = isDark ? LAYOUT_MODE_TYPES['LIGHTMODE'] : LAYOUT_MODE_TYPES['DARKMODE'];
 
     return (
         <div className="ms-1 header-item d-flex">
             <button
                 onClick={() => onChangeLayoutMode(mode)}
-                type="button" className="btn btn-icon btn-topbar btn-ghost-secondary rounded-circle light-dark-mode">
-                <i className='bx bx-moon fs-22'></i>
+                type="button"
+                title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+                className="btn btn-icon btn-topbar btn-ghost-secondary rounded-circle light-dark-mode">
+                {/* Icon reflects the CURRENT mode: sun while dark (offers light), moon while light (offers dark) */}
+                <i className={`bx ${isDark ? 'bx-sun' : 'bx-moon'} fs-22`}></i>
             </button>
         </div>
     );

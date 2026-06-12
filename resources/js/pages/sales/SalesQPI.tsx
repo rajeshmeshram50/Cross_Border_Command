@@ -117,7 +117,9 @@ type PI = {
   victoryReached?: boolean;
 };
 
-const ROWS_PER_PAGE = 5;
+// Default page size — 10 to match the Customer page. The dynamic page-size
+// effect grows this on taller screens (and never drops below this floor).
+const ROWS_PER_PAGE = 10;
 
 /**
  * Render the "Created By" cell as a colored pill with a small sub-label.
@@ -499,7 +501,7 @@ function MoreOptionsMenu(props: {
             type="button" role="menuitem"
             className="qpi-moremenu-item"
             disabled={busy !== null}
-            onClick={() => pick('view', true)}
+            onClick={() => { onError(`Not signed yet — sign this ${docLabel} via Zoho to view the signed PDF.`); onClose(); }}
           >
             <IconEyeSm />
             <span>View {docLabel} with Signature</span>
@@ -520,7 +522,7 @@ function MoreOptionsMenu(props: {
             type="button" role="menuitem"
             className="qpi-moremenu-item"
             disabled={busy !== null}
-            onClick={() => pick('download', true)}
+            onClick={() => { onError(`Not signed yet — sign this ${docLabel} via Zoho to download the signed PDF.`); onClose(); }}
           >
             <IconDownloadSm />
             <span>Download {docLabel} with Signature</span>
@@ -578,7 +580,7 @@ export default function SalesQPI() {
   const { user: currentUser } = useAuth();
   const [tab, setTab] = useState<QPITab>('quotation');
   const [piSub, setPiSub] = useState<PISubTab>('with');
-  const [wdhOpen, setWdhOpen] = useState(true);
+  const [wdhOpen, setWdhOpen] = useState(false);
   const [q, setQ] = useState('');
   // Pagination is owned here now (the project "apna wala" footer — Showing
   // X–Y of Z + numbered chips) instead of TableContainer's built-in bar.
@@ -1408,13 +1410,20 @@ export default function SalesQPI() {
             {/* Always rendered (disabled when signed) so the icon row lines up
                 across rows; a signed record stays un-deletable via the disable. */}
             {(() => {
-              const qSigned = r.id ? sigByRow[`quotation:${r.id}`]?.status === 'completed' : false;
+              const qSigned    = r.id ? sigByRow[`quotation:${r.id}`]?.status === 'completed' : false;
+              // A quotation already converted to a PI is locked — the backend
+              // rejects the cancel with a 409, so disable the button up front.
+              const qConverted = r.status === 'converted_to_pi';
+              const delTitle = readOnly ? readOnlyHint
+                : qConverted ? 'Converted to PI — cannot be deleted'
+                : qSigned    ? 'Signed quotation cannot be deleted'
+                : 'Delete Quotation';
               return (
                 <ActionBtn
-                  title={readOnly ? readOnlyHint : qSigned ? 'Signed quotation cannot be deleted' : 'Delete Quotation'}
+                  title={delTitle}
                   icon={<IconTrash />}
                   color="#dc2626"
-                  disabled={readOnly || qSigned}
+                  disabled={readOnly || qSigned || qConverted}
                   onClick={() => r.id && setDeleteTarget({ kind: 'quotation', id: r.id, code: r.qtNo })}
                 />
               );
@@ -1817,8 +1826,8 @@ export default function SalesQPI() {
           title={deleteTarget?.kind === 'pi' ? 'Cancel Proforma Invoice' : 'Cancel Quotation'}
           itemName={deleteTarget?.code}
           actionVerb="Cancel"
-          confirmLabel="Cancel record"
-          confirmingLabel="Cancelling..."
+          confirmLabel="Delete"
+          confirmingLabel="Deleting..."
           subMessage={
             deleteTarget?.kind === 'pi'
               ? 'The PI will be marked as cancelled. The record stays in the system for audit but is no longer active.'
@@ -2127,7 +2136,7 @@ function loadQpiMasters(branch: string): Promise<LoadedMasters> {
     api.get('/sales/leads', { params: { per_page: 50 } }).catch(() => ({ data: { data: [] } })),
     api.get('/master/state_codes').catch(() => ({ data: [] })),
     api.get('/master/states').catch(() => ({ data: [] })),
-    api.get('/products', { params: { per_page: 100, status: 'active' } }).catch(() => ({ data: { data: [] } })),
+    api.get('/products', { params: { per_page: 200, status: 'active' } }).catch(() => ({ data: { data: [] } })),
   ]).then(([cur, inco, port, ctry, cust, cons, bank, lead, stCode, st, prod]): LoadedMasters => {
     const next = shapeQpiMasters(cur, inco, port, ctry, cust, cons, bank, lead, stCode, st, prod);
     qpiMastersCache    = { data: next, branchId: branch, loadedAt: Date.now() };
@@ -2235,7 +2244,17 @@ function shapeQpiMasters(
   const opportunitiesRaw: LeadRow[] = [];
   leadRows.forEach((r: any) => {
     const code = r.opp_code ?? r.opp_id ?? (r.id ? `OPP-${String(r.id).padStart(4, '0')}` : '');
-    const who  = (r.sender_company || r.sender_name || r.company || '').toString();
+    // Show the mapped customer's COMPANY name (not legal name) beside the
+    // Opp ID. Falls back to the lead's sender/company only when the opp has
+    // no customer mapped yet.
+    const who  = (
+      r.customer?.company_name
+      || r.customer_company_name
+      || r.sender_company
+      || r.sender_name
+      || r.company
+      || ''
+    ).toString();
     const label = code && who ? `${code} – ${who}` : (code || who || '');
     if (!label) return;
     opportunityOpts.push({ value: label, label });
@@ -3158,7 +3177,17 @@ function OpportunitySelect({
   // masters loader so the parent cascade reads the same fields).
   const mapLead = (r: any): { value: string; label: string; row: LeadRow } | null => {
     const code = r.opp_code ?? r.opp_id ?? (r.id ? `OPP-${String(r.id).padStart(4, '0')}` : '');
-    const who  = (r.sender_company || r.sender_name || r.company || '').toString();
+    // Show the mapped customer's COMPANY name (not legal name) beside the
+    // Opp ID. Falls back to the lead's sender/company only when the opp has
+    // no customer mapped yet.
+    const who  = (
+      r.customer?.company_name
+      || r.customer_company_name
+      || r.sender_company
+      || r.sender_name
+      || r.company
+      || ''
+    ).toString();
     const label = code && who ? `${code} – ${who}` : (code || who || '');
     if (!label) return null;
     const dateSrc = r.query_time ?? r.created_at;
@@ -3183,6 +3212,10 @@ function OpportunitySelect({
           page: pageNum, per_page: 50, with_counts: 0,
           search:      q.trim() || undefined,
           customer_id: customerId || undefined,
+          // Only offer opportunities whose Price-Shared stage (Stage 4) is
+          // complete — every product in the opp's directory has a shared
+          // price. Opps still mid price-sharing are hidden here.
+          price_shared_complete: 1,
         },
       });
       const rows   = Array.isArray(res.data?.data) ? res.data.data : [];
@@ -4197,32 +4230,56 @@ const SCOPED_CSS = `
   padding: 0;
   margin: 0;
   color: var(--vz-body-color);
-  display: flex; flex-direction: column; gap: 14px;
+  display: flex; flex-direction: column; gap: 8px;
 }
 .qpi-root *, .qpi-root *::before, .qpi-root *::after { box-sizing: border-box; }
 
 /* ─── Header strip ─── */
 .qpi-header {
+  /* Matches the Customer page hero (.smc-cstrip) exactly — same gradient
+     ring (padding-box / border-box trick), height, shadow and glow — so
+     both top-level Sales Matrix pages read as one design language. */
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
-  padding: 12px 18px; min-height: 64px;
-  background: linear-gradient(110deg, #f5f3ff 0%, #ede9fe 40%, #ddd6fe 100%);
+  padding: 12px 18px; min-height: 70px;
   border: 1px solid #c4b5fd; border-radius: 16px;
-  box-shadow: 0 2px 0 rgba(255,255,255,.85) inset, 0 8px 28px rgba(139,92,246,.2);
+  background:
+    linear-gradient(110deg, #faf7ff 0%, #f4eeff 45%, #efe8ff 75%, #ece4ff 100%) padding-box,
+    linear-gradient(125deg, #7c3aed 0%, #8b5cf6 22%, #6366f1 48%, #d946ef 76%, #ec4899 100%) border-box;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.70) inset,
+    0 4px 18px rgba(124,58,237,0.16),
+    0 1px 4px rgba(99,102,241,0.10);
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+.qpi-header::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+  background-image:
+    radial-gradient(ellipse at 12% 50%, rgba(255,255,255,0.40) 0%, transparent 55%),
+    radial-gradient(ellipse at 88% 50%, rgba(167,139,250,0.20) 0%, transparent 55%);
+}
+.qpi-header::after {
+  content: ''; position: absolute; top: 0; left: 14px; right: 14px; height: 1.5px;
+  border-radius: 2px; pointer-events: none; z-index: 3; opacity: 0.9; filter: blur(0.4px);
+  background: linear-gradient(90deg,
+    rgba(255,255,255,0) 0%, rgba(147,197,253,0.30) 14%, rgba(196,181,253,0.55) 30%,
+    rgba(253,242,248,0.95) 50%, rgba(232,193,255,0.80) 66%, rgba(168,85,247,0.95) 86%,
+    rgba(124,58,237,0.92) 100%);
 }
 .qpi-accent { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6); border-radius: 16px 0 0 16px; }
 .qpi-glow   { position: absolute; right: -20px; top: -20px; width: 120px; height: 120px; border-radius: 50%; background: rgba(167,139,250,.15); pointer-events: none; }
 .qpi-header-left { display: flex; align-items: center; gap: 12px; z-index: 1; padding-left: 6px; }
 .qpi-avatar-wrap { position: relative; flex-shrink: 0; }
 .qpi-header-icon {
-  width: 40px; height: 40px; border-radius: 12px;
-  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 55%, #5b21b6 100%);
+  /* Same size + gradient + ring as .smc-cstrip-icon on the Customer page. */
+  width: 46px; height: 46px; border-radius: 12px;
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
   display: flex; align-items: center; justify-content: center; color: #fff;
-  box-shadow: 0 4px 12px rgba(124,58,237,.35), 0 0 0 3px rgba(139,92,246,.18);
+  box-shadow: 0 4px 14px rgba(91,33,182,0.40), 0 0 0 3px rgba(255,255,255,0.50);
 }
 .qpi-online-dot { position: absolute; bottom: -1px; right: -1px; width: 10px; height: 10px; border-radius: 50%; background: linear-gradient(135deg,#4ade80,#22c55e); border: 2px solid #f3e8ff; }
-.qpi-header-title { font-size: 14.5px; font-weight: 800; color: #3b0764; letter-spacing: -.3px; }
-.qpi-header-sub   { font-size: 11px; color: #7c3aed; margin-top: 2px; font-weight: 500; }
+.qpi-header-title { font-size: 18px; font-weight: 800; color: #2e1065; letter-spacing: -.3px; line-height: 1.2; }
+.qpi-header-sub   { font-size: 12px; color: #6b7280; margin-top: 4px; font-weight: 400; line-height: 1.5; opacity: .85; }
 
 .qpi-tab-switch {
   display: flex; gap: 4px; padding: 4px;
@@ -4525,10 +4582,10 @@ const SCOPED_CSS = `
   margin-bottom: 0 !important;
 }
 .qpi-table-host .table thead.table-light tr {
-  /* Solid violet header band (matches the Figma + the Customer page's
-   * create-button gradient) — seamless across columns because the gradient
-   * lives on the row, not the individual cells. */
-  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important;
+  /* Violet header band — EXACT same gradient as the Customer page
+   * (.smc-table-wrap thead tr) so both tables read identically. The
+   * gradient lives on the row so it's seamless across columns. */
+  background: linear-gradient(110deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%) !important;
 }
 .qpi-table-host .table thead.table-light th {
   /* White uppercase labels on the violet band, matching the Figma. */
@@ -5568,14 +5625,23 @@ const SCOPED_CSS = `
   color: var(--vz-body-color);
 }
 
-/* Header strip */
+/* Header strip — match the Customer page hero dark variant. */
 [data-bs-theme="dark"] .qpi-header {
-  background: linear-gradient(110deg, #1c1432 0%, #221839 50%, #2a1d49 100%);
-  border-color: rgba(167,139,250,.30);
-  box-shadow: 0 2px 0 rgba(255,255,255,.04) inset, 0 8px 28px rgba(0,0,0,.55);
+  border: 1px solid transparent;
+  background:
+    linear-gradient(110deg, #1e1b4b 0%, #2e1065 35%, #3b1675 70%, #4c1d95 100%) padding-box,
+    linear-gradient(125deg, #7c3aed 0%, #8b5cf6 22%, #6366f1 48%, #d946ef 76%, #ec4899 100%) border-box;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.05) inset,
+    0 6px 22px rgba(0,0,0,0.45),
+    0 2px 8px rgba(124,58,237,0.20);
 }
-[data-bs-theme="dark"] .qpi-header-title { color: #e9d5ff; }
-[data-bs-theme="dark"] .qpi-header-sub   { color: #c4b5fd; }
+[data-bs-theme="dark"] .qpi-header-title { color: #f5f3ff; }
+[data-bs-theme="dark"] .qpi-header-sub   { color: #ede9fe; opacity: 0.92; }
+[data-bs-theme="dark"] .qpi-header-icon  {
+  background: linear-gradient(135deg, #a78bfa, #7c3aed);
+  box-shadow: 0 4px 14px rgba(124,58,237,0.50), 0 0 0 3px rgba(167,139,250,0.18);
+}
 [data-bs-theme="dark"] .qpi-online-dot   { border-color: #1a1530; }
 [data-bs-theme="dark"] .qpi-tab-switch {
   background: rgba(255,255,255,.04);
@@ -5652,7 +5718,8 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .qpi-table-host .table-responsive::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.20); }
 [data-bs-theme="dark"] .qpi-table-host .table { color: var(--vz-body-color); }
 [data-bs-theme="dark"] .qpi-table-host .table thead.table-light tr {
-  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important;
+  /* Match the Customer page's dark header gradient. */
+  background: linear-gradient(110deg, #5b21b6 0%, #4c1d95 55%, #3b1675 100%) !important;
 }
 [data-bs-theme="dark"] .qpi-table-host .table thead.table-light th {
   color: #fff !important;

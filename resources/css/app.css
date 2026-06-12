@@ -922,6 +922,173 @@ tbody tr:nth-child(10) {
   padding: 20px;
 }
 
+/* Header strip — same shape/parts as the Clients (.cl-cstrip) header:
+   white container, 1px violet border, left accent strip, violet icon. */
+.pmt-cstrip {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  min-height: 70px; padding: 12px 18px;
+  background: #ffffff;
+  border: 1px solid #c4b5fd;
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+.pmt-cstrip-accent {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
+  border-radius: 16px 0 0 16px;
+}
+.pmt-cstrip-left { display: flex; align-items: center; gap: 16px; position: relative; z-index: 1; min-width: 0; flex: 1; }
+.pmt-cstrip-icon {
+  position: relative; width: 46px; height: 46px; border-radius: 12px;
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 22px; flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(91, 33, 182, 0.40), 0 0 0 3px rgba(124, 58, 237, 0.10);
+}
+.pmt-cstrip-icon::after {
+  content: ''; position: absolute; bottom: -2px; right: -2px;
+  width: 11px; height: 11px; border-radius: 50%;
+  background: #22c55e; border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.25), 0 2px 5px rgba(34, 197, 94, 0.45);
+}
+.pmt-cstrip-title { font-size: 18px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
+.pmt-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; margin-top: 4px; line-height: 1.5; max-width: 760px; }
+.pmt-cstrip-export {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 0 18px; height: 44px; border-radius: 14px;
+  border: 1px solid color-mix(in srgb, #7c3aed 30%, var(--vz-border-color));
+  background: #fff; color: #6d28d9;
+  font-family: inherit; font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; flex-shrink: 0;
+  transition: background .15s, border-color .15s, transform .15s;
+}
+.pmt-cstrip-export:hover:not(:disabled) { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }
+.pmt-cstrip-export:disabled { opacity: 0.6; cursor: default; }
+.pmt-cstrip-export i { font-size: 15px; }
+[data-bs-theme="dark"] .pmt-cstrip { background: var(--vz-card-bg); border-color: rgba(167, 139, 250, 0.40); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.30); }
+[data-bs-theme="dark"] .pmt-cstrip-icon::after { border-color: var(--vz-card-bg); }
+[data-bs-theme="dark"] .pmt-cstrip-export { background: transparent; color: #c4b5fd; }
+[data-bs-theme="dark"] .pmt-cstrip-export:hover:not(:disabled) { background: rgba(124, 58, 237, .14); }
+
+/* Shared form-page header strip — same shape as the Clients (.cl-cstrip)
+   header. Used by the Client / Branch / (other) add-edit forms. */
+.frm-cstrip {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  min-height: 70px; padding: 12px 18px;
+  background: #ffffff;
+  border: 1px solid #c4b5fd;
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+.frm-cstrip-accent {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
+  border-radius: 16px 0 0 16px;
+}
+.frm-cstrip-left { display: flex; align-items: center; gap: 16px; position: relative; z-index: 1; min-width: 0; flex: 1; }
+.frm-cstrip-icon {
+  position: relative; width: 46px; height: 46px; border-radius: 12px;
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 22px; flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(91, 33, 182, 0.40), 0 0 0 3px rgba(124, 58, 237, 0.10);
+}
+.frm-cstrip-title { font-size: 18px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
+.frm-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; margin-top: 4px; line-height: 1.5; }
+.frm-cstrip-back {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 0 18px; height: 44px; border-radius: 14px;
+  border: 1px solid color-mix(in srgb, #7c3aed 30%, var(--vz-border-color));
+  background: #fff; color: #6d28d9;
+  font-family: inherit; font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; flex-shrink: 0;
+  transition: background .15s, border-color .15s, transform .15s;
+}
+.frm-cstrip-back:hover { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }
+.frm-cstrip-back i { font-size: 15px; }
+[data-bs-theme="dark"] .frm-cstrip { background: var(--vz-card-bg); border-color: rgba(167, 139, 250, 0.40); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.30); }
+[data-bs-theme="dark"] .frm-cstrip-back { background: transparent; color: #c4b5fd; }
+[data-bs-theme="dark"] .frm-cstrip-back:hover { background: rgba(124, 58, 237, .14); }
+
+/* ── TableContainer "worklist" pagination footer ───────────────────────
+   Same pill / round-button shapes as the My Workplace (.lwp-pagination)
+   footer, themed violet to match the list pages. Full-bleed band assumes
+   the table sits inside a `p-3` wrapper (Clients / Branches / Payments). */
+.tc-wl-pag {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px;
+  margin: 10px -16px -16px;
+  padding: 10px 16px;
+  border-top: 2px solid #ddd6fe;
+  background: linear-gradient(90deg, #faf7ff 0%, #f1ecfd 40%, #faf7ff 100%);
+}
+.tc-wl-info {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px; font-weight: 500; color: #6d28d9;
+  background: rgba(255, 255, 255, .85); border: 1.5px solid #ddd6fe;
+  padding: 5px 14px; border-radius: 20px;
+  box-shadow: 0 1px 4px rgba(124, 58, 237, .10), 0 1px 0 rgba(255, 255, 255, .9) inset;
+}
+.tc-wl-info .tc-wl-hl { color: #7c3aed; font-weight: 800; font-size: 12px; }
+.tc-wl-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tc-wl-rows {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11.5px; color: #6d28d9; font-weight: 500;
+  background: rgba(255, 255, 255, .85); border: 1.5px solid #ddd6fe;
+  padding: 4px 12px; border-radius: 20px;
+}
+.tc-wl-rows select { border: none; background: transparent; font-family: inherit; font-size: 11.5px; color: #7c3aed; font-weight: 700; cursor: pointer; outline: none; }
+.tc-wl-range {
+  font-size: 11.5px; font-weight: 800; color: #fff;
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 55%, #5b21b6 100%);
+  padding: 5px 18px; border-radius: 20px; white-space: nowrap;
+  box-shadow: 0 3px 12px rgba(124, 58, 237, .4), 0 1px 0 rgba(255, 255, 255, .2) inset;
+}
+.tc-wl-nav { display: flex; gap: 5px; }
+.tc-wl-btn {
+  width: 32px; height: 32px; border-radius: 50%; padding: 0;
+  border: 1.5px solid #ddd6fe; background: rgba(255, 255, 255, .85);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  color: #7c3aed; transition: all .18s;
+}
+.tc-wl-btn:hover:not(:disabled) { background: #fff; border-color: #7c3aed; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(124, 58, 237, .25); }
+.tc-wl-btn:disabled { opacity: .4; cursor: not-allowed; }
+[data-bs-theme="dark"] .tc-wl-pag { background: linear-gradient(90deg, rgba(124, 58, 237, .08), rgba(124, 58, 237, .14), rgba(124, 58, 237, .08)); border-top-color: rgba(167, 139, 250, .30); }
+[data-bs-theme="dark"] .tc-wl-info,
+[data-bs-theme="dark"] .tc-wl-rows,
+[data-bs-theme="dark"] .tc-wl-btn { background: rgba(255, 255, 255, .06); border-color: rgba(167, 139, 250, .30); color: #c4b5fd; }
+[data-bs-theme="dark"] .tc-wl-info .tc-wl-hl { color: #ddd6fe; }
+[data-bs-theme="dark"] .tc-wl-rows select { color: #ddd6fe; }
+
+/* Non-bleed band for the reusable WorklistPager (used in HR tables). Same
+   look as .tc-wl-pag but without the full-bleed negative margins. */
+.wl-pager {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px;
+  margin-top: 12px; padding: 10px 14px;
+  border-top: 2px solid #ddd6fe;
+  background: linear-gradient(90deg, #faf7ff 0%, #f1ecfd 40%, #faf7ff 100%);
+  border-radius: 0 0 12px 12px;
+}
+[data-bs-theme="dark"] .wl-pager { background: linear-gradient(90deg, rgba(124, 58, 237, .08), rgba(124, 58, 237, .14), rgba(124, 58, 237, .08)); border-top-color: rgba(167, 139, 250, .30); }
+
+/* Unified list frame (search + filters + table) — mirrors the Clients frame. */
+.pmt-list-frame {
+  background: #ffffff;
+  border: 1px solid #ececf2;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.05);
+}
+.pmt-list-frame .pmt-frame-filter { border-bottom: 1px solid var(--vz-border-color); }
+[data-bs-theme="dark"] .pmt-list-frame {
+  background: var(--vz-card-bg);
+  border-color: var(--vz-border-color);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.30);
+}
+
 /* KPI cards — compact, with the same haptic hover lift used on the
    Clients / ClientPayments KPIs so every list page feels alive on hover
    instead of sitting flat. transform + layered shadow only — no layout

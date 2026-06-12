@@ -19,8 +19,10 @@
             right: 0;
             width: 100%;
             height: 44px;
-            /* Thin green top border per the reference spec (#8BC34A). */
-            border-top: 1px solid #8BC34A;
+            /* Thin top border in the tenant's primary brand colour (same as
+               the table headers / section rules); falls back to the reference
+               green only when the branch has no brand colour set. */
+            border-top: 1px solid {{ $companyDetails->primary_color ?? '#8BC34A' }};
             padding: 0;
             background: white;
             z-index: 1000;
@@ -46,7 +48,10 @@
 
         .pdf-footer .pf-barcode {
             height: 18px;
-            width: auto;
+            /* FIXED width — the barcode image must never grow with the encoded
+               data length. The data inside stays dynamic (denser bars for
+               longer values); only the rendered box size is locked. */
+            width: 90px;
             display: block;
         }
 
@@ -290,7 +295,7 @@
             <tr>
                 <td style="width:15%; text-align:left; padding-left:8px;">
                     @if(!empty($barcodeData))
-                        <img src="{{ $barcodeData }}" alt="" class="pf-barcode">
+                        <img src="{{ $barcodeData }}" alt="" class="pf-barcode" width="90" height="18" style="width:90px; height:18px;">
                     @endif
                 </td>
                 <td class="pf-company"

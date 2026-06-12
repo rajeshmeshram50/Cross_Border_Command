@@ -987,3 +987,7 @@
 [data-layout-mode="dark"] .sublist-editor-title {
   color: #8aa1d9;
 }
+
+/* Master KPI tiles — force white in light mode; keep dark card surface in dark. */
+[data-bs-theme="dark"] .mp-kpi-tile,
+[data-layout-mode="dark"] .mp-kpi-tile { background: var(--vz-card-bg) !important; }

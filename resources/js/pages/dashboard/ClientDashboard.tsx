@@ -255,9 +255,13 @@ export default function ClientDashboard() {
       {/* Page Title */}
       <Row className="mb-2">
         <Col xs={12}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '2px 0 4px', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 0 4px', gap: 12, flexWrap: 'wrap' }}>
             <div>
-              <h4 style={{ fontWeight: 800, fontSize: 20, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Dashboard</h4>
+              <h5 style={{ fontWeight: 800, fontSize: 16, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Workforce Analytics</h5>
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--vz-secondary-color)', marginTop: 2 }}>
+                Employee headcount, hiring activity and demographics
+              </p>
+            </div>
               {(() => {
                 const isExpired = plan.status === 'expired';
                 const isWarn = !isExpired && plan.days_remaining !== null && plan.days_remaining <= 30;
@@ -274,7 +278,6 @@ export default function ClientDashboard() {
                       fontWeight: 500,
                       letterSpacing: '0.03em',
                       padding: '5px 13px',
-                      marginTop: 6,
                       ['--cd-plan-color' as any]: `${color}66`,
                       ['--cd-plan-ring' as any]: `${color}00`,
                       ['--cd-plan-ring-soft' as any]: `${color}33`,
@@ -301,9 +304,6 @@ export default function ClientDashboard() {
                   </span>
                 );
               })()}
-            </div>
-            {/* No breadcrumb on the dashboard — the page title already
-                tells the user where they are. */}
           </div>
         </Col>
       </Row>

@@ -27,6 +27,17 @@ class LogSentEmail
     /** Categories whose body holds a secret and must never be persisted. */
     private const SENSITIVE_CATEGORIES = ['otp', 'credentials', 'password'];
 
+    /**
+     * Metadata for files attached to the email currently being composed/sent,
+     * set by EmailController::store() just before the send loop and cleared
+     * after. The send is synchronous so this request-scoped hand-off is safe; it
+     * lets us record the attachment list on the logged row(s) without re-reading
+     * (and re-decoding) the bytes back out of the Symfony message.
+     *
+     * @var array<int,array{name:string,size:int,mime:string,path:string}>|null
+     */
+    public static ?array $composedAttachments = null;
+
     public function handle(MessageSending $event): void
     {
         try {
@@ -47,6 +58,11 @@ class LogSentEmail
             $bodyHtml = $this->bodyToString($message->getHtmlBody());
             $bodyText = $this->bodyToString($message->getTextBody());
             $hasAttachments = count($message->getAttachments()) > 0;
+
+            // Persist the file list only for composed mails (set by the
+            // controller). Transactional mails keep has_attachments but store no
+            // files, so the table stays lean.
+            $attachmentMeta = ($category === 'composed') ? static::$composedAttachments : null;
 
             // Never persist the body of secret-bearing mails — welcome
             // credentials carry the plaintext password and OTP mails carry the
@@ -95,6 +111,7 @@ class LogSentEmail
                     'body_html'       => $bodyHtml,
                     'body_text'       => $bodyText,
                     'has_attachments' => $hasAttachments,
+                    'attachments'     => $attachmentMeta,
                     'status'          => 'sent',
                     'sent_at'         => now(),
                 ]);

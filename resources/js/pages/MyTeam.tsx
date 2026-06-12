@@ -289,20 +289,17 @@ export default function MyTeam() {
         <Col xs={12}>
           <div className="rec-page myteam-page">
             <MyTeamDarkStyles />
-            {/* Header */}
-            <Card className="mb-3" style={{ borderRadius: 14 }}>
-              <CardBody className="d-flex align-items-center justify-content-between flex-wrap gap-3">
-                <div className="d-flex align-items-center gap-3">
-                  <span className="myteam-header-icon" style={{ width: 44, height: 44, borderRadius: 10, background: 'linear-gradient(135deg,#eef2ff,#e0e7ff)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <i className="ri-team-line" style={{ fontSize: 22, color: '#4338ca' }} />
-                  </span>
-                  <div>
-                    <h4 className="mb-0 fw-bold">My Team</h4>
-                    <div className="text-muted" style={{ fontSize: 12.5 }}>{scope?.label || 'Loading…'}</div>
-                  </div>
+            {/* Header strip — same shape as the Clients / Branches module headers. */}
+            <div className="frm-cstrip mb-3">
+              <span className="frm-cstrip-accent" />
+              <div className="frm-cstrip-left">
+                <div className="frm-cstrip-icon"><i className="ri-team-line" /></div>
+                <div className="min-w-0">
+                  <div className="frm-cstrip-title">My Team</div>
+                  <div className="frm-cstrip-sub">{scope?.label || 'Loading…'}</div>
                 </div>
-              </CardBody>
-            </Card>
+              </div>
+            </div>
 
             {/* Tabs */}
             <div className="d-flex gap-2 mb-3">

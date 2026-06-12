@@ -907,7 +907,13 @@ class ProformaInvoiceController extends Controller
    
     private function applyFilters($q, Request $request): void
     {
-        if ($v = $request->query('status'))       $q->where('status', $v);
+        if ($v = $request->query('status')) {
+            $q->where('status', $v);
+        } else {
+            // Cancelled PIs ("deleted") drop out of the default list — the
+            // record is kept for audit. Pass ?status=cancelled to view them.
+            $q->where('status', '!=', ProformaInvoice::STATUS_CANCELLED);
+        }
         if ($v = $request->query('pi_type'))      $q->where('pi_type', $v);
         if ($v = $request->query('doc_type'))     $q->where('doc_type', $v);
         if ($v = $request->query('customer_id'))  $q->where('customer_id', (int) $v);

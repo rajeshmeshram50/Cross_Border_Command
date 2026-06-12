@@ -459,73 +459,45 @@ export default function Inbox() {
       <Col xs={12}>
         <div className="rec-page inbox-page">
           <InboxDarkStyles />
-          {/* Header */}
-          <Card className="mb-3" style={{ borderRadius: 14 }}>
-            <CardBody className="d-flex align-items-center justify-content-between flex-wrap gap-3">
-              <div className="d-flex align-items-center gap-3">
-                {/* Back button — uses history.back() when there's prior
-                    navigation in the stack, otherwise falls back to the
-                    dashboard so a direct-link visit still has somewhere
-                    to land. */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (window.history.length > 1) navigate(-1);
-                    else                            navigate('/dashboard');
-                  }}
-                  aria-label="Back"
-                  className="inbox-back-btn d-inline-flex align-items-center justify-content-center"
-                  style={{
-                    width: 38, height: 38, borderRadius: 10,
-                    background: 'var(--vz-card-bg)',
-                    border: '1px solid var(--vz-border-color)',
-                    color: 'var(--vz-body-color)', cursor: 'pointer',
-                    transition: 'background .15s ease, transform .15s ease',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--vz-secondary-bg)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'var(--vz-card-bg)'; }}
-                >
-                  <i className="ri-arrow-left-line" style={{ fontSize: 18 }} />
-                </button>
-                {/* Matches the saturated gradient + white-icon treatment
-                    the Master category tiles use (see MasterDashboard's
-                    CAT_META map). The previous pastel cream-on-brown
-                    combo read as washed-out next to the rest of the
-                    page; this lifts the icon to brand-equivalent
-                    presence. Drop shadow tied to the same amber so the
-                    chip floats off the card surface. */}
-                <span className="inbox-header-icon" style={{
-                  width: 44, height: 44, borderRadius: 10,
-                  background: 'linear-gradient(135deg,#f7b84b,#fad07e)',
-                  boxShadow: '0 4px 12px rgba(247, 184, 75, 0.32)',
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <i className="ri-inbox-line" style={{ fontSize: 22, color: '#ffffff' }} />
-                </span>
-                <div>
-                  <h4 className="mb-0 fw-bold">Inbox</h4>
-                  <div className="text-muted" style={{ fontSize: 12.5 }}>
-                    Documents waiting on your action — sign, approve, or acknowledge.
-                  </div>
-                </div>
+          {/* Header strip — same shape as the Clients / Branches module
+              headers (violet border + left accent strip + violet icon). */}
+          <div className="frm-cstrip mb-3">
+            <span className="frm-cstrip-accent" />
+            <div className="frm-cstrip-left">
+              <div className="frm-cstrip-icon"><i className="ri-inbox-line" /></div>
+              <div className="min-w-0">
+                <div className="frm-cstrip-title">Inbox</div>
+                <div className="frm-cstrip-sub">Documents waiting on your action — sign, approve, or acknowledge.</div>
               </div>
-              <div className="d-flex align-items-center gap-2">
-                {!loading && reminderCount > 0 && (
-                  <span className="inbox-reminder-pill inbox-reminder-pill--header"
-                    title="Someone has reminded you to act on these documents">
-                    <i className="ri-notification-badge-line" />
-                    {reminderCount} reminder{reminderCount === 1 ? '' : 's'}
-                  </span>
-                )}
-                <span style={{ padding: '6px 14px', borderRadius: 999, background: 'linear-gradient(135deg,#f7b84b,#fbc763)', color: '#fff', fontWeight: 700, fontSize: 13 }}>
-                  <i className="ri-mail-unread-line me-1" />
-                  {loading || leaveLoading || expenseLoading || myUpdatesLoading
-                    ? '…'
-                    : `${rows.length + leaveRows.length + expenseRows.length} pending${myUpdates.length ? ` · ${myUpdates.length} update${myUpdates.length === 1 ? '' : 's'}` : ''}`}
+            </div>
+            <div className="d-flex align-items-center gap-2 flex-shrink-0 flex-wrap">
+              {!loading && reminderCount > 0 && (
+                <span className="inbox-reminder-pill inbox-reminder-pill--header"
+                  title="Someone has reminded you to act on these documents">
+                  <i className="ri-notification-badge-line" />
+                  {reminderCount} reminder{reminderCount === 1 ? '' : 's'}
                 </span>
-              </div>
-            </CardBody>
-          </Card>
+              )}
+              <span style={{ padding: '6px 14px', borderRadius: 999, background: 'linear-gradient(135deg,#f7b84b,#fbc763)', color: '#fff', fontWeight: 700, fontSize: 13 }}>
+                <i className="ri-mail-unread-line me-1" />
+                {loading || leaveLoading || expenseLoading || myUpdatesLoading
+                  ? '…'
+                  : `${rows.length + leaveRows.length + expenseRows.length} pending${myUpdates.length ? ` · ${myUpdates.length} update${myUpdates.length === 1 ? '' : 's'}` : ''}`}
+              </span>
+              {/* Back — history.back() with a /dashboard fallback. */}
+              <button
+                type="button"
+                className="frm-cstrip-back"
+                onClick={() => {
+                  if (window.history.length > 1) navigate(-1);
+                  else                            navigate('/dashboard');
+                }}
+              >
+                <i className="ri-arrow-left-line" />
+                Back
+              </button>
+            </div>
+          </div>
 
           {/* New / Updated tabs — segregate items waiting on your action from
               the history of items you've already signed/approved. */}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Card, CardBody, Col, Row, Button, Input, Spinner } from 'reactstrap';
+import { Col, Row, Input, Spinner } from 'reactstrap';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
@@ -407,6 +407,86 @@ export default function Branches({ onNavigate }: Props) {
         .branches-surface { background: #ffffff; }
         [data-bs-theme="dark"] .branches-surface { background: #1c2531; }
 
+        /* Header strip — same shape/parts as the Customers (.smc-cstrip)
+           header (rounded container, left accent strip, violet icon, gradient
+           Add button) but on a plain white surface (no violet wash). */
+        .br-cstrip {
+          position: relative; overflow: hidden;
+          display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+          min-height: 70px; padding: 12px 18px;
+          background: #ffffff;
+          /* 1px violet border on all sides (the left accent strip stays). */
+          border: 1px solid #c4b5fd;
+          border-radius: 16px;
+          box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+          font-family: 'DM Sans', system-ui, sans-serif;
+        }
+        .br-cstrip-accent {
+          position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+          background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
+          border-radius: 16px 0 0 16px;
+        }
+        .br-cstrip-left { display: flex; align-items: center; gap: 16px; position: relative; z-index: 1; min-width: 0; flex: 1; }
+        .br-cstrip-icon {
+          position: relative; width: 46px; height: 46px; border-radius: 12px;
+          background: linear-gradient(135deg, #7c3aed, #5b21b6);
+          display: inline-flex; align-items: center; justify-content: center;
+          color: #fff; font-size: 22px; flex-shrink: 0;
+          box-shadow: 0 4px 14px rgba(91,33,182,0.40), 0 0 0 3px rgba(124,58,237,0.10);
+        }
+        .br-cstrip-icon::after {
+          content: ''; position: absolute; bottom: -2px; right: -2px;
+          width: 11px; height: 11px; border-radius: 50%;
+          background: #22c55e; border: 2px solid #ffffff;
+          box-shadow: 0 0 0 1px rgba(34,197,94,0.25), 0 2px 5px rgba(34,197,94,0.45);
+        }
+        .br-cstrip-title { font-size: 18px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
+        .br-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; margin-top: 4px; line-height: 1.5; max-width: 760px; }
+        .br-cstrip-add {
+          position: relative; z-index: 1; overflow: hidden;
+          display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+          padding: 0 22px; height: 44px; border: none; border-radius: 14px;
+          font-family: inherit; font-size: 13px; font-weight: 700; color: #fff;
+          white-space: nowrap; cursor: pointer; flex-shrink: 0;
+          background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 45%, #6d28d9 100%);
+          box-shadow: 0 5px 16px rgba(124,58,237,.40), 0 2px 5px rgba(91,33,182,.25), 0 1px 0 rgba(255,255,255,.22) inset;
+          transition: background .18s, transform .18s, box-shadow .18s, filter .18s;
+        }
+        .br-cstrip-add:hover { transform: translateY(-2px); filter: brightness(1.05); background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 45%, #5b21b6 100%); }
+        .br-cstrip-add:active { transform: translateY(0); }
+        .br-cstrip-add i { font-size: 16px; }
+        .br-cstrip-export {
+          display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+          padding: 0 18px; height: 44px; border-radius: 14px;
+          border: 1px solid color-mix(in srgb, #7c3aed 30%, var(--vz-border-color));
+          background: #fff; color: #6d28d9;
+          font-family: inherit; font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; flex-shrink: 0;
+          transition: background .15s, border-color .15s, transform .15s;
+        }
+        .br-cstrip-export:hover:not(:disabled) { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }
+        .br-cstrip-export:disabled { opacity: 0.6; cursor: default; }
+        .br-cstrip-export i { font-size: 15px; }
+        [data-bs-theme="dark"] .br-cstrip { background: var(--vz-card-bg); border-color: rgba(167,139,250,0.40); box-shadow: 0 6px 18px rgba(0,0,0,0.30); }
+        [data-bs-theme="dark"] .br-cstrip-icon::after { border-color: var(--vz-card-bg); }
+        [data-bs-theme="dark"] .br-cstrip-export { background: transparent; color: #c4b5fd; }
+        [data-bs-theme="dark"] .br-cstrip-export:hover:not(:disabled) { background: rgba(124,58,237,.14); }
+
+        /* Unified list frame (search + table) — mirrors the Recruitment
+           page's .rec-list-frame so search + table read as one panel. */
+        .branches-list-frame {
+          background: #ffffff;
+          border: 1px solid #ececf2;
+          border-radius: 14px;
+          overflow: hidden;
+          box-shadow: 0 1px 0 rgba(15,23,42,0.04), 0 4px 14px rgba(15,23,42,0.05);
+        }
+        .branches-list-frame .branches-frame-filter { border-bottom: 1px solid var(--vz-border-color); }
+        [data-bs-theme="dark"] .branches-list-frame {
+          background: var(--vz-card-bg);
+          border-color: var(--vz-border-color);
+          box-shadow: 0 6px 18px rgba(0,0,0,0.30);
+        }
+
         /* Unify table typography — every cell + header reads at the same
            13px size so the table looks like a single grid (matches the
            Clients list). */
@@ -501,13 +581,38 @@ export default function Branches({ onNavigate }: Props) {
 
       <Row>
         <Col xs={12}>
-          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <h4 className="mb-sm-0">Branches</h4>
-            <div className="page-title-right">
-              <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#">Admin</a></li>
-                <li className="breadcrumb-item active">Branches</li>
-              </ol>
+          {/* Header strip — same shape as the Customers (smc-cstrip) header:
+              rounded container + left accent strip + violet icon + gradient
+              "Add" button — on a plain white surface (no violet wash). */}
+          <div className="br-cstrip mb-3">
+            <span className="br-cstrip-accent" />
+            <div className="br-cstrip-left">
+              <div className="br-cstrip-icon"><i className="ri-git-branch-line" /></div>
+              <div className="min-w-0">
+                <div className="br-cstrip-title">Branches</div>
+                <div className="br-cstrip-sub">
+                  Manage branch offices, users, locations and status.
+                </div>
+              </div>
+            </div>
+            <div className="d-flex align-items-center gap-2 flex-shrink-0">
+              <button
+                type="button"
+                className="br-cstrip-export"
+                onClick={handleExport}
+                disabled={exporting}
+              >
+                {exporting ? <Spinner size="sm" /> : <i className="ri-download-2-line" />}
+                {exporting ? 'Exporting...' : 'Export'}
+              </button>
+              <button
+                type="button"
+                className="br-cstrip-add"
+                onClick={() => onNavigate('branch-form')}
+              >
+                <i className="ri-add-line" />
+                Add Branch
+              </button>
             </div>
           </div>
         </Col>
@@ -515,15 +620,10 @@ export default function Branches({ onNavigate }: Props) {
 
       <Row>
         <Col xs={12}>
-          <div
-            className="branches-surface"
-            style={{
-              borderRadius: 16,
-              border: '1px solid var(--vz-border-color)',
-              boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
-              padding: '20px',
-            }}
-          >
+          {/* Whole-page card container removed — content sits flush on the
+              page background. The `branches-surface` class is kept (table /
+              KPI / dark-mode styles are scoped to it) with no card chrome. */}
+          <div className="branches-surface" style={{ background: 'transparent' }}>
             {/* ── KPI cards ── */}
             <Row className="g-3 mb-3 align-items-stretch">
               {KPI_CARDS.map(k => (
@@ -569,9 +669,10 @@ export default function Branches({ onNavigate }: Props) {
               ))}
             </Row>
 
-            {/* ── Search + Export + Add Branch ── */}
-            <Row className="g-2 align-items-center mb-3">
-              <Col md={6} sm={12}>
+            {/* ── Search + Table — one bordered frame (matches the
+                Recruitment list frame: search row on top, table below) ── */}
+            <div className="branches-list-frame">
+              <div className="branches-frame-filter p-3">
                 <div className="search-box">
                   <Input
                     type="text"
@@ -582,31 +683,10 @@ export default function Branches({ onNavigate }: Props) {
                   />
                   <i className="ri-search-line search-icon"></i>
                 </div>
-              </Col>
-              <Col md={6} sm={12} className="d-flex justify-content-md-end gap-2 flex-wrap">
-                <Button
-                  onClick={handleExport}
-                  disabled={exporting}
-                  className="rounded-pill px-3 export-btn"
-                  style={{ fontWeight: 600 }}
-                >
-                  {exporting ? <Spinner size="sm" className="me-1" /> : <i className="ri-download-2-line align-bottom me-1"></i>}
-                  {exporting ? 'Exporting...' : 'Export'}
-                </Button>
-                <Button
-                  color="secondary"
-                  className="btn-label waves-effect waves-light rounded-pill"
-                  onClick={() => onNavigate('branch-form')}
-                >
-                  <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
-                  Add Branch
-                </Button>
-              </Col>
-            </Row>
+              </div>
 
-            {/* ── Table ── */}
-            <Card className="border-0 shadow-none mb-0">
-              <CardBody className="p-3">
+              {/* ── Table ── */}
+              <div className="p-3 pt-2">
                 {loading ? (
                   <ShimmerTable rows={6} cols={9} />
                 ) : (
@@ -616,9 +696,11 @@ export default function Branches({ onNavigate }: Props) {
                       data={filtered}
                       isGlobalFilter={false}
                       customPageSize={10}
+                      worklistPagination
+                      pageSizeOptions={[10, 25, 50, 100]}
                       tableClass="align-middle table-nowrap mb-0"
                       theadClass="table-light"
-                      divClass="table-responsive table-card border rounded"
+                      divClass="table-responsive"
                       SearchPlaceholder="Search by name, code, city..."
                     />
                     {filtered.length === 0 && (
@@ -628,8 +710,8 @@ export default function Branches({ onNavigate }: Props) {
                     )}
                   </>
                 )}
-              </CardBody>
-            </Card>
+              </div>
+            </div>
           </div>
         </Col>
       </Row>

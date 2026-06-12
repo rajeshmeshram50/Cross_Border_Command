@@ -177,27 +177,73 @@ export default function Permissions() {
   if (loading) return <ShimmerPermissions />;
 
   return (
-    <>
+    <div className="perm-page">
+      <style>{`
+        /* Force the page's theme-primary accents to violet (instead of the
+           Velzon / brand blue) so the whole Permission screen is one shade. */
+        .perm-page .text-primary { color: #7c3aed !important; }
+        .perm-page .bg-primary-subtle { background-color: rgba(124,58,237,0.12) !important; }
+        /* Header strip — same shape/parts as the Customers (.smc-cstrip)
+           header (rounded container, left accent strip, violet icon) on a
+           plain white surface. Back pill on the right (sub-page). */
+        .pm-cstrip {
+          position: relative; overflow: hidden;
+          display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+          min-height: 70px; padding: 12px 18px;
+          background: #ffffff;
+          /* 1px violet border on all sides (the left accent strip stays). */
+          border: 1px solid #c4b5fd;
+          border-radius: 16px;
+          box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+          font-family: 'DM Sans', system-ui, sans-serif;
+        }
+        .pm-cstrip-accent {
+          position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+          background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
+          border-radius: 16px 0 0 16px;
+        }
+        .pm-cstrip-left { display: flex; align-items: center; gap: 16px; position: relative; z-index: 1; min-width: 0; flex: 1; }
+        .pm-cstrip-icon {
+          position: relative; width: 46px; height: 46px; border-radius: 12px;
+          background: linear-gradient(135deg, #7c3aed, #5b21b6);
+          display: inline-flex; align-items: center; justify-content: center;
+          color: #fff; font-size: 22px; flex-shrink: 0;
+          box-shadow: 0 4px 14px rgba(91,33,182,0.40), 0 0 0 3px rgba(124,58,237,0.10);
+        }
+        .pm-cstrip-title { font-size: 18px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
+        .pm-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; margin-top: 4px; line-height: 1.5; max-width: 760px; }
+        .pm-cstrip-back {
+          display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+          padding: 0 18px; height: 44px; border-radius: 14px;
+          border: 1px solid color-mix(in srgb, #7c3aed 30%, var(--vz-border-color));
+          background: #fff; color: #6d28d9;
+          font-family: inherit; font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; flex-shrink: 0;
+          transition: background .15s, border-color .15s, transform .15s;
+        }
+        .pm-cstrip-back:hover { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }
+        .pm-cstrip-back i { font-size: 16px; }
+        [data-bs-theme="dark"] .pm-cstrip { background: var(--vz-card-bg); border-color: rgba(167,139,250,0.40); box-shadow: 0 6px 18px rgba(0,0,0,0.30); }
+        [data-bs-theme="dark"] .pm-cstrip-back { background: transparent; color: #c4b5fd; }
+        [data-bs-theme="dark"] .pm-cstrip-back:hover { background: rgba(124,58,237,.14); }
+      `}</style>
       <Row>
         <Col xs={12}>
-          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <div className="d-flex align-items-center gap-2">
-              <button
-                className="btn btn-soft-primary btn-icon rounded-circle"
-                style={{ width: 36, height: 36 }}
-                onClick={() => navigate(-1)}
-                title="Back"
-              >
-                <i className="ri-arrow-left-line fs-16"></i>
-              </button>
-              <h4 className="mb-sm-0">Permission Management</h4>
+          {/* Header strip — matches the Clients / Branches module headers. */}
+          <div className="pm-cstrip mb-3">
+            <span className="pm-cstrip-accent" />
+            <div className="pm-cstrip-left">
+              <div className="pm-cstrip-icon"><i className="ri-shield-keyhole-line" /></div>
+              <div className="min-w-0">
+                <div className="pm-cstrip-title">Permission Management</div>
+                <div className="pm-cstrip-sub">
+                  Grant or restrict module access for branch users and employees.
+                </div>
+              </div>
             </div>
-            <div className="page-title-right">
-              <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#">Admin</a></li>
-                <li className="breadcrumb-item active">Permissions</li>
-              </ol>
-            </div>
+            <button type="button" className="pm-cstrip-back" onClick={() => navigate(-1)}>
+              <i className="ri-arrow-left-line" />
+              Back
+            </button>
           </div>
         </Col>
       </Row>
@@ -271,8 +317,8 @@ export default function Permissions() {
                               color: '#fff',
                               background: isSelected
                                 ? 'rgba(255,255,255,0.18)'
-                                : 'linear-gradient(135deg,#405189,#6691e7)',
-                              boxShadow: isSelected ? 'none' : '0 2px 6px rgba(64,81,137,0.25)',
+                                : 'linear-gradient(135deg,#8b5cf6,#7c3aed)',
+                              boxShadow: isSelected ? 'none' : '0 2px 6px rgba(124,58,237,0.25)',
                             }}
                           >
                             {initials}
@@ -307,8 +353,8 @@ export default function Permissions() {
                                 style={{
                                   fontSize: 9.5,
                                   padding: '2px 6px',
-                                  background: isSelected ? 'rgba(255,255,255,0.22)' : 'var(--vz-primary-bg-subtle, rgba(64,81,137,0.1))',
-                                  color:      isSelected ? '#fff' : 'var(--vz-primary)',
+                                  background: isSelected ? 'rgba(255,255,255,0.22)' : 'rgba(124,58,237,0.12)',
+                                  color:      isSelected ? '#fff' : '#7c3aed',
                                 }}
                               >
                                 <i className="ri-user-settings-line me-1" />{roleLabel}
@@ -340,7 +386,7 @@ export default function Permissions() {
                     disabled={saving || !selectedUserId}
                     onClick={handleSave}
                     style={{
-                      background: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)',
+                      background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
                       border: 'none',
                       boxShadow: '0 4px 12px rgba(30,64,175,0.30)',
                       minWidth: 180,
@@ -376,7 +422,7 @@ export default function Permissions() {
 
             {!isSuperAdmin && visibleUsers.length > 0 && (
               <CardBody className="pt-0">
-                <Alert color="info" className="mb-0">
+                <Alert color="info" className="mb-0" style={{ background: 'rgba(124,58,237,0.08)', borderColor: 'rgba(124,58,237,0.25)', color: '#6d28d9' }}>
                   <i className="ri-shield-check-line me-1"></i>
                   You can only grant permissions that you have. Disabled checkboxes indicate permissions you don't have.
                 </Alert>
@@ -397,7 +443,7 @@ export default function Permissions() {
                 <div style={{
                   position: 'absolute', top: '-30%', left: '50%', transform: 'translateX(-50%)',
                   width: 380, height: 380, borderRadius: '50%',
-                  background: 'radial-gradient(circle, rgba(64,81,137,0.08) 0%, transparent 70%)',
+                  background: 'radial-gradient(circle, rgba(124,58,237,0.08) 0%, transparent 70%)',
                   pointerEvents: 'none',
                 }} />
 
@@ -410,9 +456,9 @@ export default function Permissions() {
                     position: 'relative',
                     width: 60, height: 60,
                     borderRadius: '50%',
-                    background: 'linear-gradient(135deg,#405189,#6691e7)',
+                    background: 'linear-gradient(135deg,#8b5cf6,#7c3aed)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    boxShadow: '0 18px 40px rgba(64,81,137,0.35)',
+                    boxShadow: '0 18px 40px rgba(124,58,237,0.35)',
                     zIndex: 1,
                   }}>
                     <i className="ri-shield-user-line" style={{ fontSize: 30, color: '#fff' }} />
@@ -423,7 +469,7 @@ export default function Permissions() {
                   <h4 style={{
                     marginTop: 22, marginBottom: 6,
                     fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))',
-                    background: 'linear-gradient(135deg,#405189,#6691e7)',
+                    background: 'linear-gradient(135deg,#8b5cf6,#7c3aed)',
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent',
                     backgroundClip: 'text',
@@ -457,7 +503,7 @@ export default function Permissions() {
                     }}>
                       <span style={{
                         width: 36, height: 36, borderRadius: 10,
-                        background: 'linear-gradient(135deg,#405189,#6691e7)',
+                        background: 'linear-gradient(135deg,#8b5cf6,#7c3aed)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         flexShrink: 0,
                       }}>
@@ -487,6 +533,7 @@ export default function Permissions() {
                   onChange={setMatrix}
                   grantableBy={isSuperAdmin ? null : myPerms}
                   loading={loadingPerms}
+                  autoExpandMasterCategories={false}
                 />
 
                 <CardBody className="border-top bg-light-subtle d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3">
@@ -507,7 +554,7 @@ export default function Permissions() {
                     disabled={saving || !selectedUserId}
                     onClick={handleSave}
                     style={{
-                      background: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)',
+                      background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
                       border: 'none',
                       boxShadow: '0 4px 12px rgba(30,64,175,0.30)',
                       minWidth: 180,
@@ -532,6 +579,6 @@ export default function Permissions() {
           </Card>
         </Col>
       </Row>
-    </>
+    </div>
   );
 }
