@@ -609,7 +609,10 @@ function ComposeDock({ onClose, onSent }: { onClose: () => void; onSent: () => v
 function GmailStyles() {
   return (
     <style>{`
-    .gm-shell { display:flex; gap:0; height:calc(100vh - 130px); min-height:560px; background:var(--vz-card-bg,#fff); border:1px solid var(--vz-border-color); border-radius:16px; overflow:hidden; }
+    /* NOTE: use --vz-secondary-bg / --vz-body-bg (global, theme-aware) — NOT --vz-card-bg,
+       which Bootstrap scopes to .card only, so on these plain divs it fell back to #fff and
+       the whole panel stayed white in dark mode. */
+    .gm-shell { display:flex; gap:0; height:calc(100vh - 130px); min-height:560px; background:var(--vz-secondary-bg,#fff); border:1px solid var(--vz-border-color); border-radius:16px; overflow:hidden; }
     /* Rail */
     .gm-rail { width:240px; flex-shrink:0; padding:14px 10px; border-right:1px solid var(--vz-border-color); overflow-y:auto; }
     .gm-compose-btn { display:flex; align-items:center; gap:12px; width:auto; padding:14px 22px 14px 16px; border:0; border-radius:16px; background:#c2e7ff; color:#001d35; font-weight:600; font-size:14px; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,.12); margin-bottom:12px; transition:box-shadow .15s, background .15s; }
@@ -656,8 +659,8 @@ function GmailStyles() {
     .gm-shim-row { padding:13px 16px; border-bottom:1px solid var(--vz-border-color); }
     .gm-row { display:flex; align-items:center; gap:8px; padding:0 12px 0 4px; height:42px; border-bottom:1px solid var(--vz-border-color); cursor:pointer; position:relative; }
     .gm-row:hover { box-shadow:inset 1px 0 0 #dadce0, inset -1px 0 0 #dadce0, 0 1px 2px rgba(60,64,67,.3); z-index:1; }
-    .gm-row.unread { background:var(--vz-card-bg,#fff); }
-    .gm-row.read { background:var(--vz-secondary-bg,#f2f6fc); }
+    .gm-row.unread { background:var(--vz-secondary-bg,#fff); }
+    .gm-row.read { background:var(--vz-body-bg,#f2f6fc); }
     .gm-row.selected { background:#c2dbff !important; }
     .gm-star { border:0; background:transparent; color:#c0c4c9; cursor:pointer; font-size:17px; width:28px; height:28px; flex-shrink:0; }
     .gm-star.on { color:#f4b400; }
@@ -731,6 +734,26 @@ function GmailStyles() {
     .gm-cmp-send:hover { background:#0a4bbf; }
     .gm-cmp-send:disabled { opacity:.6; cursor:default; }
     .gm-cmp-hint { font-size:11px; color:#9aa0a6; }
+    /* ── Dark mode: override the hardcoded light values that don't ride on CSS vars ── */
+    [data-bs-theme="dark"] .gm-search i,
+    [data-bs-theme="dark"] .gm-icon-btn,
+    [data-bs-theme="dark"] .gm-star { color:#9aa0a6; }
+    [data-bs-theme="dark"] .gm-pager-range,
+    [data-bs-theme="dark"] .gm-row-snippet,
+    [data-bs-theme="dark"] .gm-row-date,
+    [data-bs-theme="dark"] .gm-attach,
+    [data-bs-theme="dark"] .gm-reading-date,
+    [data-bs-theme="dark"] .gm-muted,
+    [data-bs-theme="dark"] .gm-reading-to,
+    [data-bs-theme="dark"] .gm-meta-label,
+    [data-bs-theme="dark"] .gm-cmp-field-label,
+    [data-bs-theme="dark"] .gm-cmp-cc,
+    [data-bs-theme="dark"] .gm-ac-email { color:#9aa0a6; }
+    /* Hover + selected used light greys/blue that streak on a dark surface */
+    [data-bs-theme="dark"] .gm-row:hover { box-shadow:inset 1px 0 0 var(--vz-border-color), inset -1px 0 0 var(--vz-border-color), 0 1px 2px rgba(0,0,0,.5); }
+    [data-bs-theme="dark"] .gm-row.selected { background:#004a77 !important; }
+    [data-bs-theme="dark"] .gm-row.selected .gm-row-sender,
+    [data-bs-theme="dark"] .gm-row.selected .gm-row-subject { color:#c2e7ff; }
     @media (max-width:991px){ .gm-rail{ width:64px; } .gm-folder-label,.gm-folder-count,.gm-compose-btn span{ display:none; } .gm-compose-btn{ padding:14px; } .gm-row-sender{ width:110px; } }
     `}</style>
   );
