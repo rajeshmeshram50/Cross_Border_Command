@@ -175,6 +175,8 @@ export default function IdimsHeader() {
   } = useBranchSwitcher();
 
   const [openDD, setOpenDD] = useState<DD | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const [branchOpen, setBranchOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
@@ -214,11 +216,11 @@ export default function IdimsHeader() {
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpenDD(null); setBranchOpen(false); setProfileOpen(false);
+        setOpenDD(null); setBranchOpen(false); setProfileOpen(false); setSearchOpen(false);
       }
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setOpenDD(null); setBranchOpen(false); setProfileOpen(false); setLogoutOpen(false); }
+      if (e.key === 'Escape') { setOpenDD(null); setBranchOpen(false); setProfileOpen(false); setLogoutOpen(false); setSearchOpen(false); }
     };
     document.addEventListener('mousedown', onDoc);
     document.addEventListener('keydown', onKey);
@@ -298,6 +300,46 @@ export default function IdimsHeader() {
       : kind === 'hr' ? hrLeafPath(id)
       : kind === 'p2p' ? p2pLeafPath(id)
       : clmLeafPath(id);
+
+  /* ── Search index — modules + sub-modules only ──────────────────────────
+     Flattens the accessible top-level nav items and their dropdown leaves
+     into a single searchable list. Permission gating mirrors the menu render
+     (super-admin sees all; P2P leaves follow the module-level can('p2p')
+     grant; every other leaf needs perms[id].can_view). The header search
+     intentionally covers ONLY modules/sub-modules — no parties/documents. */
+  type SearchEntry = { id: string; label: string; parent?: string; path: string; icon: JSX.Element };
+  const searchIndex = useMemo(() => {
+    const out: SearchEntry[] = [];
+    navItems.forEach(item => {
+      out.push({ id: item.id, label: item.label, path: topPath(item.id), icon: item.icon });
+      if (item.dd) {
+        colsFor(item.dd).flat().forEach(g => {
+          g.children.forEach(leaf => {
+            const visible = item.dd === 'p2p' || isSuperAdmin || !!perms[leaf.id]?.can_view;
+            if (!visible) return;
+            out.push({ id: leaf.id, label: leaf.label, parent: item.label, path: leafPath(leaf.id, item.dd!), icon: item.icon });
+          });
+        });
+      }
+    });
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navItems]);
+
+  const searchResults = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return searchIndex
+      .filter(e => e.label.toLowerCase().includes(q) || (e.parent?.toLowerCase().includes(q)))
+      .slice(0, 12);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, searchIndex]);
+
+  const runSearchNav = (path: string) => {
+    setSearchQuery('');
+    setSearchOpen(false);
+    go(path);
+  };
 
   const renderLeaf = (leaf: Leaf, kind: DD, accent: string, bg: string) => {
     // P2P leaves carry no per-leaf permission — module-level can('p2p') gates them.
@@ -441,9 +483,34 @@ export default function IdimsHeader() {
             <div className="idims-search">
               <span className="idims-search-ico">{IC.search}</span>
               <input className="idims-search-input" type="text"
-                placeholder="Search modules, contracts, parties, documents..."
-                onKeyDown={e => { if (e.key === 'Enter') e.preventDefault(); }} />
-              <span className="idims-search-kbd">⌘K</span>
+                placeholder="Search modules & sub-modules..."
+                value={searchQuery}
+                onChange={e => { setSearchQuery(e.target.value); setSearchOpen(true); }}
+                onFocus={() => { setOpenDD(null); setBranchOpen(false); setProfileOpen(false); setSearchOpen(true); }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { e.preventDefault(); if (searchResults[0]) runSearchNav(searchResults[0].path); }
+                }} />
+              {searchQuery
+                ? <button type="button" className="idims-search-clear" aria-label="Clear search"
+                    onClick={() => { setSearchQuery(''); setSearchOpen(false); }}>{IC.close}</button>
+                : <span className="idims-search-kbd">⌘K</span>}
+              {searchOpen && searchQuery.trim() && (
+                <div className="idims-search-results">
+                  {searchResults.length === 0 ? (
+                    <div className="idims-search-empty">No modules match “{searchQuery.trim()}”</div>
+                  ) : searchResults.map(r => (
+                    <button type="button" key={`${r.parent || ''}:${r.id}`} className="idims-search-result"
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => runSearchNav(r.path)}>
+                      <span className="idims-search-result-ico">{r.icon}</span>
+                      <span className="idims-search-result-text">
+                        <span className="idims-search-result-label">{r.label}</span>
+                        <span className="idims-search-result-sub">{r.parent ? `${r.parent} · Sub-module` : 'Module'}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Branch switcher */}
@@ -745,9 +812,26 @@ const IDIMS_CSS = `
 .idims-row-bottom .idims-nav-items::-webkit-scrollbar { display: none; }
 
 /* Search */
-.idims-search { width: 440px; flex-shrink: 0; height: 40px; display: flex; align-items: center; gap: 10px;
+.idims-search { position: relative; width: 440px; flex-shrink: 0; height: 40px; display: flex; align-items: center; gap: 10px;
   background: linear-gradient(180deg,#FFF,#F7F8FC); border: 1.5px solid #E7EAF3; border-radius: 12px; padding: 0 6px 0 13px;
   box-shadow: inset 0 1px 2px rgba(15,23,42,.04); transition: border-color .18s, box-shadow .18s, background .18s; }
+.idims-search-clear { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 22px; height: 22px;
+  border: none; background: transparent; color: #9AA2B8; border-radius: 6px; cursor: pointer; padding: 0; transition: background .15s, color .15s; }
+.idims-search-clear svg { width: 13px; height: 13px; }
+.idims-search-clear:hover { background: #EEF1F8; color: #475569; }
+.idims-search-results { position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 1200;
+  background: #fff; border: 1px solid #E7EAF3; border-radius: 12px; box-shadow: 0 12px 34px rgba(15,23,42,.16);
+  padding: 6px; max-height: 380px; overflow-y: auto; }
+.idims-search-empty { padding: 14px 12px; font-size: 12.5px; color: #9AA2B8; text-align: center; }
+.idims-search-result { display: flex; align-items: center; gap: 11px; width: 100%; border: none; background: transparent;
+  padding: 8px 10px; border-radius: 9px; cursor: pointer; text-align: left; transition: background .14s; }
+.idims-search-result:hover { background: #F5F3FF; }
+.idims-search-result-ico { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px;
+  border-radius: 8px; background: #F1F0FB; color: #7C3AED; }
+.idims-search-result-ico svg { width: 15px; height: 15px; }
+.idims-search-result-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.idims-search-result-label { font-size: 13px; font-weight: 600; color: #0F172A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.idims-search-result-sub { font-size: 11px; color: #94A0B8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .idims-search:hover { border-color: #D6DBEC; }
 .idims-search:focus-within { background: #fff; border-color: #C4B5FD; box-shadow: 0 0 0 4px rgba(139,92,246,.15); }
 .idims-search-ico { display: flex; align-items: center; color: #A0A8BD; flex-shrink: 0; transition: color .18s; }
@@ -955,6 +1039,13 @@ const IDIMS_CSS = `
 .idims-dark .idims-search { background: linear-gradient(180deg,#1E2230,#1A1D29); border-color: #2C3242; }
 .idims-dark .idims-search-input { color: #E5E7EB; }
 .idims-dark .idims-search-kbd { background: #1E2230; border-color: #2C3242; color: #9CA3AF; }
+.idims-dark .idims-search-clear:hover { background: #2C3242; color: #CBD5E1; }
+.idims-dark .idims-search-results { background: #1A1D29; border-color: #2C3242; box-shadow: 0 12px 34px rgba(0,0,0,.5); }
+.idims-dark .idims-search-result:hover { background: #252A3A; }
+.idims-dark .idims-search-result-ico { background: #252A3A; color: #A78BFA; }
+.idims-dark .idims-search-result-label { color: #E5E7EB; }
+.idims-dark .idims-search-result-sub { color: #7E8AA3; }
+.idims-dark .idims-search-empty { color: #7E8AA3; }
 .idims-dark .idims-nav-btn { color: #9CA3AF; }
 .idims-dark .idims-nav-btn:hover, .idims-dark .idims-nav-btn.dd-open { color: #C4B5FD; }
 .idims-dark .idims-action-btn { color: #9CA3AF; }
