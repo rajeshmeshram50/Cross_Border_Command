@@ -4,13 +4,32 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Announcement;
+use App\Models\Attendance;
 use App\Models\Branch;
 use App\Models\Client;
+use App\Models\ClmAgreementLibrary;
+use App\Models\ClmClauseLibrary;
+use App\Models\ClmDdDocument;
+use App\Models\ClmKycDocument;
+use App\Models\ClmQcDocument;
+use App\Models\ClmSegment;
+use App\Models\ClmSignatureRequest;
+use App\Models\ClmTncLibrary;
+use App\Models\ClmTradeDocLibrary;
+use App\Models\ClmTradeLicense;
 use App\Models\Employee;
 use App\Models\ExpenseClaim;
+use App\Models\Lead;
+use App\Models\LeaveRequest;
+use App\Models\Module;
 use App\Models\Payment;
+use App\Models\Permission;
 use App\Models\Plan;
+use App\Models\Product;
+use App\Models\ProformaInvoice;
+use App\Models\Quotation;
 use App\Models\User;
+use App\Models\Vendor;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -173,8 +192,80 @@ class DashboardController extends Controller
             ->get()
             ->toArray();
 
+        // ── SaaS subscription metrics — the platform-owner view: MRR / ARR /
+        // ARPU, active subscriptions, signups, and renewal health. Plan
+        // prices are normalised to a monthly figure so mixed billing cycles
+        // sum into a single comparable MRR. ──────────────────────────────────
+        $toMonthly = function ($price, $period): float {
+            $price = (float) $price;
+            $p = strtolower((string) $period);
+            if (str_contains($p, 'year') || str_contains($p, 'annual')) return $price / 12;
+            if (str_contains($p, 'quarter')) return $price / 3;
+            if (str_contains($p, 'week')) return $price * 4.345;
+            return $price; // monthly / default
+        };
+        $now = now();
+        $mrr = 0.0;
+        $payingClients = 0;
+        $expiringSoon = 0;   // active sub expiring within 30 days
+        $expiredSubs = 0;    // plan end date already past
+        $mrrByPlan = [];
+        Client::with('plan:id,name,price,period')
+            ->where('status', 'active')
+            ->whereNotNull('plan_id')
+            ->get(['id', 'plan_id', 'plan_expires_at'])
+            ->each(function ($c) use (&$mrr, &$payingClients, &$expiringSoon, &$expiredSubs, &$mrrByPlan, $toMonthly, $now) {
+                $price = (float) ($c->plan->price ?? 0);
+                if ($price > 0) {
+                    $m = $toMonthly($price, $c->plan->period ?? 'month');
+                    $mrr += $m;
+                    $payingClients++;
+                    $pname = $c->plan->name ?? 'Other';
+                    $mrrByPlan[$pname] = ($mrrByPlan[$pname] ?? 0) + $m;
+                }
+                if ($c->plan_expires_at) {
+                    if ($c->plan_expires_at->lt($now)) $expiredSubs++;
+                    elseif ($c->plan_expires_at->lte($now->copy()->addDays(30))) $expiringSoon++;
+                }
+            });
+        $arr  = $mrr * 12;
+        $arpu = $payingClients > 0 ? $mrr / $payingClients : 0;
+
+        $newThisMonth = Client::where('created_at', '>=', $now->copy()->startOfMonth())->count();
+        $newLastMonth = Client::whereBetween('created_at', [
+            $now->copy()->subMonthNoOverflow()->startOfMonth(),
+            $now->copy()->startOfMonth(),
+        ])->count();
+        $signupGrowth = $newLastMonth > 0
+            ? (int) round((($newThisMonth - $newLastMonth) / $newLastMonth) * 100)
+            : ($newThisMonth > 0 ? 100 : 0);
+
+        // Rough churn proxy — expired subscriptions as a share of all clients.
+        $churnRate = $totalClients > 0 ? round(($expiredSubs / $totalClients) * 100, 1) : 0;
+
+        $mrrByPlanRows = [];
+        foreach ($mrrByPlan as $name => $amount) {
+            $mrrByPlanRows[] = ['plan' => $name, 'mrr' => round($amount, 2)];
+        }
+        usort($mrrByPlanRows, fn ($a, $z) => $z['mrr'] <=> $a['mrr']);
+
         return [
             'plan_distribution' => $planDistribution,
+            'saas' => [
+                'mrr'                  => round($mrr, 2),
+                'arr'                  => round($arr, 2),
+                'arpu'                 => round($arpu, 2),
+                'paying_clients'       => $payingClients,
+                'free_clients'         => max(0, $totalClients - $payingClients),
+                'active_subscriptions' => $payingClients,
+                'new_this_month'       => $newThisMonth,
+                'new_last_month'       => $newLastMonth,
+                'signup_growth'        => $signupGrowth,
+                'expiring_soon'        => $expiringSoon,
+                'expired'              => $expiredSubs,
+                'churn_rate'           => $churnRate,
+                'mrr_by_plan'          => $mrrByPlanRows,
+            ],
             'counts' => [
                 'total_clients' => $totalClients,
                 'active_clients' => $activeClients,
@@ -336,7 +427,7 @@ class DashboardController extends Controller
         $branches = Branch::where('client_id', $clientId)
             ->where('code', '!=', 'HO')
             ->when($branchId, fn($q) => $q->where('id', $branchId))
-            ->withCount('users')
+            ->withCount(['users', 'employees'])
             ->orderByDesc('is_main')
             ->orderBy('name')
             ->get(['id', 'name', 'code', 'status', 'is_main', 'city', 'state', 'email', 'phone']);
@@ -581,6 +672,378 @@ class DashboardController extends Controller
             'upcoming_events'  => $upcomingEvents,
         ];
 
+        // ── Sales / pipeline analytics ───────────────────────────────────
+        // The branch's core business: leads → quotations → proforma invoices.
+        // Scoped to client_id + branch_id exactly like the employee analytics
+        // above (a sub-branch user is already pinned to their branch via the
+        // $branchId rewrite in clientStats()). Quotations / PIs / Leads all
+        // carry branch_id, so the same filter applies cleanly.
+        $leadBase = fn () => Lead::where('client_id', $clientId)
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+        $qtBase = fn () => Quotation::where('client_id', $clientId)
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+        $piBase = fn () => ProformaInvoice::where('client_id', $clientId)
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+
+        // Lead KPIs. "Won" = reached the Victory stage (lead_stage_id 6) OR
+        // has won_at stamped (the two are set together, but OR-ing is robust
+        // against either being missing).
+        $isWon = fn ($w) => $w->whereNotNull('won_at')->orWhere('lead_stage_id', '>=', 6);
+        $totalLeads     = (int) $leadBase()->count();
+        $qualifiedLeads = (int) $leadBase()->where('qualified', true)->where('disqualified', false)->count();
+        $disqLeads      = (int) $leadBase()->where('disqualified', true)->count();
+        $wonLeads       = (int) $leadBase()->where($isWon)->count();
+        $keyOpps        = (int) $leadBase()->where('key_opportunity', true)->count();
+        // Active = qualified, still open (not disqualified, not won/victory).
+        $activeOpps     = (int) $leadBase()->where('qualified', true)->where('disqualified', false)
+            ->whereNull('won_at')->where('lead_stage_id', '<', 6)->count();
+        // "Engaged" = leads that moved past the first stage (Inquiry Received)
+        // — a meaningful progression metric (qualified is near-always true so a
+        // qualified-ratio gauge would be a flat 100%).
+        $engagedLeads   = (int) $leadBase()->where('lead_stage_id', '>', 1)->count();
+        $newLeadsMonth  = (int) $leadBase()->where('created_at', '>=', now()->startOfMonth())->count();
+
+        // Dominant quotation currency → a display symbol. Values are stored
+        // inconsistently ("USD", "US – USD", …) and may mix currencies; we sum
+        // them and label with the most common one's symbol rather than a
+        // hardcoded ₹ (which mislabels USD figures).
+        $curMode = $qtBase()->whereNotNull('currency')->where('currency', '!=', '')
+            ->select('currency', DB::raw('count(*) c'))->groupBy('currency')->orderByDesc('c')->value('currency');
+        $curUpper = strtoupper((string) $curMode);
+        $currencySymbol = str_contains($curUpper, 'USD') ? '$'
+            : (str_contains($curUpper, 'EUR') ? '€'
+            : (str_contains($curUpper, 'GBP') ? '£'
+            : (str_contains($curUpper, 'AED') ? 'AED '
+            : '₹')));
+
+        // Pipeline funnel — count by lead_stage_id. The UI uses 1-4 then jumps
+        // to 6 (Quotation vs PI) and 8 (Victory).
+        $stageRows = $leadBase()
+            ->select('lead_stage_id', DB::raw('count(*) as count'))
+            ->groupBy('lead_stage_id')
+            ->pluck('count', 'lead_stage_id')
+            ->toArray();
+        // Stage IDs are contiguous 1-6 (validated `between:1,6` in
+        // SalesLeadController; Stage4 advances to 5, Stage5 to 6). The earlier
+        // 6/8 mapping was wrong and dropped stage-5 leads from the funnel.
+        $stageMap = [
+            1 => 'Inquiry Received',
+            2 => 'Acknowledgement',
+            3 => 'Product Sourcing',
+            4 => 'Price Shared',
+            5 => 'Quotation vs PI',
+            6 => 'Victory',
+        ];
+        $pipeline = [];
+        foreach ($stageMap as $id => $label) {
+            $pipeline[] = ['stage' => $label, 'count' => (int) ($stageRows[$id] ?? 0)];
+        }
+
+        // Quotation KPIs — value excludes cancelled rows. Conversion = the share
+        // of quotations that became a PI.
+        $totalQuotations     = (int) $qtBase()->count();
+        $quotationValue      = (float) $qtBase()->where('status', '!=', 'cancelled')->sum('grand_total');
+        $convertedQuotations = (int) $qtBase()->where('status', 'converted_to_pi')->count();
+        $conversionRate      = $totalQuotations > 0 ? (int) round(($convertedQuotations / $totalQuotations) * 100) : 0;
+
+        // Proforma Invoice KPIs.
+        $totalPis = (int) $piBase()->count();
+        $piValue  = (float) $piBase()->where('status', '!=', 'cancelled')->sum('grand_total');
+
+        // Leads trend (last 6 months by created_at) — pre-seed every bucket.
+        // The same loop also collects the per-metric spark series (plain number
+        // arrays) that drive the mini trend charts inside the KPI tiles.
+        $leadsTrend = [];
+        $sparkLeads = [];
+        $sparkQuotations = [];
+        $sparkPis = [];
+        $sparkValue = [];
+        for ($i = 5; $i >= 0; $i--) {
+            $month = now()->subMonths($i);
+            $leadCount = (int) $leadBase()
+                ->whereYear('created_at', $month->year)
+                ->whereMonth('created_at', $month->month)
+                ->count();
+            $leadsTrend[]  = ['month' => $month->format('M'), 'count' => $leadCount];
+            $sparkLeads[]  = $leadCount;
+
+            $qtAgg = $qtBase()
+                ->whereYear('created_at', $month->year)
+                ->whereMonth('created_at', $month->month)
+                ->selectRaw('COUNT(*) as cnt, COALESCE(SUM(grand_total), 0) as val')
+                ->first();
+            $sparkQuotations[] = (int) ($qtAgg->cnt ?? 0);
+            $sparkValue[]      = (float) ($qtAgg->val ?? 0);
+
+            $sparkPis[] = (int) $piBase()
+                ->whereYear('created_at', $month->year)
+                ->whereMonth('created_at', $month->month)
+                ->count();
+        }
+
+        // Recent opportunities — latest 6 leads with their stage + customer.
+        $recentLeads = $leadBase()
+            ->with('customer:id,company_name')
+            ->orderByDesc('id')
+            ->limit(6)
+            ->get(['id', 'opp_code', 'lead_stage_id', 'customer_id', 'sender_company', 'qualified', 'disqualified', 'won_at', 'created_at'])
+            ->map(fn ($l) => [
+                'id'           => $l->id,
+                'opp_code'     => $l->opp_code,
+                'customer'     => $l->customer?->company_name ?: ($l->sender_company ?: '—'),
+                'stage'        => $stageMap[$l->lead_stage_id] ?? '—',
+                'stage_id'     => (int) $l->lead_stage_id,
+                'won'          => $l->won_at !== null,
+                'disqualified' => (bool) $l->disqualified,
+                'created_at'   => optional($l->created_at)->toDateString(),
+            ]);
+
+        // Top customers by quotation value (cancelled excluded).
+        $topCustomers = $qtBase()
+            ->where('status', '!=', 'cancelled')
+            ->whereNotNull('customer_id')
+            ->select('customer_id', DB::raw('SUM(grand_total) as value'), DB::raw('COUNT(*) as quotations'))
+            ->groupBy('customer_id')
+            ->orderByDesc('value')
+            ->limit(5)
+            ->with('customer:id,company_name')
+            ->get()
+            ->map(fn ($r) => [
+                'customer'   => $r->customer?->company_name ?? '—',
+                'value'      => (float) $r->value,
+                'quotations' => (int) $r->quotations,
+            ]);
+
+        // ── Procurement & Vendors analytics ─────────────────────────────
+        // Product catalogue + supplier (vendor) onboarding, branch-scoped the
+        // same way. Both carry client_id + branch_id and a 4-step onboarding
+        // (step_completed 0-4) plus a draft/inactive/active status.
+        $prodBase = fn () => Product::where('client_id', $clientId)
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+        $venBase = fn () => Vendor::where('client_id', $clientId)
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+
+        $prodStatus = $prodBase()->select('status', DB::raw('count(*) as c'))->groupBy('status')->pluck('c', 'status')->toArray();
+        $venStatus  = $venBase()->select('status', DB::raw('count(*) as c'))->groupBy('status')->pluck('c', 'status')->toArray();
+
+        // Onboarding funnels — "reached at least step N" (step_completed is the
+        // highest step finished, so >= gives a clean descending funnel).
+        $prodFunnel = [
+            ['stage' => 'Core',    'count' => (int) $prodBase()->where('step_completed', '>=', 1)->count()],
+            ['stage' => 'Sales',   'count' => (int) $prodBase()->where('step_completed', '>=', 2)->count()],
+            ['stage' => 'Quality', 'count' => (int) $prodBase()->where('step_completed', '>=', 3)->count()],
+            ['stage' => 'Vendors', 'count' => (int) $prodBase()->where('step_completed', '>=', 4)->count()],
+        ];
+        $venFunnel = [
+            ['stage' => 'Identity',  'count' => (int) $venBase()->where('step_completed', '>=', 1)->count()],
+            ['stage' => 'Contacts',  'count' => (int) $venBase()->where('step_completed', '>=', 2)->count()],
+            ['stage' => 'KYC',       'count' => (int) $venBase()->where('step_completed', '>=', 3)->count()],
+            ['stage' => 'Products',  'count' => (int) $venBase()->where('step_completed', '>=', 4)->count()],
+        ];
+
+        // Top vendor types (joined to the master for readable names).
+        $venByType = Vendor::query()
+            ->leftJoin('master_vendor_types', 'vendors.vendor_type_id', '=', 'master_vendor_types.id')
+            ->where('vendors.client_id', $clientId)
+            ->when($branchId, fn ($q) => $q->where('vendors.branch_id', $branchId))
+            ->whereNull('vendors.deleted_at')
+            ->select(DB::raw("COALESCE(master_vendor_types.name, 'Unassigned') as name"), DB::raw('count(*) as count'))
+            ->groupBy('name')
+            ->orderByDesc('count')
+            ->limit(5)
+            ->get()
+            ->map(fn ($r) => ['name' => $r->name, 'count' => (int) $r->count])
+            ->toArray();
+
+        $procurementAnalytics = [
+            'products' => [
+                'total'          => (int) $prodBase()->count(),
+                'active'         => (int) ($prodStatus['active'] ?? 0),
+                'inactive'       => (int) ($prodStatus['inactive'] ?? 0),
+                'draft'          => (int) ($prodStatus['draft'] ?? 0),
+                'new_this_month' => (int) $prodBase()->where('created_at', '>=', now()->startOfMonth())->count(),
+                'status' => [
+                    ['name' => 'Active',   'value' => (int) ($prodStatus['active'] ?? 0)],
+                    ['name' => 'Inactive', 'value' => (int) ($prodStatus['inactive'] ?? 0)],
+                    ['name' => 'Draft',    'value' => (int) ($prodStatus['draft'] ?? 0)],
+                ],
+                'funnel' => $prodFunnel,
+            ],
+            'vendors' => [
+                'total'          => (int) $venBase()->count(),
+                'active'         => (int) ($venStatus['active'] ?? 0),
+                'inactive'       => (int) ($venStatus['inactive'] ?? 0),
+                'draft'          => (int) ($venStatus['draft'] ?? 0),
+                'new_this_month' => (int) $venBase()->where('created_at', '>=', now()->startOfMonth())->count(),
+                'status' => [
+                    ['name' => 'Active',   'value' => (int) ($venStatus['active'] ?? 0)],
+                    ['name' => 'Inactive', 'value' => (int) ($venStatus['inactive'] ?? 0)],
+                    ['name' => 'Draft',    'value' => (int) ($venStatus['draft'] ?? 0)],
+                ],
+                'funnel'  => $venFunnel,
+                'by_type' => $venByType,
+            ],
+        ];
+
+        // ── CLM / Compliance analytics ──────────────────────────────────
+        // E-signature requests + segments are branch-scoped; the compliance
+        // LIBRARY masters (KYC/DD/QC/TL/agreements/trade-docs/clauses/T&Cs) are
+        // client-level only, so those are shown as client-wide catalogue sizes.
+        $sigBase = fn () => ClmSignatureRequest::where('client_id', $clientId)
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+
+        $sigStatusRows = $sigBase()->select('status', DB::raw('count(*) as c'))->groupBy('status')->pluck('c', 'status')->toArray();
+        $sigTypeRows   = $sigBase()->select('document_type', DB::raw('count(*) as c'))->groupBy('document_type')->pluck('c', 'document_type')->toArray();
+
+        $totalSignatures   = (int) $sigBase()->count();
+        $sigCompleted      = (int) ($sigStatusRows['completed'] ?? 0);
+        $sigInProgress     = (int) ($sigStatusRows['inprogress'] ?? 0);
+        $sigDeclined       = (int) (($sigStatusRows['declined'] ?? 0) + ($sigStatusRows['recalled'] ?? 0) + ($sigStatusRows['expired'] ?? 0));
+        $sigCompletionRate = $totalSignatures > 0 ? (int) round(($sigCompleted / $totalSignatures) * 100) : 0;
+
+        $sigStatus = [
+            ['name' => 'Completed',   'value' => $sigCompleted],
+            ['name' => 'In Progress', 'value' => $sigInProgress],
+            ['name' => 'Declined',    'value' => (int) ($sigStatusRows['declined'] ?? 0)],
+            ['name' => 'Recalled',    'value' => (int) ($sigStatusRows['recalled'] ?? 0)],
+            ['name' => 'Draft',       'value' => (int) ($sigStatusRows['draft'] ?? 0)],
+        ];
+        $typeLabels = ['quotation' => 'Quotation', 'proforma_invoice' => 'Proforma Inv', 'agreement' => 'Agreement', 'trade_doc' => 'Trade Doc'];
+        $sigByType = [];
+        foreach ($typeLabels as $k => $lbl) {
+            $sigByType[] = ['name' => $lbl, 'count' => (int) ($sigTypeRows[$k] ?? 0)];
+        }
+
+        // Compliance library — client-level catalogue sizes (active rows only).
+        $library = [
+            ['name' => 'KYC Documents',       'count' => (int) ClmKycDocument::where('client_id', $clientId)->count(),     'icon' => 'kyc'],
+            ['name' => 'Due Diligence',       'count' => (int) ClmDdDocument::where('client_id', $clientId)->count(),      'icon' => 'dd'],
+            ['name' => 'Quality & Compliance','count' => (int) ClmQcDocument::where('client_id', $clientId)->count(),      'icon' => 'qc'],
+            ['name' => 'Trade Licenses',      'count' => (int) ClmTradeLicense::where('client_id', $clientId)->count(),    'icon' => 'tl'],
+            ['name' => 'Agreements',          'count' => (int) ClmAgreementLibrary::where('client_id', $clientId)->count(),'icon' => 'agr'],
+            ['name' => 'Trade Documents',     'count' => (int) ClmTradeDocLibrary::where('client_id', $clientId)->count(), 'icon' => 'td'],
+            ['name' => 'Clauses',             'count' => (int) ClmClauseLibrary::where('client_id', $clientId)->count(),   'icon' => 'clause'],
+            ['name' => 'Terms & Conditions',  'count' => (int) ClmTncLibrary::where('client_id', $clientId)->count(),      'icon' => 'tnc'],
+        ];
+
+        // Segments (branch-aware) — total + highly-regulated count.
+        $segBase = fn () => ClmSegment::where('client_id', $clientId)
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+        $totalSegments     = (int) $segBase()->count();
+        $highlyRegSegments = (int) $segBase()->where('regulatory_status', 'highly')->count();
+
+        $clmAnalytics = [
+            'signatures' => [
+                'total'           => $totalSignatures,
+                'completed'       => $sigCompleted,
+                'in_progress'     => $sigInProgress,
+                'declined'        => $sigDeclined,
+                'completion_rate' => $sigCompletionRate,
+                'status'          => $sigStatus,
+                'by_type'         => $sigByType,
+            ],
+            'library'  => $library,
+            'segments' => [
+                'total'            => $totalSegments,
+                'highly_regulated' => $highlyRegSegments,
+            ],
+        ];
+
+        // ── Per-branch breakdown (client-wide view only) ─────────────────
+        // The defining feature of a CLIENT dashboard vs a branch one: let the
+        // admin compare branches at a glance. Only computed when no branch
+        // filter is active — a branch / filtered view doesn't need it.
+        $byBranch = [];
+        if ($branchId === null) {
+            $branchRows = Branch::where('client_id', $clientId)
+                ->where('code', '!=', 'HO')
+                ->orderBy('name')
+                ->get(['id', 'name', 'code']);
+            foreach ($branchRows as $b) {
+                $byBranch[] = [
+                    'name'       => $b->name,
+                    'code'       => $b->code,
+                    'leads'      => (int) Lead::where('client_id', $clientId)->where('branch_id', $b->id)->count(),
+                    'quotations' => (int) Quotation::where('client_id', $clientId)->where('branch_id', $b->id)->count(),
+                    'value'      => (float) Quotation::where('client_id', $clientId)->where('branch_id', $b->id)->where('status', '!=', 'cancelled')->sum('grand_total'),
+                    'employees'  => (int) Employee::where('client_id', $clientId)->where('branch_id', $b->id)->count(),
+                ];
+            }
+            // Most active branch (by quoted value) first.
+            usort($byBranch, fn ($a, $z) => $z['value'] <=> $a['value']);
+        }
+
+        // ── Access & permissions overview — how many modules each user can
+        // reach (can_view), plus their edit/approve reach. Lets a client admin
+        // see "who has how much access" at a glance. Scoped by branch when a
+        // branch filter is active. ──────────────────────────────────────────
+        $totalModules = (int) Module::count();
+        $access = [];
+        $permAgg = Permission::where('client_id', $clientId)
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->where('can_view', true)
+            ->select(
+                'user_id',
+                DB::raw('COUNT(DISTINCT module_id) as modules_count'),
+                DB::raw('SUM(CASE WHEN can_edit = true THEN 1 ELSE 0 END) as edit_count'),
+                DB::raw('SUM(CASE WHEN can_approve = true THEN 1 ELSE 0 END) as approve_count')
+            )
+            ->groupBy('user_id')
+            ->get();
+        if ($permAgg->isNotEmpty()) {
+            $userRows = User::withTrashed()
+                ->whereIn('id', $permAgg->pluck('user_id')->all())
+                ->get(['id', 'name', 'user_type', 'branch_id'])
+                ->keyBy('id');
+            $branchNameMap = Branch::where('client_id', $clientId)->pluck('name', 'id');
+            foreach ($permAgg as $row) {
+                $u = $userRows->get($row->user_id);
+                if (!$u) continue;
+                $access[] = [
+                    'name'        => $u->name,
+                    'role'        => $u->user_type,
+                    'branch'      => $branchNameMap[$u->branch_id] ?? null,
+                    'modules'     => (int) $row->modules_count,
+                    'can_edit'    => (int) $row->edit_count,
+                    'can_approve' => (int) $row->approve_count,
+                ];
+            }
+            // Most-privileged users first. Return a generous slice so the
+            // frontend can paginate (5 per page) rather than just a top-N.
+            usort($access, fn ($a, $z) => $z['modules'] <=> $a['modules']);
+            $access = array_slice($access, 0, 60);
+        }
+
+        $salesAnalytics = [
+            'totals' => [
+                'total_leads'     => $totalLeads,
+                'active_opps'     => $activeOpps,
+                'qualified'       => $qualifiedLeads,
+                'disqualified'    => $disqLeads,
+                'won'             => $wonLeads,
+                'engaged'         => $engagedLeads,
+                'key_opps'        => $keyOpps,
+                'new_this_month'  => $newLeadsMonth,
+                'quotations'      => $totalQuotations,
+                'quotation_value' => $quotationValue,
+                'pis'             => $totalPis,
+                'pi_value'        => $piValue,
+                'conversion_rate' => $conversionRate,
+                'currency_symbol' => $currencySymbol,
+            ],
+            'pipeline'      => $pipeline,
+            'leads_trend'   => $leadsTrend,
+            'recent_leads'  => $recentLeads,
+            'top_customers' => $topCustomers,
+            // Per-metric 6-month series for the KPI-tile mini sparklines.
+            'spark' => [
+                'leads'      => $sparkLeads,
+                'quotations' => $sparkQuotations,
+                'pis'        => $sparkPis,
+                'value'      => $sparkValue,
+            ],
+        ];
+
         return [
             'client' => [
                 'org_name' => $client?->org_name,
@@ -598,6 +1061,8 @@ class DashboardController extends Controller
             'counts' => [
                 'total_branches' => $totalBranches,
                 'active_branches' => $activeBranches,
+                'total_employees' => $totalEmployees,
+                'active_employees' => $activeEmployees,
                 'total_users' => $totalUsers,
                 'active_users' => $activeUsers,
                 'total_payments' => $totalPayments,
@@ -609,7 +1074,15 @@ class DashboardController extends Controller
             'recent_payments' => $recentPayments,
             'payment_trend' => $paymentTrend,
             'user_roles' => $userRoles,
+            'access' => [
+                'total_modules' => $totalModules,
+                'users' => $access,
+            ],
             'employees' => $employeeAnalytics,
+            'sales' => $salesAnalytics,
+            'procurement' => $procurementAnalytics,
+            'clm' => $clmAnalytics,
+            'by_branch' => $byBranch,
             'can_view_payments' => $canViewPayments,
             'filter' => [
                 'branch_id' => $branchId,
@@ -729,6 +1202,85 @@ class DashboardController extends Controller
                     'emp_code'   => optional($c->employee)->emp_code,
                     'created_at' => optional($c->created_at)->toDateString(),
                 ]);
+        }
+
+        // ── Analytics blocks for the dashboard charts ───────────────────
+        //   · expense status split + total claimed + 6-month spend trend
+        //   · attendance this month (present / leave / absent / half-day)
+        //   · leave taken by type this year + request-status split
+        // Each is self-contained and degrades to empty/zero when the
+        // employee has no rows, so the frontend can hide empty charts.
+        $expenseStatus      = ['approved' => $myExpensesApproved, 'pending' => $myExpensesPending, 'rejected' => $myExpensesRejected];
+        $totalClaimedAmount = 0.0;
+        $expenseTrend       = [];
+        $attendanceSummary  = null;
+        $leaveByType        = [];
+        $leaveStatus        = ['approved' => 0, 'pending' => 0, 'rejected' => 0];
+
+        if ($employeeId) {
+            // 6-month expense spend trend (sum of my claim amounts per month).
+            $trendStart = Carbon::now()->startOfMonth()->subMonths(5);
+            $buckets = [];
+            for ($i = 0; $i < 6; $i++) {
+                $m = $trendStart->copy()->addMonths($i);
+                $buckets[$m->format('Y-m')] = ['month' => $m->format('M'), 'amount' => 0.0];
+            }
+            ExpenseClaim::where('employee_id', $employeeId)
+                ->where('expense_date', '>=', $trendStart->toDateString())
+                ->get(['amount', 'expense_date'])
+                ->each(function ($c) use (&$buckets) {
+                    if (!$c->expense_date) return;
+                    $k = $c->expense_date->format('Y-m');
+                    if (isset($buckets[$k])) $buckets[$k]['amount'] += (float) $c->amount;
+                });
+            $expenseTrend = array_values($buckets);
+            $totalClaimedAmount = (float) ExpenseClaim::where('employee_id', $employeeId)->sum('amount');
+
+            // Attendance this month — bucket each marked day by its status.
+            $monthStart = Carbon::now()->startOfMonth();
+            $present = $leaveDays = $absent = $halfDay = 0;
+            Attendance::where('employee_id', $employeeId)
+                ->where('attendance_date', '>=', $monthStart->toDateString())
+                ->get(['attendance_date', 'status', 'check_in_at'])
+                ->each(function ($a) use (&$present, &$leaveDays, &$absent, &$halfDay) {
+                    $s = strtolower((string) $a->status);
+                    if (str_contains($s, 'half'))           $halfDay++;
+                    elseif (str_contains($s, 'leave'))      $leaveDays++;
+                    elseif (str_contains($s, 'absent'))     $absent++;
+                    elseif (str_contains($s, 'present') || $a->check_in_at) $present++;
+                });
+            $attendanceSummary = [
+                'month'     => $monthStart->format('F Y'),
+                'present'   => $present,
+                'leave'     => $leaveDays,
+                'absent'    => $absent,
+                'half_day'  => $halfDay,
+                'total'     => $present + $leaveDays + $absent + $halfDay,
+            ];
+
+            // Leave this calendar year — taken days by type (approved) +
+            // overall request-status split.
+            $yearStart = Carbon::now()->startOfYear();
+            $byType = [];
+            LeaveRequest::where('employee_id', $employeeId)
+                ->where('from_date', '>=', $yearStart->toDateString())
+                ->with(['leaveType:id,name,short_code'])
+                ->get(['id', 'leave_type_id', 'days', 'status', 'from_date'])
+                ->each(function ($lr) use (&$byType, &$leaveStatus) {
+                    $st = strtolower((string) $lr->status);
+                    $isApproved = str_contains($st, 'approv');
+                    if ($isApproved)                                              $leaveStatus['approved']++;
+                    elseif (str_contains($st, 'reject') || str_contains($st, 'declin')) $leaveStatus['rejected']++;
+                    elseif (str_contains($st, 'pend'))                            $leaveStatus['pending']++;
+                    if ($isApproved) {
+                        $name = $lr->leaveType?->name ?: $lr->leaveType?->short_code ?: 'Leave';
+                        $byType[$name] = ($byType[$name] ?? 0) + (float) $lr->days;
+                    }
+                });
+            foreach ($byType as $name => $days) {
+                $leaveByType[] = ['type' => $name, 'days' => round($days, 1)];
+            }
+            usort($leaveByType, fn ($a, $b) => $b['days'] <=> $a['days']);
         }
 
         // ── My Team — pick the most-relevant cohort based on where the
@@ -880,8 +1432,10 @@ class DashboardController extends Controller
         }
 
         // ── Tenure (days since joining) for the KPI row ────────────────
+        // Carbon 3 (Laravel 12) returns diffInDays() as a FLOAT (e.g. 131.404),
+        // so cast to int — "Days at Company" must read as a whole number.
         $daysSinceJoining = $emp?->date_of_joining
-            ? max(0, $emp->date_of_joining->diffInDays(Carbon::now()))
+            ? max(0, (int) $emp->date_of_joining->diffInDays(Carbon::now()))
             : null;
 
         return response()->json([
@@ -895,6 +1449,14 @@ class DashboardController extends Controller
                 'days_since_joining'   => $daysSinceJoining,
             ],
             'compensation'      => $compensation,
+            'analytics'         => [
+                'expense_status'   => $expenseStatus,
+                'total_claimed'    => $totalClaimedAmount,
+                'expense_trend'    => $expenseTrend,
+                'attendance'       => $attendanceSummary,
+                'leave_by_type'    => $leaveByType,
+                'leave_status'     => $leaveStatus,
+            ],
             'recent_expenses'   => $recentExpenses,
             'pending_approvals' => $pendingApprovals,
             'team_kind'         => $teamKind,

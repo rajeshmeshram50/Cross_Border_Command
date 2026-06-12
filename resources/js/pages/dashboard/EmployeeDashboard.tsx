@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Card, CardBody, Col, Row } from 'reactstrap';
+import { PieChart, Pie, Cell, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import { ShimmerDashboard } from '../../components/ui/Shimmer';
 import { formatCurrencyCompact as formatINRCompact } from '../../utils/formatNumber';
+import { useChartTheme } from '../../hooks/useChartTheme';
+import { ChartTooltip } from './DashboardSections';
 
 /* ───────────────────────────────────────────────────────────────────────────
  *  Employee Dashboard — personal landing page for `user_type === 'employee'`.
@@ -17,7 +20,9 @@ import { formatCurrencyCompact as formatINRCompact } from '../../utils/formatNum
 function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) {
   const [display, setDisplay] = useState(0);
   useEffect(() => {
-    const target = Number(value) || 0;
+    // Round defensively — counts must be whole numbers. A float (e.g. a
+    // Carbon diffInDays of 131.404) would otherwise render "131.404".
+    const target = Math.round(Number(value) || 0);
     if (target === 0) { setDisplay(0); return; }
     let start = 0;
     const duration = 1100;
@@ -54,10 +59,12 @@ interface KpiProps {
 function KpiCard({ label, value, iconClass, gradient, hint }: KpiProps) {
   return (
     <div
+      className="emp-kpi"
       style={{
         borderRadius: 16,
-        padding: '18px 18px 14px',
-        boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
+        padding: '16px 18px 14px',
+        // Same layered "floating glass" shadow as the Branch/Client KPI tiles.
+        boxShadow: '0 1px 2px rgba(16,24,40,0.05), 0 14px 30px -16px rgba(64,81,137,0.28)',
         border: '1px solid var(--vz-border-color)',
         background: 'var(--vz-card-bg)',
         position: 'relative',
@@ -68,34 +75,41 @@ function KpiCard({ label, value, iconClass, gradient, hint }: KpiProps) {
       onMouseEnter={e => {
         const el = e.currentTarget as HTMLDivElement;
         el.style.transform = 'translateY(-3px)';
-        el.style.boxShadow = '0 12px 28px rgba(64,81,137,0.14)';
+        el.style.boxShadow = '0 1px 2px rgba(16,24,40,0.05), 0 20px 38px -14px rgba(64,81,137,0.4)';
         el.style.borderColor = 'rgba(102,145,231,0.45)';
       }}
       onMouseLeave={e => {
         const el = e.currentTarget as HTMLDivElement;
         el.style.transform = 'translateY(0)';
-        el.style.boxShadow = '0 2px 20px rgba(0,0,0,0.06)';
+        el.style.boxShadow = '0 1px 2px rgba(16,24,40,0.05), 0 14px 30px -16px rgba(64,81,137,0.28)';
         el.style.borderColor = 'var(--vz-border-color)';
       }}
     >
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: gradient }} />
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+      {/* Accent glow — small + faint, tucked into the corner so the tile
+          reads clean rather than "smoky". */}
+      <div style={{ position: 'absolute', top: -48, right: -42, width: 96, height: 96, borderRadius: '50%', background: gradient, opacity: 0.06, filter: 'blur(6px)', pointerEvents: 'none' }} />
+      {/* Glossy accent rail down the left edge (replaces the flat top border). */}
+      <div style={{ position: 'absolute', top: 12, bottom: 12, left: 0, width: 3, borderRadius: '0 4px 4px 0', background: gradient }} />
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, position: 'relative', zIndex: 1 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>{label}</p>
+          <p style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 7 }}>{label}</p>
           <h3 style={{
             fontSize: 'clamp(20px, 1.8vw, 26px)',
             fontWeight: 800,
             color: 'var(--vz-heading-color, var(--vz-body-color))',
-            margin: 0, lineHeight: 1.05,
+            margin: 0, lineHeight: 1, letterSpacing: '-0.02em',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}>
             {value}
           </h3>
-          {hint && <div style={{ marginTop: 6, fontSize: 11, color: 'var(--vz-secondary-color)' }}>{hint}</div>}
+          {hint && <div style={{ marginTop: 7, fontSize: 11, color: 'var(--vz-secondary-color)' }}>{hint}</div>}
         </div>
         <div style={{
-          width: 40, height: 40, borderRadius: 12,
+          width: 40, height: 40, borderRadius: 11,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: gradient, flexShrink: 0,
+          // Coloured glow + inset highlight so the icon lifts off the card.
+          boxShadow: '0 7px 14px -6px rgba(64,81,137,0.45), inset 0 1px 0 rgba(255,255,255,0.25)',
         }}>
           <i className={iconClass} style={{ fontSize: 18, color: '#fff' }} />
         </div>
@@ -105,17 +119,22 @@ function KpiCard({ label, value, iconClass, gradient, hint }: KpiProps) {
 }
 
 const cardStyle: React.CSSProperties = {
-  borderRadius: 16,
+  borderRadius: 18,
   border: '1px solid var(--vz-border-color)',
-  boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
+  // Layered "floating glass" shadow — a tight contact shadow plus a wide soft
+  // lift, identical to the Branch/Client dashboards so all three read as one
+  // premium surface system instead of a flat list of boxes.
+  boxShadow: '0 1px 2px rgba(16,24,40,0.05), 0 14px 34px -18px rgba(64,81,137,0.26)',
   overflow: 'hidden',
   marginBottom: 0,
   height: '100%',
 };
 const cardHeaderStyle: React.CSSProperties = {
-  background: 'var(--vz-card-bg)',
+  // Faint top-down wash so the header reads as its own band without a hard
+  // divider line — softer and more premium than a flat header.
+  background: 'linear-gradient(180deg, rgba(64,81,137,0.05), rgba(64,81,137,0))',
   borderBottom: '1px solid var(--vz-border-color)',
-  padding: '14px 18px',
+  padding: '13px 18px',
   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
 };
 
@@ -154,6 +173,14 @@ interface OverviewData {
   announcements: Array<{ id: number; title: string; snippet: string; created_at: string | null }>;
   upcoming_events: Array<{ employee_id: number; name: string; kind: 'birthday' | 'anniversary'; on: string; years: number | null }>;
   onboarding: { current_stage: number; total_stages: number; percent: number; next_label: string | null } | null;
+  analytics: {
+    expense_status: { approved: number; pending: number; rejected: number };
+    total_claimed: number;
+    expense_trend: Array<{ month: string; amount: number }>;
+    attendance: { month: string; present: number; leave: number; absent: number; half_day: number; total: number } | null;
+    leave_by_type: Array<{ type: string; days: number }>;
+    leave_status: { approved: number; pending: number; rejected: number };
+  };
 }
 
 function fmtDate(s: string | null): string {
@@ -211,8 +238,92 @@ function EmptyState({ icon, text }: { icon: string; text: string }) {
   );
 }
 
+type Slice = { name: string; value: number; color: string };
+
+/** Donut with a value + label floating in the hole, plus a centred legend.
+ *  Segments use a vertical gradient + rounded caps for a modern, glossy look.
+ *  `gid` must be unique per donut on the page (gradient defs share the DOM). */
+function Donut({ slices, center, centerLabel, prefix = '', gid }: { slices: Slice[]; center: React.ReactNode; centerLabel: string; prefix?: string; gid: string }) {
+  return (
+    <>
+      <div style={{ position: 'relative', width: '100%', height: 168 }}>
+        <ResponsiveContainer width="100%" height={168}>
+          <PieChart>
+            <defs>
+              {slices.map((s, i) => (
+                <linearGradient key={i} id={`donut-${gid}-${i}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={s.color} stopOpacity={1} />
+                  <stop offset="100%" stopColor={s.color} stopOpacity={0.68} />
+                </linearGradient>
+              ))}
+            </defs>
+            <Pie data={slices} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={72} paddingAngle={slices.length > 1 ? 3 : 0} cornerRadius={5} stroke="none">
+              {slices.map((s, i) => <Cell key={i} fill={`url(#donut-${gid}-${i})`} />)}
+            </Pie>
+            <Tooltip content={<ChartTooltip prefix={prefix} />} />
+          </PieChart>
+        </ResponsiveContainer>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+          <div style={{ fontSize: 25, fontWeight: 800, lineHeight: 1, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{center}</div>
+          <div style={{ fontSize: 10, color: 'var(--vz-secondary-color)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 4 }}>{centerLabel}</div>
+        </div>
+      </div>
+      <div className="d-flex flex-wrap justify-content-center gap-3 mt-1 px-2">
+        {slices.map((s, i) => (
+          <div key={i} className="d-flex align-items-center gap-1">
+            <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, flexShrink: 0 }} />
+            <span style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>{s.name}</span>
+            <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{s.value}</span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/** Card header with a gradient icon tile on the left — gives every section a
+ *  designed, consistent look instead of a plain title + faint corner icon. */
+function SectionHeader({ icon, gradient, title, subtitle, right }: { icon: string; gradient: string; title: string; subtitle: string; right?: React.ReactNode }) {
+  return (
+    <div style={cardHeaderStyle}>
+      <div className="d-flex align-items-center gap-2" style={{ minWidth: 0 }}>
+        <div style={{
+          width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+          background: gradient, color: '#fff',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 7px 14px -6px rgba(64,81,137,0.5), inset 0 1px 0 rgba(255,255,255,0.25)',
+        }}>
+          <i className={icon} style={{ fontSize: 17 }} />
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <h6 className="mb-0 fw-bold text-truncate">{title}</h6>
+          <small className="text-muted text-truncate d-block">{subtitle}</small>
+        </div>
+      </div>
+      {right}
+    </div>
+  );
+}
+
+/** Translucent glass chip for the hero quick-stats strip. */
+function HeroChip({ icon, text }: { icon: string; text: string }) {
+  return (
+    <span className="d-inline-flex align-items-center gap-1" style={{
+      background: 'rgba(255,255,255,0.16)',
+      border: '1px solid rgba(255,255,255,0.24)',
+      backdropFilter: 'blur(4px)',
+      padding: '4px 11px', borderRadius: 999,
+      fontSize: 11.5, fontWeight: 600, color: '#fff',
+    }}>
+      <i className={icon} style={{ fontSize: 13, opacity: 0.9 }} />
+      {text}
+    </span>
+  );
+}
+
 export default function EmployeeDashboard() {
   const { user } = useAuth();
+  const ct = useChartTheme();
   const [data, setData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -262,6 +373,22 @@ export default function EmployeeDashboard() {
           announcements:     arr(raw.announcements),
           upcoming_events:   arr(raw.upcoming_events),
           onboarding:        raw?.onboarding ?? null,
+          analytics: {
+            expense_status: {
+              approved: Number(raw?.analytics?.expense_status?.approved ?? 0),
+              pending:  Number(raw?.analytics?.expense_status?.pending  ?? 0),
+              rejected: Number(raw?.analytics?.expense_status?.rejected ?? 0),
+            },
+            total_claimed: Number(raw?.analytics?.total_claimed ?? 0),
+            expense_trend: arr(raw?.analytics?.expense_trend),
+            attendance:    raw?.analytics?.attendance ?? null,
+            leave_by_type: arr(raw?.analytics?.leave_by_type),
+            leave_status: {
+              approved: Number(raw?.analytics?.leave_status?.approved ?? 0),
+              pending:  Number(raw?.analytics?.leave_status?.pending  ?? 0),
+              rejected: Number(raw?.analytics?.leave_status?.rejected ?? 0),
+            },
+          },
         });
       })
       .catch((err: any) => {
@@ -287,13 +414,103 @@ export default function EmployeeDashboard() {
   }
   if (!data) return null;
 
-  const { me, kpis, compensation, recent_expenses, pending_approvals, team_kind, team_peers, announcements, upcoming_events, onboarding } = data;
+  const { me, kpis, compensation, recent_expenses, pending_approvals, team_kind, team_peers, announcements, upcoming_events, onboarding, analytics } = data;
   const firstName = (me.display_name || '').split(/\s+/)[0] || 'there';
   const hour = new Date().getHours();
   const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
+  // ── Derived chart data — each slice list drops zero buckets so the donut
+  //    only draws segments that actually have a value. A card renders only
+  //    when it has data, so an employee with no leave never sees an empty
+  //    leave chart (show only what's valid). ────────────────────────────
+  const exp = analytics.expense_status;
+  const expTotal = exp.approved + exp.pending + exp.rejected;
+  const expSlices: Slice[] = [
+    { name: 'Approved', value: exp.approved, color: '#0ab39c' },
+    { name: 'Pending',  value: exp.pending,  color: '#f7b84b' },
+    { name: 'Rejected', value: exp.rejected, color: '#f06548' },
+  ].filter(s => s.value > 0);
+
+  const att = analytics.attendance;
+  const attSlices: Slice[] = att ? [
+    { name: 'Present',  value: att.present,  color: '#0ab39c' },
+    { name: 'Leave',    value: att.leave,    color: '#7c5cfc' },
+    { name: 'Half Day', value: att.half_day, color: '#f7b84b' },
+    { name: 'Absent',   value: att.absent,   color: '#f06548' },
+  ].filter(s => s.value > 0) : [];
+
+  const trendHasData = analytics.expense_trend.some(t => Number(t.amount) > 0);
+  const leaveByType = analytics.leave_by_type;
+  const showAnalytics = expTotal > 0 || attSlices.length > 0 || trendHasData || leaveByType.length > 0;
+
   return (
-    <div className="p-3 p-md-4">
+    // No extra page padding here — the Velzon shell already wraps every page
+    // in .page-content > .container-fluid. The Client/Branch dashboards add
+    // none, so adding p-3/p-md-4 here would inset the employee view more than
+    // its siblings. Keep the bare wrapper so all three dashboards align.
+    <div>
+      <style>{`
+        /* Bounded scroll for list cards — when rows pile up the body scrolls
+           inside the card instead of stretching the page. Thin styled bar,
+           theme-aware, overscroll contained so the page behind doesn't move. */
+        .emp-scroll { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(64,81,137,0.32) transparent; }
+        .emp-scroll::-webkit-scrollbar { width: 6px; }
+        .emp-scroll::-webkit-scrollbar-track { background: transparent; }
+        .emp-scroll::-webkit-scrollbar-thumb { background: rgba(64,81,137,0.28); border-radius: 999px; }
+        .emp-scroll::-webkit-scrollbar-thumb:hover { background: rgba(64,81,137,0.5); }
+        [data-bs-theme="dark"] .emp-scroll::-webkit-scrollbar-thumb,
+        [data-layout-mode="dark"] .emp-scroll::-webkit-scrollbar-thumb { background: rgba(102,145,231,0.4); }
+        /* The list rows draw their own bottom border; drop it on the last row
+           so a stray divider line doesn't hang under the final item. */
+        .emp-list-body > div:last-child { border-bottom: none !important; }
+        /* Row hover — subtle tint + left accent rail, matching the Branch /
+           Client list rows so the whole dashboard family behaves the same. */
+        .emp-list-body > div { transition: background .16s ease, box-shadow .16s ease; }
+        .emp-list-body > div:hover { background: rgba(64,81,137,0.05); box-shadow: inset 3px 0 0 0 rgba(102,145,231,0.7); }
+        [data-bs-theme="dark"] .emp-list-body > div:hover,
+        [data-layout-mode="dark"] .emp-list-body > div:hover { background: rgba(255,255,255,0.04); box-shadow: inset 3px 0 0 0 rgba(102,145,231,0.9); }
+
+        /* ── Glossy glass effect on the KPI tiles ──────────────────────────
+           ::before = a soft diagonal highlight across the top-left + a thin
+           top edge highlight, so each tile reads as a polished glass surface.
+           ::after  = a light streak that sweeps across the tile on hover. */
+        .emp-kpi::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          border-radius: inherit;
+          background: linear-gradient(155deg, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.16) 26%, rgba(255,255,255,0) 52%);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+          pointer-events: none;
+          z-index: 0;
+        }
+        [data-bs-theme="dark"] .emp-kpi::before,
+        [data-layout-mode="dark"] .emp-kpi::before {
+          background: linear-gradient(155deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.03) 30%, rgba(255,255,255,0) 58%);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+        }
+        .emp-kpi::after {
+          content: '';
+          position: absolute;
+          top: 0; bottom: 0; left: -60%;
+          width: 45%;
+          background: linear-gradient(105deg, transparent 0%, rgba(255,255,255,0.45) 50%, transparent 100%);
+          transform: skewX(-18deg);
+          pointer-events: none;
+          z-index: 0;
+          opacity: 0;
+        }
+        .emp-kpi:hover::after { animation: emp-kpi-shine 0.85s ease-out; }
+        [data-bs-theme="dark"] .emp-kpi::after,
+        [data-layout-mode="dark"] .emp-kpi::after {
+          background: linear-gradient(105deg, transparent 0%, rgba(255,255,255,0.14) 50%, transparent 100%);
+        }
+        @keyframes emp-kpi-shine {
+          0%   { left: -60%; opacity: 0; }
+          18%  { opacity: 1; }
+          100% { left: 130%; opacity: 0; }
+        }
+      `}</style>
       {/* ── Profile hero ───────────────────────────────────────────────── */}
       <Card style={{ ...cardStyle, marginBottom: 16, overflow: 'hidden' }}>
         <div style={{
@@ -301,8 +518,17 @@ export default function EmployeeDashboard() {
           color: '#fff',
           padding: '22px 24px',
           position: 'relative',
+          overflow: 'hidden',
+          // Glossy top edge highlight — the banner reads as polished glass.
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.35)',
         }}>
-          <Row className="align-items-center g-3">
+          {/* Decorative light washes — soft blurred circles bleeding off the
+              top-right and bottom-left, giving the flat gradient banner depth. */}
+          <div style={{ position: 'absolute', top: -60, right: -40, width: 220, height: 220, borderRadius: '50%', background: 'rgba(255,255,255,0.12)', filter: 'blur(10px)', pointerEvents: 'none' }} />
+          <div style={{ position: 'absolute', bottom: -80, left: -50, width: 200, height: 200, borderRadius: '50%', background: 'rgba(124,92,252,0.30)', filter: 'blur(14px)', pointerEvents: 'none' }} />
+          {/* Glossy diagonal sheen across the top-left, like light on glass. */}
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(158deg, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.05) 28%, rgba(255,255,255,0) 52%)', pointerEvents: 'none' }} />
+          <Row className="align-items-center g-3" style={{ position: 'relative', zIndex: 1 }}>
             <Col xs="auto">
               <div style={{
                 width: 84, height: 84, borderRadius: '50%',
@@ -343,6 +569,21 @@ export default function EmployeeDashboard() {
                 {me.department_name && <span>· {me.department_name}</span>}
                 {me.date_of_joining && <span>· Joined {fmtDate(me.date_of_joining)}</span>}
               </div>
+              {/* Quick-stat glass chips — give the hero an at-a-glance,
+                  engaging feel instead of just a name banner. */}
+              {(() => {
+                const chips = [
+                  att && att.total > 0 ? { icon: 'ri-calendar-check-line', text: `${Math.round((att.present / att.total) * 100)}% present` } : null,
+                  analytics.total_claimed > 0 ? { icon: 'ri-bill-line', text: `${formatINRCompact(analytics.total_claimed)} claimed` } : null,
+                  kpis.team_size > 0 ? { icon: 'ri-team-line', text: `${kpis.team_size} in team` } : null,
+                  kpis.days_since_joining != null ? { icon: 'ri-time-line', text: `${kpis.days_since_joining} days here` } : null,
+                ].filter(Boolean) as Array<{ icon: string; text: string }>;
+                return chips.length ? (
+                  <div className="d-flex flex-wrap align-items-center gap-2 mt-3">
+                    {chips.map((c, i) => <HeroChip key={i} icon={c.icon} text={c.text} />)}
+                  </div>
+                ) : null;
+              })()}
             </Col>
           </Row>
         </div>
@@ -473,10 +714,22 @@ export default function EmployeeDashboard() {
           <CardBody style={{ padding: '14px 18px' }}>
             <Row className="g-2 align-items-center">
               <Col xs={12} md={3}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                  Compensation
+                <div className="d-flex align-items-center gap-2">
+                  <div style={{
+                    width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+                    background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', color: '#fff',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    boxShadow: '0 7px 14px -6px rgba(10,179,156,0.5), inset 0 1px 0 rgba(255,255,255,0.25)',
+                  }}>
+                    <i className="ri-wallet-3-line" style={{ fontSize: 19 }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                      Compensation
+                    </div>
+                    <div style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)' }}>Snapshot from your payroll record</div>
+                  </div>
                 </div>
-                <div style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)' }}>Snapshot from your payroll record</div>
               </Col>
               <Col xs={6} md={3}>
                 <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 600, marginBottom: 2 }}>Annual</div>
@@ -507,18 +760,110 @@ export default function EmployeeDashboard() {
         </Card>
       )}
 
+      {/* ── Analytics charts — donuts + trend. Each card renders only when
+           it has real data, so the row shows only what's valid for this
+           employee (no empty leave/attendance charts). ──────────────────── */}
+      {showAnalytics && (
+        <Row className="g-3 mb-3">
+          {/* Expense Claims — status donut */}
+          {expTotal > 0 && (
+            <Col xs={12} md={6} xl={4}>
+              <Card style={cardStyle}>
+                <SectionHeader
+                  icon="ri-bill-line" gradient="linear-gradient(135deg,#0ab39c,#3dd6c3)"
+                  title="Expense Claims" subtitle="Status of all your claims"
+                  right={(
+                    <div className="text-end">
+                      <div style={{ fontSize: 15, fontWeight: 800, color: '#0ab39c' }}>{formatINRCompact(analytics.total_claimed)}</div>
+                      <div style={{ fontSize: 10, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>CLAIMED</div>
+                    </div>
+                  )}
+                />
+                <CardBody style={{ padding: '14px 14px 16px' }}>
+                  <Donut slices={expSlices} center={expTotal} centerLabel="Claims" gid="exp" />
+                </CardBody>
+              </Card>
+            </Col>
+          )}
+
+          {/* Attendance — this month donut */}
+          {att && attSlices.length > 0 && (
+            <Col xs={12} md={6} xl={4}>
+              <Card style={cardStyle}>
+                <SectionHeader
+                  icon="ri-calendar-check-line" gradient="linear-gradient(135deg,#0ab39c,#02c8a7)"
+                  title="Attendance" subtitle={att.month}
+                />
+                <CardBody style={{ padding: '14px 14px 16px' }}>
+                  <Donut slices={attSlices} center={att.total} centerLabel="Days Marked" gid="att" />
+                </CardBody>
+              </Card>
+            </Col>
+          )}
+
+          {/* Expense Spend Trend — last 6 months area */}
+          {trendHasData && (
+            <Col xs={12} md={12} xl={4}>
+              <Card style={cardStyle}>
+                <SectionHeader
+                  icon="ri-line-chart-line" gradient="linear-gradient(135deg,#7c5cfc,#a78bfa)"
+                  title="Expense Spend" subtitle="Last 6 months"
+                />
+                <CardBody style={{ padding: '10px 12px 6px' }}>
+                  <ResponsiveContainer width="100%" height={196}>
+                    <AreaChart data={analytics.expense_trend} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="empSpendGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#7c5cfc" stopOpacity={0.4} />
+                          <stop offset="100%" stopColor="#7c5cfc" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
+                      <XAxis dataKey="month" tick={{ fontSize: 11, fill: ct.axisTickMuted, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 10, fill: ct.axisTickMuted }} axisLine={false} tickLine={false} width={46} tickFormatter={v => `₹${v >= 1000 ? `${(v / 1000).toFixed(0)}K` : v}`} />
+                      <Tooltip content={<ChartTooltip prefix="₹" />} cursor={{ stroke: 'rgba(124,92,252,0.4)', strokeWidth: 1, strokeDasharray: '3 3' }} />
+                      <Area type="monotone" dataKey="amount" stroke="#7c5cfc" strokeWidth={2.5} fill="url(#empSpendGrad)" dot={{ r: 3, fill: '#7c5cfc', strokeWidth: 2, stroke: ct.dotStroke }} activeDot={{ r: 5 }} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </CardBody>
+              </Card>
+            </Col>
+          )}
+
+          {/* Leave Taken — by type bar (only if any leave taken this year) */}
+          {leaveByType.length > 0 && (
+            <Col xs={12} md={6} xl={4}>
+              <Card style={cardStyle}>
+                <SectionHeader
+                  icon="ri-calendar-todo-line" gradient="linear-gradient(135deg,#299cdb,#63bcec)"
+                  title="Leave Taken" subtitle="This year, by type"
+                />
+                <CardBody style={{ padding: '10px 12px 6px' }}>
+                  <ResponsiveContainer width="100%" height={196}>
+                    <BarChart data={leaveByType} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
+                      <XAxis dataKey="type" tick={{ fontSize: 11, fill: ct.axisTickMuted, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 10, fill: ct.axisTickMuted }} axisLine={false} tickLine={false} width={30} allowDecimals={false} />
+                      <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(41,156,219,0.08)' }} />
+                      <Bar dataKey="days" fill="#299cdb" radius={[6, 6, 0, 0]} maxBarSize={46} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardBody>
+              </Card>
+            </Col>
+          )}
+        </Row>
+      )}
+
       {/* ── Row: My recent expenses + Pending approvals (as manager) ───── */}
       <Row className="g-3 mb-3">
         <Col xs={12} lg={6}>
           <Card style={cardStyle}>
-            <div style={cardHeaderStyle}>
-              <div>
-                <h6 className="mb-0 fw-bold">My Recent Expenses</h6>
-                <small className="text-muted">Last 5 claims you filed</small>
-              </div>
-              <i className="ri-bill-line" style={{ fontSize: 18, color: '#405189' }} />
-            </div>
-            <CardBody style={{ padding: 0 }}>
+            <SectionHeader
+              icon="ri-bill-line" gradient="linear-gradient(135deg,#405189,#6691e7)"
+              title="My Recent Expenses" subtitle="Last 5 claims you filed"
+            />
+            <CardBody className="emp-list-body emp-scroll" style={{ padding: 0, maxHeight: 360 }}>
               {recent_expenses.length === 0 ? (
                 <EmptyState icon="ri-bill-line" text="No expense claims yet." />
               ) : (
@@ -558,14 +903,11 @@ export default function EmployeeDashboard() {
 
         <Col xs={12} lg={6}>
           <Card style={cardStyle}>
-            <div style={cardHeaderStyle}>
-              <div>
-                <h6 className="mb-0 fw-bold">Pending Your Approval</h6>
-                <small className="text-muted">Claims filed by your team</small>
-              </div>
-              <i className="ri-shield-check-line" style={{ fontSize: 18, color: '#7c5cfc' }} />
-            </div>
-            <CardBody style={{ padding: 0 }}>
+            <SectionHeader
+              icon="ri-shield-check-line" gradient="linear-gradient(135deg,#7c5cfc,#a993fd)"
+              title="Pending Your Approval" subtitle="Claims filed by your team"
+            />
+            <CardBody className="emp-list-body emp-scroll" style={{ padding: 0, maxHeight: 360 }}>
               {pending_approvals.length === 0 ? (
                 <EmptyState icon="ri-shield-check-line" text="Nothing waiting on your approval. " />
               ) : (
@@ -607,14 +949,11 @@ export default function EmployeeDashboard() {
       <Row className="g-3 mb-3">
         <Col xs={12} lg={7}>
           <Card style={cardStyle}>
-            <div style={cardHeaderStyle}>
-              <div>
-                <h6 className="mb-0 fw-bold">Latest Announcements</h6>
-                <small className="text-muted">From your organisation</small>
-              </div>
-              <i className="ri-megaphone-line" style={{ fontSize: 18, color: '#299cdb' }} />
-            </div>
-            <CardBody style={{ padding: 0 }}>
+            <SectionHeader
+              icon="ri-megaphone-line" gradient="linear-gradient(135deg,#299cdb,#63bcec)"
+              title="Latest Announcements" subtitle="From your organisation"
+            />
+            <CardBody className="emp-list-body emp-scroll" style={{ padding: 0, maxHeight: 360 }}>
               {announcements.length === 0 ? (
                 <EmptyState icon="ri-megaphone-line" text="No announcements yet." />
               ) : (
@@ -640,14 +979,11 @@ export default function EmployeeDashboard() {
 
         <Col xs={12} lg={5}>
           <Card style={cardStyle}>
-            <div style={cardHeaderStyle}>
-              <div>
-                <h6 className="mb-0 fw-bold">Upcoming Celebrations</h6>
-                <small className="text-muted">Next 30 days · birthdays & work anniversaries</small>
-              </div>
-              <i className="ri-cake-3-line" style={{ fontSize: 18, color: '#e83e8c' }} />
-            </div>
-            <CardBody style={{ padding: 0 }}>
+            <SectionHeader
+              icon="ri-cake-3-line" gradient="linear-gradient(135deg,#e83e8c,#f774ac)"
+              title="Upcoming Celebrations" subtitle="Next 30 days · birthdays & work anniversaries"
+            />
+            <CardBody className="emp-list-body emp-scroll" style={{ padding: 0, maxHeight: 360 }}>
               {upcoming_events.length === 0 ? (
                 <EmptyState icon="ri-cake-3-line" text="No celebrations coming up." />
               ) : (
@@ -694,13 +1030,10 @@ export default function EmployeeDashboard() {
           : { title: 'My Team', subtitle: `${me.department_name || 'Department'} · ${kpis.team_size} member${kpis.team_size === 1 ? '' : 's'}` };
         return (
         <Card style={cardStyle}>
-          <div style={cardHeaderStyle}>
-            <div>
-              <h6 className="mb-0 fw-bold">{teamMeta.title}</h6>
-              <small className="text-muted">{teamMeta.subtitle}</small>
-            </div>
-            <i className="ri-team-line" style={{ fontSize: 18, color: '#405189' }} />
-          </div>
+          <SectionHeader
+            icon="ri-team-line" gradient="linear-gradient(135deg,#405189,#6691e7)"
+            title={teamMeta.title} subtitle={teamMeta.subtitle}
+          />
           <CardBody style={{ padding: '14px 18px' }}>
             <Row className="g-3">
               {team_peers.map(p => (
