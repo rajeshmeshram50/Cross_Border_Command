@@ -140,6 +140,17 @@ class LeavePlanController extends Controller
             abort(422, 'Cannot delete the default leave plan. Set another plan as default first.');
         }
 
+        // LV-25: refuse to delete a plan that still has in-flight requests —
+        // deleting would strand them with a dangling leave_plan_id and unassign
+        // the affected employees mid-cycle.
+        $active = DB::table('leave_requests')
+            ->where('leave_plan_id', $plan->id)
+            ->whereIn('status', ['Pending', 'Approved'])
+            ->count();
+        if ($active > 0) {
+            abort(422, "Cannot delete this plan — {$active} active (pending/approved) leave request(s) still reference it. Resolve or reassign them first.");
+        }
+
         DB::transaction(function () use ($plan) {
             DB::table('leave_plan_employees')->where('leave_plan_id', $plan->id)->delete();
             DB::table('leave_plan_leave_types')->where('leave_plan_id', $plan->id)->delete();
@@ -380,6 +391,15 @@ class LeavePlanController extends Controller
         $employee = Employee::with(['department:id,name'])->find($employeeId);
         if (!$employee) abort(404, 'Employee not found.');
 
+        // Tenant guard — a user may only read balances for employees in their own
+        // client (super_admin sees any). Without this, any authenticated user can
+        // enumerate employeeId and read another tenant's leave ledger (IDOR).
+        // Null client_id is treated as a mismatch so orphan rows aren't exposed.
+        if ($user->user_type !== 'super_admin'
+            && (int) $employee->client_id !== (int) $user->client_id) {
+            abort(403, 'You do not have access to this employee.');
+        }
+
         // Resolve the employee's current leave plan via the pivot.
         $planRow = DB::table('leave_plan_employees as lpe')
             ->join('master_leave_plans as p', 'p.id', '=', 'lpe.leave_plan_id')
@@ -427,7 +447,7 @@ class LeavePlanController extends Controller
             $cfg = $row->config_json ? json_decode($row->config_json, true) : null;
             $accrual = $cfg['accrual'] ?? null;
             $unlimited = (bool) ($accrual['unlimited'] ?? false);
-            $quota = (int) ($accrual['yearlyQuota'] ?? 0);
+            $quota = (float) ($accrual['yearlyQuota'] ?? 0); // LV-05: keep fractional (½-day) quotas; enforcement uses float too
             $reqs = $requestsByType[$row->leave_type_id] ?? collect();
 
             // Build a simple ledger: start-of-year accrual, then each
@@ -563,7 +583,7 @@ class LeavePlanController extends Controller
             $cfg = $row->config_json ? json_decode($row->config_json, true) : null;
             $accrual = $cfg['accrual'] ?? null;
             $unlimited = (bool) ($accrual['unlimited'] ?? false);
-            $quota = (int) ($accrual['yearlyQuota'] ?? 0);
+            $quota = (float) ($accrual['yearlyQuota'] ?? 0); // LV-05: keep fractional (½-day) quotas; enforcement uses float too
             $quotaByPlanType[$row->leave_plan_id][$row->leave_type_id] = [
                 'quota' => $quota,
                 'unlimited' => $unlimited,

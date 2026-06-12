@@ -49,6 +49,7 @@ const LEAF_DESC: Record<string, string> = {
   'sales.lead_ack_master': 'Manage Lead Acknowledgement reasons.',
   'sales.workplace': 'Manage active sales opportunities.',
   'sales.quotation_vs_pi': 'Track quotation & PI conversion history.',
+  'sales.sign_tracker': 'Track all documents sent for e-signature.',
   // Central CLM
   'clm.analytics': 'Track contract KPIs & legal performance.',
   'clm.diagnosis': 'Identify blockers, risks & pending approvals.',
@@ -119,6 +120,7 @@ function salesLeafPath(id: string): string {
     case 'sales.analytics':            return '/sales/analytics';
     case 'sales.productivity_tracker': return '/sales/todo';
     case 'sales.quotation_vs_pi':      return '/sales/qpi';
+    case 'sales.sign_tracker':         return '/sales/sign-tracker';
     default:                           return '/sales';
   }
 }
@@ -405,8 +407,14 @@ export default function IdimsHeader() {
   };
 
   const renderLeaf = (leaf: Leaf, kind: DD, accent: string, bg: string) => {
+    // Sign Document Tracker has no permission slug of its own — it's a
+    // read-only view of the same sign requests, so it rides on the
+    // Quotation Vs PI permission.
+    const leafVisible = leaf.id === 'sales.sign_tracker'
+      ? !!perms['sales.quotation_vs_pi']?.can_view
+      : !!perms[leaf.id]?.can_view;
     // P2P leaves carry no per-leaf permission — module-level can('p2p') gates them.
-    if (kind !== 'p2p' && !(isSuperAdmin || perms[leaf.id]?.can_view)) return null;
+    if (kind !== 'p2p' && !(isSuperAdmin || leafVisible)) return null;
     const path = leafPath(leaf.id, kind);
     const Icon = getLucide(leaf.icon);
     return (

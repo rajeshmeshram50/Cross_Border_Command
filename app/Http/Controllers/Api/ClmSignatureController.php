@@ -1720,6 +1720,9 @@ class ClmSignatureController extends Controller
 
                 try {
                     $details = $this->zoho->getRequest($row->zoho_request_id);
+                    // Capture per-signer Viewed / Signed activity from Zoho's
+                    // action_status so the Signing Tracker can show "Viewed on …".
+                    if ($this->syncSignerActivity($row, $details)) $changed = true;
                     $newStatus = strtolower((string) data_get($details, 'requests.request_status', $row->status));
                     if ($newStatus !== $row->status) {
                         $row->status = $newStatus;
@@ -1865,6 +1868,11 @@ class ClmSignatureController extends Controller
                 }
             }
 
+            // Stamp per-signer Viewed/Signed times onto the stored row so the
+            // modal reflects the latest even when opened directly (not via the
+            // list's sync poll).
+            $this->syncSignerActivity($row, $details);
+
             foreach (data_get($details, 'requests.actions', []) as $a) {
                 $email = strtolower((string) ($a['recipient_email'] ?? ''));
                 if ($email === '') continue;
@@ -1895,14 +1903,26 @@ class ClmSignatureController extends Controller
             $s     = (array) $s;
             $email = strtolower((string) ($s['email'] ?? ''));
             $info  = $perSigner[$email] ?? ['raw' => '', 'signed_at' => null, 'viewed_at' => null];
-            $status = $normalize((string) $info['raw']);
+
+            // Timestamps ALREADY captured on the stored signer by
+            // syncSignerActivity (from Zoho's request-level action_time) are
+            // authoritative — Zoho's per-action objects carry no view/sign
+            // time, so the freshly-derived $info times are almost always null.
+            // Preserve the stored ones; only fall back when they're missing.
+            $storedViewed = $s['viewed_at'] ?? null;
+            $storedSigned = $s['signed_at'] ?? null;
+
+            // Status: prefer a fresh Zoho action_status; fall back to the
+            // stored one so we never downgrade a known Signed/Viewed signer.
+            $raw    = $info['raw'] !== '' ? $info['raw'] : strtolower((string) ($s['action_status'] ?? ''));
+            $status = $normalize($raw);
+
             $s['status']        = $status;
-            $s['action_status'] = $info['raw'];
-            // Fall back to the request completion time for a signed signer when
-            // Zoho didn't return a per-action timestamp.
-            $s['signed_at'] = $info['signed_at']
-                ?? ($status === 'signed' ? optional($fresh->completed_at)->toIso8601String() : null);
-            $s['viewed_at'] = $info['viewed_at'];
+            $s['action_status'] = $raw;
+            $s['signed_at'] = $storedSigned
+                ?: ($info['signed_at']
+                    ?? ($status === 'signed' ? optional($fresh->completed_at)->toIso8601String() : null));
+            $s['viewed_at'] = $storedViewed ?: $info['viewed_at'];
             return $s;
         })->values()->all();
 
@@ -2564,6 +2584,63 @@ class ClmSignatureController extends Controller
      * try/catch produced an empty signed_document_paths array on server
      * and no clue why.
      */
+    /**
+     * Capture per-signer Viewed / Signed activity from a Zoho getRequest
+     * payload onto the row's `signers` JSON, so the Signing Tracker can show
+     * "Viewed on …" before the document is signed.
+     *
+     * Zoho's getRequest gives a per-recipient `action_status`
+     * (UNOPENED → VIEWED → SIGNED) but NO per-recipient timestamp — only a
+     * request-level `action_time` (epoch-ms) for the MOST RECENT action. So
+     * we stamp viewed_at / signed_at from that action_time the first time we
+     * observe each transition (exact for the common single-signer case;
+     * accurate to the poll cadence when signers interleave). Once stamped,
+     * a value is never overwritten.
+     *
+     * @return bool true if any signer row changed (caller should re-fetch).
+     */
+    private function syncSignerActivity(ClmSignatureRequest $row, array $details): bool
+    {
+        $actions = data_get($details, 'requests.actions', []);
+        if (!is_array($actions) || empty($actions)) return false;
+
+        $actionMs = (int) (data_get($details, 'requests.action_time')
+            ?: data_get($details, 'requests.modified_time') ?: 0);
+        $stamp = $actionMs > 0
+            ? \Illuminate\Support\Carbon::createFromTimestampMs($actionMs)->toIso8601String()
+            : now()->toIso8601String();
+
+        // Latest action_status per recipient email.
+        $statusByEmail = [];
+        foreach ($actions as $a) {
+            $email = strtolower(trim((string) ($a['recipient_email'] ?? '')));
+            if ($email !== '') $statusByEmail[$email] = strtoupper((string) ($a['action_status'] ?? ''));
+        }
+
+        $signers = is_array($row->signers) ? $row->signers : [];
+        $changed = false;
+        foreach ($signers as $i => $sg) {
+            $email = strtolower(trim((string) ($sg['email'] ?? '')));
+            if ($email === '' || !array_key_exists($email, $statusByEmail)) continue;
+            $st = $statusByEmail[$email];
+
+            // "Opened" = any status past UNOPENED/NOTVIEWED/UNRECEIVED. A
+            // SIGNED recipient has obviously also viewed it.
+            $opened = $st !== '' && !in_array($st, ['UNOPENED', 'NOTVIEWED', 'UNRECEIVED'], true);
+            $signed = $st === 'SIGNED';
+
+            if (($signers[$i]['action_status'] ?? null) !== $st) { $signers[$i]['action_status'] = $st; $changed = true; }
+            if ($opened && empty($signers[$i]['viewed_at'])) { $signers[$i]['viewed_at'] = $stamp; $changed = true; }
+            if ($signed && empty($signers[$i]['signed_at'])) { $signers[$i]['signed_at'] = $stamp; $changed = true; }
+        }
+
+        if ($changed) {
+            $row->signers = $signers;
+            $row->save();
+        }
+        return $changed;
+    }
+
     private function fetchSignedArtifacts(ClmSignatureRequest $row, array $details): void
     {
         $modelFolder = strtolower($row->model_name);

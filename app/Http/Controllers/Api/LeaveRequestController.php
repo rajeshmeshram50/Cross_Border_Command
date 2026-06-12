@@ -40,7 +40,9 @@ class LeaveRequestController extends Controller
         // employee_id and read leave history belonging to client Y.
         if ($user->user_type !== 'super_admin' && $user->client_id) {
             $targetClientId = Employee::where('id', $employeeId)->value('client_id');
-            if ($targetClientId !== null && (int) $targetClientId !== (int) $user->client_id) {
+            // Strict — a null client_id on the employee must NOT bypass the guard
+            // (legacy/seed rows would otherwise leak to any tenant). (LV-18)
+            if ((int) $targetClientId !== (int) $user->client_id) {
                 abort(404);
             }
         }
@@ -70,20 +72,28 @@ class LeaveRequestController extends Controller
 
         $data = $request->validate([
             'employee_id' => ['nullable', 'integer', 'exists:employees,id'],
-            'leave_type_id' => ['required', 'integer', 'exists:master_leave_types,id'],
+            // LV-23: only a leave type in the caller's own tenant (or a global
+            // null-client row) is valid — not any tenant's id.
+            'leave_type_id' => ['required', 'integer', Rule::exists('master_leave_types', 'id')->where(function ($q) use ($user) {
+                if ($user->user_type === 'super_admin') return; // unscoped — acts across tenants
+                $q->whereNull('client_id')->orWhere('client_id', $user->client_id);
+            })],
             'from_date' => ['required', 'date'],
-            'to_date' => ['required', 'date', 'after_or_equal:from_date'],
+            // LV-09: cap how far ahead leave can be booked (1 year) so a stray
+            // far-future request can't silently lock quota for years.
+            'to_date' => ['required', 'date', 'after_or_equal:from_date', 'before_or_equal:' . now()->addYear()->toDateString()],
             'day_type' => ['nullable', Rule::in(['full', 'first_half', 'second_half'])],
-            'reason' => ['nullable', 'string'],
+            // LV-22: bound the free-text fields (were unbounded → DoS/storage bloat).
+            'reason' => ['nullable', 'string', 'max:2000'],
             'attachment_path' => ['nullable', 'string', 'max:1024'],
             'notify' => ['nullable', 'array'],
             'handover_required' => ['nullable', 'boolean'],
             'cover_person_id' => ['nullable', 'integer', 'exists:employees,id'],
-            'handover_notes' => ['nullable', 'string'],
-            'critical_tasks' => ['nullable', 'string'],
+            'handover_notes' => ['nullable', 'string', 'max:5000'],
+            'critical_tasks' => ['nullable', 'string', 'max:5000'],
             'avail_on_call' => ['nullable', 'boolean'],
             'emergency_number' => ['nullable', 'string', 'max:50'],
-            'avail_note' => ['nullable', 'string'],
+            'avail_note' => ['nullable', 'string', 'max:2000'],
         ]);
 
         // Resolve target employee — explicit id (admin filing on behalf) or
@@ -148,11 +158,24 @@ class LeaveRequestController extends Controller
         // Overlap guard — same employee already has a Pending or Approved
         // request whose date range intersects the new one. Two ranges
         // overlap when each starts on or before the other one ends.
-        $overlap = LeaveRequest::where('employee_id', $employee->id)
+        $overlapQuery = LeaveRequest::where('employee_id', $employee->id)
             ->whereIn('status', ['Pending', 'Approved'])
             ->where('from_date', '<=', $to->toDateString())
-            ->where('to_date',   '>=', $from->toDateString())
-            ->first();
+            ->where('to_date',   '>=', $from->toDateString());
+
+        // LV-08: a half-day does NOT conflict with the OPPOSITE half on the same
+        // single day (AM + PM is a valid full day split across two requests).
+        // Exclude that complementary case from the overlap match.
+        if ($dayType !== 'full' && $from->isSameDay($to)) {
+            $opposite = $dayType === 'first_half' ? 'second_half' : 'first_half';
+            $day = $from->toDateString();
+            $overlapQuery->where(function ($w) use ($opposite, $day) {
+                $w->where('day_type', '!=', $opposite)
+                  ->orWhere('from_date', '!=', $day)
+                  ->orWhere('to_date', '!=', $day);
+            });
+        }
+        $overlap = $overlapQuery->first();
         if ($overlap) {
             abort(422, "You already have a {$overlap->status} leave request for {$overlap->from_date} → {$overlap->to_date}. Cancel it before applying for overlapping dates.");
         }
@@ -548,6 +571,13 @@ class LeaveRequestController extends Controller
             abort(403, 'You are not the approver for the current level of this request.');
         }
 
+        // LV-11: no one may APPROVE their own leave — not even via the admin
+        // override. (Rejecting your own is harmless and handled by /cancel.)
+        $ownEmployeeId = (int) (Employee::where('user_id', $user->id)->value('id') ?? 0);
+        if ($next === 'Approved' && $ownEmployeeId && (int) $row->employee_id === $ownEmployeeId) {
+            abort(403, 'You cannot approve your own leave request.');
+        }
+
         // Record the decision on this chain entry.
         if (isset($chain[$level - 1])) {
             $chain[$level - 1]['status'] = $next;
@@ -601,7 +631,12 @@ class LeaveRequestController extends Controller
         try {
             app(\App\Services\PayrollService::class)->recomputeEmployeePayslips((int) $employeeId);
         } catch (\Throwable $e) {
-            // Never block a leave action on a payroll recompute hiccup.
+            // Never block a leave action on a payroll recompute hiccup — but LOG
+            // it so a silent payroll/leave divergence can be diagnosed. (LV-29)
+            \Illuminate\Support\Facades\Log::warning('Leave→payroll propagation failed', [
+                'employee_id' => $employeeId,
+                'error'       => $e->getMessage(),
+            ]);
         }
     }
 
@@ -1096,10 +1131,13 @@ class LeaveRequestController extends Controller
     {
         if (!$notifiable) return;
         try {
+            // LV-28: the notification implements ShouldQueue, but there is no
+            // queue worker — so a normal send()/notify() would sit undelivered
+            // forever. Force SYNCHRONOUS delivery so approval emails actually go.
             if ($notifiable instanceof AnonymousNotifiable) {
-                Notification::send($notifiable, $notif);
+                Notification::sendNow($notifiable, $notif);
             } else {
-                $notifiable->notify($notif);
+                $notifiable->notifyNow($notif);
             }
         } catch (\Throwable $e) {
             Log::warning('[leave-notify] dispatch failed: ' . $e->getMessage(), [

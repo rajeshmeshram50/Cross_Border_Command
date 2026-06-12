@@ -24,6 +24,14 @@ class LeaveTypes extends Model
     protected static function booted(): void
     {
         static::deleting(function (LeaveTypes $type) {
+            // LV-26: refuse to delete a type that leave requests reference —
+            // deleting would silently drop those days from every "used balance"
+            // sum (they join master_leave_types), under-counting consumed leave.
+            if (DB::table('leave_requests')->where('leave_type_id', $type->id)->exists()) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'leave_type' => ['Cannot delete this leave type — existing leave requests reference it. Archive it instead.'],
+                ]);
+            }
             DB::table('leave_plan_leave_types')
                 ->where('leave_type_id', $type->id)
                 ->delete();

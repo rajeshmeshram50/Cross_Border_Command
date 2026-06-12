@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Card, CardBody, Col, Row, Input, Label, TabContent, TabPane, Form, FormGroup, Button,
 } from 'reactstrap';
@@ -169,10 +170,15 @@ function SubSection({ icon, title, desc, color, children, first = false }: { ico
 
 export default function Settings() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const toast = useToast();
   const settingsCtx = useSettings();
   const { theme, toggle: toggleTheme } = useTheme();
   const isSuper = user?.user_type === 'super_admin';
+  // Hidden Sign-Document-Tracker access (via the About-tab version badge) is
+  // for the tenant's business users — Client Admin and Branch users — and is
+  // deliberately NOT shown to the platform super-admin.
+  const canAccessSignTracker = user?.user_type === 'client_admin' || user?.user_type === 'branch_user';
 
   const [tab, setTab] = useState<string>('general');
   const [openFaq, setOpenFaq] = useState<number | null>(0);
@@ -626,11 +632,23 @@ export default function Settings() {
                         { label: 'Laravel 12', icon: 'ri-server-line',      color: '#ef4444' },
                         { label: 'React 19',   icon: 'ri-reactjs-line',     color: '#0ea5e9' },
                         { label: 'PostgreSQL', icon: 'ri-database-2-line',  color: '#10b981' },
-                      ].map(t => (
-                        <span key={t.label} className="rounded-pill fw-semibold d-inline-flex align-items-center gap-1" style={{ background: t.color + '15', color: t.color, border: `1px solid ${t.color}30`, fontSize: 9.5, letterSpacing: '0.04em', padding: '2px 7px' }}>
-                          <i className={t.icon} style={{ fontSize: 10 }} />{t.label}
-                        </span>
-                      ))}
+                      ].map(t => {
+                        // Hidden internal access: super-admins can click the
+                        // version badge to open the Sign Document Tracker. It
+                        // looks identical to a normal badge, so it isn't
+                        // discoverable to anyone who doesn't already know.
+                        const secret = t.label === 'v1.0.0' && canAccessSignTracker;
+                        return (
+                          <span
+                            key={t.label}
+                            onClick={secret ? () => navigate('/sales/sign-tracker') : undefined}
+                            className="rounded-pill fw-semibold d-inline-flex align-items-center gap-1"
+                            style={{ background: t.color + '15', color: t.color, border: `1px solid ${t.color}30`, fontSize: 9.5, letterSpacing: '0.04em', padding: '2px 7px', cursor: secret ? 'pointer' : 'default' }}
+                          >
+                            <i className={t.icon} style={{ fontSize: 10 }} />{t.label}
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
                   <SubSection icon="ri-stack-line" title="Technology Stack" desc="Built on modern, reliable frameworks" color={currentTab.color} first>
