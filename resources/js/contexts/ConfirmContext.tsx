@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, X, Loader2 } from 'lucide-react';
 
@@ -54,6 +54,18 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     resolveRef.current = null;
     setOpen(false);
   };
+
+  // Scroll lock — lock BOTH <html> and <body> while the confirm dialog is
+  // open so the page behind can't scroll. Covers every confirm/delete dialog
+  // app-wide since they all route through this provider.
+  useEffect(() => {
+    if (!open) return;
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
+  }, [open]);
 
   const tone = opts.tone || 'danger';
   const palette = TONE_STYLES[tone];
