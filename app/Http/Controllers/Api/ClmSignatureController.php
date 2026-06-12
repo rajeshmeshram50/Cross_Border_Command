@@ -783,7 +783,8 @@ class ClmSignatureController extends Controller
 
     public function ctcPreview(Request $request)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $data = $request->validate([
             'contract_id'            => 'required|integer',
             'header_config_override' => 'nullable|array',
@@ -792,7 +793,8 @@ class ClmSignatureController extends Controller
         ]);
         $c = CtcContract::where('client_id', $user->client_id)->findOrFail($data['contract_id']);
         $pdf = $this->renderCtcPdf(
-            $c, [],
+            $c,
+            [],
             $data['header_config_override'] ?? null,
             $data['footer_config_override'] ?? null,
             array_key_exists('content_override', $data) ? (string) $data['content_override'] : null,
@@ -807,7 +809,8 @@ class ClmSignatureController extends Controller
 
     public function ctcSend(Request $request)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
         if (!$this->zoho->isConfigured()) {
             return response()->json(['status' => false, 'message' => 'Zoho Sign is not configured. Contact your administrator.'], 503);
@@ -847,7 +850,8 @@ class ClmSignatureController extends Controller
         $tempPaths   = [];
         try {
             $pdf = $this->renderCtcPdf(
-                $c, $signers,
+                $c,
+                $signers,
                 $data['header_config_override'] ?? null,
                 $data['footer_config_override'] ?? null,
                 array_key_exists('content_override', $data) ? (string) $data['content_override'] : null,
@@ -886,7 +890,7 @@ class ClmSignatureController extends Controller
             $zohoActions     = data_get($details, 'requests.actions',      []);
             $zohoDocumentIds = data_get($details, 'requests.document_ids', []);
 
-            $signersByEmail = collect($signers)->keyBy(fn ($s) => strtolower((string) ($s['email'] ?? '')));
+            $signersByEmail = collect($signers)->keyBy(fn($s) => strtolower((string) ($s['email'] ?? '')));
             foreach ($zohoActions as &$za) {
                 $email = strtolower((string) ($za['recipient_email'] ?? ''));
                 $m = $signersByEmail->get($email);
@@ -900,8 +904,13 @@ class ClmSignatureController extends Controller
 
             $finalStatus = 'inprogress';
             if ($submitted) {
-                try { sleep(1); $after = $this->zoho->getRequest($zohoRequestId); $finalStatus = strtolower((string) data_get($after, 'requests.request_status', 'inprogress')); }
-                catch (\Throwable $e) { $finalStatus = 'inprogress'; }
+                try {
+                    sleep(1);
+                    $after = $this->zoho->getRequest($zohoRequestId);
+                    $finalStatus = strtolower((string) data_get($after, 'requests.request_status', 'inprogress'));
+                } catch (\Throwable $e) {
+                    $finalStatus = 'inprogress';
+                }
             }
 
             $sigReq = new ClmSignatureRequest();
@@ -911,7 +920,7 @@ class ClmSignatureController extends Controller
             $sigReq->trade_doc_id      = $c->id;
             $sigReq->trade_doc_ids     = [$c->id];
             $sigReq->document_names    = [$requestName];
-            $sigReq->zoho_document_ids = array_values(array_filter(array_map(fn ($d) => $d['document_id'] ?? null, $zohoDocumentIds)));
+            $sigReq->zoho_document_ids = array_values(array_filter(array_map(fn($d) => $d['document_id'] ?? null, $zohoDocumentIds)));
             $sigReq->model_name        = 'CtcContract';
             $sigReq->party_id          = $c->id;
             $sigReq->zoho_request_id   = $zohoRequestId;
@@ -931,9 +940,13 @@ class ClmSignatureController extends Controller
             $sigReq->save();
 
             // Advance the contract to Stage 3 with the signing tracker.
-            $recipients = collect($signers)->map(fn ($s) => [
-                'name' => $s['name'], 'email' => $s['email'], 'role' => $s['role'],
-                'contact' => $s['name'], 'signed' => false, 'signed_at' => null,
+            $recipients = collect($signers)->map(fn($s) => [
+                'name' => $s['name'],
+                'email' => $s['email'],
+                'role' => $s['role'],
+                'contact' => $s['name'],
+                'signed' => false,
+                'signed_at' => null,
             ])->all();
             // A resend after a decline carries the edited draft — persist it so
             // the contract body, preview and version snapshot all reflect it.
@@ -950,8 +963,10 @@ class ClmSignatureController extends Controller
             $versions[] = [
                 'v' => count($versions) + 1,
                 'label' => 'Agreement sent to counterparty for signature & negotiation (Zoho Sign)',
-                'status' => 'Sent for Signing', 'date' => now()->format('d M Y H:i'),
-                'by' => $user->name ?? '', 'content' => $c->content,
+                'status' => 'Sent for Signing',
+                'date' => now()->format('d M Y H:i'),
+                'by' => $user->name ?? '',
+                'content' => $c->content,
             ];
             $c->versions = $versions;
             $c->save();
@@ -983,7 +998,8 @@ class ClmSignatureController extends Controller
      */
     public function ctcSignatureStatus(Request $request, int $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $c = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
         if ($c->zoho_request_id) {
             try {
@@ -1002,7 +1018,10 @@ class ClmSignatureController extends Controller
                 $reqLevelReason = '';
                 foreach (['reason', 'reject_reason', 'declined_reason', 'decline_reason'] as $k) {
                     $rv = data_get($details, "requests.$k");
-                    if (!empty($rv)) { $reqLevelReason = (string) $rv; break; }
+                    if (!empty($rv)) {
+                        $reqLevelReason = (string) $rv;
+                        break;
+                    }
                 }
                 $byEmail = [];
                 foreach (data_get($details, 'requests.actions', []) as $a) {
@@ -1011,24 +1030,31 @@ class ClmSignatureController extends Controller
                 }
                 $recipients = array_values($c->signing_recipients ?? []);
                 $stamp = now()->format('d M Y H:i');
-                $declinedReason = null; $declinedBy = null;
+                $declinedReason = null;
+                $declinedBy = null;
                 foreach ($recipients as &$r) {
                     $a  = $byEmail[strtolower((string) ($r['email'] ?? ''))] ?? ['status' => '', 'reason' => '', 'raw' => []];
                     $st = $a['status'];
-                    if (in_array($st, ['signed', 'completed', 'approved']) && empty($r['signed'])) { $r['signed'] = true; $r['signed_at'] = $stamp; $r['declined'] = false; }
+                    if (in_array($st, ['signed', 'completed', 'approved']) && empty($r['signed'])) {
+                        $r['signed'] = true;
+                        $r['signed_at'] = $stamp;
+                        $r['declined'] = false;
+                    }
                     if (in_array($st, ['declined', 'rejected', 'recalled'])) {
                         // Log the raw declined action once so the exact reason key
                         // can be confirmed if it ever lands somewhere unexpected.
                         Log::info('CTC signer declined', ['contract' => $c->id, 'email' => $r['email'] ?? null, 'action' => $a['raw']]);
                         $reason = $a['reason'] ?: $reqLevelReason ?: ($r['decline_reason'] ?? '');
-                        $r['declined'] = true; $r['signed'] = false;
+                        $r['declined'] = true;
+                        $r['signed'] = false;
                         $r['decline_reason'] = $reason;
-                        $declinedReason = $reason; $declinedBy = $r['name'] ?? $r['email'] ?? null;
+                        $declinedReason = $reason;
+                        $declinedBy = $r['name'] ?? $r['email'] ?? null;
                     }
                 }
                 unset($r);
                 $isDeclined = $declinedBy !== null || in_array($reqStatus, ['declined', 'rejected', 'recalled']);
-                $allSigned  = !$isDeclined && count($recipients) > 0 && collect($recipients)->every(fn ($r) => !empty($r['signed']));
+                $allSigned  = !$isDeclined && count($recipients) > 0 && collect($recipients)->every(fn($r) => !empty($r['signed']));
 
                 if ($isDeclined && empty($c->signature_declined_at)) {
                     // First time we see the decline → stamp it + log a version event.
@@ -1038,7 +1064,12 @@ class ClmSignatureController extends Controller
                     $c->signature_declined_at = null;
                 }
                 if ($reqStatus === 'completed' || $allSigned) {
-                    foreach ($recipients as &$r2) { if (empty($r2['signed'])) { $r2['signed'] = true; $r2['signed_at'] = $stamp; } }
+                    foreach ($recipients as &$r2) {
+                        if (empty($r2['signed'])) {
+                            $r2['signed'] = true;
+                            $r2['signed_at'] = $stamp;
+                        }
+                    }
                     unset($r2);
                     if (!$c->cp_signed_date) $c->cp_signed_date = now();
                     // Pull the fully-signed PDF + certificate down from Zoho onto
@@ -1046,9 +1077,17 @@ class ClmSignatureController extends Controller
                     if ($c->signature_request_id) {
                         $sr = ClmSignatureRequest::find($c->signature_request_id);
                         if ($sr) {
-                            if ($sr->status !== 'completed') { $sr->status = 'completed'; if (!$sr->completed_at) $sr->completed_at = now(); $sr->save(); }
+                            if ($sr->status !== 'completed') {
+                                $sr->status = 'completed';
+                                if (!$sr->completed_at) $sr->completed_at = now();
+                                $sr->save();
+                            }
                             if (empty($sr->fresh()->signed_document_paths)) {
-                                try { $this->fetchSignedArtifacts($sr, $details); } catch (\Throwable $e) { Log::warning('CTC signed artifact fetch failed: ' . $e->getMessage()); }
+                                try {
+                                    $this->fetchSignedArtifacts($sr, $details);
+                                } catch (\Throwable $e) {
+                                    Log::warning('CTC signed artifact fetch failed: ' . $e->getMessage());
+                                }
                             }
                         }
                     }
@@ -1084,7 +1123,8 @@ class ClmSignatureController extends Controller
      */
     public function ctcRemindSigning(Request $request, int $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $c = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
         if (!$c->zoho_request_id) return response()->json(['status' => false, 'message' => 'No active signature request to remind.'], 422);
         if (!$this->zoho->isConfigured()) return response()->json(['status' => false, 'message' => 'Zoho Sign is not configured.'], 503);
@@ -1142,8 +1182,12 @@ class ClmSignatureController extends Controller
     {
         $versions = array_values($c->versions ?? []);
         $versions[] = [
-            'v' => count($versions) + 1, 'label' => $label, 'status' => $status,
-            'date' => now()->format('d M Y H:i'), 'by' => $by, 'content' => $c->content,
+            'v' => count($versions) + 1,
+            'label' => $label,
+            'status' => $status,
+            'date' => now()->format('d M Y H:i'),
+            'by' => $by,
+            'content' => $c->content,
         ];
         $c->versions = $versions;
     }
@@ -1161,7 +1205,9 @@ class ClmSignatureController extends Controller
             $ext  = strtolower(pathinfo($path, PATHINFO_EXTENSION) ?: 'png');
             $mime = in_array($ext, ['jpg', 'jpeg']) ? 'image/jpeg' : ($ext === 'webp' ? 'image/webp' : 'image/png');
             return "data:$mime;base64,$data";
-        } catch (\Throwable $e) { return null; }
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     /**
@@ -1374,7 +1420,12 @@ class ClmSignatureController extends Controller
                     $safeCode      = preg_replace('/[^A-Za-z0-9_-]/', '_', (string) ($record->code ?: ('id-' . $record->id)));
                     $emailFilename = "{$shortLabel}-{$safeCode}_signed.pdf";
                     app(SalesPdfController::class)->buildAndSendSalesDocEmail(
-                        $record, $emailKind, $shortLabel, $signerEmail, $tempPath, $emailFilename
+                        $record,
+                        $emailKind,
+                        $shortLabel,
+                        $signerEmail,
+                        $tempPath,
+                        $emailFilename
                     );
                     $pdfEmailed = true;
                 } catch (\Throwable $e) {
@@ -2281,9 +2332,9 @@ class ClmSignatureController extends Controller
                 'product.segment:id,name',
                 'product.hsn:id,hsn_code',
             ])
-                ->where('lead_id', $lead->id)
-                ->orderBy('id')
-                ->get()
+            ->where('lead_id', $lead->id)
+            ->orderBy('id')
+            ->get()
             : collect();
 
         // Locate the single <tr> holding the product tokens. Non-greedy and
@@ -2567,9 +2618,12 @@ class ClmSignatureController extends Controller
                 }
 
                 // Step 3 — capture both `url` (legacy) and `file_url`
-                // (new pattern used by other modules). On Azure the URL
-                // is the absolute blob URL; on local it's /storage/…
-                $publicUrl = Storage::disk('public')->url($path);
+                // (new pattern used by other modules). Use file_url() — the
+                // Azure-safe resolver — NOT Storage::disk('public')->url(),
+                // which throws "This driver does not support retrieving URLs"
+                // on the azure-storage-blob adapter and silently discarded
+                // every signed document on the server.
+                $publicUrl = file_url($path);
                 $savedPaths[] = [
                     'zoho_document_id' => $zohoId,
                     'document_name'    => $name,
@@ -2608,7 +2662,7 @@ class ClmSignatureController extends Controller
                     if ($ok === false) {
                         throw new RuntimeException('Storage::put returned false (disk=' . $diskName . ')');
                     }
-                    $publicUrl = Storage::disk('public')->url($path);
+                    $publicUrl = file_url($path);   // Azure-safe (see note above)
                     $savedPaths[] = [
                         'zoho_document_id' => $zohoIds[0] ?? null,
                         'document_name'    => $row->request_name,
