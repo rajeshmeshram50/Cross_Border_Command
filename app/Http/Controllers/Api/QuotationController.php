@@ -784,7 +784,16 @@ class QuotationController extends Controller
 
     private function applyFilters($q, Request $request): void
     {
-        if ($v = $request->query('status'))      $q->where('status', $v);
+        if ($v = $request->query('status')) {
+            $q->where('status', $v);
+        } else {
+            // "Delete" on a quotation is a soft-cancel (status → cancelled),
+            // kept for audit. A cancelled quote is "no longer active", so it
+            // drops out of the default list — that's what makes the delete
+            // button visibly remove the row. Pass ?status=cancelled to see them.
+            $q->where('status', '!=', Quotation::STATUS_CANCELLED);
+        }
+        if ($v = $request->query('doc_type'))    $q->where('doc_type', $v);
         if ($v = $request->query('doc_type'))    $q->where('doc_type', $v);
         if ($v = $request->query('customer_id')) $q->where('customer_id', (int) $v);
         if ($v = $request->query('opp_id'))      $q->where('opp_id', (int) $v);
