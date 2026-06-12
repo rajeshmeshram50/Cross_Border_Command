@@ -242,7 +242,32 @@ export default function IdimsHeader() {
   /* ── Visible top-level nav items in prototype order ── */
   const navItems = useMemo(() => {
     const items: { id: string; label: string; icon: JSX.Element; dd?: DD }[] = [];
+    const role = user?.user_type;
     items.push({ id: 'dashboard', label: 'Dashboard', icon: IC.grid });
+
+    // Super-admin runs the SaaS itself — it sees ONLY the platform-management
+    // modules (Clients, Plans, Payments, Master, Permissions), never the
+    // tenant business modules (HRMS / Sales / CLM / P2P / GTS / Inventory).
+    if (role === 'super_admin') {
+      items.push({ id: 'clients', label: 'Clients', icon: IC.building });
+      items.push({ id: 'plans', label: 'Plans', icon: IC.card });
+      items.push({ id: 'payments', label: 'Payments', icon: IC.rupee });
+      items.push({ id: 'master', label: 'Master', icon: IC.db });
+      items.push({ id: 'permissions', label: 'Permissions', icon: IC.shield });
+      return items;
+    }
+
+    // Client-admin manages the tenant account — it sees ONLY the account
+    // modules (Branches, Master, Permissions, My Plan), not the day-to-day
+    // business modules (HRMS / Sales / CLM / P2P / GTS / Inventory) that
+    // branch users and employees operate.
+    if (role === 'client_admin') {
+      items.push({ id: 'branches', label: 'Branches', icon: IC.branch });
+      items.push({ id: 'master', label: 'Master', icon: IC.db });
+      items.push({ id: 'permissions', label: 'Permissions', icon: IC.shield });
+      items.push({ id: 'my-plan', label: 'My Plan', icon: IC.card });
+      return items;
+    }
     if (can('credentials-vault')) items.push({ id: 'credentials-vault', label: 'Credentials Vault', icon: IC.lock });
     if (can('project-navigator')) items.push({ id: 'project-navigator', label: 'Project Navigator', icon: IC.compass });
     if (hasGroupView('hr.')) items.push({ id: 'hr', label: 'HRMS', icon: IC.users, dd: 'hr' });
@@ -758,6 +783,9 @@ const IC = {
   trend: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6h-6z" /></svg>,
   file: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" /></svg>,
   cart: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49A1 1 0 0 0 20 4H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z" /></svg>,
+  card: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></svg>,
+  rupee: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3h12M6 8h12M9 3c3.5 0 5.5 2 5.5 5S12.5 13 9 13H6l7 8" /></svg>,
+  branch: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></svg>,
   globe: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" /></svg>,
   box: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path fillRule="evenodd" clipRule="evenodd" d="M12 1.95l9.05 4.52v11.06L12 22.05l-9.05-4.52V6.47L12 1.95zm0 2.24L5.66 7.36 12 10.53l6.34-3.17L12 4.19zM4.95 9.03v7.25L11 19.3v-7.25L4.95 9.03zm14.1 0L13 12.05v7.25l6.05-3.02V9.03z" /></svg>,
   db: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C7.58 2 4 3.57 4 5.5S7.58 9 12 9s8-1.57 8-3.5S16.42 2 12 2zM4 7.97v4.53C4 14.43 7.58 16 12 16s8-1.57 8-3.5V7.97c-1.72 1.4-4.66 2.13-8 2.13s-6.28-.73-8-2.13zm0 7v3.53C4 20.43 7.58 22 12 22s8-1.57 8-3.5V14.97c-1.72 1.4-4.66 2.13-8 2.13s-6.28-.73-8-2.13z" /></svg>,
