@@ -375,8 +375,10 @@ export default function Clients({ onNavigate }: Props) {
           position: relative; overflow: hidden;
           display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
           min-height: 70px; padding: 12px 18px;
+          /* Light violet wash — the left-strip violet (#7c3aed) at 8% opacity. */
           background: #ffffff;
-          border: 1px solid var(--vz-border-color);
+          /* 1px violet border on all sides (the left accent strip stays). */
+          border: 1px solid #c4b5fd;
           border-radius: 16px;
           box-shadow: 0 2px 12px rgba(0,0,0,0.05);
           font-family: 'DM Sans', system-ui, sans-serif;
@@ -428,7 +430,7 @@ export default function Clients({ onNavigate }: Props) {
         .cl-cstrip-export:hover:not(:disabled) { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }
         .cl-cstrip-export:disabled { opacity: 0.6; cursor: default; }
         .cl-cstrip-export i { font-size: 15px; }
-        [data-bs-theme="dark"] .cl-cstrip { background: var(--vz-card-bg); border-color: var(--vz-border-color); box-shadow: 0 6px 18px rgba(0,0,0,0.30); }
+        [data-bs-theme="dark"] .cl-cstrip { background: var(--vz-card-bg); border-color: rgba(167,139,250,0.40); box-shadow: 0 6px 18px rgba(0,0,0,0.30); }
         [data-bs-theme="dark"] .cl-cstrip-icon::after { border-color: var(--vz-card-bg); }
         [data-bs-theme="dark"] .cl-cstrip-export { background: transparent; color: #c4b5fd; }
         [data-bs-theme="dark"] .cl-cstrip-export:hover:not(:disabled) { background: rgba(124,58,237,.14); }
@@ -569,7 +571,7 @@ export default function Clients({ onNavigate }: Props) {
           {/* Header strip — same shape as the Customers (smc-cstrip) header:
               rounded container + left accent strip + violet icon + gradient
               "Add" button — but on a plain white surface (no violet wash). */}
-          <div className="cl-cstrip mb-2">
+          <div className="cl-cstrip mb-3">
             <span className="cl-cstrip-accent" />
             <div className="cl-cstrip-left">
               <div className="cl-cstrip-icon"><i className="ri-building-2-line" /></div>
@@ -611,7 +613,7 @@ export default function Clients({ onNavigate }: Props) {
               (border / shadow / padding / white fill) is stripped. */}
           <div className="clients-surface" style={{ background: 'transparent' }}>
             {/* ── KPI cards (single row, equal height) ── */}
-            <Row className="g-3 mb-2 align-items-stretch">
+            <Row className="g-3 mb-3 align-items-stretch">
               {KPI_CARDS.map(k => (
                 <Col key={k.label} md={3} sm={6} xs={12}>
                   <div

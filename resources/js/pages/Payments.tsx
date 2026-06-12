@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Card, CardBody, CardHeader, Col, Row, Badge, Button, Input, Spinner,
+  Col, Row, Badge, Button, Input, Spinner,
   Modal, ModalHeader, ModalBody, ModalFooter, Form, Label,
   FormText,
 } from 'reactstrap';
@@ -64,6 +64,8 @@ export default function Payments() {
   const [plans, setPlans] = useState<{ id: number; name: string; price: number }[]>([]);
   const [sendingReminder, setSendingReminder] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
+  // Rows-per-page selector — dynamic pagination like the My Workplace list.
+  const [rpp, setRpp] = useState(10);
   const [deleteModal, setDeleteModal] = useState<{ open: boolean; payment: Payment | null }>({ open: false, payment: null });
   const [deleting, setDeleting] = useState(false);
 
@@ -410,21 +412,41 @@ export default function Payments() {
     <>
       <Row>
         <Col xs={12}>
-          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <h4 className="mb-sm-0">Revenue & Payments</h4>
-            <div className="page-title-right">
-              <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#">Admin</a></li>
-                <li className="breadcrumb-item active">Payments</li>
-              </ol>
+          {/* Header strip — same shape as the Clients / Branches module
+              headers: white container + violet border + left accent strip
+              + violet icon, with Export on the right (super admin only). */}
+          <div className="pmt-cstrip mb-3">
+            <span className="pmt-cstrip-accent" />
+            <div className="pmt-cstrip-left">
+              <div className="pmt-cstrip-icon"><i className="ri-money-rupee-circle-line" /></div>
+              <div className="min-w-0">
+                <div className="pmt-cstrip-title">Revenue &amp; Payments</div>
+                <div className="pmt-cstrip-sub">
+                  Track subscription revenue, transactions, refunds and invoices.
+                </div>
+              </div>
             </div>
+            {isSuperAdmin && (
+              <button
+                type="button"
+                className="pmt-cstrip-export"
+                onClick={handleExport}
+                disabled={exporting}
+              >
+                {exporting ? <Spinner size="sm" /> : <i className="ri-download-2-line" />}
+                {exporting ? 'Exporting...' : 'Export'}
+              </button>
+            )}
           </div>
         </Col>
       </Row>
 
       <Row>
         <Col xs={12}>
-          <div className="payments-surface pmt-page-card">
+          {/* Whole-page card container removed — content sits flush on the
+              page background. `payments-surface` kept (scoped table / KPI /
+              dark styles) with no card chrome. */}
+          <div className="payments-surface" style={{ background: 'transparent' }}>
             {/* ── KPI cards (admin-dashboard style) ──
                 row-cols-md-5 forces all five cards onto a single row on
                 tablet/desktop (Bootstrap's 12-column grid can't divide
@@ -460,56 +482,57 @@ export default function Payments() {
               ))}
             </Row>
 
-            {/* ── Single toolbar row: search + status pills + export + record ── */}
-            <Row className="g-2 align-items-center mb-3">
-              <Col lg={4} md={6} sm={12}>
-                <div className="search-box">
-                  <Input
-                    type="text"
-                    className="form-control"
-                    placeholder="Search by txn ID, invoice, client..."
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                  />
-                  <i className="ri-search-line search-icon"></i>
-                </div>
-              </Col>
+            {/* ── Search + filters + Table — one bordered frame ── */}
+            <div className="pmt-list-frame">
+              <div className="pmt-frame-filter p-3">
+                <Row className="g-2 align-items-center mb-0">
+                  <Col lg={4} md={6} sm={12}>
+                    <div className="search-box">
+                      <Input
+                        type="text"
+                        className="form-control"
+                        placeholder="Search by txn ID, invoice, client..."
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                      />
+                      <i className="ri-search-line search-icon"></i>
+                    </div>
+                  </Col>
 
-              <Col lg md={12} sm={12} className="d-flex flex-wrap gap-1">
-                {STATUS_FILTERS.map(s => {
-                  const isActive = statusFilter === s;
-                  return (
-                    <Button
-                      key={s || 'all'}
-                      color={isActive ? 'primary' : 'light'}
-                      size="sm"
-                      onClick={() => setStatusFilter(s)}
-                      className="rounded-pill px-3 text-capitalize"
+                  <Col lg md={12} sm={12} className="d-flex flex-wrap gap-1">
+                    {STATUS_FILTERS.map(s => {
+                      const isActive = statusFilter === s;
+                      return (
+                        <Button
+                          key={s || 'all'}
+                          color={isActive ? 'primary' : 'light'}
+                          size="sm"
+                          onClick={() => setStatusFilter(s)}
+                          className="rounded-pill px-3 text-capitalize"
+                        >
+                          {s || 'All'}
+                        </Button>
+                      );
+                    })}
+                  </Col>
+
+                  {/* Rows-per-page selector — dynamic pagination (My Workplace style) */}
+                  <Col lg="auto" md={12} sm={12} className="d-flex justify-content-md-end align-items-center gap-2 flex-wrap">
+                    <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Rows per page</span>
+                    <select
+                      value={rpp}
+                      onChange={e => setRpp(parseInt(e.target.value, 10))}
+                      className="form-select form-select-sm"
+                      style={{ width: 'auto', minWidth: 72 }}
                     >
-                      {s || 'All'}
-                    </Button>
-                  );
-                })}
-              </Col>
+                      {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </Col>
+                </Row>
+              </div>
 
-              {isSuperAdmin && (
-                <Col lg="auto" md={12} sm={12} className="d-flex justify-content-md-end gap-2 flex-wrap">
-                  <Button
-                    onClick={handleExport}
-                    disabled={exporting}
-                    className="rounded-pill px-3 pmt-btn-export"
-                  >
-                    {exporting ? <Spinner size="sm" className="me-1" /> : <i className="ri-download-2-line align-bottom me-1"></i>}
-                    {exporting ? 'Exporting...' : 'Export'}
-                  </Button>
-                  {/* "Record Payment" button hidden — manual payment entry disabled. */}
-                </Col>
-              )}
-            </Row>
-
-            {/* ── Table ── */}
-            <Card className="border-0 shadow-none mb-0">
-              <CardBody className="p-3">
+              {/* ── Table ── */}
+              <div className="p-3 pt-2">
                 {loading ? (
                   <ShimmerTable rows={6} cols={8} />
                 ) : (
@@ -518,10 +541,10 @@ export default function Payments() {
                       columns={columns}
                       data={filteredPayments}
                       isGlobalFilter={false}
-                      customPageSize={10}
+                      customPageSize={rpp}
                       tableClass="align-middle table-nowrap mb-0"
                       theadClass="table-light"
-                      divClass="table-responsive table-card border rounded"
+                      divClass="table-responsive"
                       SearchPlaceholder="Search by txn ID, invoice, client..."
                     />
                     {filteredPayments.length === 0 && (
@@ -532,8 +555,8 @@ export default function Payments() {
                     )}
                   </>
                 )}
-              </CardBody>
-            </Card>
+              </div>
+            </div>
           </div>
         </Col>
       </Row>

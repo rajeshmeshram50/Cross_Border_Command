@@ -187,7 +187,8 @@ export default function Permissions() {
           display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
           min-height: 70px; padding: 12px 18px;
           background: #ffffff;
-          border: 1px solid var(--vz-border-color);
+          /* 1px violet border on all sides (the left accent strip stays). */
+          border: 1px solid #c4b5fd;
           border-radius: 16px;
           box-shadow: 0 2px 12px rgba(0,0,0,0.05);
           font-family: 'DM Sans', system-ui, sans-serif;
@@ -217,14 +218,14 @@ export default function Permissions() {
         }
         .pm-cstrip-back:hover { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }
         .pm-cstrip-back i { font-size: 16px; }
-        [data-bs-theme="dark"] .pm-cstrip { background: var(--vz-card-bg); border-color: var(--vz-border-color); box-shadow: 0 6px 18px rgba(0,0,0,0.30); }
+        [data-bs-theme="dark"] .pm-cstrip { background: var(--vz-card-bg); border-color: rgba(167,139,250,0.40); box-shadow: 0 6px 18px rgba(0,0,0,0.30); }
         [data-bs-theme="dark"] .pm-cstrip-back { background: transparent; color: #c4b5fd; }
         [data-bs-theme="dark"] .pm-cstrip-back:hover { background: rgba(124,58,237,.14); }
       `}</style>
       <Row>
         <Col xs={12}>
           {/* Header strip — matches the Clients / Branches module headers. */}
-          <div className="pm-cstrip mb-2">
+          <div className="pm-cstrip mb-3">
             <span className="pm-cstrip-accent" />
             <div className="pm-cstrip-left">
               <div className="pm-cstrip-icon"><i className="ri-shield-keyhole-line" /></div>

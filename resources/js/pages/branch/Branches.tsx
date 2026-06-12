@@ -417,7 +417,8 @@ export default function Branches({ onNavigate }: Props) {
           display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
           min-height: 70px; padding: 12px 18px;
           background: #ffffff;
-          border: 1px solid var(--vz-border-color);
+          /* 1px violet border on all sides (the left accent strip stays). */
+          border: 1px solid #c4b5fd;
           border-radius: 16px;
           box-shadow: 0 2px 12px rgba(0,0,0,0.05);
           font-family: 'DM Sans', system-ui, sans-serif;
@@ -467,7 +468,7 @@ export default function Branches({ onNavigate }: Props) {
         .br-cstrip-export:hover:not(:disabled) { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }
         .br-cstrip-export:disabled { opacity: 0.6; cursor: default; }
         .br-cstrip-export i { font-size: 15px; }
-        [data-bs-theme="dark"] .br-cstrip { background: var(--vz-card-bg); border-color: var(--vz-border-color); box-shadow: 0 6px 18px rgba(0,0,0,0.30); }
+        [data-bs-theme="dark"] .br-cstrip { background: var(--vz-card-bg); border-color: rgba(167,139,250,0.40); box-shadow: 0 6px 18px rgba(0,0,0,0.30); }
         [data-bs-theme="dark"] .br-cstrip-icon::after { border-color: var(--vz-card-bg); }
         [data-bs-theme="dark"] .br-cstrip-export { background: transparent; color: #c4b5fd; }
         [data-bs-theme="dark"] .br-cstrip-export:hover:not(:disabled) { background: rgba(124,58,237,.14); }
@@ -585,7 +586,7 @@ export default function Branches({ onNavigate }: Props) {
           {/* Header strip — same shape as the Customers (smc-cstrip) header:
               rounded container + left accent strip + violet icon + gradient
               "Add" button — on a plain white surface (no violet wash). */}
-          <div className="br-cstrip mb-2">
+          <div className="br-cstrip mb-3">
             <span className="br-cstrip-accent" />
             <div className="br-cstrip-left">
               <div className="br-cstrip-icon"><i className="ri-git-branch-line" /></div>
@@ -626,7 +627,7 @@ export default function Branches({ onNavigate }: Props) {
               KPI / dark-mode styles are scoped to it) with no card chrome. */}
           <div className="branches-surface" style={{ background: 'transparent' }}>
             {/* ── KPI cards ── */}
-            <Row className="g-3 mb-2 align-items-stretch">
+            <Row className="g-3 mb-3 align-items-stretch">
               {KPI_CARDS.map(k => (
                 <Col key={k.label} md={3} sm={6} xs={12}>
                   <div
