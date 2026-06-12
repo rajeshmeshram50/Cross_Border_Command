@@ -19,8 +19,10 @@
             right: 0;
             width: 100%;
             height: 44px;
-            /* Thin green top border per the reference spec (#8BC34A). */
-            border-top: 1px solid #8BC34A;
+            /* Thin top border in the tenant's primary brand colour (same as
+               the table headers / section rules); falls back to the reference
+               green only when the branch has no brand colour set. */
+            border-top: 1px solid {{ $companyDetails->primary_color ?? '#8BC34A' }};
             padding: 0;
             background: white;
             z-index: 1000;

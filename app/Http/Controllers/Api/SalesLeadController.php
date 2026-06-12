@@ -104,6 +104,30 @@ class SalesLeadController extends Controller
 
         $this->applyListFilters($q, $request);
 
+        // Opportunity picker (Create Quotation / PI form): only surface leads
+        // whose Price-Shared stage (Stage 4) is COMPLETE — the lead has at
+        // least one product in its directory AND every one of those products
+        // has a shared price recorded. A lead with no products, or with any
+        // product still missing a shared price, is excluded.
+        if ($request->boolean('price_shared_complete')) {
+            $q->whereExists(function ($sub) {
+                    $sub->select(\Illuminate\Support\Facades\DB::raw(1))
+                        ->from('lead_products')
+                        ->whereColumn('lead_products.lead_id', 'leads.id');
+                })
+                ->whereNotExists(function ($sub) {
+                    // Any directory product without a shared price disqualifies the lead.
+                    $sub->select(\Illuminate\Support\Facades\DB::raw(1))
+                        ->from('lead_products')
+                        ->whereColumn('lead_products.lead_id', 'leads.id')
+                        ->whereNotExists(function ($sp) {
+                            $sp->select(\Illuminate\Support\Facades\DB::raw(1))
+                               ->from('lead_product_shared_prices')
+                               ->whereColumn('lead_product_shared_prices.lead_product_id', 'lead_products.id');
+                        });
+                });
+        }
+
         $perPage = min(max((int) $request->query('per_page', 50), 1), 200);
         $page    = max((int) $request->query('page', 1), 1);
 
