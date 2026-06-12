@@ -5,6 +5,7 @@ import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { Shimmer } from '../components/ui/Shimmer';
+import { resolveFileUrl, downloadFile } from '../utils/resolveFileUrl';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface EmailRow {
@@ -27,14 +28,39 @@ interface EmailRow {
   sender?: { id: number; name: string; user_type: string } | null;
 }
 
+interface MailAttachment { name: string; size: number; mime: string; path: string; }
+
 interface EmailDetail extends EmailRow {
   cc: { email: string; name: string | null }[] | null;
   bcc: { email: string; name: string | null }[] | null;
   body_html: string | null;
   body_text: string | null;
   mailable_class: string | null;
+  attachments?: MailAttachment[] | null;
   client?: { id: number; org_name: string } | null;
 }
+
+// Pretty byte size for attachment chips.
+const fmtBytes = (n: number) => {
+  if (!n || n < 1024) return `${n || 0} B`;
+  const kb = n / 1024;
+  if (kb < 1024) return `${Math.round(kb)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
+};
+
+// Remix icon for a file by mime/extension — mirrors Gmail's per-type glyphs.
+const fileIcon = (mime: string, name = '') => {
+  const m = (mime || '').toLowerCase();
+  const ext = name.split('.').pop()?.toLowerCase() || '';
+  if (m.startsWith('image/')) return 'ri-image-2-line';
+  if (m === 'application/pdf' || ext === 'pdf') return 'ri-file-pdf-2-line';
+  if (m.includes('word') || ['doc', 'docx'].includes(ext)) return 'ri-file-word-2-line';
+  if (m.includes('sheet') || m.includes('excel') || ['xls', 'xlsx', 'csv'].includes(ext)) return 'ri-file-excel-2-line';
+  if (m.includes('presentation') || ['ppt', 'pptx'].includes(ext)) return 'ri-file-ppt-2-line';
+  if (m.includes('zip') || ext === 'zip') return 'ri-file-zip-line';
+  if (m.startsWith('text/') || ext === 'txt') return 'ri-file-text-line';
+  return 'ri-file-3-line';
+};
 
 interface Stats {
   total: number; unread: number; sent: number; failed: number;
@@ -430,6 +456,35 @@ function ReadingPane({ detail, loading, onBack, onTrash, onUnread, onStar, inTra
         ) : (
           <pre className="gm-reading-text">{detail.body_text || '(no content captured)'}</pre>
         )}
+
+        {Array.isArray(detail.attachments) && detail.attachments.length > 0 && (
+          <div className="gm-attachments">
+            <div className="gm-attachments-head">
+              <i className="ri-attachment-2" /> {detail.attachments.length} attachment{detail.attachments.length === 1 ? '' : 's'}
+            </div>
+            <div className="gm-attachments-grid">
+              {detail.attachments.map((a, i) => {
+                const url = resolveFileUrl(a.path);
+                const isImg = (a.mime || '').startsWith('image/');
+                return (
+                  <div key={i} className="gm-att-card" title={a.name}>
+                    <div className="gm-att-thumb">
+                      {isImg ? <img src={url} alt={a.name} loading="lazy" /> : <i className={fileIcon(a.mime, a.name)} />}
+                    </div>
+                    <div className="gm-att-meta">
+                      <span className="gm-att-name">{a.name}</span>
+                      <span className="gm-att-size">{fmtBytes(a.size)}</span>
+                    </div>
+                    <div className="gm-att-actions">
+                      <button type="button" className="gm-icon-btn sm" title="Download" onClick={() => downloadFile(url, a.name)}><i className="ri-download-2-line" /></button>
+                      <button type="button" className="gm-icon-btn sm" title="Open" onClick={() => window.open(url, '_blank')}><i className="ri-external-link-line" /></button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -454,8 +509,32 @@ function ComposeDock({ onClose, onSent }: { onClose: () => void; onSent: () => v
   const [acField, setAcField] = useState<'to' | 'cc'>('to');
   const acRef = useRef<HTMLDivElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [files, setFiles] = useState<File[]>([]);
   // Free-drag position. null = default docked bottom-right.
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  // Mirror the server caps (10 files, 8 MB each, 20 MB total) so the user gets
+  // instant feedback instead of a 422 after upload.
+  const MAX_FILES = 10, MAX_PER_FILE = 8 * 1024 * 1024, MAX_TOTAL = 20 * 1024 * 1024;
+  const addFiles = (list: FileList | null) => {
+    if (!list || !list.length) return;
+    setFiles((prev) => {
+      const next = [...prev];
+      let total = prev.reduce((s, f) => s + f.size, 0);
+      for (const f of Array.from(list)) {
+        if (next.length >= MAX_FILES) { toast.error('Too many files', `You can attach up to ${MAX_FILES} files.`); break; }
+        if (f.size > MAX_PER_FILE) { toast.error('File too large', `"${f.name}" is over 8 MB.`); continue; }
+        if (total + f.size > MAX_TOTAL) { toast.error('Attachments too large', 'Total attachments must stay under 20 MB.'); break; }
+        // Skip exact duplicates (same name + size).
+        if (next.some((e) => e.name === f.name && e.size === f.size)) continue;
+        next.push(f); total += f.size;
+      }
+      return next;
+    });
+    if (fileRef.current) fileRef.current.value = '';
+  };
+  const removeFile = (idx: number) => setFiles((prev) => prev.filter((_, i) => i !== idx));
 
   // Drag the window by its header. Defined locally so the move/up listeners
   // share references for clean removal.
@@ -529,7 +608,19 @@ function ComposeDock({ onClose, onSent }: { onClose: () => void; onSent: () => v
     if (!body.trim()) { toast.error('Message required', 'Please write a message.'); return; }
     setSending(true);
     try {
-      const { data } = await api.post('/emails', { to, cc: cc.length ? cc : undefined, subject: subject.trim(), body });
+      let data: any;
+      if (files.length) {
+        // Multipart so the documents / images ride along as real attachments.
+        const fd = new FormData();
+        to.forEach((e) => fd.append('to[]', e));
+        cc.forEach((e) => fd.append('cc[]', e));
+        fd.append('subject', subject.trim());
+        fd.append('body', body);
+        files.forEach((f) => fd.append('attachments[]', f, f.name));
+        ({ data } = await api.post('/emails', fd, { headers: { 'Content-Type': 'multipart/form-data' } }));
+      } else {
+        ({ data } = await api.post('/emails', { to, cc: cc.length ? cc : undefined, subject: subject.trim(), body }));
+      }
       toast.success('Email sent', data?.message || `Sent to ${to.length} recipient(s).`);
       onSent();
     } catch (err: any) {
@@ -593,11 +684,36 @@ function ComposeDock({ onClose, onSent }: { onClose: () => void; onSent: () => v
           {showCc && renderField('cc', 'Cc')}
           <input className="gm-cmp-subject" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" />
           <textarea className="gm-cmp-text" value={body} onChange={(e) => setBody(e.target.value)} placeholder="Write your message…" />
+
+          {files.length > 0 && (
+            <div className="gm-cmp-attachments">
+              {files.map((f, i) => (
+                <span key={`${f.name}-${i}`} className="gm-cmp-att" title={`${f.name} · ${fmtBytes(f.size)}`}>
+                  <i className={fileIcon(f.type, f.name)} />
+                  <span className="gm-cmp-att-name">{f.name}</span>
+                  <span className="gm-cmp-att-size">{fmtBytes(f.size)}</span>
+                  <i className="ri-close-line gm-cmp-att-x" onClick={() => removeFile(i)} title="Remove" />
+                </span>
+              ))}
+            </div>
+          )}
+
           <div className="gm-cmp-footer">
             <button type="button" className="gm-cmp-send" onClick={send} disabled={sending}>
               {sending ? <><Spinner size="sm" /> Sending…</> : <>Send <i className="ri-send-plane-fill" /></>}
             </button>
-            <span className="gm-cmp-hint">Wrapped in your org's branded template.</span>
+            <button type="button" className="gm-cmp-attach-btn" title="Attach files" onClick={() => fileRef.current?.click()} disabled={sending}>
+              <i className="ri-attachment-2" />
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              hidden
+              accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.zip,image/*"
+              onChange={(e) => addFiles(e.target.files)}
+            />
+            <span className="gm-cmp-hint">{files.length ? `${files.length} file${files.length === 1 ? '' : 's'} attached` : "Wrapped in your org's branded template."}</span>
           </div>
         </div>
       )}
@@ -734,6 +850,30 @@ function GmailStyles() {
     .gm-cmp-send:hover { background:#0a4bbf; }
     .gm-cmp-send:disabled { opacity:.6; cursor:default; }
     .gm-cmp-hint { font-size:11px; color:#9aa0a6; }
+    .gm-cmp-attach-btn { width:38px; height:38px; border:0; border-radius:50%; background:transparent; color:#5f6368; cursor:pointer; font-size:19px; display:inline-flex; align-items:center; justify-content:center; transition:background .15s; }
+    .gm-cmp-attach-btn:hover { background:var(--vz-secondary-bg); }
+    .gm-cmp-attach-btn:disabled { opacity:.4; cursor:default; }
+    /* Compose attachment chips */
+    .gm-cmp-attachments { display:flex; flex-wrap:wrap; gap:8px; padding:8px 0 2px; }
+    .gm-cmp-att { display:inline-flex; align-items:center; gap:6px; max-width:220px; background:var(--vz-secondary-bg,#e8eaed); border:1px solid var(--vz-border-color); border-radius:8px; padding:5px 8px; font-size:12px; }
+    .gm-cmp-att > i:first-child { font-size:15px; color:#5f6368; flex-shrink:0; }
+    .gm-cmp-att-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--vz-body-color); }
+    .gm-cmp-att-size { color:#9aa0a6; flex-shrink:0; }
+    .gm-cmp-att-x { cursor:pointer; color:#9aa0a6; flex-shrink:0; }
+    .gm-cmp-att-x:hover { color:#d93025; }
+    [data-bs-theme="dark"] .gm-cmp-att { background:#3a4046; }
+    /* Reading-pane attachment cards */
+    .gm-attachments { margin-top:22px; border-top:1px solid var(--vz-border-color); padding-top:14px; }
+    .gm-attachments-head { font-size:13px; font-weight:600; color:var(--vz-body-color); display:flex; align-items:center; gap:6px; margin-bottom:10px; }
+    .gm-attachments-grid { display:flex; flex-wrap:wrap; gap:10px; }
+    .gm-att-card { width:210px; display:flex; align-items:center; gap:10px; border:1px solid var(--vz-border-color); border-radius:10px; padding:8px 10px; background:var(--vz-secondary-bg,#fff); }
+    .gm-att-thumb { width:40px; height:40px; border-radius:8px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:var(--vz-body-bg,#f1f3f4); overflow:hidden; }
+    .gm-att-thumb i { font-size:22px; color:#5f6368; }
+    .gm-att-thumb img { width:100%; height:100%; object-fit:cover; }
+    .gm-att-meta { flex:1; min-width:0; display:flex; flex-direction:column; }
+    .gm-att-name { font-size:12.5px; font-weight:600; color:var(--vz-body-color); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .gm-att-size { font-size:11px; color:#9aa0a6; }
+    .gm-att-actions { display:flex; gap:2px; flex-shrink:0; }
     /* ── Dark mode: override the hardcoded light values that don't ride on CSS vars ── */
     [data-bs-theme="dark"] .gm-search i,
     [data-bs-theme="dark"] .gm-icon-btn,
@@ -754,7 +894,79 @@ function GmailStyles() {
     [data-bs-theme="dark"] .gm-row.selected { background:#004a77 !important; }
     [data-bs-theme="dark"] .gm-row.selected .gm-row-sender,
     [data-bs-theme="dark"] .gm-row.selected .gm-row-subject { color:#c2e7ff; }
-    @media (max-width:991px){ .gm-rail{ width:64px; } .gm-folder-label,.gm-folder-count,.gm-compose-btn span{ display:none; } .gm-compose-btn{ padding:14px; } .gm-row-sender{ width:110px; } }
+    /* ── Responsive ──────────────────────────────────────────────────────────── */
+    /* Laptop / small desktop: let the sender column flex a little tighter */
+    @media (max-width:1199px){
+      .gm-row-sender{ width:150px; }
+    }
+    /* Tablet: collapse the rail to an icon strip, trim the reading pane */
+    @media (max-width:991px){
+      .gm-shell{ height:calc(100vh - 120px); }
+      .gm-rail{ width:60px; padding:12px 6px; }
+      .gm-folder-label,.gm-folder-count,.gm-compose-btn span{ display:none; }
+      .gm-compose-btn{ width:46px; height:46px; padding:0; justify-content:center; border-radius:50%; }
+      .gm-compose-btn i{ font-size:20px; }
+      .gm-folder{ justify-content:center; padding:0; height:40px; border-radius:10px; }
+      .gm-rail-divider{ margin:8px 10px; }
+      .gm-row-sender{ width:130px; }
+      .gm-reading-body{ padding:16px 18px 32px; }
+      .gm-reading-iframe{ height:440px; }
+      .gm-search{ max-width:none; }
+    }
+    /* Large phone / portrait tablet: drop the brand wordmark + non-essential row chrome */
+    @media (max-width:768px){
+      .gm-topbar{ gap:6px; padding:8px 10px; }
+      .gm-brand{ display:none; }
+      .gm-search{ height:42px; }
+      .gm-toolbar{ flex-wrap:wrap; row-gap:2px; padding:4px 8px; }
+      .gm-row-snippet{ display:none; }
+      .gm-reading-subject{ font-size:19px; }
+    }
+    /* Phone: stack each mail row onto two lines, full-bleed compose sheet */
+    @media (max-width:575px){
+      .gm-shell{ height:calc(100dvh - 130px); min-height:360px; border-radius:10px; }
+      .gm-rail{ width:54px; padding:10px 5px; }
+      .gm-compose-btn{ width:42px; height:42px; }
+      .gm-topbar{ padding:6px 8px; }
+      .gm-search{ height:40px; padding:0 12px; }
+      .gm-search input{ font-size:13px; }
+      .gm-pager-range{ display:none; }
+      .gm-toolbar-title{ font-size:12.5px; }
+
+      /* Two-line row: sender + date on top, subject below */
+      .gm-row{ flex-wrap:wrap; height:auto; min-height:56px; align-items:center; padding:8px 10px; gap:4px 6px; }
+      .gm-row .gm-check{ width:26px; }
+      .gm-star{ width:24px; font-size:16px; }
+      .gm-avatar{ width:30px; height:30px; }
+      .gm-row-sender{ width:auto; flex:1 1 auto; order:1; font-size:14px; }
+      .gm-row-date{ order:2; width:auto; min-width:48px; }
+      .gm-row-main{ order:3; flex-basis:100%; padding-left:36px; }
+      .gm-chip,.gm-row-emp,.gm-attach,.gm-chip-fail{ display:none; }
+      /* No hover on touch — keep the swipe-free quick actions out of the way */
+      .gm-row:hover .gm-row-actions{ display:none; }
+      .gm-row:hover .gm-row-date{ visibility:visible; }
+
+      /* Reading pane */
+      .gm-reading-toolbar{ padding:6px 8px; }
+      .gm-reading-body{ padding:14px 14px 28px; }
+      .gm-reading-subject{ font-size:18px; }
+      .gm-reading-head{ flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+      .gm-reading-from{ gap:10px; }
+      .gm-avatar.lg{ width:34px; height:34px; font-size:14px; }
+      .gm-reading-date{ margin-left:0; flex-basis:100%; }
+      .gm-reading-iframe{ height:60vh; min-height:300px; }
+      .gm-meta-label{ min-width:64px; }
+
+      /* Compose: full-width bottom sheet, overriding the draggable inline position */
+      .gm-compose-dock,.gm-compose-dock.floating{ left:0 !important; right:0 !important; top:auto !important; bottom:0 !important; width:100% !important; max-width:100% !important; border-radius:14px 14px 0 0 !important; }
+      .gm-compose-dock.min{ width:100% !important; }
+      .gm-cmp-header{ cursor:default; }
+      .gm-cmp-body{ padding:6px 12px 12px; }
+      .gm-cmp-text{ min-height:140px; }
+      .gm-cmp-hint{ display:none; }
+      .gm-cmp-att{ max-width:100%; }
+      .gm-att-card{ width:100%; }
+    }
     `}</style>
   );
 }

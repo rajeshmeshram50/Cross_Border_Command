@@ -20,13 +20,14 @@ class EmailLog extends Model
         'client_id', 'branch_id', 'user_id', 'employee_id',
         'direction', 'category', 'mailable_class',
         'from_email', 'from_name', 'to_email', 'to_name', 'cc', 'bcc',
-        'subject', 'body_html', 'body_text', 'has_attachments',
+        'subject', 'body_html', 'body_text', 'has_attachments', 'attachments',
         'status', 'error', 'sent_at', 'is_read', 'is_starred',
     ];
 
     protected $casts = [
         'cc'              => 'array',
         'bcc'             => 'array',
+        'attachments'     => 'array',
         'has_attachments' => 'boolean',
         'is_read'         => 'boolean',
         'is_starred'      => 'boolean',

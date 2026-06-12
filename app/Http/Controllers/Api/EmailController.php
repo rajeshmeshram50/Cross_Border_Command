@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Listeners\LogSentEmail;
 use App\Mail\ComposedEmail;
 use App\Models\Branch;
 use App\Models\Customer;
@@ -12,6 +13,8 @@ use App\Models\User;
 use App\Support\Settings;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 /**
@@ -262,6 +265,15 @@ class EmailController extends Controller
             'cc.*'    => ['email'],
             'subject' => ['required', 'string', 'max:255'],
             'body'    => ['required', 'string', 'max:50000'],
+            // Attachments — documents / images, Gmail-style. Per-file 8 MB,
+            // up to 10 files; office docs, PDFs, images, csv/txt, zip only
+            // (no executables/scripts).
+            'attachments'   => ['nullable', 'array', 'max:10'],
+            'attachments.*' => [
+                'file', 'max:8192',
+                // No svg — it can carry inline script and would run from our origin.
+                'mimes:jpg,jpeg,png,gif,webp,bmp,pdf,doc,docx,xls,xlsx,csv,ppt,pptx,txt,zip',
+            ],
         ]);
 
         if (!Settings::shouldSendMail()) {
@@ -270,31 +282,65 @@ class EmailController extends Controller
             ], 422);
         }
 
+        // Persist any attachments once (shared by every recipient row). Each file
+        // lands under an unguessable random folder on the public disk; we keep
+        // two views: $mailFiles (absolute paths for the mailable to attach) and
+        // $attachmentMeta (name/size/mime + /storage URL for the reading pane).
+        $mailFiles = [];
+        $attachmentMeta = [];
+        $totalBytes = 0;
+        foreach ($request->file('attachments', []) as $file) {
+            if (!$file || !$file->isValid()) continue;
+            $totalBytes += (int) $file->getSize();
+            // Hard total cap so a single send can't exceed typical SMTP limits.
+            if ($totalBytes > 20 * 1024 * 1024) {
+                return response()->json(['message' => 'Attachments exceed the 20 MB total limit.'], 422);
+            }
+            $display  = $file->getClientOriginalName() ?: 'attachment';
+            $ext      = strtolower($file->getClientOriginalExtension());
+            $diskName = (Str::slug(pathinfo($display, PATHINFO_FILENAME)) ?: 'file') . ($ext ? ".{$ext}" : '');
+            $dir      = 'email-attachments/' . date('Y/m') . '/' . Str::random(24);
+            $stored   = $file->storeAs($dir, $diskName, 'public');   // e.g. email-attachments/2026/06/<rand>/file.pdf
+            $mime     = $file->getClientMimeType() ?: 'application/octet-stream';
+
+            $mailFiles[]      = ['path' => Storage::disk('public')->path($stored), 'name' => $display, 'mime' => $mime];
+            $attachmentMeta[] = ['name' => $display, 'size' => (int) $file->getSize(), 'mime' => $mime, 'path' => '/storage/' . $stored];
+        }
+
         $orgName = $user->client?->org_name ?: config('mail.from.name', 'Cross Border Command');
         $senderName = $user->name ?: '';
         // Normalise plain-text line breaks to <br> so a typed message keeps its
         // shape; if the user pasted HTML it passes through untouched.
         $bodyHtml = str_contains($data['body'], '<') ? $data['body'] : nl2br(e($data['body']));
 
+        // Hand the attachment metadata to the send-logger so each logged row
+        // records the file list (for the reading-pane download chips). Cleared
+        // in finally so it never bleeds into the next send.
+        LogSentEmail::$composedAttachments = $attachmentMeta ?: null;
+
         $sent = 0;
         $failed = [];
-        // One personalised send per recipient (each gets a "Hi {their name}").
-        // Cc is attached only to the FIRST send so cc'd people don't receive a
-        // duplicate copy for every To address.
-        $ccAttached = false;
-        foreach ($data['to'] as $email) {
-            $name = $this->resolveRecipientName($email);
-            try {
-                $mail = Mail::to($email);
-                if (!empty($data['cc']) && !$ccAttached) {
-                    $mail->cc($data['cc']);
-                    $ccAttached = true;
+        try {
+            // One personalised send per recipient (each gets a "Hi {their name}").
+            // Cc is attached only to the FIRST send so cc'd people don't receive a
+            // duplicate copy for every To address.
+            $ccAttached = false;
+            foreach ($data['to'] as $email) {
+                $name = $this->resolveRecipientName($email);
+                try {
+                    $mail = Mail::to($email);
+                    if (!empty($data['cc']) && !$ccAttached) {
+                        $mail->cc($data['cc']);
+                        $ccAttached = true;
+                    }
+                    $mail->send(new ComposedEmail($data['subject'], $bodyHtml, $name, $orgName, $senderName, $mailFiles));
+                    $sent++;
+                } catch (\Throwable $e) {
+                    $failed[] = ['email' => $email, 'error' => $e->getMessage()];
                 }
-                $mail->send(new ComposedEmail($data['subject'], $bodyHtml, $name, $orgName, $senderName));
-                $sent++;
-            } catch (\Throwable $e) {
-                $failed[] = ['email' => $email, 'error' => $e->getMessage()];
             }
+        } finally {
+            LogSentEmail::$composedAttachments = null;
         }
 
         return response()->json([
