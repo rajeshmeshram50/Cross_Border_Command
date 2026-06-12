@@ -250,6 +250,12 @@ export default function IdimsHeader() {
     if (can('gts')) items.push({ id: 'gts', label: 'GTS (E-Docs)', icon: IC.globe });
     if (can('inventory')) items.push({ id: 'inventory', label: 'Inventory Management System', icon: IC.box });
     if (hasGroupView('master.')) items.push({ id: 'master', label: 'Master', icon: IC.db });
+    // Permissions module — role-based visibility (not a plan-permission row).
+    // Shown for super-admin, client and branch logins, matching the legacy
+    // MENU_ITEMS roles in constants.ts.
+    if (['super_admin', 'client_admin', 'branch_user'].includes(user?.user_type || '')) {
+      items.push({ id: 'permissions', label: 'Permissions', icon: IC.shield });
+    }
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
@@ -443,7 +449,7 @@ export default function IdimsHeader() {
             {/* Branch switcher */}
             <div className="idims-branch-wrap">
               <button type="button" className={`idims-branch-btn ${branchOpen ? 'dd-open' : ''}`}
-                onClick={() => canSwitch && setBranchOpen(o => !o)}
+                onClick={() => canSwitch && (setOpenDD(null), setProfileOpen(false), setBranchOpen(o => !o))}
                 style={{ cursor: canSwitch ? 'pointer' : 'default' }}>
                 <span className="idims-branch-ico">{IC.building}</span>
                 <span className="idims-branch-meta">
@@ -522,7 +528,7 @@ export default function IdimsHeader() {
 
               {/* Profile */}
               <div className="idims-profile-wrap">
-                <button type="button" className="idims-profile-icon" title="Profile" onClick={() => setProfileOpen(o => !o)}>
+                <button type="button" className="idims-profile-icon" title="Profile" onClick={() => { setOpenDD(null); setBranchOpen(false); setProfileOpen(o => !o); }}>
                   {photoSrc
                     ? <img src={photoSrc} alt="profile" />
                     : <span className="idims-profile-initials">{user?.initials || (user?.name || '?').slice(0, 2).toUpperCase()}</span>}
@@ -573,7 +579,7 @@ export default function IdimsHeader() {
                 item.dd ? (
                   <div className="idims-dd-wrap" key={item.id}>
                     <button type="button" className={`idims-nav-btn ${openDD === item.dd ? 'dd-open' : ''}`}
-                      onClick={() => setOpenDD(o => o === item.dd ? null : item.dd!)}>
+                      onClick={() => { setBranchOpen(false); setProfileOpen(false); setOpenDD(o => o === item.dd ? null : item.dd!); }}>
                       <span className="idims-ico">{item.icon}</span>{item.label}
                       <span className="dd-chev">{IC.chevSm}</span>
                     </button>
