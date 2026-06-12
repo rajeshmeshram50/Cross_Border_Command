@@ -64,8 +64,6 @@ export default function Payments() {
   const [plans, setPlans] = useState<{ id: number; name: string; price: number }[]>([]);
   const [sendingReminder, setSendingReminder] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
-  // Rows-per-page selector — dynamic pagination like the My Workplace list.
-  const [rpp, setRpp] = useState(10);
   const [deleteModal, setDeleteModal] = useState<{ open: boolean; payment: Payment | null }>({ open: false, payment: null });
   const [deleting, setDeleting] = useState(false);
 
@@ -515,19 +513,6 @@ export default function Payments() {
                       );
                     })}
                   </Col>
-
-                  {/* Rows-per-page selector — dynamic pagination (My Workplace style) */}
-                  <Col lg="auto" md={12} sm={12} className="d-flex justify-content-md-end align-items-center gap-2 flex-wrap">
-                    <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Rows per page</span>
-                    <select
-                      value={rpp}
-                      onChange={e => setRpp(parseInt(e.target.value, 10))}
-                      className="form-select form-select-sm"
-                      style={{ width: 'auto', minWidth: 72 }}
-                    >
-                      {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-                    </select>
-                  </Col>
                 </Row>
               </div>
 
@@ -541,7 +526,9 @@ export default function Payments() {
                       columns={columns}
                       data={filteredPayments}
                       isGlobalFilter={false}
-                      customPageSize={rpp}
+                      customPageSize={10}
+                      worklistPagination
+                      pageSizeOptions={[10, 25, 50, 100]}
                       tableClass="align-middle table-nowrap mb-0"
                       theadClass="table-light"
                       divClass="table-responsive"

@@ -39,10 +39,6 @@ export default function Clients({ onNavigate }: Props) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [exporting, setExporting] = useState(false);
-  // Rows-per-page selector — dynamic pagination like the My Workplace list.
-  // Drives TableContainer's customPageSize (it re-applies setPageSize when
-  // this prop changes), so the page size updates live.
-  const [rpp, setRpp] = useState(10);
   const [stats, setStats] = useState<ClientStats>({
     total: 0, active: 0, inactive: 0, plans_count: 0, plan_breakdown: [],
   });
@@ -776,8 +772,8 @@ export default function Clients({ onNavigate }: Props) {
             {/* ── Search + Table — one bordered frame (matches the
                 Recruitment list frame: search row on top, table below) ── */}
             <div className="clients-list-frame">
-              <div className="clients-frame-filter p-3 d-flex align-items-center gap-3 flex-wrap">
-                <div className="search-box" style={{ flex: 1, minWidth: 220 }}>
+              <div className="clients-frame-filter p-3">
+                <div className="search-box">
                   <Input
                     type="text"
                     className="form-control"
@@ -786,18 +782,6 @@ export default function Clients({ onNavigate }: Props) {
                     onChange={e => setSearchInput(e.target.value)}
                   />
                   <i className="ri-search-line search-icon"></i>
-                </div>
-                {/* Rows-per-page selector — dynamic pagination (My Workplace style) */}
-                <div className="cl-rows-sel d-flex align-items-center gap-2 flex-shrink-0">
-                  <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Rows per page</span>
-                  <select
-                    value={rpp}
-                    onChange={e => setRpp(parseInt(e.target.value, 10))}
-                    className="form-select form-select-sm"
-                    style={{ width: 'auto', minWidth: 72 }}
-                  >
-                    {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-                  </select>
                 </div>
               </div>
 
@@ -811,7 +795,9 @@ export default function Clients({ onNavigate }: Props) {
                       columns={columns}
                       data={clients}
                       isGlobalFilter={false}
-                      customPageSize={rpp}
+                      customPageSize={10}
+                      worklistPagination
+                      pageSizeOptions={[10, 25, 50, 100]}
                       tableClass="align-middle table-nowrap mb-0"
                       theadClass="table-light"
                       divClass="table-responsive"

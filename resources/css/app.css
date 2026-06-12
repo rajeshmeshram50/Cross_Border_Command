@@ -971,6 +971,56 @@ tbody tr:nth-child(10) {
 [data-bs-theme="dark"] .pmt-cstrip-export { background: transparent; color: #c4b5fd; }
 [data-bs-theme="dark"] .pmt-cstrip-export:hover:not(:disabled) { background: rgba(124, 58, 237, .14); }
 
+/* ── TableContainer "worklist" pagination footer ───────────────────────
+   Same pill / round-button shapes as the My Workplace (.lwp-pagination)
+   footer, themed violet to match the list pages. Full-bleed band assumes
+   the table sits inside a `p-3` wrapper (Clients / Branches / Payments). */
+.tc-wl-pag {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px;
+  margin: 10px -16px -16px;
+  padding: 10px 16px;
+  border-top: 2px solid #ddd6fe;
+  background: linear-gradient(90deg, #faf7ff 0%, #f1ecfd 40%, #faf7ff 100%);
+}
+.tc-wl-info {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px; font-weight: 500; color: #6d28d9;
+  background: rgba(255, 255, 255, .85); border: 1.5px solid #ddd6fe;
+  padding: 5px 14px; border-radius: 20px;
+  box-shadow: 0 1px 4px rgba(124, 58, 237, .10), 0 1px 0 rgba(255, 255, 255, .9) inset;
+}
+.tc-wl-info .tc-wl-hl { color: #7c3aed; font-weight: 800; font-size: 12px; }
+.tc-wl-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tc-wl-rows {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11.5px; color: #6d28d9; font-weight: 500;
+  background: rgba(255, 255, 255, .85); border: 1.5px solid #ddd6fe;
+  padding: 4px 12px; border-radius: 20px;
+}
+.tc-wl-rows select { border: none; background: transparent; font-family: inherit; font-size: 11.5px; color: #7c3aed; font-weight: 700; cursor: pointer; outline: none; }
+.tc-wl-range {
+  font-size: 11.5px; font-weight: 800; color: #fff;
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 55%, #5b21b6 100%);
+  padding: 5px 18px; border-radius: 20px; white-space: nowrap;
+  box-shadow: 0 3px 12px rgba(124, 58, 237, .4), 0 1px 0 rgba(255, 255, 255, .2) inset;
+}
+.tc-wl-nav { display: flex; gap: 5px; }
+.tc-wl-btn {
+  width: 32px; height: 32px; border-radius: 50%; padding: 0;
+  border: 1.5px solid #ddd6fe; background: rgba(255, 255, 255, .85);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  color: #7c3aed; transition: all .18s;
+}
+.tc-wl-btn:hover:not(:disabled) { background: #fff; border-color: #7c3aed; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(124, 58, 237, .25); }
+.tc-wl-btn:disabled { opacity: .4; cursor: not-allowed; }
+[data-bs-theme="dark"] .tc-wl-pag { background: linear-gradient(90deg, rgba(124, 58, 237, .08), rgba(124, 58, 237, .14), rgba(124, 58, 237, .08)); border-top-color: rgba(167, 139, 250, .30); }
+[data-bs-theme="dark"] .tc-wl-info,
+[data-bs-theme="dark"] .tc-wl-rows,
+[data-bs-theme="dark"] .tc-wl-btn { background: rgba(255, 255, 255, .06); border-color: rgba(167, 139, 250, .30); color: #c4b5fd; }
+[data-bs-theme="dark"] .tc-wl-info .tc-wl-hl { color: #ddd6fe; }
+[data-bs-theme="dark"] .tc-wl-rows select { color: #ddd6fe; }
+
 /* Unified list frame (search + filters + table) — mirrors the Clients frame. */
 .pmt-list-frame {
   background: #ffffff;
