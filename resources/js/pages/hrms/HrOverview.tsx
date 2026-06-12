@@ -327,20 +327,23 @@ export default function HrOverview() {
   const t = data.totals;
 
   return (
-    <div className="p-3 p-md-4">
+    <div>
       <HrOverviewKpiStyles />
       {/* Page header — same typography rhythm as AdminDashboard /
           BranchDashboard so flipping between dashboards doesn't feel
           like a different app: h4 at 20/800, sub at 12. */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0 12px', gap: 12, flexWrap: 'wrap' }}>
-        <div>
-          <h4 style={{ fontWeight: 800, fontSize: 20, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, letterSpacing: '-0.01em' }}>HRMS Overview</h4>
-          <p style={{ margin: 0, fontSize: 12, color: 'var(--vz-secondary-color)', marginTop: 2 }}>
-            Live headcount, hiring, onboarding and exit signals — all in one place.
-          </p>
+      {/* Header strip — same shape as the Clients / Branches module headers. */}
+      <div className="frm-cstrip mb-3">
+        <span className="frm-cstrip-accent" />
+        <div className="frm-cstrip-left">
+          <div className="frm-cstrip-icon"><i className="ri-group-line" /></div>
+          <div className="min-w-0">
+            <div className="frm-cstrip-title">HRMS Overview</div>
+            <div className="frm-cstrip-sub">Live headcount, hiring, onboarding and exit signals — all in one place.</div>
+          </div>
         </div>
         <span
-          className="badge rounded-pill"
+          className="badge rounded-pill flex-shrink-0"
           style={{
             background: 'rgba(10,179,156,0.12)', color: '#0ab39c',
             fontWeight: 700, padding: '6px 12px', fontSize: 11, letterSpacing: '0.04em',

@@ -2911,33 +2911,17 @@ export default function HrEmployees() {
               table, search box, dark mode — are scoped to it) but its card
               chrome (border / shadow / padding / white fill) is stripped. */}
           <div className="hr-employees-surface" style={{ background: 'transparent' }}>
-            {/* ── Header row ── */}
-            <div className="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-2">
-              <div className="d-flex align-items-center gap-3 min-w-0">
-                {/* Icon tile — gradient square with white glyph and a soft
-                    primary shadow, matching the master "What you are doing
-                    here" card on the Department Master. */}
-                <span
-                  className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-                  style={{
-                    width: 46, height: 46,
-                    background: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)',
-                    boxShadow: '0 4px 10px rgba(64,81,137,0.25)',
-                  }}
-                >
-                  <i className="ri-team-line" style={{ color: '#fff', fontSize: 21 }} />
-                </span>
+            {/* ── Header strip — same shape as the Clients / Branches headers. ── */}
+            <div className="frm-cstrip mb-3">
+              <span className="frm-cstrip-accent" />
+              <div className="frm-cstrip-left">
+                <div className="frm-cstrip-icon"><i className="ri-team-line" /></div>
                 <div className="min-w-0">
-                  <div className="d-flex align-items-center gap-2 flex-wrap">
-                    <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Employee </h5>
-                    
-                  </div>
-                  <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
-                    Employee directory, profiles, and employment records
-                  </div>
+                  <div className="frm-cstrip-title">Employee</div>
+                  <div className="frm-cstrip-sub">Employee directory, profiles, and employment records</div>
                 </div>
               </div>
-              <div className="d-flex align-items-center gap-2 flex-wrap">
+              <div className="d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
                 <Button
                   onClick={handleExportEmployees}
                   disabled={exporting}
@@ -2981,7 +2965,7 @@ export default function HrEmployees() {
             {/* KPI strip — same Swiper-based carousel pattern as the
                 Plans page (PlanSelection.tsx). Autoplay at 2s loop, pause
                 on hover, manual nav arrows that don't fight the autoplay. */}
-            <div className="hr-emp-kpi-outer mb-2">
+            <div className="hr-emp-kpi-outer mb-3">
               <button
                 ref={kpiPrevRef}
                 type="button"
@@ -3073,7 +3057,7 @@ export default function HrEmployees() {
             </div>
 
             {/* ── Tabs (Active / Disabled) ── */}
-            <Row className="g-2 mb-2">
+            <Row className="g-2 mb-3">
               <Col xs={12}>
                 <div
                   className="d-flex"

@@ -314,21 +314,16 @@ export default function HrExitManagement() {
             {/* ── Header — Exit-themed banner card (red accent), distinct from
                  Recruitment's purple. Uses the original .exit-page-head /
                  .exit-head-icon / .exit-head-badge / .exit-checklist-btn CSS. ── */}
-            <div className="exit-page-head">
-              <div className="d-flex align-items-center gap-3 min-w-0">
-                <span className="exit-head-icon">
-                  <i className="ri-logout-box-r-line" />
-                </span>
+            <div className="frm-cstrip mb-3">
+              <span className="frm-cstrip-accent" />
+              <div className="frm-cstrip-left">
+                <div className="frm-cstrip-icon"><i className="ri-logout-box-r-line" /></div>
                 <div className="min-w-0">
-                  <div className="d-flex align-items-center gap-2 flex-wrap">
-                    <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Exit Management Hub</h5>
-                  </div>
-                  <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
-                    Track active employees, ongoing exit cases, and completed employee exits
-                  </div>
+                  <div className="frm-cstrip-title">Exit Management Hub</div>
+                  <div className="frm-cstrip-sub">Track active employees, ongoing exit cases, and completed employee exits</div>
                 </div>
               </div>
-              <button type="button" className="exit-checklist-btn" onClick={() => setChecklistOpen(true)}>
+              <button type="button" className="exit-checklist-btn flex-shrink-0" onClick={() => setChecklistOpen(true)}>
                 <i className="ri-clipboard-line" />Exit Checklist
               </button>
             </div>
@@ -336,7 +331,7 @@ export default function HrExitManagement() {
             {/* ── KPI cards — 5 across at xl, reflowing to 3 / 2 / 1 at smaller
                  breakpoints. row-cols-* divides the row evenly regardless of
                  card count, so all 5 always fill the full width. ── */}
-            <Row className="g-3 mb-2 align-items-stretch rec-page-kpis row-cols-xl-5 row-cols-md-3 row-cols-sm-2 row-cols-1">
+            <Row className="g-3 mb-3 align-items-stretch rec-page-kpis row-cols-xl-5 row-cols-md-3 row-cols-sm-2 row-cols-1">
               {KPI_CARDS.map(k => (
                 <Col key={k.key}>
                   <div className="rec-kpi-card h-100">

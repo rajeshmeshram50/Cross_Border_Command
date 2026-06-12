@@ -635,30 +635,22 @@ export default function HrAttendance() {
             }}
           >
 
-            {/* ── Header row — Employee-style: gradient icon tile + title + meta ── */}
-            <div className="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
-              <div className="d-flex align-items-center gap-3 min-w-0">
-                <span
-                  className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-                  style={{
-                    width: 46, height: 46,
-                    background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
-                    boxShadow: '0 4px 10px rgba(13,148,136,0.25)',
-                  }}
-                >
-                  <i className="ri-time-line" style={{ color: '#fff', fontSize: 21 }} />
-                </span>
+            {/* ── Header strip — same shape as the Clients / Branches headers. ── */}
+            <div className="frm-cstrip mb-3">
+              <span className="frm-cstrip-accent" />
+              <div className="frm-cstrip-left">
+                <div className="frm-cstrip-icon"><i className="ri-time-line" /></div>
                 <div className="min-w-0">
                   <div className="d-flex align-items-center gap-2 flex-wrap">
-                    <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Attendance</h5>
+                    <span className="frm-cstrip-title">Attendance</span>
                     {isPast && <span className="att-head-readonly"><i className="ri-eye-line" />Read-only · past day</span>}
                   </div>
-                  <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
+                  <div className="frm-cstrip-sub">
                     Track punches, exceptions and regularizations · pick any past day to review
                   </div>
                 </div>
               </div>
-              <div className="d-flex align-items-center gap-2 flex-wrap">
+              <div className="d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
                 <div className="att-date-nav">
                   <button type="button" className="att-date-nav-btn" onClick={() => setViewDate(addDays(viewDate, -1))} aria-label="Previous day">
                     <i className="ri-arrow-left-s-line" />

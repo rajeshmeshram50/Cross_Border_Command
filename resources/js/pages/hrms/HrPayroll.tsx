@@ -898,26 +898,18 @@ export default function HrPayroll() {
       `}</style>
 
       {/* ── Hero card (purple-tinted, mirrors HrEmployeeOnboarding) ── */}
-      <div className="onb-hero-card mb-3">
-        <div className="d-flex align-items-center gap-3 min-w-0">
-          <span
-            className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-            style={{
-              width: 46, height: 46,
-              background: 'linear-gradient(135deg, #7c5cfc 0%, #5a3fd1 100%)',
-              boxShadow: '0 4px 10px rgba(124,92,252,0.30)',
-            }}
-          >
-            <i className="ri-coins-line" style={{ color: '#fff', fontSize: 21 }} />
-          </span>
+      <div className="frm-cstrip mb-3">
+        <span className="frm-cstrip-accent" />
+        <div className="frm-cstrip-left">
+          <div className="frm-cstrip-icon"><i className="ri-coins-line" /></div>
           <div className="min-w-0">
             <div className="d-flex align-items-center gap-2 flex-wrap">
-              <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Payroll</h5>
+              <span className="frm-cstrip-title">Payroll</span>
               <span className="onb-hero-pill">
                 <span className="dot" />{cycle.label}
               </span>
             </div>
-            <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
+            <div className="frm-cstrip-sub">
               Monthly payroll engine — biometric → run payroll → payslips & bank advice
             </div>
           </div>

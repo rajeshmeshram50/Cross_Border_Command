@@ -700,31 +700,19 @@ export default function HrEmployeeOnboarding() {
     <>
       <MasterFormStyles />
 
-      {/* ── Hero card (purple-tinted, separate container) ── */}
-      <div className="onb-hero-card mb-2">
-        <div className="d-flex align-items-center gap-3 min-w-0">
-          <span
-            className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-            style={{
-              width: 46, height: 46,
-              background: 'linear-gradient(135deg, #7c5cfc 0%, #5a3fd1 100%)',
-              boxShadow: '0 4px 10px rgba(124,92,252,0.30)',
-            }}
-          >
-            <i className="ri-user-add-line" style={{ color: '#fff', fontSize: 21 }} />
-          </span>
+      {/* ── Header strip — same shape as the Clients / Branches headers. ── */}
+      <div className="frm-cstrip mb-3">
+        <span className="frm-cstrip-accent" />
+        <div className="frm-cstrip-left">
+          <div className="frm-cstrip-icon"><i className="ri-user-add-line" /></div>
           <div className="min-w-0">
-            <div className="d-flex align-items-center gap-2 flex-wrap">
-              <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Employee Onboarding Hub</h5>
-            </div>
-            <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
-              Track newly joined employees, onboarding progress, and completed onboarding records
-            </div>
+            <div className="frm-cstrip-title">Employee Onboarding Hub</div>
+            <div className="frm-cstrip-sub">Track newly joined employees, onboarding progress, and completed onboarding records</div>
           </div>
         </div>
         <Button
           onClick={() => setChecklistOpen(true)}
-          className="onb-checklist-cta rounded-pill"
+          className="onb-checklist-cta rounded-pill flex-shrink-0"
         >
           <i className="ri-checkbox-multiple-line me-2" style={{ fontSize: 16 }} />
           Onboarding Checklist
@@ -732,7 +720,7 @@ export default function HrEmployeeOnboarding() {
       </div>
 
       {/* ── KPI cards (own row, each its own card) ── */}
-      <Row className="g-3 mb-2 align-items-stretch">
+      <Row className="g-3 mb-3 align-items-stretch">
         {KPI_CARDS.map(k => (
           <Col key={k.key} xl={true} md={4} sm={6} xs={12}>
             <div
@@ -769,7 +757,7 @@ export default function HrEmployeeOnboarding() {
       </Row>
 
       {/* ── Tabs (free, no surrounding container — like the screenshot) ── */}
-      <div className="d-flex mb-2" style={{ gap: 8, flexWrap: 'wrap' }}>
+      <div className="d-flex mb-3" style={{ gap: 8, flexWrap: 'wrap' }}>
         {[
           { key: 'pending'   as const, label: 'Onboarding Pending (New Joiners)', count: counts.pending,   icon: 'ri-time-line' },
           { key: 'completed' as const, label: 'Onboarding Completed',             count: counts.completed, icon: 'ri-checkbox-circle-line' },

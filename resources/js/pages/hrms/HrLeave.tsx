@@ -577,27 +577,19 @@ export default function HrLeave() {
             {/* ── Hero card — purple-tinted banner, mirrors Onboarding Hub.
                   Uses the existing .onb-hero-card / .onb-hero-pill classes
                   shipped by HrEmployeeOnboarding. ── */}
-            <div className="onb-hero-card mb-3">
-              <div className="d-flex align-items-center gap-3 min-w-0">
-                <span
-                  className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-                  style={{
-                    width: 48, height: 48,
-                    background: 'linear-gradient(135deg, #7c5cfc 0%, #5a3fd1 100%)',
-                    boxShadow: '0 8px 18px rgba(124,92,252,0.32)',
-                  }}
-                >
-                  <i className="ri-calendar-2-line" style={{ color: '#fff', fontSize: 22 }} />
-                </span>
+            <div className="frm-cstrip mb-3">
+              <span className="frm-cstrip-accent" />
+              <div className="frm-cstrip-left">
+                <div className="frm-cstrip-icon"><i className="ri-calendar-2-line" /></div>
                 <div className="min-w-0">
                   <div className="d-flex align-items-center gap-2 flex-wrap">
-                    <h5 className="fw-bold mb-0">Leave Management</h5>
+                    <span className="frm-cstrip-title">Leave Management</span>
                     <span className="onb-hero-pill">
                       <span className="dot" />
                       FY 2025–26
                     </span>
                   </div>
-                  <div className="text-muted mt-1 fs-13">
+                  <div className="frm-cstrip-sub">
                     Leave requests, balances, and approval pipeline across all employees
                   </div>
                 </div>
