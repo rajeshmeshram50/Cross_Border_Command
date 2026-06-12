@@ -129,7 +129,7 @@ const cardHeaderStyle: React.CSSProperties = {
 };
 
 export default function BranchDashboard() {
-  const { isMainBranchUser, selectedBranchId } = useBranchSwitcher();
+  const { selectedBranchId } = useBranchSwitcher();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const ct = useChartTheme();
@@ -171,6 +171,49 @@ export default function BranchDashboard() {
   const { counts, plan, recent_payments, payment_trend, can_view_payments, employees: emp } = data;
   const successRate = counts.total_payments > 0
     ? Math.round((counts.success_payments / counts.total_payments) * 100) : 0;
+
+  // Plan status pill (mirrors ClientDashboard). Rendered inline at the right
+  // of the section heading row instead of as its own band.
+  const planPill = (() => {
+    const isExpired = plan.status === 'expired';
+    const isWarn = !isExpired && plan.days_remaining !== null && plan.days_remaining <= 30;
+    const isAlert = isExpired || isWarn;
+    const color = isExpired ? '#1a7927' : isWarn ? '#0c5a29' : '#0c695d';
+    const label = isExpired ? 'EXPIRED' : isWarn ? 'EXPIRES SOON' : 'CURRENT';
+    return (
+      <span
+        className={`bd-plan-pill d-inline-flex align-items-center gap-2 rounded-pill ${isAlert ? '' : 'bd-plan-pill-calm'}`}
+        style={{
+          background: `linear-gradient(135deg, ${color}1f 0%, ${color}12 100%)`,
+          color,
+          border: `1px solid ${color}`,
+          fontSize: 12.5,
+          fontWeight: 500,
+          letterSpacing: '0.03em',
+          padding: '5px 13px',
+          ['--bd-plan-ring' as any]: `${color}00`,
+          ['--bd-plan-ring-soft' as any]: `${color}33`,
+          ['--bd-plan-shadow' as any]: `${color}66`,
+          ['--bd-plan-glow' as any]: `${color}33`,
+          ['--bd-dot-color' as any]: color,
+        }}
+        title={isExpired ? `Expired ${plan.expires_at ?? ''}` : `Valid until ${plan.expires_at ?? ''}`}
+      >
+        <span className="bd-plan-dot-wrap">
+          <span className="bd-plan-dot-ripple" />
+          <span className="bd-plan-dot-ripple bd-plan-dot-ripple-2" />
+          <span className="bd-plan-dot-core" />
+        </span>
+        {label}: {plan.name?.toUpperCase()}
+        {isWarn && plan.days_remaining !== null && (
+          <span className="ms-1" style={{ opacity: 0.9 }}>· {plan.days_remaining}d</span>
+        )}
+        {plan.expires_at && (
+          <span className="ms-1" style={{ opacity: 0.8 }}>· {plan.expires_at}</span>
+        )}
+      </span>
+    );
+  })();
 
   return (
     <>
@@ -332,79 +375,25 @@ export default function BranchDashboard() {
         }
         .bd-plan-dot-ripple-2 { animation-delay: 0.8s; }
       `}</style>
-      {/* Page Title */}
-      <Row className="mb-2">
-        <Col xs={12}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0 12px' }}>
-            <div>
-              <h4 style={{ fontWeight: 800, fontSize: 20, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Dashboard</h4>
-              <p style={{ margin: 0, fontSize: 12, color: 'var(--vz-secondary-color)', marginTop: 2 }}>
-                {isMainBranchUser && !selectedBranchId ? 'All branches overview' : 'Branch operations summary'}
-              </p>
-            </div>
-            {/* No breadcrumb on the dashboard — the page title already
-                tells the user where they are. */}
-          </div>
-        </Col>
-      </Row>
-
-      {/* Plan status pill (mirrors ClientDashboard) */}
-      {(() => {
-        const isExpired = plan.status === 'expired';
-        const isWarn = !isExpired && plan.days_remaining !== null && plan.days_remaining <= 30;
-        const isAlert = isExpired || isWarn;
-        const color = isExpired ? '#1a7927' : isWarn ? '#0c5a29' : '#0c695d';
-        const label = isExpired ? 'EXPIRED' : isWarn ? 'EXPIRES SOON' : 'CURRENT';
-        return (
-          <div style={{ marginBottom: 16 }}>
-            <span
-              className={`bd-plan-pill d-inline-flex align-items-center gap-2 rounded-pill ${isAlert ? '' : 'bd-plan-pill-calm'}`}
-              style={{
-                background: `linear-gradient(135deg, ${color}1f 0%, ${color}12 100%)`,
-                color,
-                border: `1px solid ${color}`,
-                fontSize: 12.5,
-                fontWeight: 500,
-                letterSpacing: '0.03em',
-                padding: '5px 13px',
-                ['--bd-plan-ring' as any]: `${color}00`,
-                ['--bd-plan-ring-soft' as any]: `${color}33`,
-                ['--bd-plan-shadow' as any]: `${color}66`,
-                ['--bd-plan-glow' as any]: `${color}33`,
-                ['--bd-dot-color' as any]: color,
-              }}
-              title={isExpired ? `Expired ${plan.expires_at ?? ''}` : `Valid until ${plan.expires_at ?? ''}`}
-            >
-              <span className="bd-plan-dot-wrap">
-                <span className="bd-plan-dot-ripple" />
-                <span className="bd-plan-dot-ripple bd-plan-dot-ripple-2" />
-                <span className="bd-plan-dot-core" />
-              </span>
-              {label}: {plan.name?.toUpperCase()}
-              {isWarn && plan.days_remaining !== null && (
-                <span className="ms-1" style={{ opacity: 0.9 }}>· {plan.days_remaining}d</span>
-              )}
-              {plan.expires_at && (
-                <span className="ms-1" style={{ opacity: 0.8 }}>· {plan.expires_at}</span>
-              )}
-            </span>
-          </div>
-        );
-      })()}
-
       {/* ── Workforce analytics ────────────────────────────────────────
           Promoted above the billing tiles per request — gives branch users
           the headcount snapshot first, with the same branch-scoping logic
           as the rest of the dashboard. */}
+      {/* Fallback: if there's no workforce section to host it, keep the plan
+          badge visible on its own. */}
+      {!emp && <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>{planPill}</div>}
       {emp && (
         <>
           <Row className="mb-2">
             <Col xs={12}>
-              <div style={{ padding: '4px 0 8px' }}>
-                <h5 style={{ fontWeight: 800, fontSize: 16, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Workforce Analytics</h5>
-                <p style={{ margin: 0, fontSize: 12, color: 'var(--vz-secondary-color)', marginTop: 2 }}>
-                  Employee headcount, hiring activity and demographics
-                </p>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', padding: '4px 0 8px' }}>
+                <div>
+                  <h5 style={{ fontWeight: 800, fontSize: 16, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Workforce Analytics</h5>
+                  <p style={{ margin: 0, fontSize: 12, color: 'var(--vz-secondary-color)', marginTop: 2 }}>
+                    Employee headcount, hiring activity and demographics
+                  </p>
+                </div>
+                {planPill}
               </div>
             </Col>
           </Row>
