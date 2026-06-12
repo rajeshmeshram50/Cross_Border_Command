@@ -422,7 +422,7 @@ export default function Permissions() {
 
             {!isSuperAdmin && visibleUsers.length > 0 && (
               <CardBody className="pt-0">
-                <Alert color="info" className="mb-0">
+                <Alert color="info" className="mb-0" style={{ background: 'rgba(124,58,237,0.08)', borderColor: 'rgba(124,58,237,0.25)', color: '#6d28d9' }}>
                   <i className="ri-shield-check-line me-1"></i>
                   You can only grant permissions that you have. Disabled checkboxes indicate permissions you don't have.
                 </Alert>
