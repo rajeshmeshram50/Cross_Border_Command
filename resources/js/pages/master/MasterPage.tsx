@@ -1962,54 +1962,29 @@ function MasterPageInner({
               </div>
             </div>
           ) : (
-            <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-              <h4 className="mb-sm-0">{cfg.title}</h4>
-              <div className="d-flex align-items-center gap-3 flex-wrap">
-                {/* Unified "Back to Master list" pill — matches the
-                    Departments / Legal Entities / Designations / Roles /
-                    KPIs / Assets variant so every master surface
-                    presents a single, consistent back affordance. */}
-                <button
-                  type="button"
-                  onClick={() => navigate('/master')}
-                  title="Back to Master list"
-                  className="d-inline-flex align-items-center justify-content-center gap-2 rounded-pill"
-                  style={{
-                    height: 38,
-                    padding: '0 18px',
-                    background: 'color-mix(in srgb, #405189 8%, #ffffff)',
-                    color: '#405189',
-                    border: '1px solid color-mix(in srgb, #405189 22%, transparent)',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'background 0.18s ease',
-                    whiteSpace: 'nowrap',
-                  }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 14%, #ffffff)'; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 8%, #ffffff)'; }}
-                >
-                  <i className="ri-arrow-left-line" style={{ fontSize: 15 }}></i>
-                  Back to Master list
-                </button>
-                <div className="page-title-right">
-                  <ol className="breadcrumb m-0">
-                    <li className="breadcrumb-item">
-                      <a href="#" onClick={(e) => { e.preventDefault(); navigate('/master'); }}>Master</a>
-                    </li>
-                    <li className="breadcrumb-item active">{cfg.title}</li>
-                  </ol>
+            <div className="frm-cstrip mb-3">
+              <span className="frm-cstrip-accent" />
+              <div className="frm-cstrip-left">
+                <div className="frm-cstrip-icon"><i className={cfg.icon} /></div>
+                <div className="min-w-0">
+                  <div className="frm-cstrip-title">{cfg.title}</div>
+                  <div className="frm-cstrip-sub">Manage {singular} records</div>
                 </div>
               </div>
+              <button type="button" className="frm-cstrip-back" onClick={() => navigate('/master')}>
+                <i className="ri-arrow-left-line" />
+                Back to Master list
+              </button>
             </div>
           )}
         </Col>
       </Row>
       )}
 
-      {/* "What you are doing here" — hidden on designations & roles since the
-          rich title strip already carries the subtitle context. */}
-      {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'legal_entities' && cfg.slug !== 'haz_class' && cfg.slug !== 'uom' && cfg.slug !== 'hsn_codes' && cfg.slug !== 'gst_percentage' && cfg.slug !== 'packaging_material' && cfg.slug !== 'conditions' && cfg.slug !== 'segments' && (
+      {/* "What you are doing here" guide — removed from the standard master
+          pages (the strip header now carries the context). Kept ONLY for
+          Departments, whose headerless layout hosts its Add + Back here. */}
+      {cfg.slug === 'departments' && (
         <WhatYouDoHere
           cfg={cfg}
           onAdd={openAdd}
@@ -2039,7 +2014,7 @@ function MasterPageInner({
                   style={{
                     borderRadius: 12,
                     border: '1px solid var(--vz-border-color)',
-                    background: 'var(--vz-card-bg)',
+                    background: '#ffffff',
                     boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
                     padding: '14px 16px',
                     position: 'relative',
