@@ -189,6 +189,10 @@ export default function IdimsHeader() {
   const planExpired = !!(user?.plan && (!user.plan.has_plan || user.plan.expired)) &&
     user?.user_type !== 'super_admin';
 
+  // Clock-In is an attendance action — only users with an actual employee
+  // record can punch in. Hidden for super-admin / client / branch logins
+  // (mirrors the `isEmployee` guard in components/App.tsx).
+  const isEmployee = user?.user_type === 'employee' && !!user?.employee_id;
   const can = (slug: string) => isSuperAdmin || (!planExpired && !!perms[slug]?.can_view);
   const hasGroupView = (prefix: string) =>
     isSuperAdmin || (!planExpired && Object.keys(perms).some(s => s.startsWith(prefix) && perms[s]?.can_view));
@@ -498,9 +502,11 @@ export default function IdimsHeader() {
                 <button type="button" className="idims-action-btn idims-fs-btn" title="Fullscreen" onClick={toggleFs}>
                   {isFs ? IC.minimize : IC.maximize}
                 </button>
-                <button type="button" className="idims-action-btn idims-clock-btn" title="Clock In / Out" onClick={() => go('/clock-in')}>
-                  {IC.clock}
-                </button>
+                {isEmployee && (
+                  <button type="button" className="idims-action-btn idims-clock-btn" title="Clock In / Out" onClick={() => go('/clock-in')}>
+                    {IC.clock}
+                  </button>
+                )}
                 <button type="button" className="idims-action-btn idims-mail-btn" title="Gmail" onClick={() => go('/gmail')}>
                   {IC.mail}
                 </button>
@@ -602,10 +608,12 @@ export default function IdimsHeader() {
         <>
           <div className="idims-mob-backdrop" onClick={() => setMobileOpen(false)} />
           <div className="idims-mobile-panel">
-            <button type="button" className="idims-mob-item"
-              onClick={() => go('/clock-in')}>
-              <span className="idims-ico">{IC.clock}</span><span className="idims-mob-label">Clock In / Out</span>
-            </button>
+            {isEmployee && (
+              <button type="button" className="idims-mob-item"
+                onClick={() => go('/clock-in')}>
+                <span className="idims-ico">{IC.clock}</span><span className="idims-mob-label">Clock In / Out</span>
+              </button>
+            )}
             {navItems.map(item => (
               item.dd ? (
                 <div key={item.id} className="idims-mob-group">
