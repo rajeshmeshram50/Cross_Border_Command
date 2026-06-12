@@ -288,29 +288,63 @@ export default function AddPlan({ onBack, editId }: Props) {
   return (
     <>
       <MasterFormStyles />
-      {/* ── Page Header ── */}
+      <style>{`
+        /* Header strip — same shape as the Clients / Plans module headers. */
+        .ap-cstrip {
+          position: relative; overflow: hidden;
+          display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+          min-height: 70px; padding: 12px 18px;
+          background: #ffffff;
+          border: 1px solid #c4b5fd;
+          border-radius: 16px;
+          box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+          font-family: 'DM Sans', system-ui, sans-serif;
+        }
+        .ap-cstrip-accent {
+          position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+          background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
+          border-radius: 16px 0 0 16px;
+        }
+        .ap-cstrip-left { display: flex; align-items: center; gap: 16px; position: relative; z-index: 1; min-width: 0; flex: 1; }
+        .ap-cstrip-icon {
+          position: relative; width: 46px; height: 46px; border-radius: 12px;
+          background: linear-gradient(135deg, #7c3aed, #5b21b6);
+          display: inline-flex; align-items: center; justify-content: center;
+          color: #fff; font-size: 22px; flex-shrink: 0;
+          box-shadow: 0 4px 14px rgba(91,33,182,0.40), 0 0 0 3px rgba(124,58,237,0.10);
+        }
+        .ap-cstrip-title { font-size: 18px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
+        .ap-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; margin-top: 4px; line-height: 1.5; }
+        .ap-cstrip-back {
+          display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+          padding: 0 18px; height: 44px; border-radius: 14px;
+          border: 1px solid color-mix(in srgb, #7c3aed 30%, var(--vz-border-color));
+          background: #fff; color: #6d28d9;
+          font-family: inherit; font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; flex-shrink: 0;
+          transition: background .15s, border-color .15s, transform .15s;
+        }
+        .ap-cstrip-back:hover { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }
+        .ap-cstrip-back i { font-size: 15px; }
+        [data-bs-theme="dark"] .ap-cstrip { background: var(--vz-card-bg); border-color: rgba(167,139,250,0.40); box-shadow: 0 6px 18px rgba(0,0,0,0.30); }
+        [data-bs-theme="dark"] .ap-cstrip-back { background: transparent; color: #c4b5fd; }
+        [data-bs-theme="dark"] .ap-cstrip-back:hover { background: rgba(124,58,237,.14); }
+      `}</style>
+      {/* ── Page Header strip ── */}
       <Row>
         <Col xs={12}>
-          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <div className="d-flex align-items-center gap-2">
-              <button
-                type="button"
-                className="btn btn-soft-primary btn-icon rounded-circle d-inline-flex align-items-center justify-content-center"
-                style={{ width: 36, height: 36 }}
-                onClick={onBack}
-                title="Back"
-              >
-                <i className="ri-arrow-left-line fs-16"></i>
-              </button>
-              <div>
-                <h5 className="mb-0">{isEdit ? 'Edit Plan' : 'Add New Plan'}</h5>
-                <p className="text-muted fs-12 mb-0">{isEdit ? 'Update subscription plan details' : 'Create a new subscription plan'}</p>
+          <div className="ap-cstrip mb-3">
+            <span className="ap-cstrip-accent" />
+            <div className="ap-cstrip-left">
+              <div className="ap-cstrip-icon"><i className="ri-bank-card-line" /></div>
+              <div className="min-w-0">
+                <div className="ap-cstrip-title">{isEdit ? 'Edit Plan' : 'Add New Plan'}</div>
+                <div className="ap-cstrip-sub">{isEdit ? 'Update subscription plan details' : 'Create a new subscription plan'}</div>
               </div>
             </div>
-            <ol className="breadcrumb m-0">
-              <li className="breadcrumb-item"><a href="#" onClick={e => { e.preventDefault(); onBack(); }}>Plans</a></li>
-              <li className="breadcrumb-item active">{isEdit ? 'Edit' : 'New'}</li>
-            </ol>
+            <button type="button" className="ap-cstrip-back" onClick={onBack}>
+              <i className="ri-arrow-left-line" />
+              Back
+            </button>
           </div>
         </Col>
       </Row>

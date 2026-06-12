@@ -177,8 +177,12 @@ export default function Permissions() {
   if (loading) return <ShimmerPermissions />;
 
   return (
-    <>
+    <div className="perm-page">
       <style>{`
+        /* Force the page's theme-primary accents to violet (instead of the
+           Velzon / brand blue) so the whole Permission screen is one shade. */
+        .perm-page .text-primary { color: #7c3aed !important; }
+        .perm-page .bg-primary-subtle { background-color: rgba(124,58,237,0.12) !important; }
         /* Header strip — same shape/parts as the Customers (.smc-cstrip)
            header (rounded container, left accent strip, violet icon) on a
            plain white surface. Back pill on the right (sub-page). */
@@ -313,8 +317,8 @@ export default function Permissions() {
                               color: '#fff',
                               background: isSelected
                                 ? 'rgba(255,255,255,0.18)'
-                                : 'linear-gradient(135deg,#405189,#6691e7)',
-                              boxShadow: isSelected ? 'none' : '0 2px 6px rgba(64,81,137,0.25)',
+                                : 'linear-gradient(135deg,#8b5cf6,#7c3aed)',
+                              boxShadow: isSelected ? 'none' : '0 2px 6px rgba(124,58,237,0.25)',
                             }}
                           >
                             {initials}
@@ -349,8 +353,8 @@ export default function Permissions() {
                                 style={{
                                   fontSize: 9.5,
                                   padding: '2px 6px',
-                                  background: isSelected ? 'rgba(255,255,255,0.22)' : 'var(--vz-primary-bg-subtle, rgba(64,81,137,0.1))',
-                                  color:      isSelected ? '#fff' : 'var(--vz-primary)',
+                                  background: isSelected ? 'rgba(255,255,255,0.22)' : 'rgba(124,58,237,0.12)',
+                                  color:      isSelected ? '#fff' : '#7c3aed',
                                 }}
                               >
                                 <i className="ri-user-settings-line me-1" />{roleLabel}
@@ -382,7 +386,7 @@ export default function Permissions() {
                     disabled={saving || !selectedUserId}
                     onClick={handleSave}
                     style={{
-                      background: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)',
+                      background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
                       border: 'none',
                       boxShadow: '0 4px 12px rgba(30,64,175,0.30)',
                       minWidth: 180,
@@ -439,7 +443,7 @@ export default function Permissions() {
                 <div style={{
                   position: 'absolute', top: '-30%', left: '50%', transform: 'translateX(-50%)',
                   width: 380, height: 380, borderRadius: '50%',
-                  background: 'radial-gradient(circle, rgba(64,81,137,0.08) 0%, transparent 70%)',
+                  background: 'radial-gradient(circle, rgba(124,58,237,0.08) 0%, transparent 70%)',
                   pointerEvents: 'none',
                 }} />
 
@@ -452,9 +456,9 @@ export default function Permissions() {
                     position: 'relative',
                     width: 60, height: 60,
                     borderRadius: '50%',
-                    background: 'linear-gradient(135deg,#405189,#6691e7)',
+                    background: 'linear-gradient(135deg,#8b5cf6,#7c3aed)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    boxShadow: '0 18px 40px rgba(64,81,137,0.35)',
+                    boxShadow: '0 18px 40px rgba(124,58,237,0.35)',
                     zIndex: 1,
                   }}>
                     <i className="ri-shield-user-line" style={{ fontSize: 30, color: '#fff' }} />
@@ -465,7 +469,7 @@ export default function Permissions() {
                   <h4 style={{
                     marginTop: 22, marginBottom: 6,
                     fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))',
-                    background: 'linear-gradient(135deg,#405189,#6691e7)',
+                    background: 'linear-gradient(135deg,#8b5cf6,#7c3aed)',
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent',
                     backgroundClip: 'text',
@@ -499,7 +503,7 @@ export default function Permissions() {
                     }}>
                       <span style={{
                         width: 36, height: 36, borderRadius: 10,
-                        background: 'linear-gradient(135deg,#405189,#6691e7)',
+                        background: 'linear-gradient(135deg,#8b5cf6,#7c3aed)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         flexShrink: 0,
                       }}>
@@ -529,6 +533,7 @@ export default function Permissions() {
                   onChange={setMatrix}
                   grantableBy={isSuperAdmin ? null : myPerms}
                   loading={loadingPerms}
+                  autoExpandMasterCategories={false}
                 />
 
                 <CardBody className="border-top bg-light-subtle d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3">
@@ -549,7 +554,7 @@ export default function Permissions() {
                     disabled={saving || !selectedUserId}
                     onClick={handleSave}
                     style={{
-                      background: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)',
+                      background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
                       border: 'none',
                       boxShadow: '0 4px 12px rgba(30,64,175,0.30)',
                       minWidth: 180,
@@ -574,6 +579,6 @@ export default function Permissions() {
           </Card>
         </Col>
       </Row>
-    </>
+    </div>
   );
 }

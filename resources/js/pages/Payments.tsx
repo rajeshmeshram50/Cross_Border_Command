@@ -416,7 +416,7 @@ export default function Payments() {
           <div className="pmt-cstrip mb-3">
             <span className="pmt-cstrip-accent" />
             <div className="pmt-cstrip-left">
-              <div className="pmt-cstrip-icon"><i className="ri-money-rupee-circle-line" /></div>
+              <div className="pmt-cstrip-icon"><i className="ri-wallet-3-line" /></div>
               <div className="min-w-0">
                 <div className="pmt-cstrip-title">Revenue &amp; Payments</div>
                 <div className="pmt-cstrip-sub">
