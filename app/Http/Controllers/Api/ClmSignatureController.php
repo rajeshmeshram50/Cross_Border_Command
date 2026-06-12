@@ -2591,6 +2591,39 @@ class ClmSignatureController extends Controller
             }
         }
 
+        // Fallback: the per-document endpoint above produced nothing (the
+        // symptom seen on the deployed server, while it works locally). Try
+        // the request-level combined PDF, which downloads the whole signed
+        // request as one file. For these single-document sign requests that
+        // IS the signed PI/quotation/agreement, so it recovers the document
+        // without needing the per-document scope/endpoint to succeed.
+        if (empty($savedPaths) && !empty($zohoIds)) {
+            try {
+                $bytes = $this->zoho->downloadRequestPdf($row->zoho_request_id);
+                if (is_string($bytes) && $bytes !== '') {
+                    $safe     = Str::slug($row->request_name) ?: 'request';
+                    $fileName = sprintf('signed_%s_%d_0.pdf', $safe, time());
+                    $path     = $basePath . '/' . $fileName;
+                    $ok       = Storage::disk('public')->put($path, $bytes);
+                    if ($ok === false) {
+                        throw new RuntimeException('Storage::put returned false (disk=' . $diskName . ')');
+                    }
+                    $publicUrl = Storage::disk('public')->url($path);
+                    $savedPaths[] = [
+                        'zoho_document_id' => $zohoIds[0] ?? null,
+                        'document_name'    => $row->request_name,
+                        'path'             => $path,
+                        'url'              => $publicUrl,
+                        'file_url'         => $publicUrl,
+                        'size'             => strlen($bytes),
+                    ];
+                    Log::info('signed_doc saved via request-level fallback', $logCtx + ['path' => $path, 'size' => strlen($bytes)]);
+                }
+            } catch (\Throwable $e) {
+                Log::error('signed_doc request-level fallback failed', $logCtx + ['err' => $e->getMessage(), 'class' => get_class($e)]);
+            }
+        }
+
         if (!empty($savedPaths)) {
             $row->zoho_document_ids      = $zohoIds;
             $row->signed_document_paths  = $savedPaths;

@@ -374,6 +374,25 @@ class ZohoSignService
         return $this->unwrapPdfPayload($resp->body());
     }
 
+    /**
+     * Request-level signed PDF — the whole completed request as one PDF
+     * (all its documents combined). This is the fallback for environments
+     * where the per-document endpoint above fails (e.g. a refresh token
+     * scoped without per-document read access). For single-document
+     * requests this returns exactly the same signed PDF.
+     */
+    public function downloadRequestPdf(string $requestId): string
+    {
+        $token = $this->getAccessToken();
+        $url   = "{$this->baseUrl}/api/{$this->apiVersion}/requests/{$requestId}/pdf";
+
+        $resp = Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $token])->get($url);
+        if (!$resp->successful()) {
+            throw new RuntimeException("Zoho request-level download failed for {$requestId}: " . $resp->body());
+        }
+        return $this->unwrapPdfPayload($resp->body());
+    }
+
     public function downloadCertificate(string $requestId): string
     {
         $token = $this->getAccessToken();
