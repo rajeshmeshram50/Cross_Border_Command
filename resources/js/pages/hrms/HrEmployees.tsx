@@ -2692,21 +2692,14 @@ export default function HrEmployees() {
           overflow: hidden;
         }
         [data-bs-theme="dark"] .hr-emp-kpi-card {
-          /* Same recipe as the Plan cards in dark mode — fresh deep
-             black with a crisp accent-tinted glow. Avoids the smoky
-             "fog" look the previous radial-on-slate produced. The
-             --card-accent variable is set per-card inline so each
-             tile gets its own accent shadow + faint accent wash. */
-          background:
-            linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, transparent 18%),
-            linear-gradient(180deg, color-mix(in srgb, var(--card-accent, #7c5cfc) 14%, transparent) 0%, transparent 38%),
-            #0f1216 !important;
-          border-color: color-mix(in srgb, var(--card-accent, #7c5cfc) 40%, transparent) !important;
+          /* Match the Recruitment KPI card background in dark mode — a soft
+             theme card surface (var(--vz-card-bg)) instead of the deep-black
+             accent-glow "Plan card" recipe, so both pages read the same. The
+             per-card top accent ribbon is kept for colour identity. */
+          background: var(--vz-card-bg) !important;
+          border-color: var(--vz-border-color) !important;
           color: rgba(255, 255, 255, 0.96);
-          box-shadow:
-            inset 0 1px 0 0 rgba(255, 255, 255, 0.10),
-            0 4px 10px rgba(0, 0, 0, 0.50),
-            0 14px 32px -10px color-mix(in srgb, var(--card-accent, #7c5cfc) 45%, transparent) !important;
+          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.30) !important;
         }
         /* Top ribbon — bump to 4px in dark mode so the accent stripe
            reads as a clean lit edge against the deep black surface
@@ -2725,14 +2718,10 @@ export default function HrEmployees() {
           color: #f8fafc !important;
         }
         [data-bs-theme="dark"] .hr-emp-kpi-card:hover {
-          /* Keep the layered black surface — only deepen the accent
-             tint so the panel reads as "leaning in" on hover instead
-             of flipping to a different colour entirely. */
-          background:
-            linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, transparent 18%),
-            linear-gradient(180deg, color-mix(in srgb, var(--card-accent, #7c5cfc) 22%, transparent) 0%, transparent 42%),
-            #0f1216 !important;
-          border-color: color-mix(in srgb, var(--card-accent, #7c5cfc) 70%, transparent) !important;
+          /* Hover keeps the recruitment-style surface; just lift the border
+             toward the card accent so it reads as "leaning in". */
+          background: var(--vz-card-bg) !important;
+          border-color: color-mix(in srgb, var(--card-accent, #7c5cfc) 55%, var(--vz-border-color)) !important;
         }
         /* Page-level text legibility in dark mode — the page subtitle and
            any other text-muted body copy under this surface default to a
