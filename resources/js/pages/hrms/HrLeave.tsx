@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Col, Row, Input, Modal, ModalBody } from 'reactstrap';
 import { MasterFormStyles, MasterSelect, MasterDatePicker } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
+import WorklistPager from '../../components/ui/WorklistPager';
 import { useAuth } from '../../contexts/AuthContext';
 import { leaveRequestsApi, ApiLeaveRequest } from './leavePlansApi';
 import '../../../css/recruitment.css';
@@ -1079,35 +1080,13 @@ export default function HrLeave() {
                   </div>
 
                   {/* Pagination footer — same shape as recruitment */}
-                  <div className="rec-list-footer">
-                    <div className="d-flex align-items-center gap-2">
-                      <span className="text-muted" style={{ fontSize: 12 }}>Rows per page:</span>
-                      <div style={{ width: 80 }}>
-                        <MasterSelect
-                          value={String(pageSize)}
-                          onChange={(v) => { setPageSize(Number(v) || 10); setPage(1); }}
-                          options={['10', '25', '50'].map(v => ({ value: v, label: v }))}
-                          placeholder="10"
-                        />
-                      </div>
-                      <span className="text-muted" style={{ fontSize: 12, marginLeft: 16 }}>
-                        Showing {filtered.length === 0 ? 0 : (sliceFrom + 1)}–{Math.min(sliceFrom + pageSize, filtered.length)} of {filtered.length}
-                      </span>
-                    </div>
-                    <div className="d-flex align-items-center gap-1">
-                      <button className="rec-pagebtn" onClick={() => goto(safePage - 1)} disabled={safePage <= 1}>‹ Prev</button>
-                      {Array.from({ length: pageCount }).map((_, i) => (
-                        <button
-                          key={i}
-                          className={`rec-pagebtn${safePage === i + 1 ? ' is-active' : ''}`}
-                          onClick={() => goto(i + 1)}
-                        >
-                          {i + 1}
-                        </button>
-                      ))}
-                      <button className="rec-pagebtn" onClick={() => goto(safePage + 1)} disabled={safePage >= pageCount}>Next ›</button>
-                    </div>
-                  </div>
+                  <WorklistPager
+                    total={filtered.length}
+                    page={safePage}
+                    pageSize={pageSize}
+                    onPage={goto}
+                    onPageSize={(n) => { setPageSize(n); setPage(1); }}
+                  />
                 </div>
               </CardBody>
             </Card>

@@ -9,6 +9,7 @@ import SalaryStructureModal, { type SalaryEmployeeLite } from '../../components/
 import PaymentDisbursementModal from '../../components/PaymentDisbursementModal';
 import { useToast } from '../../contexts/ToastContext';
 import { ShimmerTableRows, Shimmer } from '../../components/ui/Shimmer';
+import WorklistPager from '../../components/ui/WorklistPager';
 import api from '../../api';
 // Reuses the purple hero-card, hero-pill, KPI surface and table styles that
 // HrEmployeeOnboarding ships (.onb-hero-card / .onb-hero-pill / .onb-surface
@@ -1723,36 +1724,7 @@ export default function HrPayroll() {
 
           {/* Pagination — only for the payslip-row tabs (not Salary Setup). */}
           {tab !== 'salary' && (
-          <Row className="align-items-center mt-2 g-3 text-center text-sm-start">
-            <div className="col-sm">
-              <div className="text-muted">
-                Showing
-                <span className="fw-semibold ms-1">{visible.length}</span>
-                {' '}of <span className="fw-semibold">{filtered.length}</span> Results
-              </div>
-            </div>
-            <div className="col-sm-auto">
-              <ul className="pagination pagination-separated pagination-md justify-content-center justify-content-sm-start mb-0">
-                <li className={safePage <= 1 ? 'page-item disabled' : 'page-item'}>
-                  <a href="#" className="page-link" onClick={(e) => { e.preventDefault(); goto(safePage - 1); }}>Previous</a>
-                </li>
-                {Array.from({ length: pageCount }).map((_, i) => (
-                  <li key={i} className="page-item">
-                    <a
-                      href="#"
-                      className={safePage === i + 1 ? 'page-link active' : 'page-link'}
-                      onClick={(e) => { e.preventDefault(); goto(i + 1); }}
-                    >
-                      {i + 1}
-                    </a>
-                  </li>
-                ))}
-                <li className={safePage >= pageCount ? 'page-item disabled' : 'page-item'}>
-                  <a href="#" className="page-link" onClick={(e) => { e.preventDefault(); goto(safePage + 1); }}>Next</a>
-                </li>
-              </ul>
-            </div>
-          </Row>
+            <WorklistPager total={filtered.length} page={safePage} pageSize={PAGE_SIZE} onPage={goto} />
           )}
         </CardBody>
       </Card>

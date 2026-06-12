@@ -14,6 +14,7 @@ import HeaderFooterPanel, {
   type HeaderConfig, type FooterConfig,
 } from '../hrms/doc-templates/HeaderFooterPanel';
 import Tooltip from '../../components/ui/Tooltip';
+import WorklistPager from '../../components/ui/WorklistPager';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
@@ -1043,37 +1044,8 @@ export default function HrEmployeeOnboarding() {
                   </table>
                 </div>
 
-          {/* Pagination — same layout as master TableContainer */}
-          <Row className="align-items-center mt-2 g-3 text-center text-sm-start">
-            <div className="col-sm">
-              <div className="text-muted">
-                Showing
-                <span className="fw-semibold ms-1">{visible.length}</span>
-                {' '}of <span className="fw-semibold">{filtered.length}</span> Results
-              </div>
-            </div>
-            <div className="col-sm-auto">
-              <ul className="pagination pagination-separated pagination-md justify-content-center justify-content-sm-start mb-0">
-                <li className={safePage <= 1 ? 'page-item disabled' : 'page-item'}>
-                  <a href="#" className="page-link" aria-label="Previous" onClick={(e) => { e.preventDefault(); goto(safePage - 1); }}><i className="ri-arrow-left-s-line" /></a>
-                </li>
-                {Array.from({ length: pageCount }).map((_, i) => (
-                  <li key={i} className="page-item">
-                    <a
-                      href="#"
-                      className={safePage === i + 1 ? 'page-link active' : 'page-link'}
-                      onClick={(e) => { e.preventDefault(); goto(i + 1); }}
-                    >
-                      {i + 1}
-                    </a>
-                  </li>
-                ))}
-                <li className={safePage >= pageCount ? 'page-item disabled' : 'page-item'}>
-                  <a href="#" className="page-link" aria-label="Next" onClick={(e) => { e.preventDefault(); goto(safePage + 1); }}><i className="ri-arrow-right-s-line" /></a>
-                </li>
-              </ul>
-            </div>
-          </Row>
+          {/* Pagination — My Workplace / Client-table style */}
+          <WorklistPager total={filtered.length} page={safePage} pageSize={PAGE_SIZE} onPage={goto} />
         </CardBody>
       </Card>
 

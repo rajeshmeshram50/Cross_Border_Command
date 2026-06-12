@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
 import Tooltip from '../../components/ui/Tooltip';
+import WorklistPager from '../../components/ui/WorklistPager';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
@@ -3421,58 +3422,7 @@ export default function HrEmployees() {
                     always visible (chevrons go disabled when there's
                     only one page) so the affordance never disappears
                     on lists with few rows. */}
-                <div className="d-flex align-items-center justify-content-between mt-3 pt-2 border-top flex-wrap gap-2">
-                  {/* Wrap the "Showing …" text in a flex row that's the
-                      same height as the pagination buttons (32px) so its
-                      baseline lines up exactly with the right-side
-                      buttons. Without min-height, the small 12px text
-                      box was shorter than the button strip and got
-                      visually centred at a different y than the buttons,
-                      making the left edge of the footer look like it
-                      was "sinking" below the right. */}
-                  <div
-                    className="text-muted d-inline-flex align-items-center"
-                    style={{ fontSize: 12, minHeight: 32, lineHeight: 1 }}
-                  >
-                    {filtered.length === 0 ? (
-                      <span>Showing <span className="fw-bold text-body">0</span> {tab === 'active' ? 'Active' : 'Disabled'} Employees</span>
-                    ) : (
-                      <span>
-                        Showing <span className="fw-bold text-body">{(page - 1) * ROWS_PER_PAGE + 1}</span>–<span className="fw-bold text-body">{Math.min(page * ROWS_PER_PAGE, filtered.length)}</span> of <span className="fw-bold text-body">{filtered.length}</span> {tab === 'active' ? 'Active' : 'Disabled'} Employees
-                      </span>
-                    )}
-                  </div>
-                  <div className="hr-emp-pag">
-                    <button
-                      type="button"
-                      className="hr-emp-pag-btn"
-                      onClick={() => setPage(p => Math.max(1, p - 1))}
-                      disabled={page === 1}
-                      aria-label="Previous page"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-                    </button>
-                    {Array.from({ length: totalPages }, (_, n) => n + 1).map(n => (
-                      <button
-                        key={n}
-                        type="button"
-                        className={`hr-emp-pag-btn ${n === page ? 'is-active' : ''}`}
-                        onClick={() => setPage(n)}
-                      >
-                        {n}
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      className="hr-emp-pag-btn"
-                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                      disabled={page === totalPages}
-                      aria-label="Next page"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-                    </button>
-                  </div>
-                </div>
+                <WorklistPager total={filtered.length} page={page} pageSize={ROWS_PER_PAGE} onPage={setPage} />
             </div>
             </div>
           </div>
