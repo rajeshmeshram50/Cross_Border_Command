@@ -580,7 +580,7 @@ export default function SalesQPI() {
   const { user: currentUser } = useAuth();
   const [tab, setTab] = useState<QPITab>('quotation');
   const [piSub, setPiSub] = useState<PISubTab>('with');
-  const [wdhOpen, setWdhOpen] = useState(true);
+  const [wdhOpen, setWdhOpen] = useState(false);
   const [q, setQ] = useState('');
   // Pagination is owned here now (the project "apna wala" footer — Showing
   // X–Y of Z + numbered chips) instead of TableContainer's built-in bar.
@@ -4230,7 +4230,7 @@ const SCOPED_CSS = `
   padding: 0;
   margin: 0;
   color: var(--vz-body-color);
-  display: flex; flex-direction: column; gap: 14px;
+  display: flex; flex-direction: column; gap: 8px;
 }
 .qpi-root *, .qpi-root *::before, .qpi-root *::after { box-sizing: border-box; }
 

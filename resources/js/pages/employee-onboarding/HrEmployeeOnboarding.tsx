@@ -701,7 +701,7 @@ export default function HrEmployeeOnboarding() {
       <MasterFormStyles />
 
       {/* ── Hero card (purple-tinted, separate container) ── */}
-      <div className="onb-hero-card mb-3">
+      <div className="onb-hero-card mb-2">
         <div className="d-flex align-items-center gap-3 min-w-0">
           <span
             className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
@@ -732,7 +732,7 @@ export default function HrEmployeeOnboarding() {
       </div>
 
       {/* ── KPI cards (own row, each its own card) ── */}
-      <Row className="g-3 mb-3 align-items-stretch">
+      <Row className="g-3 mb-2 align-items-stretch">
         {KPI_CARDS.map(k => (
           <Col key={k.key} xl={true} md={4} sm={6} xs={12}>
             <div
@@ -769,7 +769,7 @@ export default function HrEmployeeOnboarding() {
       </Row>
 
       {/* ── Tabs (free, no surrounding container — like the screenshot) ── */}
-      <div className="d-flex mb-3" style={{ gap: 8, flexWrap: 'wrap' }}>
+      <div className="d-flex mb-2" style={{ gap: 8, flexWrap: 'wrap' }}>
         {[
           { key: 'pending'   as const, label: 'Onboarding Pending (New Joiners)', count: counts.pending,   icon: 'ri-time-line' },
           { key: 'completed' as const, label: 'Onboarding Completed',             count: counts.completed, icon: 'ri-checkbox-circle-line' },
@@ -811,7 +811,7 @@ export default function HrEmployeeOnboarding() {
       {/* ── Filters + Table — own card, like Employee list ── */}
       <Card>
         <CardBody>
-          <Row className="g-2 align-items-center mb-3">
+          <Row className="g-2 align-items-center mb-2">
             <Col md={5} sm={12}>
               <div className="search-box">
                 <Input
@@ -1067,7 +1067,7 @@ export default function HrEmployeeOnboarding() {
             <div className="col-sm-auto">
               <ul className="pagination pagination-separated pagination-md justify-content-center justify-content-sm-start mb-0">
                 <li className={safePage <= 1 ? 'page-item disabled' : 'page-item'}>
-                  <a href="#" className="page-link" onClick={(e) => { e.preventDefault(); goto(safePage - 1); }}>Previous</a>
+                  <a href="#" className="page-link" aria-label="Previous" onClick={(e) => { e.preventDefault(); goto(safePage - 1); }}><i className="ri-arrow-left-s-line" /></a>
                 </li>
                 {Array.from({ length: pageCount }).map((_, i) => (
                   <li key={i} className="page-item">
@@ -1081,7 +1081,7 @@ export default function HrEmployeeOnboarding() {
                   </li>
                 ))}
                 <li className={safePage >= pageCount ? 'page-item disabled' : 'page-item'}>
-                  <a href="#" className="page-link" onClick={(e) => { e.preventDefault(); goto(safePage + 1); }}>Next</a>
+                  <a href="#" className="page-link" aria-label="Next" onClick={(e) => { e.preventDefault(); goto(safePage + 1); }}><i className="ri-arrow-right-s-line" /></a>
                 </li>
               </ul>
             </div>

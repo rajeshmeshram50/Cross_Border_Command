@@ -7,6 +7,9 @@ import type { MenuChild, MenuGroup } from '../types';
 import api from '../api';
 import { getMasterConfig, masterEndpoint } from './master/masterConfigs';
 import './MasterDashboard.css';
+// Shared master card-strip styling (.dsn-page-strip) — reused so the
+// overview header matches the per-master page headers (Legal Entities, etc.).
+import '../../css/master.css';
 
 type CountEntry = { active: number; inactive: number; total: number };
 
@@ -285,38 +288,65 @@ export default function MasterDashboard() {
       @keyframes mc-spin { to { transform: rotate(360deg); } }
     `}</style>
     <div>
-      {/* ── Page Header ── */}
-      <div className="page-title-box d-sm-flex align-items-center justify-content-between mb-4">
-        <div className="d-flex align-items-center gap-2">
-          {/* Back button — uses history.back() when there's a prior
-              entry, otherwise lands on /dashboard so a direct-link
-              visit still has somewhere coherent to go. */}
+      {/* ── Page Header ── card-strip styled to match the per-master page
+          headers (Legal Entities, etc.): gradient icon + title on the left,
+          a pill "Back" button on the right. */}
+      <div
+        className="dsn-page-strip d-sm-flex align-items-center justify-content-between flex-wrap gap-3 mb-2"
+        style={{ padding: '9px 18px', borderRadius: 12 }}
+      >
+        <div className="d-flex align-items-center gap-3 min-w-0">
+          <span
+            className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+            style={{
+              width: 36, height: 36,
+              background: 'linear-gradient(135deg, #2b3a85 0%, #405189 50%, #6691e7 100%)',
+              border: '1px solid color-mix(in srgb, #405189 35%, transparent)',
+              boxShadow: '0 4px 12px rgba(64,81,137,0.32), inset 0 1px 0 rgba(255,255,255,0.18)',
+            }}
+          >
+            <i className="ri-stack-line" style={{ color: '#ffffff', fontSize: 17 }} />
+          </span>
+          <div className="min-w-0">
+            <h5 className="mb-0 fw-bold" style={{ color: 'var(--vz-heading-color, #2b3245)', letterSpacing: '0.01em' }}>
+              Master Control Center
+            </h5>
+          </div>
+        </div>
+        <div className="d-flex align-items-center gap-2 flex-shrink-0">
+          {/* Back — history.back() when there's a prior entry, otherwise
+              /dashboard so a direct-link visit still has somewhere to go. */}
           <button
             type="button"
             onClick={() => {
               if (window.history.length > 1) navigate(-1);
               else                            navigate('/dashboard');
             }}
-            aria-label="Back"
-            className="btn btn-soft-secondary btn-icon rounded-circle"
-            style={{ width: 36, height: 36 }}
-            title="Back"
+            title="Back to Dashboard"
+            className="d-inline-flex align-items-center justify-content-center gap-2 rounded-pill"
+            style={{
+              height: 38,
+              padding: '0 18px',
+              background: 'color-mix(in srgb, #405189 8%, #ffffff)',
+              color: '#405189',
+              border: '1px solid color-mix(in srgb, #405189 22%, transparent)',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'background 0.18s ease',
+              whiteSpace: 'nowrap',
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 14%, #ffffff)'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 8%, #ffffff)'; }}
           >
-            <i className="ri-arrow-left-line fs-16" />
+            <i className="ri-arrow-left-line" style={{ fontSize: 15 }}></i>
+            Back to Dashboard
           </button>
-          <div>
-            <h4 className="mb-0">Master Control Center</h4>
-            <p className="text-muted fs-12 mb-0 mt-1">{totals.total} masters across {groups.length} categories</p>
-          </div>
         </div>
-        {/* Breadcrumb intentionally omitted on the Master overview —
-            it's the top of the master hierarchy ("Master Data > Overview"
-            was a tautology), the back button on the left already gives
-            the user a one-click escape route. */}
       </div>
 
       {/* ── KPI Stat Cards ── */}
-   <Row className="g-3 mb-4">
+   <Row className="g-3 mb-2">
   {STAT_CARDS.map((sc, i) => (
     <Col key={sc.label} xl={3} md={6} xs={12}>
       <div
@@ -408,7 +438,7 @@ export default function MasterDashboard() {
 </Row>
 
       {/* ── Search Bar ── */}
-      <div className="master-surface" style={{ border: '1px solid var(--vz-border-color)', borderRadius: 12, padding: '10px 14px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div className="master-surface" style={{ border: '1px solid var(--vz-border-color)', borderRadius: 12, padding: '10px 14px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
         <i className="ri-search-line" style={{ color: 'var(--vz-secondary-color)', fontSize: 17 }} />
         <input
           type="text"
@@ -443,7 +473,7 @@ export default function MasterDashboard() {
         const isCollapsed = hasSearch ? false : closedGroups.has(group.id);
 
         return (
-          <div key={group.id} style={{ marginBottom: 12 }}>
+          <div key={group.id} style={{ marginBottom: 8 }}>
 
             {/* ── Category Header — single white row, clickable to toggle ── */}
             <div
@@ -504,8 +534,13 @@ export default function MasterDashboard() {
             </div>
 
             {/* ── Expanded master cards ── */}
+            {/* gx-3 keeps the 16px horizontal gutter; gy-2 sets an 8px
+                vertical gutter between wrapped card rows. marginTop:0
+                cancels the row's default negative top margin so the first
+                card row also sits 8px under the strip — equal spacing all
+                round (strip→cards and row→row). */}
             {!isCollapsed && (
-              <Row className="g-3" style={{ marginTop: 10 }}>
+              <Row className="gx-3 gy-2" style={{ marginTop: 0 }}>
                 {group.children.map(leaf => (
                   <Col key={leaf.id} xl={3} lg={4} md={6}>
                     <MasterCard

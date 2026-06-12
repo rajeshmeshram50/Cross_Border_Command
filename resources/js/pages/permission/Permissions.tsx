@@ -178,26 +178,67 @@ export default function Permissions() {
 
   return (
     <>
+      <style>{`
+        /* Header strip — same shape/parts as the Customers (.smc-cstrip)
+           header (rounded container, left accent strip, violet icon) on a
+           plain white surface. Back pill on the right (sub-page). */
+        .pm-cstrip {
+          position: relative; overflow: hidden;
+          display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+          min-height: 70px; padding: 12px 18px;
+          background: #ffffff;
+          border: 1px solid var(--vz-border-color);
+          border-radius: 16px;
+          box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+          font-family: 'DM Sans', system-ui, sans-serif;
+        }
+        .pm-cstrip-accent {
+          position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+          background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
+          border-radius: 16px 0 0 16px;
+        }
+        .pm-cstrip-left { display: flex; align-items: center; gap: 16px; position: relative; z-index: 1; min-width: 0; flex: 1; }
+        .pm-cstrip-icon {
+          position: relative; width: 46px; height: 46px; border-radius: 12px;
+          background: linear-gradient(135deg, #7c3aed, #5b21b6);
+          display: inline-flex; align-items: center; justify-content: center;
+          color: #fff; font-size: 22px; flex-shrink: 0;
+          box-shadow: 0 4px 14px rgba(91,33,182,0.40), 0 0 0 3px rgba(124,58,237,0.10);
+        }
+        .pm-cstrip-title { font-size: 18px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
+        .pm-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; margin-top: 4px; line-height: 1.5; max-width: 760px; }
+        .pm-cstrip-back {
+          display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+          padding: 0 18px; height: 44px; border-radius: 14px;
+          border: 1px solid color-mix(in srgb, #7c3aed 30%, var(--vz-border-color));
+          background: #fff; color: #6d28d9;
+          font-family: inherit; font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; flex-shrink: 0;
+          transition: background .15s, border-color .15s, transform .15s;
+        }
+        .pm-cstrip-back:hover { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }
+        .pm-cstrip-back i { font-size: 16px; }
+        [data-bs-theme="dark"] .pm-cstrip { background: var(--vz-card-bg); border-color: var(--vz-border-color); box-shadow: 0 6px 18px rgba(0,0,0,0.30); }
+        [data-bs-theme="dark"] .pm-cstrip-back { background: transparent; color: #c4b5fd; }
+        [data-bs-theme="dark"] .pm-cstrip-back:hover { background: rgba(124,58,237,.14); }
+      `}</style>
       <Row>
         <Col xs={12}>
-          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <div className="d-flex align-items-center gap-2">
-              <button
-                className="btn btn-soft-primary btn-icon rounded-circle"
-                style={{ width: 36, height: 36 }}
-                onClick={() => navigate(-1)}
-                title="Back"
-              >
-                <i className="ri-arrow-left-line fs-16"></i>
-              </button>
-              <h4 className="mb-sm-0">Permission Management</h4>
+          {/* Header strip — matches the Clients / Branches module headers. */}
+          <div className="pm-cstrip mb-2">
+            <span className="pm-cstrip-accent" />
+            <div className="pm-cstrip-left">
+              <div className="pm-cstrip-icon"><i className="ri-shield-keyhole-line" /></div>
+              <div className="min-w-0">
+                <div className="pm-cstrip-title">Permission Management</div>
+                <div className="pm-cstrip-sub">
+                  Grant or restrict module access for branch users and employees.
+                </div>
+              </div>
             </div>
-            <div className="page-title-right">
-              <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#">Admin</a></li>
-                <li className="breadcrumb-item active">Permissions</li>
-              </ol>
-            </div>
+            <button type="button" className="pm-cstrip-back" onClick={() => navigate(-1)}>
+              <i className="ri-arrow-left-line" />
+              Back
+            </button>
           </div>
         </Col>
       </Row>

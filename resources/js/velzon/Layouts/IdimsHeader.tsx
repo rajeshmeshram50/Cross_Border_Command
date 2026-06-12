@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -183,6 +183,13 @@ export default function IdimsHeader() {
   const [isFs, setIsFs] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileExpand, setMobileExpand] = useState<DD | null>(null);
+  // Overflow "More" menu — collapses nav items that don't fit on one row
+  // (instead of horizontal scrolling) into a dropdown.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [moreExpand, setMoreExpand] = useState<DD | null>(null);
+  const [visibleCount, setVisibleCount] = useState(99);
+  const navItemsRef = useRef<HTMLDivElement | null>(null);
+  const navGhostRef = useRef<HTMLDivElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   /* ── Permission helpers (mirror LayoutMenuData) ── */
@@ -216,11 +223,11 @@ export default function IdimsHeader() {
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpenDD(null); setBranchOpen(false); setProfileOpen(false); setSearchOpen(false);
+        setOpenDD(null); setBranchOpen(false); setProfileOpen(false); setSearchOpen(false); setMoreOpen(false);
       }
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setOpenDD(null); setBranchOpen(false); setProfileOpen(false); setLogoutOpen(false); setSearchOpen(false); }
+      if (e.key === 'Escape') { setOpenDD(null); setBranchOpen(false); setProfileOpen(false); setLogoutOpen(false); setSearchOpen(false); setMoreOpen(false); }
     };
     document.addEventListener('mousedown', onDoc);
     document.addEventListener('keydown', onKey);
@@ -233,7 +240,7 @@ export default function IdimsHeader() {
     return () => document.removeEventListener('fullscreenchange', onFs);
   }, []);
 
-  const go = (path: string) => { setOpenDD(null); setMobileOpen(false); navigate(path); };
+  const go = (path: string) => { setOpenDD(null); setMobileOpen(false); setMoreOpen(false); setMoreExpand(null); navigate(path); };
   const toggleFs = () => {
     if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
     else document.exitFullscreen?.();
@@ -242,7 +249,32 @@ export default function IdimsHeader() {
   /* ── Visible top-level nav items in prototype order ── */
   const navItems = useMemo(() => {
     const items: { id: string; label: string; icon: JSX.Element; dd?: DD }[] = [];
+    const role = user?.user_type;
     items.push({ id: 'dashboard', label: 'Dashboard', icon: IC.grid });
+
+    // Super-admin runs the SaaS itself — it sees ONLY the platform-management
+    // modules (Clients, Plans, Payments, Master, Permissions), never the
+    // tenant business modules (HRMS / Sales / CLM / P2P / GTS / Inventory).
+    if (role === 'super_admin') {
+      items.push({ id: 'clients', label: 'Clients', icon: IC.building });
+      items.push({ id: 'plans', label: 'Plans', icon: IC.card });
+      items.push({ id: 'payments', label: 'Payments', icon: IC.rupee });
+      items.push({ id: 'master', label: 'Master', icon: IC.db });
+      items.push({ id: 'permissions', label: 'Permissions', icon: IC.shield });
+      return items;
+    }
+
+    // Client-admin manages the tenant account — it sees ONLY the account
+    // modules (Branches, Master, Permissions, My Plan), not the day-to-day
+    // business modules (HRMS / Sales / CLM / P2P / GTS / Inventory) that
+    // branch users and employees operate.
+    if (role === 'client_admin') {
+      items.push({ id: 'branches', label: 'Branches', icon: IC.branch });
+      items.push({ id: 'master', label: 'Master', icon: IC.db });
+      items.push({ id: 'permissions', label: 'Permissions', icon: IC.shield });
+      items.push({ id: 'my-plan', label: 'My Plan', icon: IC.card });
+      return items;
+    }
     if (can('credentials-vault')) items.push({ id: 'credentials-vault', label: 'Credentials Vault', icon: IC.lock });
     if (can('project-navigator')) items.push({ id: 'project-navigator', label: 'Project Navigator', icon: IC.compass });
     if (hasGroupView('hr.')) items.push({ id: 'hr', label: 'HRMS', icon: IC.users, dd: 'hr' });
@@ -252,15 +284,46 @@ export default function IdimsHeader() {
     if (can('gts')) items.push({ id: 'gts', label: 'GTS (E-Docs)', icon: IC.globe });
     if (can('inventory')) items.push({ id: 'inventory', label: 'Inventory Management System', icon: IC.box });
     if (hasGroupView('master.')) items.push({ id: 'master', label: 'Master', icon: IC.db });
-    // Permissions module — role-based visibility (not a plan-permission row).
-    // Shown for super-admin, client and branch logins, matching the legacy
-    // MENU_ITEMS roles in constants.ts.
-    if (['super_admin', 'client_admin', 'branch_user'].includes(user?.user_type || '')) {
+    // Permissions — branch admins manage their team's access (employees do
+    // not; they can't grant permissions). Super-admin / client-admin already
+    // returned above with their own Permissions entry.
+    if (role === 'branch_user') {
       items.push({ id: 'permissions', label: 'Permissions', icon: IC.shield });
     }
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  /* ── Overflow measurement ─────────────────────────────────────────────
+     A hidden "ghost" row renders every nav item at full width so we can
+     measure how many fit on a single line. Anything past that collapses
+     into the "More" dropdown — no horizontal scrolling. Recomputed on
+     resize (ResizeObserver) and whenever the item list changes. */
+  useLayoutEffect(() => {
+    const compute = () => {
+      const box = navItemsRef.current;
+      const ghost = navGhostRef.current;
+      if (!box || !ghost) return;
+      const avail = box.clientWidth;
+      const widths = (Array.from(ghost.children) as HTMLElement[]).map(c => c.offsetWidth + 4);
+      const total = widths.reduce((a, b) => a + b, 0);
+      if (total <= avail) { setVisibleCount(widths.length); return; }
+      const MORE_W = 104; // reserve room for the "More" button
+      let used = 0, count = 0;
+      for (const w of widths) {
+        if (used + w <= avail - MORE_W) { used += w; count++; } else break;
+      }
+      setVisibleCount(Math.max(1, count));
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    if (navItemsRef.current) ro.observe(navItemsRef.current);
+    window.addEventListener('resize', compute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', compute); };
+  }, [navItems]);
+
+  const visibleNav = navItems.slice(0, visibleCount);
+  const overflowNav = navItems.slice(visibleCount);
 
   /* ── Mega-menu column layouts ── */
   const salesCols: Group[][] = useMemo(
@@ -486,7 +549,7 @@ export default function IdimsHeader() {
                 placeholder="Search modules & sub-modules..."
                 value={searchQuery}
                 onChange={e => { setSearchQuery(e.target.value); setSearchOpen(true); }}
-                onFocus={() => { setOpenDD(null); setBranchOpen(false); setProfileOpen(false); setSearchOpen(true); }}
+                onFocus={() => { setOpenDD(null); setBranchOpen(false); setProfileOpen(false); setMoreOpen(false); setSearchOpen(true); }}
                 onKeyDown={e => {
                   if (e.key === 'Enter') { e.preventDefault(); if (searchResults[0]) runSearchNav(searchResults[0].path); }
                 }} />
@@ -516,7 +579,7 @@ export default function IdimsHeader() {
             {/* Branch switcher */}
             <div className="idims-branch-wrap">
               <button type="button" className={`idims-branch-btn ${branchOpen ? 'dd-open' : ''}`}
-                onClick={() => canSwitch && (setOpenDD(null), setProfileOpen(false), setBranchOpen(o => !o))}
+                onClick={() => canSwitch && (setOpenDD(null), setProfileOpen(false), setMoreOpen(false), setBranchOpen(o => !o))}
                 style={{ cursor: canSwitch ? 'pointer' : 'default' }}>
                 <span className="idims-branch-ico">{IC.building}</span>
                 <span className="idims-branch-meta">
@@ -595,7 +658,7 @@ export default function IdimsHeader() {
 
               {/* Profile */}
               <div className="idims-profile-wrap">
-                <button type="button" className="idims-profile-icon" title="Profile" onClick={() => { setOpenDD(null); setBranchOpen(false); setProfileOpen(o => !o); }}>
+                <button type="button" className="idims-profile-icon" title="Profile" onClick={() => { setOpenDD(null); setBranchOpen(false); setMoreOpen(false); setProfileOpen(o => !o); }}>
                   {photoSrc
                     ? <img src={photoSrc} alt="profile" />
                     : <span className="idims-profile-initials">{user?.initials || (user?.name || '?').slice(0, 2).toUpperCase()}</span>}
@@ -641,12 +704,22 @@ export default function IdimsHeader() {
 
           {/* ── Row 2: nav items ── */}
           <div className="idims-nav-row idims-row-bottom">
-            <div className="idims-nav-items">
+            {/* Hidden ghost row — measures every item's natural width so the
+                overflow calc knows how many fit before collapsing to "More". */}
+            <div className="idims-nav-ghost" ref={navGhostRef} aria-hidden="true">
               {navItems.map(item => (
+                <span className="idims-nav-btn" key={item.id}>
+                  <span className="idims-ico">{item.icon}</span>{item.label}
+                  {item.dd && <span className="dd-chev">{IC.chevSm}</span>}
+                </span>
+              ))}
+            </div>
+            <div className="idims-nav-items" ref={navItemsRef}>
+              {visibleNav.map(item => (
                 item.dd ? (
                   <div className="idims-dd-wrap" key={item.id}>
                     <button type="button" className={`idims-nav-btn ${openDD === item.dd ? 'dd-open' : ''}`}
-                      onClick={() => { setBranchOpen(false); setProfileOpen(false); setOpenDD(o => o === item.dd ? null : item.dd!); }}>
+                      onClick={() => { setBranchOpen(false); setProfileOpen(false); setMoreOpen(false); setOpenDD(o => o === item.dd ? null : item.dd!); }}>
                       <span className="idims-ico">{item.icon}</span>{item.label}
                       <span className="dd-chev">{IC.chevSm}</span>
                     </button>
@@ -671,6 +744,56 @@ export default function IdimsHeader() {
                   </button>
                 )
               ))}
+
+              {/* Overflow "More" dropdown — holds items that don't fit. */}
+              {overflowNav.length > 0 && (
+                <div className="idims-dd-wrap idims-more-wrap">
+                  <button type="button" className={`idims-nav-btn ${moreOpen ? 'dd-open' : ''}`}
+                    onClick={() => { setBranchOpen(false); setProfileOpen(false); setOpenDD(null); setMoreOpen(o => !o); }}>
+                    <span className="idims-ico">{IC.more}</span>More
+                    <span className="dd-chev">{IC.chevSm}</span>
+                  </button>
+                  {moreOpen && (
+                    <div className="idims-more-panel">
+                      {overflowNav.map(item => (
+                        item.dd ? (
+                          <div key={item.id} className="idims-more-group">
+                            <button type="button" className={`idims-more-item ${moreExpand === item.dd ? 'open' : ''}`}
+                              onClick={() => setMoreExpand(e => e === item.dd ? null : item.dd!)}>
+                              <span className="idims-ico">{item.icon}</span><span className="idims-more-label">{item.label}</span>
+                              <span className="idims-more-chev">{IC.chevSm}</span>
+                            </button>
+                            {moreExpand === item.dd && (
+                              <div className="idims-more-sub">
+                                {colsFor(item.dd).flat().map(g => {
+                                  const leaves = item.dd === 'p2p'
+                                    ? g.children
+                                    : g.children.filter(l => isSuperAdmin || perms[l.id]?.can_view);
+                                  if (!leaves.length) return null;
+                                  return (
+                                    <div key={g.id} className="idims-more-subgroup">
+                                      <div className="idims-more-sub-label">{g.label}</div>
+                                      {leaves.map(l => (
+                                        <button type="button" key={l.id} className="idims-more-sub-item"
+                                          onClick={() => go(leafPath(l.id, item.dd!))}>{l.label}</button>
+                                      ))}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <button type="button" key={item.id} className="idims-more-item"
+                            onClick={() => go(topPath(item.id))}>
+                            <span className="idims-ico">{item.icon}</span><span className="idims-more-label">{item.label}</span>
+                          </button>
+                        )
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -758,6 +881,10 @@ const IC = {
   trend: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6h-6z" /></svg>,
   file: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" /></svg>,
   cart: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49A1 1 0 0 0 20 4H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z" /></svg>,
+  card: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></svg>,
+  rupee: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3h12M6 8h12M9 3c3.5 0 5.5 2 5.5 5S12.5 13 9 13H6l7 8" /></svg>,
+  branch: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></svg>,
+  more: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>,
   globe: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" /></svg>,
   box: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path fillRule="evenodd" clipRule="evenodd" d="M12 1.95l9.05 4.52v11.06L12 22.05l-9.05-4.52V6.47L12 1.95zm0 2.24L5.66 7.36 12 10.53l6.34-3.17L12 4.19zM4.95 9.03v7.25L11 19.3v-7.25L4.95 9.03zm14.1 0L13 12.05v7.25l6.05-3.02V9.03z" /></svg>,
   db: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C7.58 2 4 3.57 4 5.5S7.58 9 12 9s8-1.57 8-3.5S16.42 2 12 2zM4 7.97v4.53C4 14.43 7.58 16 12 16s8-1.57 8-3.5V7.97c-1.72 1.4-4.66 2.13-8 2.13s-6.28-.73-8-2.13zm0 7v3.53C4 20.43 7.58 22 12 22s8-1.57 8-3.5V14.97c-1.72 1.4-4.66 2.13-8 2.13s-6.28-.73-8-2.13z" /></svg>,
@@ -807,9 +934,31 @@ const IDIMS_CSS = `
 .idims-nav-stack { flex: 1; min-width: 0; align-self: stretch; display: flex; flex-direction: column; }
 .idims-nav-row { display: flex; align-items: center; min-width: 0; }
 .idims-row-top { flex: 1.08; gap: 12px; padding: 8px 0 4px 0; border-bottom: 1px solid #EEF1F7; }
-.idims-row-bottom { flex: 1; padding: 6px 0 10px 0; min-width: 0; }
-.idims-row-bottom .idims-nav-items { gap: 2px; overflow-x: auto; overflow-y: visible; scrollbar-width: none; -ms-overflow-style: none; }
-.idims-row-bottom .idims-nav-items::-webkit-scrollbar { display: none; }
+.idims-row-bottom { position: relative; flex: 1; padding: 6px 0 10px 0; min-width: 0; }
+/* No horizontal scroll — items that don't fit collapse into "More". */
+.idims-row-bottom .idims-nav-items { gap: 2px; overflow: visible; flex-wrap: nowrap; }
+/* Hidden measuring row: laid out flat off-screen, never visible/clickable. */
+.idims-nav-ghost { position: absolute; top: 0; left: 0; display: flex; gap: 2px; flex-wrap: nowrap;
+  white-space: nowrap; visibility: hidden; pointer-events: none; height: 0; overflow: hidden; }
+
+/* Overflow "More" dropdown panel */
+.idims-more-wrap { position: relative; flex-shrink: 0; }
+.idims-more-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 1200; min-width: 240px; max-width: 320px;
+  max-height: 70vh; overflow-y: auto; background: #fff; border: 1px solid #E7EAF3; border-radius: 12px;
+  box-shadow: 0 12px 34px rgba(15,23,42,.16); padding: 6px; }
+.idims-more-item { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: transparent;
+  padding: 9px 11px; border-radius: 9px; cursor: pointer; text-align: left; font-size: 13px; font-weight: 600; color: #0F172A; transition: background .14s; }
+.idims-more-item:hover { background: #F5F3FF; }
+.idims-more-item.open { background: #F5F3FF; }
+.idims-more-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.idims-more-chev { display: flex; align-items: center; color: #9AA2B8; transition: transform .18s; }
+.idims-more-item.open .idims-more-chev { transform: rotate(180deg); }
+.idims-more-sub { padding: 2px 0 6px 12px; margin-left: 10px; border-left: 2px solid #EEF1F8; }
+.idims-more-subgroup { margin-top: 4px; }
+.idims-more-sub-label { font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #94A0B8; padding: 5px 10px 2px; }
+.idims-more-sub-item { display: block; width: 100%; border: none; background: transparent; text-align: left;
+  padding: 6px 10px; border-radius: 7px; cursor: pointer; font-size: 12.5px; color: #475569; transition: background .14s, color .14s; }
+.idims-more-sub-item:hover { background: #F5F3FF; color: #7C3AED; }
 
 /* Search */
 .idims-search { position: relative; width: 440px; flex-shrink: 0; height: 40px; display: flex; align-items: center; gap: 10px;
@@ -1046,6 +1195,13 @@ const IDIMS_CSS = `
 .idims-dark .idims-search-result-label { color: #E5E7EB; }
 .idims-dark .idims-search-result-sub { color: #7E8AA3; }
 .idims-dark .idims-search-empty { color: #7E8AA3; }
+.idims-dark .idims-more-panel { background: #1A1D29; border-color: #2C3242; box-shadow: 0 12px 34px rgba(0,0,0,.5); }
+.idims-dark .idims-more-item { color: #E5E7EB; }
+.idims-dark .idims-more-item:hover, .idims-dark .idims-more-item.open { background: #252A3A; }
+.idims-dark .idims-more-sub { border-left-color: #2C3242; }
+.idims-dark .idims-more-sub-label { color: #7E8AA3; }
+.idims-dark .idims-more-sub-item { color: #AEB7CC; }
+.idims-dark .idims-more-sub-item:hover { background: #252A3A; color: #A78BFA; }
 .idims-dark .idims-nav-btn { color: #9CA3AF; }
 .idims-dark .idims-nav-btn:hover, .idims-dark .idims-nav-btn.dd-open { color: #C4B5FD; }
 .idims-dark .idims-action-btn { color: #9CA3AF; }

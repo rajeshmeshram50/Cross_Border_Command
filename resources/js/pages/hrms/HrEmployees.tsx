@@ -2501,6 +2501,26 @@ export default function HrEmployees() {
           -webkit-overflow-scrolling: touch;
         }
 
+        /* Unified list frame (search + table + pagination) — mirrors the
+           Recruitment page's .rec-list-frame so the list reads as one clean
+           bordered panel now that the whole-page card container is gone. */
+        .hr-emp-list-frame {
+          background: #ffffff;
+          border: 1px solid #ececf2;
+          border-radius: 14px;
+          overflow: hidden;
+          box-shadow: 0 1px 0 rgba(15,23,42,0.04), 0 4px 14px rgba(15,23,42,0.05);
+        }
+        .hr-emp-list-frame .hr-emp-frame-filter {
+          border-bottom: 1px solid var(--vz-border-color);
+        }
+        [data-bs-theme="dark"] .hr-emp-list-frame,
+        [data-layout-mode="dark"] .hr-emp-list-frame {
+          background: var(--vz-card-bg);
+          border-color: var(--vz-border-color);
+          box-shadow: 0 6px 18px rgba(0,0,0,0.30);
+        }
+
         /* Tablet portrait — ≤ 991.98px */
         @media (max-width: 991.98px) {
           /* Header buttons keep their width but the whole right-side
@@ -2672,21 +2692,14 @@ export default function HrEmployees() {
           overflow: hidden;
         }
         [data-bs-theme="dark"] .hr-emp-kpi-card {
-          /* Same recipe as the Plan cards in dark mode — fresh deep
-             black with a crisp accent-tinted glow. Avoids the smoky
-             "fog" look the previous radial-on-slate produced. The
-             --card-accent variable is set per-card inline so each
-             tile gets its own accent shadow + faint accent wash. */
-          background:
-            linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, transparent 18%),
-            linear-gradient(180deg, color-mix(in srgb, var(--card-accent, #7c5cfc) 14%, transparent) 0%, transparent 38%),
-            #0f1216 !important;
-          border-color: color-mix(in srgb, var(--card-accent, #7c5cfc) 40%, transparent) !important;
+          /* Match the Recruitment KPI card background in dark mode — a soft
+             theme card surface (var(--vz-card-bg)) instead of the deep-black
+             accent-glow "Plan card" recipe, so both pages read the same. The
+             per-card top accent ribbon is kept for colour identity. */
+          background: var(--vz-card-bg) !important;
+          border-color: var(--vz-border-color) !important;
           color: rgba(255, 255, 255, 0.96);
-          box-shadow:
-            inset 0 1px 0 0 rgba(255, 255, 255, 0.10),
-            0 4px 10px rgba(0, 0, 0, 0.50),
-            0 14px 32px -10px color-mix(in srgb, var(--card-accent, #7c5cfc) 45%, transparent) !important;
+          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.30) !important;
         }
         /* Top ribbon — bump to 4px in dark mode so the accent stripe
            reads as a clean lit edge against the deep black surface
@@ -2705,14 +2718,10 @@ export default function HrEmployees() {
           color: #f8fafc !important;
         }
         [data-bs-theme="dark"] .hr-emp-kpi-card:hover {
-          /* Keep the layered black surface — only deepen the accent
-             tint so the panel reads as "leaning in" on hover instead
-             of flipping to a different colour entirely. */
-          background:
-            linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, transparent 18%),
-            linear-gradient(180deg, color-mix(in srgb, var(--card-accent, #7c5cfc) 22%, transparent) 0%, transparent 42%),
-            #0f1216 !important;
-          border-color: color-mix(in srgb, var(--card-accent, #7c5cfc) 70%, transparent) !important;
+          /* Hover keeps the recruitment-style surface; just lift the border
+             toward the card accent so it reads as "leaning in". */
+          background: var(--vz-card-bg) !important;
+          border-color: color-mix(in srgb, var(--card-accent, #7c5cfc) 55%, var(--vz-border-color)) !important;
         }
         /* Page-level text legibility in dark mode — the page subtitle and
            any other text-muted body copy under this surface default to a
@@ -2896,17 +2905,14 @@ export default function HrEmployees() {
 
       <Row>
         <Col xs={12}>
-          <div
-            className="hr-employees-surface"
-            style={{
-              borderRadius: 16,
-              border: '1px solid var(--vz-border-color)',
-              boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
-              padding: '20px',
-            }}
-          >
+          {/* Whole-page card container removed — content sits flush on the
+              page background (matches the Recruitment page layout). The
+              `hr-employees-surface` class is kept (many descendant styles —
+              table, search box, dark mode — are scoped to it) but its card
+              chrome (border / shadow / padding / white fill) is stripped. */}
+          <div className="hr-employees-surface" style={{ background: 'transparent' }}>
             {/* ── Header row ── */}
-            <div className="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
+            <div className="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-2">
               <div className="d-flex align-items-center gap-3 min-w-0">
                 {/* Icon tile — gradient square with white glyph and a soft
                     primary shadow, matching the master "What you are doing
@@ -2975,7 +2981,7 @@ export default function HrEmployees() {
             {/* KPI strip — same Swiper-based carousel pattern as the
                 Plans page (PlanSelection.tsx). Autoplay at 2s loop, pause
                 on hover, manual nav arrows that don't fight the autoplay. */}
-            <div className="hr-emp-kpi-outer mb-3">
+            <div className="hr-emp-kpi-outer mb-2">
               <button
                 ref={kpiPrevRef}
                 type="button"
@@ -3067,7 +3073,7 @@ export default function HrEmployees() {
             </div>
 
             {/* ── Tabs (Active / Disabled) ── */}
-            <Row className="g-2 mb-3">
+            <Row className="g-2 mb-2">
               <Col xs={12}>
                 <div
                   className="d-flex"
@@ -3124,8 +3130,11 @@ export default function HrEmployees() {
               </Col>
             </Row>
 
-            {/* ── Search + Filters (Clients-style row) ── */}
-            <Row className="g-2 align-items-center mb-3">
+            {/* ── Search + Filters + Table — one bordered frame (matches the
+                Recruitment list frame, now that the page container is gone) ── */}
+            <div className="hr-emp-list-frame">
+            <div className="hr-emp-frame-filter p-3">
+            <Row className="g-2 align-items-center mb-0">
               <Col md={6} sm={12}>
                 <div className="search-box">
                   <Input
@@ -3157,11 +3166,11 @@ export default function HrEmployees() {
                 </div>
               </Col>
             </Row>
+            </div>
 
-            {/* ── Table (Clients-style: table-card border rounded + table-light thead) ── */}
-            <Card className="border-0 shadow-none mb-0">
-              <CardBody className="p-3">
-                <div className="table-responsive table-card border rounded">
+            {/* ── Table — flows inside the same frame as the search row ── */}
+            <div className="p-3">
+                <div className="table-responsive">
                   <table className="table align-middle table-nowrap mb-0">
                     <thead className="table-light">
                       <tr>
@@ -3480,8 +3489,8 @@ export default function HrEmployees() {
                     </button>
                   </div>
                 </div>
-              </CardBody>
-            </Card>
+            </div>
+            </div>
           </div>
         </Col>
       </Row>
