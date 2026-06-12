@@ -286,16 +286,21 @@ class EmailController extends Controller
         // lands under an unguessable random folder on the public disk; we keep
         // two views: $mailFiles (absolute paths for the mailable to attach) and
         // $attachmentMeta (name/size/mime + /storage URL for the reading pane).
+        $uploads = array_values(array_filter(
+            $request->file('attachments', []),
+            fn ($f) => $f && $f->isValid()
+        ));
+
+        // Enforce the total-size cap BEFORE writing anything, so an over-limit
+        // batch never leaves half its files orphaned on disk.
+        $totalBytes = array_sum(array_map(fn ($f) => (int) $f->getSize(), $uploads));
+        if ($totalBytes > 20 * 1024 * 1024) {
+            return response()->json(['message' => 'Attachments exceed the 20 MB total limit.'], 422);
+        }
+
         $mailFiles = [];
         $attachmentMeta = [];
-        $totalBytes = 0;
-        foreach ($request->file('attachments', []) as $file) {
-            if (!$file || !$file->isValid()) continue;
-            $totalBytes += (int) $file->getSize();
-            // Hard total cap so a single send can't exceed typical SMTP limits.
-            if ($totalBytes > 20 * 1024 * 1024) {
-                return response()->json(['message' => 'Attachments exceed the 20 MB total limit.'], 422);
-            }
+        foreach ($uploads as $file) {
             $display  = $file->getClientOriginalName() ?: 'attachment';
             $ext      = strtolower($file->getClientOriginalExtension());
             $diskName = (Str::slug(pathinfo($display, PATHINFO_FILENAME)) ?: 'file') . ($ext ? ".{$ext}" : '');

@@ -40,6 +40,13 @@ interface EmailDetail extends EmailRow {
   client?: { id: number; org_name: string } | null;
 }
 
+// Allowed attachment extensions — mirror the server's `mimes:` rule so the
+// compose box rejects unsupported files instantly (no svg — script risk).
+const ALLOWED_EXT = new Set([
+  'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp',
+  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'ppt', 'pptx', 'txt', 'zip',
+]);
+
 // Pretty byte size for attachment chips.
 const fmtBytes = (n: number) => {
   if (!n || n < 1024) return `${n || 0} B`;
@@ -511,6 +518,7 @@ function ComposeDock({ onClose, onSent }: { onClose: () => void; onSent: () => v
   const dockRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
+  const [dragOver, setDragOver] = useState(false);
   // Free-drag position. null = default docked bottom-right.
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
 
@@ -524,6 +532,8 @@ function ComposeDock({ onClose, onSent }: { onClose: () => void; onSent: () => v
       let total = prev.reduce((s, f) => s + f.size, 0);
       for (const f of Array.from(list)) {
         if (next.length >= MAX_FILES) { toast.error('Too many files', `You can attach up to ${MAX_FILES} files.`); break; }
+        const ext = f.name.split('.').pop()?.toLowerCase() || '';
+        if (!ALLOWED_EXT.has(ext)) { toast.error('Unsupported file', `"${f.name}" type isn't allowed.`); continue; }
         if (f.size > MAX_PER_FILE) { toast.error('File too large', `"${f.name}" is over 8 MB.`); continue; }
         if (total + f.size > MAX_TOTAL) { toast.error('Attachments too large', 'Total attachments must stay under 20 MB.'); break; }
         // Skip exact duplicates (same name + size).
@@ -535,6 +545,10 @@ function ComposeDock({ onClose, onSent }: { onClose: () => void; onSent: () => v
     if (fileRef.current) fileRef.current.value = '';
   };
   const removeFile = (idx: number) => setFiles((prev) => prev.filter((_, i) => i !== idx));
+  // Drag-and-drop files onto the compose window, just like Gmail.
+  const onDrop = (e: React.DragEvent) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer?.files ?? null); };
+  const onDragOver = (e: React.DragEvent) => { e.preventDefault(); if (!dragOver) setDragOver(true); };
+  const onDragLeave = (e: React.DragEvent) => { e.preventDefault(); setDragOver(false); };
 
   // Drag the window by its header. Defined locally so the move/up listeners
   // share references for clean removal.
@@ -679,7 +693,10 @@ function ComposeDock({ onClose, onSent }: { onClose: () => void; onSent: () => v
         </span>
       </div>
       {!minimized && (
-        <div className="gm-cmp-body">
+        <div className={`gm-cmp-body ${dragOver ? 'dragging' : ''}`} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
+          {dragOver && (
+            <div className="gm-cmp-drop"><i className="ri-upload-cloud-2-line" /><span>Drop files to attach</span></div>
+          )}
           {renderField('to', 'To')}
           {showCc && renderField('cc', 'Cc')}
           <input className="gm-cmp-subject" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" />
@@ -736,7 +753,7 @@ function GmailStyles() {
     .gm-compose-btn i { font-size:18px; }
     .gm-folders { display:flex; flex-direction:column; gap:1px; }
     .gm-folder { display:flex; align-items:center; gap:14px; padding:0 12px 0 18px; height:34px; border:0; border-radius:0 16px 16px 0; background:transparent; color:var(--vz-body-color); font-size:13.5px; font-weight:500; cursor:pointer; text-align:left; }
-    .gm-folder:hover { background:var(--vz-secondary-bg); }
+    .gm-folder:hover { background:rgba(32,33,36,.06); }
     .gm-folder.active { background:#d3e3fd; color:#041e49; font-weight:700; }
     [data-bs-theme="dark"] .gm-folder.active { background:#004a77; color:#c2e7ff; }
     .gm-folder i { font-size:17px; flex-shrink:0; }
@@ -747,7 +764,9 @@ function GmailStyles() {
     /* Main */
     .gm-main { flex:1; min-width:0; display:flex; flex-direction:column; }
     .gm-topbar { display:flex; align-items:center; gap:10px; padding:10px 14px; }
-    .gm-search { flex:1; max-width:720px; display:flex; align-items:center; gap:10px; background:var(--vz-secondary-bg,#eaf1fb); border-radius:999px; padding:0 16px; height:44px; }
+    /* Search pill rides on --vz-body-bg so it stays visibly distinct from the
+       panel surface (--vz-secondary-bg) in BOTH light and dark. */
+    .gm-search { flex:1; max-width:720px; display:flex; align-items:center; gap:10px; background:var(--vz-body-bg,#eaf1fb); border-radius:999px; padding:0 16px; height:44px; }
     .gm-search input { flex:1; border:0; background:transparent; outline:none; font-size:14px; color:var(--vz-body-color); }
     .gm-search i { color:#5f6368; font-size:18px; }
     .gm-search-clear { cursor:pointer; }
@@ -763,7 +782,7 @@ function GmailStyles() {
     .gm-text-btn { border:0; background:transparent; color:#d93025; font-weight:700; font-size:12.5px; cursor:pointer; margin-right:8px; }
     /* Icon buttons */
     .gm-icon-btn { width:36px; height:36px; border:0; border-radius:50%; background:transparent; color:#5f6368; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-size:18px; transition:background .15s; }
-    .gm-icon-btn:hover { background:var(--vz-secondary-bg); }
+    .gm-icon-btn:hover { background:rgba(32,33,36,.06); }
     .gm-icon-btn:disabled { opacity:.35; cursor:default; }
     .gm-icon-btn.danger:hover { color:#d93025; }
     .gm-icon-btn.sm { width:30px; height:30px; font-size:15px; }
@@ -828,7 +847,9 @@ function GmailStyles() {
     .gm-cmp-header { display:flex; align-items:center; justify-content:space-between; background:#404040; color:#fff; padding:10px 14px; border-radius:12px 12px 0 0; font-size:13.5px; font-weight:600; cursor:move; user-select:none; }
     .gm-compose-dock.floating .gm-cmp-header { border-radius:12px 12px 0 0; }
     .gm-cmp-header-actions i { margin-left:14px; cursor:pointer; font-size:16px; }
-    .gm-cmp-body { display:flex; flex-direction:column; padding:6px 16px 14px; }
+    .gm-cmp-body { display:flex; flex-direction:column; padding:6px 16px 14px; position:relative; }
+    .gm-cmp-drop { position:absolute; inset:6px; border:2px dashed #0b57d0; border-radius:10px; background:rgba(11,87,208,.08); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; color:#0b57d0; font-weight:600; font-size:14px; z-index:6; pointer-events:none; }
+    .gm-cmp-drop i { font-size:30px; }
     .gm-cmp-field { display:flex; align-items:flex-start; gap:8px; border-bottom:1px solid var(--vz-border-color); padding:6px 0; position:relative; }
     .gm-cmp-field-label { font-size:13px; color:#5f6368; padding-top:5px; }
     .gm-cmp-chips { flex:1; display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
@@ -839,7 +860,7 @@ function GmailStyles() {
     .gm-ac { position:absolute; top:100%; left:0; right:0; background:#fff; border:1px solid var(--vz-border-color); border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,.18); z-index:5; overflow:hidden; }
     [data-bs-theme="dark"] .gm-ac { background:#2a2f34; }
     .gm-ac-item { display:flex; align-items:center; gap:8px; width:100%; border:0; background:transparent; padding:8px 12px; cursor:pointer; text-align:left; }
-    .gm-ac-item:hover { background:var(--vz-secondary-bg); }
+    .gm-ac-item:hover { background:rgba(32,33,36,.06); }
     .gm-ac-name { font-size:13px; font-weight:600; color:var(--vz-body-color); }
     .gm-ac-email { font-size:12px; color:#5f6368; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .gm-ac-group { font-size:10px; font-weight:800; text-transform:uppercase; color:#1a73e8; }
@@ -851,7 +872,7 @@ function GmailStyles() {
     .gm-cmp-send:disabled { opacity:.6; cursor:default; }
     .gm-cmp-hint { font-size:11px; color:#9aa0a6; }
     .gm-cmp-attach-btn { width:38px; height:38px; border:0; border-radius:50%; background:transparent; color:#5f6368; cursor:pointer; font-size:19px; display:inline-flex; align-items:center; justify-content:center; transition:background .15s; }
-    .gm-cmp-attach-btn:hover { background:var(--vz-secondary-bg); }
+    .gm-cmp-attach-btn:hover { background:rgba(32,33,36,.06); }
     .gm-cmp-attach-btn:disabled { opacity:.4; cursor:default; }
     /* Compose attachment chips */
     .gm-cmp-attachments { display:flex; flex-wrap:wrap; gap:8px; padding:8px 0 2px; }
@@ -889,6 +910,12 @@ function GmailStyles() {
     [data-bs-theme="dark"] .gm-cmp-field-label,
     [data-bs-theme="dark"] .gm-cmp-cc,
     [data-bs-theme="dark"] .gm-ac-email { color:#9aa0a6; }
+    /* Hover overlays need to lighten (not darken) on a dark surface */
+    [data-bs-theme="dark"] .gm-folder:hover,
+    [data-bs-theme="dark"] .gm-icon-btn:hover,
+    [data-bs-theme="dark"] .gm-ac-item:hover,
+    [data-bs-theme="dark"] .gm-cmp-attach-btn:hover { background:rgba(255,255,255,.08); }
+    [data-bs-theme="dark"] .gm-att-thumb i { color:#c0c4c9; }
     /* Hover + selected used light greys/blue that streak on a dark surface */
     [data-bs-theme="dark"] .gm-row:hover { box-shadow:inset 1px 0 0 var(--vz-border-color), inset -1px 0 0 var(--vz-border-color), 0 1px 2px rgba(0,0,0,.5); }
     [data-bs-theme="dark"] .gm-row.selected { background:#004a77 !important; }
@@ -958,10 +985,10 @@ function GmailStyles() {
       .gm-meta-label{ min-width:64px; }
 
       /* Compose: full-width bottom sheet, overriding the draggable inline position */
-      .gm-compose-dock,.gm-compose-dock.floating{ left:0 !important; right:0 !important; top:auto !important; bottom:0 !important; width:100% !important; max-width:100% !important; border-radius:14px 14px 0 0 !important; }
+      .gm-compose-dock,.gm-compose-dock.floating{ left:0 !important; right:0 !important; top:auto !important; bottom:0 !important; width:100% !important; max-width:100% !important; max-height:88dvh !important; border-radius:14px 14px 0 0 !important; }
       .gm-compose-dock.min{ width:100% !important; }
-      .gm-cmp-header{ cursor:default; }
-      .gm-cmp-body{ padding:6px 12px 12px; }
+      .gm-cmp-header{ cursor:default; flex-shrink:0; }
+      .gm-cmp-body{ padding:6px 12px 12px; overflow-y:auto; min-height:0; }
       .gm-cmp-text{ min-height:140px; }
       .gm-cmp-hint{ display:none; }
       .gm-cmp-att{ max-width:100%; }
