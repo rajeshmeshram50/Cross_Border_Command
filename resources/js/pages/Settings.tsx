@@ -373,21 +373,16 @@ export default function Settings() {
         }
       `}</style>
 
-      {/* Header */}
-      <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
-        <div className="d-flex align-items-center gap-2">
-          <div className="d-inline-flex align-items-center justify-content-center rounded-2 flex-shrink-0" style={{ width: 36, height: 36, background: '#40518918', border: '1px solid #40518928' }}>
-            <i className="ri-settings-5-line" style={{ color: '#405189', fontSize: 17 }} />
-          </div>
-          <div>
-            <h5 className="mb-0 fw-bold" style={{ fontSize: 15, letterSpacing: '-0.01em' }}>Settings</h5>
-            <p className="mb-0 text-muted" style={{ fontSize: 11.5 }}>Configure your platform preferences and options</p>
+      {/* Header strip — same shape as the Clients / Branches module headers. */}
+      <div className="frm-cstrip mb-3">
+        <span className="frm-cstrip-accent" />
+        <div className="frm-cstrip-left">
+          <div className="frm-cstrip-icon"><i className="ri-settings-5-line" /></div>
+          <div className="min-w-0">
+            <div className="frm-cstrip-title">Settings</div>
+            <div className="frm-cstrip-sub">Configure your platform preferences and options</div>
           </div>
         </div>
-        <ol className="breadcrumb m-0" style={{ fontSize: 11.5 }}>
-          <li className="breadcrumb-item"><a href="#">Admin</a></li>
-          <li className="breadcrumb-item active">Settings</li>
-        </ol>
       </div>
 
       <Row className="g-3 align-items-start pb-3">
