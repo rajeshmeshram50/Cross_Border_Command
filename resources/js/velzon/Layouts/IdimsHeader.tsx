@@ -189,6 +189,10 @@ export default function IdimsHeader() {
   const planExpired = !!(user?.plan && (!user.plan.has_plan || user.plan.expired)) &&
     user?.user_type !== 'super_admin';
 
+  // Clock-In is an attendance action — only users with an actual employee
+  // record can punch in. Hidden for super-admin / client / branch logins
+  // (mirrors the `isEmployee` guard in components/App.tsx).
+  const isEmployee = user?.user_type === 'employee' && !!user?.employee_id;
   const can = (slug: string) => isSuperAdmin || (!planExpired && !!perms[slug]?.can_view);
   const hasGroupView = (prefix: string) =>
     isSuperAdmin || (!planExpired && Object.keys(perms).some(s => s.startsWith(prefix) && perms[s]?.can_view));
@@ -498,6 +502,11 @@ export default function IdimsHeader() {
                 <button type="button" className="idims-action-btn idims-fs-btn" title="Fullscreen" onClick={toggleFs}>
                   {isFs ? IC.minimize : IC.maximize}
                 </button>
+                {isEmployee && (
+                  <button type="button" className="idims-action-btn idims-clock-btn" title="Clock In / Out" onClick={() => go('/clock-in')}>
+                    {IC.clock}
+                  </button>
+                )}
                 <button type="button" className="idims-action-btn idims-mail-btn" title="Gmail" onClick={() => go('/gmail')}>
                   {IC.mail}
                 </button>
@@ -599,6 +608,12 @@ export default function IdimsHeader() {
         <>
           <div className="idims-mob-backdrop" onClick={() => setMobileOpen(false)} />
           <div className="idims-mobile-panel">
+            {isEmployee && (
+              <button type="button" className="idims-mob-item"
+                onClick={() => go('/clock-in')}>
+                <span className="idims-ico">{IC.clock}</span><span className="idims-mob-label">Clock In / Out</span>
+              </button>
+            )}
             {navItems.map(item => (
               item.dd ? (
                 <div key={item.id} className="idims-mob-group">
@@ -684,6 +699,7 @@ const IC = {
   sun: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></svg>,
   maximize: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3" /></svg>,
   minimize: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3m8 0v-3a2 2 0 0 1 2-2h3" /></svg>,
+  clock: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15.5 14" /></svg>,
   mail: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 6L2 7" /></svg>,
   bell: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>,
   logout: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>,
