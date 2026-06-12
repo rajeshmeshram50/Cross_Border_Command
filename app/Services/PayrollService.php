@@ -65,8 +65,14 @@ class PayrollService
                 'created_by'   => $ctx['user_id'] ?? null,
             ]);
         } catch (\Illuminate\Database\QueryException $e) {
-            // Lost the create race — the row now exists, fetch it.
-            return PayrollPeriod::where($key)->firstOrFail();
+            // Recover ONLY from the lost-create race (the row now exists). For
+            // any other DB error, rethrow instead of masking it behind a
+            // confusing 404 from firstOrFail. (P2)
+            $existing = PayrollPeriod::where($key)->first();
+            if ($existing) {
+                return $existing;
+            }
+            throw $e;
         }
     }
 
@@ -166,6 +172,12 @@ class PayrollService
     public function disburseRun(PayrollRun $run, ?int $userId): array
     {
         return DB::transaction(function () use ($run, $userId) {
+            // Lock the run so the two disbursement entry points (/payroll/pay and
+            // the Proceed-to-Pay advice flow) can't both pay the same payslips
+            // concurrently. The unpaid set below is then read under the lock, so a
+            // second caller finds everything already Paid. (P5)
+            PayrollRun::whereKey($run->id)->lockForUpdate()->first();
+
             // Never fabricate a "paid" state for a run that has no payslips
             // (e.g. one reopened back to draft) — that would lock the period
             // with zero disbursement.
@@ -181,7 +193,14 @@ class PayrollService
                     continue;
                 }
                 $emp = Employee::find($slip->employee_id);
-                $bankOk = (bool) ($emp && $emp->bank_account_number && $emp->ifsc_code);
+                // P26: don't treat "non-empty" as "valid" — validate the shapes so a
+                // typo'd IFSC / account number is HELD rather than disbursed. IFSC is
+                // 4 letters + 0 + 6 alphanumerics; account no. is 6–18 digits.
+                $ifsc = strtoupper(trim((string) ($emp->ifsc_code ?? '')));
+                $acct = preg_replace('/\s+/', '', (string) ($emp->bank_account_number ?? ''));
+                $bankOk = (bool) ($emp
+                    && preg_match('/^[A-Z]{4}0[A-Z0-9]{6}$/', $ifsc)
+                    && preg_match('/^\d{6,18}$/', $acct));
                 $slip->bank_account_number = $emp->bank_account_number ?? $slip->bank_account_number;
                 $slip->ifsc_code = $emp->ifsc_code ?? $slip->ifsc_code;
                 $slip->bank_verified = $bankOk;
@@ -412,12 +431,19 @@ class PayrollService
             throw new RuntimeException('This payroll period is locked. Adjustments must go to the next cycle.');
         }
 
-        $existing = $period->runs()->latest('id')->first();
-        if ($existing && $existing->isLocked()) {
-            throw new RuntimeException('Payroll for this period is already approved/paid and cannot be regenerated.');
-        }
+        return DB::transaction(function () use ($period, $ctx) {
+            // Serialize concurrent generation for this period: row-lock the
+            // period, THEN read the latest run inside the lock. Without this a
+            // double-click / two HR users both saw "no run" and each created a
+            // full PayrollRun + payslip set (doubled totals). The loser now
+            // waits, then reuses the run the winner created. (P1)
+            PayrollPeriod::whereKey($period->id)->lockForUpdate()->first();
 
-        return DB::transaction(function () use ($period, $ctx, $existing) {
+            $existing = $period->runs()->latest('id')->first();
+            if ($existing && $existing->isLocked()) {
+                throw new RuntimeException('Payroll for this period is already approved/paid and cannot be regenerated.');
+            }
+
             $run = $existing ?: new PayrollRun([
                 'client_id'         => $period->client_id,
                 'branch_id'         => $period->branch_id,
@@ -1097,6 +1123,11 @@ class PayrollService
         }
         return (float) DB::table('payroll_adjustments')
             ->where('employee_id', $employeeId)
+            // P23: scope to the period's tenant so an adjustment can't bleed into
+            // another client's run (or another branch's), matching by client and
+            // — when the run is branch-scoped — that branch or a client-wide row.
+            ->when($period->client_id, fn ($q) => $q->where('client_id', $period->client_id))
+            ->when($period->branch_id, fn ($q) => $q->where(fn ($w) => $w->whereNull('branch_id')->orWhere('branch_id', $period->branch_id)))
             ->where('month', (int) $period->month)
             ->where('year', (int) $period->year)
             ->where('status', 'approved')
@@ -1113,6 +1144,9 @@ class PayrollService
         }
         return DB::table('payroll_adjustments')
             ->where('employee_id', $employeeId)
+            // P23: same tenant scoping as approvedAdjustments().
+            ->when($period->client_id, fn ($q) => $q->where('client_id', $period->client_id))
+            ->when($period->branch_id, fn ($q) => $q->where(fn ($w) => $w->whereNull('branch_id')->orWhere('branch_id', $period->branch_id)))
             ->where('month', (int) $period->month)
             ->where('year', (int) $period->year)
             ->where('status', 'approved')

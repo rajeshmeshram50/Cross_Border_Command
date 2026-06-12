@@ -434,6 +434,13 @@ class PayrollController extends Controller
         if (!in_array($run->status, ['approved', 'paid'], true)) {
             return response()->json(['message' => 'Approve the payroll before paying.'], 422);
         }
+        // A 'paid' status is allowed back in ONLY to clear previously-held slips.
+        // If nothing is outstanding, refuse — don't let a settled run be re-run
+        // (which, after a recompute reset a slip, could re-pay without approval).
+        if ($run->status === 'paid'
+            && \App\Models\Payslip::where('payroll_run_id', $run->id)->where('status', '!=', 'Paid')->doesntExist()) {
+            return response()->json(['message' => 'This payroll run is already fully paid.'], 422);
+        }
 
         // Shared disbursement logic (also used by the Proceed-to-Pay flow).
         $result = $this->payroll->disburseRun($run, $request->user()?->id);
@@ -462,13 +469,37 @@ class PayrollController extends Controller
     public function fnf(Request $request, int $employeeId)
     {
         $user = $request->user();
+        // FnF exposes full salary + settlement figures — manage-only, never the
+        // employee tier (which previously could read any colleague's FnF).
+        if (!$this->canManage($request)) {
+            return response()->json(['message' => 'You do not have permission to view full-and-final settlements.'], 403);
+        }
         $employee = \App\Models\Employee::find($employeeId);
         if (!$employee) {
             return response()->json(['message' => 'Employee not found.'], 404);
         }
-        if ($user && $user->client_id && (int) $employee->client_id !== (int) $user->client_id) {
+        // Strict tenant match (a null client_id must not pass as "same tenant").
+        if ($user && $user->user_type !== 'super_admin' && (int) $employee->client_id !== (int) $user->client_id) {
             return response()->json(['message' => 'Employee belongs to another tenant.'], 403);
         }
+
+        // FnF is only meaningful for an exiting employee — without an exit record
+        // the engine silently used "today" as the last working day and produced a
+        // bogus settlement for an active employee. (P25)
+        $hasExit = \Illuminate\Support\Facades\Schema::hasTable('employee_exits')
+            && \Illuminate\Support\Facades\DB::table('employee_exits')->where('employee_id', $employee->id)->exists();
+        if (!$hasExit) {
+            return response()->json(['message' => 'This employee has no exit record. Initiate the exit before computing a full & final settlement.'], 422);
+        }
+
+        // Validate the HR-decided numeric inputs (were taken raw from the query —
+        // negatives/garbage flowed straight into the calc). (P24)
+        $request->validate([
+            'leave_encashment_days'  => ['nullable', 'numeric', 'min:0', 'max:365'],
+            'notice_recovery_amount' => ['nullable', 'numeric', 'min:0', 'max:100000000'],
+            'other_dues'             => ['nullable', 'numeric', 'min:0', 'max:100000000'],
+            'other_deductions'       => ['nullable', 'numeric', 'min:0', 'max:100000000'],
+        ]);
 
         $opts = [
             'leave_encashment_days'  => $request->query('leave_encashment_days'),
@@ -485,6 +516,12 @@ class PayrollController extends Controller
         $slip = Payslip::with('run:id,status')->find($id);
         if (!$slip || !$this->ownsRow($request, $slip)) {
             return response()->json(['message' => 'Payslip not found.'], 404);
+        }
+        // Self-service guard (mirrors payslipPdf) — an employee may only open
+        // their OWN payslip, not a colleague's full pay + bank breakdown.
+        $user = $request->user();
+        if ($user && $user->user_type === 'employee' && (int) ($user->employee_id ?? 0) !== (int) $slip->employee_id) {
+            return response()->json(['message' => 'You can only view your own payslip.'], 403);
         }
         $data = $this->serializePayslip($slip, true);
         // Real (branch-resolved) company letterhead for the on-screen viewer.
@@ -634,7 +671,10 @@ class PayrollController extends Controller
         $period = $this->payroll->resolveOrCreatePeriod($ctx, $month, $year);
         $run = $period->runs()->latest('id')->first();
 
-        if (!$run || !$run->isLocked() && $run->status !== 'approved') {
+        // P28: explicit "finalized" check instead of the fragile
+        // `!isLocked() && status!=='approved'` precedence soup.
+        $finalized = $run && ($run->isLocked() || in_array($run->status, ['approved', 'paid'], true));
+        if (!$finalized) {
             return response()->json(['message' => 'Approve the payroll before emailing payslips.'], 422);
         }
 
@@ -713,6 +753,10 @@ class PayrollController extends Controller
 
         [$month, $year] = $this->resolveMonthYear($request);
         $ctx = $this->ctx($request);
+        // P29: require a concrete tenant scope — without this a super-admin with
+        // no client/branch selected would pool every tenant's payslips into one
+        // export. (abort_if, since this method must return a StreamedResponse.)
+        abort_if(empty($ctx['client_id']) && empty($ctx['branch_id']), 422, 'Select a client or branch before exporting payroll.');
         $period = $this->payroll->resolveOrCreatePeriod($ctx, $month, $year);
         $run = $period->runs()->latest('id')->first();
 
@@ -759,8 +803,9 @@ class PayrollController extends Controller
         $id = (int) $request->input('run_id', $request->query('run_id'));
         $run = PayrollRun::with('period')->find($id);
         if (!$run) return null;
-        // Tenant gate — client + (for branch-pinned users) branch.
-        if ($ctx['client_id'] && $run->client_id && (int) $run->client_id !== (int) $ctx['client_id']) {
+        // Tenant gate — client + (for branch-pinned users) branch. A null
+        // client_id on the run must NOT bypass the gate for a scoped caller.
+        if ($ctx['client_id'] && (int) $run->client_id !== (int) $ctx['client_id']) {
             return null;
         }
         if ($ctx['branch_id'] && $run->branch_id && (int) $run->branch_id !== (int) $ctx['branch_id']) {
@@ -772,8 +817,11 @@ class PayrollController extends Controller
     private function ownsRow(Request $request, Payslip $slip): bool
     {
         $user = $request->user();
-        if (!$user || $user->user_type === 'super_admin') return true;
-        return !$slip->client_id || (int) $slip->client_id === (int) $user->client_id;
+        if (!$user) return false;
+        if ($user->user_type === 'super_admin') return true;
+        // Strict match — a null client_id on the slip must NOT pass for a scoped
+        // user (that previously let any tenant read client-less payslips).
+        return (int) $slip->client_id === (int) $user->client_id;
     }
 
     private function canExport(Request $request): bool

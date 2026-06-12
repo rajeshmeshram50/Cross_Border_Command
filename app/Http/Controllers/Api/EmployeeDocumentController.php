@@ -48,7 +48,11 @@ class EmployeeDocumentController extends Controller
 
         $data = $request->validate([
             'document_key' => 'required|string|max:60',
-            'file'         => 'required|file|max:' . (self::MAX_MB * 1024),
+            // OB-15: a content-based `mimes` backstop so a renamed binary
+            // (evil.html → evil.pdf) can't pass on extension alone. The
+            // two-signal MIME/ext check below still runs for the friendlier
+            // error message and to tolerate non-canonical server MIMEs.
+            'file'         => 'required|file|max:' . (self::MAX_MB * 1024) . '|mimes:pdf,jpg,jpeg,png,webp',
         ]);
 
         $file = $request->file('file');
@@ -201,8 +205,9 @@ class EmployeeDocumentController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
         if ($user->isSuperAdmin()) return;
-        // Super admins always pass; everyone else must be in the same tenant.
-        if ($employee->client_id && $user->client_id !== $employee->client_id) {
+        // Strict tenant match — a null client_id must NOT pass for scoped users
+        // (that previously let any tenant reach a client-less employee's docs).
+        if ((int) $employee->client_id !== (int) $user->client_id) {
             abort(403, 'Document belongs to a different organization.');
         }
     }
@@ -212,7 +217,8 @@ class EmployeeDocumentController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
         if ($user->isSuperAdmin()) return;
-        if ($doc->client_id && $user->client_id !== $doc->client_id) {
+        // Strict tenant match (null client_id must not pass for scoped users).
+        if ((int) $doc->client_id !== (int) $user->client_id) {
             abort(403, 'Document belongs to a different organization.');
         }
     }
