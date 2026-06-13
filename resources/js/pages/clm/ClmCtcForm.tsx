@@ -10,6 +10,7 @@ import { useOpsTheme, type OpsTokens } from './useOpsTheme';
 import { VersionHistoryModal, type CtcVersion } from './clmCtcModals';
 import ClmCtcSignPositionModal from './ClmCtcSignPositionModal';
 import { Shimmer } from '../../components/ui/Shimmer';
+import { checkSpelling } from '../../utils/spellCheck';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Case to Case Contracts → full-screen "Create / Edit CTC Agreement" form.
@@ -1549,9 +1550,14 @@ function GreenChoice({ t, sel, onClick, title, sub, icon }: { t: OpsTokens; sel:
 
 /* ── Stage-1 right panel: placeholder fields + AI writing assistant + summary ── */
 function RightTools({ t, draft, onInsert, summary, declineReason, declinedBy, active = true }: { t: OpsTokens; draft: string; onInsert: (tok: string) => void; summary: string[][]; declineReason?: string; declinedBy?: string; active?: boolean }) {
-  const plain = draft.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
-  const words = plain ? plain.split(/\s+/).length : 0;
-  const score = Math.min(100, Math.round(words * 1.5));
+  // Grammarly-style live review: score = % of words spelled correctly, with
+  // the flagged misspellings (and suggestions) listed below the score.
+  const { score, words, issues } = checkSpelling(draft);
+  const clean = score >= 90, mild = score >= 60 && score < 90;
+  const scoreClr = words === 0 ? '#EF4444' : clean ? (t.dark ? '#6ee7b7' : '#059669') : mild ? (t.dark ? '#fcd34d' : '#D97706') : (t.dark ? '#fca5a5' : '#DC2626');
+  const statusLabel = words === 0 ? 'Not Started' : clean ? 'Looks Clean' : mild ? 'Minor Issues' : 'Needs Review';
+  const statusBg = words === 0 ? (t.dark ? 'rgba(239,68,68,.16)' : '#FEF2F2') : clean ? (t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5') : mild ? (t.dark ? 'rgba(245,158,11,.16)' : '#FFFBEB') : (t.dark ? 'rgba(239,68,68,.16)' : '#FEF2F2');
+  const statusBd = words === 0 ? (t.dark ? 'rgba(239,68,68,.4)' : '#FECACA') : clean ? (t.dark ? 'rgba(16,185,129,.4)' : '#A7F3D0') : mild ? (t.dark ? 'rgba(245,158,11,.4)' : '#FDE68A') : (t.dark ? 'rgba(239,68,68,.4)' : '#FECACA');
   // Tokens auto-fill from the "Our Organisation" (Company Details master) row
   // at agreement generation — see CtcContractController::downloadVersion.
   const FIELDS = [['SIGNATURE', 'signature'], ['COMPANY NAME', 'company_name'], ['COMPANY NO', 'company_no'], ['EMAIL', 'email'], ['CONTACT NO', 'contact_no'], ['ADDRESS', 'address']];
@@ -1607,14 +1613,35 @@ function RightTools({ t, draft, onInsert, summary, declineReason, declinedBy, ac
         </div>
         <div style={{ padding: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <div><div style={{ fontSize: 8, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: t.textMuted }}>Quality Score</div><div style={{ fontSize: 24, fontWeight: 900, color: score > 0 ? (t.dark ? '#6ee7b7' : '#059669') : '#EF4444' }}>{score}<span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>/100</span></div></div>
+            <div><div style={{ fontSize: 8, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: t.textMuted }}>Quality Score</div><div style={{ fontSize: 24, fontWeight: 900, color: scoreClr }}>{score}<span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>/100</span></div></div>
             <div style={{ textAlign: 'right' }}>
-              <span style={{ display: 'inline-block', padding: '3px 9px', borderRadius: 20, fontSize: 8.5, fontWeight: 800, background: score > 0 ? (t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5') : (t.dark ? 'rgba(239,68,68,.16)' : '#FEF2F2'), color: score > 0 ? (t.dark ? '#6ee7b7' : '#059669') : (t.dark ? '#fca5a5' : '#DC2626'), border: `1px solid ${score > 0 ? (t.dark ? 'rgba(16,185,129,.4)' : '#A7F3D0') : (t.dark ? 'rgba(239,68,68,.4)' : '#FECACA')}` }}>{score > 0 ? 'In Progress' : 'Not Started'}</span>
-              <div style={{ fontSize: 8.5, color: t.textMuted, fontWeight: 600, marginTop: 4 }}>{words} words</div>
+              <span style={{ display: 'inline-block', padding: '3px 9px', borderRadius: 20, fontSize: 8.5, fontWeight: 800, background: statusBg, color: scoreClr, border: `1px solid ${statusBd}` }}>{statusLabel}</span>
+              <div style={{ fontSize: 8.5, color: t.textMuted, fontWeight: 600, marginTop: 4 }}>{words} words · {issues.length} {issues.length === 1 ? 'issue' : 'issues'}</div>
             </div>
           </div>
-          <div style={{ height: 5, borderRadius: 4, background: t.dark ? 'rgba(255,255,255,.06)' : '#EDE9FE', overflow: 'hidden' }}><div style={{ height: '100%', width: `${score}%`, background: 'linear-gradient(90deg,#7C3AED,#059669)', transition: 'width .25s' }} /></div>
-          <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, border: `1px dashed ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, textAlign: 'center', fontSize: 9, fontWeight: 600, color: t.dark ? '#a78bfa' : '#7C3AED' }}>{score > 0 ? 'Keep going — add parties, clauses & terms to raise the score.' : 'Start typing in the editor to see live analysis'}</div>
+          <div style={{ height: 5, borderRadius: 4, background: t.dark ? 'rgba(255,255,255,.06)' : '#EDE9FE', overflow: 'hidden' }}><div style={{ height: '100%', width: `${score}%`, background: `linear-gradient(90deg,#7C3AED,${scoreClr})`, transition: 'width .25s' }} /></div>
+          {/* Spelling feedback — flagged words with suggestions where known. */}
+          {words === 0 ? (
+            <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, border: `1px dashed ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, textAlign: 'center', fontSize: 9, fontWeight: 600, color: t.dark ? '#a78bfa' : '#7C3AED' }}>Start typing in the editor to see live spelling review</div>
+          ) : issues.length === 0 ? (
+            <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, border: `1px solid ${t.dark ? 'rgba(16,185,129,.35)' : '#A7F3D0'}`, background: t.dark ? 'rgba(16,185,129,.1)' : '#F0FDF4', display: 'flex', alignItems: 'center', gap: 7, fontSize: 9.5, fontWeight: 700, color: t.dark ? '#6ee7b7' : '#059669' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+              No spelling issues found — looks clean.
+            </div>
+          ) : (
+            <div style={{ marginTop: 10, padding: '9px 11px', borderRadius: 8, border: `1px solid ${t.dark ? 'rgba(239,68,68,.35)' : '#FECACA'}`, background: t.dark ? 'rgba(239,68,68,.08)' : '#FEF2F2' }}>
+              <div style={{ fontSize: 8.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.05em', color: t.dark ? '#fca5a5' : '#DC2626', marginBottom: 6 }}>{issues.length} possible spelling {issues.length === 1 ? 'issue' : 'issues'}</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                {issues.slice(0, 8).map((iss, i) => (
+                  <span key={i} title={iss.suggestion ? `Did you mean “${iss.suggestion}”?` : 'Possible misspelling'} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 7px', borderRadius: 6, fontSize: 9, fontWeight: 700, background: t.dark ? 'rgba(239,68,68,.14)' : '#fff', border: `1px solid ${t.dark ? 'rgba(239,68,68,.35)' : '#FECACA'}`, color: t.dark ? '#fecaca' : '#B91C1C' }}>
+                    <span style={{ textDecoration: 'underline wavy', textDecorationColor: t.dark ? '#f87171' : '#EF4444' }}>{iss.word}</span>
+                    {iss.suggestion && <><span style={{ color: t.textMuted }}>→</span><span style={{ color: t.dark ? '#6ee7b7' : '#059669' }}>{iss.suggestion}</span></>}
+                  </span>
+                ))}
+                {issues.length > 8 && <span style={{ fontSize: 9, fontWeight: 700, color: t.textMuted, alignSelf: 'center' }}>+{issues.length - 8} more</span>}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
