@@ -71,7 +71,7 @@ const fileIcon = (mime: string, name = '') => {
 
 interface Stats {
   total: number; unread: number; sent: number; failed: number;
-  branch: number; employee: number; composed: number; starred: number; trash: number;
+  branch: number; employee: number; composed: number; mine: number; starred: number; trash: number;
 }
 
 type Recipient = { id: number; name: string; email: string; code?: string | null };
@@ -165,7 +165,9 @@ export default function Gmail() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadStats(); }, [loadStats]);
 
-  const switchFolder = (f: Folder) => { setFolder(f); setPage(1); setOpenId(null); setSelected(new Set()); };
+  // Picking a folder clears the "Unread only" modifier so the rail never shows
+  // two highlighted items at once (a folder + Unread). One active nav at a time.
+  const switchFolder = (f: Folder) => { setFolder(f); setUnreadOnly(false); setPage(1); setOpenId(null); setSelected(new Set()); };
 
   const openEmail = async (id: number) => {
     setOpenId(id);
@@ -183,10 +185,46 @@ export default function Gmail() {
     } finally { setDetailLoading(false); }
   };
 
+  // In-place toggles (read/unread/star/unstar) patch the row locally instead of
+  // reloading the whole list — so marking unread is instant, no page spinner.
+  const PATCH: Record<string, Partial<EmailRow>> = {
+    read:   { is_read: true },
+    unread: { is_read: false },
+    star:   { is_starred: true },
+    unstar: { is_starred: false },
+  };
+
   // Bulk action over an explicit id set (defaults to current selection).
   const runBulk = async (action: string, ids?: number[]) => {
     const target = ids ?? Array.from(selected);
     if (target.length === 0) return;
+    const targetSet = new Set(target);
+
+    // Optimistic path for the in-place toggles — update rows in memory and only
+    // refresh the counts. Rows that no longer match the current view drop out
+    // (read mail in "Unread only", unstarred mail in "Starred").
+    const patch = PATCH[action];
+    if (patch) {
+      setRows((prev) => prev.flatMap((r) => {
+        if (!targetSet.has(r.id)) return [r];
+        const next = { ...r, ...patch };
+        if (unreadOnly && action === 'read') return [];
+        if (folder === 'starred' && action === 'unstar') return [];
+        return [next];
+      }));
+      setSelected(new Set());
+      try {
+        await api.post('/emails/bulk', { ids: target, action });
+        loadStats();
+      } catch (err: any) {
+        toast.error('Action failed', err?.response?.data?.message || 'Please try again.');
+        load();
+      }
+      return;
+    }
+
+    // Removal actions (trash/restore/delete) take rows out of the list, so a
+    // refetch is the honest way to resync.
     setBusy(true);
     try {
       await api.post('/emails/bulk', { ids: target, action });
@@ -221,7 +259,7 @@ export default function Gmail() {
 
   const FOLDERS: { id: Folder; label: string; icon: string; count?: number; activeIcon?: string }[] = [
     { id: 'all',      label: 'All Mail',    icon: 'ri-mail-line',         count: stats?.total },
-    { id: 'sent',     label: 'Sent',        icon: 'ri-send-plane-line',   count: stats?.composed },
+    { id: 'sent',     label: 'Sent',        icon: 'ri-send-plane-line',   count: stats?.mine },
     { id: 'starred',  label: 'Starred',     icon: 'ri-star-line',         count: stats?.starred },
     { id: 'branch',   label: 'By Branch',   icon: 'ri-git-branch-line',   count: stats?.branch },
     { id: 'employee', label: 'By Employee', icon: 'ri-team-line',         count: stats?.employee },
@@ -331,7 +369,10 @@ export default function Gmail() {
 
             {/* List */}
             <div className="gm-list">
-              {loading ? (
+              {/* Thin progress strip for background refetches (search / paging /
+                  refresh) so the list stays put instead of flashing to shimmers. */}
+              {loading && rows.length > 0 && <div className="gm-loading-bar" />}
+              {loading && rows.length === 0 ? (
                 Array.from({ length: 10 }).map((_, i) => (
                   <div key={i} className="gm-shim-row"><Shimmer height={14} radius={6} /></div>
                 ))
@@ -406,6 +447,7 @@ function ReadingPane({ detail, loading, onBack, onTrash, onUnread, onStar, inTra
   onTrash: () => void; onUnread: () => void; onStar: () => void; inTrash: boolean;
 }) {
   const [showMeta, setShowMeta] = useState(false);
+  const [preview, setPreview] = useState<MailAttachment | null>(null);
   if (loading || !detail) {
     return (
       <div className="gm-reading">
@@ -472,17 +514,26 @@ function ReadingPane({ detail, loading, onBack, onTrash, onUnread, onStar, inTra
             <div className="gm-attachments-grid">
               {detail.attachments.map((a, i) => {
                 const url = resolveFileUrl(a.path);
+                const ext = a.name.split('.').pop()?.toLowerCase() || '';
                 const isImg = (a.mime || '').startsWith('image/');
+                const isPdf = (a.mime || '') === 'application/pdf' || ext === 'pdf';
+                const canPreview = isImg || isPdf;
                 return (
-                  <div key={i} className="gm-att-card" title={a.name}>
+                  <div
+                    key={i}
+                    className={`gm-att-card ${canPreview ? 'previewable' : ''}`}
+                    title={canPreview ? `Preview ${a.name}` : a.name}
+                    onClick={canPreview ? () => setPreview(a) : undefined}
+                  >
                     <div className="gm-att-thumb">
                       {isImg ? <img src={url} alt={a.name} loading="lazy" /> : <i className={fileIcon(a.mime, a.name)} />}
+                      {canPreview && <span className="gm-att-eye"><i className="ri-eye-line" /></span>}
                     </div>
                     <div className="gm-att-meta">
                       <span className="gm-att-name">{a.name}</span>
                       <span className="gm-att-size">{fmtBytes(a.size)}</span>
                     </div>
-                    <div className="gm-att-actions">
+                    <div className="gm-att-actions" onClick={(e) => e.stopPropagation()}>
                       <button type="button" className="gm-icon-btn sm" title="Download" onClick={() => downloadFile(url, a.name)}><i className="ri-download-2-line" /></button>
                       <button type="button" className="gm-icon-btn sm" title="Open" onClick={() => window.open(url, '_blank')}><i className="ri-external-link-line" /></button>
                     </div>
@@ -490,6 +541,53 @@ function ReadingPane({ detail, loading, onBack, onTrash, onUnread, onStar, inTra
                 );
               })}
             </div>
+          </div>
+        )}
+      </div>
+
+      {preview && <AttachmentPreview att={preview} onClose={() => setPreview(null)} />}
+    </div>
+  );
+}
+
+// Lightbox that renders an image or PDF inline so a recipient can actually see
+// the file (not just its name) before downloading — fixes the "raw name, no
+// file" complaint. Falls back to a download prompt for any other type.
+function AttachmentPreview({ att, onClose }: { att: MailAttachment; onClose: () => void }) {
+  const url = resolveFileUrl(att.path);
+  const ext = att.name.split('.').pop()?.toLowerCase() || '';
+  const isImg = (att.mime || '').startsWith('image/');
+  const isPdf = (att.mime || '') === 'application/pdf' || ext === 'pdf';
+
+  // Esc to close; lock background scroll while the lightbox is up.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
+  }, [onClose]);
+
+  return (
+    <div className="gm-lightbox" onClick={onClose}>
+      <div className="gm-lightbox-bar" onClick={(e) => e.stopPropagation()}>
+        <span className="gm-lightbox-name" title={att.name}><i className={fileIcon(att.mime, att.name)} /> {att.name}</span>
+        <span className="gm-lightbox-actions">
+          <button type="button" className="gm-icon-btn" title="Download" onClick={() => downloadFile(url, att.name)}><i className="ri-download-2-line" /></button>
+          <button type="button" className="gm-icon-btn" title="Open in new tab" onClick={() => window.open(url, '_blank')}><i className="ri-external-link-line" /></button>
+          <button type="button" className="gm-icon-btn" title="Close" onClick={onClose}><i className="ri-close-line" /></button>
+        </span>
+      </div>
+      <div className="gm-lightbox-stage" onClick={(e) => e.stopPropagation()}>
+        {isImg ? (
+          <img src={url} alt={att.name} className="gm-lightbox-img" />
+        ) : isPdf ? (
+          <iframe title={att.name} src={url} className="gm-lightbox-frame" />
+        ) : (
+          <div className="gm-lightbox-fallback">
+            <i className={fileIcon(att.mime, att.name)} />
+            <p>No inline preview for this file type.</p>
+            <button type="button" className="gm-cmp-send" onClick={() => downloadFile(url, att.name)}>Download <i className="ri-download-2-line" /></button>
           </div>
         )}
       </div>
@@ -790,7 +888,12 @@ function GmailStyles() {
     .gm-check { display:inline-flex; align-items:center; justify-content:center; width:36px; cursor:pointer; }
     .gm-check input { width:16px; height:16px; cursor:pointer; }
     /* List */
-    .gm-list { flex:1; overflow-y:auto; }
+    .gm-list { flex:1; overflow-y:auto; position:relative; }
+    /* Indeterminate top strip shown while a background refetch runs (search /
+       paging) so the list never blanks to shimmers on every keystroke. */
+    .gm-loading-bar { position:sticky; top:0; left:0; right:0; height:3px; z-index:3; overflow:hidden; background:rgba(26,115,232,.15); }
+    .gm-loading-bar::after { content:''; position:absolute; inset:0; width:40%; background:#1a73e8; border-radius:3px; animation:gm-indeterminate 1.1s ease-in-out infinite; }
+    @keyframes gm-indeterminate { 0%{ transform:translateX(-100%);} 100%{ transform:translateX(320%);} }
     .gm-shim-row { padding:13px 16px; border-bottom:1px solid var(--vz-border-color); }
     .gm-row { display:flex; align-items:center; gap:8px; padding:0 12px 0 4px; height:42px; border-bottom:1px solid var(--vz-border-color); cursor:pointer; position:relative; }
     .gm-row:hover { box-shadow:inset 1px 0 0 #dadce0, inset -1px 0 0 #dadce0, 0 1px 2px rgba(60,64,67,.3); z-index:1; }
@@ -847,7 +950,9 @@ function GmailStyles() {
     .gm-cmp-header { display:flex; align-items:center; justify-content:space-between; background:#404040; color:#fff; padding:10px 14px; border-radius:12px 12px 0 0; font-size:13.5px; font-weight:600; cursor:move; user-select:none; }
     .gm-compose-dock.floating .gm-cmp-header { border-radius:12px 12px 0 0; }
     .gm-cmp-header-actions i { margin-left:14px; cursor:pointer; font-size:16px; }
-    .gm-cmp-body { display:flex; flex-direction:column; padding:6px 16px 14px; position:relative; }
+    /* max-height + contained overscroll: the dock body scrolls within itself and
+       wheeling inside it never chains through to scroll the inbox behind. */
+    .gm-cmp-body { display:flex; flex-direction:column; padding:6px 16px 14px; position:relative; max-height:calc(100vh - 160px); overflow-y:auto; overscroll-behavior:contain; }
     .gm-cmp-drop { position:absolute; inset:6px; border:2px dashed #0b57d0; border-radius:10px; background:rgba(11,87,208,.08); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; color:#0b57d0; font-weight:600; font-size:14px; z-index:6; pointer-events:none; }
     .gm-cmp-drop i { font-size:30px; }
     .gm-cmp-field { display:flex; align-items:flex-start; gap:8px; border-bottom:1px solid var(--vz-border-color); padding:6px 0; position:relative; }
@@ -865,7 +970,7 @@ function GmailStyles() {
     .gm-ac-email { font-size:12px; color:#5f6368; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .gm-ac-group { font-size:10px; font-weight:800; text-transform:uppercase; color:#1a73e8; }
     .gm-cmp-subject { border:0; border-bottom:1px solid var(--vz-border-color); outline:none; padding:10px 0; font-size:14px; font-weight:600; background:transparent; color:var(--vz-body-color); }
-    .gm-cmp-text { border:0; outline:none; padding:12px 0; min-height:200px; resize:vertical; font-size:14px; background:transparent; color:var(--vz-body-color); font-family:inherit; }
+    .gm-cmp-text { border:0; outline:none; padding:12px 0; min-height:200px; resize:vertical; font-size:14px; background:transparent; color:var(--vz-body-color); font-family:inherit; overscroll-behavior:contain; }
     .gm-cmp-footer { display:flex; align-items:center; gap:14px; padding-top:6px; }
     .gm-cmp-send { display:inline-flex; align-items:center; gap:8px; background:#0b57d0; color:#fff; border:0; border-radius:999px; padding:9px 24px; font-weight:600; font-size:14px; cursor:pointer; }
     .gm-cmp-send:hover { background:#0a4bbf; }
@@ -888,7 +993,24 @@ function GmailStyles() {
     .gm-attachments-head { font-size:13px; font-weight:600; color:var(--vz-body-color); display:flex; align-items:center; gap:6px; margin-bottom:10px; }
     .gm-attachments-grid { display:flex; flex-wrap:wrap; gap:10px; }
     .gm-att-card { width:210px; display:flex; align-items:center; gap:10px; border:1px solid var(--vz-border-color); border-radius:10px; padding:8px 10px; background:var(--vz-secondary-bg,#fff); }
-    .gm-att-thumb { width:40px; height:40px; border-radius:8px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:var(--vz-body-bg,#f1f3f4); overflow:hidden; }
+    .gm-att-card.previewable { cursor:pointer; }
+    .gm-att-card.previewable:hover { border-color:#1a73e8; box-shadow:0 1px 6px rgba(26,115,232,.18); }
+    .gm-att-card.previewable:hover .gm-att-eye { opacity:1; }
+    .gm-att-thumb { width:40px; height:40px; border-radius:8px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:var(--vz-body-bg,#f1f3f4); overflow:hidden; position:relative; }
+    .gm-att-eye { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.45); color:#fff; font-size:18px; opacity:0; transition:opacity .15s; }
+    /* Attachment lightbox */
+    .gm-lightbox { position:fixed; inset:0; z-index:1400; background:rgba(17,24,39,.82); display:flex; flex-direction:column; }
+    .gm-lightbox-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 18px; color:#fff; }
+    .gm-lightbox-name { display:flex; align-items:center; gap:8px; font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .gm-lightbox-actions { display:flex; gap:4px; flex-shrink:0; }
+    .gm-lightbox .gm-icon-btn { color:#fff; }
+    .gm-lightbox .gm-icon-btn:hover { background:rgba(255,255,255,.16); }
+    .gm-lightbox-stage { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; padding:0 18px 22px; }
+    .gm-lightbox-img { max-width:100%; max-height:100%; object-fit:contain; border-radius:8px; background:#fff; }
+    .gm-lightbox-frame { width:100%; max-width:1000px; height:100%; border:0; border-radius:8px; background:#fff; }
+    .gm-lightbox-fallback { background:#fff; border-radius:12px; padding:40px 48px; text-align:center; color:#5f6368; }
+    .gm-lightbox-fallback i { font-size:52px; display:block; margin-bottom:14px; color:#9aa0a6; }
+    .gm-lightbox-fallback p { margin:0 0 16px; font-size:14px; }
     .gm-att-thumb i { font-size:22px; color:#5f6368; }
     .gm-att-thumb img { width:100%; height:100%; object-fit:cover; }
     .gm-att-meta { flex:1; min-width:0; display:flex; flex-direction:column; }

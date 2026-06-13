@@ -80,8 +80,14 @@ class EmailController extends Controller
                 $q->whereNotNull('branch_id');
                 break;
             case 'composed':
-            case 'sent':
                 $q->where('category', 'composed');
+                break;
+            case 'sent':
+                // "Sent" is everything the signed-in user actually dispatched —
+                // composed mail AND announcements / docs they triggered — not just
+                // the compose box. System mail (OTP, etc.) has no actor (user_id
+                // null) so it correctly stays out of the sender's Sent box.
+                $q->where('user_id', $user->id);
                 break;
             case 'starred':
                 $q->where('is_starred', true);
@@ -156,6 +162,8 @@ class EmailController extends Controller
                 'branch'    => $base()->whereNotNull('branch_id')->count(),
                 'employee'  => $base()->whereNotNull('employee_id')->count(),
                 'composed'  => $base()->where('category', 'composed')->count(),
+                // Drives the "Sent" folder count — mail the signed-in user sent.
+                'mine'      => $base()->where('user_id', $user->id)->count(),
                 'starred'   => $base()->where('is_starred', true)->count(),
                 'trash'     => $trash()->count(),
             ],
