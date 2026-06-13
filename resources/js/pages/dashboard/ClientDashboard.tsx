@@ -252,16 +252,16 @@ export default function ClientDashboard() {
           filter: brightness(1.15);
         }
       `}</style>
-      {/* Page Title */}
-      <Row className="mb-2">
-        <Col xs={12}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 0 4px', gap: 12, flexWrap: 'wrap' }}>
-            <div>
-              <h5 style={{ fontWeight: 800, fontSize: 16, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Workforce Analytics</h5>
-              <p style={{ margin: 0, fontSize: 12, color: 'var(--vz-secondary-color)', marginTop: 2 }}>
-                Employee headcount, hiring activity and demographics
-              </p>
-            </div>
+      {/* Header strip — Workforce Analytics, with the plan badge on the right. */}
+      <div className="frm-cstrip mb-3">
+        <span className="frm-cstrip-accent" />
+        <div className="frm-cstrip-left">
+          <div className="frm-cstrip-icon"><i className="ri-group-line" /></div>
+          <div className="min-w-0">
+            <div className="frm-cstrip-title">Workforce Analytics</div>
+            <div className="frm-cstrip-sub">Employee headcount, hiring activity and demographics</div>
+          </div>
+        </div>
               {(() => {
                 const isExpired = plan.status === 'expired';
                 const isWarn = !isExpired && plan.days_remaining !== null && plan.days_remaining <= 30;
@@ -304,9 +304,7 @@ export default function ClientDashboard() {
                   </span>
                 );
               })()}
-          </div>
-        </Col>
-      </Row>
+      </div>
 
       {/* KPI Cards */}
       <Row className="g-2 mb-2">
