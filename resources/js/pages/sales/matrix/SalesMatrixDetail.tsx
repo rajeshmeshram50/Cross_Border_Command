@@ -537,15 +537,21 @@ export default function SalesMatrixDetail() {
       if (c) return 'consignee';
       return 'both';
     };
-    let agrTotal = 0, agrDone = 0, tdTotal = 0, tdDone = 0;
+    // ONE entry per unique document — a trade doc / agreement applicable to
+    // multiple segments is counted once (not once per segment), matching the
+    // de-duped Trade Documents / Agreements send popup. Each Map value is the
+    // "done" flag, unioned across segments (done in ANY segment ⇒ done).
+    const agrSeen = new Map<string, boolean>();
+    const tdSeen  = new Map<string, boolean>();
     for (const s of segs) {
       for (const a of s.agreements) {
-        // buyer == consignee → keep buyer-only AND buyer+consignee "both"
-        // agreements (one signature each); only pure consignee-only rows are
-        // dropped as mirrors. Must match activeAgreements in the send popup.
-        if (buyerEqualsConsignee && partyBucket(a.party) === 'consignee') continue;
-        agrTotal++;
-        if (a.signature_request?.status === 'completed') agrDone++;
+        // buyer == consignee → count ONLY pure buyer agreements (the Consignee
+        // and Buyer+Consignee categories are redundant for a single party).
+        // Must match activeAgreements in the send popup.
+        if (buyerEqualsConsignee && partyBucket(a.party) !== 'buyer') continue;
+        const key  = a.id != null ? `id:${a.id}` : `code:${a.code ?? ''}|title:${a.title ?? ''}`;
+        const done = a.signature_request?.status === 'completed';
+        agrSeen.set(key, (agrSeen.get(key) ?? false) || done);
       }
       // A trade doc counts as "done" when it's uploaded/verified OR signed
       // (its signature request reached completed) — same way agreements count
@@ -557,10 +563,15 @@ export default function SalesMatrixDetail() {
         // LeadAgreementSendModal). The card count must match: keep anything with
         // for_buyer, drop pure consignee-only, so a "both" doc still counts once.
         if (buyerEqualsConsignee && !td.for_buyer) continue;
-        tdTotal++;
-        if (td.status === 'Verified' || td.signature_request?.status === 'completed') tdDone++;
+        const key  = td.db_id != null ? `id:${td.db_id}` : `code:${td.doc_code}|ref:${td.reference}|name:${td.name}`;
+        const done = td.status === 'Verified' || td.signature_request?.status === 'completed';
+        tdSeen.set(key, (tdSeen.get(key) ?? false) || done);
       }
     }
+    const agrTotal = agrSeen.size;
+    const agrDone  = Array.from(agrSeen.values()).filter(Boolean).length;
+    const tdTotal  = tdSeen.size;
+    const tdDone   = Array.from(tdSeen.values()).filter(Boolean).length;
     return { agrTotal, agrDone, tdTotal, tdDone };
   }, [agreementApplicable]);
 
