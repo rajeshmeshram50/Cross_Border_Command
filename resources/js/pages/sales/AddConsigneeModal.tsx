@@ -254,6 +254,16 @@ const consigneeStageMemory = new Map<number, ConsigneeStageMemoryEntry>();
 export default function AddConsigneeModal({ open, consignee, onClose, onSaved, preselectedCustomerId, preselectedCustomerDbId, existingMirrorCount, initialStage }: Props) {
   const toast = useToast();
 
+  // Scroll lock — lock BOTH <html> and <body> so the page behind can't scroll.
+  useEffect(() => {
+    if (!open) return;
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
+  }, [open]);
+
   const [phase, setPhase]   = useState<Phase>('pick-customer');
   const [stage, setStage]   = useState<Stage>(1);
   /* Furthest stage the user has reached — drives which steps the

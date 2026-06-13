@@ -443,7 +443,7 @@ function SegmentRuleModal(props: {
 
   // Lock the background page from scrolling while the modal is open — otherwise
   // a scroll over the overlay bleeds through and scrolls the page behind it.
-  useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = ''; }; }, []);
+  useEffect(() => { document.body.style.overflow = 'hidden'; document.documentElement.style.overflow = 'hidden'; return () => { document.body.style.overflow = ''; document.documentElement.style.overflow = ''; }; }, []);
 
   /* Less-Regulatory create-mode flips on multi-select. Edit mode locks to
    * single because each edit targets exactly one rule, and High keeps a

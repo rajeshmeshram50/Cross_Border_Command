@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Consignee;
+use App\Models\ConsigneeAddress;
 use App\Models\ConsigneeDocument;
 use App\Models\ConsigneeOwner;
 use App\Models\Customer;
@@ -50,6 +51,66 @@ class ConsigneeKycMirror
 
         foreach ($mirrors as $consignee) {
             $this->resyncOne($customer, $consignee, $actingUserId);
+        }
+    }
+
+    /**
+     * Push the customer's ENTIRE profile into every same-as-customer
+     * consignee — every shared core column AND the full address book
+     * (primary + every secondary location) — so editing the customer keeps
+     * the mirrored consignee in complete lock-step.
+     *
+     * Core fields are every column the two models share; the only customer
+     * column with no consignee equivalent is `type`, so it's skipped.
+     * Identity/ownership columns (ids, codes, customer_id, same_as_customer)
+     * are intentionally NOT copied.
+     *
+     * Lightweight vs the KYC resync — it touches columns + address rows
+     * only, never the documents/owners file copies (those have their own
+     * resyncForCustomer), so a profile edit doesn't re-copy every KYC file.
+     */
+    public function syncCoreFromCustomer(Customer $customer, ?int $actingUserId = null): void
+    {
+        $mirrors = Consignee::query()
+            ->where('customer_id', $customer->id)
+            ->where('same_as_customer', true)
+            ->get();
+
+        if ($mirrors->isEmpty()) return;
+
+        $customer->loadMissing('addresses');
+
+        // Every core field shared with the consignee (customer's `type` is
+        // the only one with no consignee column, so it's left out).
+        $core = [
+            'company_name'   => $customer->company_name,
+            'legal_name'     => $customer->legal_name,
+            'segment'        => $customer->segment,
+            'classification' => $customer->classification,
+            'risk_level'     => $customer->risk_level,
+            'website'        => $customer->website,
+            'primary_email'  => $customer->primary_email,
+            'status'         => $customer->status,
+        ];
+
+        // The customer's FULL address book → consignee rows. Strip identity /
+        // ownership / timestamp columns; keep everything else (incl.
+        // `is_primary`) so the primary + secondary split is preserved.
+        $addressRows = $customer->addresses->map(fn ($a) => collect($a->getAttributes())
+            ->except(['id', 'customer_id', 'consignee_id', 'created_at', 'updated_at'])
+            ->all())->all();
+
+        foreach ($mirrors as $consignee) {
+            DB::transaction(function () use ($consignee, $core, $addressRows) {
+                $consignee->update($core);
+
+                // Replace ALL addresses (primary + secondary) — same
+                // delete-and-recreate strategy the customer update uses.
+                $consignee->addresses()->delete();
+                foreach ($addressRows as $addr) {
+                    ConsigneeAddress::create(array_merge($addr, ['consignee_id' => $consignee->id]));
+                }
+            });
         }
     }
 

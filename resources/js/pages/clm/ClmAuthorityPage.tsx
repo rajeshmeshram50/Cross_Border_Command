@@ -13,6 +13,7 @@ import {
   sanitizeClmDescription,
   isMeaningfulClmValue,
   findClmDuplicate,
+  useScrollLock,
 } from './clmCommon';
 
 /* Central CLM → Authority Master. 3-card faithful port of the prototype. */
@@ -61,6 +62,7 @@ export default function ClmAuthorityPage() {
 
   const [editing, setEditing]     = useState<Authority | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  useScrollLock(modalOpen); // lock html+body while the custom Add/Edit modal is open
   const [pendingDelete, setPendingDelete] = useState<Authority | null>(null);
   const [deleting, setDeleting] = useState(false);
 
