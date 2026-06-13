@@ -109,12 +109,9 @@ export default function SalesLeadAckMaster() {
   // tab switch is instant — we flash the table skeleton briefly on switch so
   // the change reads as a deliberate "loading the new tab" transition. The
   // form modal flashes a field skeleton on open before the inputs settle in.
-  const [tabLoading, setTabLoading]   = useState(false);
   const [formLoading, setFormLoading] = useState(false);
-  const tabTimer  = useRef<number | null>(null);
   const formTimer = useRef<number | null>(null);
   useEffect(() => () => {
-    if (tabTimer.current)  window.clearTimeout(tabTimer.current);
     if (formTimer.current) window.clearTimeout(formTimer.current);
   }, []);
 
@@ -211,14 +208,12 @@ export default function SalesLeadAckMaster() {
     if (page !== safePage) setPage(safePage);
   }, [page, safePage]);
 
-  // Tab switch resets page + clears search, and flashes the table skeleton
-  // so the swap to another opportunity type reads as a fresh load.
+  // Tab switch is instant — all three tabs' reasons are already fetched on
+  // mount, so there's nothing to load. (Previously this flashed a 450ms fake
+  // skeleton "so the swap reads as a fresh load", which just added lag.)
   const switchTab = (next: OppType) => {
     if (next === tab) return;
     setTab(next); setPage(1); setQ('');
-    setTabLoading(true);
-    if (tabTimer.current) window.clearTimeout(tabTimer.current);
-    tabTimer.current = window.setTimeout(() => setTabLoading(false), 450);
   };
 
   // ── Modal actions ──
@@ -429,7 +424,7 @@ export default function SalesLeadAckMaster() {
               </tr>
             </thead>
             <tbody>
-              {(loading || tabLoading) && Array.from({ length: 6 }).map((_, i) => (
+              {loading && Array.from({ length: 6 }).map((_, i) => (
                 <tr key={`sk-${i}`} className="lam-skel-row">
                   <td className="lam-td-sr"><span className="lam-skel lam-skel-badge" /></td>
                   <td className="lam-td-reason">
@@ -447,13 +442,13 @@ export default function SalesLeadAckMaster() {
                   </td>
                 </tr>
               ))}
-              {!loading && !tabLoading && rows.length === 0 && (
+              {!loading && rows.length === 0 && (
                 <tr><td colSpan={tab === 'disqualified' ? 5 : 4} className="lam-empty">
                   <i className="ri-inbox-line lam-empty-icon" />
                   No reasons found
                 </td></tr>
               )}
-              {!loading && !tabLoading && rows.map((r, i) => (
+              {!loading && rows.map((r, i) => (
                 <tr key={r.id}>
                   <td className="lam-td-sr"><span className="lam-sr-badge">{startIdx + i + 1}</span></td>
                   <td className="lam-td-reason"><ReasonCell text={r.reason} /></td>
