@@ -1,15 +1,91 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type CSSProperties } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Col, Row } from 'reactstrap';
-import { AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList } from 'recharts';
+import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList } from 'recharts';
 import api from '../../api';
 import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
 import { ShimmerDashboard } from '../../components/ui/Shimmer';
 import { formatCompact } from '../../utils/formatNumber';
 import { useChartTheme } from '../../hooks/useChartTheme';
 import { readDashboardStats, writeDashboardStats } from './dashboardStatsCache';
-import { KpiCard, AnimatedNumber, ChartTooltip, cardStyle, cardHeaderStyle } from './DashboardSections';
+import { AnimatedNumber, ChartTooltip } from './DashboardSections';
 
-const COLORS = ['#405189', '#0ab39c', '#f7b84b', '#f06548', '#299cdb', '#9b72cf'];
+/* ── Minimal-enterprise design system ──────────────────────────────────────
+ * Neutral slate surfaces, one indigo accent, NO gradients or glows, thin
+ * borders, generous whitespace. Charts use a single muted indigo ramp so the
+ * whole page reads calm and standard (Stripe / Linear style) rather than the
+ * earlier colourful, glossy look. */
+const ACCENT = '#4f46e5';
+// Per-metric muted accents (KPI icon tints) — distinct but professional.
+const KPI_ACCENTS = ['#2563eb', '#0d9488', '#7c3aed', '#059669', '#0891b2', '#d97706'];
+// One muted hue-ramp per donut card so each chart is distinct yet cohesive.
+const RAMP_TEAL   = ['#0d9488', '#2dd4bf', '#5eead4', '#99f6e4'];
+const RAMP_INDIGO = ['#4f46e5', '#6366f1', '#818cf8', '#c7d2fe'];
+const RAMP_BLUE   = ['#1d4ed8', '#3b82f6', '#60a5fa', '#bfdbfe'];
+// Vivid "ultra-HD" gradient per KPI — used on the icon chips for a glassy,
+// premium pop against the frosted cards.
+const KPI_GRADIENTS = [
+  'linear-gradient(135deg,#2563eb 0%,#06b6d4 100%)',  // blue → cyan
+  'linear-gradient(135deg,#0d9488 0%,#34d399 100%)',  // teal → emerald
+  'linear-gradient(135deg,#7c3aed 0%,#d946ef 100%)',  // violet → fuchsia
+  'linear-gradient(135deg,#059669 0%,#10b981 100%)',  // emerald
+  'linear-gradient(135deg,#0891b2 0%,#22d3ee 100%)',  // cyan
+  'linear-gradient(135deg,#ea580c 0%,#f59e0b 100%)',  // orange → amber
+];
+
+// Frosted-glass card surface. Colours come from CSS vars defined per theme on
+// the .cd-glass-page wrapper, so light/dark both look right.
+const cardStyle: CSSProperties = {
+  borderRadius: 18,
+  border: '1px solid var(--cd-glass-border)',
+  boxShadow: 'var(--cd-glass-shadow)',
+  background: 'var(--cd-glass-bg)',
+  overflow: 'hidden',
+  marginBottom: 0,
+  height: '100%',
+};
+const cardHeaderStyle: CSSProperties = {
+  background: 'transparent',
+  borderBottom: '1px solid var(--vz-border-color)',
+  padding: '14px 18px',
+  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+};
+
+/* Hero KPI tile — designed to sit ON the gradient banner. Solid card surface
+ * that "lifts" off the band via a soft shadow, a bigger number, and a larger
+ * tinted accent icon. Theme-aware (white in light mode, dark card in dark). */
+function HeroKpi({ label, value, iconClass, accent = ACCENT, gradient, changeText, change }: {
+  label: string; value: React.ReactNode; iconClass: string; accent?: string;
+  gradient?: string; changeText?: string; change?: string;
+}) {
+  return (
+    <div className="cd-hero-kpi" style={{
+      position: 'relative',
+      background: 'var(--cd-glass-bg)',
+      border: '1px solid var(--cd-glass-border)',
+      borderRadius: 16,
+      padding: '12px 15px 11px',
+      boxShadow: 'var(--cd-glass-shadow)',
+      height: '100%',
+      overflow: 'hidden',
+    }}>
+      {/* vivid accent wash in the corner for identity */}
+      <div style={{ position: 'absolute', top: -26, right: -26, width: 66, height: 66, borderRadius: '50%', background: `${accent}22`, filter: 'blur(2px)', pointerEvents: 'none' }} />
+      <div className="d-flex align-items-center justify-content-between" style={{ marginBottom: 7, position: 'relative' }}>
+        <span style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--vz-secondary-color)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
+        <span style={{ width: 26, height: 26, borderRadius: 8, background: gradient ?? accent, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: `0 4px 11px -2px ${accent}aa` }}>
+          <i className={iconClass} style={{ fontSize: 13 }} />
+        </span>
+      </div>
+      <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums', position: 'relative' }}>{value}</div>
+      {(change || changeText) && (
+        <div style={{ marginTop: 6, fontSize: 10.5, color: 'var(--vz-secondary-color)', position: 'relative' }}>
+          {change && <span style={{ color: accent, fontWeight: 700 }}>{change}</span>}{change ? ' ' : ''}{changeText}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const methodLabels: Record<string, string> = {
   upi: 'UPI', credit_card: 'Credit Card', debit_card: 'Debit Card',
@@ -18,6 +94,7 @@ const methodLabels: Record<string, string> = {
 
 
 export default function ClientDashboard() {
+  const navigate = useNavigate();
   const { selectedBranchId } = useBranchSwitcher();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -57,36 +134,65 @@ export default function ClientDashboard() {
   if (!data) return null;
 
   const { counts, plan, branches, recent_payments, payment_trend, user_roles, by_branch } = data;
-  const curSym = data.sales?.totals?.currency_symbol ?? '₹';
   const access = data.access ?? { total_modules: 0, users: [] };
   const roleLabel = (r: string) => (r ? r.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '—');
 
-  // ── Donut slices for the analytics row (circular charts, not bars) ──
-  const branchPalette = ['#f7b84b', '#405189', '#0ab39c', '#9b72cf', '#299cdb', '#f06548'];
+  // ── Donut slices — single muted indigo ramp (CHART) so the analytics row
+  //    reads calm and consistent rather than rainbow-coloured. ──
   const headcountSlices = (by_branch ?? [])
     .filter((b: any) => b.employees > 0)
-    .map((b: any, i: number) => ({ name: b.code || b.name, value: b.employees, color: branchPalette[i % branchPalette.length] }));
+    .map((b: any, i: number) => ({ name: b.code || b.name, value: b.employees, color: RAMP_TEAL[i % RAMP_TEAL.length] }));
 
   const roleSlices = Object.entries(user_roles || {})
-    .map(([k, v], i) => ({ name: roleLabel(k), value: Number(v), color: COLORS[i % COLORS.length] }))
+    .map(([k, v], i) => ({ name: roleLabel(k), value: Number(v), color: RAMP_INDIGO[i % RAMP_INDIGO.length] }))
     .filter(s => s.value > 0);
 
   const et = data.employees?.totals ?? {};
   const statusSlices = [
-    { name: 'Active', value: Number(et.active || 0), color: '#0ab39c' },
-    { name: 'On Leave', value: Number(et.on_leave || 0), color: '#f7b84b' },
-    { name: 'Probation', value: Number(et.probation || 0), color: '#299cdb' },
-    { name: 'Notice', value: Number(et.notice_period || 0), color: '#f06548' },
-    { name: 'Exited', value: Number(et.exited || 0), color: '#878a99' },
-  ].filter(s => s.value > 0);
+    { name: 'Active', value: Number(et.active || 0) },
+    { name: 'On Leave', value: Number(et.on_leave || 0) },
+    { name: 'Probation', value: Number(et.probation || 0) },
+    { name: 'Notice', value: Number(et.notice_period || 0) },
+    { name: 'Exited', value: Number(et.exited || 0) },
+  ].filter(s => s.value > 0).map((s, i) => ({ ...s, color: RAMP_BLUE[i % RAMP_BLUE.length] }));
 
   const showDonuts = headcountSlices.length > 0 || roleSlices.length > 0 || statusSlices.length > 0;
   const successRate = counts.total_payments > 0
     ? Math.round((counts.success_payments / counts.total_payments) * 100) : 0;
 
+  const orgName = data.client?.org_name ? String(data.client.org_name).charAt(0).toUpperCase() + String(data.client.org_name).slice(1) : '';
+  const hr = new Date().getHours();
+  const greeting = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
+
   return (
-    <>
+    <div className="cd-glass-page" style={{ position: 'relative' }}>
       <style>{`
+        .cd-glass-page {
+          --cd-glass-bg: #ffffff;
+          --cd-glass-border: rgba(15,23,42,0.06);
+          --cd-glass-shadow: 0 1px 2px rgba(16,24,40,0.04), 0 16px 38px -18px rgba(16,24,40,0.18);
+          background:
+            radial-gradient(110% 70% at 50% -8%, rgba(99,102,241,0.05) 0%, transparent 58%),
+            radial-gradient(90% 60% at 100% 0%, rgba(13,148,136,0.04) 0%, transparent 55%);
+          padding-bottom: 4px;
+        }
+        [data-bs-theme="dark"] .cd-glass-page,
+        [data-layout-mode="dark"] .cd-glass-page {
+          --cd-glass-bg: #1b2434;
+          --cd-glass-border: rgba(255,255,255,0.08);
+          --cd-glass-shadow: 0 1px 2px rgba(0,0,0,0.35), 0 16px 38px -18px rgba(0,0,0,0.6);
+          background:
+            radial-gradient(110% 70% at 50% -8%, rgba(99,102,241,0.10) 0%, transparent 58%),
+            radial-gradient(90% 60% at 100% 0%, rgba(13,148,136,0.07) 0%, transparent 55%);
+        }
+        /* Premium hover elevation on every card. */
+        .cd-glass-page .card { transition: transform .24s cubic-bezier(.2,.8,.2,1), box-shadow .24s cubic-bezier(.2,.8,.2,1); }
+        .cd-glass-page .card:hover { transform: translateY(-3px); box-shadow: 0 2px 4px rgba(16,24,40,0.05), 0 26px 54px -22px rgba(16,24,40,0.26) !important; }
+        @keyframes cd-blob-float {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          50%      { transform: translate(18px, -22px) scale(1.06); }
+        }
+        .cd-blob { position: absolute; border-radius: 50%; pointer-events: none; will-change: transform; }
         .dashboard-kpi-card {
           background: #ffffff;
           transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
@@ -97,6 +203,10 @@ export default function ClientDashboard() {
           box-shadow: 0 12px 28px rgba(13,38,76,0.14) !important;
           border-color: rgba(29,79,196,0.25) !important;
         }
+        .cd-hero-kpi { transition: transform .2s ease, box-shadow .2s ease; }
+        .cd-hero-kpi:hover { transform: translateY(-3px); box-shadow: 0 16px 34px -12px rgba(15,23,42,0.6) !important; }
+        .cd-insight { transition: transform .2s ease, box-shadow .2s ease; }
+        .cd-insight:hover { transform: translateY(-3px); box-shadow: 0 16px 34px -12px rgba(15,23,42,0.55) !important; }
         [data-bs-theme="dark"] .dashboard-kpi-card { background: #1c2531; }
         [data-bs-theme="dark"] .dashboard-kpi-card:hover {
           box-shadow: 0 12px 28px rgba(0,0,0,0.55) !important;
@@ -213,13 +323,11 @@ export default function ClientDashboard() {
           position: relative;
         }
         .cd-list-row:hover {
-          background: rgba(124, 92, 252, 0.08);
-          box-shadow: inset 3px 0 0 0 rgba(124, 92, 252, 0.7);
+          background: rgba(79, 70, 229, 0.05);
         }
         [data-bs-theme="dark"] .cd-list-row:hover,
         [data-layout-mode="dark"] .cd-list-row:hover {
-          background: rgba(255, 255, 255, 0.05);
-          box-shadow: inset 3px 0 0 0 rgba(124, 92, 252, 0.9);
+          background: rgba(255, 255, 255, 0.04);
         }
         .cd-list-row + .cd-list-row { border-top: 1px solid #f1f3f9; }
         [data-bs-theme="dark"] .cd-list-row + .cd-list-row,
@@ -228,13 +336,11 @@ export default function ClientDashboard() {
         /* Bounded scroll for list cards — body scrolls internally instead of
            stretching the page. (Previously provided by DashboardSections,
            which the client dashboard no longer renders.) */
-        .dash-scroll { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(124,92,252,0.35) transparent; }
+        .dash-scroll { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(100,116,139,0.4) transparent; }
         .dash-scroll::-webkit-scrollbar { width: 6px; }
         .dash-scroll::-webkit-scrollbar-track { background: transparent; }
-        .dash-scroll::-webkit-scrollbar-thumb { background: rgba(124,92,252,0.28); border-radius: 999px; }
-        .dash-scroll::-webkit-scrollbar-thumb:hover { background: rgba(124,92,252,0.5); }
-        [data-bs-theme="dark"] .dash-scroll::-webkit-scrollbar-thumb,
-        [data-layout-mode="dark"] .dash-scroll::-webkit-scrollbar-thumb { background: rgba(167,139,250,0.32); }
+        .dash-scroll::-webkit-scrollbar-thumb { background: rgba(100,116,139,0.3); border-radius: 999px; }
+        .dash-scroll::-webkit-scrollbar-thumb:hover { background: rgba(100,116,139,0.5); }
 
         /* Team Roles chips hover */
         .cd-role-chip {
@@ -252,158 +358,131 @@ export default function ClientDashboard() {
           filter: brightness(1.15);
         }
       `}</style>
-      {/* Page Title */}
-      <Row className="mb-2">
-        <Col xs={12}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 0 4px', gap: 12, flexWrap: 'wrap' }}>
-            <div>
-              <h5 style={{ fontWeight: 800, fontSize: 16, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Workforce Analytics</h5>
-              <p style={{ margin: 0, fontSize: 12, color: 'var(--vz-secondary-color)', marginTop: 2 }}>
-                Employee headcount, hiring activity and demographics
-              </p>
-            </div>
-              {(() => {
-                const isExpired = plan.status === 'expired';
-                const isWarn = !isExpired && plan.days_remaining !== null && plan.days_remaining <= 30;
-                const color = isExpired ? '#00fb43' : isWarn ? '#057154' : '#096e60';
-                const label = isExpired ? 'EXPIRED' : isWarn ? 'EXPIRES SOON' : 'CURRENT';
-                return (
-                  <span
-                    className="cd-plan-pill d-inline-flex align-items-center gap-2 rounded-pill"
-                    style={{
-                      background: `linear-gradient(135deg, ${color}1f 0%, ${color}12 100%)`,
-                      color,
-                      border: `1px solid ${color}`,
-                      fontSize: 12.5,
-                      fontWeight: 500,
-                      letterSpacing: '0.03em',
-                      padding: '5px 13px',
-                      ['--cd-plan-color' as any]: `${color}66`,
-                      ['--cd-plan-ring' as any]: `${color}00`,
-                      ['--cd-plan-ring-soft' as any]: `${color}33`,
-                      ['--cd-plan-shadow' as any]: `${color}66`,
-                      ['--cd-plan-glow' as any]: `${color}33`,
-                    }}
-                    title={isExpired ? `Expired ${plan.expires_at}` : `Valid until ${plan.expires_at}`}
-                  >
-                    <span
-                      className="cd-plan-dot-wrap"
-                      style={{
-                        ['--cd-dot-color' as any]: color,
-                      }}
-                    >
-                      <span className="cd-plan-dot-ripple" />
-                      <span className="cd-plan-dot-ripple cd-plan-dot-ripple-2" />
-                      <span className="cd-plan-dot-core" />
-                    </span>
-                    {label}: {plan.name?.toUpperCase()}
-                    {isWarn && plan.days_remaining !== null && (
-                      <span className="ms-1" style={{ opacity: 0.9 }}>· {plan.days_remaining}d</span>
-                    )}
-                    <span className="ms-1" style={{ opacity: 0.8 }}>· {plan.expires_at}</span>
-                  </span>
-                );
-              })()}
-          </div>
-        </Col>
-      </Row>
 
-      {/* KPI Cards */}
+      {/* Content wrapper. */}
+      <div style={{ position: 'relative', zIndex: 1 }}>
+      {/* Title + plan status */}
+      <div className="d-flex align-items-center justify-content-between" style={{ gap: 12, flexWrap: 'wrap', marginBottom: 14, padding: '2px 2px 0' }}>
+        <div>
+          <h5 style={{ fontWeight: 700, fontSize: 19, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, letterSpacing: '-0.01em' }}>
+            {greeting}{orgName ? <>, <span style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>{orgName}</span></> : ''} 👋
+          </h5>
+          <p style={{ margin: 0, fontSize: 12.5, color: 'var(--vz-secondary-color)', marginTop: 3 }}>
+            Here's your organisation overview, subscription &amp; team
+          </p>
+        </div>
+        {(() => {
+          const isExpired = plan.status === 'expired';
+          const isWarn = !isExpired && plan.days_remaining !== null && plan.days_remaining <= 30;
+          const color = isExpired ? '#dc2626' : isWarn ? '#b45309' : '#0f766e';
+          const label = isExpired ? 'Expired' : isWarn ? 'Expires soon' : 'Active';
+          return (
+            <span className="d-inline-flex align-items-center gap-2"
+              style={{ fontSize: 12, fontWeight: 600, color, background: `${color}14`, border: `1px solid ${color}33`, borderRadius: 9, padding: '6px 13px' }}
+              title={isExpired ? `Expired ${plan.expires_at}` : `Valid until ${plan.expires_at}`}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />
+              {plan.name} · {label}
+              {!isExpired && plan.days_remaining !== null && <span style={{ color: 'var(--vz-secondary-color)', fontWeight: 500 }}>· {plan.days_remaining}d left</span>}
+            </span>
+          );
+        })()}
+      </div>
+
+      {/* KPI strip */}
       <Row className="g-2 mb-2">
-        <Col xl={2} md={4} xs={6}>
-          <KpiCard label="Branches" value={<AnimatedNumber value={counts.total_branches} />}
-            iconClass="ri-git-branch-line" gradient="linear-gradient(135deg,#299cdb,#50c3e6)"
-            trend="up" change={`${counts.active_branches}`} changeText="active" />
-        </Col>
-        <Col xl={2} md={4} xs={6}>
-          <KpiCard label="Employees" value={<AnimatedNumber value={counts.total_employees ?? 0} />}
-            iconClass="ri-group-line" gradient="linear-gradient(135deg,#0ab39c,#02c8a7)"
-            trend="up" change={`${counts.active_employees ?? 0}`} changeText="active" />
-        </Col>
-        <Col xl={2} md={4} xs={6}>
-          <KpiCard label="Users" value={<AnimatedNumber value={counts.total_users} />}
-            iconClass="ri-user-3-line" gradient="linear-gradient(135deg,#9b72cf,#865ce2)"
-            trend="up" change={`${counts.active_users}`} changeText="active" />
-        </Col>
-        <Col xl={2} md={4} xs={6}>
-          <KpiCard
-            label="Total Paid"
-            value={<>₹{formatCompact(counts.total_paid)}</>}
-            iconClass="ri-coins-line"
-            gradient="linear-gradient(135deg,#0ab39c,#02c8a7)"
-            trend="up"
-            change={`${counts.success_payments}`}
-            changeText="payments"
-          />
-        </Col>
-        <Col xl={2} md={4} xs={6}>
-          <KpiCard label="Payments" value={<AnimatedNumber value={counts.total_payments} />}
-            iconClass="ri-bank-card-line" gradient="linear-gradient(135deg,#405189,#6691e7)"
-            trend={successRate > 80 ? 'up' : 'down'} change={`${successRate}%`} changeText="success rate" />
-        </Col>
-        <Col xl={2} md={4} xs={6}>
-          <KpiCard label="Plan Days" value={<AnimatedNumber value={plan.days_remaining ?? 0} />}
-            iconClass="ri-calendar-line"
-            gradient={plan.days_remaining !== null && plan.days_remaining <= 7
-              ? 'linear-gradient(135deg,#f06548,#f4907b)'
-              : 'linear-gradient(135deg,#0ab39c,#02c8a7)'}
-            changeText={plan.status === 'expired' ? 'expired' : 'remaining'} />
-        </Col>
-      </Row>
+          <Col xl={2} md={4} xs={6}>
+            <HeroKpi label="Branches" value={<AnimatedNumber value={counts.total_branches} />}
+              iconClass="ri-git-branch-line" accent={KPI_ACCENTS[0]} gradient={KPI_GRADIENTS[0]}
+              change={`${counts.active_branches}`} changeText="active" />
+          </Col>
+          <Col xl={2} md={4} xs={6}>
+            <HeroKpi label="Employees" value={<AnimatedNumber value={counts.total_employees ?? 0} />}
+              iconClass="ri-group-line" accent={KPI_ACCENTS[1]} gradient={KPI_GRADIENTS[1]}
+              change={`${counts.active_employees ?? 0}`} changeText="active" />
+          </Col>
+          <Col xl={2} md={4} xs={6}>
+            <HeroKpi label="Users" value={<AnimatedNumber value={counts.total_users} />}
+              iconClass="ri-user-3-line" accent={KPI_ACCENTS[2]} gradient={KPI_GRADIENTS[2]}
+              change={`${counts.active_users}`} changeText="active" />
+          </Col>
+          <Col xl={2} md={4} xs={6}>
+            <HeroKpi
+              label="Total Paid"
+              value={<>₹{formatCompact(counts.total_paid)}</>}
+              iconClass="ri-coins-line"
+              accent={KPI_ACCENTS[3]} gradient={KPI_GRADIENTS[3]}
+              change={`${counts.success_payments}`}
+              changeText="payments"
+            />
+          </Col>
+          <Col xl={2} md={4} xs={6}>
+            <HeroKpi label="Payments" value={<AnimatedNumber value={counts.total_payments} />}
+              iconClass="ri-bank-card-line" accent={KPI_ACCENTS[4]} gradient={KPI_GRADIENTS[4]}
+              change={`${successRate}%`} changeText="success rate" />
+          </Col>
+          <Col xl={2} md={4} xs={6}>
+            <HeroKpi label="Plan Days" value={<AnimatedNumber value={plan.days_remaining ?? 0} />}
+              iconClass="ri-calendar-line"
+              accent={plan.days_remaining !== null && plan.days_remaining <= 7 ? '#dc2626' : KPI_ACCENTS[5]}
+              gradient={plan.days_remaining !== null && plan.days_remaining <= 7 ? 'linear-gradient(135deg,#dc2626,#f87171)' : KPI_GRADIENTS[5]}
+              changeText={plan.status === 'expired' ? 'expired' : 'remaining'} />
+          </Col>
+        </Row>
 
-      {/* ── Subscription / Plan — the SaaS heart of a tenant dashboard.
-          Operational analytics (Sales/Procurement/CLM/Workforce) live in
-          their own module dashboards, not here. */}
+      {/* Highlights bar — ONE slim strip of derived insights + plan summary,
+          deliberately a single divided row (not another card grid) so the page
+          doesn't read as two stacked KPI grids. Replaces the old standalone
+          Subscription strip — plan renewal/validity/price now live here. */}
       {(() => {
         const isExpired = plan.status === 'expired';
         const isWarn = !isExpired && plan.days_remaining !== null && plan.days_remaining <= 30;
-        const color = isExpired ? '#f06548' : isWarn ? '#f7b84b' : '#0ab39c';
-        const statusLabel = isExpired ? 'Expired' : isWarn ? 'Expires Soon' : 'Active';
+        const planColor = isExpired ? '#dc2626' : isWarn ? '#d97706' : '#0d9488';
+        const top = by_branch?.[0];
+        const wfTotal = counts.total_employees ?? 0;
+        const wfPct = wfTotal ? Math.round(((counts.active_employees ?? 0) / wfTotal) * 100) : 0;
+        const priceTxt = plan.price ? `₹${Number(plan.price).toLocaleString('en-IN')}/cycle` : '';
+        const items: any[] = [
+          {
+            icon: isExpired ? 'ri-error-warning-line' : 'ri-vip-crown-2-line',
+            grad: isExpired ? 'linear-gradient(135deg,#dc2626,#f87171)' : isWarn ? 'linear-gradient(135deg,#d97706,#fbbf24)' : 'linear-gradient(135deg,#7c3aed,#d946ef)',
+            color: planColor,
+            value: isExpired ? 'Plan expired' : `${plan.days_remaining ?? '—'} days left`,
+            label: `${plan.name || 'Plan'}${plan.expires_at ? ` · till ${plan.expires_at}` : ''}${priceTxt ? ` · ${priceTxt}` : ''}`,
+          },
+          ...(top ? [{
+            icon: 'ri-building-2-line', grad: KPI_GRADIENTS[0], color: '#2563eb',
+            value: (top.name || '').length > 16 ? top.code : top.name,
+            label: `Largest branch · ${top.users || 0} users, ${top.employees || 0} staff`,
+          }] : []),
+          {
+            icon: 'ri-team-line', grad: KPI_GRADIENTS[1], color: '#0d9488',
+            value: `${wfPct}% active`,
+            label: `${counts.active_employees ?? 0} of ${wfTotal} employees`,
+          },
+          {
+            icon: 'ri-bank-card-line', grad: KPI_GRADIENTS[4], color: '#0891b2',
+            value: `${successRate}% success`,
+            label: `${counts.success_payments} of ${counts.total_payments} payments`,
+          },
+        ];
         return (
-          <Row className="g-2 mb-2">
-            <Col xs={12}>
-              <Card style={cardStyle}>
-                <CardBody style={{ padding: '9px 18px' }}>
-                  <Row className="g-2 align-items-center">
-                    <Col xs={12} md={4}>
-                      <div className="d-flex align-items-center gap-2">
-                        <div style={{
-                          width: 40, height: 40, borderRadius: 11, flexShrink: 0,
-                          background: 'linear-gradient(135deg,#7c5cfc,#a78bfa)', color: '#fff',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          boxShadow: '0 8px 18px -8px rgba(124,92,252,0.6), inset 0 1px 0 rgba(255,255,255,0.3)',
-                        }}>
-                          <i className="ri-vip-crown-2-line" style={{ fontSize: 20 }} />
-                        </div>
-                        <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <div>
-                            <div style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Subscription Plan</div>
-                            <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1.1 }}>{plan.name || '—'}</div>
-                          </div>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, fontWeight: 700, color, background: `${color}1f`, padding: '2px 9px', borderRadius: 999 }}>
-                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />
-                            {statusLabel}
-                          </span>
-                        </div>
-                      </div>
-                    </Col>
-                    {[
-                      { label: 'Days Remaining', value: plan.days_remaining ?? '—', accent: color, big: true },
-                      { label: 'Valid Until', value: plan.expires_at || '—' },
-                      { label: 'Plan Price', value: plan.price ? `₹${Number(plan.price).toLocaleString('en-IN')}` : '—', sub: '/ cycle' },
-                    ].map((s, i) => (
-                      <Col key={i} xs={4} md={i === 0 ? 2 : 3}>
-                        <div style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 2 }}>{s.label}</div>
-                        <div style={{ fontSize: s.big ? 19 : 14.5, fontWeight: 800, color: s.accent || 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1 }}>
-                          {s.value}{s.sub && <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--vz-secondary-color)' }}> {s.sub}</span>}
-                        </div>
-                      </Col>
-                    ))}
-                  </Row>
-                </CardBody>
-              </Card>
-            </Col>
-          </Row>
+          <Card style={{ ...cardStyle, marginBottom: 8 }}>
+            <CardBody style={{ padding: '9px 4px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>
+                {items.map((it, i) => (
+                  <div key={i} style={{ flex: '1 1 210px', minWidth: 0, display: 'flex', alignItems: 'center', gap: 11, padding: '5px 16px', borderLeft: i > 0 ? '1px solid var(--vz-border-color)' : 'none' }}>
+                    <span style={{ width: 34, height: 34, borderRadius: 9, background: it.grad, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: `0 5px 12px -4px ${it.color}aa` }}>
+                      <i className={it.icon} style={{ fontSize: 16 }} />
+                    </span>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.value}</div>
+                      <div style={{ fontSize: 10.5, color: 'var(--vz-secondary-color)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.label}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardBody>
+          </Card>
         );
       })()}
 
@@ -416,7 +495,7 @@ export default function ClientDashboard() {
               <Card style={cardStyle}>
                 <div style={cardHeaderStyle}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-                    <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', color: '#fff', fontSize: 16, boxShadow: '0 8px 18px -8px rgba(10,179,156,0.6)' }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--vz-light)', color: 'var(--vz-secondary-color)', fontSize: 16, border: '1px solid var(--vz-border-color)' }}>
                       <i className="ri-group-line"></i>
                     </div>
                     <div>
@@ -436,7 +515,7 @@ export default function ClientDashboard() {
               <Card style={cardStyle}>
                 <div style={cardHeaderStyle}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-                    <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#9b72cf,#865ce2)', color: '#fff', fontSize: 16, boxShadow: '0 8px 18px -8px rgba(155,114,207,0.6)' }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--vz-light)', color: 'var(--vz-secondary-color)', fontSize: 16, border: '1px solid var(--vz-border-color)' }}>
                       <i className="ri-team-line"></i>
                     </div>
                     <div>
@@ -456,7 +535,7 @@ export default function ClientDashboard() {
               <Card style={cardStyle}>
                 <div style={cardHeaderStyle}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-                    <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#405189,#6691e7)', color: '#fff', fontSize: 16, boxShadow: '0 8px 18px -8px rgba(64,81,137,0.6)' }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--vz-light)', color: 'var(--vz-secondary-color)', fontSize: 16, border: '1px solid var(--vz-border-color)' }}>
                       <i className="ri-user-heart-line"></i>
                     </div>
                     <div>
@@ -474,66 +553,52 @@ export default function ClientDashboard() {
         </Row>
       )}
 
-      {/* Branch Performance — a "top performers" podium grid (rank medals,
-          big value, mini-stats) instead of flat bars. Top 3 as cards; any
-          remaining branches fall into a compact list below. */}
+      {/* Branch Overview — a tenant view: branches ranked by headcount, with
+          employees / users / status. (Sales metrics live in the Sales module
+          dashboard, not on the tenant overview.) */}
       {by_branch && by_branch.length > 0 && (() => {
-        const medals = [
-          { grad: 'linear-gradient(135deg,#fbc763,#e89a1d)', color: '#e0941b', ring: 'rgba(224,148,27,0.45)' },
-          { grad: 'linear-gradient(135deg,#cdd4e1,#8b97b3)', color: '#7a86a3', ring: 'rgba(122,134,163,0.4)' },
-          { grad: 'linear-gradient(135deg,#dca074,#b06f3f)', color: '#b06f3f', ring: 'rgba(176,111,63,0.4)' },
-        ];
-        const max = by_branch[0].value || 1;
+        const maxHead = Math.max(1, ...by_branch.map((b: any) => b.users || 0));
+        const statusOf = (s: string) => {
+          const active = (s || '').toLowerCase() === 'active';
+          return { color: active ? '#0f766e' : '#b45309', label: active ? 'Active' : (s ? s.replace(/\b\w/g, c => c.toUpperCase()) : 'Inactive') };
+        };
         return (
           <div className="mb-2">
-            {/* Standalone leaderboard header (the cards below float as a grid). */}
             <div className="d-flex align-items-center gap-2 mb-2" style={{ padding: '0 2px' }}>
-              <div style={{ width: 38, height: 38, borderRadius: 11, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#fbc763,#e89a1d)', color: '#fff', fontSize: 19, boxShadow: '0 8px 18px -8px rgba(232,154,29,0.7)' }}>
-                <i className="ri-trophy-line"></i>
-              </div>
+              <i className="ri-git-branch-line" style={{ fontSize: 17, color: 'var(--vz-secondary-color)' }} />
               <div>
-                <h5 style={{ fontWeight: 700, fontSize: 15.5, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Branch Performance</h5>
-                <p style={{ margin: 0, fontSize: 11.5, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Top branches ranked by quoted value</p>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Branch Overview</h5>
+                <p style={{ margin: 0, fontSize: 11.5, color: 'var(--vz-secondary-color)', marginTop: 1 }}>Branches ranked by users (login seats)</p>
               </div>
             </div>
 
             <Row className="g-2">
               {by_branch.slice(0, 3).map((b: any, i: number) => {
-                const m = medals[i] ?? medals[2];
                 const isLeader = i === 0;
+                const st = statusOf(b.status);
+                const place = [b.city, b.state].filter(Boolean).join(', ');
                 return (
                   <Col xs={12} md={4} key={i}>
-                    <Card style={{
-                      ...cardStyle, position: 'relative', overflow: 'hidden',
-                      border: isLeader ? `1.5px solid ${m.color}55` : '1px solid var(--vz-border-color)',
-                      // Faint colour wash from the top-left fading into the card
-                      // surface — gives each card life without the harsh strips.
-                      background: `linear-gradient(155deg, ${m.color}16, transparent 46%), var(--vz-card-bg)`,
-                      boxShadow: isLeader ? `0 1px 2px rgba(16,24,40,0.05), 0 18px 38px -16px ${m.ring}` : cardStyle.boxShadow,
-                    }}>
-                      {/* Soft corner glow — subtle, blurred, low-opacity. */}
-                      <div style={{ position: 'absolute', top: -45, right: -35, width: 130, height: 130, borderRadius: '50%', background: m.grad, opacity: 0.16, filter: 'blur(18px)', pointerEvents: 'none' }} />
-                      <CardBody style={{ padding: '16px 18px 14px', position: 'relative' }}>
+                    <Card style={{ ...cardStyle, borderColor: isLeader ? `${ACCENT}55` : 'var(--vz-border-color)' }}>
+                      <CardBody style={{ padding: '16px 18px 14px' }}>
                         <div className="d-flex align-items-center justify-content-between" style={{ marginBottom: 14 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-                            <div style={{ width: 42, height: 42, borderRadius: 13, background: m.grad, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 18, flexShrink: 0, boxShadow: `0 8px 18px -6px ${m.ring}, inset 0 1px 0 rgba(255,255,255,0.35)` }}>{i + 1}</div>
+                            <div style={{ width: 34, height: 34, borderRadius: 9, background: isLeader ? ACCENT : 'var(--vz-light)', color: isLeader ? '#fff' : 'var(--vz-secondary-color)', border: isLeader ? 'none' : '1px solid var(--vz-border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>{i + 1}</div>
                             <div style={{ minWidth: 0 }}>
                               <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.name}</div>
-                              <div style={{ fontSize: 10.5, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>{b.code}</div>
+                              <div style={{ fontSize: 10.5, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>{b.code}{place ? ` · ${place}` : ''}</div>
                             </div>
                           </div>
-                          <div style={{ width: 30, height: 30, borderRadius: '50%', background: `${m.color}1f`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                            {isLeader
-                              ? <i className="ri-vip-crown-2-fill" style={{ color: m.color, fontSize: 16 }} title="Top branch" />
-                              : <i className="ri-medal-2-fill" style={{ color: m.color, fontSize: 15 }} />}
-                          </div>
+                          <span style={{ fontSize: 10, fontWeight: 600, color: st.color, background: `${st.color}14`, border: `1px solid ${st.color}33`, borderRadius: 6, padding: '2px 8px', flexShrink: 0 }}>{st.label}</span>
                         </div>
-                        <div style={{ fontSize: 26, fontWeight: 800, color: m.color, lineHeight: 1, letterSpacing: '-0.02em' }}>{curSym}{formatCompact(b.value)}</div>
-                        <div style={{ fontSize: 9.5, color: 'var(--vz-secondary-color)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginTop: 3 }}>Quoted Value</div>
-                        <div className="d-flex" style={{ marginTop: 14, padding: '11px 6px', borderRadius: 12, background: 'var(--vz-light)' }}>
-                          {[{ v: b.leads, l: 'Leads' }, { v: b.quotations, l: 'Quotes' }, { v: b.employees, l: 'Staff' }].map((s, j) => (
+                        <div className="d-flex align-items-baseline gap-2">
+                          <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1, letterSpacing: '-0.02em' }}>{b.users || 0}</div>
+                          <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>users</div>
+                        </div>
+                        <div className="d-flex" style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--vz-border-color)' }}>
+                          {[{ v: b.employees || 0, l: 'Employees' }, { v: b.users || 0, l: 'Users' }].map((s, j) => (
                             <div key={j} style={{ flex: 1, textAlign: 'center', borderLeft: j > 0 ? '1px solid var(--vz-border-color)' : 'none' }}>
-                              <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1 }}>{s.v}</div>
+                              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1 }}>{s.v}</div>
                               <div style={{ fontSize: 9, color: 'var(--vz-secondary-color)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginTop: 4 }}>{s.l}</div>
                             </div>
                           ))}
@@ -551,21 +616,22 @@ export default function ClientDashboard() {
                 <CardBody className="dash-scroll" style={{ padding: 0, maxHeight: 260 }}>
                   {by_branch.slice(3).map((b: any, idx: number) => {
                     const i = idx + 3;
-                    const pct = Math.max(3, Math.round((b.value / max) * 100));
+                    const head = b.users || 0;
+                    const pct = Math.max(3, Math.round((head / maxHead) * 100));
                     return (
                       <div key={i} className="cd-list-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 18px', flexWrap: 'wrap' }}>
                         <div className="d-flex align-items-center gap-2" style={{ minWidth: 0 }}>
-                          <div style={{ width: 26, height: 26, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--vz-light)', color: 'var(--vz-secondary-color)', fontWeight: 800, fontSize: 11, flexShrink: 0 }}>{i + 1}</div>
+                          <div style={{ width: 26, height: 26, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--vz-light)', color: 'var(--vz-secondary-color)', fontWeight: 700, fontSize: 11, flexShrink: 0 }}>{i + 1}</div>
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.name}</div>
-                            <div style={{ fontSize: 10.5, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>{b.code} · {b.leads} leads · {b.employees} staff</div>
+                            <div style={{ fontSize: 10.5, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>{b.code} · {b.employees} employees · {b.users} users</div>
                           </div>
                         </div>
                         <div className="d-flex align-items-center gap-3" style={{ flexShrink: 0 }}>
                           <div style={{ width: 90, height: 5, background: 'var(--vz-border-color)', borderRadius: 999, overflow: 'hidden' }}>
-                            <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg,#5fb8ef,#1976c2)', borderRadius: 999 }} />
+                            <div style={{ width: `${pct}%`, height: '100%', background: ACCENT, borderRadius: 999 }} />
                           </div>
-                          <span style={{ fontWeight: 800, fontSize: 13, color: 'var(--vz-heading-color, var(--vz-body-color))', minWidth: 56, textAlign: 'right' }}>{curSym}{formatCompact(b.value)}</span>
+                          <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--vz-heading-color, var(--vz-body-color))', minWidth: 56, textAlign: 'right' }}>{head} users</span>
                         </div>
                       </div>
                     );
@@ -590,7 +656,13 @@ export default function ClientDashboard() {
         <Row className="g-2 mb-2">
           <Col xs={12}>
             <Card style={cardStyle}>
-              <CardHead icon="ri-shield-keyhole-line" gradient="linear-gradient(135deg,#7c5cfc,#a78bfa)" title="Access & Permissions" subtitle={`Module access by user · out of ${access.total_modules} modules`} />
+              <CardHead icon="ri-shield-keyhole-line" gradient="linear-gradient(135deg,#7c5cfc,#a78bfa)" title="Access & Permissions" subtitle={`How many of ${access.total_modules} modules each user can access — click a user to edit`}
+                right={(
+                  <button type="button" onClick={() => navigate('/permissions')}
+                    style={{ fontSize: 12, fontWeight: 600, color: ACCENT, background: `${ACCENT}12`, border: `1px solid ${ACCENT}33`, borderRadius: 8, padding: '5px 11px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    Manage Permissions <i className="ri-arrow-right-line" style={{ fontSize: 14 }} />
+                  </button>
+                )} />
               {/* Fixed height = 5 rows so the card stays the same size on every
                   page (no height jump when the last page has fewer rows). */}
               <CardBody style={{ padding: 0, minHeight: 275 }}>
@@ -598,23 +670,35 @@ export default function ClientDashboard() {
                   const i = start + j;
                   const total = access.total_modules || 1;
                   const pct = Math.max(2, Math.round((u.modules / total) * 100));
-                  const accent = pct >= 80 ? '#f06548' : pct >= 40 ? '#f7b84b' : '#0ab39c';
-                  const barGrad = pct >= 80 ? 'linear-gradient(90deg,#f06548,#ff9e7c)' : pct >= 40 ? 'linear-gradient(90deg,#f7b84b,#fad07e)' : 'linear-gradient(90deg,#0ab39c,#3dd6c3)';
+                  // High access (≥80%) flagged in muted red as a governance
+                  // nudge; everything else uses the neutral accent.
+                  const accent = pct >= 80 ? '#dc2626' : ACCENT;
+                  const barGrad = accent;
                   const initial = (u.name || '?').trim().charAt(0).toUpperCase();
                   return (
-                    <div key={i} className="cd-list-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 18px' }}>
+                    <div key={i} className="cd-list-row"
+                      onClick={() => navigate(u.user_id ? `/permissions?user=${u.user_id}` : '/permissions')}
+                      title={`Edit ${u.name}'s permissions`}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 18px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-                        <div style={{ width: 34, height: 34, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#405189,#6691e7)', color: '#fff', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{initial}</div>
+                        <div style={{ width: 34, height: 34, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--vz-light)', color: 'var(--vz-secondary-color)', fontWeight: 700, fontSize: 13, flexShrink: 0, border: '1px solid var(--vz-border-color)' }}>{initial}</div>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.name}</div>
                           <div style={{ fontSize: 10.5, color: 'var(--vz-secondary-color)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{roleLabel(u.role)}{u.branch ? ` · ${u.branch}` : ''}</div>
                         </div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-                        <div className="d-none d-md-block" style={{ width: 90, height: 6, background: 'var(--vz-border-color)', borderRadius: 999, overflow: 'hidden' }}>
+                      <div style={{ flexShrink: 0, textAlign: 'right', minWidth: 168 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--vz-secondary-color)' }}>
+                          <span style={{ fontSize: 15, fontWeight: 800, color: accent }}>{u.modules}</span> of {total} modules
+                          {pct >= 80 && <span style={{ marginLeft: 6, fontSize: 9.5, fontWeight: 700, color: '#dc2626', background: '#dc262615', border: '1px solid #dc262633', borderRadius: 5, padding: '1px 5px' }}>HIGH</span>}
+                        </div>
+                        <div style={{ width: '100%', height: 6, background: 'var(--vz-border-color)', borderRadius: 999, overflow: 'hidden', margin: '5px 0 4px' }}>
                           <div style={{ width: `${pct}%`, height: '100%', background: barGrad, borderRadius: 999 }} />
                         </div>
-                        <span style={{ fontSize: 13, fontWeight: 800, color: accent, minWidth: 58, textAlign: 'right' }}>{u.modules}<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--vz-secondary-color)' }}>/{access.total_modules}</span></span>
+                        <div style={{ fontSize: 10.5, color: 'var(--vz-secondary-color)', fontWeight: 600, display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                          <span title="Modules this user can edit"><i className="ri-edit-2-line" style={{ fontSize: 11, verticalAlign: '-1px' }} /> {u.can_edit ?? 0} edit</span>
+                          <span title="Modules this user can approve"><i className="ri-checkbox-circle-line" style={{ fontSize: 11, verticalAlign: '-1px' }} /> {u.can_approve ?? 0} approve</span>
+                        </div>
                       </div>
                     </div>
                   );
@@ -648,69 +732,36 @@ export default function ClientDashboard() {
       <Row className="g-2 mb-2">
         <Col xl={8}>
           <Card style={cardStyle}>
-            <CardHead icon="ri-line-chart-line" gradient="linear-gradient(135deg,#0ab39c,#02c8a7)" title="Payment History" subtitle="Monthly payment trend"
+            <CardHead icon="ri-line-chart-line" title="Payment History" subtitle="Monthly payment trend"
               right={(
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 18, fontWeight: 800, color: '#0ab39c' }} title={`₹${counts.total_paid.toLocaleString('en-IN')}`}>₹{formatCompact(counts.total_paid)}</div>
+                  <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))' }} title={`₹${counts.total_paid.toLocaleString('en-IN')}`}>₹{formatCompact(counts.total_paid)}</div>
                   <div style={{ fontSize: 10, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>TOTAL PAID</div>
                 </div>
               )} />
             <CardBody style={{ padding: '12px 16px 8px' }}>
-              <ResponsiveContainer width="100%" height={260}>
-                {/* AreaChart with type="linear" instead of "monotone" —
-                   monotone smooths a single non-zero value into a
-                   misleading "growth ramp" curve. Linear draws straight
-                   segments between data points, so a flat ₹0 baseline
-                   that suddenly jumps to ₹12K in May looks like an
-                   honest sharp spike (which it is) instead of gradual
-                   growth that never happened. Dots + value labels make
-                   each month's actual amount readable at a glance. */}
-                <AreaChart data={payment_trend} margin={{ top: 18, right: 18, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="clientRevGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%"   stopColor="#0ab39c" stopOpacity={0.45} />
-                      <stop offset="55%"  stopColor="#0ab39c" stopOpacity={0.15} />
-                      <stop offset="100%" stopColor="#0ab39c" stopOpacity={0} />
-                    </linearGradient>
-                    <filter id="clientRevGlow" x="-10%" y="-30%" width="120%" height="160%">
-                      <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="blur" />
-                      <feFlood floodColor="#0ab39c" floodOpacity="0.35" result="flood" />
-                      <feComposite in="flood" in2="blur" operator="in" result="glow" />
-                      <feMerge>
-                        <feMergeNode in="glow" />
-                        <feMergeNode in="SourceGraphic" />
-                      </feMerge>
-                    </filter>
-                  </defs>
+              {/* Honest monthly bars — one bar per month. Months with no
+                 payment simply show no bar, instead of a smooth area curve
+                 inventing "growth" between a single data point and zero. */}
+              <ResponsiveContainer width="100%" height={210}>
+                <BarChart data={payment_trend} margin={{ top: 18, right: 12, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
                   <XAxis dataKey="month" tick={{ fontSize: 11, fill: ct.axisTickMuted, fontWeight: 600 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 10, fill: ct.axisTickMuted }} axisLine={false} tickLine={false} width={55} tickFormatter={v => `₹${(v / 1000).toFixed(0)}K`} />
-                  <Tooltip content={<ChartTooltip prefix="₹" />} cursor={{ stroke: 'rgba(10,179,156,0.4)', strokeWidth: 1, strokeDasharray: '3 3' }} />
-                  <Area
-                    type="monotone"
-                    dataKey="amount"
-                    stroke="#0ab39c"
-                    strokeWidth={2.75}
-                    fill="url(#clientRevGrad)"
-                    filter="url(#clientRevGlow)"
-                    dot={{ r: 4, fill: '#0ab39c', strokeWidth: 2, stroke: ct.dotStroke }}
-                    activeDot={{ r: 6, fill: '#0ab39c' }}
-                  >
+                  <Tooltip content={<ChartTooltip prefix="₹" />} cursor={{ fill: `${ACCENT}10` }} />
+                  <Bar dataKey="amount" fill={ACCENT} radius={[5, 5, 0, 0]} maxBarSize={46} isAnimationActive={false}>
                     <LabelList
                       dataKey="amount"
                       position="top"
-                      // Suppress labels on ₹0 months so the X-axis baseline
-                      // doesn't get cluttered with five "₹0" tags. Only
-                      // months with an actual payment get a label.
                       formatter={(label) => {
                         const v = Number(label ?? 0);
                         if (!Number.isFinite(v) || v <= 0) return '';
                         return `₹${v >= 1000 ? `${(v / 1000).toFixed(1)}K` : v.toFixed(0)}`;
                       }}
-                      style={{ fontSize: 10.5, fontWeight: 700, fill: '#0ab39c' }}
+                      style={{ fontSize: 10.5, fontWeight: 700, fill: ACCENT }}
                     />
-                  </Area>
-                </AreaChart>
+                  </Bar>
+                </BarChart>
               </ResponsiveContainer>
             </CardBody>
           </Card>
@@ -744,18 +795,18 @@ export default function ClientDashboard() {
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{
-                      width: 38, height: 38, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      background: b.is_main
-                        ? 'linear-gradient(135deg,#f7b84b,#f1963b)'
-                        : 'linear-gradient(135deg,#299cdb,#50c3e6)',
-                      color: '#fff', fontWeight: 800, fontSize: 12, flexShrink: 0,
+                      width: 36, height: 36, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: b.is_main ? `${ACCENT}14` : 'var(--vz-light)',
+                      color: b.is_main ? ACCENT : 'var(--vz-secondary-color)',
+                      border: `1px solid ${b.is_main ? ACCENT + '33' : 'var(--vz-border-color)'}`,
+                      fontWeight: 700, fontSize: 12, flexShrink: 0,
                     }}>
                       {b.code?.substring(0, 2).toUpperCase() || (b.name || '?').charAt(0).toUpperCase()}
                     </div>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                         {b.name}
-                        {b.is_main && <i className="ri-star-fill" style={{ color: '#f7b84b', fontSize: 12 }}></i>}
+                        {b.is_main && <i className="ri-star-fill" style={{ color: ACCENT, fontSize: 11 }}></i>}
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 1 }}>
                         {[b.city, b.state].filter(Boolean).join(', ') || 'No location'}
@@ -764,11 +815,11 @@ export default function ClientDashboard() {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span className="d-inline-flex align-items-center gap-1" title="Employees" style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', fontWeight: 700 }}>
-                      <i className="ri-group-line" style={{ fontSize: 13, color: '#0ab39c' }} />
+                      <i className="ri-group-line" style={{ fontSize: 13, color: 'var(--vz-secondary-color)' }} />
                       <span style={{ color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{b.employees_count ?? 0}</span>
                     </span>
                     <span className="d-inline-flex align-items-center gap-1" title="Login users" style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', fontWeight: 700 }}>
-                      <i className="ri-user-3-line" style={{ fontSize: 13, color: '#9b72cf' }} />
+                      <i className="ri-user-3-line" style={{ fontSize: 13, color: 'var(--vz-secondary-color)' }} />
                       <span style={{ color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{b.users_count}</span>
                     </span>
                     <span style={{
@@ -827,22 +878,20 @@ export default function ClientDashboard() {
           </Card>
         </Col>
       </Row>
-    </>
+      </div>
+    </div>
   );
 }
 
-/** Card header with a gradient icon tile — keeps every section's header
- *  consistent across the dashboard. `right` is optional trailing content. */
-function CardHead({ icon, gradient, title, subtitle, right }: { icon: string; gradient: string; title: string; subtitle: string; right?: React.ReactNode }) {
+/** Flat card header — a quiet monochrome icon + title/subtitle. */
+function CardHead({ icon, title, subtitle, right }: { icon: string; gradient?: string; title: string; subtitle: string; right?: React.ReactNode }) {
   return (
     <div style={cardHeaderStyle}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-        <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: gradient, color: '#fff', fontSize: 16, boxShadow: '0 8px 18px -8px rgba(64,81,137,0.5)' }}>
-          <i className={icon}></i>
-        </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+        <i className={icon} style={{ fontSize: 17, color: 'var(--vz-secondary-color)', flexShrink: 0 }}></i>
         <div style={{ minWidth: 0 }}>
-          <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>{title}</h5>
-          <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>{subtitle}</p>
+          <h5 style={{ fontWeight: 700, fontSize: 14, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>{title}</h5>
+          <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 1 }}>{subtitle}</p>
         </div>
       </div>
       {right}
@@ -850,41 +899,44 @@ function CardHead({ icon, gradient, title, subtitle, right }: { icon: string; gr
   );
 }
 
-/** A row of radial gauges — one per slice, each a % ring with the number in
- *  the centre and the name + count below. Fills the card width cleanly. */
+/** Clean flat donut + legend list — muted fills, no gradients/glows, total in
+ *  the centre, a tidy breakdown table beside it. */
 function MiniDonut({ slices, gid }: { slices: Array<{ name: string; value: number; color: string }>; gid: string }) {
+  void gid;
   const total = slices.reduce((s, x) => s + x.value, 0) || 1;
   return (
-    <div className="d-flex justify-content-around align-items-start" style={{ width: '100%', gap: 6 }}>
-      {slices.map((s, i) => {
-        const pct = Math.round((s.value / total) * 100);
-        const data = [{ v: pct }, { v: 100 - pct }];
-        return (
-          <div key={i} style={{ textAlign: 'center', flex: 1, minWidth: 0 }}>
-            <div style={{ position: 'relative', width: '100%', height: 108 }}>
-              <ResponsiveContainer width="100%" height={108}>
-                <PieChart>
-                  <defs>
-                    <linearGradient id={`cd-gauge-${gid}-${i}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={s.color} stopOpacity={1} />
-                      <stop offset="100%" stopColor={s.color} stopOpacity={0.7} />
-                    </linearGradient>
-                  </defs>
-                  <Pie data={data} dataKey="v" cx="50%" cy="50%" innerRadius={33} outerRadius={48} startAngle={90} endAngle={-270} stroke="none" cornerRadius={6} isAnimationActive={false}>
-                    <Cell fill={`url(#cd-gauge-${gid}-${i})`} />
-                    <Cell fill={`${s.color}1f`} />
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                <span style={{ fontSize: 17, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1 }}>{pct}%</span>
+    <div className="d-flex align-items-center gap-3" style={{ width: '100%' }}>
+      <div style={{ position: 'relative', width: 124, height: 124, flexShrink: 0 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie data={slices} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={44} outerRadius={60} paddingAngle={1} cornerRadius={2} stroke="var(--vz-card-bg)" strokeWidth={2} isAnimationActive={false}>
+              {slices.map((s, i) => <Cell key={i} fill={s.color} />)}
+            </Pie>
+            <Tooltip content={<ChartTooltip />} />
+          </PieChart>
+        </ResponsiveContainer>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1, letterSpacing: '-0.02em' }}>{total}</div>
+          <div style={{ fontSize: 9, color: 'var(--vz-secondary-color)', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 3 }}>Total</div>
+        </div>
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {slices.map((s, i) => {
+          const pct = Math.round((s.value / total) * 100);
+          return (
+            <div key={i} className="d-flex align-items-center justify-content-between" style={{ padding: '6px 0', borderBottom: i < slices.length - 1 ? '1px solid var(--vz-border-color)' : 'none' }}>
+              <div className="d-flex align-items-center gap-2" style={{ minWidth: 0 }}>
+                <span style={{ width: 10, height: 10, borderRadius: 3, background: s.color, flexShrink: 0 }} />
+                <span style={{ fontSize: 12.5, color: 'var(--vz-body-color)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</span>
+              </div>
+              <div className="d-flex align-items-center gap-2" style={{ flexShrink: 0 }}>
+                <span style={{ fontSize: 11, color: 'var(--vz-secondary-color)', minWidth: 30, textAlign: 'right' }}>{pct}%</span>
+                <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', minWidth: 22, textAlign: 'right' }}>{s.value}</span>
               </div>
             </div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</div>
-            <div style={{ fontSize: 12, color: s.color, fontWeight: 800, marginTop: 1 }}>{s.value}</div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -464,13 +464,12 @@ class DashboardController extends Controller
         // Scope mirrors the user/branch counts above: a sub-branch user is
         // pinned to their own branch (via the $branchId rewrite up top), a
         // main-branch user sees the whole client unless they pick a branch.
-        // Include soft-deleted employees in the totals so deactivating a
-        // branch (which cascades soft-deletes onto its employees) doesn't
-        // make the KPI silently drop. "Active" / "On Leave" / "Probation"
-        // counts still come straight from the live status column so they
-        // accurately reflect who's currently working — soft-deleted rows
-        // simply add to the "Inactive" bucket below.
-        $empBase = fn() => Employee::withTrashed()->where('client_id', $clientId)
+        // Count LIVE employees only (no withTrashed). A soft-deleted employee
+        // is no longer current staff, so counting them — and worse, counting a
+        // soft-deleted "Active" row as active — inflates the KPI and makes it
+        // disagree with the per-branch headcount donut. Live-only keeps every
+        // employee figure (total, active, status donut, by-branch) consistent.
+        $empBase = fn() => Employee::where('client_id', $clientId)
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
 
         // Status counts (enum values are Title-Case in the migration).
@@ -958,19 +957,21 @@ class DashboardController extends Controller
             $branchRows = Branch::where('client_id', $clientId)
                 ->where('code', '!=', 'HO')
                 ->orderBy('name')
-                ->get(['id', 'name', 'code']);
+                ->get(['id', 'name', 'code', 'status', 'city', 'state']);
             foreach ($branchRows as $b) {
                 $byBranch[] = [
                     'name'       => $b->name,
                     'code'       => $b->code,
-                    'leads'      => (int) Lead::where('client_id', $clientId)->where('branch_id', $b->id)->count(),
-                    'quotations' => (int) Quotation::where('client_id', $clientId)->where('branch_id', $b->id)->count(),
-                    'value'      => (float) Quotation::where('client_id', $clientId)->where('branch_id', $b->id)->where('status', '!=', 'cancelled')->sum('grand_total'),
+                    'status'     => $b->status,
+                    'city'       => $b->city,
+                    'state'      => $b->state,
                     'employees'  => (int) Employee::where('client_id', $clientId)->where('branch_id', $b->id)->count(),
+                    'users'      => (int) User::where('client_id', $clientId)->where('branch_id', $b->id)->count(),
                 ];
             }
-            // Most active branch (by quoted value) first.
-            usort($byBranch, fn ($a, $z) => $z['value'] <=> $a['value']);
+            // Largest branch by users (login seats) first — this is a tenant
+            // view, so we rank by seats, then employees, not sales value.
+            usort($byBranch, fn ($a, $z) => ($z['users'] <=> $a['users']) ?: ($z['employees'] <=> $a['employees']));
         }
 
         // ── Access & permissions overview — how many modules each user can
@@ -1000,6 +1001,7 @@ class DashboardController extends Controller
                 $u = $userRows->get($row->user_id);
                 if (!$u) continue;
                 $access[] = [
+                    'user_id'     => (int) $u->id,
                     'name'        => $u->name,
                     'role'        => $u->user_type,
                     'branch'      => $branchNameMap[$u->branch_id] ?? null,
