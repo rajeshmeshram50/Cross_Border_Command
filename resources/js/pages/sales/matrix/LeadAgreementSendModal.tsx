@@ -487,6 +487,10 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
   }, [visibleSegments, activeSegId, hasCombined]);
 
   const activeSeg = visibleSegments.find(s => s.id === activeSegId) ?? null;
+  // True when this segment has no standalone agreement of its own but DOES take
+  // part in a multi-segment agreement (which lives in the Combined tab). Used to
+  // explain an empty segment table instead of a bare "no agreements" line.
+  const activeSegHasCombined = !!activeSeg && activeSeg.agreements.some(a => (agrSegCount.get(a.id) ?? 1) > 1);
 
   /* Open the agreement PDF preview in a new tab. The backend response
    * is a binary stream, so we wrap it in a Blob and createObjectURL it.
@@ -1207,7 +1211,15 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                   </thead>
                   <tbody>
                     {activeAgreements.length === 0 ? (
-                      <tr><td colSpan={8} className="lasm-empty-row">No agreements in this group for this segment.</td></tr>
+                      <tr><td colSpan={8} className="lasm-empty-row">
+                        {activeSegHasCombined ? (
+                          <span>
+                            <strong>{activeSeg?.name}</strong> has no separate agreement of its own — it’s covered by a
+                            shared agreement that spans multiple segments. Open the
+                            <strong> “Combined Segment Agreements”</strong> tab to view and send it.
+                          </span>
+                        ) : 'No agreements in this group for this segment.'}
+                      </td></tr>
                     ) : activeAgreements.map((a, idx) => {
                       const sig = a.signature_request;
                       const sigStatus = sig?.status ?? 'draft';
