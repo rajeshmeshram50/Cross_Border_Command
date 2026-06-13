@@ -105,7 +105,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
     return d ? { by: d.name || 'a signer', reason: d.decline_reason || '' } : null;
   })();
 
-  useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = ''; }; }, []);
+  useEffect(() => { document.body.style.overflow = 'hidden'; document.documentElement.style.overflow = 'hidden'; return () => { document.body.style.overflow = ''; document.documentElement.style.overflow = ''; }; }, []);
 
   // Pull "Our Organisation" options from the Company Details master.
   useEffect(() => {

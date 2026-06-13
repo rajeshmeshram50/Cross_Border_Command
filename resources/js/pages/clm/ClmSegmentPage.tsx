@@ -7,6 +7,7 @@ import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { MasterSelect } from '../../components/ui/MasterSelect';
+import { useScrollLock } from './clmCommon';
 
 /* Central CLM → Segment Master.
  * Faithful 3-card port of the CLM-Master.html prototype:
@@ -77,6 +78,7 @@ export default function ClmSegmentPage() {
 
   const [editing, setEditing]     = useState<Segment | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  useScrollLock(modalOpen); // lock html+body while the custom Add/Edit modal is open
   const [pendingDelete, setPendingDelete] = useState<Segment | null>(null);
   const [deleting, setDeleting] = useState(false);
 
