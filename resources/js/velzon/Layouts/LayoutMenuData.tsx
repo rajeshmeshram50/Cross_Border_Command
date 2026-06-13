@@ -120,6 +120,7 @@ const salesLeafLink = (leafId: string): string => {
     case "sales.analytics":           return "/sales/analytics";
     case "sales.productivity_tracker": return "/sales/todo";
     case "sales.quotation_vs_pi":     return "/sales/qpi";
+    case "sales.sign_tracker":        return "/sales/sign-tracker";
     case "sales.p2p_summary":         return "/sales/p2p-summary";
     case "sales.diagnosis":           return "/sales/diagnosis";
     case "sales.resolution_center":   return "/sales/resolution-center";
@@ -283,7 +284,14 @@ const Navdata = () => {
     return SALES_GROUPS
       .map((g) => {
         const childItems = g.children
-          .filter((c) => isSuperAdmin || perms[c.id]?.can_view)
+          .filter((c) => {
+            if (isSuperAdmin) return true;
+            // Sign Document Tracker has no permission slug of its own — it's a
+            // read-only view of the same Quotation/PI/agreement sign requests,
+            // so it rides on the Quotation Vs PI permission.
+            if (c.id === 'sales.sign_tracker') return !!perms['sales.quotation_vs_pi']?.can_view;
+            return !!perms[c.id]?.can_view;
+          })
           .map((c) => ({
             id: c.id,
             label: c.label,

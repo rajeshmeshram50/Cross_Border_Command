@@ -113,7 +113,71 @@ class CtcContractController extends Controller
 
     private function cpNames(CtcContract $c): array
     {
-        return collect($c->counterparties ?? [])->map(fn ($x) => $x['name'] ?? '')->filter()->values()->all();
+        return collect($this->resolveCounterparties($c))->map(fn ($x) => $x['name'] ?? '')->filter()->values()->all();
+    }
+
+    /**
+     * Refresh each stored counterparty against its live source record
+     * (Customer / Consignee / Vendor) by source_type + source_id, so edits made
+     * in those masters flow through to the agreement. Only the factual fields
+     * (name, country, phone, email) are overlaid; the user-set `referred` alias,
+     * `badge`, and the `source_*` reference keys are preserved as stored. Manual
+     * / legacy entries without a source reference keep their snapshot.
+     */
+    private function resolveCounterparties(CtcContract $c): array
+    {
+        $cps = is_array($c->counterparties) ? $c->counterparties : [];
+        return array_map(function ($cp) use ($c) {
+            $type = strtolower((string) ($cp['source_type'] ?? ''));
+            $id   = $cp['source_id'] ?? null;
+            if ($id === null || $id === '' || $type === '') return $cp;
+            $live = $this->liveParty($type, $id, (int) $c->client_id);
+            return $live ? array_merge($cp, $live) : $cp;
+        }, $cps);
+    }
+
+    /** Current name/country/phone/email for a party reference, or null if it no longer exists. */
+    private function liveParty(string $type, $id, int $clientId): ?array
+    {
+        if ($type === 'buyer' || $type === 'customer') {
+            // source_id is the customer_code (e.g. "C-009"), not the numeric PK —
+            // resolve by code, falling back to id only when it's numeric.
+            $q = \App\Models\Customer::where('client_id', $clientId)->with('primaryAddress');
+            $row = is_numeric($id) ? $q->find($id) : $q->where('customer_code', $id)->first();
+            if (!$row) return null;
+            $a = $row->primaryAddress;
+            return [
+                'name'    => (string) $row->company_name,
+                'country' => (string) ($a?->country ?? ''),
+                'phone'   => (string) ($a?->cp_contact ?? ''),
+                'email'   => (string) ($a?->cp_email ?? $row->primary_email ?? ''),
+            ];
+        }
+        if ($type === 'consignee') {
+            $q = \App\Models\Consignee::where('client_id', $clientId)->with('primaryAddress');
+            $row = is_numeric($id) ? $q->find($id) : $q->where('consignee_code', $id)->first();
+            if (!$row) return null;
+            $a = $row->primaryAddress;
+            return [
+                'name'    => (string) $row->company_name,
+                'country' => (string) ($a?->country ?? ''),
+                'phone'   => (string) ($a?->cp_contact ?? ''),
+                'email'   => (string) ($a?->cp_email ?? $row->primary_email ?? ''),
+            ];
+        }
+        if ($type === 'supplier' || $type === 'vendor') {
+            $q = \App\Models\Vendor::where('client_id', $clientId)->with('primaryAddress');
+            $row = is_numeric($id) ? $q->find($id) : $q->where('vendor_code', $id)->first();
+            if (!$row) return null;
+            $a = $row->primaryAddress;
+            return [
+                'name'    => (string) $row->company_name,
+                'country' => (string) ($a?->city ?? ''),
+                'phone'   => (string) ($a?->contact_no ?? ''),
+                'email'   => (string) ($a?->email ?? $row->primary_email ?? ''),
+            ];
+        }
+        return null;
     }
 
     /** Case to Case Contracts list row. */
@@ -311,6 +375,9 @@ class CtcContractController extends Controller
         $row->org_signature_url = $this->orgSignatureUrl($row);
         // Fully-signed PDF (from Zoho) once the signature request completed.
         $row->signed_document_url = $this->signedDocumentUrl($row);
+        // Re-hydrate counterparties from their live source masters so any edit
+        // made in Customer / Consignee / Vendor since this was saved shows here.
+        $row->counterparties = $this->resolveCounterparties($row);
         return response()->json(['status' => true, 'data' => $row]);
     }
 
@@ -856,6 +923,25 @@ class CtcContractController extends Controller
             ? '<img src="' . $sigUri . '" alt="Authorised Signatory" style="max-height:80px;max-width:210px;object-fit:contain;" />'
             : '';
         $processedHtml = preg_replace('/\{\{\s*signature\s*\}\}/i', $sigHtml, $processedHtml);
+
+        // Organisation-detail placeholders — filled from the Company Details
+        // master row backing this agreement's "Our Organisation" selection.
+        // ({{company_name}} {{company_no}} {{email}} {{contact_no}} {{address}})
+        $orgName = trim((string) ($row->org_name ?? ''));
+        $company = $orgName
+            ? \App\Models\Masters\Company::where('client_id', $row->client_id)
+                ->where('company_name', $orgName)->first()
+            : null;
+        $orgTokens = [
+            'company_name' => $row->org_name ?: ($company->company_name ?? ''),
+            'company_no'   => $company->cin ?? '',          // registered company number (CIN)
+            'email'        => $company->email ?? '',
+            'contact_no'   => $company->mobile ?? '',
+            'address'      => $company->address ?? '',
+        ];
+        foreach ($orgTokens as $tok => $val) {
+            $processedHtml = preg_replace('/\{\{\s*' . $tok . '\s*\}\}/i', e((string) $val), $processedHtml);
+        }
 
         $headerConfig = is_array($row->header_config) ? $row->header_config : [];
         $footerConfig = is_array($row->footer_config) ? $row->footer_config : [];

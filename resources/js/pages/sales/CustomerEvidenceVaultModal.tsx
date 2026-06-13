@@ -261,6 +261,16 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
+  // Scroll lock — lock BOTH <html> and <body> so the page behind can't scroll.
+  useEffect(() => {
+    if (!open) return;
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
+  }, [open]);
+
   /* Initialise the active tab/group — ONLY when the modal opens (or the target
    * customer / deep-link tab changes), so the user's manual tab choice sticks.
    * Deliberately NOT dependent on `onClose`: that's a fresh closure on every

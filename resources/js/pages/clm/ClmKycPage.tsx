@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import WorklistPager from "../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
@@ -7,7 +8,7 @@ import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { MasterMultiSelect } from '../../components/ui/MasterMultiSelect';
-import { SimpleDescModal } from './clmCommon';
+import { SimpleDescModal, useScrollLock } from './clmCommon';
 
 /* Central CLM → KYC Documents Master. 3-card faithful port. */
 
@@ -29,6 +30,7 @@ export default function ClmKycPage() {
   const rootRef                 = useRef<HTMLDivElement | null>(null);
   const [editing, setEditing]   = useState<Kyc | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  useScrollLock(modalOpen); // lock html+body while the custom Add/Edit modal is open
   const [pendingDelete, setPendingDelete] = useState<Kyc | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -170,14 +172,7 @@ export default function ClmKycPage() {
                 </tbody>
               </table>
               {!loading && filtered.length > 0 && (
-                <div className="clm-pag">
-                  <span className="clm-pag-info">Showing <b>{start + 1}–{start + slice.length}</b> of <b>{filtered.length}</b> record{filtered.length === 1 ? '' : 's'}</span>
-                  <div className="clm-pag-btns">
-                    {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
-                      <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
-                    ))}
-                  </div>
-                </div>
+                <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
               )}
             </div>
           )}

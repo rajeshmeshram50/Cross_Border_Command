@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import WorklistPager from "../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
@@ -192,14 +193,7 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
               </tbody>
             </table>
             {!loading && filtered.length > 0 && (
-              <div className="clm-pag">
-                <span className="clm-pag-info">Showing <b>{start + 1}–{start + slice.length}</b> of <b>{filtered.length}</b></span>
-                <div className="clm-pag-btns">
-                  {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
-                    <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
-                  ))}
-                </div>
-              </div>
+              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
             )}
           </div>
         )}
@@ -361,9 +355,17 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                         </Tooltip>
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        {isHigh && r.segment
+                        {/* Show every mapped segment as its own badge (r.segment
+                            may be a CSV like "Tobacco, Rice"), regardless of
+                            regulatory tier. Only fall back to "All segments"
+                            when no segment is mapped at all. */}
+                        {r.segment
                           ? <Tooltip label={`Segment scope · ${r.segment}`}>
-                              <span className="clm-badge clm-badge-teal">{r.segment}</span>
+                              <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
+                                {r.segment.split(',').map(s => s.trim()).filter(Boolean).map((s, i) => (
+                                  <span key={i} className="clm-badge clm-badge-teal">{s}</span>
+                                ))}
+                              </span>
                             </Tooltip>
                           : <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>All segments</span>}
                       </td>
@@ -396,14 +398,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
               </tbody>
             </table>
             {!loading && filtered.length > 0 && (
-              <div className="clm-pag">
-                <span className="clm-pag-info">Showing <b>{start + 1}–{start + slice.length}</b> of <b>{filtered.length}</b></span>
-                <div className="clm-pag-btns">
-                  {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
-                    <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
-                  ))}
-                </div>
-              </div>
+              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
             )}
           </div>
         )}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import WorklistPager from "../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
@@ -13,6 +14,7 @@ import {
   sanitizeClmDescription,
   isMeaningfulClmValue,
   findClmDuplicate,
+  useScrollLock,
 } from './clmCommon';
 
 /* Central CLM → Authority Master. 3-card faithful port of the prototype. */
@@ -61,6 +63,7 @@ export default function ClmAuthorityPage() {
 
   const [editing, setEditing]     = useState<Authority | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  useScrollLock(modalOpen); // lock html+body while the custom Add/Edit modal is open
   const [pendingDelete, setPendingDelete] = useState<Authority | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -218,14 +221,7 @@ export default function ClmAuthorityPage() {
                 </tbody>
               </table>
               {!loading && filtered.length > 0 && (
-                <div className="clm-pag">
-                  <span className="clm-pag-info">Showing <b>{start + 1}–{start + slice.length}</b> of <b>{filtered.length}</b> record{filtered.length === 1 ? '' : 's'}</span>
-                  <div className="clm-pag-btns">
-                    {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
-                      <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
-                    ))}
-                  </div>
-                </div>
+                <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
               )}
             </div>
           )}

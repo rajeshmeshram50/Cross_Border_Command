@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardBody, CardHeader, Col, Row, Badge, Button, Spinner, Alert } from 'reactstrap';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import api from '../../api';
@@ -28,6 +28,7 @@ export default function Permissions() {
   const { user: authUser } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [modules, setModules] = useState<PermModule[]>([]);
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string>('');
@@ -64,6 +65,12 @@ export default function Permissions() {
       const mods: PermModule[] = (modRes.data as PermModule[]).filter(m => !HIDDEN_SLUGS.has(m.slug));
       setModules(mods);
       setUsers(usersRes.data);
+      // Deep-link support: /permissions?user=<id> (e.g. from the dashboard
+      // Access & Permissions card) preselects that user if manageable.
+      const pre = searchParams.get('user');
+      if (pre && (usersRes.data as ManagedUser[]).some(u => String(u.id) === pre)) {
+        setSelectedUserId(pre);
+      }
     }).finally(() => setLoading(false));
 
     if (!isSuperAdmin && authUser) {

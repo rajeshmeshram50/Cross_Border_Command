@@ -286,6 +286,7 @@ class ModuleSeeder extends Seeder
             'sales.operations' => [
                 ['name' => 'My Workplace',             'slug' => 'sales.workplace',        'icon' => 'Activity',    'description' => 'Manage active sales opportunities'],
                 ['name' => 'Quotation Vs PI History',  'slug' => 'sales.quotation_vs_pi',  'icon' => 'FileText',    'description' => 'Track quotation & PI conversion history'],
+                ['name' => 'Sign Document Tracker',    'slug' => 'sales.sign_tracker',     'icon' => 'ClipboardCheck','description' => 'Track all documents sent for e-signature'],
                 ['name' => 'Lead Distribution',        'slug' => 'sales.lead_distribution','icon' => 'Share2',      'description' => 'Distribute and reassign opportunity leads'],
                 ['name' => 'Lead Detail',              'slug' => 'sales.lead_detail',      'icon' => 'FileSearch',  'description' => 'Full opportunity detail view'],
                 ['name' => 'Enquiries',                'slug' => 'sales.enquiries',        'icon' => 'Mail',        'description' => 'Inbound enquiries log & triage'],

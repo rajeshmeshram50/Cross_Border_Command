@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import WorklistPager from "../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
@@ -7,6 +8,7 @@ import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { MasterSelect } from '../../components/ui/MasterSelect';
+import { useScrollLock } from './clmCommon';
 
 /* Central CLM → Segment Master.
  * Faithful 3-card port of the CLM-Master.html prototype:
@@ -77,6 +79,7 @@ export default function ClmSegmentPage() {
 
   const [editing, setEditing]     = useState<Segment | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  useScrollLock(modalOpen); // lock html+body while the custom Add/Edit modal is open
   const [pendingDelete, setPendingDelete] = useState<Segment | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -273,14 +276,7 @@ export default function ClmSegmentPage() {
                   </tbody>
                 </table>
                 {!loading && filtered.length > 0 && (
-                  <div className="clm-pag">
-                    <span className="clm-pag-info">Showing <b>{start + 1}–{start + slice.length}</b> of <b>{filtered.length}</b> record{filtered.length === 1 ? '' : 's'}</span>
-                    <div className="clm-pag-btns">
-                      {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
-                        <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
-                      ))}
-                    </div>
-                  </div>
+                  <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
                 )}
               </div>
             )}

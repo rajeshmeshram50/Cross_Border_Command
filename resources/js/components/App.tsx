@@ -54,6 +54,7 @@ import LeadDistributionPage from '../pages/sales/AssignedLeadsModal';
 import SalesLeadsDetails from '../pages/sales/SalesLeadsDetails';
 import SalesTodo from '../pages/sales/SalesTodo';
 import SalesQPI from '../pages/sales/SalesQPI';
+import SalesSignTracker from '../pages/sales/SalesSignTracker';
 import SalesP2PSummary from '../pages/sales/SalesP2PSummary';
 import SalesMatrixDetail from '../pages/sales/matrix/SalesMatrixDetail';
 import Products from '../pages/products/Products';
@@ -196,6 +197,7 @@ const getPagePath = (page: string, data?: any): string => {
          "Quotation Vs PI History"; the QPI page already exists and the
          alias keeps the new menu id wired to it. */
       if (page === 'sales.quotation_vs_pi') return '/sales/qpi';
+      if (page === 'sales.sign_tracker')    return '/sales/sign-tracker';
       if (page === 'sales.p2p_summary')     return '/sales/p2p-summary';
       if (page === 'sales.diagnosis')       return '/sales/diagnosis';
       if (page === 'sales.resolution_center') return '/sales/resolution-center';
@@ -723,6 +725,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/sales/todo" element={<SalesTodo />} />
               <Route path="/sales/matrix/:oppId/stage/:stage" element={<SalesMatrixDetail />} />
               <Route path="/sales/qpi" element={<SalesQPI />} />
+              <Route path="/sales/sign-tracker" element={<SalesSignTracker />} />
               <Route path="/sales/p2p-summary" element={<SalesP2PSummary />} />
               {/* New top-level header modules. P2P reuses the Sales P2P
                   Summary page; the rest render the shared permission-gated

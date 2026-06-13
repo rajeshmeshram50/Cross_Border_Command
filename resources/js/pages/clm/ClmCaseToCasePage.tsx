@@ -62,7 +62,7 @@ export default function ClmCaseToCasePage() {
   const [tab, setTab]   = useState<CtcTab>('all');
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
-  const [infoOpen, setInfoOpen] = useState(true);
+  const [infoOpen, setInfoOpen] = useState(false);   // "What We Are Doing Here" starts collapsed
   const [cpOpen, setCpOpen] = useState<{ id: string; names: string[]; x: number; y: number } | null>(null);   // counterparties popover
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CtcContract | null>(null);

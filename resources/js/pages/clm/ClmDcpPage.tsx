@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import WorklistPager from "../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
@@ -377,14 +378,7 @@ export default function ClmDcpPage() {
                 </tbody>
               </table>
               {!loading && filtered.length > 0 && (
-                <div className="clm-pag">
-                  <span className="clm-pag-info">Showing <b>{start + 1}–{start + slice.length}</b> of <b>{filtered.length}</b> rule{filtered.length === 1 ? '' : 's'}</span>
-                  <div className="clm-pag-btns">
-                    {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
-                      <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
-                    ))}
-                  </div>
-                </div>
+                <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
               )}
             </div>
           )}
@@ -443,7 +437,7 @@ function SegmentRuleModal(props: {
 
   // Lock the background page from scrolling while the modal is open — otherwise
   // a scroll over the overlay bleeds through and scrolls the page behind it.
-  useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = ''; }; }, []);
+  useEffect(() => { document.body.style.overflow = 'hidden'; document.documentElement.style.overflow = 'hidden'; return () => { document.body.style.overflow = ''; document.documentElement.style.overflow = ''; }; }, []);
 
   /* Less-Regulatory create-mode flips on multi-select. Edit mode locks to
    * single because each edit targets exactly one rule, and High keeps a

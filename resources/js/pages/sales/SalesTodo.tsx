@@ -279,6 +279,18 @@ export default function SalesTodo() {
   const [calMonth, setCalMonth] = useState(todayDate.m);
   const [popover, setPopover]   = useState<{ dateKey: string; x: number; y: number } | null>(null);
 
+  // Scroll lock — while the Add/Edit form or the Reminder Details modal is
+  // open, lock BOTH <html> and <body> so the page behind can't scroll.
+  useEffect(() => {
+    const anyOpen = modalOpen || viewReminder !== null;
+    if (!anyOpen) return;
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
+  }, [modalOpen, viewReminder]);
+
   // Inject Google Fonts (DM Sans + Inter) once on mount.
   useEffect(() => {
     const id = 'sm-td-fonts';

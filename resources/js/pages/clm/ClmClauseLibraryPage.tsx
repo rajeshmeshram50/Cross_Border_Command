@@ -1,4 +1,5 @@
 import { forwardRef, memo, useEffect, useMemo, useRef, useState } from 'react';
+import WorklistPager from "../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
@@ -13,9 +14,14 @@ import { MasterSelect } from '../../components/ui/MasterSelect';
  * while the parent is still open, then the parent restores the original). */
 function useBodyScrollLock() {
   useEffect(() => {
-    const prev = document.body.style.overflow;
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
     document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overflow = prevHtml;
+    };
   }, []);
 }
 
@@ -208,14 +214,7 @@ function TypesPane({ rows, loading, reload }: { rows: ClType[]; loading: boolean
               </tbody>
             </table>
             {!loading && filtered.length > 0 && (
-              <div className="clm-pag">
-                <span className="clm-pag-info">Showing <b>{start + 1}–{start + slice.length}</b> of <b>{filtered.length}</b></span>
-                <div className="clm-pag-btns">
-                  {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
-                    <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
-                  ))}
-                </div>
-              </div>
+              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
             )}
           </div>
         )}
@@ -343,14 +342,7 @@ function LibraryPane({ rows, types, loading, reload }: { rows: ClLib[]; types: C
               </tbody>
             </table>
             {!loading && filtered.length > 0 && (
-              <div className="clm-pag">
-                <span className="clm-pag-info">Showing <b>{start + 1}–{start + slice.length}</b> of <b>{filtered.length}</b></span>
-                <div className="clm-pag-btns">
-                  {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
-                    <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
-                  ))}
-                </div>
-              </div>
+              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
             )}
           </div>
         )}

@@ -36,6 +36,17 @@ export default function DeleteConfirmModal({
     return () => document.removeEventListener('keydown', handler);
   }, [open, onClose, loading]);
 
+  // Scroll lock — lock BOTH <html> and <body> while open so the page behind
+  // can't scroll. Shared component, so this fixes every usage app-wide.
+  useEffect(() => {
+    if (!open) return;
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
+  }, [open]);
+
   if (!open) return null;
 
   const rawName = itemNameProp ?? clientName;
