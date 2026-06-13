@@ -859,8 +859,16 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
               <div className="lasm-empty">No trade documents configured for this lead's PI segments yet.</div>
             ) : (() => {
               const rows = tdBuckets[tdTab];
-              // Library docs (db_id set) are the only sendable rows.
-              const selectableIds = Array.from(new Set(rows.filter(r => r.db_id != null).map(r => r.db_id as number)));
+              // Already out-for / back-from signature → not re-sendable. Mirrors
+              // the per-row `tdSent` check below so "select all" can't pick up a
+              // doc that's already been sent and queue it for a second send.
+              const isTdSent = (r: typeof rows[number]) => {
+                const st = r.signature_request?.status ?? null;
+                return !!st && !['draft', 'recalled', 'superseded'].includes(st);
+              };
+              // Library docs (db_id set) that haven't been sent are the only
+              // sendable rows — select-all only touches these.
+              const selectableIds = Array.from(new Set(rows.filter(r => r.db_id != null && !isTdSent(r)).map(r => r.db_id as number)));
               const allSel  = selectableIds.length > 0 && selectableIds.every(id => tdSelected.has(id));
               const someSel = selectableIds.some(id => tdSelected.has(id)) && !allSel;
               const toggleAll = () => setTdSelected(allSel ? new Set() : new Set(selectableIds));
