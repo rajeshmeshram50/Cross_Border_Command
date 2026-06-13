@@ -198,6 +198,17 @@ function buildDemoVault(consignee: ConsigneeVaultTarget): VaultData {
 
 export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, data, initialTab }: Props) {
   const toast = useToast();
+
+  // Scroll lock — lock BOTH <html> and <body> so the page behind can't scroll.
+  useEffect(() => {
+    if (!open) return;
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
+  }, [open]);
+
   const [tab, setTab] = useState<TabKey>('company-dd');
   const [group, setGroup] = useState<GroupKey>('standard');
   const [shipmentFilter, setShipmentFilter] = useState<'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee'>('all');

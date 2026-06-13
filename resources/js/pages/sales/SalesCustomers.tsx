@@ -124,6 +124,18 @@ export default function SalesCustomers() {
    * Empty = no popup; otherwise holds the customer being asked about. */
   const [pendingEdit, setPendingEdit] = useState<Customer | null>(null);
 
+  // Scroll lock for the inline "Linked Consignee Alert" confirm — lock BOTH
+  // <html> and <body> so the page behind can't scroll. (The Add and Vault
+  // modals lock themselves.)
+  useEffect(() => {
+    if (!pendingEdit) return;
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
+  }, [pendingEdit]);
+
   /* ── Live customer list pulled from /api/customers. The previous
    * hardcoded FRESH/RECURRING arrays were a stub while the DB tables
    * didn't exist; now the table is backed by Customer + CustomerAddress
