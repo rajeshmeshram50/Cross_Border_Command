@@ -160,6 +160,7 @@ export default function SalesConsignee() {
         // Use it directly — keeps the list page in sync with whatever
         // shape ConsigneeController::shape() decides to expose.
         countryDetail:  d.countryDetail ?? d.city ?? '',
+        same_as_customer: !!d.same_as_customer,
       })));
     } catch (e: any) {
       toast.error('Failed to load consignees', e?.response?.data?.message ?? 'Please try again.');
@@ -334,6 +335,16 @@ export default function SalesConsignee() {
           <span className="smcg-risk-pill" style={{ background: r.bg, color: r.color, borderColor: r.bg.replace('0.12)','0.35)').replace('0.14)','0.38)') }}>
             {v}
           </span>
+        );
+      },
+    },
+    {
+      header: 'Same as Customer',
+      accessorKey: 'same_as_customer',
+      cell: (info: any) => {
+        const yes = !!info.getValue();
+        return (
+          <span className={`smcg-sac-pill ${yes ? 'is-yes' : 'is-no'}`}>{yes ? 'Yes' : 'No'}</span>
         );
       },
     },
@@ -1445,6 +1456,13 @@ const SCOPED_CSS = `
 }
 /* Segment chip leading dot removed — matches the SalesCustomers
    cleanup where pill badges don't carry a leading dot indicator. */
+/* Same-as-Customer Yes/No pill — green for a mirror, neutral grey otherwise. */
+.smcg-sac-pill { display: inline-flex; align-items: center; padding: 3px 11px; border-radius: 999px; font-size: 10.5px; font-weight: 800; }
+.smcg-sac-pill.is-yes { background: rgba(16,185,129,.14); color: #059669; }
+.smcg-sac-pill.is-no  { background: rgba(100,116,139,.12); color: #64748b; }
+[data-bs-theme="dark"] .smcg-sac-pill.is-yes { background: rgba(16,185,129,.18); color: #6ee7b7; }
+[data-bs-theme="dark"] .smcg-sac-pill.is-no  { background: rgba(148,163,184,.14); color: #94a3b8; }
+
 .smcg-risk-pill {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 4px 12px 4px 11px;
