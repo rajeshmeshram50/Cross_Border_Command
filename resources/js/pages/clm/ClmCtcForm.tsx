@@ -779,7 +779,7 @@ function Stage1(p: {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg><span style={{ fontSize: 8, color: t.dark ? '#a78bfa' : '#A78BFA', fontWeight: 500, fontStyle: 'italic' }}>Placeholders auto-fill on agreement generation</span></div>
                   <span style={{ fontSize: 8, fontWeight: 700, color: t.dark ? '#a78bfa' : '#C4B5FD', letterSpacing: '.05em' }}>{'{{PLACEHOLDER}}'}</span>
                 </div>
-                {phOpen && <ClmInsertPlaceholderModal open={phOpen} onClose={() => setPhOpen(false)} onInsert={tok => { if (/^\s*</.test(tok)) insertHtml(tok); else insertText(tok); }} />}
+                {phOpen && <ClmInsertPlaceholderModal open={phOpen} hideProductTab onClose={() => setPhOpen(false)} onInsert={tok => { if (/^\s*</.test(tok)) insertHtml(tok); else insertText(tok); }} />}
                 {clauseOpen && <ClmClauseInsertPanel onClose={() => setClauseOpen(false)} onInsert={html => insertHtml(html)} />}
               </div>
             )}
@@ -1552,7 +1552,9 @@ function RightTools({ t, draft, onInsert, summary, declineReason, declinedBy, ac
   const plain = draft.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
   const words = plain ? plain.split(/\s+/).length : 0;
   const score = Math.min(100, Math.round(words * 1.5));
-  const FIELDS = [['SIGNATURE', 'signature'], ['PERSON NAME', 'person_name'], ['COMPANY NAME', 'company_name'], ['EMAIL', 'email'], ['CONTACT NO', 'contact_no'], ['ADDRESS', 'address']];
+  // Tokens auto-fill from the "Our Organisation" (Company Details master) row
+  // at agreement generation — see CtcContractController::downloadVersion.
+  const FIELDS = [['SIGNATURE', 'signature'], ['COMPANY NAME', 'company_name'], ['COMPANY NO', 'company_no'], ['EMAIL', 'email'], ['CONTACT NO', 'contact_no'], ['ADDRESS', 'address']];
   // Signature is a one-time placeholder — once {{signature}} is in the draft
   // its tile is locked so it can't be inserted a second time.
   const sigUsed = /\{\{\s*signature\s*\}\}/i.test(draft);

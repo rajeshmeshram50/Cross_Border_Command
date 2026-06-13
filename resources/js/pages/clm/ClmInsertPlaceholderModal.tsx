@@ -106,10 +106,16 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onInsert: (token: string) => void;
+  /* Case-to-case agreements have no Proforma-Invoice product mapping, so the
+     Product placeholder tab is hidden there. Defaults to shown elsewhere
+     (Trade Documents Master, customer signature flows). */
+  hideProductTab?: boolean;
 }
 
-export default function ClmInsertPlaceholderModal({ open, onClose, onInsert }: Props) {
+export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hideProductTab = false }: Props) {
   const toast = useToast();
+  // Tabs available in this context — Product is dropped for case-to-case.
+  const visibleTabs = hideProductTab ? TABS.filter(t => t.key !== 'product') : TABS;
   const [tab, setTab] = useState<Tab>('customer');
   // Multi-select: tokens the user has ticked across ALL tabs. Persists
   // while the modal is open so a single "Copy selected" can grab a mix of
@@ -228,7 +234,7 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert }: P
 
         <div className="ipm-body">
           <aside className="ipm-tabs">
-            {TABS.map(t => {
+            {visibleTabs.map(t => {
               const count = FIELDS[t.key].length;
               const active = t.key === tab;
               return (
