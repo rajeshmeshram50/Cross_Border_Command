@@ -374,20 +374,17 @@ export default function AdminDashboard() {
           color: color-mix(in srgb, var(--role-c) 35%, #ffffff);
         }
       `}</style>
-      {/* Page Title */}
-      <Row className="mb-2">
-        <Col xs={12}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0 12px' }}>
-            <div>
-              <h4 style={{ fontWeight: 800, fontSize: 20, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Dashboard</h4>
-              <p style={{ margin: 0, fontSize: 12, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Welcome back! Here's what's happening today.</p>
-            </div>
-            {/* No breadcrumb on the dashboard — the page title already
-                tells the user where they are, and the trail "IGC › Dashboard"
-                was redundant noise. */}
+      {/* Page Title strip — same shape as the Clients / Branches headers. */}
+      <div className="frm-cstrip mb-3">
+        <span className="frm-cstrip-accent" />
+        <div className="frm-cstrip-left">
+          <div className="frm-cstrip-icon"><i className="ri-dashboard-line" /></div>
+          <div className="min-w-0">
+            <div className="frm-cstrip-title">Dashboard</div>
+            <div className="frm-cstrip-sub">Welcome back! Here's what's happening today.</div>
           </div>
-        </Col>
-      </Row>
+        </div>
+      </div>
 
       {/* KPI Cards — each gradient stays within a single hue family so
           adjacent cards read as a harmonious palette instead of muddy

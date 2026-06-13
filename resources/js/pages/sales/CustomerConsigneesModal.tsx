@@ -200,6 +200,7 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                     <th>COMPANY NAME</th>
                     <th>SEGMENT</th>
                     <th>RISK LEVEL</th>
+                    <th>SAME AS CUSTOMER</th>
                     <th>CONTACT PERSON</th>
                     <th>EMAIL</th>
                     <th>CONTACT NO</th>
@@ -209,7 +210,7 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                 </thead>
                 <tbody>
                   {loading ? (
-                    <tr className="ccm-empty"><td colSpan={10}>
+                    <tr className="ccm-empty"><td colSpan={11}>
                       <div className="ccm-empty-state">
                         <span className="ccm-empty-spinner" />
                         <span>Loading consignees…</span>
@@ -217,7 +218,7 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                     </td></tr>
                   ) : filtered.length === 0 ? (
                     <tr className="ccm-empty">
-                      <td colSpan={10}>
+                      <td colSpan={11}>
                         {q ? 'No consignees match your search.' : <>No consignees mapped to <strong>{customer.id}</strong> yet. Click <strong>+ Add Consignee</strong> to create the first one.</>}
                       </td>
                     </tr>
@@ -235,6 +236,7 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                         <td className="ccm-company">{c.company || '—'}</td>
                         <td>{c.segment ? <span className="ccm-seg">{c.segment}</span> : '—'}</td>
                         <td><span className={`ccm-pill ${riskColor}`}>{c.risk || '—'}</span></td>
+                        <td><span className={`ccm-sac ${c.same_as_customer ? 'is-yes' : 'is-no'}`}>{c.same_as_customer ? 'Yes' : 'No'}</span></td>
                         <td>{c.contact || '—'}</td>
                         <td className="ccm-email">{c.email || '—'}</td>
                         <td className="ccm-mono">{c.phone || '—'}</td>
@@ -539,6 +541,10 @@ const SCOPED_CSS = `
   font-size: 11px; font-weight: 700; border: 1px solid transparent;
 }
 .ccm-pill::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+/* Same-as-Customer Yes/No pill. */
+.ccm-sac { display: inline-flex; align-items: center; padding: 3px 11px; border-radius: 999px; font-size: 11px; font-weight: 800; }
+.ccm-sac.is-yes { background: rgba(16,185,129,.14); color: #059669; }
+.ccm-sac.is-no  { background: rgba(100,116,139,.12); color: #64748b; }
 .ccm-pill-low  { background: #ecfdf5; color: #047857; border-color: #6ee7b7; }
 .ccm-pill-med  { background: #fffbeb; color: #b45309; border-color: #fed7aa; }
 .ccm-pill-high { background: #fef2f2; color: #b91c1c; border-color: #fca5a5; }

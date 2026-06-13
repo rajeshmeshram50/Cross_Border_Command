@@ -1,4 +1,5 @@
 import { forwardRef, memo, useEffect, useMemo, useRef, useState } from 'react';
+import WorklistPager from "../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
@@ -213,14 +214,7 @@ function TypesPane({ rows, loading, reload }: { rows: ClType[]; loading: boolean
               </tbody>
             </table>
             {!loading && filtered.length > 0 && (
-              <div className="clm-pag">
-                <span className="clm-pag-info">Showing <b>{start + 1}–{start + slice.length}</b> of <b>{filtered.length}</b></span>
-                <div className="clm-pag-btns">
-                  {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
-                    <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
-                  ))}
-                </div>
-              </div>
+              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
             )}
           </div>
         )}
@@ -348,14 +342,7 @@ function LibraryPane({ rows, types, loading, reload }: { rows: ClLib[]; types: C
               </tbody>
             </table>
             {!loading && filtered.length > 0 && (
-              <div className="clm-pag">
-                <span className="clm-pag-info">Showing <b>{start + 1}–{start + slice.length}</b> of <b>{filtered.length}</b></span>
-                <div className="clm-pag-btns">
-                  {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
-                    <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
-                  ))}
-                </div>
-              </div>
+              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
             )}
           </div>
         )}

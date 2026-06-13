@@ -857,6 +857,25 @@ class CtcContractController extends Controller
             : '';
         $processedHtml = preg_replace('/\{\{\s*signature\s*\}\}/i', $sigHtml, $processedHtml);
 
+        // Organisation-detail placeholders — filled from the Company Details
+        // master row backing this agreement's "Our Organisation" selection.
+        // ({{company_name}} {{company_no}} {{email}} {{contact_no}} {{address}})
+        $orgName = trim((string) ($row->org_name ?? ''));
+        $company = $orgName
+            ? \App\Models\Masters\Company::where('client_id', $row->client_id)
+                ->where('company_name', $orgName)->first()
+            : null;
+        $orgTokens = [
+            'company_name' => $row->org_name ?: ($company->company_name ?? ''),
+            'company_no'   => $company->cin ?? '',          // registered company number (CIN)
+            'email'        => $company->email ?? '',
+            'contact_no'   => $company->mobile ?? '',
+            'address'      => $company->address ?? '',
+        ];
+        foreach ($orgTokens as $tok => $val) {
+            $processedHtml = preg_replace('/\{\{\s*' . $tok . '\s*\}\}/i', e((string) $val), $processedHtml);
+        }
+
         $headerConfig = is_array($row->header_config) ? $row->header_config : [];
         $footerConfig = is_array($row->footer_config) ? $row->footer_config : [];
         $client = \App\Models\Client::find($row->client_id);

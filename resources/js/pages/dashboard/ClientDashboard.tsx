@@ -358,34 +358,58 @@ export default function ClientDashboard() {
           filter: brightness(1.15);
         }
       `}</style>
-
-      {/* Content wrapper. */}
-      <div style={{ position: 'relative', zIndex: 1 }}>
-      {/* Title + plan status */}
-      <div className="d-flex align-items-center justify-content-between" style={{ gap: 12, flexWrap: 'wrap', marginBottom: 14, padding: '2px 2px 0' }}>
-        <div>
-          <h5 style={{ fontWeight: 700, fontSize: 19, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, letterSpacing: '-0.01em' }}>
-            {greeting}{orgName ? <>, <span style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>{orgName}</span></> : ''} 👋
-          </h5>
-          <p style={{ margin: 0, fontSize: 12.5, color: 'var(--vz-secondary-color)', marginTop: 3 }}>
-            Here's your organisation overview, subscription &amp; team
-          </p>
+      {/* Header strip — Workforce Analytics, with the plan badge on the right. */}
+      <div className="frm-cstrip mb-3">
+        <span className="frm-cstrip-accent" />
+        <div className="frm-cstrip-left">
+          <div className="frm-cstrip-icon"><i className="ri-group-line" /></div>
+          <div className="min-w-0">
+            <div className="frm-cstrip-title">Workforce Analytics</div>
+            <div className="frm-cstrip-sub">Employee headcount, hiring activity and demographics</div>
+          </div>
         </div>
-        {(() => {
-          const isExpired = plan.status === 'expired';
-          const isWarn = !isExpired && plan.days_remaining !== null && plan.days_remaining <= 30;
-          const color = isExpired ? '#dc2626' : isWarn ? '#b45309' : '#0f766e';
-          const label = isExpired ? 'Expired' : isWarn ? 'Expires soon' : 'Active';
-          return (
-            <span className="d-inline-flex align-items-center gap-2"
-              style={{ fontSize: 12, fontWeight: 600, color, background: `${color}14`, border: `1px solid ${color}33`, borderRadius: 9, padding: '6px 13px' }}
-              title={isExpired ? `Expired ${plan.expires_at}` : `Valid until ${plan.expires_at}`}>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />
-              {plan.name} · {label}
-              {!isExpired && plan.days_remaining !== null && <span style={{ color: 'var(--vz-secondary-color)', fontWeight: 500 }}>· {plan.days_remaining}d left</span>}
-            </span>
-          );
-        })()}
+              {(() => {
+                const isExpired = plan.status === 'expired';
+                const isWarn = !isExpired && plan.days_remaining !== null && plan.days_remaining <= 30;
+                const color = isExpired ? '#00fb43' : isWarn ? '#057154' : '#096e60';
+                const label = isExpired ? 'EXPIRED' : isWarn ? 'EXPIRES SOON' : 'CURRENT';
+                return (
+                  <span
+                    className="cd-plan-pill d-inline-flex align-items-center gap-2 rounded-pill"
+                    style={{
+                      background: `linear-gradient(135deg, ${color}1f 0%, ${color}12 100%)`,
+                      color,
+                      border: `1px solid ${color}`,
+                      fontSize: 12.5,
+                      fontWeight: 500,
+                      letterSpacing: '0.03em',
+                      padding: '5px 13px',
+                      ['--cd-plan-color' as any]: `${color}66`,
+                      ['--cd-plan-ring' as any]: `${color}00`,
+                      ['--cd-plan-ring-soft' as any]: `${color}33`,
+                      ['--cd-plan-shadow' as any]: `${color}66`,
+                      ['--cd-plan-glow' as any]: `${color}33`,
+                    }}
+                    title={isExpired ? `Expired ${plan.expires_at}` : `Valid until ${plan.expires_at}`}
+                  >
+                    <span
+                      className="cd-plan-dot-wrap"
+                      style={{
+                        ['--cd-dot-color' as any]: color,
+                      }}
+                    >
+                      <span className="cd-plan-dot-ripple" />
+                      <span className="cd-plan-dot-ripple cd-plan-dot-ripple-2" />
+                      <span className="cd-plan-dot-core" />
+                    </span>
+                    {label}: {plan.name?.toUpperCase()}
+                    {isWarn && plan.days_remaining !== null && (
+                      <span className="ms-1" style={{ opacity: 0.9 }}>· {plan.days_remaining}d</span>
+                    )}
+                    <span className="ms-1" style={{ opacity: 0.8 }}>· {plan.expires_at}</span>
+                  </span>
+                );
+              })()}
       </div>
 
       {/* KPI strip */}

@@ -10,6 +10,7 @@ import { useOpsTheme, type OpsTokens } from './useOpsTheme';
 import { VersionHistoryModal, type CtcVersion } from './clmCtcModals';
 import ClmCtcSignPositionModal from './ClmCtcSignPositionModal';
 import { Shimmer } from '../../components/ui/Shimmer';
+import { checkSpelling } from '../../utils/spellCheck';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Case to Case Contracts → full-screen "Create / Edit CTC Agreement" form.
@@ -127,6 +128,18 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
   }, []);
 
   const goStage = (n: number) => setStage(n);
+  // Furthest stage the contract has actually reached (its persisted stage, or
+  // the stage currently being viewed). Mirrors My Workplace: every reached
+  // stage stays marked "done" and freely navigable from the stepper — so when
+  // you edit a contract that's progressed and step back to an earlier stage,
+  // stages 2-4 keep their completed styling instead of reverting to a greyed
+  // "not started" look that hides that you can still click into them.
+  const furthestStage = Math.max(stage, Number(record?.stage) || 1);
+  // Stepper click is gated: you can revisit any stage the contract has reached,
+  // but can't skip ahead to a stage it hasn't reached yet (parity with My
+  // Workplace). Internal lifecycle transitions call goStage() directly and so
+  // bypass this lock.
+  const goStageFromStepper = (n: number) => { if (n > furthestStage) return; goStage(n); };
 
   // Edit mode — hydrate the form from the saved record.
   useEffect(() => {
@@ -313,19 +326,29 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
           <div style={{ padding: '10px 16px 12px' }}>
             <div style={{ display: 'flex', alignItems: 'stretch', justifyContent: 'space-between' }}>
               {STAGES.map((s, i) => {
-                const active = s.n === stage, done = s.n < stage, isLast = i === STAGES.length - 1;
+                const active = s.n === stage;
+                // "done" = any stage we've reached but aren't currently viewing,
+                // so reached stages stay completed/navigable even after stepping
+                // back (parity with My Workplace's furthest-stage stepper).
+                const done = !active && s.n <= furthestStage;
+                // Locked = a stage the contract hasn't reached yet — not
+                // clickable from the stepper (advance via the stage's own
+                // action button instead).
+                const locked = s.n > furthestStage;
+                const isLast = i === STAGES.length - 1;
                 const num = String(s.n).padStart(2, '0');
                 return (
                   <div key={s.n} style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0 }}>
                     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-                      <div onClick={() => goStage(s.n)} style={{
-                        position: 'relative', overflow: 'hidden', cursor: 'pointer', height: '100%', padding: '11px 12px 10px', minHeight: 88, borderRadius: 10,
+                      <div onClick={() => goStageFromStepper(s.n)} title={locked ? 'Complete the current stage to unlock this step' : undefined} style={{
+                        position: 'relative', overflow: 'hidden', cursor: locked ? 'not-allowed' : 'pointer', opacity: locked ? .6 : 1, height: '100%', padding: '11px 12px 10px', minHeight: 88, borderRadius: 10,
                         background: active ? 'linear-gradient(140deg,#5B21B6 0%,#6D28D9 45%,#7C3AED 100%)' : done ? (t.dark ? 'rgba(124,58,237,.14)' : 'linear-gradient(140deg,#EDE9FE 0%,#DDD6FE 100%)') : (t.dark ? 'rgba(255,255,255,.04)' : '#F0F1F8'),
                         border: active ? 'none' : done ? `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD'}` : `1.5px solid ${t.dark ? 'rgba(148,163,184,.18)' : '#E2E4F0'}`,
                         boxShadow: active ? '0 6px 20px rgba(109,40,217,.35)' : done ? '0 2px 8px rgba(124,58,237,.1)' : '0 1px 4px rgba(15,23,42,.04)' }}>
                         {active && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '45%', background: 'linear-gradient(180deg,rgba(255,255,255,.1),transparent)', pointerEvents: 'none', borderRadius: '10px 10px 0 0' }} />}
                         {active && <span style={{ position: 'absolute', top: 9, right: 10, display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(255,255,255,.2)', border: '1px solid rgba(255,255,255,.32)', borderRadius: 20, padding: '2px 8px', fontSize: 7, fontWeight: 800, color: '#fff', letterSpacing: '.5px', textTransform: 'uppercase', zIndex: 2 }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: '#34d399' }} />Active</span>}
                         {done && <span style={{ position: 'absolute', top: 9, right: 10, width: 17, height: 17, borderRadius: '50%', background: 'linear-gradient(135deg,#A78BFA,#7C3AED)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(124,58,237,.28)', zIndex: 2 }}><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg></span>}
+                        {locked && <span style={{ position: 'absolute', top: 9, right: 10, width: 17, height: 17, borderRadius: '50%', background: t.dark ? 'rgba(148,163,184,.18)' : '#E2E4F0', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#94a3b8' : '#94A3B8'} strokeWidth="2.4" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg></span>}
                         <div style={{ fontSize: 7.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.9px', lineHeight: 1, marginBottom: 6, color: active ? 'rgba(255,255,255,.55)' : done ? '#A78BFA' : (t.dark ? '#7c87a8' : '#A5AEC8') }}>STAGE {num}</div>
                         <div style={{ fontSize: 12, lineHeight: 1.3, marginBottom: 2, paddingRight: active || done ? 26 : 6, color: active ? '#fff' : done ? (t.dark ? '#c4b5fd' : '#5B21B6') : (t.dark ? t.textSub : '#5B6480'), fontWeight: active || done ? 800 : 700 }}>{s.label}</div>
                         <div style={{ fontSize: 9, fontWeight: 500, lineHeight: 1.4, color: active ? 'rgba(255,255,255,.62)' : done ? '#A78BFA' : (t.dark ? '#7c87a8' : '#A0AABE') }}>{s.sub}</div>
@@ -757,7 +780,7 @@ function Stage1(p: {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg><span style={{ fontSize: 8, color: t.dark ? '#a78bfa' : '#A78BFA', fontWeight: 500, fontStyle: 'italic' }}>Placeholders auto-fill on agreement generation</span></div>
                   <span style={{ fontSize: 8, fontWeight: 700, color: t.dark ? '#a78bfa' : '#C4B5FD', letterSpacing: '.05em' }}>{'{{PLACEHOLDER}}'}</span>
                 </div>
-                {phOpen && <ClmInsertPlaceholderModal open={phOpen} onClose={() => setPhOpen(false)} onInsert={tok => { if (/^\s*</.test(tok)) insertHtml(tok); else insertText(tok); }} />}
+                {phOpen && <ClmInsertPlaceholderModal open={phOpen} hideProductTab counterparties={p.cps.map(c => ({ name: c.name, code: String(c.sourceId ?? ''), role: (c.sourceType || c.badge || '').toLowerCase() }))} onClose={() => setPhOpen(false)} onInsert={tok => { if (/^\s*</.test(tok)) insertHtml(tok); else insertText(tok); }} />}
                 {clauseOpen && <ClmClauseInsertPanel onClose={() => setClauseOpen(false)} onInsert={html => insertHtml(html)} />}
               </div>
             )}
@@ -800,7 +823,7 @@ function Stage1(p: {
       <div style={{ flex: rightOpen ? 2.5 : '0 0 48px', minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', transition: 'flex .25s cubic-bezier(.22,1,.36,1)' }}>
         {!rightOpen ? <CollapsedBar t={t} title="Agreement Summary Details" headGrad="#6D28D9,#7C3AED,#8B5CF6,#A78BFA,#C4B5FD" dir="right" onExpand={() => setRightOpen(true)} /> :
         <Panel t={t} header="Panel 03" title="Agreement Summary Details" headGrad="#6D28D9,#7C3AED,#8B5CF6,#A78BFA,#C4B5FD" onCollapse={() => setRightOpen(false)} collapseDir="right">
-          <RightTools t={t} draft={p.draft} declineReason={p.declineReason} declinedBy={p.declinedBy} onInsert={(tok) => { if (editorRef.current) insertText(tok); else p.setDraft((p.draft ? p.draft + ' ' : '') + tok); }} summary={[['Agreement', p.agTitle || '—'], ['Type', p.agType || '—'], ['Eff. Date', p.effDate || '—'], ['End Date', p.endDate || '—'], ['Counterparties', p.cps.length ? `${p.cps.length} added` : '—'], ['CP 1', cp1?.name || '—'], ['Organisation', p.org?.name || '—']]} />
+          <RightTools t={t} active={midStep === 3} draft={p.draft} declineReason={p.declineReason} declinedBy={p.declinedBy} onInsert={(tok) => { if (midStep !== 3) return; if (editorRef.current) insertText(tok); else p.setDraft((p.draft ? p.draft + ' ' : '') + tok); }} summary={[['Agreement', p.agTitle || '—'], ['Type', p.agType || '—'], ['Eff. Date', p.effDate || '—'], ['End Date', p.endDate || '—'], ['Counterparties', p.cps.length ? `${p.cps.length} added` : '—'], ['CP 1', cp1?.name || '—'], ['Organisation', p.org?.name || '—']]} />
         </Panel>}
       </div>
     </div>
@@ -1526,11 +1549,21 @@ function GreenChoice({ t, sel, onClick, title, sub, icon }: { t: OpsTokens; sel:
 }
 
 /* ── Stage-1 right panel: placeholder fields + AI writing assistant + summary ── */
-function RightTools({ t, draft, onInsert, summary, declineReason, declinedBy }: { t: OpsTokens; draft: string; onInsert: (tok: string) => void; summary: string[][]; declineReason?: string; declinedBy?: string }) {
-  const plain = draft.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
-  const words = plain ? plain.split(/\s+/).length : 0;
-  const score = Math.min(100, Math.round(words * 1.5));
-  const FIELDS = [['SIGNATURE', 'signature'], ['PERSON NAME', 'person_name'], ['COMPANY NAME', 'company_name'], ['EMAIL', 'email'], ['CONTACT NO', 'contact_no'], ['ADDRESS', 'address']];
+function RightTools({ t, draft, onInsert, summary, declineReason, declinedBy, active = true }: { t: OpsTokens; draft: string; onInsert: (tok: string) => void; summary: string[][]; declineReason?: string; declinedBy?: string; active?: boolean }) {
+  // Grammarly-style live review: score = % of words spelled correctly, with
+  // the flagged misspellings (and suggestions) listed below the score.
+  const { score, words, issues } = checkSpelling(draft);
+  const clean = score >= 90, mild = score >= 60 && score < 90;
+  const scoreClr = words === 0 ? '#EF4444' : clean ? (t.dark ? '#6ee7b7' : '#059669') : mild ? (t.dark ? '#fcd34d' : '#D97706') : (t.dark ? '#fca5a5' : '#DC2626');
+  const statusLabel = words === 0 ? 'Not Started' : clean ? 'Looks Clean' : mild ? 'Minor Issues' : 'Needs Review';
+  const statusBg = words === 0 ? (t.dark ? 'rgba(239,68,68,.16)' : '#FEF2F2') : clean ? (t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5') : mild ? (t.dark ? 'rgba(245,158,11,.16)' : '#FFFBEB') : (t.dark ? 'rgba(239,68,68,.16)' : '#FEF2F2');
+  const statusBd = words === 0 ? (t.dark ? 'rgba(239,68,68,.4)' : '#FECACA') : clean ? (t.dark ? 'rgba(16,185,129,.4)' : '#A7F3D0') : mild ? (t.dark ? 'rgba(245,158,11,.4)' : '#FDE68A') : (t.dark ? 'rgba(239,68,68,.4)' : '#FECACA');
+  // Tokens auto-fill from the "Our Organisation" (Company Details master) row
+  // at agreement generation — see CtcContractController::downloadVersion.
+  const FIELDS = [['SIGNATURE', 'signature'], ['COMPANY NAME', 'company_name'], ['COMPANY NO', 'company_no'], ['EMAIL', 'email'], ['CONTACT NO', 'contact_no'], ['ADDRESS', 'address']];
+  // Signature is a one-time placeholder — once {{signature}} is in the draft
+  // its tile is locked so it can't be inserted a second time.
+  const sigUsed = /\{\{\s*signature\s*\}\}/i.test(draft);
   const cardBd = `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`;
   return (
     <div className="ctc-mid-scroll ctc-noshrink" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 12px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1547,21 +1580,29 @@ function RightTools({ t, draft, onInsert, summary, declineReason, declinedBy }: 
           </div>
         </div>
       )}
-      {/* Placeholder fields */}
-      <div style={{ background: t.surface, borderRadius: 12, border: cardBd, overflow: 'hidden', boxShadow: '0 2px 10px rgba(109,40,217,.07)' }}>
+      {/* Placeholder fields — only insertable on Step 3 (the editor step).
+          Disabled + dimmed on Steps 1–2 so a click can't mutate the draft
+          before the editor is active. */}
+      <div style={{ background: t.surface, borderRadius: 12, border: cardBd, overflow: 'hidden', boxShadow: '0 2px 10px rgba(109,40,217,.07)', opacity: active ? 1 : 0.55 }}>
         <div style={{ padding: '9px 12px', background: t.dark ? 'rgba(124,58,237,.14)' : 'linear-gradient(110deg,#EDE9FE 0%,#F3F0FF 40%,#E8E2FF 100%)', borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#DDD6FE'}`, display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ width: 22, height: 22, borderRadius: 7, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg></div>
-          <div><div style={{ fontSize: 10, fontWeight: 800, color: t.dark ? '#ddd6fe' : '#3B0764' }}>Standard Placeholder Fields</div><div style={{ fontSize: 7.5, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500 }}>Click a field to insert into the editor</div></div>
+          <div><div style={{ fontSize: 10, fontWeight: 800, color: t.dark ? '#ddd6fe' : '#3B0764' }}>Standard Placeholder Fields</div><div style={{ fontSize: 7.5, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500 }}>{active ? 'Click a field to insert into the editor' : 'Available in Step 3 — open the draft editor first'}</div></div>
         </div>
         <div style={{ padding: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
-          {FIELDS.map(([lbl, tok]) => (
-            <button key={tok} onClick={() => onInsert(`{{${tok}}}`)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '8px 10px', borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, background: t.dark ? 'rgba(255,255,255,.03)' : '#FAFBFF', cursor: 'pointer', fontFamily: 'inherit' }}>
-              <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '.04em', color: t.dark ? '#cbd5e1' : '#475569' }}>{lbl}</span>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#a78bfa' : '#A78BFA'} strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+          {FIELDS.map(([lbl, tok]) => {
+            const lockedSig = tok === 'signature' && sigUsed;   // one-time signature
+            const off = !active || lockedSig;
+            return (
+            <button key={tok} disabled={off} onClick={() => { if (!off) onInsert(`{{${tok}}}`); }} title={lockedSig ? 'Signature already added — only one is allowed' : (active ? '' : 'Available in Step 3')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '8px 10px', borderRadius: 8, border: `1.5px solid ${lockedSig ? (t.dark ? 'rgba(16,185,129,.4)' : '#a7f3d0') : (t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE')}`, background: lockedSig ? (t.dark ? 'rgba(16,185,129,.10)' : '#f0fdf4') : (t.dark ? 'rgba(255,255,255,.03)' : '#FAFBFF'), cursor: off ? 'not-allowed' : 'pointer', opacity: lockedSig ? 0.85 : 1, fontFamily: 'inherit' }}>
+              <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '.04em', color: lockedSig ? (t.dark ? '#6ee7b7' : '#059669') : (t.dark ? '#cbd5e1' : '#475569') }}>{lbl}</span>
+              {lockedSig
+                ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#6ee7b7' : '#059669'} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#a78bfa' : '#A78BFA'} strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>}
             </button>
-          ))}
+            );
+          })}
         </div>
-        <div style={{ padding: '0 10px 10px' }}><div style={{ border: `1px dashed ${t.dark ? 'rgba(124,58,237,.3)' : '#C4B5FD'}`, borderRadius: 8, padding: '8px 10px', textAlign: 'center', fontSize: 8.5, fontWeight: 600, color: t.dark ? '#a78bfa' : '#7C3AED' }}>✦ Drag to editor or click to insert at cursor</div></div>
+        <div style={{ padding: '0 10px 10px' }}><div style={{ border: `1px dashed ${t.dark ? 'rgba(124,58,237,.3)' : '#C4B5FD'}`, borderRadius: 8, padding: '8px 10px', textAlign: 'center', fontSize: 8.5, fontWeight: 600, color: t.dark ? '#a78bfa' : '#7C3AED' }}>{active ? '✦ Drag to editor or click to insert at cursor' : '✦ Insert becomes available on Step 3'}</div></div>
       </div>
 
       {/* AI Writing Assistant */}
@@ -1572,14 +1613,35 @@ function RightTools({ t, draft, onInsert, summary, declineReason, declinedBy }: 
         </div>
         <div style={{ padding: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <div><div style={{ fontSize: 8, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: t.textMuted }}>Quality Score</div><div style={{ fontSize: 24, fontWeight: 900, color: score > 0 ? (t.dark ? '#6ee7b7' : '#059669') : '#EF4444' }}>{score}<span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>/100</span></div></div>
+            <div><div style={{ fontSize: 8, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: t.textMuted }}>Quality Score</div><div style={{ fontSize: 24, fontWeight: 900, color: scoreClr }}>{score}<span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>/100</span></div></div>
             <div style={{ textAlign: 'right' }}>
-              <span style={{ display: 'inline-block', padding: '3px 9px', borderRadius: 20, fontSize: 8.5, fontWeight: 800, background: score > 0 ? (t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5') : (t.dark ? 'rgba(239,68,68,.16)' : '#FEF2F2'), color: score > 0 ? (t.dark ? '#6ee7b7' : '#059669') : (t.dark ? '#fca5a5' : '#DC2626'), border: `1px solid ${score > 0 ? (t.dark ? 'rgba(16,185,129,.4)' : '#A7F3D0') : (t.dark ? 'rgba(239,68,68,.4)' : '#FECACA')}` }}>{score > 0 ? 'In Progress' : 'Not Started'}</span>
-              <div style={{ fontSize: 8.5, color: t.textMuted, fontWeight: 600, marginTop: 4 }}>{words} words</div>
+              <span style={{ display: 'inline-block', padding: '3px 9px', borderRadius: 20, fontSize: 8.5, fontWeight: 800, background: statusBg, color: scoreClr, border: `1px solid ${statusBd}` }}>{statusLabel}</span>
+              <div style={{ fontSize: 8.5, color: t.textMuted, fontWeight: 600, marginTop: 4 }}>{words} words · {issues.length} {issues.length === 1 ? 'issue' : 'issues'}</div>
             </div>
           </div>
-          <div style={{ height: 5, borderRadius: 4, background: t.dark ? 'rgba(255,255,255,.06)' : '#EDE9FE', overflow: 'hidden' }}><div style={{ height: '100%', width: `${score}%`, background: 'linear-gradient(90deg,#7C3AED,#059669)', transition: 'width .25s' }} /></div>
-          <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, border: `1px dashed ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, textAlign: 'center', fontSize: 9, fontWeight: 600, color: t.dark ? '#a78bfa' : '#7C3AED' }}>{score > 0 ? 'Keep going — add parties, clauses & terms to raise the score.' : 'Start typing in the editor to see live analysis'}</div>
+          <div style={{ height: 5, borderRadius: 4, background: t.dark ? 'rgba(255,255,255,.06)' : '#EDE9FE', overflow: 'hidden' }}><div style={{ height: '100%', width: `${score}%`, background: `linear-gradient(90deg,#7C3AED,${scoreClr})`, transition: 'width .25s' }} /></div>
+          {/* Spelling feedback — flagged words with suggestions where known. */}
+          {words === 0 ? (
+            <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, border: `1px dashed ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, textAlign: 'center', fontSize: 9, fontWeight: 600, color: t.dark ? '#a78bfa' : '#7C3AED' }}>Start typing in the editor to see live spelling review</div>
+          ) : issues.length === 0 ? (
+            <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, border: `1px solid ${t.dark ? 'rgba(16,185,129,.35)' : '#A7F3D0'}`, background: t.dark ? 'rgba(16,185,129,.1)' : '#F0FDF4', display: 'flex', alignItems: 'center', gap: 7, fontSize: 9.5, fontWeight: 700, color: t.dark ? '#6ee7b7' : '#059669' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+              No spelling issues found — looks clean.
+            </div>
+          ) : (
+            <div style={{ marginTop: 10, padding: '9px 11px', borderRadius: 8, border: `1px solid ${t.dark ? 'rgba(239,68,68,.35)' : '#FECACA'}`, background: t.dark ? 'rgba(239,68,68,.08)' : '#FEF2F2' }}>
+              <div style={{ fontSize: 8.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.05em', color: t.dark ? '#fca5a5' : '#DC2626', marginBottom: 6 }}>{issues.length} possible spelling {issues.length === 1 ? 'issue' : 'issues'}</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                {issues.slice(0, 8).map((iss, i) => (
+                  <span key={i} title={iss.suggestion ? `Did you mean “${iss.suggestion}”?` : 'Possible misspelling'} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 7px', borderRadius: 6, fontSize: 9, fontWeight: 700, background: t.dark ? 'rgba(239,68,68,.14)' : '#fff', border: `1px solid ${t.dark ? 'rgba(239,68,68,.35)' : '#FECACA'}`, color: t.dark ? '#fecaca' : '#B91C1C' }}>
+                    <span style={{ textDecoration: 'underline wavy', textDecorationColor: t.dark ? '#f87171' : '#EF4444' }}>{iss.word}</span>
+                    {iss.suggestion && <><span style={{ color: t.textMuted }}>→</span><span style={{ color: t.dark ? '#6ee7b7' : '#059669' }}>{iss.suggestion}</span></>}
+                  </span>
+                ))}
+                {issues.length > 8 && <span style={{ fontSize: 9, fontWeight: 700, color: t.textMuted, alignSelf: 'center' }}>+{issues.length - 8} more</span>}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

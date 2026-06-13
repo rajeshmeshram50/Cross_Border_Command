@@ -282,24 +282,55 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
     });
   };
 
+  /* ── Multi-segment ("combined") agreements ──────────────────────────────
+     An agreement applicable to more than one segment of the active tier is
+     pulled OUT of the individual segment tabs and shown once in a synthetic
+     "Multiple Segments" tab (activeSegId === COMBINED_SEG_ID). Its `segment`
+     field carries the joined segment names ("Rice + Basmati Rice") so the
+     row makes clear which segments it covers. Single-segment agreements stay
+     in their own segment tab. */
+  const COMBINED_SEG_ID = -1;
+  const tierSegments = (payload?.segments ?? []).filter(s => s.regulatory === tierTab);
+  const agrSegCount = new Map<number, number>();   // agreement id → # tier segments
+  const agrFirstRow = new Map<number, AgreementRow>();
+  const agrSegNames = new Map<number, string[]>();
+  tierSegments.forEach(seg => seg.agreements.forEach(a => {
+    agrSegCount.set(a.id, (agrSegCount.get(a.id) ?? 0) + 1);
+    if (!agrFirstRow.has(a.id)) agrFirstRow.set(a.id, a);
+    const names = agrSegNames.get(a.id) ?? [];
+    if (seg.name && !names.includes(seg.name)) { names.push(seg.name); agrSegNames.set(a.id, names); }
+  }));
+  const combinedAgreements: AgreementRow[] = Array.from(agrFirstRow.entries())
+    .filter(([id]) => (agrSegCount.get(id) ?? 0) > 1)
+    .map(([id, a]) => ({ ...a, segment: (agrSegNames.get(id) ?? []).join(' + ') }));
+  const hasCombined = combinedAgreements.length > 0;
+
   // Active segment's agreements + the applicable-party sub-tab counts. The
   // table, select-all and header-check all read the party-narrowed list.
-  const activeSegRawAgreements = activeSegId
-    ? (payload?.segments.find(s => s.id === activeSegId)?.agreements ?? [])
-    : [];
+  // Segment tabs show only single-segment agreements; the Combined tab shows
+  // the de-duped multi-segment ones.
+  const activeSegRawAgreements = activeSegId === COMBINED_SEG_ID
+    ? combinedAgreements
+    : activeSegId
+      ? (payload?.segments.find(s => s.id === activeSegId)?.agreements ?? [])
+          .filter(a => (agrSegCount.get(a.id) ?? 1) <= 1)
+      : [];
   const agrPartyCounts = {
     buyer:     activeSegRawAgreements.filter(a => partyBucket(a.party) === 'buyer').length,
     consignee: activeSegRawAgreements.filter(a => partyBucket(a.party) === 'consignee').length,
     both:      activeSegRawAgreements.filter(a => partyBucket(a.party) === 'both').length,
   };
-  // buyer == consignee → flat list of every agreement that involves the buyer
-  // (buyer-only AND buyer+consignee "both"). Only pure consignee-only agreements
-  // are excluded as mirrors. Otherwise filter by the active sub-tab.
+  // buyer == consignee → show ONLY pure buyer agreements (a single party means
+  // the Consignee and Buyer+Consignee categories are redundant). When buyer !=
+  // consignee, the three party sub-tabs (Buyer / Consignee / Buyer+Consignee)
+  // filter the list.
   const activeAgreements = buyerEqualsConsignee
-    ? activeSegRawAgreements.filter(a => partyBucket(a.party) !== 'consignee')
+    ? activeSegRawAgreements.filter(a => partyBucket(a.party) === 'buyer')
     : (agrPartyTab === 'all'
         ? activeSegRawAgreements
         : activeSegRawAgreements.filter(a => partyBucket(a.party) === agrPartyTab));
+  // Human label of the active party sub-tab, for empty-state messages.
+  const partyLabel = agrPartyTab === 'buyer' ? 'Buyer' : agrPartyTab === 'consignee' ? 'Consignee' : 'Buyer + Consignee';
 
   // Header-checkbox state for the active tab — checked when every
   // matching-party row is already in the selection, indeterminate
@@ -375,15 +406,37 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
     less:   typeSegments.filter(s => s.regulatory === 'less').length,
   }), [typeSegments]);
 
-  /* Trade documents flattened across every PI segment (one row per doc per
-   * segment occurrence, keeping its source segment for the Segment column). */
+  /* Trade documents across every PI segment — ONE row per document. A single
+   * trade doc that's applicable to multiple segments is collapsed into a single
+   * row whose Segment column lists all its segments comma-separated (rather than
+   * a duplicate row per segment). De-duped by db_id (the trade-doc master id),
+   * falling back to doc_code + reference + name when db_id is missing. */
   type TradeDocRow = SegmentTradeDoc & { segmentName: string; segmentCode: string };
   const tradeDocs = useMemo(() => {
-    const rows: TradeDocRow[] = [];
+    const byKey = new Map<string, TradeDocRow>();
     (payload?.segments ?? []).forEach(seg =>
-      seg.trade_documents.forEach(td =>
-        rows.push({ ...td, segmentName: seg.name, segmentCode: seg.code })));
-    return rows;
+      seg.trade_documents.forEach(td => {
+        const key = td.db_id != null
+          ? `id:${td.db_id}`
+          : `code:${td.doc_code}|ref:${td.reference}|name:${td.name}`;
+        const existing = byKey.get(key);
+        if (existing) {
+          // Same document mapped to another segment → merge the segment into
+          // the existing row (comma-separated, de-duplicated) instead of adding
+          // a second row for the same document.
+          const names = existing.segmentName ? existing.segmentName.split(', ') : [];
+          if (seg.name && !names.includes(seg.name)) {
+            existing.segmentName = [...names, seg.name].join(', ');
+            const codes = existing.segmentCode ? existing.segmentCode.split(', ') : [];
+            existing.segmentCode = [...codes, seg.code].filter(Boolean).join(', ');
+          }
+          // A verified upload in any segment satisfies the requirement.
+          if (td.status === 'Verified') existing.status = 'Verified';
+        } else {
+          byKey.set(key, { ...td, segmentName: seg.name, segmentCode: seg.code });
+        }
+      }));
+    return Array.from(byKey.values());
   }, [payload]);
 
   /* Applicable-party buckets driving the Buyer / Consignee / Both tabs.
@@ -427,12 +480,19 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
   // the segment list changes (fresh fetch, tier flip, or view flip).
   useEffect(() => {
     if (!visibleSegments.length) { setActiveSegId(null); return; }
+    // Keep the synthetic "Multiple Segments" tab selected while it still has
+    // rows; otherwise fall back to the first real segment tab.
+    if (activeSegId === COMBINED_SEG_ID) { if (!hasCombined) setActiveSegId(visibleSegments[0].id); return; }
     if (!activeSegId || !visibleSegments.find(s => s.id === activeSegId)) {
       setActiveSegId(visibleSegments[0].id);
     }
-  }, [visibleSegments, activeSegId]);
+  }, [visibleSegments, activeSegId, hasCombined]);
 
   const activeSeg = visibleSegments.find(s => s.id === activeSegId) ?? null;
+  // True when this segment has no standalone agreement of its own but DOES take
+  // part in a multi-segment agreement (which lives in the Combined tab). Used to
+  // explain an empty segment table instead of a bare "no agreements" line.
+  const activeSegHasCombined = !!activeSeg && activeSeg.agreements.some(a => (agrSegCount.get(a.id) ?? 1) > 1);
 
   /* Open the agreement PDF preview in a new tab. The backend response
    * is a binary stream, so we wrap it in a Blob and createObjectURL it.
@@ -805,8 +865,16 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
               <div className="lasm-empty">No trade documents configured for this lead's PI segments yet.</div>
             ) : (() => {
               const rows = tdBuckets[tdTab];
-              // Library docs (db_id set) are the only sendable rows.
-              const selectableIds = Array.from(new Set(rows.filter(r => r.db_id != null).map(r => r.db_id as number)));
+              // Already out-for / back-from signature → not re-sendable. Mirrors
+              // the per-row `tdSent` check below so "select all" can't pick up a
+              // doc that's already been sent and queue it for a second send.
+              const isTdSent = (r: typeof rows[number]) => {
+                const st = r.signature_request?.status ?? null;
+                return !!st && !['draft', 'recalled', 'superseded'].includes(st);
+              };
+              // Library docs (db_id set) that haven't been sent are the only
+              // sendable rows — select-all only touches these.
+              const selectableIds = Array.from(new Set(rows.filter(r => r.db_id != null && !isTdSent(r)).map(r => r.db_id as number)));
               const allSel  = selectableIds.length > 0 && selectableIds.every(id => tdSelected.has(id));
               const someSel = selectableIds.some(id => tdSelected.has(id)) && !allSel;
               const toggleAll = () => setTdSelected(allSel ? new Set() : new Set(selectableIds));
@@ -1056,9 +1124,17 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                 </div>
               ) : (
                 <>
-              {/* Tabs — one per applicable segment */}
+              {/* Tabs — one per applicable segment, plus a "Multiple Segments"
+                  tab listing agreements that apply to 2+ segments at once. */}
               <div className="lasm-tabs">
-                {visibleSegments.map(seg => (
+                {visibleSegments.map(seg => {
+                  // Single-segment agreements for this segment — the same set
+                  // its table shows (multi-segment docs live in the Combined tab).
+                  // When buyer == consignee only pure-buyer rows are shown, so the
+                  // count must apply that same filter to stay in sync with the table.
+                  const segAgs = seg.agreements.filter(a => (agrSegCount.get(a.id) ?? 1) <= 1);
+                  const segCount = buyerEqualsConsignee ? segAgs.filter(a => partyBucket(a.party) === 'buyer').length : segAgs.length;
+                  return (
                   <button
                     key={seg.id}
                     type="button"
@@ -1067,9 +1143,23 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                     className={`lasm-tab ${seg.id === activeSegId ? 'is-on' : ''}`}
                     onClick={() => setActiveSegId(seg.id)}
                   >
-                    {seg.name}
+                    {seg.name}<span className="lasm-tab-count">{segCount}</span>
                   </button>
-                ))}
+                  );
+                })}
+                {hasCombined && (
+                  <button
+                    key="combined"
+                    type="button"
+                    role="tab"
+                    aria-selected={activeSegId === COMBINED_SEG_ID}
+                    className={`lasm-tab ${activeSegId === COMBINED_SEG_ID ? 'is-on' : ''}`}
+                    onClick={() => setActiveSegId(COMBINED_SEG_ID)}
+                    title="Agreements applicable to more than one segment"
+                  >
+                    Combined Segment Agreements<span className="lasm-tab-count">{buyerEqualsConsignee ? combinedAgreements.filter(a => partyBucket(a.party) === 'buyer').length : combinedAgreements.length}</span>
+                  </button>
+                )}
               </div>
 
               {/* Applicable-party sub-tabs WITHIN the segment — only when the
@@ -1123,7 +1213,33 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                   </thead>
                   <tbody>
                     {activeAgreements.length === 0 ? (
-                      <tr><td colSpan={8} className="lasm-empty-row">No agreements in this group for this segment.</td></tr>
+                      <tr><td colSpan={8} className="lasm-empty-row">
+                        {activeSegId === COMBINED_SEG_ID ? (
+                          // Combined-segment tab: empty only because the party sub-tab filters it out.
+                          <span>
+                            No <strong>{partyLabel}</strong> agreement in the combined-segment group.
+                            {!buyerEqualsConsignee && ' Check the other party tabs above.'}
+                          </span>
+                        ) : (!buyerEqualsConsignee && activeSegRawAgreements.length > 0) ? (
+                          // Segment HAS agreements, just none for the party sub-tab in view.
+                          <span>
+                            No <strong>{partyLabel}</strong> agreement
+                            for <strong>{activeSeg?.name}</strong> in this segment. Check the other party tabs above,
+                            or create one for this party from the <strong>Agreements Master</strong>.
+                          </span>
+                        ) : activeSegHasCombined ? (
+                          <span>
+                            <strong>{activeSeg?.name}</strong> has no separate agreement of its own — it’s covered by a
+                            shared agreement that spans multiple segments. Open the
+                            <strong> “Combined Segment Agreements”</strong> tab to view and send it.
+                          </span>
+                        ) : (
+                          <span>
+                            No agreement exists for <strong>{activeSeg?.name}</strong> yet — create one for this
+                            segment from the <strong>Agreements Master</strong>, then it will appear here to send.
+                          </span>
+                        )}
+                      </td></tr>
                     ) : activeAgreements.map((a, idx) => {
                       const sig = a.signature_request;
                       const sigStatus = sig?.status ?? 'draft';
@@ -1155,6 +1271,11 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                           <td>
                             <div className="lasm-doc-name">{a.title}</div>
                             <div className="lasm-doc-sub">{a.agreement_type || '—'}</div>
+                            {/* On the Multiple Segments tab, list the segments this
+                                one agreement covers (e.g. "Rice + Basmati Rice"). */}
+                            {activeSegId === COMBINED_SEG_ID && a.segment && (
+                              <div className="lasm-doc-sub" style={{ color: '#7c3aed', fontWeight: 600 }}>{a.segment}</div>
+                            )}
                           </td>
                           <td>
                             {/* Applicable party CSV (e.g. "Buyer, Consignee") split
