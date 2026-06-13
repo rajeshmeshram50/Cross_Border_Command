@@ -288,7 +288,11 @@ class CtcContractController extends Controller
                   ->orWhere('primary_approver_email', $email);
             })
             ->orderByDesc('id')->get()
-            ->flatMap(fn ($c) => $this->approvalRoundsShaped($c, $user->name ?? ''));
+            ->flatMap(fn ($c) => $this->approvalRoundsShaped($c, $user->name ?? ''))
+            // One row per CTC — keep only the latest round (rounds come back
+            // newest-first, so the first occurrence of each code is the latest).
+            ->unique('id')
+            ->values();
         return response()->json(['status' => true, 'data' => $rows->values()]);
     }
 

@@ -114,6 +114,14 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
     return allSigned || String(record?.status ?? '') === 'signed' || (Number(record?.stage) || 0) >= 4;
   })();
   const signedDocUrl = String((record?.signed_document_url as string) ?? '');
+  // The DRAFT itself is editable only in three states: a fresh draft never sent
+  // for approval, an internally-rejected draft, or one the counterparty declined.
+  // While it's awaiting internal approval, approved/out-for-signature, or signed,
+  // it is view-only — see the user's lifecycle rules.
+  const editLock = !( !approval || approval === 'rejected' || !!signDecline );
+  // Why it's locked — drives the Stage-1 banner copy.
+  const lockReason: 'approval' | 'signing' | 'signed' | null =
+    !editLock ? null : signedLock ? 'signed' : (approval === 'approved' || stage >= 3) ? 'signing' : 'approval';
 
   useEffect(() => { document.body.style.overflow = 'hidden'; document.documentElement.style.overflow = 'hidden'; return () => { document.body.style.overflow = ''; document.documentElement.style.overflow = ''; }; }, []);
 
@@ -391,7 +399,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
               header={header} setHeader={setHeader} footer={footer} setFooter={setFooter}
               isEditing={!!editing?.dbId} onUpdate={saveEdit}
               onSubmitForApproval={submitForApproval}
-              signedLock={signedLock} signedUrl={signedDocUrl}
+              editLock={editLock} lockReason={lockReason} signedUrl={signedDocUrl}
               resubmitMode={!!workingId && (approval === 'rejected' || !!signDecline)} onResubmit={resubmitDraft}
               declineReason={signDecline?.reason} declinedBy={signDecline?.by}
               onNext={() => goStage(2)}
@@ -457,8 +465,9 @@ function Stage1(p: {
   onSubmitForApproval: (approval: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => Promise<boolean>;
   resubmitMode: boolean; onResubmit: () => void;
   declineReason?: string; declinedBy?: string;
-  // Counterparty has signed → view-only: no re-submit / re-send, draft locked.
-  signedLock?: boolean; signedUrl?: string;
+  // Draft is view-only unless it's fresh / internally-rejected / counterparty-
+  // declined. lockReason explains why (awaiting approval, out for signature, signed).
+  editLock?: boolean; lockReason?: 'approval' | 'signing' | 'signed' | null; signedUrl?: string;
   onNext: () => void;
 }) {
   const t = p.t;
@@ -784,7 +793,7 @@ function Stage1(p: {
                 </div>
                 <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#eef0f6', padding: 14 }}>
                   <HeaderFooterPanel header={header} setHeader={setHeader} footer={footer} setFooter={setFooter} uploadLogoEndpoint="/clm/trade-doc-library/upload-header-logo">
-                    <div ref={editorRef} className="ctc-editor" contentEditable={!p.signedLock} suppressContentEditableWarning data-ph="Start drafting your agreement content here…  This Agreement is entered into between [Counter Party 1] and [Counter Party 2]…" onInput={p.signedLock ? undefined : syncDraft} onBlur={p.signedLock ? undefined : syncDraft} style={{ minHeight: 220, padding: '14px 16px', border: 'none', outline: 'none', fontSize: 12, fontFamily: 'inherit', color: t.dark ? '#e8eaed' : '#1f2937', lineHeight: 1.8, background: t.dark ? '#1b2230' : '#fff', boxSizing: 'border-box' }} />
+                    <div ref={editorRef} className="ctc-editor" contentEditable={!p.editLock} suppressContentEditableWarning data-ph="Start drafting your agreement content here…  This Agreement is entered into between [Counter Party 1] and [Counter Party 2]…" onInput={p.editLock ? undefined : syncDraft} onBlur={p.editLock ? undefined : syncDraft} style={{ minHeight: 220, padding: '14px 16px', border: 'none', outline: 'none', fontSize: 12, fontFamily: 'inherit', color: t.dark ? '#e8eaed' : '#1f2937', lineHeight: 1.8, background: t.dark ? '#1b2230' : '#fff', boxSizing: 'border-box' }} />
                   </HeaderFooterPanel>
                 </div>
                 {/* footer hint */}
@@ -811,20 +820,30 @@ function Stage1(p: {
                 <span style={{ fontSize: 9.5, fontWeight: 700, color: '#fff' }}>{MID_STEPS[midStep - 1].next}</span>
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>
               </button>
-            ) : p.signedLock ? (
-              // Counterparty has signed — locked. View only: no resubmit / approval.
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9, background: t.dark ? 'rgba(16,185,129,.12)' : '#ECFDF5', border: `1.5px solid ${t.dark ? 'rgba(16,185,129,.35)' : '#A7F3D0'}`, color: t.dark ? '#6ee7b7' : '#059669', fontSize: 9.5, fontWeight: 800 }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
-                  Signed &amp; locked — view only
-                </span>
-                {p.signedUrl && (
-                  <button onClick={() => window.open(p.signedUrl, '_blank')} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, background: 'linear-gradient(135deg,#059669,#047857)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 12px rgba(5,150,105,.32)' }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-                    <span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>View Signed Document</span>
-                  </button>
-                )}
-              </div>
+            ) : p.editLock ? (
+              // Draft is locked (awaiting approval / out for signature / signed).
+              // View only — no edit, resubmit or approval from here.
+              (() => {
+                const lk = p.lockReason === 'signed'
+                  ? { txt: 'Signed & locked — view only', bg: t.dark ? 'rgba(16,185,129,.12)' : '#ECFDF5', bd: t.dark ? 'rgba(16,185,129,.35)' : '#A7F3D0', fg: t.dark ? '#6ee7b7' : '#059669' }
+                  : p.lockReason === 'signing'
+                    ? { txt: 'Out for counterparty signature — view only (editable only if they decline)', bg: t.dark ? 'rgba(8,145,178,.12)' : '#ECFEFF', bd: t.dark ? 'rgba(6,182,212,.35)' : '#A5F3FC', fg: t.dark ? '#67e8f9' : '#0E7490' }
+                    : { txt: 'Awaiting internal approval — view only (editable only if rejected)', bg: t.dark ? 'rgba(245,158,11,.12)' : '#FFFBEB', bd: t.dark ? 'rgba(245,158,11,.35)' : '#FDE68A', fg: t.dark ? '#fcd34d' : '#B45309' };
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9, background: lk.bg, border: `1.5px solid ${lk.bd}`, color: lk.fg, fontSize: 9.5, fontWeight: 800 }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+                      {lk.txt}
+                    </span>
+                    {p.lockReason === 'signed' && p.signedUrl && (
+                      <button onClick={() => window.open(p.signedUrl, '_blank')} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, background: 'linear-gradient(135deg,#059669,#047857)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 12px rgba(5,150,105,.32)' }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                        <span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>View Signed Document</span>
+                      </button>
+                    )}
+                  </div>
+                );
+              })()
             ) : p.resubmitMode ? (
               <button onClick={p.onResubmit} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#B45309,#D97706,#F59E0B)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(217,119,6,.4)' }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
@@ -849,7 +868,7 @@ function Stage1(p: {
       <div style={{ flex: rightOpen ? 2.5 : '0 0 48px', minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', transition: 'flex .25s cubic-bezier(.22,1,.36,1)' }}>
         {!rightOpen ? <CollapsedBar t={t} title="Agreement Summary Details" headGrad="#6D28D9,#7C3AED,#8B5CF6,#A78BFA,#C4B5FD" dir="right" onExpand={() => setRightOpen(true)} /> :
         <Panel t={t} header="Panel 03" title="Agreement Summary Details" headGrad="#6D28D9,#7C3AED,#8B5CF6,#A78BFA,#C4B5FD" onCollapse={() => setRightOpen(false)} collapseDir="right">
-          <RightTools t={t} active={midStep === 3 && !p.signedLock} draft={p.draft} declineReason={p.declineReason} declinedBy={p.declinedBy} onInsert={(tok) => { if (midStep !== 3 || p.signedLock) return; if (editorRef.current) insertText(tok); else p.setDraft((p.draft ? p.draft + ' ' : '') + tok); }} summary={[['Agreement', p.agTitle || '—'], ['Type', p.agType || '—'], ['Eff. Date', p.effDate || '—'], ['End Date', p.endDate || '—'], ['Counterparties', p.cps.length ? `${p.cps.length} added` : '—'], ['CP 1', cp1?.name || '—'], ['Organisation', p.org?.name || '—']]} />
+          <RightTools t={t} active={midStep === 3 && !p.editLock} draft={p.draft} declineReason={p.declineReason} declinedBy={p.declinedBy} onInsert={(tok) => { if (midStep !== 3 || p.editLock) return; if (editorRef.current) insertText(tok); else p.setDraft((p.draft ? p.draft + ' ' : '') + tok); }} summary={[['Agreement', p.agTitle || '—'], ['Type', p.agType || '—'], ['Eff. Date', p.effDate || '—'], ['End Date', p.endDate || '—'], ['Counterparties', p.cps.length ? `${p.cps.length} added` : '—'], ['CP 1', cp1?.name || '—'], ['Organisation', p.org?.name || '—']]} />
         </Panel>}
       </div>
     </div>
