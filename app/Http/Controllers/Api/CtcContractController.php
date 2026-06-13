@@ -410,20 +410,19 @@ class CtcContractController extends Controller
         $user = $request->user(); if (!$user) abort(401);
         $branchFilter = $request->integer('branch_id') ?: null;
 
+        // Internal approvers are branch users and employees only — clients
+        // (client_admin) are intentionally excluded from the approver list.
         $query = User::where('client_id', $user->client_id)
             ->where('status', 'active')
-            ->whereIn('user_type', ['client_admin', 'branch_user', 'employee'])
+            ->whereIn('user_type', ['branch_user', 'employee'])
             ->with('branch:id,name');
 
         if ($branchFilter) {
-            $query->where(function ($w) use ($branchFilter) {
-                $w->where('user_type', 'client_admin')      // client stays tenant-wide
-                  ->orWhere('branch_id', $branchFilter);    // branch + its employees
-            });
+            $query->where('branch_id', $branchFilter);    // branch + its employees
         }
 
-        // CLIENT first, then BRANCH, then employees — and alphabetical within each.
-        $order = ['client_admin' => 0, 'branch_user' => 1, 'employee' => 2];
+        // BRANCH first, then employees — and alphabetical within each.
+        $order = ['branch_user' => 0, 'employee' => 1];
         $rows = $query->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id'])
             ->sortBy(fn ($u) => [$order[$u->user_type] ?? 9, strtolower($u->name ?? '')])
             ->values()
