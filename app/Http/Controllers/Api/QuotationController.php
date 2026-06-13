@@ -681,6 +681,7 @@ class QuotationController extends Controller
         // but honour the BranchSwitcher when they've picked a specific branch.
         if ($user->user_type !== 'branch_user' || !$user->branch_id) {
             $this->applySwitcherBranchFilter($q, $user, $branchFilter);
+            \App\Support\SalesVisibility::applyToSalesDocs($q, $user);
             return;
         }
 
@@ -688,6 +689,7 @@ class QuotationController extends Controller
         // likewise honour the switcher's narrowing.
         if ($user->branch && (bool) $user->branch->is_main) {
             $this->applySwitcherBranchFilter($q, $user, $branchFilter);
+            \App\Support\SalesVisibility::applyToSalesDocs($q, $user);
             return;
         }
 
@@ -705,6 +707,7 @@ class QuotationController extends Controller
                 $w->orWhere('branch_id', $mainBranchId);
             }
         });
+        \App\Support\SalesVisibility::applyToSalesDocs($q, $user);
     }
 
     /** Narrow an already-tenant-scoped query when the BranchSwitcher injects

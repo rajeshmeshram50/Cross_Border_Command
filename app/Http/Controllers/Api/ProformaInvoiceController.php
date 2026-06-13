@@ -820,10 +820,12 @@ class ProformaInvoiceController extends Controller
         // under their client, but honour the BranchSwitcher's narrowing.
         if ($user->user_type !== 'branch_user' || !$user->branch_id) {
             $this->applySwitcherBranchFilter($q, $user, $branchFilter);
+            \App\Support\SalesVisibility::applyToSalesDocs($q, $user);
             return;
         }
         if ($user->branch && (bool) $user->branch->is_main) {
             $this->applySwitcherBranchFilter($q, $user, $branchFilter);
+            \App\Support\SalesVisibility::applyToSalesDocs($q, $user);
             return;
         }
 
@@ -840,6 +842,7 @@ class ProformaInvoiceController extends Controller
                 $w->orWhere('branch_id', $mainBranchId);
             }
         });
+        \App\Support\SalesVisibility::applyToSalesDocs($q, $user);
     }
 
     /** Narrow an already-tenant-scoped query when the BranchSwitcher injects

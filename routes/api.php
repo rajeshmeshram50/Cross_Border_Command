@@ -447,6 +447,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/sales/leads/salespeople',            [SalesLeadController::class, 'salespeople']);
     Route::get   ('/sales/leads/salesperson-summary',    [SalesLeadController::class, 'salespersonSummary']);
     Route::get   ('/sales/leads/filter-options',         [SalesLeadController::class, 'filterOptions']);
+    Route::get   ('/sales/leads/{id}/activity', [SalesLeadController::class, 'activity'])->whereNumber('id');
     Route::get   ('/sales/leads/{id}',          [SalesLeadController::class, 'show'])->whereNumber('id');
     Route::put   ('/sales/leads/{id}',          [SalesLeadController::class, 'update'])->whereNumber('id');
     Route::delete('/sales/leads/{id}',          [SalesLeadController::class, 'destroy'])->whereNumber('id');
