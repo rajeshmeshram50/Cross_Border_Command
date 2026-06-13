@@ -321,6 +321,16 @@ class CustomerController extends Controller
             return $customer->load(['primaryAddress', 'addresses']);
         });
 
+        // Keep any same-as-customer consignee's CORE details (company/legal
+        // name, segment, classification, risk, website, email + primary
+        // address) in lock-step with the customer. Best-effort — a mirror
+        // hiccup must never fail the customer save.
+        try {
+            app(\App\Services\ConsigneeKycMirror::class)->syncCoreFromCustomer($row, $user?->id);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Consignee core mirror failed: ' . $e->getMessage());
+        }
+
         return response()->json(['data' => $this->shape($row)]);
     }
 
