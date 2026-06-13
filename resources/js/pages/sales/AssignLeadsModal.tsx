@@ -76,6 +76,17 @@ export default function AssignLeadsModal({
 
   const todayStr = new Date().toISOString().slice(0, 10);
 
+  // Scroll lock — lock BOTH <html> and <body> so the page behind can't
+  // scroll regardless of which element owns the viewport scroll.
+  useEffect(() => {
+    if (!open) return;
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
+  }, [open]);
+
   useEffect(() => {
     if (!open) {
       setSpId(''); setAccount(''); setStartDate(''); setEndDate('');

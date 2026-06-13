@@ -7,7 +7,7 @@ import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { MasterSelect } from '../../components/ui/MasterSelect';
-import { SimpleDescModal } from './clmCommon';
+import { SimpleDescModal, useScrollLock } from './clmCommon';
 
 /* Central CLM → Trade Licences Master. 3-card faithful port. */
 
@@ -29,6 +29,7 @@ export default function ClmTradeLicensesPage() {
   const rootRef                 = useRef<HTMLDivElement | null>(null);
   const [editing, setEditing]   = useState<Tl | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  useScrollLock(modalOpen); // lock html+body while the custom Add/Edit modal is open
   const [pendingDelete, setPendingDelete] = useState<Tl | null>(null);
   const [deleting, setDeleting] = useState(false);
 

@@ -112,12 +112,14 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
   const pageRows = filtered.slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE);
 
-  // Body scroll lock — keep the page behind the modal from scrolling while open.
+  // Scroll lock — lock BOTH <html> and <body> so the page behind can't scroll.
   useEffect(() => {
     if (!open) return;
-    const prev = document.body.style.overflow;
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
     document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
   }, [open]);
 
   if (!open || !customer) return null;

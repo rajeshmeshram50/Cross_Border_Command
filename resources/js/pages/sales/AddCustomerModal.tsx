@@ -1064,12 +1064,14 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     document.head.appendChild(link);
   }, []);
 
-  // Body scroll lock
+  // Scroll lock — lock BOTH <html> and <body> so the page behind can't scroll.
   useEffect(() => {
     if (!open) return;
-    const prev = document.body.style.overflow;
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
     document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
   }, [open]);
 
   // Close wrapper — if any intermediate Save & Next persisted edits

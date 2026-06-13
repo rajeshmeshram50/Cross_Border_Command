@@ -161,13 +161,16 @@ export default function SalesLeadAckMaster() {
     return () => window.removeEventListener('keydown', onKey);
   }, [oppSelectorOpen, formOpen, saving]);
 
-  // Lock body scroll while any modal is open.
+  // Lock scroll while any modal is open — lock BOTH <html> and <body> so the
+  // page behind can't scroll regardless of which owns the viewport scroll.
   useEffect(() => {
     const open = oppSelectorOpen || formOpen;
     if (!open) return;
-    const prev = document.body.style.overflow;
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
     document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
   }, [oppSelectorOpen, formOpen]);
 
   // Fetch on mount if user can view.

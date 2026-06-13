@@ -1,16 +1,39 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-/* Locks <body> scroll while a modal is mounted so the page behind the overlay
- * can't scroll-chain. Captures the prior overflow and restores it on unmount;
- * nesting-safe (a nested modal restores to the parent's 'hidden', then the
- * parent restores the original value). Shared by every CLM modal below. */
+/* Locks scroll while a modal is mounted so the page behind the overlay can't
+ * scroll-chain. Locks BOTH <html> and <body> — the viewport scroll is owned by
+ * <html> in standards mode, so a body-only lock doesn't reliably stop it.
+ * Captures the prior overflow and restores it on unmount; nesting-safe.
+ * Shared by every CLM modal below. */
 function useBodyScrollLock() {
   useEffect(() => {
-    const prev = document.body.style.overflow;
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
     document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overflow = prevHtml;
+    };
   }, []);
+}
+
+/* Conditional scroll lock for pages that render their own (custom) modal
+ * markup rather than the shared modal components below. Pass the page's
+ * "any modal open" boolean; locks <html>+<body> while it's true. */
+export function useScrollLock(active: boolean) {
+  useEffect(() => {
+    if (!active) return;
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overflow = prevHtml;
+    };
+  }, [active]);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
