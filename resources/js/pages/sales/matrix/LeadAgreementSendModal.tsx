@@ -1121,7 +1121,14 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
               {/* Tabs — one per applicable segment, plus a "Multiple Segments"
                   tab listing agreements that apply to 2+ segments at once. */}
               <div className="lasm-tabs">
-                {visibleSegments.map(seg => (
+                {visibleSegments.map(seg => {
+                  // Single-segment agreements for this segment — the same set
+                  // its table shows (multi-segment docs live in the Combined tab).
+                  // When buyer == consignee only pure-buyer rows are shown, so the
+                  // count must apply that same filter to stay in sync with the table.
+                  const segAgs = seg.agreements.filter(a => (agrSegCount.get(a.id) ?? 1) <= 1);
+                  const segCount = buyerEqualsConsignee ? segAgs.filter(a => partyBucket(a.party) === 'buyer').length : segAgs.length;
+                  return (
                   <button
                     key={seg.id}
                     type="button"
@@ -1130,9 +1137,10 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                     className={`lasm-tab ${seg.id === activeSegId ? 'is-on' : ''}`}
                     onClick={() => setActiveSegId(seg.id)}
                   >
-                    {seg.name}
+                    {seg.name}<span className="lasm-tab-count">{segCount}</span>
                   </button>
-                ))}
+                  );
+                })}
                 {hasCombined && (
                   <button
                     key="combined"
@@ -1143,7 +1151,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                     onClick={() => setActiveSegId(COMBINED_SEG_ID)}
                     title="Agreements applicable to more than one segment"
                   >
-                    Multiple Segments<span className="lasm-tab-count">{combinedAgreements.length}</span>
+                    Combined Segment Agreements<span className="lasm-tab-count">{buyerEqualsConsignee ? combinedAgreements.filter(a => partyBucket(a.party) === 'buyer').length : combinedAgreements.length}</span>
                   </button>
                 )}
               </div>
