@@ -280,14 +280,6 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
     catch (e: any) { toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete'); }
   };
 
-  const typeBadge = (t: string) => {
-    const map: Record<string, string> = {
-      Declaration: 'clm-badge-teal', Undertaking: 'clm-badge-indigo', Authorization: 'clm-badge-amber',
-      Bond: 'clm-badge-green', Certificate: 'clm-badge-violet', Letter: 'clm-badge-slate',
-    };
-    return map[t] ?? 'clm-badge-slate';
-  };
-
   return (
     <div className="clm-page-card">
       <style>{`
@@ -332,7 +324,6 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                 <th style={{ width: 110, textAlign: 'center' }}>TRADE DOC ID</th>
                 <th>TRADE DOCUMENT TITLE</th>
-                <th style={{ width: 130, textAlign: 'center' }}>TYPE</th>
                 <th style={{ width: 110, textAlign: 'center' }}>REGULATORY</th>
                 <th style={{ width: 130, textAlign: 'center' }}>SEGMENT</th>
                 <th>PURPOSE</th>
@@ -341,13 +332,12 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {loading && <tr><td colSpan={10} className="clm-status">Loading…</td></tr>}
+                {loading && <tr><td colSpan={9} className="clm-status">Loading…</td></tr>}
                 {!loading && slice.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
                     <td className="clm-td-name">{r.title}</td>
-                    <td style={{ textAlign: 'center' }}><span className={`clm-badge ${typeBadge(r.doc_type)}`}>{r.doc_type}</span></td>
                     <td style={{ textAlign: 'center' }}>
                       {(() => {
                         const isHigh = r.regulatory === 'highly';
