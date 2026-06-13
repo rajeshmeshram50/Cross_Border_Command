@@ -361,9 +361,17 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                         </Tooltip>
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        {isHigh && r.segment
+                        {/* Show every mapped segment as its own badge (r.segment
+                            may be a CSV like "Tobacco, Rice"), regardless of
+                            regulatory tier. Only fall back to "All segments"
+                            when no segment is mapped at all. */}
+                        {r.segment
                           ? <Tooltip label={`Segment scope · ${r.segment}`}>
-                              <span className="clm-badge clm-badge-teal">{r.segment}</span>
+                              <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
+                                {r.segment.split(',').map(s => s.trim()).filter(Boolean).map((s, i) => (
+                                  <span key={i} className="clm-badge clm-badge-teal">{s}</span>
+                                ))}
+                              </span>
                             </Tooltip>
                           : <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>All segments</span>}
                       </td>

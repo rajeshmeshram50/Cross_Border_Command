@@ -110,10 +110,28 @@ interface Props {
      Product placeholder tab is hidden there. Defaults to shown elsewhere
      (Trade Documents Master, customer signature flows). */
   hideProductTab?: boolean;
+  /* Case-to-case agreements: drive the tabs from the counterparties actually
+     added to this agreement instead of the generic Customer/Consignee/Supplier
+     set. Each CP becomes its own tab; its placeholder tokens use the token
+     group of the role it was referred as (buyer→customer, consignee→consignee,
+     supplier→supplier), so a buyer referred as a supplier inserts {{supplier.*}}. */
+  counterparties?: { name: string; code: string; role: string }[];
 }
 
-export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hideProductTab = false }: Props) {
+/* Map a counterparty role to the placeholder token group it should use. */
+function roleGroup(role: string): Exclude<Tab, 'product'> {
+  const r = (role || '').toLowerCase();
+  if (r === 'supplier' || r === 'vendor') return 'supplier';
+  if (r === 'consignee') return 'consignee';
+  return 'customer';   // buyer / customer / anything else
+}
+
+export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hideProductTab = false, counterparties }: Props) {
   const toast = useToast();
+  // Counterparty-driven mode (case-to-case): one tab per CP, role-based tokens.
+  const cpMode = Array.isArray(counterparties) && counterparties.length > 0;
+  const cpTabs = cpMode ? counterparties!.map((cp, i) => ({ cp, i, group: roleGroup(cp.role) })) : [];
+  const [cpIdx, setCpIdx] = useState(0);
   // Tabs available in this context — Product is dropped for case-to-case.
   const visibleTabs = hideProductTab ? TABS.filter(t => t.key !== 'product') : TABS;
   const [tab, setTab] = useState<Tab>('customer');
@@ -138,7 +156,7 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
 
   // Clear the ticked set every time the picker re-opens so a fresh session
   // never inherits a stale selection.
-  useEffect(() => { if (!open) setSelected(new Set()); }, [open]);
+  useEffect(() => { if (!open) { setSelected(new Set()); setCpIdx(0); } }, [open]);
 
   /* Low-level clipboard write — uses navigator.clipboard when available and
    * falls back to a hidden textarea on browsers without it (older Safari,
@@ -193,8 +211,21 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
 
   if (!open) return null;
 
-  const fields    = FIELDS[tab];
-  const tabHeader = TABS.find(t => t.key === tab)!;
+  const groupMeta = (g: Tab) => TABS.find(t => t.key === g)!;
+  // In CP mode the active token group + header come from the selected
+  // counterparty (by the role it was referred as); otherwise from the tab.
+  const activeCp  = cpMode ? (cpTabs[Math.min(cpIdx, cpTabs.length - 1)] ?? null) : null;
+  const activeKey: Tab = cpMode ? (activeCp?.group ?? 'customer') : tab;
+  const fields    = FIELDS[activeKey];
+  const tabHeader = groupMeta(activeKey);
+  // The live value a CP placeholder resolves to — only name & code are known
+  // here, surfaced under the token so the user sees which party it points at.
+  const cpValueFor = (token: string): string | null => {
+    if (!activeCp) return null;
+    if (/\.(name|company)\}\}$/.test(token)) return activeCp.cp.name || null;
+    if (/\.code\}\}$/.test(token)) return activeCp.cp.code || null;
+    return null;
+  };
   const allInTabSelected = fields.length > 0 && fields.every(f => selected.has(f.token));
   const toggleSelectAllInTab = () => {
     setSelected(prev => {
@@ -234,7 +265,19 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
 
         <div className="ipm-body">
           <aside className="ipm-tabs">
-            {visibleTabs.map(t => {
+            {cpMode ? cpTabs.map(({ cp, i, group }) => {
+              const meta = groupMeta(group);
+              const active = i === Math.min(cpIdx, cpTabs.length - 1);
+              return (
+                <button key={i} type="button" className={`ipm-tab ${active ? 'is-active' : ''}`} onClick={() => setCpIdx(i)} style={active ? { ['--ipm-accent' as any]: meta.color } : undefined}>
+                  <span className="ipm-tab-ico" style={{ background: `${meta.color}1f`, color: meta.color }}>{meta.icon}</span>
+                  <span className="ipm-tab-text">
+                    <span className="ipm-tab-label" style={{ color: meta.color }}>{cp.name || `Counter Party ${i + 1}`}</span>
+                    <span className="ipm-tab-sub">{[meta.label, cp.code].filter(Boolean).join(' · ')}</span>
+                  </span>
+                </button>
+              );
+            }) : visibleTabs.map(t => {
               const count = FIELDS[t.key].length;
               const active = t.key === tab;
               return (
@@ -253,15 +296,19 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
             <header className="ipm-pane-head">
               <span className="ipm-pane-ico" style={{ background: `${tabHeader.color}1f`, color: tabHeader.color }}>{tabHeader.icon}</span>
               <div>
-                <div className="ipm-pane-title">{tabHeader.label} Fields</div>
-                <div className="ipm-pane-sub">Select a field to insert its placeholder into the document</div>
+                <div className="ipm-pane-title">{activeCp ? activeCp.cp.name : `${tabHeader.label} Fields`}</div>
+                <div className="ipm-pane-sub">
+                  {activeCp
+                    ? `Referred as ${tabHeader.label}${activeCp.cp.code ? ` · ${activeCp.cp.code}` : ''} — inserts {{${activeKey}.*}} placeholders`
+                    : 'Select a field to insert its placeholder into the document'}
+                </div>
               </div>
             </header>
 
             <div className="ipm-selbar">
               <label className="ipm-selall">
                 <input type="checkbox" checked={allInTabSelected} onChange={toggleSelectAllInTab} />
-                Select all in {tabHeader.label} ({fields.length})
+                Select all in {activeCp ? activeCp.cp.name : tabHeader.label} ({fields.length})
               </label>
               <div className="ipm-selbar-actions">
                 <span className="ipm-selcount">{selected.size} selected</span>
@@ -278,7 +325,7 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
             </div>
 
             <div className="ipm-grid">
-              {tab === 'product' && (
+              {!cpMode && tab === 'product' && (
                 <div className="ipm-card ipm-card-table">
                   <span className="ipm-card-label">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 7 }}><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
@@ -301,6 +348,7 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
               )}
               {fields.map(f => {
                 const isChecked = selected.has(f.token);
+                const cpVal = cpValueFor(f.token);
                 return (
                 <div key={f.token} className={`ipm-card ${f.isSignature ? 'is-sig' : ''} ${isChecked ? 'is-checked' : ''}`} role="button" tabIndex={0}
                      onClick={() => onInsert(f.token)}
@@ -322,6 +370,7 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                     </button>
                   </span>
+                  {cpVal && <span className="ipm-card-cpval" title={cpVal}>{cpVal}</span>}
                 </div>
                 );
               })}
@@ -521,6 +570,12 @@ const IPM_CSS = `
   font-size: 11.5px; font-weight: 700;
 }
 .ipm-card.is-sig .ipm-card-token { background: #eef2ff; border-color: rgba(99,102,241,.30); color: #4338ca; }
+.ipm-card-cpval {
+  font-size: 11px; font-weight: 700; color: #0e7490;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-top: -2px;
+}
+[data-bs-theme="dark"] .ipm-card-cpval { color: #67e8f9; }
 .ipm-card-copy {
   width: 24px; height: 24px; border-radius: 6px;
   display: inline-flex; align-items: center; justify-content: center;
