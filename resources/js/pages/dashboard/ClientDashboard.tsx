@@ -902,7 +902,6 @@ export default function ClientDashboard() {
           </Card>
         </Col>
       </Row>
-      </div>
     </div>
   );
 }
