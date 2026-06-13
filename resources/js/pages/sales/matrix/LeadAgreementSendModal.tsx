@@ -329,6 +329,8 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
     : (agrPartyTab === 'all'
         ? activeSegRawAgreements
         : activeSegRawAgreements.filter(a => partyBucket(a.party) === agrPartyTab));
+  // Human label of the active party sub-tab, for empty-state messages.
+  const partyLabel = agrPartyTab === 'buyer' ? 'Buyer' : agrPartyTab === 'consignee' ? 'Consignee' : 'Buyer + Consignee';
 
   // Header-checkbox state for the active tab — checked when every
   // matching-party row is already in the selection, indeterminate
@@ -1212,13 +1214,31 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                   <tbody>
                     {activeAgreements.length === 0 ? (
                       <tr><td colSpan={8} className="lasm-empty-row">
-                        {activeSegHasCombined ? (
+                        {activeSegId === COMBINED_SEG_ID ? (
+                          // Combined-segment tab: empty only because the party sub-tab filters it out.
+                          <span>
+                            No <strong>{partyLabel}</strong> agreement in the combined-segment group.
+                            {!buyerEqualsConsignee && ' Check the other party tabs above.'}
+                          </span>
+                        ) : (!buyerEqualsConsignee && activeSegRawAgreements.length > 0) ? (
+                          // Segment HAS agreements, just none for the party sub-tab in view.
+                          <span>
+                            No <strong>{partyLabel}</strong> agreement
+                            for <strong>{activeSeg?.name}</strong> in this segment. Check the other party tabs above,
+                            or create one for this party from the <strong>Agreements Master</strong>.
+                          </span>
+                        ) : activeSegHasCombined ? (
                           <span>
                             <strong>{activeSeg?.name}</strong> has no separate agreement of its own — it’s covered by a
                             shared agreement that spans multiple segments. Open the
                             <strong> “Combined Segment Agreements”</strong> tab to view and send it.
                           </span>
-                        ) : 'No agreements in this group for this segment.'}
+                        ) : (
+                          <span>
+                            No agreement exists for <strong>{activeSeg?.name}</strong> yet — create one for this
+                            segment from the <strong>Agreements Master</strong>, then it will appear here to send.
+                          </span>
+                        )}
                       </td></tr>
                     ) : activeAgreements.map((a, idx) => {
                       const sig = a.signature_request;
