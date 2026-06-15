@@ -531,7 +531,27 @@ function Stage1(p: {
     { n: 2, label: 'Agreement Basic Details', next: 'Next: Draft Content' },
     { n: 3, label: 'Draft Agreement Content', next: 'Next: Internal Review' },
   ] as const;
-  const midNext = () => { if (midStep < 3) setMidStep((midStep + 1) as 1 | 2 | 3); else p.onNext(); };
+  // Stage-1 validation — counterparty + organisation (Step 1), then title,
+  // type and dates (Step 2) are all required before the draft can be submitted.
+  const toast = useToast();
+  const validateStep1 = (): boolean => {
+    if (!p.cps.length) { toast.error('Counterparty required', 'Add at least one counterparty before continuing.'); setMidStep(1); return false; }
+    if (!p.org)        { toast.error('Organisation required', 'Select your organisation details before continuing.'); setMidStep(1); return false; }
+    return true;
+  };
+  const validateStep2 = (): boolean => {
+    if (!p.agTitle.trim()) { toast.error('Agreement name required', 'Enter the agreement title.'); setMidStep(2); return false; }
+    if (!p.agType)         { toast.error('Agreement type required', 'Select the agreement type.'); setMidStep(2); return false; }
+    if (!p.effDate)        { toast.error('Effective date required', 'Select the effective date.'); setMidStep(2); return false; }
+    if (!p.endDate)        { toast.error('End date required', 'Select the end date.'); setMidStep(2); return false; }
+    return true;
+  };
+  const validateAll = (): boolean => validateStep1() && validateStep2();
+  const midNext = () => {
+    if (midStep === 1) { if (!validateStep1()) return; setMidStep(2); }
+    else if (midStep === 2) { if (!validateStep2()) return; setMidStep(3); }
+    else p.onNext();
+  };
   const midBack = () => { if (midStep > 1) setMidStep((midStep - 1) as 1 | 2 | 3); };
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', gap: 12, flex: 1, minHeight: 0, width: '100%' }}>
@@ -845,7 +865,7 @@ function Stage1(p: {
                 );
               })()
             ) : p.resubmitMode ? (
-              <button onClick={p.onResubmit} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#B45309,#D97706,#F59E0B)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(217,119,6,.4)' }}>
+              <button onClick={() => { if (validateAll()) p.onResubmit(); }} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#B45309,#D97706,#F59E0B)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(217,119,6,.4)' }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
                 <span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>Resubmit for Review</span>
               </button>
@@ -854,7 +874,7 @@ function Stage1(p: {
               // workflow and send for approval (edit updates the existing row
               // via resubmit; see submitForApproval). No more "Save Changes"
               // dead-end that redirected to the list.
-              <button onClick={() => setApprovalOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(109,40,217,.4)' }}>
+              <button onClick={() => { if (validateAll()) setApprovalOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(109,40,217,.4)' }}>
                 <span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{p.isEditing ? 'Update & Send for Approval' : 'Submit & Send for Approval'}</span>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
               </button>
