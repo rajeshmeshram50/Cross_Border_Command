@@ -78,6 +78,8 @@ import ClmClauseLibraryPage from '../pages/clm/ClmClauseLibraryPage';
 import ClmDcpPage from '../pages/clm/ClmDcpPage';
 import ClmBuyerProfilePage from '../pages/clm/ClmBuyerProfilePage';
 import ClmSupplierProfilePage from '../pages/clm/ClmSupplierProfilePage';
+import ClmDiagnosisResolutionPage from '../pages/clm/ClmDiagnosisResolutionPage';
+import ClmRegulatoryDefenseFilePage from '../pages/clm/ClmRegulatoryDefenseFilePage';
 import ClmCaseToCasePage from '../pages/clm/ClmCaseToCasePage';
 import ClmAgreementsSentPage from '../pages/clm/ClmAgreementsSentPage';
 import ClmAgreementsToApprovePage from '../pages/clm/ClmAgreementsToApprovePage';
@@ -207,8 +209,8 @@ const getPagePath = (page: string, data?: any): string => {
       // real pages ship. The slug after /clm/ is what the stub reads
       // to render the right title + breadcrumb.
       if (page === 'clm.analytics')             return '/clm/analytics';
-      if (page === 'clm.diagnosis')             return '/clm/diagnosis';
-      if (page === 'clm.resolution_center')     return '/clm/resolution-center';
+      if (page === 'clm.diagnosis_resolution')  return '/clm/diagnosis-resolution';
+      if (page === 'clm.regulatory_defense')    return '/clm/regulatory-defense';
       if (page === 'clm.buyer_profile')         return '/clm/buyer-profile';
       if (page === 'clm.supplier_profile')      return '/clm/supplier-profile';
       if (page === 'clm.case_to_case')          return '/clm/case-to-case';
@@ -758,6 +760,10 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/clm/document-panel"   element={<ClmDcpPage />} />
               <Route path="/clm/buyer-profile"    element={<ClmBuyerProfilePage />} />
               <Route path="/clm/supplier-profile" element={<ClmSupplierProfilePage />} />
+              {/* Command Center — combined Diagnosis & Resolution Center +
+                  the read-only Regulatory Defense File repository. */}
+              <Route path="/clm/diagnosis-resolution" element={<ClmDiagnosisResolutionPage />} />
+              <Route path="/clm/regulatory-defense"   element={<ClmRegulatoryDefenseFilePage />} />
               {/* Operations · Without Shipment ID — Case to Case Contracts,
                   Agreements We Sent, Agreements To Approve. */}
               <Route path="/clm/case-to-case"          element={<ClmCaseToCasePage />} />

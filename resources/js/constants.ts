@@ -278,9 +278,9 @@ export const CLM_GROUPS: MenuGroup[] = [
     label: 'CLM Command Center',
     icon: 'LayoutDashboard',
     children: [
-      { id: 'clm.analytics',          icon: 'BarChart3',      label: 'CLM Analytics' },
-      { id: 'clm.diagnosis',          icon: 'Stethoscope',    label: 'Diagnosis View' },
-      { id: 'clm.resolution_center',  icon: 'Wrench',         label: 'Resolution Center' },
+      { id: 'clm.analytics',            icon: 'BarChart3',      label: 'CLM Analytics' },
+      { id: 'clm.diagnosis_resolution', icon: 'Stethoscope',    label: 'Diagnosis & Resolution Center' },
+      { id: 'clm.regulatory_defense',   icon: 'ShieldCheck',    label: 'Regulatory Defense File' },
     ],
   },
   {
