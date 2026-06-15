@@ -2865,7 +2865,7 @@ const Stage1 = ({
                 disabled={lock}
               />
             </Field>
-            <Field label="Consignee Legal Name" required error={errors.legalName} fieldKey="legalName">
+            <Field label="Company Legal Name" required error={errors.legalName} fieldKey="legalName">
               <input className={`acm-input ${errors.legalName ? 'acm-input-error' : ''}`} placeholder="Enter legal name" value={form.legalName} onChange={e => set('legalName', e.target.value)} disabled={lock} />
             </Field>
             </div>
@@ -4123,7 +4123,7 @@ function ConsigneeHistoryStage1({ form, locations, consigneeCode }: {
       <div className="acg-hs-grid">
         {consigneeCode && <ReadInlineG label="Consignee ID" value={consigneeCode} />}
         <ReadInlineG label="Company Name"        value={form.companyName} />
-        <ReadInlineG label="Consignee Legal Name"  value={form.legalName} />
+        <ReadInlineG label="Company Legal Name"  value={form.legalName} />
         <ReadInlineG label="Customer Segment"    value={(form.segment ?? []).join(', ')} />
 
         <ReadInlineG label="Classification"      value={form.classification} />

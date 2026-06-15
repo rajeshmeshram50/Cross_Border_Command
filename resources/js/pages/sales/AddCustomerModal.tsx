@@ -2168,7 +2168,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
         <div className="acm-section-body">
           <div className="acm-row acm-row-3">
             <Field label="Company Name" required error={errors.coName} fieldKey="coName"><input className={errors.coName ? 'acm-input-error' : ''} value={form.coName} maxLength={30} onChange={e => set('coName', e.target.value.slice(0, 30))} placeholder="e.g. Shree Agro Pvt Ltd (max 30)" /></Field>
-            <Field label="Customer Legal Name" required error={errors.coLegal} fieldKey="coLegal"><input className={errors.coLegal ? 'acm-input-error' : ''} value={form.coLegal} onChange={e => set('coLegal', e.target.value)} placeholder="Registered legal entity name" /></Field>
+            <Field label="Company Legal Name" required error={errors.coLegal} fieldKey="coLegal"><input className={errors.coLegal ? 'acm-input-error' : ''} value={form.coLegal} onChange={e => set('coLegal', e.target.value)} placeholder="Registered legal entity name" /></Field>
             <Field label="Customer Type" required error={errors.coType} fieldKey="coType">
               <MasterSelect value={form.coType} options={optsWith(masters.customerTypes, form.coType)} placeholder="Select customer type" invalid={!!errors.coType} onChange={v => set('coType', v)} />
             </Field>
@@ -3997,7 +3997,7 @@ function HistoryStage1({ form, locations, customerId }: { form: any; locations: 
       <div className="acm-hs-grid">
         <ReadInline label="Customer ID"               value={customerId} />
         <ReadInline label="Company Name"              value={form.coName} />
-        <ReadInline label="Customer Legal Name"        value={form.coLegal} />
+        <ReadInline label="Company Legal Name"        value={form.coLegal} />
         <ReadInline label="Customer Type"             value={form.coType} />
 
         <ReadInline label="Company Website"           value={form.coWeb} />
