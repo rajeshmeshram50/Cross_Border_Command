@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useToast } from '../../contexts/ToastContext';
+import api from '../../api';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * CLM Command Center → Diagnosis & Resolution Center
@@ -42,32 +43,23 @@ type CtcRow = {
 
 const PER_PAGE = 6;
 
-/* ── sample data ─────────────────────────────────────────────────────────── */
-const BUYER_ROWS: ComplianceRow[] = [
-  { id: 'CUST-001', name: 'AlphaWorks Ltd',         segment: 'Tobacco',            country: 'Germany',    consignees: 3, shipments: 12, kyc: [5,5], dd: [5,5], tl: [5,5], td: [3,5], agr: [2,5] },
-  { id: 'CUST-002', name: 'GreenHarvest Global',    segment: 'Rice',               country: 'UAE',        consignees: 2, shipments: 9,  kyc: [4,5], dd: [5,5], tl: [2,5], td: [5,5], agr: [5,5] },
-  { id: 'CUST-003', name: 'International Buyer LLC', segment: 'Food Grade Ethanol', country: 'USA',        consignees: 4, shipments: 7,  kyc: [5,5], dd: [3,5], tl: [5,5], td: [5,5], agr: [1,5] },
-  { id: 'CUST-004', name: 'Dubai Trade Hub LLC',    segment: 'Rice',               country: 'UAE',        consignees: 1, shipments: 4,  kyc: [0,5], dd: [0,5], tl: [0,5], td: [0,5], agr: [0,5] },
-  { id: 'CUST-005', name: 'Nordic Imports AB',      segment: 'Tobacco',            country: 'Sweden',     consignees: 2, shipments: 6,  kyc: [5,5], dd: [5,5], tl: [5,5], td: [5,5], agr: [5,5] },
-  { id: 'CUST-006', name: 'Pacific Rim Traders',    segment: 'Rice',               country: 'Singapore',  consignees: 3, shipments: 8,  kyc: [3,5], dd: [4,5], tl: [3,5], td: [2,5], agr: [3,5] },
-  { id: 'CUST-007', name: 'Sahara Foods FZE',       segment: 'Food Grade Ethanol', country: 'Egypt',      consignees: 2, shipments: 5,  kyc: [5,5], dd: [2,5], tl: [4,5], td: [3,5], agr: [4,5] },
-];
+/* Map an API {d,t} object to a [done,total] tuple. */
+const frac = (o: any): Frac => [Number(o?.d) || 0, Number(o?.t) || 0];
 
-const SUP_ROWS: ComplianceRow[] = [
-  { id: 'SUP-101', name: 'AccelTrade Pvt Ltd',       segment: 'Rice',               country: 'India', consignees: 0, shipments: 8, kyc: [4,4], dd: [4,4], tl: [4,4], td: [3,4], agr: [2,3] },
-  { id: 'SUP-102', name: 'Raipur Agro Supplies',     segment: 'Rice',               country: 'India', consignees: 0, shipments: 6, kyc: [4,4], dd: [2,4], tl: [4,4], td: [4,4], agr: [3,3] },
-  { id: 'SUP-103', name: 'Nagpur Spice Traders',     segment: 'Tobacco',            country: 'India', consignees: 0, shipments: 5, kyc: [0,4], dd: [0,4], tl: [0,4], td: [0,4], agr: [0,3] },
-  { id: 'SUP-104', name: 'Indore Pulses Pvt Ltd',    segment: 'Food Grade Ethanol', country: 'India', consignees: 0, shipments: 7, kyc: [4,4], dd: [4,4], tl: [4,4], td: [4,4], agr: [3,3] },
-  { id: 'SUP-105', name: 'SGS India Pvt Ltd',        segment: 'Rice',               country: 'India', consignees: 0, shipments: 4, kyc: [3,4], dd: [3,4], tl: [2,4], td: [2,4], agr: [1,3] },
-];
-
-const CTC_ROWS: CtcRow[] = [
-  { id: 'RDF-C-001', ctc: 'CTC-0001', title: 'Master Supply Agreement',  counterparty: 'Supplier Inc.',   role: 'Supplier', status: 'signed' },
-  { id: 'RDF-C-002', ctc: 'CTC-0002', title: 'Non-Disclosure Agreement', counterparty: 'Tech Partner LLC', role: 'Partner',  status: 'inprogress' },
-  { id: 'RDF-C-003', ctc: 'CTC-0003', title: 'Distribution Agreement',   counterparty: 'AlphaWorks Ltd',   role: 'Buyer',    status: 'clarify' },
-  { id: 'RDF-C-004', ctc: 'CTC-0004', title: 'Service Level Agreement',  counterparty: 'Pacific Rim',      role: 'Buyer',    status: 'rejected' },
-  { id: 'RDF-C-005', ctc: 'CTC-0005', title: 'Toll Manufacturing Pact',  counterparty: 'Indore Pulses',    role: 'Supplier', status: 'signed' },
-];
+/* Map a buyer / supplier profile row to the page's ComplianceRow. Buyers carry
+ * `seg` (array) + `cn` (consignee count) + `country`; suppliers carry a `seg`
+ * string + `state` (used as the locale column) and no consignees. */
+function mapCompliance(rows: any[]): ComplianceRow[] {
+  return rows.map((r) => ({
+    id: r.id ?? '—',
+    name: r.name ?? '—',
+    segment: Array.isArray(r.seg) ? r.seg.join(', ') : (r.seg ?? '—'),
+    country: r.country ?? r.state ?? '—',
+    consignees: Number(r.cn) || 0,
+    shipments: Number(r.ship) || 0,
+    kyc: frac(r.kyc), dd: frac(r.dd), tl: frac(r.tl), td: frac(r.td), agr: frac(r.agr),
+  }));
+}
 
 const ZONES: { id: SubTab; label: string; icon: JSX.Element }[] = [
   { id: 'buyer',    label: 'Buyer Side Overview',             icon: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /></> },
@@ -111,8 +103,39 @@ export default function ClmDiagnosisResolutionPage() {
   const [cardFilter, setCardFilter] = useState<'all' | 'compliant' | 'pending'>('all');
   const [diag, setDiag] = useState<{ row: ComplianceRow } | null>(null);
   const [escalate, setEscalate] = useState<{ name: string; ref: string } | null>(null);
+  const [buyerRows, setBuyerRows] = useState<ComplianceRow[]>([]);
+  const [supRows, setSupRows] = useState<ComplianceRow[]>([]);
+  const [ctcRows, setCtcRows] = useState<CtcRow[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const partyRows = tab === 'supplier' ? SUP_ROWS : BUYER_ROWS;
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await api.get('/clm/diagnosis-resolution');
+        if (!alive) return;
+        const d = res.data?.data ?? {};
+        setBuyerRows(mapCompliance(d.buyer?.buyers ?? []));
+        setSupRows(mapCompliance([
+          ...(d.supplier?.ws_mat ?? []), ...(d.supplier?.ws_logi ?? []),
+          ...(d.supplier?.wos_svc ?? []), ...(d.supplier?.wos_mat ?? []), ...(d.supplier?.wos_logi ?? []),
+        ]));
+        setCtcRows((d.ctc ?? []).map((r: any): CtcRow => ({
+          id: r.id, ctc: r.ctc ?? r.id, title: r.title ?? '—',
+          counterparty: r.counterparty ?? '—',
+          role: (['Buyer', 'Supplier', 'Partner'].includes(r.role) ? r.role : 'Partner') as CtcRow['role'],
+          status: (['signed', 'inprogress', 'clarify', 'rejected'].includes(r.status) ? r.status : 'inprogress') as CtcRow['status'],
+        })));
+      } catch {
+        if (alive) toast.error('Load failed', 'Could not load diagnosis data.');
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [toast]);
+
+  const partyRows = tab === 'supplier' ? supRows : buyerRows;
   const isCompliant = (r: ComplianceRow) => [r.kyc, r.dd, r.tl, r.td, r.agr].every((f) => pct(f) === 100);
 
   /* KPI counts for the active compliance tab */
@@ -134,8 +157,8 @@ export default function ClmDiagnosisResolutionPage() {
 
   const ctcFiltered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return q ? CTC_ROWS.filter((r) => `${r.id} ${r.ctc} ${r.title} ${r.counterparty}`.toLowerCase().includes(q)) : CTC_ROWS;
-  }, [search]);
+    return q ? ctcRows.filter((r) => `${r.id} ${r.ctc} ${r.title} ${r.counterparty}`.toLowerCase().includes(q)) : ctcRows;
+  }, [search, ctcRows]);
 
   const rowsForPage = tab === 'ctc' ? ctcFiltered : filtered;
   const totalPages = Math.max(1, Math.ceil(rowsForPage.length / PER_PAGE));
@@ -145,12 +168,12 @@ export default function ClmDiagnosisResolutionPage() {
   const switchTab = (t: SubTab) => { setTab(t); setPage(1); setSearch(''); setCardFilter('all'); };
 
   const ctcKpis = useMemo(() => ({
-    total: CTC_ROWS.length,
-    signed: CTC_ROWS.filter((r) => r.status === 'signed').length,
-    inprogress: CTC_ROWS.filter((r) => r.status === 'inprogress').length,
-    clarify: CTC_ROWS.filter((r) => r.status === 'clarify').length,
-    rejected: CTC_ROWS.filter((r) => r.status === 'rejected').length,
-  }), []);
+    total: ctcRows.length,
+    signed: ctcRows.filter((r) => r.status === 'signed').length,
+    inprogress: ctcRows.filter((r) => r.status === 'inprogress').length,
+    clarify: ctcRows.filter((r) => r.status === 'clarify').length,
+    rejected: ctcRows.filter((r) => r.status === 'rejected').length,
+  }), [ctcRows]);
 
   return (
     <div className="dr-root">
@@ -274,7 +297,7 @@ export default function ClmDiagnosisResolutionPage() {
               </tbody>
             </table>
           )}
-          {pageRows.length === 0 && <div className="dr-empty">No records match your search.</div>}
+          {pageRows.length === 0 && <div className="dr-empty">{loading ? 'Loading…' : 'No records match your search.'}</div>}
         </div>
 
         <div className="dr-foot">
@@ -290,7 +313,16 @@ export default function ClmDiagnosisResolutionPage() {
       </div>
 
       {diag && <DiagnosisModal row={diag.row} compliant={isCompliant(diag.row)} onClose={() => setDiag(null)} onEscalate={() => { setEscalate({ name: diag.row.name, ref: diag.row.id }); setDiag(null); }} />}
-      {escalate && <EscalateModal name={escalate.name} reference={escalate.ref} onClose={() => setEscalate(null)} onSubmit={() => { setEscalate(null); toast.success('Escalated', 'A formal escalation has been raised and logged.'); }} />}
+      {escalate && <EscalateModal name={escalate.name} reference={escalate.ref} onClose={() => setEscalate(null)} onSubmit={async (payload) => {
+        try {
+          await api.post('/clm/diagnosis-resolution/escalate', { reference: escalate.ref, ...payload });
+          toast.success('Escalated', 'A formal escalation has been raised and logged.');
+        } catch {
+          toast.error('Failed', 'Could not raise the escalation.');
+        } finally {
+          setEscalate(null);
+        }
+      }} />}
     </div>
   );
 
@@ -390,14 +422,27 @@ function DiagCard({ accent, bg, icon, title, lead, rows }: { accent: string; bg:
 }
 
 /* ── Resolution Center · Escalation modal ────────────────────────────────── */
-function EscalateModal({ name, reference, onClose, onSubmit }: { name: string; reference: string; onClose: () => void; onSubmit: () => void }) {
+type EscalatePayload = { escalate_to: string; issue_type: string; priority: string; message: string; notify_via: string[] };
+
+function EscalateModal({ name, reference, onClose, onSubmit }: { name: string; reference: string; onClose: () => void; onSubmit: (p: EscalatePayload) => void }) {
   const [priority, setPriority] = useState('high');
+  const [escalateTo, setEscalateTo] = useState('Trade Compliance');
+  const [issueType, setIssueType] = useState('Hard Block');
+  const [message, setMessage] = useState(`${reference} compliance gap — SLA at risk. Requires immediate attention.`);
+  const [notify, setNotify] = useState<Record<string, boolean>>({ Email: true, WhatsApp: false, Slack: false, 'System Notification': true });
+  const [saving, setSaving] = useState(false);
   const PRIOS = [
     { k: 'critical', label: '🔴 Critical', c: '#dc2626' },
     { k: 'high',     label: '🟠 High',     c: '#d97706' },
     { k: 'medium',   label: '🔵 Medium',   c: '#0891b2' },
     { k: 'low',      label: '🟢 Low',      c: '#059669' },
   ];
+  const toggleNotify = (k: string) => setNotify((n) => ({ ...n, [k]: !n[k] }));
+  const submit = () => {
+    if (!message.trim()) return;
+    setSaving(true);
+    onSubmit({ escalate_to: escalateTo, issue_type: issueType, priority, message: message.trim(), notify_via: Object.keys(notify).filter((k) => notify[k]) });
+  };
   return (
     <div className="dr-overlay" onClick={onClose}>
       <div className="dr-esc" onClick={(e) => e.stopPropagation()}>
@@ -413,10 +458,10 @@ function EscalateModal({ name, reference, onClose, onSubmit }: { name: string; r
           <div className="dr-esc-alert">⚠️ Escalation will create an audit log, notify the target, and mark this issue as Escalated in the system.</div>
           <div className="dr-esc-grid2">
             <label className="dr-field"><span>Escalate To <i>*</i></span>
-              <select><option>Trade Compliance</option><option>Sales Department</option><option>Purchase &amp; Procurement</option><option>Finance &amp; Accounts</option><option>Legal &amp; Contracts</option><option>Management / CXO</option></select>
+              <select value={escalateTo} onChange={(e) => setEscalateTo(e.target.value)}><option>Trade Compliance</option><option>Sales Department</option><option>Purchase &amp; Procurement</option><option>Finance &amp; Accounts</option><option>Legal &amp; Contracts</option><option>Management / CXO</option></select>
             </label>
             <label className="dr-field"><span>Issue Type <i>*</i></span>
-              <select><option>Hard Block</option><option>Compliance Gap</option><option>Document Pending</option><option>SLA Breach</option><option>Approval Delay</option><option>Other</option></select>
+              <select value={issueType} onChange={(e) => setIssueType(e.target.value)}><option>Hard Block</option><option>Compliance Gap</option><option>Document Pending</option><option>SLA Breach</option><option>Approval Delay</option><option>Other</option></select>
             </label>
           </div>
           <div className="dr-field"><span>Priority</span>
@@ -427,14 +472,13 @@ function EscalateModal({ name, reference, onClose, onSubmit }: { name: string; r
             </div>
           </div>
           <label className="dr-field"><span>Reason / Message <i>*</i></span>
-            <textarea defaultValue={`${reference} compliance gap — SLA at risk. Requires immediate attention.`} />
+            <textarea value={message} onChange={(e) => setMessage(e.target.value)} />
           </label>
           <div className="dr-field"><span>Notify Via</span>
             <div className="dr-notify">
-              <label><input type="checkbox" defaultChecked /> 📧 Email</label>
-              <label><input type="checkbox" /> 💬 WhatsApp</label>
-              <label><input type="checkbox" /> 💼 Slack</label>
-              <label><input type="checkbox" defaultChecked /> 🔔 System Notification</label>
+              {(['Email', 'WhatsApp', 'Slack', 'System Notification'] as const).map((k) => (
+                <label key={k}><input type="checkbox" checked={notify[k]} onChange={() => toggleNotify(k)} /> {k === 'Email' ? '📧' : k === 'WhatsApp' ? '💬' : k === 'Slack' ? '💼' : '🔔'} {k}</label>
+              ))}
             </div>
           </div>
         </div>
@@ -442,7 +486,7 @@ function EscalateModal({ name, reference, onClose, onSubmit }: { name: string; r
           <span>All fields marked * are required</span>
           <div>
             <button className="dr-btn ghost" onClick={onClose}>Cancel</button>
-            <button className="dr-btn danger" onClick={onSubmit}>⚠ Confirm Escalation</button>
+            <button className="dr-btn danger" disabled={saving} onClick={submit}>⚠ Confirm Escalation</button>
           </div>
         </div>
       </div>

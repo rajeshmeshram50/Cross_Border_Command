@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useToast } from '../../contexts/ToastContext';
+import api from '../../api';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * CLM Command Center → Regulatory Defense File (RDF)
@@ -25,29 +26,6 @@ type C2cRow = { rdf: string; ctc: string; title: string; counterparty: string; r
 
 const PER_PAGE = 8;
 
-const WITH_ROWS: WithRow[] = [
-  { rdf: 'RDF-001', ship: 'SHP-001', opp: 'OPP-101', proc: 'PROC-001', customer: 'Shree Exports Pvt Ltd',  consignee: 'Shree Exports Pvt Ltd',  supplier: 'Raipur Agro Supplies',  pi: 'PI/2026-27/001', po: 'PO/2026-27/001' },
-  { rdf: 'RDF-002', ship: 'SHP-002', opp: 'OPP-102', proc: 'PROC-002', customer: 'GreenHarvest Global',     consignee: 'GreenHarvest Global',     supplier: 'Nagpur Spice Traders',  pi: 'PI/2026-27/002', po: 'PO/2026-27/002' },
-  { rdf: 'RDF-003', ship: 'SHP-003', opp: 'OPP-103', proc: 'PROC-003', customer: 'International Buyer LLC',  consignee: 'Dubai Trade Hub LLC',     supplier: 'Indore Pulses Pvt Ltd', pi: 'PI/2026-27/003', po: 'PO/2026-27/003' },
-  { rdf: 'RDF-004', ship: 'SHP-004', opp: 'OPP-104', proc: 'PROC-004', customer: 'Nordic Imports AB',       consignee: 'Nordic Imports AB',       supplier: 'AccelTrade Pvt Ltd',    pi: 'PI/2026-27/004', po: 'PO/2026-27/004' },
-  { rdf: 'RDF-005', ship: 'SHP-005', opp: 'OPP-105', proc: 'PROC-005', customer: 'Pacific Rim Traders',     consignee: 'Pacific Rim Traders',     supplier: 'SGS India Pvt Ltd',     pi: 'PI/2026-27/005', po: 'PO/2026-27/005' },
-];
-
-const WITHOUT_ROWS: WithoutRow[] = [
-  { rdf: 'RDF-001', proc: 'PROC-001', supplier: 'SGS India Pvt Ltd',         po: 'PO/2026-27/001', vti: 'VTI/2026-27/001', kyc: [4,4], dd: [3,3], tl: [3,3], td: [4,4], agr: [2,2] },
-  { rdf: 'RDF-002', proc: 'PROC-002', supplier: 'Raipur Agro Supplies',      po: 'PO/2026-27/002', vti: 'VTI/2026-27/002', kyc: [4,4], dd: [2,3], tl: [3,3], td: [3,4], agr: [1,2] },
-  { rdf: 'RDF-003', proc: 'PROC-003', supplier: 'Nagpur Spice Traders',      po: 'PO/2026-27/003', vti: 'VTI/2026-27/003', kyc: [2,4], dd: [1,3], tl: [0,3], td: [1,4], agr: [0,2] },
-  { rdf: 'RDF-004', proc: 'PROC-004', supplier: 'FSSAI Consultant Group',    po: 'PO/2026-27/004', vti: 'VTI/2026-27/004', kyc: [0,4], dd: [0,3], tl: [0,3], td: [0,4], agr: [0,2] },
-  { rdf: 'RDF-005', proc: 'PROC-005', supplier: 'Indore Pulses Pvt Ltd',     po: 'PO/2026-27/005', vti: 'VTI/2026-27/005', kyc: [4,4], dd: [3,3], tl: [3,3], td: [4,4], agr: [2,2] },
-];
-
-const C2C_ROWS: C2cRow[] = [
-  { rdf: 'RDF-C-001', ctc: 'CTC-0001', title: 'Master Supply Agreement',  counterparty: 'Supplier Inc.',    role: 'Supplier' },
-  { rdf: 'RDF-C-002', ctc: 'CTC-0002', title: 'Non-Disclosure Agreement', counterparty: 'Tech Partner LLC', role: 'Partner' },
-  { rdf: 'RDF-C-003', ctc: 'CTC-0003', title: 'Distribution Agreement',   counterparty: 'AlphaWorks Ltd',   role: 'Buyer' },
-  { rdf: 'RDF-C-004', ctc: 'CTC-0004', title: 'Service Level Agreement',  counterparty: 'Pacific Rim',      role: 'Buyer' },
-];
-
 const TABS: { id: RdfTab; label: string; icon: JSX.Element }[] = [
   { id: 'with',    label: 'With Shipment ID RDF',    icon: <><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></> },
   { id: 'without', label: 'Without Shipment ID RDF', icon: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></> },
@@ -64,6 +42,8 @@ const referredAs = (r: C2cRow['role']) => (r === 'Buyer' ? 'Supplier' : r === 'S
 const pct = ([d, t]: Frac) => (t === 0 ? 0 : Math.round((d / t) * 100));
 const fracColor = (f: Frac) => (pct(f) === 100 ? '#059669' : pct(f) > 0 ? '#d97706' : '#dc2626');
 const initials = (s: string) => s.split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+/* Map an API {d,t} object to a [done,total] tuple. */
+const frac = (o: any): Frac => [Number(o?.d) || 0, Number(o?.t) || 0];
 
 /* ── read-only document repository (Evidence Vault) ──────────────────────── */
 const DOC_GROUPS = [
@@ -187,10 +167,44 @@ function ProgressCell({ f }: { f: Frac }) {
 }
 
 export default function ClmRegulatoryDefenseFilePage() {
+  const toast = useToast();
   const [tab, setTab] = useState<RdfTab>('with');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [vault, setVault] = useState<string | null>(null);
+  const [withRows, setWithRows] = useState<WithRow[]>([]);
+  const [withoutRows, setWithoutRows] = useState<WithoutRow[]>([]);
+  const [c2cRows, setC2cRows] = useState<C2cRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await api.get('/clm/regulatory-defense');
+        if (!alive) return;
+        const d = res.data?.data ?? {};
+        setWithRows((d.with_shipment ?? []).map((r: any): WithRow => ({
+          rdf: r.rdf, ship: r.ship ?? '—', opp: r.opp ?? '—', proc: r.proc ?? '—',
+          customer: r.customer ?? '—', consignee: r.consignee ?? '—', supplier: r.supplier ?? '—',
+          pi: r.pi ?? '—', po: r.po ?? '—',
+        })));
+        setWithoutRows((d.without_shipment ?? []).map((r: any): WithoutRow => ({
+          rdf: r.rdf, proc: r.proc ?? '—', supplier: r.supplier ?? '—', po: r.po ?? '—', vti: r.vti ?? '—',
+          kyc: frac(r.kyc), dd: frac(r.dd), tl: frac(r.tl), td: frac(r.td), agr: frac(r.agr),
+        })));
+        setC2cRows((d.case_to_case ?? []).map((r: any): C2cRow => ({
+          rdf: r.rdf, ctc: r.ctc ?? '—', title: r.title ?? '—', counterparty: r.counterparty ?? '—',
+          role: (['Buyer', 'Supplier', 'Partner'].includes(r.role) ? r.role : 'Partner') as C2cRow['role'],
+        })));
+      } catch {
+        if (alive) toast.error('Load failed', 'Could not load Regulatory Defense File data.');
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [toast]);
 
   const placeholder = tab === 'with'
     ? 'Search by RDF, Shipment, Customer, Supplier, PI/PO…'
@@ -199,9 +213,9 @@ export default function ClmRegulatoryDefenseFilePage() {
       : 'Search by RDF, CTC, Agreement, Counterparty…';
 
   const q = search.trim().toLowerCase();
-  const withF = useMemo(() => WITH_ROWS.filter((r) => !q || `${r.rdf} ${r.ship} ${r.customer} ${r.supplier} ${r.pi} ${r.po}`.toLowerCase().includes(q)), [q]);
-  const withoutF = useMemo(() => WITHOUT_ROWS.filter((r) => !q || `${r.rdf} ${r.proc} ${r.supplier} ${r.po} ${r.vti}`.toLowerCase().includes(q)), [q]);
-  const c2cF = useMemo(() => C2C_ROWS.filter((r) => !q || `${r.rdf} ${r.ctc} ${r.title} ${r.counterparty}`.toLowerCase().includes(q)), [q]);
+  const withF = useMemo(() => withRows.filter((r) => !q || `${r.rdf} ${r.ship} ${r.customer} ${r.supplier} ${r.pi} ${r.po}`.toLowerCase().includes(q)), [q, withRows]);
+  const withoutF = useMemo(() => withoutRows.filter((r) => !q || `${r.rdf} ${r.proc} ${r.supplier} ${r.po} ${r.vti}`.toLowerCase().includes(q)), [q, withoutRows]);
+  const c2cF = useMemo(() => c2cRows.filter((r) => !q || `${r.rdf} ${r.ctc} ${r.title} ${r.counterparty}`.toLowerCase().includes(q)), [q, c2cRows]);
 
   const rows = tab === 'with' ? withF : tab === 'without' ? withoutF : c2cF;
   const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
@@ -331,7 +345,7 @@ export default function ClmRegulatoryDefenseFilePage() {
             </table>
           )}
 
-          {pageRows.length === 0 && <div className="rdf-empty">No RDF records match your search.</div>}
+          {pageRows.length === 0 && <div className="rdf-empty">{loading ? 'Loading…' : 'No RDF records match your search.'}</div>}
         </div>
 
         <div className="rdf-foot">
@@ -424,7 +438,8 @@ const SCOPED_CSS = `
 
 /* Evidence Vault drawer */
 .rdf-overlay { position:fixed; inset:0; z-index:100001; background:rgba(15,23,42,.5); display:flex; justify-content:flex-end; }
-.rdf-drawer { width:100%; max-width:920px; height:100%; background:linear-gradient(180deg,#f0f9ff,#f8fafc); display:flex; flex-direction:column; box-shadow:-20px 0 60px rgba(8,145,178,.25); }
+.rdf-drawer { width:100%; max-width:920px; height:100%; overflow:hidden; background:linear-gradient(180deg,#f0f9ff,#f8fafc); display:flex; flex-direction:column; box-shadow:-20px 0 60px rgba(8,145,178,.25); }
+.rdf-drawer-head, .rdf-drawer-toolbar { flex-shrink:0; }
 .rdf-drawer-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 22px; color:#fff; background:linear-gradient(125deg,#0c4a6e,#0e7490 55%,#0891b2); }
 .rdf-drawer-eyebrow { font-size:8.5px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; color:#7dd3fc; }
 .rdf-drawer-title { font-size:16px; font-weight:800; margin-top:2px; }
@@ -437,7 +452,11 @@ const SCOPED_CSS = `
 .rdf-view-toggle button.on { background:linear-gradient(135deg,#06b6d4,#0891b2); color:#fff; box-shadow:0 2px 8px rgba(8,145,178,.3); }
 .rdf-zip-btn { display:inline-flex; align-items:center; gap:7px; padding:9px 16px; border:none; border-radius:11px; font-family:inherit; font-size:11px; font-weight:800; color:#fff; cursor:pointer; background:linear-gradient(135deg,#0ea5e9,#06b6d4 50%,#0891b2); box-shadow:0 6px 18px rgba(8,145,178,.42); }
 .rdf-zip-btn:hover { transform:translateY(-1.5px); }
-.rdf-drawer-body { flex:1; overflow-y:auto; padding:14px 18px 24px; display:flex; flex-direction:column; gap:12px; }
+.rdf-drawer-body { flex:1; min-height:0; overflow-y:auto; padding:14px 18px 24px; display:flex; flex-direction:column; gap:12px; }
+.rdf-drawer-body::-webkit-scrollbar { width:10px; }
+.rdf-drawer-body::-webkit-scrollbar-thumb { background:#7dd3fc; border-radius:6px; border:2px solid transparent; background-clip:padding-box; }
+.rdf-drawer-body::-webkit-scrollbar-thumb:hover { background:#0891b2; background-clip:padding-box; }
+.rdf-drawer-body::-webkit-scrollbar-track { background:transparent; }
 
 .rdf-sec { position:relative; border:1px solid #d6eef5; border-radius:14px; overflow:hidden; background:#fff; box-shadow:0 1px 3px rgba(8,145,178,.05),0 8px 24px rgba(6,182,212,.06); }
 .rdf-sec-accent { position:absolute; left:0; top:0; bottom:0; width:4px; background:linear-gradient(180deg,#67e8f9,#0891b2,#0e7490); z-index:2; }
