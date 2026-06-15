@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
+import WorklistPager from '../../components/ui/WorklistPager';
+import { resolveFileUrl } from '../../utils/resolveFileUrl';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * CLM Command Center → Regulatory Defense File (RDF)
@@ -20,11 +23,13 @@ import api from '../../api';
 type RdfTab = 'with' | 'without' | 'c2c';
 type Frac = [number, number];
 
-type WithRow = { rdf: string; ship: string; opp: string; proc: string; customer: string; consignee: string; supplier: string; pi: string; po: string };
-type WithoutRow = { rdf: string; proc: string; supplier: string; po: string; vti: string; kyc: Frac; dd: Frac; tl: Frac; td: Frac; agr: Frac };
-type C2cRow = { rdf: string; ctc: string; title: string; counterparty: string; role: 'Buyer' | 'Supplier' | 'Partner' };
+/** An Evidence-Vault party the row's documents can be pulled for. */
+type VaultTarget = { key: string; label: string; type: string; id: number };
 
-const PER_PAGE = 8;
+type WithRow = { rdf: string; ship: string; opp: string; proc: string; customer: string; consignee: string; supplier: string; pi: string; po: string; vault: VaultTarget[] };
+type WithoutRow = { rdf: string; proc: string; supplier: string; po: string; vti: string; kyc: Frac; dd: Frac; tl: Frac; td: Frac; agr: Frac; vault: VaultTarget[] };
+type C2cRow = { rdf: string; ctc: string; title: string; counterparty: string; role: 'Buyer' | 'Supplier' | 'Partner'; vault: VaultTarget[] };
+
 
 const TABS: { id: RdfTab; label: string; icon: JSX.Element }[] = [
   { id: 'with',    label: 'With Shipment ID RDF',    icon: <><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></> },
@@ -46,19 +51,68 @@ const initials = (s: string) => s.split(/\s+/).slice(0, 2).map((w) => w[0]).join
 const frac = (o: any): Frac => [Number(o?.d) || 0, Number(o?.t) || 0];
 
 /* ── read-only document repository (Evidence Vault) ──────────────────────── */
-const DOC_GROUPS = [
-  { key: 'dd',   name: 'Company Due Diligence', sub: 'Registration · Tax · Identity',     files: ['Certificate of Incorporation.pdf', 'GST Registration.pdf', 'PAN Card.pdf', 'Address Proof.pdf'] },
-  { key: 'kyc',  name: 'Owner KYC Details',     sub: 'Identity & ownership',              files: ['Director Aadhaar.pdf', 'Director Passport.pdf', 'Shareholding Pattern.pdf'] },
-  { key: 'tl',   name: 'Trade Licenses',        sub: 'Permits & registrations',           files: ['IEC Certificate.pdf', 'FSSAI License.pdf', 'APEDA Registration.pdf'] },
-  { key: 'td',   name: 'Trade Documents',       sub: 'Declarations & undertakings',       files: ['Self Declaration.pdf', 'End-Use Undertaking.pdf', 'Origin Declaration.pdf', 'Quality Certificate.pdf'] },
-  { key: 'agr',  name: 'Agreements',            sub: 'Signed contracts',                  files: ['Master Supply Agreement.pdf', 'NDA.pdf'] },
+const SECTION_META: { key: 'company_dd' | 'owner_kyc' | 'trade_licenses' | 'trade_documents'; name: string; sub: string }[] = [
+  { key: 'company_dd',      name: 'Company Due Diligence', sub: 'Registration · Tax · Identity' },
+  { key: 'owner_kyc',       name: 'Owner KYC Details',     sub: 'Identity & ownership' },
+  { key: 'trade_licenses',  name: 'Trade Licenses',        sub: 'Permits & registrations' },
+  { key: 'trade_documents', name: 'Trade Documents',       sub: 'Declarations & undertakings' },
 ];
 
-function VaultDrawer({ title, onClose }: { title: string; onClose: () => void }) {
+type VaultDoc = { name?: string; reference?: string; status?: string; attachment?: string | null; attachment_url?: string | null };
+
+const FileIco = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+);
+const EyeIco = () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>);
+const DlIco = () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>);
+
+function VaultDrawer({ title, targets, onClose }: { title: string; targets: VaultTarget[]; onClose: () => void }) {
   const toast = useToast();
   const [view, setView] = useState<'card' | 'list'>('card');
-  return (
+  const [active, setActive] = useState(0);
+  const [data, setData] = useState<Record<string, VaultDoc[]>>({});
+  const [loading, setLoading] = useState(true);
+
+  // Lock background scroll while the drawer is open.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  const target = targets[active];
+  useEffect(() => {
+    if (!target) { setData({}); setLoading(false); return; }
+    let alive = true;
+    setLoading(true);
+    api.get(`/segment-uploads/${target.type}/${target.id}/vault`)
+      .then((res) => {
+        if (!alive) return;
+        const d = res.data?.data ?? {};
+        setData({
+          company_dd: d.company_dd ?? [], owner_kyc: d.owner_kyc ?? [],
+          trade_licenses: d.trade_licenses ?? [], trade_documents: d.trade_documents ?? [],
+        });
+      })
+      .catch(() => { if (alive) toast.error('Load failed', 'Could not load vault documents.'); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [target?.type, target?.id, toast]);
+
+  const sections = SECTION_META.map((m) => ({ ...m, docs: data[m.key] ?? [] })).filter((s) => s.docs.length > 0);
+
+  const docOpen = (doc: VaultDoc) => {
+    const url = resolveFileUrl(doc.attachment_url || doc.attachment || '');
+    if (url) window.open(url, '_blank', 'noopener');
+    else toast.info('Not uploaded', `${doc.name ?? 'This document'} has not been uploaded yet.`);
+  };
+  const statusTok = (s?: string) => (s === 'Verified'
+    ? { color: '#059669', bg: 'linear-gradient(135deg,#ecfdf5,#d1fae5)', border: '#a7f3d0', dot: '#10b981' }
+    : { color: '#d97706', bg: 'linear-gradient(135deg,#fffbeb,#fef3c7)', border: '#fcd34d', dot: '#f59e0b' });
+
+  return createPortal(
     <div className="rdf-overlay" onClick={onClose}>
+      <style>{SCOPED_CSS}</style>
       <div className="rdf-drawer" onClick={(e) => e.stopPropagation()}>
         <div className="rdf-drawer-head">
           <div>
@@ -70,7 +124,15 @@ function VaultDrawer({ title, onClose }: { title: string; onClose: () => void })
           </button>
         </div>
         <div className="rdf-drawer-toolbar">
-          <span className="rdf-readonly">🔒 Read-only repository · view &amp; download only</span>
+          {targets.length > 1 ? (
+            <div className="rdf-view-toggle">
+              {targets.map((t, i) => (
+                <button key={t.key} className={active === i ? 'on' : ''} onClick={() => setActive(i)}>{t.label}</button>
+              ))}
+            </div>
+          ) : (
+            <span className="rdf-readonly">🔒 Read-only repository · view &amp; download only</span>
+          )}
           <div className="rdf-toolbar-right">
             <div className="rdf-view-toggle">
               <button className={view === 'card' ? 'on' : ''} onClick={() => setView('card')}>
@@ -82,14 +144,14 @@ function VaultDrawer({ title, onClose }: { title: string; onClose: () => void })
                 List
               </button>
             </div>
-            <button className="rdf-zip-btn" onClick={() => toast.info('Download', 'Preparing ZIP of all documents…')}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-              Download All (ZIP)
-            </button>
           </div>
         </div>
         <div className="rdf-drawer-body">
-          {DOC_GROUPS.map((g) => (
+          {loading ? (
+            <div className="rdf-vault-empty">Loading documents…</div>
+          ) : sections.length === 0 ? (
+            <div className="rdf-vault-empty">{target ? 'No documents on record for this party yet.' : 'No linked party to show documents for.'}</div>
+          ) : sections.map((g) => (
             <div key={g.key} className="rdf-sec">
               <span className="rdf-sec-accent" />
               <div className="rdf-sec-hd">
@@ -100,50 +162,54 @@ function VaultDrawer({ title, onClose }: { title: string; onClose: () => void })
                   <div className="rdf-sec-name">{g.name}</div>
                   <div className="rdf-sec-sub">{g.sub}</div>
                 </div>
-                <span className="rdf-sec-count">{g.files.length} files</span>
+                <span className="rdf-sec-count">{g.docs.length} files</span>
               </div>
               {view === 'card' ? (
                 <div className="rdf-grid">
-                  {g.files.map((f) => (
-                    <div key={f} className="rdf-file">
-                      <span className="rdf-file-top-bar" />
-                      <div className="rdf-file-top">
-                        <span className="rdf-file-ico">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-                          <i className="rdf-pdf">PDF</i>
-                        </span>
-                        <div className="rdf-file-body">
-                          <div className="rdf-file-name" title={f}>{f}</div>
-                          <div className="rdf-file-meta"><i className="rdf-dot" /> Verified</div>
+                  {g.docs.map((doc, i) => {
+                    const st = statusTok(doc.status);
+                    return (
+                      <div key={i} className="rdf-file">
+                        <span className="rdf-file-top-bar" />
+                        <div className="rdf-file-top">
+                          <span className="rdf-file-ico"><FileIco /><i className="rdf-pdf">PDF</i></span>
+                          <div className="rdf-file-body">
+                            <div className="rdf-file-name" title={doc.name}>{doc.name ?? doc.reference ?? 'Document'}</div>
+                            <div className="rdf-file-meta" style={{ color: st.color, background: st.bg, borderColor: st.border }}><i className="rdf-dot" style={{ background: st.dot }} /> {doc.status ?? 'Pending'}</div>
+                          </div>
+                        </div>
+                        <div className="rdf-file-acts">
+                          <button className="rdf-act view" title="View" onClick={() => docOpen(doc)}><EyeIco /></button>
+                          <button className="rdf-act dl" title="Download" onClick={() => docOpen(doc)}><DlIco /></button>
                         </div>
                       </div>
-                      <div className="rdf-file-acts">
-                        <button className="rdf-act view" title="View" onClick={() => toast.info('Preview', f)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg></button>
-                        <button className="rdf-act dl" title="Download" onClick={() => toast.info('Download', f)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg></button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="rdf-list">
-                  {g.files.map((f) => (
-                    <div key={f} className="rdf-row">
-                      <span className="rdf-row-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></span>
-                      <span className="rdf-row-name" title={f}>{f}</span>
-                      <span className="rdf-row-status"><i className="rdf-dot" /> Verified</span>
-                      <span className="rdf-file-acts">
-                        <button className="rdf-act view" title="View" onClick={() => toast.info('Preview', f)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg></button>
-                        <button className="rdf-act dl" title="Download" onClick={() => toast.info('Download', f)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg></button>
-                      </span>
-                    </div>
-                  ))}
+                  {g.docs.map((doc, i) => {
+                    const st = statusTok(doc.status);
+                    return (
+                      <div key={i} className="rdf-row">
+                        <span className="rdf-row-ico"><FileIco /></span>
+                        <span className="rdf-row-name" title={doc.name}>{doc.name ?? doc.reference ?? 'Document'}</span>
+                        <span className="rdf-row-status" style={{ color: st.color, background: st.bg, borderColor: st.border }}><i className="rdf-dot" style={{ background: st.dot }} /> {doc.status ?? 'Pending'}</span>
+                        <span className="rdf-file-acts">
+                          <button className="rdf-act view" title="View" onClick={() => docOpen(doc)}><EyeIco /></button>
+                          <button className="rdf-act dl" title="Download" onClick={() => docOpen(doc)}><DlIco /></button>
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
           ))}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -171,7 +237,8 @@ export default function ClmRegulatoryDefenseFilePage() {
   const [tab, setTab] = useState<RdfTab>('with');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const [vault, setVault] = useState<string | null>(null);
+  const [pageSize, setPageSize] = useState(10);
+  const [vault, setVault] = useState<{ title: string; targets: VaultTarget[] } | null>(null);
   const [withRows, setWithRows] = useState<WithRow[]>([]);
   const [withoutRows, setWithoutRows] = useState<WithoutRow[]>([]);
   const [c2cRows, setC2cRows] = useState<C2cRow[]>([]);
@@ -187,15 +254,17 @@ export default function ClmRegulatoryDefenseFilePage() {
         setWithRows((d.with_shipment ?? []).map((r: any): WithRow => ({
           rdf: r.rdf, ship: r.ship ?? '—', opp: r.opp ?? '—', proc: r.proc ?? '—',
           customer: r.customer ?? '—', consignee: r.consignee ?? '—', supplier: r.supplier ?? '—',
-          pi: r.pi ?? '—', po: r.po ?? '—',
+          pi: r.pi ?? '—', po: r.po ?? '—', vault: Array.isArray(r.vault) ? r.vault : [],
         })));
         setWithoutRows((d.without_shipment ?? []).map((r: any): WithoutRow => ({
           rdf: r.rdf, proc: r.proc ?? '—', supplier: r.supplier ?? '—', po: r.po ?? '—', vti: r.vti ?? '—',
           kyc: frac(r.kyc), dd: frac(r.dd), tl: frac(r.tl), td: frac(r.td), agr: frac(r.agr),
+          vault: Array.isArray(r.vault) ? r.vault : [],
         })));
         setC2cRows((d.case_to_case ?? []).map((r: any): C2cRow => ({
           rdf: r.rdf, ctc: r.ctc ?? '—', title: r.title ?? '—', counterparty: r.counterparty ?? '—',
           role: (['Buyer', 'Supplier', 'Partner'].includes(r.role) ? r.role : 'Partner') as C2cRow['role'],
+          vault: Array.isArray(r.vault) ? r.vault : [],
         })));
       } catch {
         if (alive) toast.error('Load failed', 'Could not load Regulatory Defense File data.');
@@ -218,9 +287,9 @@ export default function ClmRegulatoryDefenseFilePage() {
   const c2cF = useMemo(() => c2cRows.filter((r) => !q || `${r.rdf} ${r.ctc} ${r.title} ${r.counterparty}`.toLowerCase().includes(q)), [q, c2cRows]);
 
   const rows = tab === 'with' ? withF : tab === 'without' ? withoutF : c2cF;
-  const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const safePage = Math.min(page, totalPages);
-  const pageRows = rows.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+  const pageRows = rows.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   const switchTab = (t: RdfTab) => { setTab(t); setPage(1); setSearch(''); };
 
@@ -276,7 +345,7 @@ export default function ClmRegulatoryDefenseFilePage() {
               <tbody>
                 {(pageRows as WithRow[]).map((r, i) => (
                   <tr key={r.rdf + r.ship}>
-                    <td>{(safePage - 1) * PER_PAGE + i + 1}</td>
+                    <td>{(safePage - 1) * pageSize + i + 1}</td>
                     <td><span className="rdf-pill purple">{r.rdf}</span></td>
                     <td><span className="rdf-pill cyan">{r.ship}</span></td>
                     <td><span className="rdf-pill indigo">{r.opp}</span></td>
@@ -286,7 +355,7 @@ export default function ClmRegulatoryDefenseFilePage() {
                     <td className="l"><Party name={r.supplier} grad="#0891b2,#06b6d4" /></td>
                     <td><span className="rdf-pill sky">{r.pi}</span></td>
                     <td><span className="rdf-pill orange">{r.po}</span></td>
-                    <td><VaultBtn onClick={() => setVault(`${r.rdf} · ${r.ship} · ${r.supplier}`)} /></td>
+                    <td><VaultBtn onClick={() => setVault({ title: `${r.rdf} · ${r.ship}`, targets: r.vault })} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -299,7 +368,7 @@ export default function ClmRegulatoryDefenseFilePage() {
               <tbody>
                 {(pageRows as WithoutRow[]).map((r, i) => (
                   <tr key={r.rdf + r.proc}>
-                    <td>{(safePage - 1) * PER_PAGE + i + 1}</td>
+                    <td>{(safePage - 1) * pageSize + i + 1}</td>
                     <td><span className="rdf-pill purple">{r.rdf}</span></td>
                     <td><span className="rdf-pill teal">{r.proc}</span></td>
                     <td className="l"><Party name={r.supplier} grad="#0891b2,#06b6d4" /></td>
@@ -310,7 +379,7 @@ export default function ClmRegulatoryDefenseFilePage() {
                     <td><ProgressCell f={r.tl} /></td>
                     <td><ProgressCell f={r.td} /></td>
                     <td><ProgressCell f={r.agr} /></td>
-                    <td><VaultBtn onClick={() => setVault(`${r.rdf} · ${r.proc} · ${r.supplier}`)} /></td>
+                    <td><VaultBtn onClick={() => setVault({ title: `${r.rdf} · ${r.proc} · ${r.supplier}`, targets: r.vault })} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -325,7 +394,7 @@ export default function ClmRegulatoryDefenseFilePage() {
                   const rc = ROLE_CFG[r.role];
                   return (
                     <tr key={r.rdf}>
-                      <td>{(safePage - 1) * PER_PAGE + i + 1}</td>
+                      <td>{(safePage - 1) * pageSize + i + 1}</td>
                       <td><span className="rdf-pill purple">{r.rdf}</span></td>
                       <td><span className="rdf-pill teal">{r.ctc}</span></td>
                       <td className="l strong">{r.title}</td>
@@ -337,7 +406,7 @@ export default function ClmRegulatoryDefenseFilePage() {
                         </span>
                       </td>
                       <td><span className="rdf-referred">{referredAs(r.role)}</span></td>
-                      <td><VaultBtn onClick={() => setVault(`${r.rdf} · ${r.ctc} · ${r.title}`)} /></td>
+                      <td><VaultBtn onClick={() => setVault({ title: `${r.rdf} · ${r.ctc} · ${r.title}`, targets: r.vault })} /></td>
                     </tr>
                   );
                 })}
@@ -348,19 +417,16 @@ export default function ClmRegulatoryDefenseFilePage() {
           {pageRows.length === 0 && <div className="rdf-empty">{loading ? 'Loading…' : 'No RDF records match your search.'}</div>}
         </div>
 
-        <div className="rdf-foot">
-          <span>Showing {rows.length === 0 ? 0 : (safePage - 1) * PER_PAGE + 1}–{Math.min(safePage * PER_PAGE, rows.length)} of {rows.length} RDF records</span>
-          <div className="rdf-pager">
-            <button disabled={safePage === 1} onClick={() => setPage(safePage - 1)}>Prev</button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-              <button key={p} className={p === safePage ? 'active' : ''} onClick={() => setPage(p)}>{p}</button>
-            ))}
-            <button disabled={safePage === totalPages} onClick={() => setPage(safePage + 1)}>Next</button>
-          </div>
-        </div>
+        <WorklistPager
+          total={rows.length}
+          page={safePage}
+          pageSize={pageSize}
+          onPage={setPage}
+          onPageSize={(n) => { setPageSize(n); setPage(1); }}
+        />
       </div>
 
-      {vault && <VaultDrawer title={vault} onClose={() => setVault(null)} />}
+      {vault && <VaultDrawer title={vault.title} targets={vault.targets} onClose={() => setVault(null)} />}
     </div>
   );
 }
@@ -429,16 +495,10 @@ const SCOPED_CSS = `
 .rdf-vault-btn:hover { transform:translateY(-1px); box-shadow:0 5px 16px rgba(6,182,212,.5); }
 
 .rdf-empty { padding:28px; text-align:center; color:#64748b; font-size:12px; }
-.rdf-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 18px; border-top:1px solid #eef6f9; background:#fafdff; flex-wrap:wrap; }
-.rdf-foot > span { font-size:10.5px; color:#64748b; }
-.rdf-pager { display:flex; gap:5px; }
-.rdf-pager button { min-width:28px; height:28px; padding:0 9px; border:1.5px solid #d6eef3; border-radius:7px; background:#fff; color:#0891b2; font-family:inherit; font-size:11px; font-weight:700; cursor:pointer; }
-.rdf-pager button:disabled { opacity:.45; cursor:not-allowed; }
-.rdf-pager button.active { background:linear-gradient(135deg,#06b6d4,#0891b2); color:#fff; border-color:transparent; box-shadow:0 2px 8px rgba(8,145,178,.3); }
 
 /* Evidence Vault drawer */
-.rdf-overlay { position:fixed; inset:0; z-index:100001; background:rgba(15,23,42,.5); display:flex; justify-content:flex-end; }
-.rdf-drawer { width:100%; max-width:920px; height:100%; overflow:hidden; background:linear-gradient(180deg,#f0f9ff,#f8fafc); display:flex; flex-direction:column; box-shadow:-20px 0 60px rgba(8,145,178,.25); }
+.rdf-overlay { position:fixed; inset:0; z-index:100001; height:100vh; background:rgba(15,23,42,.5); display:flex; justify-content:flex-end; }
+.rdf-drawer { width:100%; max-width:920px; height:100vh; max-height:100vh; overflow:hidden; background:linear-gradient(180deg,#f0f9ff,#f8fafc); display:flex; flex-direction:column; box-shadow:-20px 0 60px rgba(8,145,178,.25); }
 .rdf-drawer-head, .rdf-drawer-toolbar { flex-shrink:0; }
 .rdf-drawer-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 22px; color:#fff; background:linear-gradient(125deg,#0c4a6e,#0e7490 55%,#0891b2); }
 .rdf-drawer-eyebrow { font-size:8.5px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; color:#7dd3fc; }
@@ -453,12 +513,13 @@ const SCOPED_CSS = `
 .rdf-zip-btn { display:inline-flex; align-items:center; gap:7px; padding:9px 16px; border:none; border-radius:11px; font-family:inherit; font-size:11px; font-weight:800; color:#fff; cursor:pointer; background:linear-gradient(135deg,#0ea5e9,#06b6d4 50%,#0891b2); box-shadow:0 6px 18px rgba(8,145,178,.42); }
 .rdf-zip-btn:hover { transform:translateY(-1.5px); }
 .rdf-drawer-body { flex:1; min-height:0; overflow-y:auto; padding:14px 18px 24px; display:flex; flex-direction:column; gap:12px; }
+.rdf-vault-empty { margin:auto; padding:40px; text-align:center; font-size:13px; font-weight:600; color:#0e7490; }
 .rdf-drawer-body::-webkit-scrollbar { width:10px; }
 .rdf-drawer-body::-webkit-scrollbar-thumb { background:#7dd3fc; border-radius:6px; border:2px solid transparent; background-clip:padding-box; }
 .rdf-drawer-body::-webkit-scrollbar-thumb:hover { background:#0891b2; background-clip:padding-box; }
 .rdf-drawer-body::-webkit-scrollbar-track { background:transparent; }
 
-.rdf-sec { position:relative; border:1px solid #d6eef5; border-radius:14px; overflow:hidden; background:#fff; box-shadow:0 1px 3px rgba(8,145,178,.05),0 8px 24px rgba(6,182,212,.06); }
+.rdf-sec { position:relative; flex:0 0 auto; border:1px solid #d6eef5; border-radius:14px; overflow:hidden; background:#fff; box-shadow:0 1px 3px rgba(8,145,178,.05),0 8px 24px rgba(6,182,212,.06); }
 .rdf-sec-accent { position:absolute; left:0; top:0; bottom:0; width:4px; background:linear-gradient(180deg,#67e8f9,#0891b2,#0e7490); z-index:2; }
 .rdf-sec-hd { display:flex; align-items:center; gap:11px; padding:9px 16px 9px 18px; background:linear-gradient(110deg,#f0fdff 0%,#e8fbfd 30%,#d8f8fc 60%,#caf5fa 80%,#baf2f9 100%); border-bottom:1px solid #a5f3fc; }
 .rdf-sec-ico { width:36px; height:36px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#06b6d4 0%,#0891b2 55%,#0e7490 100%); }
@@ -523,8 +584,4 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .rdf-party { color:#e2e8f0; }
 [data-bs-theme="dark"] .rdf-referred { background:rgba(3,105,161,.2); border-color:rgba(56,189,248,.4); color:#7dd3fc; }
 [data-bs-theme="dark"] .rdf-empty { color:#94a3b8; }
-[data-bs-theme="dark"] .rdf-foot { background:rgba(255,255,255,.03); border-top-color:rgba(148,163,184,.18); }
-[data-bs-theme="dark"] .rdf-foot > span { color:#94a3b8; }
-[data-bs-theme="dark"] .rdf-pager button { background:rgba(255,255,255,.05); border-color:rgba(148,163,184,.22); color:#67e8f9; }
-[data-bs-theme="dark"] .rdf-pager button.active { background:linear-gradient(135deg,#06b6d4,#0891b2); color:#fff; border-color:transparent; }
 `;
