@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
+import { ShipmentDocPanel, type VaultShipmentDoc } from './CustomerEvidenceVaultModal';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import api from '../../api';
@@ -70,6 +71,7 @@ export interface VaultShipmentRow {
   shipment_id: string;
   opportunity_id: string;
   customer: string;
+  consignee?: string;
   country: string;
   due_dil:    { ratio: string; pct: number };
   kyc:        { ratio: string; pct: number };
@@ -78,6 +80,10 @@ export interface VaultShipmentRow {
   agreement:  { ratio: string; pct: number };
   risk: 'Compliant' | 'Medium' | 'High';
   buyer_is_consignee: boolean;
+  trade_docs_buyer?:     VaultShipmentDoc[];
+  trade_docs_consignee?: VaultShipmentDoc[];
+  agreements_buyer?:     VaultShipmentDoc[];
+  agreements_consignee?: VaultShipmentDoc[];
 }
 
 export interface VaultData {
@@ -656,13 +662,13 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
               </div>
             </div>
             <div className="cnev-section-right">
-              <div className="cnev-section-count">{vault[tabMeta.countKey] as number}</div>
-              <div className="cnev-section-count-label">{tab === 'shipment-agreements' ? 'SHIPMENTS' : 'DOCUMENTS'}</div>
+              <div className="cnev-section-count">{(tab === 'shipment-agreements' || tab === 'trade-documents') ? vault.total_shipments : (vault[tabMeta.countKey] as number)}</div>
+              <div className="cnev-section-count-label">{(tab === 'shipment-agreements' || tab === 'trade-documents') ? 'SHIPMENTS' : 'DOCUMENTS'}</div>
             </div>
           </div>
 
-          {tab === 'shipment-agreements'
-            ? <ShipmentTable rows={vault.shipment_agreements} filter={shipmentFilter} setFilter={setShipmentFilter} />
+          {(tab === 'shipment-agreements' || tab === 'trade-documents')
+            ? <ShipmentTable rows={vault.shipment_agreements} kind={tab === 'trade-documents' ? 'trade' : 'agreement'} filter={shipmentFilter} setFilter={setShipmentFilter} />
             : <DocsTable rows={docsForTab} tab={tab} ownerType="consignee" ownerId={consignee?.db_id ?? null} onReload={reloadVault}
                          onSendTradeDoc={(d) => { if (d.db_id) setSendDocIds([d.db_id]); }}
                          onRemindTradeDoc={handleRemind} />}
@@ -1035,16 +1041,20 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   );
 }
 
-function ShipmentTable({ rows, filter, setFilter }: {
+function ShipmentTable({ rows, kind, filter, setFilter }: {
   rows: VaultShipmentRow[];
+  kind: 'trade' | 'agreement';
   filter: 'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee';
   setFilter: (f: 'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee') => void;
 }) {
+  const [openId, setOpenId] = useState<number | null>(null);
   const filtered = rows.filter(r =>
     filter === 'all' ? true
     : filter === 'buyer-eq-consignee' ? r.buyer_is_consignee
     : !r.buyer_is_consignee
   );
+  const lastCol = kind === 'trade' ? 'Trade Docs' : 'Agreement';
+  const COLS = 10;
   return (
     <>
       <div className="cnev-ship-filter">
@@ -1057,46 +1067,63 @@ function ShipmentTable({ rows, filter, setFilter }: {
         <table className="cnev-table">
           <thead>
             <tr>
-              <th style={{ width: 56 }}>SR</th>
+              <th style={{ width: 34 }} />
+              <th style={{ width: 46 }}>SR</th>
               <th>Shipment ID</th>
               <th>Opportunity ID</th>
-              <th>Customer</th>
-              <th>Country</th>
+              <th>Customer (Buyer)</th>
+              <th>Consignee</th>
               <th>Due Dil.</th>
               <th>KYC</th>
               <th>Trade Lic.</th>
-              <th>Trade Docs</th>
-              <th>Agreement</th>
-              <th>Risk</th>
+              <th>{lastCol}</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={11} className="cnev-empty">No shipments match the filter.</td></tr>
-            ) : filtered.map((r, i) => (
-              <tr key={r.id}>
-                <td>{i + 1}</td>
-                <td><span className="cnev-chip-pill">● {r.shipment_id}</span></td>
-                <td><span className="cnev-chip-pill cnev-chip-pill-warm">● {r.opportunity_id}</span></td>
-                <td>
-                  <span className="cnev-cust-cell">
-                    <span className="cnev-cust-mono">{r.customer.charAt(0)}</span>
-                    {r.customer}
-                  </span>
-                </td>
-                <td>{r.country}</td>
-                <td><Ratio r={r.due_dil} /></td>
-                <td><Ratio r={r.kyc} /></td>
-                <td><Ratio r={r.trade_lic} /></td>
-                <td><Ratio r={r.trade_docs} /></td>
-                <td><Ratio r={r.agreement} /></td>
-                <td>
-                  <span className={`cnev-pill cnev-risk-${r.risk.toLowerCase()}`}>
-                    {r.risk === 'Compliant' ? '✓' : '⚠'} {r.risk}
-                  </span>
-                </td>
-              </tr>
-            ))}
+              <tr><td colSpan={COLS} className="cnev-empty">No shipments match the filter.</td></tr>
+            ) : filtered.map((r, i) => {
+              const open = openId === r.id;
+              return (
+                <Fragment key={r.id}>
+                  <tr style={{ cursor: 'pointer' }} onClick={() => setOpenId(open ? null : r.id)}>
+                    <td style={{ textAlign: 'center' }}><span style={{ display: 'inline-block', transition: 'transform .18s', transform: open ? 'rotate(90deg)' : 'none', color: '#0891b2', fontWeight: 800 }}>▸</span></td>
+                    <td>{i + 1}</td>
+                    <td><span className="cnev-chip-pill">● {r.shipment_id}</span></td>
+                    <td><span className="cnev-chip-pill cnev-chip-pill-warm">● {r.opportunity_id}</span></td>
+                    <td>
+                      <span className="cnev-cust-cell">
+                        <span className="cnev-cust-mono">{r.customer.charAt(0)}</span>
+                        {r.customer}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="cnev-cust-cell">
+                        <span className="cnev-cust-mono" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>{(r.consignee || '—').charAt(0)}</span>
+                        {r.consignee || '—'}
+                      </span>
+                    </td>
+                    <td><Ratio r={r.due_dil} /></td>
+                    <td><Ratio r={r.kyc} /></td>
+                    <td><Ratio r={r.trade_lic} /></td>
+                    <td><Ratio r={kind === 'trade' ? r.trade_docs : r.agreement} /></td>
+                  </tr>
+                  {open && (
+                    <tr>
+                      <td colSpan={COLS} style={{ padding: 0, background: '#f0fdff' }}>
+                        <ShipmentDocPanel
+                          buyer={kind === 'trade' ? (r.trade_docs_buyer ?? []) : (r.agreements_buyer ?? [])}
+                          consignee={kind === 'trade' ? (r.trade_docs_consignee ?? []) : (r.agreements_consignee ?? [])}
+                          buyerName={r.customer}
+                          consigneeName={r.consignee || '—'}
+                          buyerIsConsignee={r.buyer_is_consignee}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
         </div>

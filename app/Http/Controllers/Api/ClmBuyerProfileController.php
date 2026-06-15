@@ -309,6 +309,7 @@ class ClmBuyerProfileController extends Controller
                 'leadId'   => $lid,
                 'customer' => $cust->company_name,
                 'custId'   => (int) $cust->id,
+                'country'  => optional($cust->primaryAddress)->country ?: '',
                 'pi'       => $pi ? (string) ($pi->code ?? '') : '',
                 'reg'      => $regFor($segIds),
                 'kyc'      => $cp ? $cp['kyc'] : ['d' => 0, 't' => 0],
