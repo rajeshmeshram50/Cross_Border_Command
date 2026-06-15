@@ -485,6 +485,28 @@
           background-color: rgba(240,101,72,0.10) !important;
           color: var(--vz-body-color) !important;
         }
+        /* Expense/Advance toolbar search — the default form-control border
+           was too faint to see in light mode and blended into the card in
+           dark mode. Give it a clearly visible, theme-aware border + focus
+           ring so the field reads as an input in both themes. */
+        .ep-exp-search .form-control {
+          border: 1px solid #cbd5e1;
+          background: #ffffff;
+        }
+        .ep-exp-search .form-control:focus {
+          border-color: #a855f7;
+          box-shadow: 0 0 0 3px rgba(168,85,247,0.15);
+        }
+        [data-bs-theme="dark"] .ep-exp-search .form-control {
+          border-color: rgba(255,255,255,0.24);
+          background: var(--vz-input-bg, #1c2531);
+          color: var(--vz-body-color);
+        }
+        [data-bs-theme="dark"] .ep-exp-search .form-control:focus {
+          border-color: #a855f7;
+          box-shadow: 0 0 0 3px rgba(168,85,247,0.25);
+        }
+
         .ep-claim-upload {
           padding: 14px; text-align: center;
           background: var(--accent-soft);
@@ -494,6 +516,10 @@
           transition: background .15s ease;
         }
         .ep-claim-upload:hover { background: rgba(249,115,22,0.16); }
+        .ep-claim-upload.is-invalid {
+          border-color: #ef4444;
+          background: rgba(239,68,68,0.06);
+        }
         .is-advance .ep-claim-upload:hover { background: rgba(99,102,241,0.14); }
         .ep-claim-upload-icon {
           display: inline-flex; align-items: center; justify-content: center;

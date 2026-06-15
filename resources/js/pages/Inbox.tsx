@@ -97,6 +97,10 @@ export default function Inbox() {
   // so the dispatch knows whether to hit manager-approve or hr-approve.
   type ExpenseApprovalRow = {
     id: number;
+    // Both expense claims and advance requests share this row shape and the
+    // same two-stage approval flow; `module` decides which endpoint the
+    // approve/reject action hits (/expense-claims vs /advance-requests).
+    module: 'expense' | 'advance';
     code: string | null;
     title: string;
     subject_name: string;
@@ -106,20 +110,26 @@ export default function Inbox() {
       stage: 'manager' | 'hr';
       amount: number;
       currency: string | null;
-      expense_date: string | null;
+      expense_date?: string | null;
       category_name: string | null;
-      vendor: string | null;
+      vendor?: string | null;
       employee_name: string | null;
       employee_code: string | null;
       department_name: string | null;
       manager_name: string | null;
-      purpose: string | null;
+      purpose?: string | null;
+      reason?: string | null;       // advance requests carry `reason` not `purpose`
     };
   };
   const [expenseRows, setExpenseRows] = useState<ExpenseApprovalRow[]>([]);
   const [expenseLoading, setExpenseLoading] = useState(true);
-  const [expenseActing, setExpenseActing] = useState<{ id: number; verdict: 'approve' | 'reject' } | null>(null);
-  const [expenseComment, setExpenseComment] = useState<Record<number, string>>({});
+  // Expense and advance IDs share the same number space, so per-row state
+  // (in-flight action + draft comment) is keyed by `<module>-<id>` rather
+  // than the bare id — otherwise claim #5 and advance #5 would clobber each
+  // other's comment box and spinner.
+  const [expenseActing, setExpenseActing] = useState<{ key: string; verdict: 'approve' | 'reject' } | null>(null);
+  const [expenseComment, setExpenseComment] = useState<Record<string, string>>({});
+  const expRowKey = (r: { module: string; id: number }) => `${r.module}-${r.id}`;
 
   // Personal claim/advance updates — FYI notifications for claims THIS
   // user filed that managers or HR have just acted on. Read-only; no
@@ -169,7 +179,7 @@ export default function Inbox() {
       api.get<SignatureRun[]>('/hr-document-signatures/inbox', { params: { history: 1 } }),
     ]);
     setHistLeave(lv.status === 'fulfilled' ? (Array.isArray(lv.value) ? lv.value : []).filter(r => r.status === 'Approved' || r.status === 'Rejected') : []);
-    setHistExpense(ex.status === 'fulfilled' ? ((ex.value.data?.approvals ?? []) as any[]).filter(a => a.module === 'expense') : []);
+    setHistExpense(ex.status === 'fulfilled' ? ((ex.value.data?.approvals ?? []) as any[]).filter(a => a.module === 'expense' || a.module === 'advance') : []);
     setHistDocs(dc.status === 'fulfilled' ? (Array.isArray(dc.value.data) ? dc.value.data : []) : []);
     setHistLoading(false);
   };
@@ -229,9 +239,9 @@ export default function Inbox() {
       const { data } = await api.get('/my-team/approvals');
       const all = Array.isArray(data?.approvals) ? data.approvals : [];
       const expense: ExpenseApprovalRow[] = all
-        .filter((a: any) => a.module === 'expense')
+        .filter((a: any) => a.module === 'expense' || a.module === 'advance')
         .map((a: any) => ({
-          id: a.id, code: a.code, title: a.title,
+          id: a.id, module: a.module, code: a.code, title: a.title,
           subject_name: a.subject_name, subject_dept: a.subject_dept,
           created_at: a.created_at, raw: a.raw,
         }));
@@ -310,24 +320,29 @@ export default function Inbox() {
   };
 
   const actOnExpense = async (row: ExpenseApprovalRow, verdict: 'approve' | 'reject') => {
-    const comment = (expenseComment[row.id] || '').trim();
+    const key = expRowKey(row);
+    const comment = (expenseComment[key] || '').trim();
     if (verdict === 'reject' && !comment) {
       toast.error('Reason required', 'Please add a short comment explaining the rejection.');
       return;
     }
     const stage = row.raw.stage === 'hr' ? 'hr' : 'manager';
-    setExpenseActing({ id: row.id, verdict });
+    // Route to the right module's approve/reject endpoint. Both follow the
+    // identical /{id}/{stage}-{verdict} shape.
+    const base = row.module === 'advance' ? 'advance-requests' : 'expense-claims';
+    const noun = row.module === 'advance' ? 'Advance request' : 'Claim';
+    setExpenseActing({ key, verdict });
     try {
-      await api.post(`/expense-claims/${row.id}/${stage}-${verdict}`, comment ? { comment } : {});
+      await api.post(`/${base}/${row.id}/${stage}-${verdict}`, comment ? { comment } : {});
       toast.success(
-        verdict === 'approve' ? 'Claim approved' : 'Claim rejected',
+        verdict === 'approve' ? `${noun} approved` : `${noun} rejected`,
         verdict === 'approve' ? 'The employee will be notified.' : 'The employee will see your remark.',
       );
-      setExpenseComment(prev => { const next = { ...prev }; delete next[row.id]; return next; });
+      setExpenseComment(prev => { const next = { ...prev }; delete next[key]; return next; });
       await loadExpenses();
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Action failed';
-      toast.error('Could not act on this claim', msg);
+      toast.error(`Could not act on this ${row.module === 'advance' ? 'advance request' : 'claim'}`, msg);
     } finally {
       setExpenseActing(null);
     }
@@ -694,9 +709,9 @@ export default function Inbox() {
                     <i className="ri-bill-line" style={{ fontSize: 16, color: '#a16207' }} />
                   </span>
                   <div>
-                    <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Expense Claims</h6>
+                    <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Expense &amp; Advance Requests</h6>
                     <div className="text-muted" style={{ fontSize: 11.5 }}>
-                      Approvals waiting on you — reporting managers see manager-stage rows, branch admins see HR-stage rows.
+                      Expense claims and advance requests waiting on you — reporting managers see manager-stage rows, branch admins see HR-stage rows.
                     </div>
                   </div>
                 </div>
@@ -734,22 +749,25 @@ export default function Inbox() {
               ) : expenseRows.length === 0 ? (
                 <div style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>
                   <i className="ri-wallet-3-line" style={{ fontSize: 30, display: 'block', marginBottom: 6 }} />
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>No pending expense claims</div>
-                  <div style={{ fontSize: 11.5 }}>You're all caught up on reimbursements.</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>No pending expense or advance requests</div>
+                  <div style={{ fontSize: 11.5 }}>You're all caught up on reimbursements and advances.</div>
                 </div>
               ) : (
                 <div>
                   {paginate(expenseRows, expensePage).map((r) => {
+                    const rk = expRowKey(r);
+                    const isAdvance = r.module === 'advance';
                     const empName = r.raw.employee_name || r.subject_name || '—';
                     const initials = empName.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase() || '?';
-                    const acting = expenseActing?.id === r.id;
+                    const acting = expenseActing?.key === rk;
                     const isApproving = acting && expenseActing?.verdict === 'approve';
                     const isRejecting = acting && expenseActing?.verdict === 'reject';
-                    const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+                    const fmtDate = (d: string | null | undefined) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
                     const fmtAmt = `₹${Number(r.raw.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
                     const stageLabel = r.raw.stage === 'hr' ? 'HR / Finance stage' : 'Manager stage';
+                    const note = r.raw.purpose || r.raw.reason;
                     return (
-                      <div key={r.id} style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                      <div key={rk} style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
                         <div className="d-flex align-items-start gap-3 flex-wrap">
                           <span className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
                             style={{ width: 38, height: 38, fontSize: 12, background: 'linear-gradient(135deg,#f59e0b,#d97706)' }}>
@@ -764,37 +782,40 @@ export default function Inbox() {
                               </span>
                             </div>
                             <div className="mt-1 d-flex align-items-center flex-wrap gap-2" style={{ fontSize: 12.5 }}>
+                              <span style={{ padding: '2px 8px', borderRadius: 999, background: isAdvance ? '#e0e7ff' : '#fde9d3', color: isAdvance ? '#4338ca' : '#9a4d1a', fontWeight: 700, fontSize: 10, letterSpacing: 0.3, textTransform: 'uppercase' }}>
+                                {isAdvance ? 'Advance' : 'Expense'}
+                              </span>
                               <span style={{ padding: '2px 8px', borderRadius: 6, background: '#fef3c7', color: '#a16207', fontWeight: 700, fontSize: 11 }}>
-                                {r.raw.category_name || 'Expense'}
+                                {r.raw.category_name || (isAdvance ? 'Advance' : 'Expense')}
                               </span>
                               {r.code && (
                                 <code style={{ fontSize: 10.5, background: '#f3f4f6', color: '#4b5563', padding: '1px 6px', borderRadius: 4 }}>
                                   {r.code}
                                 </code>
                               )}
-                              <span className="text-muted">· {fmtDate(r.raw.expense_date)}</span>
+                              {r.raw.expense_date && <span className="text-muted">· {fmtDate(r.raw.expense_date)}</span>}
                               <span className="fw-bold" style={{ color: '#a16207' }}>· {fmtAmt}</span>
                               <span style={{ padding: '1px 7px', borderRadius: 999, background: r.raw.stage === 'hr' ? '#e0e7ff' : '#dcfce7', color: r.raw.stage === 'hr' ? '#4338ca' : '#15803d', fontSize: 10, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase' }}>
                                 {stageLabel}
                               </span>
                             </div>
-                            {r.title && r.title !== 'Expense Claim' && (
+                            {r.title && r.title !== 'Expense Claim' && r.title !== 'Advance Request' && (
                               <div className="mt-1" style={{ fontSize: 12, color: '#374151' }}>
                                 <strong>{r.title}</strong>
                                 {r.raw.vendor ? <span className="text-muted"> · {r.raw.vendor}</span> : null}
                               </div>
                             )}
-                            {r.raw.purpose && (
+                            {note && (
                               <div className="mt-1 text-muted" style={{ fontSize: 12 }}>
-                                <i className="ri-double-quotes-l me-1" />{r.raw.purpose}
+                                <i className="ri-double-quotes-l me-1" />{note}
                               </div>
                             )}
                             <input
                               type="text"
                               className="form-control mt-2"
                               placeholder="Add a remark (required for reject, optional for approve)"
-                              value={expenseComment[r.id] || ''}
-                              onChange={e => setExpenseComment(prev => ({ ...prev, [r.id]: e.target.value }))}
+                              value={expenseComment[rk] || ''}
+                              onChange={e => setExpenseComment(prev => ({ ...prev, [rk]: e.target.value }))}
                               style={{ fontSize: 12.5 }}
                             />
                           </div>
@@ -889,17 +910,17 @@ export default function Inbox() {
                 {/* Expense — decided */}
                 <Card className="mb-3" style={{ borderRadius: 12 }}>
                   <CardBody style={{ padding: 0 }}>
-                    <HistHead icon="ri-bill-line" bg="#fef3c7" fg="#a16207" title="Expense Claims" sub="Claims you've approved or rejected at your stage." count={histExpense.length} />
+                    <HistHead icon="ri-bill-line" bg="#fef3c7" fg="#a16207" title="Expense & Advance Requests" sub="Requests you've approved or rejected at your stage." count={histExpense.length} />
                     {histLoading ? (
                       <div style={{ padding: 18 }}>{Array.from({ length: 2 }).map((_, i) => <Shimmer key={i} height={40} radius={8} />)}</div>
                     ) : histExpense.length === 0 ? (
-                      <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 12.5 }}>No decided expense claims yet.</div>
+                      <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 12.5 }}>No decided expense or advance requests yet.</div>
                     ) : paginate(histExpense, histExpensePage).map((r) => {
                       const empName = r.raw.employee_name || r.subject_name || '—';
                       const initials = empName.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase() || '?';
                       const amt = `₹${Number(r.raw.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
                       return (
-                        <div key={r.id} style={{ padding: '12px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                        <div key={expRowKey(r)} style={{ padding: '12px 18px', borderBottom: '1px solid #f3f4f6' }}>
                           <div className="d-flex align-items-center gap-3 flex-wrap">
                             <span className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0" style={{ width: 34, height: 34, fontSize: 11, background: 'linear-gradient(135deg,#f59e0b,#d97706)' }}>{initials}</span>
                             <div style={{ flex: '1 1 280px', minWidth: 200 }}>

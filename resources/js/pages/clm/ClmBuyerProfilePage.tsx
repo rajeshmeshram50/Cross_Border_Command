@@ -36,12 +36,13 @@ type WsEqRow = {
   sr: number; shp: string; opp: string; customer: string; custId?: number; consId?: number; country?: string; pi: string; reg: Reg;
   kyc: Prog; dd: Prog; tl: Prog; td: Prog; agr: Prog;
 };
-type WsNeqRow = WsEqRow & { consignee: string };
+type ConsProg = { c_kyc?: Prog; c_dd?: Prog; c_tl?: Prog; c_td?: Prog; c_agr?: Prog };
+type WsNeqRow = WsEqRow & { consignee: string } & ConsProg;
 type WosEqRow = {
   sr: number; opp: string; customer: string; custId?: number; consId?: number; country?: string; pi: string; reg: Reg;
   kyc: Prog; dd: Prog; tl: Prog; td: Prog; agr: Prog;
 };
-type WosNeqRow = WosEqRow & { consignee: string };
+type WosNeqRow = WosEqRow & { consignee: string } & ConsProg;
 
 /* Shape of GET /clm/buyer-profile → data. */
 type BpData = {
@@ -296,6 +297,13 @@ function cardHoverOut(e: React.MouseEvent<HTMLDivElement>) {
   e.currentTarget.style.borderColor = '#A5F3FC';
   e.currentTarget.style.boxShadow = '0 1px 3px rgba(6,182,212,.07)';
 }
+/* Buyer / Consignee Transactions sub-tab pill (Buyer ≠ Consignee view). */
+const neqTabStyle = (on: boolean): CSSProperties => ({
+  display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 9, border: 'none', cursor: 'pointer',
+  fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: on ? '#fff' : '#0e7490',
+  background: on ? 'linear-gradient(135deg,#06b6d4,#0891b2)' : '#e0f7fa',
+  boxShadow: on ? '0 2px 8px rgba(8,145,178,.35)' : 'none',
+});
 
 /* Progress cell used in the buyer / consignee list tables. When `onClick`
  * is supplied the cell becomes a button that deep-links into the Evidence
@@ -504,6 +512,9 @@ export default function ClmBuyerProfilePage() {
   const [shipTab, setShipTab] = useState<'with' | 'without'>('with');
   const [wsSub, setWsSub] = useState<'eq' | 'neq'>('eq');
   const [wosSub, setWosSub] = useState<'eq' | 'neq'>('eq');
+  // Within "Buyer ≠ Consignee" — switch the table between the buyer's and the
+  // consignee's compliance perspective.
+  const [neqParty, setNeqParty] = useState<'buyer' | 'consignee'>('buyer');
 
   // collapsible analytics strips
   const [partyAnalyticsOpen, setPartyAnalyticsOpen] = useState(true);
@@ -553,6 +564,14 @@ export default function ClmBuyerProfilePage() {
     if (row) { openBuyerVault(row, 'company-dd'); return; }
     setBuyerVaultTab('company-dd');
     setBuyerVault({ id: '—', db_id: custId, company: custName || '—', segment: '', country: country || '' });
+  };
+  // Same, for the consignee perspective (Consignee Transactions view).
+  const openTxnConsVault = (consId?: number, consName?: string, country?: string) => {
+    if (!consId) return;
+    const row = bp.consignees.find((c) => c.db_id === consId);
+    if (row) { openConsVault(row, 'company-dd'); return; }
+    setConsVaultTab('company-dd');
+    setConsVault({ id: '—', db_id: consId, company: consName || '—', segment: '', country: country || '', customerId: '' });
   };
 
   // Open the single-bucket documents popup for a row's progress cell.
@@ -863,6 +882,10 @@ export default function ClmBuyerProfilePage() {
 
                 {wsSub === 'neq' && (
                   <div style={{ overflowX: 'auto' }}>
+                    <div style={{ display: 'flex', gap: 6, padding: '10px 16px 2px' }}>
+                      <button onClick={() => setNeqParty('buyer')} style={neqTabStyle(neqParty === 'buyer')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>Buyer Transactions</button>
+                      <button onClick={() => setNeqParty('consignee')} style={neqTabStyle(neqParty === 'consignee')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>Consignee Transactions</button>
+                    </div>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
                       <thead>
                         <tr style={txnTableHeaderRow}>
@@ -883,8 +906,10 @@ export default function ClmBuyerProfilePage() {
                               <td style={customerTd}>{r.consignee}</td>
                               <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={piChip}>{r.pi}</span></td>
                               <RegBadge reg={r.reg} />
-                              <WsProgCell obj={r.kyc} /><WsProgCell obj={r.dd} /><WsProgCell obj={r.tl} /><WsProgCell obj={r.td} /><WsProgCell obj={r.agr} />
-                              <EvidenceVaultBtn icon="shield" disabled={!r.custId} onClick={() => openTxnBuyerVault(r.custId, r.customer, r.country)} />
+                              <WsProgCell obj={neqParty === 'consignee' ? (r.c_kyc ?? r.kyc) : r.kyc} /><WsProgCell obj={neqParty === 'consignee' ? (r.c_dd ?? r.dd) : r.dd} /><WsProgCell obj={neqParty === 'consignee' ? (r.c_tl ?? r.tl) : r.tl} /><WsProgCell obj={neqParty === 'consignee' ? (r.c_td ?? r.td) : r.td} /><WsProgCell obj={neqParty === 'consignee' ? (r.c_agr ?? r.agr) : r.agr} />
+                              {neqParty === 'consignee'
+                                ? <EvidenceVaultBtn icon="shield" disabled={!r.consId} onClick={() => openTxnConsVault(r.consId, r.consignee, r.country)} />
+                                : <EvidenceVaultBtn icon="shield" disabled={!r.custId} onClick={() => openTxnBuyerVault(r.custId, r.customer, r.country)} />}
                             </tr>
                           );
                         })}
@@ -945,6 +970,10 @@ export default function ClmBuyerProfilePage() {
 
                 {wosSub === 'neq' && (
                   <div style={{ overflowX: 'auto' }}>
+                    <div style={{ display: 'flex', gap: 6, padding: '10px 16px 2px' }}>
+                      <button onClick={() => setNeqParty('buyer')} style={neqTabStyle(neqParty === 'buyer')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>Buyer Transactions</button>
+                      <button onClick={() => setNeqParty('consignee')} style={neqTabStyle(neqParty === 'consignee')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>Consignee Transactions</button>
+                    </div>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
                       <thead>
                         <tr style={txnTableHeaderRow}>
@@ -967,9 +996,11 @@ export default function ClmBuyerProfilePage() {
                                 ? <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={piChip}>{r.pi}</span></td>
                                 : <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '10px', fontWeight: 500, color: '#b0c4d4', fontStyle: 'italic' }}>—</span></td>}
                               <RegBadge reg={r.reg} />
-                              <WsProgCell obj={r.kyc} /><WsProgCell obj={r.dd} /><WsProgCell obj={r.tl} /><WsProgCell obj={r.td} />
-                              <WosAgrCell row={r} />
-                              <EvidenceVaultBtn icon="box" disabled={!r.custId} onClick={() => openTxnBuyerVault(r.custId, r.customer, r.country)} />
+                              <WsProgCell obj={neqParty === 'consignee' ? (r.c_kyc ?? r.kyc) : r.kyc} /><WsProgCell obj={neqParty === 'consignee' ? (r.c_dd ?? r.dd) : r.dd} /><WsProgCell obj={neqParty === 'consignee' ? (r.c_tl ?? r.tl) : r.tl} /><WsProgCell obj={neqParty === 'consignee' ? (r.c_td ?? r.td) : r.td} />
+                              <WosAgrCell row={neqParty === 'consignee' ? { ...r, agr: r.c_agr ?? r.agr } : r} />
+                              {neqParty === 'consignee'
+                                ? <EvidenceVaultBtn icon="box" disabled={!r.consId} onClick={() => openTxnConsVault(r.consId, r.consignee, r.country)} />
+                                : <EvidenceVaultBtn icon="box" disabled={!r.custId} onClick={() => openTxnBuyerVault(r.custId, r.customer, r.country)} />}
                             </tr>
                           );
                         })}

@@ -174,13 +174,28 @@ export default function ClmTradeDocumentDraftPage() {
     }
   };
   const uploadDocx = async (file: File) => {
-    if (!editingId) {
-      toast.error('Save first', 'Save the trade document before uploading a revised DOCX.');
-      return;
-    }
     const fd = new FormData();
     fd.append('docx', file);
     try {
+      // New (not-yet-saved) draft: there's no library row to attach the file
+      // to, so convert the DOCX to HTML statelessly via the shared endpoint
+      // and load it straight into the editor — the same flow the TNC / CTC
+      // editors use. The file re-attaches as a revised DOCX after the first
+      // save (the {id}/upload-docx path below).
+      if (!editingId) {
+        const { data } = await api.post('/clm/docx-to-html', fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        const html = String(data?.html ?? '').trim();
+        if (!html) {
+          toast.warning('Nothing to import', 'The document appears to be empty.');
+          return;
+        }
+        setContent(html);
+        if (editorRef.current) editorRef.current.innerHTML = html;
+        toast.success('Imported', `${file.name} loaded into the editor.`);
+        return;
+      }
       const { data } = await api.post(`/clm/trade-doc-library/${editingId}/upload-docx`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
@@ -515,7 +530,7 @@ export default function ClmTradeDocumentDraftPage() {
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                     Download DOCX
                   </button>
-                  <button type="button" className="tdw-editor-btn" onClick={() => docxRef.current?.click()} title={editingId ? 'Upload a revised Word file' : 'Save the trade document first'}>
+                  <button type="button" className="tdw-editor-btn" onClick={() => docxRef.current?.click()} title={editingId ? 'Upload a revised Word file' : 'Import content from a Word file'}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
                     Upload Word Doc
                   </button>
