@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { type CtcContract, inits, PER_PAGE } from './clmOpsData';
@@ -76,6 +77,19 @@ export default function ClmCaseToCasePage() {
       .finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
+
+  // Deep-link from "Agreements We Sent" → open this contract's edit form.
+  // ?edit=<dbId> is consumed once rows are loaded, then cleared so a refresh
+  // or back-nav doesn't reopen the form.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const editId = searchParams.get('edit');
+    if (!editId || loading) return;
+    const target = rows.find((r) => String(r.dbId) === editId);
+    if (target) { setEditing(target); setFormOpen(true); }
+    searchParams.delete('edit');
+    setSearchParams(searchParams, { replace: true });
+  }, [loading, rows, searchParams, setSearchParams]);
 
   // Version-history / timeline modals need the full record (versions +
   // signing recipients + stage), which the list rows don't carry — fetch on demand.

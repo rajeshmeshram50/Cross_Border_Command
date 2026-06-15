@@ -306,7 +306,9 @@ class ClmBuyerProfileController extends Controller
 
             $base = [
                 'opp'      => $l->opp_code ?: ('OPP-' . $lid),
+                'leadId'   => $lid,
                 'customer' => $cust->company_name,
+                'custId'   => (int) $cust->id,
                 'pi'       => $pi ? (string) ($pi->code ?? '') : '',
                 'reg'      => $regFor($segIds),
                 'kyc'      => $cp ? $cp['kyc'] : ['d' => 0, 't' => 0],
@@ -316,7 +318,7 @@ class ClmBuyerProfileController extends Controller
                 'agr'      => $agr,
             ];
             if ($hasShip) $base['shp'] = 'SHP-' . str_pad((string) $lid, 3, '0', STR_PAD_LEFT);
-            if ($separateConsignee) $base['consignee'] = $cons->company_name;
+            if ($separateConsignee) { $base['consignee'] = $cons->company_name; $base['consId'] = (int) $cons->id; }
 
             if ($hasShip && $separateConsignee)        { $base['sr'] = ++$n['wsNeq'];  $wsNeq[]  = $base; }
             elseif ($hasShip && !$separateConsignee)   { $base['sr'] = ++$n['wsEq'];   $wsEq[]   = $base; }

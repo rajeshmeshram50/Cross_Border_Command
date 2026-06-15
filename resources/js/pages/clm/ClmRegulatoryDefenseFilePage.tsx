@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
+import WorklistPager from '../../components/ui/WorklistPager';
+import { resolveFileUrl } from '../../utils/resolveFileUrl';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * CLM Command Center → Regulatory Defense File (RDF)
@@ -20,11 +23,15 @@ import api from '../../api';
 type RdfTab = 'with' | 'without' | 'c2c';
 type Frac = [number, number];
 
-type WithRow = { rdf: string; ship: string; opp: string; proc: string; customer: string; consignee: string; supplier: string; pi: string; po: string };
-type WithoutRow = { rdf: string; proc: string; supplier: string; po: string; vti: string; kyc: Frac; dd: Frac; tl: Frac; td: Frac; agr: Frac };
-type C2cRow = { rdf: string; ctc: string; title: string; counterparty: string; role: 'Buyer' | 'Supplier' | 'Partner' };
+/** An Evidence-Vault party the row's documents can be pulled for. */
+type VaultTarget = { key: string; label: string; type: string; id: number };
 
-const PER_PAGE = 8;
+type Supplier = { name: string; code: string; id: number };
+type ProcLine = { proc: string; suppliers: Supplier[]; po: string };
+type WithRow = { rdf: string; ship: string; opp: string; customer: string; consignee: string; pi: string; procs: ProcLine[]; vault: VaultTarget[] };
+type WithoutRow = { rdf: string; proc: string; supplier: string; po: string; vti: string; kyc: Frac; dd: Frac; tl: Frac; td: Frac; agr: Frac; vault: VaultTarget[] };
+type C2cRow = { rdf: string; ctc: string; title: string; counterparty: string; role: 'Buyer' | 'Supplier' | 'Partner'; vault: VaultTarget[] };
+
 
 const TABS: { id: RdfTab; label: string; icon: JSX.Element }[] = [
   { id: 'with',    label: 'With Shipment ID RDF',    icon: <><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></> },
@@ -46,19 +53,68 @@ const initials = (s: string) => s.split(/\s+/).slice(0, 2).map((w) => w[0]).join
 const frac = (o: any): Frac => [Number(o?.d) || 0, Number(o?.t) || 0];
 
 /* ── read-only document repository (Evidence Vault) ──────────────────────── */
-const DOC_GROUPS = [
-  { key: 'dd',   name: 'Company Due Diligence', sub: 'Registration · Tax · Identity',     files: ['Certificate of Incorporation.pdf', 'GST Registration.pdf', 'PAN Card.pdf', 'Address Proof.pdf'] },
-  { key: 'kyc',  name: 'Owner KYC Details',     sub: 'Identity & ownership',              files: ['Director Aadhaar.pdf', 'Director Passport.pdf', 'Shareholding Pattern.pdf'] },
-  { key: 'tl',   name: 'Trade Licenses',        sub: 'Permits & registrations',           files: ['IEC Certificate.pdf', 'FSSAI License.pdf', 'APEDA Registration.pdf'] },
-  { key: 'td',   name: 'Trade Documents',       sub: 'Declarations & undertakings',       files: ['Self Declaration.pdf', 'End-Use Undertaking.pdf', 'Origin Declaration.pdf', 'Quality Certificate.pdf'] },
-  { key: 'agr',  name: 'Agreements',            sub: 'Signed contracts',                  files: ['Master Supply Agreement.pdf', 'NDA.pdf'] },
+const SECTION_META: { key: 'company_dd' | 'owner_kyc' | 'trade_licenses' | 'trade_documents'; name: string; sub: string }[] = [
+  { key: 'company_dd',      name: 'Company Due Diligence', sub: 'Registration · Tax · Identity' },
+  { key: 'owner_kyc',       name: 'Owner KYC Details',     sub: 'Identity & ownership' },
+  { key: 'trade_licenses',  name: 'Trade Licenses',        sub: 'Permits & registrations' },
+  { key: 'trade_documents', name: 'Trade Documents',       sub: 'Declarations & undertakings' },
 ];
 
-function VaultDrawer({ title, onClose }: { title: string; onClose: () => void }) {
+type VaultDoc = { name?: string; reference?: string; status?: string; attachment?: string | null; attachment_url?: string | null };
+
+const FileIco = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+);
+const EyeIco = () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>);
+const DlIco = () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>);
+
+function VaultDrawer({ title, targets, onClose }: { title: string; targets: VaultTarget[]; onClose: () => void }) {
   const toast = useToast();
   const [view, setView] = useState<'card' | 'list'>('card');
-  return (
+  const [active, setActive] = useState(0);
+  const [data, setData] = useState<Record<string, VaultDoc[]>>({});
+  const [loading, setLoading] = useState(true);
+
+  // Lock background scroll while the drawer is open.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  const target = targets[active];
+  useEffect(() => {
+    if (!target) { setData({}); setLoading(false); return; }
+    let alive = true;
+    setLoading(true);
+    api.get(`/segment-uploads/${target.type}/${target.id}/vault`)
+      .then((res) => {
+        if (!alive) return;
+        const d = res.data?.data ?? {};
+        setData({
+          company_dd: d.company_dd ?? [], owner_kyc: d.owner_kyc ?? [],
+          trade_licenses: d.trade_licenses ?? [], trade_documents: d.trade_documents ?? [],
+        });
+      })
+      .catch(() => { if (alive) toast.error('Load failed', 'Could not load vault documents.'); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [target?.type, target?.id, toast]);
+
+  const sections = SECTION_META.map((m) => ({ ...m, docs: data[m.key] ?? [] })).filter((s) => s.docs.length > 0);
+
+  const docOpen = (doc: VaultDoc) => {
+    const url = resolveFileUrl(doc.attachment_url || doc.attachment || '');
+    if (url) window.open(url, '_blank', 'noopener');
+    else toast.info('Not uploaded', `${doc.name ?? 'This document'} has not been uploaded yet.`);
+  };
+  const statusTok = (s?: string) => (s === 'Verified'
+    ? { color: '#059669', bg: 'linear-gradient(135deg,#ecfdf5,#d1fae5)', border: '#a7f3d0', dot: '#10b981' }
+    : { color: '#d97706', bg: 'linear-gradient(135deg,#fffbeb,#fef3c7)', border: '#fcd34d', dot: '#f59e0b' });
+
+  return createPortal(
     <div className="rdf-overlay" onClick={onClose}>
+      <style>{SCOPED_CSS}</style>
       <div className="rdf-drawer" onClick={(e) => e.stopPropagation()}>
         <div className="rdf-drawer-head">
           <div>
@@ -70,7 +126,15 @@ function VaultDrawer({ title, onClose }: { title: string; onClose: () => void })
           </button>
         </div>
         <div className="rdf-drawer-toolbar">
-          <span className="rdf-readonly">🔒 Read-only repository · view &amp; download only</span>
+          {targets.length > 1 ? (
+            <div className="rdf-view-toggle">
+              {targets.map((t, i) => (
+                <button key={t.key} className={active === i ? 'on' : ''} onClick={() => setActive(i)}>{t.label}</button>
+              ))}
+            </div>
+          ) : (
+            <span className="rdf-readonly">🔒 Read-only repository · view &amp; download only</span>
+          )}
           <div className="rdf-toolbar-right">
             <div className="rdf-view-toggle">
               <button className={view === 'card' ? 'on' : ''} onClick={() => setView('card')}>
@@ -82,14 +146,14 @@ function VaultDrawer({ title, onClose }: { title: string; onClose: () => void })
                 List
               </button>
             </div>
-            <button className="rdf-zip-btn" onClick={() => toast.info('Download', 'Preparing ZIP of all documents…')}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-              Download All (ZIP)
-            </button>
           </div>
         </div>
         <div className="rdf-drawer-body">
-          {DOC_GROUPS.map((g) => (
+          {loading ? (
+            <div className="rdf-vault-empty">Loading documents…</div>
+          ) : sections.length === 0 ? (
+            <div className="rdf-vault-empty">{target ? 'No documents on record for this party yet.' : 'No linked party to show documents for.'}</div>
+          ) : sections.map((g) => (
             <div key={g.key} className="rdf-sec">
               <span className="rdf-sec-accent" />
               <div className="rdf-sec-hd">
@@ -100,50 +164,54 @@ function VaultDrawer({ title, onClose }: { title: string; onClose: () => void })
                   <div className="rdf-sec-name">{g.name}</div>
                   <div className="rdf-sec-sub">{g.sub}</div>
                 </div>
-                <span className="rdf-sec-count">{g.files.length} files</span>
+                <span className="rdf-sec-count">{g.docs.length} files</span>
               </div>
               {view === 'card' ? (
                 <div className="rdf-grid">
-                  {g.files.map((f) => (
-                    <div key={f} className="rdf-file">
-                      <span className="rdf-file-top-bar" />
-                      <div className="rdf-file-top">
-                        <span className="rdf-file-ico">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-                          <i className="rdf-pdf">PDF</i>
-                        </span>
-                        <div className="rdf-file-body">
-                          <div className="rdf-file-name" title={f}>{f}</div>
-                          <div className="rdf-file-meta"><i className="rdf-dot" /> Verified</div>
+                  {g.docs.map((doc, i) => {
+                    const st = statusTok(doc.status);
+                    return (
+                      <div key={i} className="rdf-file">
+                        <span className="rdf-file-top-bar" />
+                        <div className="rdf-file-top">
+                          <span className="rdf-file-ico"><FileIco /><i className="rdf-pdf">PDF</i></span>
+                          <div className="rdf-file-body">
+                            <div className="rdf-file-name" title={doc.name}>{doc.name ?? doc.reference ?? 'Document'}</div>
+                            <div className="rdf-file-meta" style={{ color: st.color, background: st.bg, borderColor: st.border }}><i className="rdf-dot" style={{ background: st.dot }} /> {doc.status ?? 'Pending'}</div>
+                          </div>
+                        </div>
+                        <div className="rdf-file-acts">
+                          <button className="rdf-act view" title="View" onClick={() => docOpen(doc)}><EyeIco /></button>
+                          <button className="rdf-act dl" title="Download" onClick={() => docOpen(doc)}><DlIco /></button>
                         </div>
                       </div>
-                      <div className="rdf-file-acts">
-                        <button className="rdf-act view" title="View" onClick={() => toast.info('Preview', f)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg></button>
-                        <button className="rdf-act dl" title="Download" onClick={() => toast.info('Download', f)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg></button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="rdf-list">
-                  {g.files.map((f) => (
-                    <div key={f} className="rdf-row">
-                      <span className="rdf-row-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></span>
-                      <span className="rdf-row-name" title={f}>{f}</span>
-                      <span className="rdf-row-status"><i className="rdf-dot" /> Verified</span>
-                      <span className="rdf-file-acts">
-                        <button className="rdf-act view" title="View" onClick={() => toast.info('Preview', f)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg></button>
-                        <button className="rdf-act dl" title="Download" onClick={() => toast.info('Download', f)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg></button>
-                      </span>
-                    </div>
-                  ))}
+                  {g.docs.map((doc, i) => {
+                    const st = statusTok(doc.status);
+                    return (
+                      <div key={i} className="rdf-row">
+                        <span className="rdf-row-ico"><FileIco /></span>
+                        <span className="rdf-row-name" title={doc.name}>{doc.name ?? doc.reference ?? 'Document'}</span>
+                        <span className="rdf-row-status" style={{ color: st.color, background: st.bg, borderColor: st.border }}><i className="rdf-dot" style={{ background: st.dot }} /> {doc.status ?? 'Pending'}</span>
+                        <span className="rdf-file-acts">
+                          <button className="rdf-act view" title="View" onClick={() => docOpen(doc)}><EyeIco /></button>
+                          <button className="rdf-act dl" title="Download" onClick={() => docOpen(doc)}><DlIco /></button>
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
           ))}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -171,7 +239,8 @@ export default function ClmRegulatoryDefenseFilePage() {
   const [tab, setTab] = useState<RdfTab>('with');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const [vault, setVault] = useState<string | null>(null);
+  const [pageSize, setPageSize] = useState(10);
+  const [vault, setVault] = useState<{ title: string; targets: VaultTarget[] } | null>(null);
   const [withRows, setWithRows] = useState<WithRow[]>([]);
   const [withoutRows, setWithoutRows] = useState<WithoutRow[]>([]);
   const [c2cRows, setC2cRows] = useState<C2cRow[]>([]);
@@ -185,17 +254,23 @@ export default function ClmRegulatoryDefenseFilePage() {
         if (!alive) return;
         const d = res.data?.data ?? {};
         setWithRows((d.with_shipment ?? []).map((r: any): WithRow => ({
-          rdf: r.rdf, ship: r.ship ?? '—', opp: r.opp ?? '—', proc: r.proc ?? '—',
-          customer: r.customer ?? '—', consignee: r.consignee ?? '—', supplier: r.supplier ?? '—',
-          pi: r.pi ?? '—', po: r.po ?? '—',
+          rdf: r.rdf, ship: r.ship ?? '—', opp: r.opp ?? '—',
+          customer: r.customer ?? '—', consignee: r.consignee ?? '—', pi: r.pi ?? '—',
+          procs: Array.isArray(r.procs) ? r.procs.map((p: any): ProcLine => ({
+            proc: p.proc ?? '—', po: p.po ?? '—',
+            suppliers: Array.isArray(p.suppliers) ? p.suppliers.map((s: any): Supplier => ({ name: s.name ?? '—', code: s.code ?? '', id: Number(s.id) || 0 })) : [],
+          })) : [],
+          vault: Array.isArray(r.vault) ? r.vault : [],
         })));
         setWithoutRows((d.without_shipment ?? []).map((r: any): WithoutRow => ({
           rdf: r.rdf, proc: r.proc ?? '—', supplier: r.supplier ?? '—', po: r.po ?? '—', vti: r.vti ?? '—',
           kyc: frac(r.kyc), dd: frac(r.dd), tl: frac(r.tl), td: frac(r.td), agr: frac(r.agr),
+          vault: Array.isArray(r.vault) ? r.vault : [],
         })));
         setC2cRows((d.case_to_case ?? []).map((r: any): C2cRow => ({
           rdf: r.rdf, ctc: r.ctc ?? '—', title: r.title ?? '—', counterparty: r.counterparty ?? '—',
           role: (['Buyer', 'Supplier', 'Partner'].includes(r.role) ? r.role : 'Partner') as C2cRow['role'],
+          vault: Array.isArray(r.vault) ? r.vault : [],
         })));
       } catch {
         if (alive) toast.error('Load failed', 'Could not load Regulatory Defense File data.');
@@ -213,14 +288,18 @@ export default function ClmRegulatoryDefenseFilePage() {
       : 'Search by RDF, CTC, Agreement, Counterparty…';
 
   const q = search.trim().toLowerCase();
-  const withF = useMemo(() => withRows.filter((r) => !q || `${r.rdf} ${r.ship} ${r.customer} ${r.supplier} ${r.pi} ${r.po}`.toLowerCase().includes(q)), [q, withRows]);
+  const withF = useMemo(() => withRows.filter((r) => {
+    if (!q) return true;
+    const sup = r.procs.flatMap((p) => [p.proc, ...p.suppliers.map((s) => `${s.name} ${s.code}`)]).join(' ');
+    return `${r.rdf} ${r.ship} ${r.opp} ${r.customer} ${r.consignee} ${r.pi} ${sup}`.toLowerCase().includes(q);
+  }), [q, withRows]);
   const withoutF = useMemo(() => withoutRows.filter((r) => !q || `${r.rdf} ${r.proc} ${r.supplier} ${r.po} ${r.vti}`.toLowerCase().includes(q)), [q, withoutRows]);
   const c2cF = useMemo(() => c2cRows.filter((r) => !q || `${r.rdf} ${r.ctc} ${r.title} ${r.counterparty}`.toLowerCase().includes(q)), [q, c2cRows]);
 
   const rows = tab === 'with' ? withF : tab === 'without' ? withoutF : c2cF;
-  const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const safePage = Math.min(page, totalPages);
-  const pageRows = rows.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+  const pageRows = rows.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   const switchTab = (t: RdfTab) => { setTab(t); setPage(1); setSearch(''); };
 
@@ -276,17 +355,35 @@ export default function ClmRegulatoryDefenseFilePage() {
               <tbody>
                 {(pageRows as WithRow[]).map((r, i) => (
                   <tr key={r.rdf + r.ship}>
-                    <td>{(safePage - 1) * PER_PAGE + i + 1}</td>
-                    <td><span className="rdf-pill purple">{r.rdf}</span></td>
-                    <td><span className="rdf-pill cyan">{r.ship}</span></td>
-                    <td><span className="rdf-pill indigo">{r.opp}</span></td>
-                    <td><span className="rdf-pill teal">{r.proc}</span></td>
-                    <td className="l"><Party name={r.customer} grad="#6366f1,#818cf8" /></td>
-                    <td className="l"><Party name={r.consignee} grad="#059669,#10b981" /></td>
-                    <td className="l"><Party name={r.supplier} grad="#0891b2,#06b6d4" /></td>
-                    <td><span className="rdf-pill sky">{r.pi}</span></td>
-                    <td><span className="rdf-pill orange">{r.po}</span></td>
-                    <td><VaultBtn onClick={() => setVault(`${r.rdf} · ${r.ship} · ${r.supplier}`)} /></td>
+                    <td style={{ verticalAlign: 'top' }}>{(safePage - 1) * pageSize + i + 1}</td>
+                    <td style={{ verticalAlign: 'top' }}><span className="rdf-pill purple">{r.rdf}</span></td>
+                    <td style={{ verticalAlign: 'top' }}><span className="rdf-pill cyan">{r.ship}</span></td>
+                    <td style={{ verticalAlign: 'top' }}><span className="rdf-pill indigo">{r.opp}</span></td>
+                    <td style={{ verticalAlign: 'top' }}>
+                      <div className="rdf-stack">
+                        {r.procs.length ? r.procs.map((p, k) => <span key={k} className="rdf-sup-line"><span className="rdf-pill teal">{p.proc}</span></span>) : <span className="rdf-muted">—</span>}
+                      </div>
+                    </td>
+                    <td className="l" style={{ verticalAlign: 'top' }}><Party name={r.customer} grad="#6366f1,#818cf8" /></td>
+                    <td className="l" style={{ verticalAlign: 'top' }}><Party name={r.consignee} grad="#059669,#10b981" /></td>
+                    <td className="l" style={{ verticalAlign: 'top' }}>
+                      <div className="rdf-stack">
+                        {r.procs.length ? r.procs.map((p, k) => (
+                          <div key={k} className="rdf-sup-line">
+                            {p.suppliers.length
+                              ? p.suppliers.map((s) => <Party key={s.id} name={s.name} code={s.code} grad="#0891b2,#06b6d4" />)
+                              : <span className="rdf-muted">—</span>}
+                          </div>
+                        )) : <span className="rdf-muted">—</span>}
+                      </div>
+                    </td>
+                    <td style={{ verticalAlign: 'top' }}><span className="rdf-pill sky">{r.pi}</span></td>
+                    <td style={{ verticalAlign: 'top' }}>
+                      <div className="rdf-stack">
+                        {r.procs.length ? r.procs.map((p, k) => <span key={k} className="rdf-sup-line"><span className="rdf-pill orange">{p.po}</span></span>) : <span className="rdf-muted">—</span>}
+                      </div>
+                    </td>
+                    <td style={{ verticalAlign: 'top' }}><VaultBtn onClick={() => setVault({ title: `${r.rdf} · ${r.ship}`, targets: r.vault })} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -299,7 +396,7 @@ export default function ClmRegulatoryDefenseFilePage() {
               <tbody>
                 {(pageRows as WithoutRow[]).map((r, i) => (
                   <tr key={r.rdf + r.proc}>
-                    <td>{(safePage - 1) * PER_PAGE + i + 1}</td>
+                    <td>{(safePage - 1) * pageSize + i + 1}</td>
                     <td><span className="rdf-pill purple">{r.rdf}</span></td>
                     <td><span className="rdf-pill teal">{r.proc}</span></td>
                     <td className="l"><Party name={r.supplier} grad="#0891b2,#06b6d4" /></td>
@@ -310,7 +407,7 @@ export default function ClmRegulatoryDefenseFilePage() {
                     <td><ProgressCell f={r.tl} /></td>
                     <td><ProgressCell f={r.td} /></td>
                     <td><ProgressCell f={r.agr} /></td>
-                    <td><VaultBtn onClick={() => setVault(`${r.rdf} · ${r.proc} · ${r.supplier}`)} /></td>
+                    <td><VaultBtn onClick={() => setVault({ title: `${r.rdf} · ${r.proc} · ${r.supplier}`, targets: r.vault })} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -325,7 +422,7 @@ export default function ClmRegulatoryDefenseFilePage() {
                   const rc = ROLE_CFG[r.role];
                   return (
                     <tr key={r.rdf}>
-                      <td>{(safePage - 1) * PER_PAGE + i + 1}</td>
+                      <td>{(safePage - 1) * pageSize + i + 1}</td>
                       <td><span className="rdf-pill purple">{r.rdf}</span></td>
                       <td><span className="rdf-pill teal">{r.ctc}</span></td>
                       <td className="l strong">{r.title}</td>
@@ -337,7 +434,7 @@ export default function ClmRegulatoryDefenseFilePage() {
                         </span>
                       </td>
                       <td><span className="rdf-referred">{referredAs(r.role)}</span></td>
-                      <td><VaultBtn onClick={() => setVault(`${r.rdf} · ${r.ctc} · ${r.title}`)} /></td>
+                      <td><VaultBtn onClick={() => setVault({ title: `${r.rdf} · ${r.ctc} · ${r.title}`, targets: r.vault })} /></td>
                     </tr>
                   );
                 })}
@@ -348,28 +445,28 @@ export default function ClmRegulatoryDefenseFilePage() {
           {pageRows.length === 0 && <div className="rdf-empty">{loading ? 'Loading…' : 'No RDF records match your search.'}</div>}
         </div>
 
-        <div className="rdf-foot">
-          <span>Showing {rows.length === 0 ? 0 : (safePage - 1) * PER_PAGE + 1}–{Math.min(safePage * PER_PAGE, rows.length)} of {rows.length} RDF records</span>
-          <div className="rdf-pager">
-            <button disabled={safePage === 1} onClick={() => setPage(safePage - 1)}>Prev</button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-              <button key={p} className={p === safePage ? 'active' : ''} onClick={() => setPage(p)}>{p}</button>
-            ))}
-            <button disabled={safePage === totalPages} onClick={() => setPage(safePage + 1)}>Next</button>
-          </div>
-        </div>
+        <WorklistPager
+          total={rows.length}
+          page={safePage}
+          pageSize={pageSize}
+          onPage={setPage}
+          onPageSize={(n) => { setPageSize(n); setPage(1); }}
+        />
       </div>
 
-      {vault && <VaultDrawer title={vault} onClose={() => setVault(null)} />}
+      {vault && <VaultDrawer title={vault.title} targets={vault.targets} onClose={() => setVault(null)} />}
     </div>
   );
 }
 
-function Party({ name, grad }: { name: string; grad: string }) {
+function Party({ name, grad, code }: { name: string; grad: string; code?: string }) {
   return (
-    <span className="rdf-party">
+    <span className="rdf-party" title={code ? `${name} (${code})` : name}>
       <span className="rdf-ava" style={{ background: `linear-gradient(135deg,${grad})` }}>{initials(name)}</span>
-      <span className="rdf-party-name" title={name}>{name}</span>
+      <span className="rdf-party-col">
+        <span className="rdf-party-name">{name}</span>
+        {code && <span className="rdf-party-code">{code}</span>}
+      </span>
     </span>
   );
 }
@@ -390,7 +487,7 @@ const SCOPED_CSS = `
 .rdf-tab:hover { background:rgba(6,182,212,.1); color:#0c4a6e; }
 .rdf-tab.active { background:linear-gradient(135deg,#06b6d4 0%,#0891b2 55%,#0e7490 100%); color:#fff; box-shadow:0 3px 12px rgba(6,182,212,.4); }
 
-.rdf-card { background:#fff; border:1px solid #cffafe; border-radius:13px; overflow:hidden; box-shadow:0 1px 4px rgba(6,182,172,.06); }
+.rdf-card { background:#fff; border:1.5px solid #a5f3fc; border-radius:14px; overflow:hidden; box-shadow:0 4px 20px rgba(8,145,178,.1),0 1px 4px rgba(0,0,0,.04); }
 .rdf-card-hd { display:flex; align-items:center; gap:12px; padding:13px 18px; background:linear-gradient(110deg,#f0fdff,#e8fbfd); border-bottom:1px solid #a5f3fc; flex-wrap:wrap; }
 .rdf-card-hd-ico { width:30px; height:30px; border-radius:9px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#06b6d4,#0891b2,#0e7490); }
 .rdf-card-hd-txt { margin-right:auto; }
@@ -402,15 +499,31 @@ const SCOPED_CSS = `
 .rdf-search input:focus { border-color:#0891b2; box-shadow:0 0 0 3.5px rgba(8,145,178,.14); }
 .rdf-rec-badge { font-size:10px; font-weight:700; color:#0e7490; background:rgba(6,182,212,.12); border:1px solid rgba(6,182,212,.28); border-radius:20px; padding:5px 12px; white-space:nowrap; }
 
-.rdf-table-wrap { overflow-x:auto; }
+/* Recolor the shared WorklistPager to the cyan table-head palette (scoped to
+   this page so the global violet pager used elsewhere is untouched). */
+.rdf-card .wl-pager { background:linear-gradient(90deg,#f0fdff 0%,#e8fbfd 40%,#f0fdff 100%); border-top:2px solid #a5f3fc; }
+.rdf-card .tc-wl-info, .rdf-card .tc-wl-rows, .rdf-card .tc-wl-btn { color:#0e7490; border-color:#a5f3fc; background:rgba(255,255,255,.85); }
+.rdf-card .tc-wl-info .tc-wl-hl { color:#0891b2; }
+.rdf-card .tc-wl-rows select { color:#0891b2; }
+.rdf-card .tc-wl-range { background:linear-gradient(135deg,#22d3ee 0%,#0891b2 55%,#0e7490 100%); box-shadow:0 3px 12px rgba(8,145,178,.4),0 1px 0 rgba(255,255,255,.2) inset; }
+.rdf-card .tc-wl-btn:hover:not(:disabled) { background:#fff; border-color:#0891b2; box-shadow:0 4px 12px rgba(8,145,178,.25); }
+
+.rdf-table-wrap { overflow-x:auto; scrollbar-width:thin; scrollbar-color:#a5f3fc transparent; }
+.rdf-table-wrap::-webkit-scrollbar { width:9px; height:9px; }
+.rdf-table-wrap::-webkit-scrollbar-track { background:transparent; }
+.rdf-table-wrap::-webkit-scrollbar-thumb { background:#a5f3fc; border-radius:8px; border:2px solid transparent; background-clip:content-box; }
+.rdf-table-wrap::-webkit-scrollbar-thumb:hover { background:#67e8f9; background-clip:content-box; }
 .rdf-table { width:100%; border-collapse:collapse; min-width:920px; }
-.rdf-table th { padding:9px 8px; font-size:8px; font-weight:800; letter-spacing:.06em; color:#0e7490; text-transform:uppercase; white-space:nowrap; text-align:center; background:linear-gradient(180deg,#f0fdff,#e8fbfd); border-bottom:2px solid #a5f3fc; }
+.rdf-table thead tr { background:linear-gradient(90deg,#155e75 0%,#0e7490 25%,#0891b2 55%,#06b6d4 80%,#22d3ee 100%); box-shadow:0 2px 10px rgba(8,145,178,.3); }
+.rdf-table th { padding:10px 8px; font-size:8px; font-weight:700; letter-spacing:.07em; color:#fff; text-transform:uppercase; white-space:nowrap; text-align:center; text-shadow:0 1px 3px rgba(0,0,0,.2); border-bottom:none; }
 .rdf-table th.l { text-align:left; }
-.rdf-table td { padding:8px; font-size:11px; text-align:center; border-bottom:1px solid rgba(6,182,212,.07); white-space:nowrap; }
+.rdf-table td { padding:8px; font-size:11px; text-align:center; border-bottom:1px solid #ecfeff; white-space:nowrap; }
 .rdf-table td.l { text-align:left; }
 .rdf-table td.strong { font-weight:700; color:#0f172a; }
-.rdf-table tbody tr:nth-child(odd) { background:#fafdff; }
-.rdf-table tbody tr:hover { background:#f0fdff; }
+.rdf-table tbody tr { transition:background .12s; }
+.rdf-table tbody tr:nth-child(even) { background:#f7fffe; }
+.rdf-table tbody tr:last-child td { border-bottom:none; }
+.rdf-table tbody tr:hover { background:#ecfeff; }
 
 .rdf-pill { display:inline-flex; align-items:center; padding:2px 9px; border-radius:6px; font-size:9.5px; font-weight:700; font-family:ui-monospace,monospace; white-space:nowrap; }
 .rdf-pill.purple { color:#7c3aed; background:#f5f3ff; border:1px solid #ddd6fe; }
@@ -420,8 +533,13 @@ const SCOPED_CSS = `
 .rdf-pill.sky    { color:#0369a1; background:#eff6ff; border:1px solid #bfdbfe; }
 .rdf-pill.orange { color:#9a3412; background:#fff7ed; border:1px solid #fed7aa; }
 .rdf-party { display:inline-flex; align-items:center; gap:8px; font-size:11px; font-weight:700; color:#0f172a; max-width:200px; }
+.rdf-party-col { display:flex; flex-direction:column; min-width:0; line-height:1.2; }
 .rdf-party-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rdf-party-code { font-size:8.5px; font-weight:700; color:#0e7490; font-family:ui-monospace,monospace; }
 .rdf-ava { width:26px; height:26px; border-radius:7px; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; font-size:9px; font-weight:800; color:#fff; }
+.rdf-stack { display:flex; flex-direction:column; gap:6px; align-items:flex-start; }
+.rdf-sup-line { display:flex; flex-wrap:wrap; gap:6px; min-height:26px; align-items:center; }
+.rdf-muted { color:#94a3b8; }
 .rdf-role { padding:2px 8px; border-radius:20px; font-size:8.5px; font-weight:800; text-transform:uppercase; letter-spacing:.02em; }
 .rdf-referred { display:inline-block; padding:3px 10px; border-radius:20px; font-size:9.5px; font-weight:700; color:#0369a1; background:#eff6ff; border:1.5px solid #bfdbfe; }
 .rdf-prog { display:flex; flex-direction:column; align-items:center; line-height:1.2; }
@@ -429,16 +547,10 @@ const SCOPED_CSS = `
 .rdf-vault-btn:hover { transform:translateY(-1px); box-shadow:0 5px 16px rgba(6,182,212,.5); }
 
 .rdf-empty { padding:28px; text-align:center; color:#64748b; font-size:12px; }
-.rdf-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 18px; border-top:1px solid #eef6f9; background:#fafdff; flex-wrap:wrap; }
-.rdf-foot > span { font-size:10.5px; color:#64748b; }
-.rdf-pager { display:flex; gap:5px; }
-.rdf-pager button { min-width:28px; height:28px; padding:0 9px; border:1.5px solid #d6eef3; border-radius:7px; background:#fff; color:#0891b2; font-family:inherit; font-size:11px; font-weight:700; cursor:pointer; }
-.rdf-pager button:disabled { opacity:.45; cursor:not-allowed; }
-.rdf-pager button.active { background:linear-gradient(135deg,#06b6d4,#0891b2); color:#fff; border-color:transparent; box-shadow:0 2px 8px rgba(8,145,178,.3); }
 
 /* Evidence Vault drawer */
-.rdf-overlay { position:fixed; inset:0; z-index:100001; background:rgba(15,23,42,.5); display:flex; justify-content:flex-end; }
-.rdf-drawer { width:100%; max-width:920px; height:100%; overflow:hidden; background:linear-gradient(180deg,#f0f9ff,#f8fafc); display:flex; flex-direction:column; box-shadow:-20px 0 60px rgba(8,145,178,.25); }
+.rdf-overlay { position:fixed; inset:0; z-index:100001; height:100vh; background:rgba(15,23,42,.5); display:flex; justify-content:flex-end; }
+.rdf-drawer { width:100%; max-width:920px; height:100vh; max-height:100vh; overflow:hidden; background:linear-gradient(180deg,#f0f9ff,#f8fafc); display:flex; flex-direction:column; box-shadow:-20px 0 60px rgba(8,145,178,.25); }
 .rdf-drawer-head, .rdf-drawer-toolbar { flex-shrink:0; }
 .rdf-drawer-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 22px; color:#fff; background:linear-gradient(125deg,#0c4a6e,#0e7490 55%,#0891b2); }
 .rdf-drawer-eyebrow { font-size:8.5px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; color:#7dd3fc; }
@@ -453,12 +565,13 @@ const SCOPED_CSS = `
 .rdf-zip-btn { display:inline-flex; align-items:center; gap:7px; padding:9px 16px; border:none; border-radius:11px; font-family:inherit; font-size:11px; font-weight:800; color:#fff; cursor:pointer; background:linear-gradient(135deg,#0ea5e9,#06b6d4 50%,#0891b2); box-shadow:0 6px 18px rgba(8,145,178,.42); }
 .rdf-zip-btn:hover { transform:translateY(-1.5px); }
 .rdf-drawer-body { flex:1; min-height:0; overflow-y:auto; padding:14px 18px 24px; display:flex; flex-direction:column; gap:12px; }
+.rdf-vault-empty { margin:auto; padding:40px; text-align:center; font-size:13px; font-weight:600; color:#0e7490; }
 .rdf-drawer-body::-webkit-scrollbar { width:10px; }
 .rdf-drawer-body::-webkit-scrollbar-thumb { background:#7dd3fc; border-radius:6px; border:2px solid transparent; background-clip:padding-box; }
 .rdf-drawer-body::-webkit-scrollbar-thumb:hover { background:#0891b2; background-clip:padding-box; }
 .rdf-drawer-body::-webkit-scrollbar-track { background:transparent; }
 
-.rdf-sec { position:relative; border:1px solid #d6eef5; border-radius:14px; overflow:hidden; background:#fff; box-shadow:0 1px 3px rgba(8,145,178,.05),0 8px 24px rgba(6,182,212,.06); }
+.rdf-sec { position:relative; flex:0 0 auto; border:1px solid #d6eef5; border-radius:14px; overflow:hidden; background:#fff; box-shadow:0 1px 3px rgba(8,145,178,.05),0 8px 24px rgba(6,182,212,.06); }
 .rdf-sec-accent { position:absolute; left:0; top:0; bottom:0; width:4px; background:linear-gradient(180deg,#67e8f9,#0891b2,#0e7490); z-index:2; }
 .rdf-sec-hd { display:flex; align-items:center; gap:11px; padding:9px 16px 9px 18px; background:linear-gradient(110deg,#f0fdff 0%,#e8fbfd 30%,#d8f8fc 60%,#caf5fa 80%,#baf2f9 100%); border-bottom:1px solid #a5f3fc; }
 .rdf-sec-ico { width:36px; height:36px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#06b6d4 0%,#0891b2 55%,#0e7490 100%); }
@@ -509,10 +622,14 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .rdf-card-sub { color:#94a3b8; }
 [data-bs-theme="dark"] .rdf-search input { background:rgba(255,255,255,.05); border-color:rgba(148,163,184,.22); color:#e2e8f0; }
 [data-bs-theme="dark"] .rdf-rec-badge { color:#67e8f9; background:rgba(6,182,212,.14); border-color:rgba(6,182,212,.3); }
-[data-bs-theme="dark"] .rdf-table th { background:rgba(255,255,255,.04); color:#67e8f9; border-bottom-color:rgba(148,163,184,.22); }
+[data-bs-theme="dark"] .rdf-card .wl-pager { background:linear-gradient(90deg,rgba(6,182,212,.08),rgba(6,182,212,.14),rgba(6,182,212,.08)); border-top-color:rgba(6,182,212,.3); }
+[data-bs-theme="dark"] .rdf-card .tc-wl-info, [data-bs-theme="dark"] .rdf-card .tc-wl-rows, [data-bs-theme="dark"] .rdf-card .tc-wl-btn { background:rgba(255,255,255,.06); border-color:rgba(6,182,212,.3); color:#67e8f9; }
+[data-bs-theme="dark"] .rdf-card .tc-wl-info .tc-wl-hl, [data-bs-theme="dark"] .rdf-card .tc-wl-rows select { color:#a5f3fc; }
+[data-bs-theme="dark"] .rdf-table thead tr { background:linear-gradient(90deg,#0c3a4a,#0e5066 30%,#0891b2 70%,#06b6d4); box-shadow:0 2px 10px rgba(0,0,0,.3); }
+[data-bs-theme="dark"] .rdf-table th { color:#fff; }
 [data-bs-theme="dark"] .rdf-table td { color:#cbd5e1; border-bottom-color:rgba(148,163,184,.12); }
 [data-bs-theme="dark"] .rdf-table td.strong { color:#f1f5f9; }
-[data-bs-theme="dark"] .rdf-table tbody tr:nth-child(odd) { background:rgba(255,255,255,.025); }
+[data-bs-theme="dark"] .rdf-table tbody tr:nth-child(even) { background:rgba(255,255,255,.03); }
 [data-bs-theme="dark"] .rdf-table tbody tr:hover { background:rgba(6,182,212,.1); }
 [data-bs-theme="dark"] .rdf-pill.purple { background:rgba(124,58,237,.18); border-color:rgba(124,58,237,.42); color:#c4b5fd; }
 [data-bs-theme="dark"] .rdf-pill.cyan   { background:rgba(6,182,212,.16); border-color:rgba(6,182,212,.4); color:#67e8f9; }
@@ -521,10 +638,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .rdf-pill.sky    { background:rgba(3,105,161,.2); border-color:rgba(56,189,248,.4); color:#7dd3fc; }
 [data-bs-theme="dark"] .rdf-pill.orange { background:rgba(154,52,18,.22); border-color:rgba(251,146,60,.4); color:#fdba74; }
 [data-bs-theme="dark"] .rdf-party { color:#e2e8f0; }
+[data-bs-theme="dark"] .rdf-party-code { color:#67e8f9; }
 [data-bs-theme="dark"] .rdf-referred { background:rgba(3,105,161,.2); border-color:rgba(56,189,248,.4); color:#7dd3fc; }
 [data-bs-theme="dark"] .rdf-empty { color:#94a3b8; }
-[data-bs-theme="dark"] .rdf-foot { background:rgba(255,255,255,.03); border-top-color:rgba(148,163,184,.18); }
-[data-bs-theme="dark"] .rdf-foot > span { color:#94a3b8; }
-[data-bs-theme="dark"] .rdf-pager button { background:rgba(255,255,255,.05); border-color:rgba(148,163,184,.22); color:#67e8f9; }
-[data-bs-theme="dark"] .rdf-pager button.active { background:linear-gradient(135deg,#06b6d4,#0891b2); color:#fff; border-color:transparent; }
 `;

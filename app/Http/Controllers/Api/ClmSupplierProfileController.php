@@ -231,6 +231,7 @@ class ClmSupplierProfileController extends Controller
             $txnBase = [
                 'supplier' => $v->company_name,
                 'supId'    => $row['id'],
+                'supDbId'  => (int) $v->id,
                 'reg'      => $regFor($segId),
                 'po'       => '—',
                 'inv'      => '—',
