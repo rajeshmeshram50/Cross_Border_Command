@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Card, CardBody, Col, Row } from 'reactstrap';
+import { Card, CardBody, Col, Row, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
+import * as XLSX from 'xlsx';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList } from 'recharts';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -7,6 +8,7 @@ import { useToast } from '../../contexts/ToastContext';
 import ExpenseClaimsTable, { type ExpenseClaimRow } from '../../components/ExpenseClaimsTable';
 import AdvanceRequestsTable, { type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
+import { useChartTheme } from '../../hooks/useChartTheme';
 
 
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
@@ -100,14 +102,22 @@ function KpiTile({
           )}
         </div>
         <div
+          className="hrexp-kpi-ic"
           style={{
             width: 44, height: 44, borderRadius: 10,
-            background: tint,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             flexShrink: 0,
-          }}
+            // Light values are the inline tint/fg; the dark variants derive
+            // from `strip` (the vivid accent) — a translucent wash for the
+            // tile + the vivid colour for the glyph. The [data-bs-theme]
+            // rules in the page <style> pick which pair applies.
+            ['--kpi-tint' as string]: tint,
+            ['--kpi-fg' as string]: fg,
+            ['--kpi-tint-dark' as string]: `${strip}33`,
+            ['--kpi-fg-dark' as string]: strip,
+          } as React.CSSProperties}
         >
-          <i className={iconClass} style={{ fontSize: 20, color: fg }} />
+          <i className={iconClass} style={{ fontSize: 20 }} />
         </div>
       </div>
     </div>
@@ -117,6 +127,10 @@ function KpiTile({
 export default function HrExpenseManagement() {
   const { user } = useAuth();
   const toast = useToast();
+  // Live chart palette — re-renders the spend chart when the theme toggles.
+  // Recharts can't resolve CSS vars on SVG attrs reliably, so the grid,
+  // axis ticks and tooltip take concrete colours from here.
+  const chartTheme = useChartTheme();
 
   const [rows, setRows] = useState<ExpenseClaimRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -450,24 +464,62 @@ export default function HrExpenseManagement() {
     return true;
   });
 
-  /**
-   * Export the currently filtered rows as a CSV file (Excel opens this
-   * directly). UTF-8 BOM up front so non-ASCII names + the ₹ symbol render
-   * correctly when the user opens the file in Excel.
-   */
-  const exportCsv = () => {
+  // Export menu (Excel / PDF / CSV). The Export button is now a split picker
+  // instead of an immediate CSV download — users pick the format from the
+  // dropdown. All three share the same column set + filtered row source.
+  const [exportOpen, setExportOpen] = useState(false);
+
+  const EXPORT_HEADER = [
+    'Claim No', 'Employee', 'Emp Code', 'Category',
+    'Description', 'Expense Date', 'Amount', 'Currency',
+    'Supplier', 'Project', 'Payment Method',
+    'Status', 'Manager Status', 'Manager Acted', 'Manager Comment',
+    'HR Status', 'HR User', 'HR Acted', 'HR Comment',
+    'Created By', 'Created At',
+  ];
+
+  /** One filtered claim → an ordered array of cells aligned to EXPORT_HEADER. */
+  const exportRow = (r: ExpenseClaimRow): (string | number | null)[] => [
+    r.claim_no, r.employee_name, r.employee_code, r.category_name,
+    r.title, r.expense_date, r.amount, r.currency,
+    r.vendor, r.project, r.payment_method,
+    r.status, r.manager_status, r.manager_acted_at, r.manager_comment,
+    r.hr_status, r.hr_user_name, r.hr_acted_at, r.hr_comment,
+    r.creator_name, r.created_at,
+  ];
+
+  const exportStamp = () => new Date().toISOString().slice(0, 10);
+  const exportBaseName = () => `expense-claims-${dateFilter}-${exportStamp()}`;
+
+  /** Shared empty-state guard. Returns false (and toasts) when nothing matches. */
+  const hasExportRows = (): boolean => {
     if (filtered.length === 0) {
       toast.error('Nothing to export', 'No claims match the current filters.');
-      return;
+      return false;
     }
-    const header = [
-      'Claim No', 'Employee', 'Emp Code', 'Category',
-      'Description', 'Expense Date', 'Amount', 'Currency',
-      'Supplier', 'Project', 'Payment Method',
-      'Status', 'Manager Status', 'Manager Acted', 'Manager Comment',
-      'HR Status', 'HR User', 'HR Acted', 'HR Comment',
-      'Created By', 'Created At',
-    ];
+    return true;
+  };
+
+  const triggerDownload = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const exportDoneToast = (fmt: string) =>
+    toast.success('Export ready', `${filtered.length} claim${filtered.length === 1 ? '' : 's'} exported to ${fmt}.`);
+
+  /**
+   * CSV — UTF-8 BOM up front so non-ASCII names + the ₹ symbol render
+   * correctly when the file is opened in Excel.
+   */
+  const exportCsv = () => {
+    if (!hasExportRows()) return;
     const escape = (v: any): string => {
       if (v === null || v === undefined) return '';
       const s = String(v);
@@ -475,30 +527,79 @@ export default function HrExpenseManagement() {
       if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
       return s;
     };
-    const lines = [header.map(escape).join(',')];
-    for (const r of filtered) {
-      lines.push([
-        r.claim_no, r.employee_name, r.employee_code, r.category_name,
-        r.title, r.expense_date, r.amount, r.currency,
-        r.vendor, r.project, r.payment_method,
-        r.status, r.manager_status, r.manager_acted_at, r.manager_comment,
-        r.hr_status, r.hr_user_name, r.hr_acted_at, r.hr_comment,
-        r.creator_name, r.created_at,
-      ].map(escape).join(','));
-    }
+    const lines = [EXPORT_HEADER.map(escape).join(',')];
+    for (const r of filtered) lines.push(exportRow(r).map(escape).join(','));
     // BOM (﻿) makes Excel honor UTF-8 — without it, ₹ + accented names
     // render as garbled mojibake on Windows.
     const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const stamp = new Date().toISOString().slice(0, 10);
-    a.download = `expense-claims-${dateFilter}-${stamp}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast.success('Export ready', `${filtered.length} claim${filtered.length === 1 ? '' : 's'} downloaded.`);
+    triggerDownload(blob, `${exportBaseName()}.csv`);
+    exportDoneToast('CSV');
+  };
+
+  /** Excel (.xlsx) — same XLSX pattern used by the Employees export. */
+  const exportXlsx = () => {
+    if (!hasExportRows()) return;
+    try {
+      const aoa = [EXPORT_HEADER, ...filtered.map(r => exportRow(r).map(v => v ?? ''))];
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Expense Claims');
+      XLSX.writeFile(wb, `${exportBaseName()}.xlsx`);
+      exportDoneToast('Excel');
+    } catch {
+      toast.error('Export failed', 'Could not generate the Excel file. Please try again.');
+    }
+  };
+
+  /**
+   * PDF — open a printable HTML report in a new window and trigger the
+   * browser's print dialog (user picks "Save as PDF"). Mirrors the
+   * window.print() approach already used for payslips; needs no extra
+   * dependency and renders on a white sheet regardless of app theme.
+   */
+  const exportPdf = () => {
+    if (!hasExportRows()) return;
+    const esc = (v: any) =>
+      String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const thead = `<tr>${EXPORT_HEADER.map(h => `<th>${esc(h)}</th>`).join('')}</tr>`;
+    const tbody = filtered
+      .map(r => `<tr>${exportRow(r).map(c => `<td>${esc(c)}</td>`).join('')}</tr>`)
+      .join('');
+    const title = `Expense Claims — ${DATE_FILTER_LABELS[dateFilter]}`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(exportBaseName())}</title>
+      <style>
+        * { box-sizing: border-box; }
+        body { font-family: Arial, Helvetica, sans-serif; color: #1f2937; margin: 24px; }
+        h1 { font-size: 16px; margin: 0 0 4px; }
+        .meta { font-size: 11px; color: #6b7280; margin: 0 0 16px; }
+        table { border-collapse: collapse; width: 100%; font-size: 9px; }
+        th, td { border: 1px solid #d1d5db; padding: 4px 6px; text-align: left; vertical-align: top; }
+        thead th { background: #f3f4f6; font-weight: 700; }
+        tbody tr:nth-child(even) { background: #fafafa; }
+        @media print { @page { size: landscape; margin: 12mm; } }
+      </style></head>
+      <body>
+        <h1>${esc(title)}</h1>
+        <p class="meta">${filtered.length} claim(s) · generated ${esc(exportStamp())}</p>
+        <table><thead>${thead}</thead><tbody>${tbody}</tbody></table>
+        <script>window.onload = function () { window.focus(); window.print(); };<\/script>
+      </body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) {
+      toast.error('Pop-up blocked', 'Allow pop-ups for this site to export as PDF.');
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    toast.success('Print view opened', `Choose "Save as PDF" in the print dialog · ${filtered.length} claim${filtered.length === 1 ? '' : 's'}.`);
+  };
+
+  const runExport = (fmt: 'xlsx' | 'pdf' | 'csv') => {
+    setExportOpen(false);
+    if (fmt === 'xlsx') exportXlsx();
+    else if (fmt === 'pdf') exportPdf();
+    else exportCsv();
   };
 
   return (
@@ -592,6 +693,27 @@ export default function HrExpenseManagement() {
           background: rgba(124,92,252,0.10);
           color: #c4b5fd;
         }
+        /* KPI tile icon squares. Light mode uses the soft pastel tint + dark
+           glyph passed inline as CSS vars; dark mode swaps to a translucent
+           wash of the tile's vivid accent (--kpi-*-dark) so every KPI icon
+           reads uniformly against the dark surface instead of glowing as a
+           bright pastel block. */
+        .hrexp-kpi-ic { background: var(--kpi-tint); }
+        .hrexp-kpi-ic i { color: var(--kpi-fg); }
+        [data-bs-theme="dark"] .hrexp-kpi-ic { background: var(--kpi-tint-dark); }
+        [data-bs-theme="dark"] .hrexp-kpi-ic i { color: var(--kpi-fg-dark); }
+
+        /* Card-header icon tiles ("Spend by Category" / "Policy Limits"). The
+           light pastel background + colour are set inline (fine in light
+           mode) but stayed bright on the dark surface. Override the inline
+           values in dark mode — !important is required to beat the inline
+           style attribute, same trick the row-badge dark overrides use. */
+        [data-bs-theme="dark"] .hrexp-card-ic--chart {
+          background: rgba(124,92,252,0.20) !important; color: #c4b5fd !important;
+        }
+        [data-bs-theme="dark"] .hrexp-card-ic--policy {
+          background: rgba(240,101,72,0.20) !important; color: #ffa78f !important;
+        }
       `}</style>
 
         {/* ── Hero header — purple-tinted card mirroring the Employee
@@ -626,10 +748,25 @@ export default function HrExpenseManagement() {
                 placeholder="All Dates"
               />
             </div>
-            <button type="button" onClick={exportCsv} className="hrexp-cta rounded-pill">
-              <i className="ri-download-2-line me-2" style={{ fontSize: 16 }} />
-              Export
-            </button>
+            <Dropdown isOpen={exportOpen} toggle={() => setExportOpen(o => !o)}>
+              <DropdownToggle tag="button" type="button" className="hrexp-cta rounded-pill" caret={false}>
+                <i className="ri-download-2-line me-2" style={{ fontSize: 16 }} />
+                Export
+                <i className="ri-arrow-down-s-line ms-1" style={{ fontSize: 16 }} />
+              </DropdownToggle>
+              <DropdownMenu end>
+                <DropdownItem header>Download as</DropdownItem>
+                <DropdownItem onClick={() => runExport('xlsx')}>
+                  <i className="ri-file-excel-2-line me-2 text-success" />Excel (.xlsx)
+                </DropdownItem>
+                <DropdownItem onClick={() => runExport('pdf')}>
+                  <i className="ri-file-pdf-2-line me-2 text-danger" />PDF (.pdf)
+                </DropdownItem>
+                <DropdownItem onClick={() => runExport('csv')}>
+                  <i className="ri-file-text-line me-2 text-primary" />CSV (.csv)
+                </DropdownItem>
+              </DropdownMenu>
+            </Dropdown>
           </div>
         </div>
 
@@ -651,7 +788,7 @@ export default function HrExpenseManagement() {
               label="Total Amount"
               sub={dateSubLabel}
               value={fmtCompact(totalAmount)}
-              iconClass="ri-money-rupee-circle-line"
+              iconClass="ri-cash-line"
               strip="#f97316"
               tint="#fdf3d6"
               fg="#a06f00"
@@ -708,7 +845,7 @@ export default function HrExpenseManagement() {
               <div className="d-flex align-items-center justify-content-between mb-3">
                 <div className="d-flex align-items-center gap-2">
                   <span
-                    className="d-inline-flex align-items-center justify-content-center"
+                    className="d-inline-flex align-items-center justify-content-center hrexp-card-ic--chart"
                     style={{ width: 28, height: 28, borderRadius: 8, background: '#ece6ff', color: '#7c5cfc', fontSize: 14 }}
                   >
                     <i className="ri-bar-chart-2-line" />
@@ -739,16 +876,16 @@ export default function HrExpenseManagement() {
                         margin={{ top: 24, right: 12, left: 0, bottom: 8 }}
                         barCategoryGap="22%"
                       >
-                        <CartesianGrid strokeDasharray="3 3" stroke="#eef2f6" vertical={false} />
+                        <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
                         <XAxis
                           dataKey="name"
-                          tick={{ fontSize: 11, fill: '#6b7280', fontWeight: 600 }}
+                          tick={{ fontSize: 11, fill: chartTheme.axisTick, fontWeight: 600 }}
                           interval={0}
                           axisLine={false}
                           tickLine={false}
                         />
                         <YAxis
-                          tick={{ fontSize: 10, fill: '#a0aec0' }}
+                          tick={{ fontSize: 10, fill: chartTheme.axisTickMuted }}
                           axisLine={false}
                           tickLine={false}
                           width={55}
@@ -761,10 +898,13 @@ export default function HrExpenseManagement() {
                         <Tooltip
                           cursor={{ fill: 'rgba(124,92,252,0.06)' }}
                           contentStyle={{
-                            background: '#ffffff', border: '1px solid #e5e7eb',
+                            background: chartTheme.tooltipBg,
+                            border: `1px solid ${chartTheme.tooltipBorder}`,
                             borderRadius: 8, fontSize: 12, padding: '6px 10px',
                             boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
                           }}
+                          itemStyle={{ color: chartTheme.axisTick }}
+                          labelStyle={{ color: chartTheme.axisTick }}
                           formatter={(value: any) => [`₹${Number(value).toLocaleString('en-IN')}`, 'Spent']}
                         />
                         <Bar dataKey="spent" radius={[6, 6, 0, 0]}>
@@ -775,7 +915,7 @@ export default function HrExpenseManagement() {
                             dataKey="spent"
                             position="top"
                             formatter={(v: any) => Number(v) > 0 ? `₹${Number(v).toLocaleString('en-IN')}` : ''}
-                            style={{ fontSize: 10.5, fontWeight: 700, fill: '#1f2937' }}
+                            style={{ fontSize: 10.5, fontWeight: 700, fill: chartTheme.axisTick }}
                           />
                         </Bar>
                       </BarChart>
@@ -814,7 +954,7 @@ export default function HrExpenseManagement() {
               <div className="d-flex align-items-center justify-content-between mb-3">
                 <div className="d-flex align-items-center gap-2">
                   <span
-                    className="d-inline-flex align-items-center justify-content-center"
+                    className="d-inline-flex align-items-center justify-content-center hrexp-card-ic--policy"
                     style={{ width: 28, height: 28, borderRadius: 8, background: '#fdd9d6', color: '#b1401d', fontSize: 14 }}
                   >
                     <i className="ri-shield-check-line" />

@@ -123,6 +123,11 @@ class ExpenseClaimController extends Controller
             abort(403, 'You can only file claims for your own employee record.');
         }
 
+        // Expense date window — today back to 30 days ago. Mirrors the
+        // client-side bound so a direct API call can't backdate a claim
+        // beyond policy or file a future-dated expense.
+        $minExpenseDate = now()->subDays(30)->toDateString();
+
         $data = $request->validate([
             'category_id'    => ['nullable', 'integer'],
             'currency'       => ['nullable', 'string', 'max:8'],
@@ -134,9 +139,19 @@ class ExpenseClaimController extends Controller
             // is rejected by the validator with a clean 422 instead of
             // overflowing the database and surfacing as a 500.
             'amount'         => ['required', 'numeric', 'min:0', 'max:9999999999999.99'],
-            'expense_date'   => ['required', 'date'],
+            'expense_date'   => ['required', 'date', 'before_or_equal:today', 'after_or_equal:' . $minExpenseDate],
             'vendor'         => ['nullable', 'string', 'max:255'],
             'purpose'        => ['nullable', 'string'],
+            // Proof & receipt is mandatory — every claim must be backed by at
+            // least one supporting document. Enforced server-side too so the
+            // requirement can't be bypassed by a direct API call.
+            'files'          => ['required', 'array', 'min:1'],
+            'files.*'        => ['file', 'max:5120', 'mimes:pdf,jpg,jpeg,png'],
+        ], [
+            'files.required'             => 'At least one proof / receipt is required.',
+            'files.min'                  => 'At least one proof / receipt is required.',
+            'expense_date.before_or_equal' => 'Expense date cannot be in the future.',
+            'expense_date.after_or_equal'  => 'Expense date must be within the last 30 days.',
         ]);
 
         // File attachments — accepted as multipart `files[]`. Each file is

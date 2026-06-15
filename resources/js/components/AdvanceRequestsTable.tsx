@@ -78,6 +78,21 @@ const RECOVERY_LABEL: Record<string, string> = {
   bimonthly:  'Bi-Monthly',
 };
 
+/* Dark-mode badge tints. The Adv ID / Advance Type / Recovery / Status pills
+   set light pastel backgrounds via inline styles (fine in light mode), which
+   washed out to bright chips on the dark table — the values under those
+   columns looked "stuck in light theme". These rules override only in dark
+   mode (!important beats the inline light colours); light mode is untouched.
+   Mirrors the BADGE_DARK_CSS block already shipping in ExpenseClaimsTable. */
+const BADGE_DARK_CSS = `
+[data-bs-theme="dark"] .adv-id-badge       { background: #11324d !important; color: #7cc4f8 !important; }
+[data-bs-theme="dark"] .adv-type-badge     { background: #2a1d5c !important; color: #c4b5fd !important; }
+[data-bs-theme="dark"] .adv-recovery-badge { background: #0c2e2b !important; color: #5eead4 !important; }
+[data-bs-theme="dark"] .adv-status-badge--pending  { background: #3a2a08 !important; color: #fbbf24 !important; }
+[data-bs-theme="dark"] .adv-status-badge--approved { background: #0c2e1d !important; color: #4ade80 !important; }
+[data-bs-theme="dark"] .adv-status-badge--rejected { background: #3a0e1e !important; color: #f9a8d4 !important; }
+`;
+
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -116,8 +131,10 @@ export default function AdvanceRequestsTable({
   onAct,
 }: Props) {
   return (
-    <div className="table-responsive border rounded ep-att-scroll-wrap">
-      <table className="table align-middle table-nowrap ep-att-table mb-0">
+    <>
+      <style>{BADGE_DARK_CSS}</style>
+      <div className="table-responsive border rounded ep-att-scroll-wrap">
+        <table className="table align-middle table-nowrap ep-att-table mb-0">
         <thead className="table-light">
           <tr>
             <th>Adv ID</th>
@@ -159,7 +176,8 @@ export default function AdvanceRequestsTable({
           ))}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -212,7 +230,7 @@ function AdvanceRequestRowView({
     <tr>
       <td>
         <span
-          className="font-monospace fw-semibold"
+          className="font-monospace fw-semibold adv-id-badge"
           style={{
             fontSize: 11, padding: '2px 9px', borderRadius: 999,
             background: '#dceefe', color: '#0c63b0', letterSpacing: '0.02em',
@@ -243,7 +261,7 @@ function AdvanceRequestRowView({
       </td>
       <td>
         <span
-          className="d-inline-flex align-items-center gap-1 fw-semibold"
+          className="d-inline-flex align-items-center gap-1 fw-semibold adv-type-badge"
           style={{
             fontSize: 11, padding: '3px 9px', borderRadius: 999,
             background: '#ece6ff', color: '#5a3fd1',
@@ -259,7 +277,7 @@ function AdvanceRequestRowView({
       <td className="text-muted">{fmtDate(r.recovery_start)}</td>
       <td>
         <span
-          className="d-inline-flex align-items-center fw-semibold"
+          className="d-inline-flex align-items-center fw-semibold adv-recovery-badge"
           style={{
             fontSize: 11, padding: '2px 9px', borderRadius: 999,
             background: '#d3f0ee', color: '#0a716a',
@@ -292,7 +310,7 @@ function AdvanceRequestRowView({
       </td>
       <td>
         <span
-          className="d-inline-flex align-items-center gap-1 fw-semibold"
+          className={`d-inline-flex align-items-center gap-1 fw-semibold adv-status-badge adv-status-badge--${r.status}`}
           style={{
             fontSize: 11, padding: '3px 10px', borderRadius: 999,
             background: tone.bg, color: tone.fg,
