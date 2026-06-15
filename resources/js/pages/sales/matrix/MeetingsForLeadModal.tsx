@@ -341,7 +341,7 @@ export default function MeetingsForLeadModal({
             </div>
             <div className="mfl-fld">
               <label className="mfl-lbl">END TIME <span className="mfl-req">*</span></label>
-              <MasterTimePicker value={endTime} onChange={(v) => { setEndTime(v); clearErr('endTime'); }} placeholder="--:--" invalid={!!errors.endTime} />
+              <MasterTimePicker value={endTime} onChange={(v) => { setEndTime(v); clearErr('endTime'); }} placeholder="--:--" invalid={!!errors.endTime} showNow={false} />
               {errors.endTime && <div className="mfl-err">{errors.endTime}</div>}
             </div>
           </div>

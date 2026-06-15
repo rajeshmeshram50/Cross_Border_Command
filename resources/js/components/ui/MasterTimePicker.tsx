@@ -14,6 +14,7 @@ export function MasterTimePicker({
   disabled,
   invalid,
   minuteStep = 5,
+  showNow = true,
 }: {
   name?: string;
   value?: string;
@@ -23,6 +24,9 @@ export function MasterTimePicker({
   disabled?: boolean;
   invalid?: boolean;
   minuteStep?: number;
+  /* The "Now" shortcut only makes sense for a "start" time. Pass false to
+   * hide it (e.g. an end time — setting it to "now" is meaningless). */
+  showNow?: boolean;
 }) {
   const [internal, setInternal] = useState<string>(defaultValue ?? '');
   useEffect(() => {
@@ -211,15 +215,17 @@ export function MasterTimePicker({
               className="master-timepicker-foot-btn"
               onClick={() => { commit(''); setOpen(false); }}
             >Clear</button>
-            <button
-              type="button"
-              className="master-timepicker-foot-btn primary"
-              onClick={() => {
-                const now = new Date();
-                commit(`${pad(now.getHours())}:${pad(now.getMinutes())}`);
-                setOpen(false);
-              }}
-            >Now</button>
+            {showNow && (
+              <button
+                type="button"
+                className="master-timepicker-foot-btn primary"
+                onClick={() => {
+                  const now = new Date();
+                  commit(`${pad(now.getHours())}:${pad(now.getMinutes())}`);
+                  setOpen(false);
+                }}
+              >Now</button>
+            )}
             <button
               type="button"
               className="master-timepicker-foot-btn primary"

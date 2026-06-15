@@ -5,6 +5,7 @@ import api from '../../api';
 import { SigningTrackerModal } from './SigningTrackerModal';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
+import { useScrollLock } from '../../hooks/useScrollLock';
 import Tooltip from '../../components/ui/Tooltip';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
@@ -389,7 +390,11 @@ function MoreOptionsMenu(props: {
     const key: BusyKey =
       mode === 'view' ? (withSignature ? 'view-sig' : 'view-nosig')
                       : (withSignature ? 'dl-sig'   : 'dl-nosig');
-    const win = mode === 'view' ? window.open('', '_blank', 'noopener,noreferrer') : null;
+    // NOTE: no 'noopener' here — window.open() returns null when noopener is
+    // set, which would lose the pre-opened tab reference and make us fall back
+    // to a second window.open() in openSalesPdf (the "two tabs" bug). We keep
+    // the reference and immediately redirect this tab to the blob URL.
+    const win = mode === 'view' ? window.open('', '_blank') : null;
     setBusy(key);
     openSalesPdf(kind, payload, withSignature, mode, win)
       .then(() => onClose())
@@ -2411,6 +2416,7 @@ export function CreateQuotationModal(props: {
   const { editId, initialOpp, onClose, onSubmit } = props;
   const isEdit = editId != null;
   const toast = useToast();
+  useScrollLock();   // freeze background scroll while the modal is open
   const [step, setStep] = useState<1 | 2>(1);
   /* If the modal was opened from inside a Sales Matrix lead, the parent
    * passes the opportunity context so the user doesn't have to re-pick it
@@ -2774,6 +2780,7 @@ export function CreatePIModal(props: {
   const { editId, source, initialOpp, onClose, onSubmit } = props;
   const isEdit = editId != null;
   const toast = useToast();
+  useScrollLock();   // freeze background scroll while the modal is open
   const [step, setStep] = useState<1 | 2>(1);
   // Existing PI metadata shown in the top-right pills + used for the
   // PUT URL when in edit mode.
@@ -3690,7 +3697,19 @@ function BasicForm(props: {
               )}
             </Field>
             <Field label="Exchange Rate">
-              <input className="qpi-input" placeholder="Enter exchange rate" value={form.exchangeRate} onChange={(e) => set('exchangeRate', e.target.value)} />
+              <input
+                className="qpi-input"
+                placeholder="Enter exchange rate"
+                inputMode="decimal"
+                value={form.exchangeRate}
+                onChange={(e) => {
+                  // Allow only digits and a single decimal point — no letters/symbols.
+                  let v = e.target.value.replace(/[^0-9.]/g, '');
+                  const dot = v.indexOf('.');
+                  if (dot !== -1) v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, '');
+                  set('exchangeRate', v);
+                }}
+              />
             </Field>
             <Field label="INCO Term" required error={hasError('incoTerm')}>
               <MasterSelect
@@ -3727,6 +3746,7 @@ function BasicForm(props: {
               <input
                 className="qpi-input"
                 placeholder="Enter final destination"
+                maxLength={100}
                 value={form.finalDestination}
                 onChange={(e) => set('finalDestination', e.target.value)}
               />
@@ -4084,7 +4104,10 @@ function ProductsStep(props: {
             <input
               className="qpi-input qpi-summary-input"
               type="number" min="0"
-              value={shipping || 0}
+              placeholder="0"
+              /* Show empty (not a literal "0") when zero, so typing replaces it
+               * instead of leaving a leading zero like "05". Empty = 0. */
+              value={shipping || ''}
               onChange={(e) => setShipping(Number(e.target.value))}
             />
           </div>

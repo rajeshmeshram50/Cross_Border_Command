@@ -3,7 +3,7 @@ import WorklistPager from "../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
-import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
+import { CLM_CSS, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
@@ -55,9 +55,8 @@ export default function ClmAuthorityPage() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch]   = useState('');
   const [page, setPage]       = useState(1);
-  // Dynamic pagination: rows-per-page auto-fits the visible table height.
-  const [rpp, setRpp]         = useState(PER_PAGE);
-  const [fillH, setFillH]     = useState<number | undefined>(undefined);
+  // Fixed pagination — exactly 5 rows per page, consistent across next/back.
+  const rpp = 5;
   const scrollRef             = useRef<HTMLDivElement | null>(null);
   const rootRef               = useRef<HTMLDivElement | null>(null);
 
@@ -82,31 +81,6 @@ export default function ClmAuthorityPage() {
     return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.description.toLowerCase().includes(s));
   }, [rows, search]);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
-
-  // Dynamic pagination: pick the rows-per-page that fits between the table's
-  // top and the bottom of the viewport, so the page fills the screen and
-  // spills the rest onto further pages. Layout stays natural; only the row
-  // count changes. Mirrors the Segment Master page.
-  useEffect(() => {
-    const recompute = () => {
-      const el = scrollRef.current;
-      if (!el) return;
-      const top = el.getBoundingClientRect().top;     // viewport-relative top of table
-      const THEAD = 40, ROW = 46, FOOTER = 96;         // header row + pagination/footer reserve
-      const avail = window.innerHeight - top - THEAD - FOOTER;
-      const fit = Math.max(4, Math.floor(avail / ROW));
-      setRpp(prev => (prev === fit ? prev : fit));
-      // Stretch the table card down to cover the page even when rows are few.
-      const fh = Math.max(0, window.innerHeight - top - 64);
-      setFillH(prev => (prev === fh ? prev : fh));
-    };
-    recompute();
-    const raf = requestAnimationFrame(recompute);
-    const ro = new ResizeObserver(recompute);
-    if (rootRef.current) ro.observe(rootRef.current);
-    window.addEventListener('resize', recompute);
-    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
-  }, [filtered.length]);
 
   const onSave = async (form: { name: string; description: string }, id?: number) => {
     try {
@@ -185,7 +159,7 @@ export default function ClmAuthorityPage() {
               <div className="clm-empty-sub">{rows.length === 0 ? 'Click + Add Authority to create the first record.' : 'No results match the current search.'}</div>
             </div>
           ) : (
-            <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
+            <div className="clm-table-wrap clm-table-fill" ref={scrollRef}>
               <table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
