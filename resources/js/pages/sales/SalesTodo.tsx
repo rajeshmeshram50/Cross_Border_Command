@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -126,11 +126,9 @@ const MEETING_FILTERS: { key: MeetingStatus; label: string; icon: React.ReactNod
 ];
 
 const TAT_OPTIONS  = ['24 Hours', '48 Hours', '72 Hours', '1 Week', '2 Weeks'];
-// Opportunity picker source — once the leads/opportunities table ships and
-// surfaces an /api/sales/opportunities endpoint, replace this with a server
-// fetch (probably in a useEffect). Hard-coded for now so the dropdown is
-// usable end-to-end without blocking on that work.
-const OPP_ID_OPTIONS = Array.from({ length: 50 }, (_, i) => `OPP-${String(i + 1).padStart(3, '0')}`);
+// Opportunity picker is fed by a live fetch of real leads (see the
+// `oppOptions` effect below) — code + company + real opportunity date. No
+// hard-coded placeholder list; an empty result simply shows no options.
 // 'Other' is always last so the user can capture a platform/venue type that
 // isn't in the predefined list (QA: "what if the meeting is scheduled on some
 // another platform"). Selecting it reveals a free-text input.
@@ -325,36 +323,69 @@ export default function SalesTodo() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope]);
 
-  /* Load real opportunities (code + opportunity date) for the picker so
-   * choosing one can auto-fill the Opportunity Date. One-shot on mount;
-   * a failure leaves oppOptions empty and the form falls back to the
-   * static OPP_ID_OPTIONS list. */
-  useEffect(() => {
-    let cancelled = false;
-    api.get<{ data: Array<{ opp_code: string | null; query_time: string | null; created_at: string | null }> }>(
+  /* Opportunity picker — SERVER-PAGINATED. Instead of loading every
+   * opportunity up front, we page through /sales/leads 20 at a time: the
+   * dropdown loads page 1 on open, fetches the next page as the user scrolls
+   * to the bottom, and re-queries server-side (debounced) as they type. Each
+   * option carries the real company + opportunity date for the auto-fill. */
+  const OPP_PER = 20;
+  const [oppPage, setOppPage]               = useState(1);
+  const [oppHasMore, setOppHasMore]         = useState(true);
+  const [oppLoadingMore, setOppLoadingMore] = useState(false);
+  const oppSearchRef = useRef('');   // latest search term (for scroll-paging)
+  const oppReqIdRef  = useRef(0);    // guards against out-of-order responses
+
+  const mapOpp = (l: any) => {
+    const raw = (l.query_time ?? l.created_at ?? '').slice(0, 10);
+    // Surface the opportunity's company so the picker shows real data
+    // ("OPP-0492 · HARI KRISHAN"), not just a bare code.
+    const company = l.customer?.company_name || l.sender_company || l.sender_name || '';
+    return {
+      value: l.opp_code as string,
+      label: company ? `${l.opp_code} · ${company}` : (l.opp_code as string),
+      date: raw ? isoToDisplay(raw) : '',
+    };
+  };
+
+  const loadOpps = useCallback((page: number, search: string, append: boolean) => {
+    const reqId = ++oppReqIdRef.current;
+    setOppLoadingMore(true);
+    api.get<{ data: any[]; pagination?: { last_page?: number } }>(
       '/sales/leads',
-      { params: { status: 'all', per_page: 200, page: 1, with_counts: 0 } },
+      { params: { status: 'all', per_page: OPP_PER, page, with_counts: 0, search: search || undefined } },
     )
       .then(({ data }) => {
-        if (cancelled) return;
-        const opts = (data.data ?? [])
-          .filter(l => l.opp_code)
-          .map(l => {
-            const raw = (l.query_time ?? l.created_at ?? '').slice(0, 10);
-            return { value: l.opp_code as string, label: l.opp_code as string, date: raw ? isoToDisplay(raw) : '' };
-          });
-        setOppOptions(opts);
+        if (reqId !== oppReqIdRef.current) return;   // a newer request superseded this one
+        const opts = (data.data ?? []).filter(l => l.opp_code).map(mapOpp);
+        setOppOptions(prev => append ? [...prev, ...opts] : opts);
+        const lastPage = data.pagination?.last_page ?? page;
+        setOppHasMore(page < lastPage);
+        setOppPage(page);
       })
-      .catch(() => { /* keep empty → static fallback */ });
-    return () => { cancelled = true; };
+      .catch(() => {
+        if (reqId !== oppReqIdRef.current) return;
+        if (!append) setOppOptions([]);
+        setOppHasMore(false);
+      })
+      .finally(() => { if (reqId === oppReqIdRef.current) setOppLoadingMore(false); });
   }, []);
 
-  /* Picker options for the Opportunity ID select — real opportunities when
-   * available, else the static placeholder list. `oppDateFor` resolves a
-   * code to its opportunity date for the auto-fill. */
-  const oppPickerOptions = oppOptions.length
-    ? oppOptions.map(o => ({ value: o.value, label: o.label }))
-    : OPP_ID_OPTIONS.map(o => ({ value: o, label: o }));
+  // First page on mount (the picker also re-fetches page 1 each time it opens).
+  useEffect(() => { loadOpps(1, '', false); }, [loadOpps]);
+
+  // Debounced server search (called by MasterSelect as the user types) — resets to page 1.
+  const handleOppSearch = useCallback((q: string) => {
+    oppSearchRef.current = q;
+    loadOpps(1, q, false);
+  }, [loadOpps]);
+
+  // Scrolled near the bottom of the dropdown → append the next page.
+  const handleOppScrollEnd = useCallback(() => {
+    if (oppLoadingMore || !oppHasMore) return;
+    loadOpps(oppPage + 1, oppSearchRef.current, true);
+  }, [oppLoadingMore, oppHasMore, oppPage, loadOpps]);
+
+  const oppPickerOptions = oppOptions.map(o => ({ value: o.value, label: o.label }));
   const oppDateFor = (code: string): string => oppOptions.find(o => o.value === code)?.date ?? '';
 
   /* ── Reminder filtering ── */
@@ -1269,17 +1300,17 @@ export default function SalesTodo() {
                       <MasterSelect
                         value={form.oppId || ''}
                         placeholder="— Select opportunity —"
-                        options={OPP_ID_OPTIONS.map(o => ({ value: o, label: o }))}
+                        options={oppPickerOptions}
+                        onSearchChange={handleOppSearch}
+                        onScrollEnd={handleOppScrollEnd}
+                        loadingMore={oppLoadingMore}
                         onChange={v => setForm(p => ({
                           ...p,
                           oppId: v,
                           // Opportunity Date is derived from the chosen
-                          // opportunity, not free-typed. Until the
-                          // /opportunities endpoint exposes each lead's real
-                          // date we stamp today's date as the default; the
-                          // field is read-only either way. Clearing the
+                          // opportunity's real query/created date. Clearing the
                           // opportunity clears the date (QA bug 29).
-                          oppDate: v ? TODAY_STR : '',
+                          oppDate: oppDateFor(v),
                         }))}
                       />
                     </Field>
@@ -1460,6 +1491,9 @@ export default function SalesTodo() {
                         value={form.oppId || ''}
                         placeholder="— Select opportunity —"
                         options={oppPickerOptions}
+                        onSearchChange={handleOppSearch}
+                        onScrollEnd={handleOppScrollEnd}
+                        loadingMore={oppLoadingMore}
                         onChange={v => setForm(p => ({ ...p, oppId: v, oppDate: oppDateFor(v) }))}
                       />
                     </Field>

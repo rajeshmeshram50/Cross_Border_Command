@@ -92,9 +92,11 @@ class ProformaInvoiceController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
         $row = ProformaInvoice::with([
-            'items', 'customer:id,customer_code,company_name',
+            'items',
+            'customer:id,customer_code,company_name',
             'consignee:id,consignee_code,company_name',
-            'lead:id,opp_code', 'sourceQuotation:id,code',
+            'lead:id,opp_code',
+            'sourceQuotation:id,code',
             'salesManager:id,name',
         ])->findOrFail($id);
         $this->assertScope($row, $user);
@@ -121,7 +123,7 @@ class ProformaInvoiceController extends Controller
         // Segment "Buyer ≠ Consignee" guard — same rule as Quotation create.
         if ($block = $this->segmentPartyBlockResponse(
             (int) $user->client_id,
-            array_map(fn ($it) => $it['product_id'] ?? null, $data['items']),
+            array_map(fn($it) => $it['product_id'] ?? null, $data['items']),
             $data['consignee_id'] ?? null,
         )) {
             return $block;
@@ -245,9 +247,9 @@ class ProformaInvoiceController extends Controller
         //      bucket at all, so a mandatory QC doc could never be satisfied.
         // Both are dropped so they can't permanently block PI creation.
         $gatedCategories = ['kyc', 'dd', 'tl'];
-        $onlyGated = fn (array $miss) => array_values(array_filter(
+        $onlyGated = fn(array $miss) => array_values(array_filter(
             $miss,
-            fn ($d) => in_array($d['category'] ?? null, $gatedCategories, true)
+            fn($d) => in_array($d['category'] ?? null, $gatedCategories, true)
         ));
 
         if ($customerId) {
@@ -271,7 +273,7 @@ class ProformaInvoiceController extends Controller
 
         $parts = [];
         foreach ($blocks as $party => $miss) {
-            $names = array_slice(array_map(fn ($d) => $d['name'], $miss), 0, 4);
+            $names = array_slice(array_map(fn($d) => $d['name'], $miss), 0, 4);
             $extra = count($miss) > 4 ? ' +' . (count($miss) - 4) . ' more' : '';
             $parts[] = "{$party} → " . implode(', ', $names) . $extra;
         }
@@ -321,10 +323,12 @@ class ProformaInvoiceController extends Controller
          * a customer-visible discrepancy. The check is INSIDE update() so
          * the validator's other rules still pass — we just early-out before
          * the write if the currency changed AND a source quote is locked. */
-        if ($row->source_quotation_id
+        if (
+            $row->source_quotation_id
             && array_key_exists('currency', $data)
             && $data['currency'] !== null
-            && $data['currency'] !== $row->currency) {
+            && $data['currency'] !== $row->currency
+        ) {
             return response()->json([
                 'status'  => false,
                 'message' => "This PI was created from a quotation and is locked to {$row->currency}. Use a fresh PI to invoice in a different currency.",
@@ -400,7 +404,7 @@ class ProformaInvoiceController extends Controller
         return response()->json(['status' => true, 'data' => $row->fresh(['items'])]);
     }
 
-   
+
     public function destroy(Request $request, $id): JsonResponse
     {
         $user = $request->user();
@@ -417,7 +421,7 @@ class ProformaInvoiceController extends Controller
         return response()->json(['status' => true, 'message' => 'Cancelled']);
     }
 
-    
+
     public function duplicate(Request $request, $id): JsonResponse
     {
         $user = $request->user();
@@ -445,7 +449,7 @@ class ProformaInvoiceController extends Controller
         return response()->json(['status' => true, 'data' => $clone], 201);
     }
 
-    
+
     public function fromQuotation(Request $request, $quotationId): JsonResponse
     {
         $user = $request->user();
@@ -582,7 +586,7 @@ class ProformaInvoiceController extends Controller
         return response()->json(['status' => true, 'data' => $pi], 201);
     }
 
-   
+
     private function validatePayload(Request $request): array
     {
         $docType = $request->input('doc_type', ProformaInvoice::DOC_INTERNATIONAL);
@@ -592,7 +596,7 @@ class ProformaInvoiceController extends Controller
             'bt_id'              => 'nullable|string|max:24',
             'bt_date'            => 'nullable|date',
             'signing_mode'       => ['nullable', Rule::in(ProformaInvoice::SIGN_MODES)],
-            'source_quotation_id'=> 'nullable|integer|exists:quotations,id',
+            'source_quotation_id' => 'nullable|integer|exists:quotations,id',
             'doc_type'           => ['required', Rule::in(ProformaInvoice::DOC_TYPES)],
             'opp_id'             => 'nullable|integer|exists:leads,id',
             'customer_id'        => 'required|integer|exists:customers,id',
@@ -657,7 +661,7 @@ class ProformaInvoiceController extends Controller
         }, $items);
     }
 
-   
+
     private function aggregateTotals(array $items, float $shipping): array
     {
         $rawSub = 0.0;
@@ -722,7 +726,7 @@ class ProformaInvoiceController extends Controller
         return [$customerName, $consigneeName, $oppCode, $oppDate, $bankLabel, $smName, $convertFrom];
     }
 
-  
+
     /**
      * Read-only preview of the next PI code for the Create form's "PI ID"
      * pill — INV/{FY}/{SEQ}, no advisory lock, never consumes a number.
@@ -758,7 +762,8 @@ class ProformaInvoiceController extends Controller
         $codes = ProformaInvoice::where('client_id', $clientId)
             ->where('code', 'like', "INV/{$fy}/%")
             ->pluck('code')->all();
-        $max = 0; $taken = [];
+        $max = 0;
+        $taken = [];
         foreach ($codes as $c) {
             if (preg_match('#^INV/' . preg_quote($fy, '#') . '/(\d+)$#', $c, $m)) {
                 $n = (int) $m[1];
@@ -767,11 +772,14 @@ class ProformaInvoiceController extends Controller
             $taken[$c] = true;
         }
         $n = $max;
-        do { $n++; $code = "INV/{$fy}/{$n}"; } while (isset($taken[$code]));
+        do {
+            $n++;
+            $code = "INV/{$fy}/{$n}";
+        } while (isset($taken[$code]));
         return $code;
     }
 
-   
+
     private function nextBtCode(int $clientId): string
     {
         // B20: defense-in-depth advisory lock for BT sequence.
@@ -781,7 +789,8 @@ class ProformaInvoiceController extends Controller
         $codes = ProformaInvoice::where('client_id', $clientId)
             ->whereNotNull('bt_id')
             ->pluck('bt_id')->all();
-        $max = 0; $taken = [];
+        $max = 0;
+        $taken = [];
         foreach ($codes as $c) {
             if (preg_match('/^BT-(\d+)$/', (string) $c, $m)) {
                 $n = (int) $m[1];
@@ -790,7 +799,10 @@ class ProformaInvoiceController extends Controller
             $taken[$c] = true;
         }
         $n = $max;
-        do { $n++; $code = sprintf('BT-%04d', $n); } while (isset($taken[$code]));
+        do {
+            $n++;
+            $code = sprintf('BT-%04d', $n);
+        } while (isset($taken[$code]));
         return $code;
     }
 
@@ -803,7 +815,7 @@ class ProformaInvoiceController extends Controller
         return "{$startYear}-{$endShort}";
     }
 
-  
+
     private function applyScope($q, $user, ?int $branchFilter = null): void
     {
         if ($user->user_type === 'super_admin') {
@@ -857,7 +869,7 @@ class ProformaInvoiceController extends Controller
         $q->where('branch_id', $branchFilter);
     }
 
-   
+
     private function assertScope(ProformaInvoice $row, $user, string $action = 'read'): void
     {
         if ($user->user_type === 'super_admin') return;
@@ -879,7 +891,7 @@ class ProformaInvoiceController extends Controller
         abort(404);
     }
 
-   
+
     private function assertQuotationScope(Quotation $row, $user): void
     {
         if ($user->user_type === 'super_admin') return;
@@ -897,7 +909,7 @@ class ProformaInvoiceController extends Controller
         abort(404);
     }
 
-   
+
     private function userCanModify(ProformaInvoice $row, $user): bool
     {
         if ($user->user_type === 'super_admin') return true;
@@ -907,7 +919,7 @@ class ProformaInvoiceController extends Controller
         return (int) $row->branch_id === (int) $user->branch_id;
     }
 
-   
+
     private function applyFilters($q, Request $request): void
     {
         if ($v = $request->query('status')) {
@@ -932,11 +944,11 @@ class ProformaInvoiceController extends Controller
             $like = "%{$search}%";
             $q->where(function ($w) use ($like) {
                 $w->where('code',            'ilike', $like)
-                  ->orWhere('bt_id',         'ilike', $like)
-                  ->orWhere('opp_code',      'ilike', $like)
-                  ->orWhere('customer_name', 'ilike', $like)
-                  ->orWhere('consignee_name','ilike', $like)
-                  ->orWhere('convert_from_code', 'ilike', $like);
+                    ->orWhere('bt_id',         'ilike', $like)
+                    ->orWhere('opp_code',      'ilike', $like)
+                    ->orWhere('customer_name', 'ilike', $like)
+                    ->orWhere('consignee_name', 'ilike', $like)
+                    ->orWhere('convert_from_code', 'ilike', $like);
             });
         }
     }

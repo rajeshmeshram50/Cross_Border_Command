@@ -164,6 +164,34 @@ class MasterDataSeeder extends Seeder
                 $updated,
                 $keyColumn
             ));
+
+            // ── Authoritative prune for designations ──
+            // The designations master is a fixed org hierarchy — any row NOT in
+            // the canonical list is removed so the table holds exactly the
+            // seeded set. Null out every reference (employees + recruitments)
+            // to a pruned row first so the designation_id FK never dangles.
+            if ($slug === 'designations') {
+                $keepNames = array_column($rows, 'name');
+                $stale = DB::table($table)->whereNotIn('name', $keepNames)->pluck('id')->all();
+                if (!empty($stale)) {
+                    $empCleared = DB::table('employees')->whereIn('designation_id', $stale)->update(['designation_id' => null]);
+                    $recCleared = DB::table('recruitments')->whereIn('designation_id', $stale)->update(['designation_id' => null]);
+                    $removed = DB::table($table)->whereIn('id', $stale)->delete();
+                    $this->command->info(sprintf(
+                        'prune  %-28s -%d removed (refs cleared: %d employees, %d recruitments)',
+                        $slug, $removed, $empCleared, $recCleared
+                    ));
+                }
+
+                // Stamp a stable code derived from the DB id → DES-001, DES-002…
+                // so the Code column reflects each designation's row id.
+                foreach (DB::table($table)->get(['id']) as $r) {
+                    DB::table($table)->where('id', $r->id)->update([
+                        'code' => 'DES-' . str_pad((string) $r->id, 3, '0', STR_PAD_LEFT),
+                    ]);
+                }
+                $this->command->info('stamp  designations               codes set (DES-<id>)');
+            }
         }
     }
 
@@ -274,19 +302,16 @@ class MasterDataSeeder extends Seeder
                 ];
 
             case 'designations':
+                // Canonical 6-level org hierarchy (top → bottom). This is the
+                // authoritative set — the seeder prunes any designation NOT in
+                // this list (see the 'designations' cleanup in run()).
                 return [
-                    ['name' => 'Software Developer',       'description' => 'Full-stack development, system integration',     'status' => 'Active'],
-                    ['name' => 'Operations Manager',       'description' => 'Oversees daily operations and team coordination', 'status' => 'Active'],
-                    ['name' => 'HR Executive',             'description' => 'Recruitment, onboarding, employee engagement',   'status' => 'Active'],
-                    ['name' => 'Sales Manager',            'description' => 'Drives revenue, manages accounts and targets',   'status' => 'Active'],
-                    ['name' => 'Sales Employee',           'description' => 'Works the leads assigned by the Sales Manager',  'status' => 'Active'],
-                    ['name' => 'Sales Intern',             'description' => 'Trainee — works only leads assigned to them',    'status' => 'Active'],
-                    ['name' => 'Purchase Officer',         'description' => 'Raises purchase orders, liaises with vendors',   'status' => 'Active'],
-                    ['name' => 'Chartered Accountant',     'description' => 'Statutory audit, GST filing, financial reports', 'status' => 'Active'],
-                    ['name' => 'Warehouse Supervisor',     'description' => 'Manages stock, GRN, dispatch floor',             'status' => 'Active'],
-                    ['name' => 'Logistics Coordinator',    'description' => 'Coordinates shipments, freight forwarders',      'status' => 'Active'],
-                    ['name' => 'Quality Inspector',        'description' => 'Product QC, certification, lab tests',           'status' => 'Active'],
-                    ['name' => 'Compliance Officer',       'description' => 'Ensures regulatory and trade compliance',        'status' => 'Active'],
+                    ['name' => 'Director / CEO',            'description' => 'Top of the org hierarchy',                       'status' => 'Active'],
+                    ['name' => 'Head of Department (HOD)',  'description' => 'Department head, reports to Director / CEO',     'status' => 'Active'],
+                    ['name' => 'Team Leader',               'description' => 'Leads a team, reports to the HOD',               'status' => 'Active'],
+                    ['name' => 'Executive',                 'description' => 'Individual contributor, reports to Team Leader', 'status' => 'Active'],
+                    ['name' => 'Employee',                  'description' => 'Standard employee',                             'status' => 'Active'],
+                    ['name' => 'Intern / Trainee',          'description' => 'Trainee / intern',                              'status' => 'Active'],
                 ];
 
                 /* ───────────── GEOGRAPHY & LOCATION ───────────── */

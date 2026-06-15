@@ -3,134 +3,169 @@
 namespace App\Support;
 
 use App\Models\Employee;
+use App\Models\Module;
+use App\Models\Permission;
 use App\Models\User;
 
 /**
- * Sales-Matrix row visibility by ROLE + reporting hierarchy.
+ * Sales-Matrix row visibility by DESIGNATION + delegated permission.
  *
  * On top of the existing client/branch scoping, the Sales Matrix narrows
  * leads (and everything derived from them — quotations, PIs, distribution
- * counts) to what a user is allowed to see based on their seeded sales role
- * and the lead-assignment (`leads.salesperson_id`):
+ * counts) to one of three TIERS:
  *
- *   Super Admin / Client Admin            → everything in scope (no narrowing)
- *   Branch Admin (main-branch user)       → everything in the branch
- *   Sales Manager                         → leads assigned to SELF + direct
- *                                           reports, PLUS unassigned leads
- *                                           (so they can distribute them)
- *   Sales Employee / Sales Intern         → ONLY leads assigned to themselves
- *   (no recognised sales role)            → unchanged (no narrowing)
+ *   'all'   → Super Admin / Client Admin / Branch Admin (main-branch user) /
+ *             Designation = Head of Department (HOD, the Sales Manager).
+ *             Sees EVERY lead in scope and may distribute to anyone.
+ *   'team'  → Designation = Team Leader WHO HAS the delegated distribution
+ *             permission (can_edit on Sales Matrix → My Workplace). SEES only
+ *             the leads HOD assigned to THEM (not the whole team, not all), but
+ *             may DISTRIBUTE those down to their direct reports.
+ *   'self'  → Everyone else (incl. a Team Leader without the permission).
+ *             Sees ONLY the leads assigned to them; cannot distribute.
  *
- * "Role" is read from the user's Employee record (`primary_role_id` →
- * master_roles.name). "Reports" are Employees whose
- * `reporting_manager_user_id` points at the manager's user account.
+ * Designation is read from the Employee record (`designation_id` →
+ * master_designations.name). Reports are Employees whose
+ * `reporting_manager_id` points at the leader's Employee id (with
+ * `reporting_manager_user_id` as a fallback). Department is intentionally NOT
+ * enforced here — module access is governed by the Permission grant.
  */
 class SalesVisibility
 {
-    public const ROLE_MANAGER  = 'Sales Manager';
-    public const ROLE_EMPLOYEE = 'Sales Employee';
-    public const ROLE_INTERN   = 'Sales Intern';
+    /** Designation that always acts as the Sales Manager (full + distribute). */
+    public const DESIGNATION_MANAGER     = 'Head of Department (HOD)';
+    /** Designation that MAY distribute to its team when granted the permission. */
+    public const DESIGNATION_TEAM_LEADER = 'Team Leader';
+    /** Module whose `can_edit` grant delegates distribution to a Team Leader. */
+    public const DISTRIBUTE_MODULE_SLUG  = 'sales.workplace';
+
+    /** Per-request memo so resolveScope/canDistribute/assignableUserIds don't
+     *  re-query the employee + permission rows on every call. */
+    private static array $tierCache = [];
+
+    /**
+     * Classify the user into a visibility tier: 'all' | 'team' | 'self'.
+     */
+    private static function tier(User $user): string
+    {
+        if (isset(self::$tierCache[$user->id])) return self::$tierCache[$user->id];
+
+        $result = 'self';
+        // The designation hierarchy applies ONLY to HR employees (the people
+        // who carry a Sales designation). Every other account type — Super
+        // Admin, Client Admin, Client User, and the Branch Admin (branch_user)
+        // — sees its full scope. NOTE: we key off user_type, not branch.is_main,
+        // because branches in this tenant may all be is_main = false; gating on
+        // is_main wrongly stripped branch users of access.
+        if ($user->user_type !== 'employee') {
+            $result = 'all';
+        } else {
+            $designation = self::designationOf($user);
+            if ($designation === self::DESIGNATION_MANAGER) {
+                $result = 'all';                              // HOD = Sales Manager
+            } elseif ($designation === self::DESIGNATION_TEAM_LEADER && self::hasDistributePermission($user)) {
+                $result = 'team';                            // delegated Team Leader
+            }
+        }
+
+        return self::$tierCache[$user->id] = $result;
+    }
+
+    /** Designation name for a user's Employee record (null if none). */
+    private static function designationOf(User $user): ?string
+    {
+        return optional(
+            Employee::query()
+                ->where('user_id', $user->id)
+                ->with('designation:id,name')
+                ->first(['id', 'user_id', 'designation_id'])
+        )->designation?->name;
+    }
+
+    /** True when the user holds can_edit on Sales Matrix → My Workplace — the
+     *  delegated lead-distribution permission the HOD grants to a Team Leader. */
+    private static function hasDistributePermission(User $user): bool
+    {
+        static $moduleId = null;
+        if ($moduleId === null) {
+            $moduleId = Module::query()->where('slug', self::DISTRIBUTE_MODULE_SLUG)->value('id') ?: 0;
+        }
+        if (!$moduleId) return false;
+
+        return Permission::query()
+            ->where('user_id', $user->id)
+            ->where('module_id', $moduleId)
+            ->where('can_edit', true)
+            ->exists();
+    }
 
     /**
      * Resolve a user's lead-visibility scope.
      *
      * @return array{0: int[], 1: bool}|null
-     *   null               → no narrowing (admin tiers / no sales role)
-     *   [$userIds, $unassigned]
-     *                      → restrict to salesperson_id IN $userIds
-     *                        (plus unassigned rows when $unassigned is true)
+     *   null               → no narrowing ('all' tier)
+     *   [$userIds, false]  → restrict to salesperson_id IN $userIds
      */
     public static function resolveScope(User $user): ?array
     {
-        // Admin tiers see everything within the client/branch scope.
-        if (in_array($user->user_type, ['super_admin', 'client_admin'], true)) {
-            return null;
+        switch (self::tier($user)) {
+            case 'all':
+                return null;
+            case 'team':
+                // A delegated Team Leader SEES only the leads HOD assigned to
+                // THEM (not their reports' leads, not all) — they distribute
+                // those down via assignableUserIds(), they don't watch the team.
+                return [[(int) $user->id], false];
+            default:
+                return [[(int) $user->id], false];
         }
-        // A main-branch user acts as the Branch Admin → full branch.
-        if ($user->user_type === 'branch_user' && ($user->branch?->is_main ?? false)) {
-            return null;
-        }
-
-        $emp = Employee::query()
-            ->where('user_id', $user->id)
-            ->with('primaryRole:id,name')
-            ->first(['id', 'user_id', 'primary_role_id']);
-
-        $role = $emp?->primaryRole?->name;
-
-        if ($role === self::ROLE_MANAGER) {
-            // Self + direct reports; include unassigned so the manager can
-            // see and distribute leads that aren't yet owned by anyone.
-            // Reports are matched primarily by `reporting_manager_id` (the
-            // manager's EMPLOYEE id — what the HR form actually saves), with
-            // `reporting_manager_user_id` kept as a fallback.
-            $reportUserIds = Employee::query()
-                ->where(function ($w) use ($emp, $user) {
-                    $w->where('reporting_manager_id', $emp->id)
-                      ->orWhere('reporting_manager_user_id', $user->id);
-                })
-                ->whereNotNull('user_id')
-                ->pluck('user_id')
-                ->all();
-            $ids = array_values(array_unique(array_map('intval', array_merge([$user->id], $reportUserIds))));
-            return [$ids, true];
-        }
-
-        if (in_array($role, [self::ROLE_EMPLOYEE, self::ROLE_INTERN], true)) {
-            // Only the leads individually assigned to them.
-            return [[(int) $user->id], false];
-        }
-
-        // No recognised sales role → leave visibility unchanged.
-        return null;
     }
 
-    /** True when the user can BULK-distribute leads (manager and up). Drives
-     *  the My Workplace "Assign Leads" / "Lead Distribution" / sync buttons. */
+    /** Lead distribution/assignment is open to EVERY level — anyone in the
+     *  Sales Matrix can assign a lead. The DESIGNATION tiers only narrow what a
+     *  user SEES (resolveScope), not who they can assign to. Drives the My
+     *  Workplace Assign / Lead Distribution / sync buttons. */
     public static function canDistribute(User $user): bool
     {
-        $scope = self::resolveScope($user);
-        if ($scope === null) return true;          // admin tiers
-        return $scope[1] === true;                 // manager (unassigned access)
+        return true;
     }
 
     /**
-     * Who a user may (re)assign a lead TO — their own reporting chain:
-     * themselves, their reporting manager (assign UP), and their direct
-     * reports (assign DOWN). Admin tiers return null = anyone in scope.
+     * Who a user may (re)assign a lead TO. No hierarchy restriction — every
+     * level can assign to ANY Sales-department employee. `null` = no per-user
+     * narrowing; the SALES-DEPARTMENT gate (salesDepartmentUserIds + the
+     * picker/assign filters) is what limits targets to Sales-department members.
      *
      * @return int[]|null
      */
     public static function assignableUserIds(User $user): ?array
     {
-        // Admin tiers (and non-sales roles) can assign to anyone in scope.
-        if (self::resolveScope($user) === null) return null;
+        return null;
+    }
 
-        $emp = Employee::query()
-            ->where('user_id', $user->id)
-            ->first(['id', 'user_id', 'reporting_manager_id', 'reporting_manager_user_id']);
-
-        $ids = [(int) $user->id];                          // self
-        // Manager (assign UP): prefer the stored user-id, else resolve the
-        // user account from the manager's EMPLOYEE id (what the HR form saves).
-        if ($emp?->reporting_manager_user_id) {
-            $ids[] = (int) $emp->reporting_manager_user_id;
-        } elseif ($emp?->reporting_manager_id) {
-            $mgrUserId = Employee::query()
-                ->where('id', $emp->reporting_manager_id)
-                ->value('user_id');
-            if ($mgrUserId) $ids[] = (int) $mgrUserId;
-        }
-        $reportUserIds = Employee::query()                  // direct reports (down)
-            ->where(function ($w) use ($emp, $user) {
-                $w->where('reporting_manager_id', $emp->id)
-                  ->orWhere('reporting_manager_user_id', $user->id);
-            })
-            ->whereNotNull('user_id')
-            ->pluck('user_id')
+    /**
+     * User ids of employees in the SALES department (within the given user's
+     * client scope). Lead-assignment targets are restricted to this set — a
+     * lead can never be handed to someone outside the Sales department.
+     * Returns [] when no "Sales" department exists.
+     *
+     * @return int[]
+     */
+    public static function salesDepartmentUserIds(User $user): array
+    {
+        $deptIds = \App\Models\Masters\Departments::query()
+            ->whereRaw('LOWER(name) = ?', ['sales'])
+            ->pluck('id')
             ->all();
+        if (empty($deptIds)) return [];
 
-        return array_values(array_unique(array_merge($ids, array_map('intval', $reportUserIds))));
+        $q = Employee::query()
+            ->whereIn('department_id', $deptIds)
+            ->whereNotNull('user_id');
+        if ($user->client_id) {
+            $q->where('client_id', $user->client_id);
+        }
+        return $q->pluck('user_id')->map(fn ($v) => (int) $v)->unique()->values()->all();
     }
 
     /**

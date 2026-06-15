@@ -1020,11 +1020,11 @@ export default function SalesLeadWorksheet() {
                             <IconActivity />
                           </button>
                         </Tooltip>
-                        {/* Per-row (re)assign stays available to everyone in the
-                            sales hierarchy — an employee can reassign their lead
-                            up to their manager or down to their own reports. The
-                            picker (and the server) restrict the valid targets. */}
-                        {canAssign && (
+                        {/* Per-row assign is a distributor action — only the HOD
+                            (Sales Manager) / Branch Admin / admins can hand a
+                            lead to someone. Other employees just hold what's
+                            assigned to them, so the button is hidden for them. */}
+                        {canAssign && canDistribute && (
                           <Tooltip label="Assign Lead">
                             <button
                               className="lwp-ab lwp-ab-assign"

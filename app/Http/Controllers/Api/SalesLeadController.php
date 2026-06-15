@@ -73,6 +73,23 @@ class SalesLeadController extends Controller
                 ->whereColumn('lead_products.lead_id', 'leads.id')
                 ->whereNotNull('currency')
                 ->limit(1)])
+            // PI Number + Shipment (BT) ID for the lead — the latest
+            // non-cancelled Proforma Invoice on this opportunity. Surfaced so
+            // the Leads Details / Total-Leads tables can show them instead of
+            // "N/A" once a PI is created.
+            ->addSelect(['pi_number' => \Illuminate\Support\Facades\DB::table('proforma_invoices')
+                ->select('code')
+                ->whereColumn('proforma_invoices.opp_id', 'leads.id')
+                ->where('proforma_invoices.status', '!=', \App\Models\ProformaInvoice::STATUS_CANCELLED)
+                ->orderByDesc('id')
+                ->limit(1)])
+            ->addSelect(['shipment_id' => \Illuminate\Support\Facades\DB::table('proforma_invoices')
+                ->select('bt_id')
+                ->whereColumn('proforma_invoices.opp_id', 'leads.id')
+                ->where('proforma_invoices.status', '!=', \App\Models\ProformaInvoice::STATUS_CANCELLED)
+                ->whereNotNull('bt_id')
+                ->orderByDesc('id')
+                ->limit(1)])
             ->with([
                 'salesperson' => fn ($r) => $r->select('id', 'name')->withTrashed(),
                 'customer'    => fn ($r) => $r->select('id', 'company_name', 'legal_name', 'customer_code')->withTrashed(),
@@ -673,6 +690,16 @@ class SalesLeadController extends Controller
             return response()->json([
                 'status'  => false,
                 'message' => 'You can only assign leads to your reporting manager or your own team members.',
+            ], 403);
+        }
+
+        // Department gate — the target must be a SALES-department member; a lead
+        // can never be handed to someone from another department.
+        $salesUserIds = \App\Support\SalesVisibility::salesDepartmentUserIds($user);
+        if (!empty($salesUserIds) && !in_array((int) $data['salesperson_id'], $salesUserIds, true)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'You can only assign leads to Sales-department members.',
             ], 403);
         }
 
@@ -1762,29 +1789,18 @@ class SalesLeadController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        // Only SALES-tagged people belong in the assignment picker — a user
-        // qualifies only once their Employee record carries a sales Role
-        // (Sales Manager / Sales Employee / Sales Intern). Anyone not tagged
-        // is excluded; access is granted purely by giving them that role.
-        $salesRoleIds = \App\Models\Masters\Roles::query()
-            ->whereIn('name', [
-                \App\Support\SalesVisibility::ROLE_MANAGER,
-                \App\Support\SalesVisibility::ROLE_EMPLOYEE,
-                \App\Support\SalesVisibility::ROLE_INTERN,
-            ])
-            ->pluck('id')
-            ->all();
-
-        // Map user_id → { role name, designation name } from sales employees.
-        $salesEmps = \App\Models\Employee::query()
+        // Assignment picker — the people a distributor (HOD / Branch Admin /
+        // admin) may hand a lead to. We surface active employees in the
+        // caller's branch/client scope, labelled with their designation +
+        // department so the HOD can tell who's who. (Designation drives
+        // visibility; department is shown for context, not enforced here.)
+        $emps = \App\Models\Employee::query()
             ->whereNotNull('user_id')
-            ->whereIn('primary_role_id', $salesRoleIds ?: [-1])
-            ->with(['primaryRole:id,name', 'designation:id,name'])
-            ->get(['id', 'user_id', 'primary_role_id', 'designation_id'])
+            ->with(['designation:id,name', 'department:id,name'])
+            ->get(['id', 'user_id', 'designation_id', 'department_id'])
             ->keyBy('user_id');
 
         $q = User::query()
-            ->whereIn('id', $salesEmps->keys()->all() ?: [-1])   // sales people only
             ->where('status', 'active');
 
         if ($user->user_type !== 'super_admin') {
@@ -1797,12 +1813,19 @@ class SalesLeadController extends Controller
             }
         }
 
-        // Hierarchy narrowing: a sales user may (re)assign only within their
-        // reporting chain (self + manager + reports), so the picker shows just
-        // those people. Admin tiers (null) keep the full sales list.
+        // Only distributors get a populated picker; everyone else may assign to
+        // nobody but themselves (assignableUserIds returns [self]).
         $assignable = \App\Support\SalesVisibility::assignableUserIds($user);
         if ($assignable !== null) {
             $q->whereIn('id', $assignable ?: [-1]);
+        }
+
+        // Department gate — a lead may only be assigned to a SALES-department
+        // member, never to someone from another department. When a Sales
+        // department exists, restrict the picker to its people.
+        $salesUserIds = \App\Support\SalesVisibility::salesDepartmentUserIds($user);
+        if (!empty($salesUserIds)) {
+            $q->whereIn('id', $salesUserIds);
         }
 
         $rows = $q->select(['id', 'name', 'user_type', 'email'])
@@ -1811,17 +1834,17 @@ class SalesLeadController extends Controller
 
         return response()->json([
             'status' => true,
-            'data'   => $rows->map(function ($u) use ($salesEmps) {
-                $emp  = $salesEmps->get($u->id);
-                $role = $emp?->primaryRole?->name;          // Sales Manager / Employee / Intern
+            'data'   => $rows->map(function ($u) use ($emps) {
+                $emp  = $emps->get($u->id);
                 $desg = $emp?->designation?->name;          // their designation, if set
+                $dept = $emp?->department?->name;           // their department, if set
                 return [
                     'id'        => $u->id,
                     'name'      => $u->name,
                     'code'      => 'EMP-' . str_pad((string) $u->id, 3, '0', STR_PAD_LEFT),
-                    'role'      => $role ?: $u->user_type,
-                    // Shown next to the name in the picker: designation · role.
-                    'subtitle'  => trim(implode(' · ', array_filter([$desg, $role]))) ?: 'Sales',
+                    'role'      => $desg ?: $u->user_type,
+                    // Shown next to the name in the picker: designation · department.
+                    'subtitle'  => trim(implode(' · ', array_filter([$desg, $dept]))) ?: ucfirst(str_replace('_', ' ', (string) $u->user_type)),
                 ];
             })->values(),
         ]);
