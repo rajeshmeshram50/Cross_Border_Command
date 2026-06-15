@@ -306,6 +306,7 @@ class ClmBuyerProfileController extends Controller
 
             $base = [
                 'opp'      => $l->opp_code ?: ('OPP-' . $lid),
+                'leadId'   => $lid,
                 'customer' => $cust->company_name,
                 'custId'   => (int) $cust->id,
                 'pi'       => $pi ? (string) ($pi->code ?? '') : '',

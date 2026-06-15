@@ -26,7 +26,9 @@ type Frac = [number, number];
 /** An Evidence-Vault party the row's documents can be pulled for. */
 type VaultTarget = { key: string; label: string; type: string; id: number };
 
-type WithRow = { rdf: string; ship: string; opp: string; proc: string; customer: string; consignee: string; supplier: string; pi: string; po: string; vault: VaultTarget[] };
+type Supplier = { name: string; code: string; id: number };
+type ProcLine = { proc: string; suppliers: Supplier[]; po: string };
+type WithRow = { rdf: string; ship: string; opp: string; customer: string; consignee: string; pi: string; procs: ProcLine[]; vault: VaultTarget[] };
 type WithoutRow = { rdf: string; proc: string; supplier: string; po: string; vti: string; kyc: Frac; dd: Frac; tl: Frac; td: Frac; agr: Frac; vault: VaultTarget[] };
 type C2cRow = { rdf: string; ctc: string; title: string; counterparty: string; role: 'Buyer' | 'Supplier' | 'Partner'; vault: VaultTarget[] };
 
@@ -252,9 +254,13 @@ export default function ClmRegulatoryDefenseFilePage() {
         if (!alive) return;
         const d = res.data?.data ?? {};
         setWithRows((d.with_shipment ?? []).map((r: any): WithRow => ({
-          rdf: r.rdf, ship: r.ship ?? '—', opp: r.opp ?? '—', proc: r.proc ?? '—',
-          customer: r.customer ?? '—', consignee: r.consignee ?? '—', supplier: r.supplier ?? '—',
-          pi: r.pi ?? '—', po: r.po ?? '—', vault: Array.isArray(r.vault) ? r.vault : [],
+          rdf: r.rdf, ship: r.ship ?? '—', opp: r.opp ?? '—',
+          customer: r.customer ?? '—', consignee: r.consignee ?? '—', pi: r.pi ?? '—',
+          procs: Array.isArray(r.procs) ? r.procs.map((p: any): ProcLine => ({
+            proc: p.proc ?? '—', po: p.po ?? '—',
+            suppliers: Array.isArray(p.suppliers) ? p.suppliers.map((s: any): Supplier => ({ name: s.name ?? '—', code: s.code ?? '', id: Number(s.id) || 0 })) : [],
+          })) : [],
+          vault: Array.isArray(r.vault) ? r.vault : [],
         })));
         setWithoutRows((d.without_shipment ?? []).map((r: any): WithoutRow => ({
           rdf: r.rdf, proc: r.proc ?? '—', supplier: r.supplier ?? '—', po: r.po ?? '—', vti: r.vti ?? '—',
@@ -282,7 +288,11 @@ export default function ClmRegulatoryDefenseFilePage() {
       : 'Search by RDF, CTC, Agreement, Counterparty…';
 
   const q = search.trim().toLowerCase();
-  const withF = useMemo(() => withRows.filter((r) => !q || `${r.rdf} ${r.ship} ${r.customer} ${r.supplier} ${r.pi} ${r.po}`.toLowerCase().includes(q)), [q, withRows]);
+  const withF = useMemo(() => withRows.filter((r) => {
+    if (!q) return true;
+    const sup = r.procs.flatMap((p) => [p.proc, ...p.suppliers.map((s) => `${s.name} ${s.code}`)]).join(' ');
+    return `${r.rdf} ${r.ship} ${r.opp} ${r.customer} ${r.consignee} ${r.pi} ${sup}`.toLowerCase().includes(q);
+  }), [q, withRows]);
   const withoutF = useMemo(() => withoutRows.filter((r) => !q || `${r.rdf} ${r.proc} ${r.supplier} ${r.po} ${r.vti}`.toLowerCase().includes(q)), [q, withoutRows]);
   const c2cF = useMemo(() => c2cRows.filter((r) => !q || `${r.rdf} ${r.ctc} ${r.title} ${r.counterparty}`.toLowerCase().includes(q)), [q, c2cRows]);
 
@@ -345,17 +355,35 @@ export default function ClmRegulatoryDefenseFilePage() {
               <tbody>
                 {(pageRows as WithRow[]).map((r, i) => (
                   <tr key={r.rdf + r.ship}>
-                    <td>{(safePage - 1) * pageSize + i + 1}</td>
-                    <td><span className="rdf-pill purple">{r.rdf}</span></td>
-                    <td><span className="rdf-pill cyan">{r.ship}</span></td>
-                    <td><span className="rdf-pill indigo">{r.opp}</span></td>
-                    <td><span className="rdf-pill teal">{r.proc}</span></td>
-                    <td className="l"><Party name={r.customer} grad="#6366f1,#818cf8" /></td>
-                    <td className="l"><Party name={r.consignee} grad="#059669,#10b981" /></td>
-                    <td className="l"><Party name={r.supplier} grad="#0891b2,#06b6d4" /></td>
-                    <td><span className="rdf-pill sky">{r.pi}</span></td>
-                    <td><span className="rdf-pill orange">{r.po}</span></td>
-                    <td><VaultBtn onClick={() => setVault({ title: `${r.rdf} · ${r.ship}`, targets: r.vault })} /></td>
+                    <td style={{ verticalAlign: 'top' }}>{(safePage - 1) * pageSize + i + 1}</td>
+                    <td style={{ verticalAlign: 'top' }}><span className="rdf-pill purple">{r.rdf}</span></td>
+                    <td style={{ verticalAlign: 'top' }}><span className="rdf-pill cyan">{r.ship}</span></td>
+                    <td style={{ verticalAlign: 'top' }}><span className="rdf-pill indigo">{r.opp}</span></td>
+                    <td style={{ verticalAlign: 'top' }}>
+                      <div className="rdf-stack">
+                        {r.procs.length ? r.procs.map((p, k) => <span key={k} className="rdf-sup-line"><span className="rdf-pill teal">{p.proc}</span></span>) : <span className="rdf-muted">—</span>}
+                      </div>
+                    </td>
+                    <td className="l" style={{ verticalAlign: 'top' }}><Party name={r.customer} grad="#6366f1,#818cf8" /></td>
+                    <td className="l" style={{ verticalAlign: 'top' }}><Party name={r.consignee} grad="#059669,#10b981" /></td>
+                    <td className="l" style={{ verticalAlign: 'top' }}>
+                      <div className="rdf-stack">
+                        {r.procs.length ? r.procs.map((p, k) => (
+                          <div key={k} className="rdf-sup-line">
+                            {p.suppliers.length
+                              ? p.suppliers.map((s) => <Party key={s.id} name={s.name} code={s.code} grad="#0891b2,#06b6d4" />)
+                              : <span className="rdf-muted">—</span>}
+                          </div>
+                        )) : <span className="rdf-muted">—</span>}
+                      </div>
+                    </td>
+                    <td style={{ verticalAlign: 'top' }}><span className="rdf-pill sky">{r.pi}</span></td>
+                    <td style={{ verticalAlign: 'top' }}>
+                      <div className="rdf-stack">
+                        {r.procs.length ? r.procs.map((p, k) => <span key={k} className="rdf-sup-line"><span className="rdf-pill orange">{p.po}</span></span>) : <span className="rdf-muted">—</span>}
+                      </div>
+                    </td>
+                    <td style={{ verticalAlign: 'top' }}><VaultBtn onClick={() => setVault({ title: `${r.rdf} · ${r.ship}`, targets: r.vault })} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -431,11 +459,14 @@ export default function ClmRegulatoryDefenseFilePage() {
   );
 }
 
-function Party({ name, grad }: { name: string; grad: string }) {
+function Party({ name, grad, code }: { name: string; grad: string; code?: string }) {
   return (
-    <span className="rdf-party">
+    <span className="rdf-party" title={code ? `${name} (${code})` : name}>
       <span className="rdf-ava" style={{ background: `linear-gradient(135deg,${grad})` }}>{initials(name)}</span>
-      <span className="rdf-party-name" title={name}>{name}</span>
+      <span className="rdf-party-col">
+        <span className="rdf-party-name">{name}</span>
+        {code && <span className="rdf-party-code">{code}</span>}
+      </span>
     </span>
   );
 }
@@ -468,6 +499,15 @@ const SCOPED_CSS = `
 .rdf-search input:focus { border-color:#0891b2; box-shadow:0 0 0 3.5px rgba(8,145,178,.14); }
 .rdf-rec-badge { font-size:10px; font-weight:700; color:#0e7490; background:rgba(6,182,212,.12); border:1px solid rgba(6,182,212,.28); border-radius:20px; padding:5px 12px; white-space:nowrap; }
 
+/* Recolor the shared WorklistPager to the cyan table-head palette (scoped to
+   this page so the global violet pager used elsewhere is untouched). */
+.rdf-card .wl-pager { background:linear-gradient(90deg,#f0fdff 0%,#e8fbfd 40%,#f0fdff 100%); border-top:2px solid #a5f3fc; }
+.rdf-card .tc-wl-info, .rdf-card .tc-wl-rows, .rdf-card .tc-wl-btn { color:#0e7490; border-color:#a5f3fc; background:rgba(255,255,255,.85); }
+.rdf-card .tc-wl-info .tc-wl-hl { color:#0891b2; }
+.rdf-card .tc-wl-rows select { color:#0891b2; }
+.rdf-card .tc-wl-range { background:linear-gradient(135deg,#22d3ee 0%,#0891b2 55%,#0e7490 100%); box-shadow:0 3px 12px rgba(8,145,178,.4),0 1px 0 rgba(255,255,255,.2) inset; }
+.rdf-card .tc-wl-btn:hover:not(:disabled) { background:#fff; border-color:#0891b2; box-shadow:0 4px 12px rgba(8,145,178,.25); }
+
 .rdf-table-wrap { overflow-x:auto; }
 .rdf-table { width:100%; border-collapse:collapse; min-width:920px; }
 .rdf-table th { padding:9px 8px; font-size:8px; font-weight:800; letter-spacing:.06em; color:#0e7490; text-transform:uppercase; white-space:nowrap; text-align:center; background:linear-gradient(180deg,#f0fdff,#e8fbfd); border-bottom:2px solid #a5f3fc; }
@@ -486,8 +526,13 @@ const SCOPED_CSS = `
 .rdf-pill.sky    { color:#0369a1; background:#eff6ff; border:1px solid #bfdbfe; }
 .rdf-pill.orange { color:#9a3412; background:#fff7ed; border:1px solid #fed7aa; }
 .rdf-party { display:inline-flex; align-items:center; gap:8px; font-size:11px; font-weight:700; color:#0f172a; max-width:200px; }
+.rdf-party-col { display:flex; flex-direction:column; min-width:0; line-height:1.2; }
 .rdf-party-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rdf-party-code { font-size:8.5px; font-weight:700; color:#0e7490; font-family:ui-monospace,monospace; }
 .rdf-ava { width:26px; height:26px; border-radius:7px; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; font-size:9px; font-weight:800; color:#fff; }
+.rdf-stack { display:flex; flex-direction:column; gap:6px; align-items:flex-start; }
+.rdf-sup-line { display:flex; flex-wrap:wrap; gap:6px; min-height:26px; align-items:center; }
+.rdf-muted { color:#94a3b8; }
 .rdf-role { padding:2px 8px; border-radius:20px; font-size:8.5px; font-weight:800; text-transform:uppercase; letter-spacing:.02em; }
 .rdf-referred { display:inline-block; padding:3px 10px; border-radius:20px; font-size:9.5px; font-weight:700; color:#0369a1; background:#eff6ff; border:1.5px solid #bfdbfe; }
 .rdf-prog { display:flex; flex-direction:column; align-items:center; line-height:1.2; }
@@ -570,6 +615,9 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .rdf-card-sub { color:#94a3b8; }
 [data-bs-theme="dark"] .rdf-search input { background:rgba(255,255,255,.05); border-color:rgba(148,163,184,.22); color:#e2e8f0; }
 [data-bs-theme="dark"] .rdf-rec-badge { color:#67e8f9; background:rgba(6,182,212,.14); border-color:rgba(6,182,212,.3); }
+[data-bs-theme="dark"] .rdf-card .wl-pager { background:linear-gradient(90deg,rgba(6,182,212,.08),rgba(6,182,212,.14),rgba(6,182,212,.08)); border-top-color:rgba(6,182,212,.3); }
+[data-bs-theme="dark"] .rdf-card .tc-wl-info, [data-bs-theme="dark"] .rdf-card .tc-wl-rows, [data-bs-theme="dark"] .rdf-card .tc-wl-btn { background:rgba(255,255,255,.06); border-color:rgba(6,182,212,.3); color:#67e8f9; }
+[data-bs-theme="dark"] .rdf-card .tc-wl-info .tc-wl-hl, [data-bs-theme="dark"] .rdf-card .tc-wl-rows select { color:#a5f3fc; }
 [data-bs-theme="dark"] .rdf-table th { background:rgba(255,255,255,.04); color:#67e8f9; border-bottom-color:rgba(148,163,184,.22); }
 [data-bs-theme="dark"] .rdf-table td { color:#cbd5e1; border-bottom-color:rgba(148,163,184,.12); }
 [data-bs-theme="dark"] .rdf-table td.strong { color:#f1f5f9; }
@@ -582,6 +630,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .rdf-pill.sky    { background:rgba(3,105,161,.2); border-color:rgba(56,189,248,.4); color:#7dd3fc; }
 [data-bs-theme="dark"] .rdf-pill.orange { background:rgba(154,52,18,.22); border-color:rgba(251,146,60,.4); color:#fdba74; }
 [data-bs-theme="dark"] .rdf-party { color:#e2e8f0; }
+[data-bs-theme="dark"] .rdf-party-code { color:#67e8f9; }
 [data-bs-theme="dark"] .rdf-referred { background:rgba(3,105,161,.2); border-color:rgba(56,189,248,.4); color:#7dd3fc; }
 [data-bs-theme="dark"] .rdf-empty { color:#94a3b8; }
 `;

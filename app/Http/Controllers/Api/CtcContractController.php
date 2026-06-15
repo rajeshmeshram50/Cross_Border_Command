@@ -961,6 +961,11 @@ class CtcContractController extends Controller
         // Make the document title reflect the version for the blade heading.
         $row->title = ($row->title ?: 'Agreement') . ' — v' . $v;
 
+        // DOCX export — same processed content rendered to an editable Word file.
+        if (strtolower((string) $request->query('format')) === 'docx') {
+            return $this->renderVersionDocx($processedHtml, $row->title, ($row->code ?: 'CTC') . '-v' . $v);
+        }
+
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.clm-signature-document', [
             'document'         => $row,
             'party'            => null,
@@ -976,5 +981,35 @@ class CtcContractController extends Controller
         ])->setPaper('a4')->setOption('isPhpEnabled', true);
 
         return $pdf->download(($row->code ?: 'CTC') . '-v' . $v . '.pdf');
+    }
+
+    /**
+     * Render a version's processed HTML to an editable .docx via PhpWord.
+     * Data-URI images (e.g. the signature stamp) are stripped first because
+     * PhpWord's HTML reader chokes on them; the malformed-HTML fallback drops
+     * to plain paragraphs so a download is always produced.
+     */
+    private function renderVersionDocx(string $html, string $title, string $baseName)
+    {
+        $phpWord = new \PhpOffice\PhpWord\PhpWord();
+        $section = $phpWord->addSection();
+        $section->addTitle(strip_tags($title), 1);
+
+        $clean = preg_replace('/<img[^>]*src="data:[^"]*"[^>]*>/i', '', $html) ?? $html;
+        try {
+            \PhpOffice\PhpWord\Shared\Html::addHtml($section, $clean, false, false);
+        } catch (\Throwable $e) {
+            foreach (preg_split('/<\/p>|<br\s*\/?>/i', $clean) ?: [] as $chunk) {
+                $text = trim(html_entity_decode(strip_tags($chunk), ENT_QUOTES | ENT_HTML5));
+                if ($text !== '') $section->addText($text);
+            }
+        }
+
+        $writer = \PhpOffice\PhpWord\IOFactory::createWriter($phpWord, 'Word2007');
+        return response()->streamDownload(function () use ($writer) {
+            $writer->save('php://output');
+        }, $baseName . '.docx', [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ]);
     }
 }

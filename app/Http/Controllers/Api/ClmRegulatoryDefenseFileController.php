@@ -4,6 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\CtcContract;
+use App\Models\Procurement;
+use App\Models\ProcurementProduct;
+use App\Models\Vendor;
+use App\Models\VendorProductMapping;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -38,7 +42,7 @@ class ClmRegulatoryDefenseFileController extends Controller
         return response()->json([
             'status' => true,
             'data'   => [
-                'with_shipment'    => $this->withShipment($b, $s),
+                'with_shipment'    => $this->withShipment($b, (int) ($user->client_id ?? 0)),
                 'without_shipment' => $this->withoutShipment($s),
                 'case_to_case'     => $this->caseToCase((int) ($user->client_id ?? 0)),
             ],
@@ -46,52 +50,109 @@ class ClmRegulatoryDefenseFileController extends Controller
     }
 
     /**
-     * Shipment-linked RDF rows: take the buyer transaction rows that carry a
-     * shipment (ws_eq + ws_neq) and overlay the supplier + PO procured under
-     * the same shipment (matched on the SHP code).
+     * Shipment-linked RDF rows. Each buyer shipment row (ws_eq + ws_neq) is
+     * expanded with EVERY procurement raised under its lead, and each
+     * procurement with EVERY supplier (vendor) that supplies a product in it.
+     * A single opportunity therefore shows all its procurement ids + suppliers
+     * stacked in one row, instead of being collapsed to a single supplier.
      */
-    private function withShipment(array $buyer, array $supplier): array
+    private function withShipment(array $buyer, int $cid): array
     {
-        // SHP code → {supplier, po, proc, db id} from the supplier transaction tables.
-        $bySupShip = [];
-        foreach (['txn_ws_mat', 'txn_ws_logi'] as $key) {
-            foreach ($supplier[$key] ?? [] as $r) {
-                $shp = (string) ($r['shpId'] ?? '');
-                if ($shp === '') continue;
-                $bySupShip[$shp] = [
-                    'supplier' => (string) ($r['supplier'] ?? '—'),
-                    'po'       => (string) ($r['po'] ?? '—'),
-                    'proc'     => (string) ($r['procId'] ?? '—'),
-                    'supDbId'  => (int) ($r['supDbId'] ?? 0),
-                ];
+        $wsRows = array_merge($buyer['ws_eq'] ?? [], $buyer['ws_neq'] ?? []);
+        $leadIds = array_values(array_unique(array_filter(array_map(
+            static fn ($r) => (int) ($r['leadId'] ?? 0),
+            $wsRows
+        ))));
+
+        // lead → [procurement ids]; procurement id → lead.
+        $procByLead = [];
+        $procIds = [];
+        if ($cid && $leadIds) {
+            foreach (Procurement::where('client_id', $cid)->whereIn('lead_id', $leadIds)->orderBy('id')->get(['id', 'lead_id']) as $p) {
+                $procByLead[(int) $p->lead_id][] = (int) $p->id;
+                $procIds[] = (int) $p->id;
             }
         }
 
+        // procurement → [product ids].
+        $productsByProc = [];
+        $productIds = [];
+        if ($procIds) {
+            foreach (ProcurementProduct::whereIn('procurement_id', $procIds)->whereNotNull('product_id')->get(['procurement_id', 'product_id']) as $pp) {
+                $productsByProc[(int) $pp->procurement_id][] = (int) $pp->product_id;
+                $productIds[] = (int) $pp->product_id;
+            }
+        }
+
+        // product → [vendor ids], then vendor id → {name, code}.
+        $vendorsByProduct = [];
+        $vendorIds = [];
+        if ($productIds) {
+            foreach (VendorProductMapping::whereIn('product_id', array_values(array_unique($productIds)))->get(['vendor_id', 'product_id']) as $m) {
+                $vendorsByProduct[(int) $m->product_id][] = (int) $m->vendor_id;
+                $vendorIds[] = (int) $m->vendor_id;
+            }
+        }
+        $vendorById = $vendorIds
+            ? Vendor::whereIn('id', array_values(array_unique($vendorIds)))->get(['id', 'company_name', 'vendor_code'])->keyBy('id')
+            : collect();
+
+        // Suppliers for a procurement (deduped by vendor id).
+        $suppliersForProc = function (int $procId) use ($productsByProc, $vendorsByProduct, $vendorById): array {
+            $seen = [];
+            $out = [];
+            foreach ($productsByProc[$procId] ?? [] as $pid) {
+                foreach ($vendorsByProduct[$pid] ?? [] as $vid) {
+                    if (isset($seen[$vid])) continue;
+                    $v = $vendorById->get($vid);
+                    if (!$v) continue;
+                    $seen[$vid] = true;
+                    $out[] = [
+                        'id'    => (int) $v->id,
+                        'name'  => (string) $v->company_name,
+                        'code'  => $v->vendor_code ?: ('V-' . str_pad((string) $v->id, 2, '0', STR_PAD_LEFT)),
+                    ];
+                }
+            }
+            return $out;
+        };
+
         $rows = [];
         $sr = 0;
-        foreach (['ws_eq', 'ws_neq'] as $key) {
-            foreach ($buyer[$key] ?? [] as $r) {
-                $sr++;
-                $shp = (string) ($r['shp'] ?? '');
-                $sup = $bySupShip[$shp] ?? ['supplier' => '—', 'po' => '—', 'proc' => '—', 'supDbId' => 0];
-                // Evidence-Vault party targets: buyer, (separate) consignee, supplier.
-                $vault = [];
-                if (!empty($r['custId'])) $vault[] = ['key' => 'buyer', 'label' => 'Buyer', 'type' => 'customer', 'id' => (int) $r['custId']];
-                if (!empty($r['consId'])) $vault[] = ['key' => 'consignee', 'label' => 'Consignee', 'type' => 'consignee', 'id' => (int) $r['consId']];
-                if (!empty($sup['supDbId'])) $vault[] = ['key' => 'supplier', 'label' => 'Supplier', 'type' => 'supplier', 'id' => (int) $sup['supDbId']];
-                $rows[] = [
-                    'rdf'       => 'RDF-' . str_pad((string) $sr, 3, '0', STR_PAD_LEFT),
-                    'ship'      => $shp ?: '—',
-                    'opp'       => (string) ($r['opp'] ?? '—'),
-                    'proc'      => $sup['proc'],
-                    'customer'  => (string) ($r['customer'] ?? '—'),
-                    'consignee' => (string) ($r['consignee'] ?? ($r['customer'] ?? '—')),
-                    'supplier'  => $sup['supplier'],
-                    'pi'        => (string) ($r['pi'] ?? '—') ?: '—',
-                    'po'        => $sup['po'],
-                    'vault'     => $vault,
+        foreach ($wsRows as $r) {
+            $sr++;
+            $lead = (int) ($r['leadId'] ?? 0);
+
+            $procs = [];        // [{proc, suppliers:[{name,code,id}], po}]
+            $vendorSeen = [];   // dedupe vault targets across procurements
+            $vault = [];
+            if (!empty($r['custId'])) $vault[] = ['key' => 'buyer', 'label' => 'Buyer', 'type' => 'customer', 'id' => (int) $r['custId']];
+            if (!empty($r['consId'])) $vault[] = ['key' => 'consignee', 'label' => 'Consignee', 'type' => 'consignee', 'id' => (int) $r['consId']];
+
+            foreach ($procByLead[$lead] ?? [] as $procId) {
+                $sups = $suppliersForProc($procId);
+                $procs[] = [
+                    'proc'      => 'PROC-' . str_pad((string) $procId, 3, '0', STR_PAD_LEFT),
+                    'suppliers' => $sups,
+                    'po'        => '—',
                 ];
+                foreach ($sups as $s) {
+                    if (isset($vendorSeen[$s['id']])) continue;
+                    $vendorSeen[$s['id']] = true;
+                    $vault[] = ['key' => 'supplier-' . $s['id'], 'label' => count($vendorSeen) > 1 ? ('Supplier · ' . $s['name']) : 'Supplier', 'type' => 'supplier', 'id' => $s['id']];
+                }
             }
+
+            $rows[] = [
+                'rdf'       => 'RDF-' . str_pad((string) $sr, 3, '0', STR_PAD_LEFT),
+                'ship'      => (string) ($r['shp'] ?? '—') ?: '—',
+                'opp'       => (string) ($r['opp'] ?? '—'),
+                'customer'  => (string) ($r['customer'] ?? '—'),
+                'consignee' => (string) ($r['consignee'] ?? ($r['customer'] ?? '—')),
+                'pi'        => (string) ($r['pi'] ?? '—') ?: '—',
+                'procs'     => $procs,
+                'vault'     => $vault,
+            ];
         }
         return $rows;
     }
@@ -135,22 +196,41 @@ class ClmRegulatoryDefenseFileController extends Controller
         return CtcContract::where('client_id', $clientId)
             ->orderByDesc('id')
             ->get(['id', 'code', 'title', 'counterparties'])
-            ->map(function (CtcContract $c) use (&$sr) {
+            ->map(function (CtcContract $c) use (&$sr, $clientId) {
                 $sr++;
                 $cps  = is_array($c->counterparties) ? $c->counterparties : [];
                 $first = $cps[0] ?? [];
-                $target = $this->resolveVaultTarget(
-                    (string) ($first['source_type'] ?? ''),
-                    $first['source_id'] ?? null,
-                    (int) $c->client_id
-                );
+
+                // Every counterparty becomes an Evidence-Vault party tab so the
+                // drawer can show each side's Company DD / KYC / Trade Licenses /
+                // Trade Documents. Deduped by resolved (type,id).
+                $vault = [];
+                $seen = [];
+                foreach ($cps as $cp) {
+                    $t = $this->resolveVaultTarget(
+                        (string) ($cp['source_type'] ?? ''),
+                        $cp['source_id'] ?? null,
+                        $clientId
+                    );
+                    if (!$t) continue;
+                    $dedupe = $t['type'] . '#' . $t['id'];
+                    if (isset($seen[$dedupe])) continue;
+                    $seen[$dedupe] = true;
+                    // Label the tab by the counterparty name (falls back to role)
+                    // so a deal with two buyers reads clearly.
+                    $name = trim((string) ($cp['name'] ?? ''));
+                    $t['label'] = $name !== '' ? $name : $t['label'];
+                    $t['key']   = $dedupe;
+                    $vault[] = $t;
+                }
+
                 return [
                     'rdf'          => 'RDF-C-' . str_pad((string) $sr, 3, '0', STR_PAD_LEFT),
                     'ctc'          => $c->code,
                     'title'        => $c->title ?: '—',
                     'counterparty' => (string) ($first['name'] ?? '—') ?: '—',
                     'role'         => $this->normaliseRole((string) ($first['badge'] ?? $first['source_type'] ?? '')),
-                    'vault'        => $target ? [$target] : [],
+                    'vault'        => $vault,
                 ];
             })
             ->all();
