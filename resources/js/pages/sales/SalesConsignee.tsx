@@ -1120,6 +1120,9 @@ const SCOPED_CSS = `
   overflow: hidden;
   flex: 1; min-height: 0;
   padding: 14px 14px 12px;
+  /* Anchor for the empty-state overlay (centered in the body region
+     between the sticky header and the footer). */
+  position: relative;
   scrollbar-width: thin;
   scrollbar-color: #d1d5db transparent;
 }
@@ -1389,7 +1392,18 @@ const SCOPED_CSS = `
 .smcg-table tbody tr.even td { background: rgba(236,253,245,.50); }
 .smcg-table tbody tr:hover td { background: linear-gradient(90deg, rgba(110,231,183,.25), rgba(52,211,153,.20), rgba(110,231,183,.25)) !important; }
 .smcg-table tbody tr:last-child td { border-bottom: none; }
-.smcg-empty { text-align: center; padding: 32px !important; color: #10b981; font-size: 12px; font-style: italic; }
+/* Empty state — centered OVER the table body (between the sticky header and
+   the footer) instead of dropping below the footer. */
+.smcg-empty {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 16px);
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: #10b981; font-size: 12px; font-style: italic;
+  pointer-events: none;
+  z-index: 2;
+}
 
 /* List-page shimmer wrapper. Uses a CSS grid for the row layout so
  * each shimmer cell auto-fits to its column. Matches the live table's

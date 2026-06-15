@@ -1444,7 +1444,7 @@ export default function SalesQPI() {
     { header: 'PI No', accessorKey: 'piNo',  cell: (info: any) => <span className="qpi-link">{info.getValue()}</span> },
     { header: 'PI Date', accessorKey: 'piDate', cell: (info: any) => <span className="qpi-date">{info.getValue() || '—'}</span> },
     ...(withShipment ? [
-      { header: 'BT ID',   accessorKey: 'btId',   cell: (info: any) => info.getValue() ? <span className="qpi-bt-badge">{info.getValue()}</span> : <span className="qpi-em">—</span> },
+      { header: 'Shipp ID', accessorKey: 'btId',   cell: (info: any) => info.getValue() ? <span className="qpi-bt-badge">{info.getValue()}</span> : <span className="qpi-em">—</span> },
       { header: 'BT Date', accessorKey: 'btDate', cell: (info: any) => <span className="qpi-date">{info.getValue() || '—'}</span> },
     ] : []),
     { header: 'Convert From (Quotation No)', accessorKey: 'convertFrom',
@@ -1744,6 +1744,15 @@ export default function SalesQPI() {
               SearchPlaceholder="Search PIs..."
               condensedPagination
             />
+          )}
+
+          {/* Empty state — centered message in the table body when the active
+              dataset has no rows (the TableContainer still shows its header).
+              Replaces the previous blank gap below the header. */}
+          {!(tab === 'quotation' ? loadingQt : loadingPi) && totalRows === 0 && (
+            <div className="qpi-empty">
+              {tab === 'quotation' ? 'No quotations found' : 'No proforma invoices found'}
+            </div>
           )}
         </div>
 

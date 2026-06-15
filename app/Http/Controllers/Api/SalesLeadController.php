@@ -184,6 +184,10 @@ class SalesLeadController extends Controller
                 'per_page'     => $paginator->perPage(),
                 'total'        => $paginator->total(),
             ],
+            // Lets the My Workplace UI hide the Assign / Lead Distribution
+            // actions for Sales Employees / Interns (only managers + admins
+            // can distribute). The backend also enforces this server-side.
+            'can_distribute' => \App\Support\SalesVisibility::canDistribute($user),
         ];
         if ($counts !== null) $response['counts'] = $counts;
 
@@ -368,6 +372,16 @@ class SalesLeadController extends Controller
 
         $lead->load(['salesperson:id,name', 'customer:id,company_name,customer_code']);
 
+        // Activity tracker — record the lead's birth (manual capture).
+        \App\Support\LeadActivity::log(
+            $user,
+            $lead,
+            \App\Support\LeadActivity::ACTION_GENERATED,
+            'Lead generated (' . ($lead->query_type ?: 'Manual') . ' · ' . ($lead->platform ?: 'Offline') . ')',
+            null,
+            ['opp_code' => $lead->opp_code],
+        );
+
         return response()->json(['status' => true, 'data' => $lead], 201);
     }
 
@@ -539,7 +553,32 @@ class SalesLeadController extends Controller
             }
         }
 
+        // Snapshot the owner BEFORE saving so we can log an ownership change
+        // when this edit (re)assigns the lead via the salesperson_id field.
+        $prevSalesId = $lead->salesperson_id ? (int) $lead->salesperson_id : null;
+
         $lead->update($data);
+
+        // Activity tracker — log when the edit changed the lead's owner.
+        if (array_key_exists('salesperson_id', $data)) {
+            $newSalesId = $data['salesperson_id'] ? (int) $data['salesperson_id'] : null;
+            if ($newSalesId !== $prevSalesId && $newSalesId !== null) {
+                $names = \App\Models\User::query()
+                    ->whereIn('id', array_filter([$prevSalesId, $newSalesId]))
+                    ->pluck('name', 'id');
+                $newName  = $names[$newSalesId] ?? ('User #' . $newSalesId);
+                $prevName = $prevSalesId ? ($names[$prevSalesId] ?? ('User #' . $prevSalesId)) : null;
+
+                \App\Support\LeadActivity::log(
+                    $user,
+                    $lead,
+                    $prevSalesId ? \App\Support\LeadActivity::ACTION_REASSIGNED : \App\Support\LeadActivity::ACTION_ASSIGNED,
+                    $prevSalesId ? "Reassigned from {$prevName} to {$newName}" : "Assigned to {$newName}",
+                    $prevSalesId ? ['salesperson_id' => $prevSalesId, 'salesperson_name' => $prevName] : null,
+                    ['salesperson_id' => $newSalesId, 'salesperson_name' => $newName],
+                );
+            }
+        }
 
         return response()->json(['status' => true, 'data' => $lead->fresh(['salesperson:id,name'])]);
     }
@@ -625,28 +664,77 @@ class SalesLeadController extends Controller
             'salesperson_id'  => 'required|integer|exists:users,id',
         ]);
 
+        // Hierarchy guard: a sales user can (re)assign a lead only WITHIN their
+        // reporting chain — to themselves, their manager (up), or their direct
+        // reports (down). Admin tiers (assignableUserIds === null) may assign
+        // to anyone in scope.
+        $assignable = \App\Support\SalesVisibility::assignableUserIds($user);
+        if ($assignable !== null && !in_array((int) $data['salesperson_id'], $assignable, true)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'You can only assign leads to your reporting manager or your own team members.',
+            ], 403);
+        }
+
         $q = Lead::query()->whereIn('id', $data['lead_ids']);
         $this->applyScope($q, $user);
-        $leads = $q->get(['id', 'salesperson_id']);
+        $leads = $q->get(['id', 'client_id', 'branch_id', 'salesperson_id']);
+
+        $targetId   = (int) $data['salesperson_id'];
+        $targetName = \App\Models\User::query()->whereKey($targetId)->value('name') ?: ('User #' . $targetId);
+
+        // Resolve previous-owner names in one query so reassignment rows can
+        // read "Reassigned from X to Y" without N round-trips.
+        $prevIds   = $leads->pluck('salesperson_id')->filter()->map(fn ($v) => (int) $v)->unique()->all();
+        $prevNames = !empty($prevIds)
+            ? \App\Models\User::query()->whereIn('id', $prevIds)->pluck('name', 'id')->all()
+            : [];
 
         $newCount       = 0;
         $reassignCount  = 0;
         $skippedCount   = count($data['lead_ids']) - $leads->count();
         $touchedIds     = [];
+        $activity       = [];   // [lead, action, prevId]
 
         foreach ($leads as $lead) {
-            if ($lead->salesperson_id && (int) $lead->salesperson_id !== (int) $data['salesperson_id']) {
+            $prevId = $lead->salesperson_id ? (int) $lead->salesperson_id : null;
+
+            if ($prevId === $targetId) {
+                // Already owned by the target — no-op, don't log noise.
+                continue;
+            }
+
+            if ($prevId) {
                 $reassignCount++;
-            } elseif (!$lead->salesperson_id) {
+                $activity[] = [$lead, \App\Support\LeadActivity::ACTION_REASSIGNED, $prevId];
+            } else {
                 $newCount++;
+                $activity[] = [$lead, \App\Support\LeadActivity::ACTION_ASSIGNED, null];
             }
             $touchedIds[] = $lead->id;
         }
 
         if (!empty($touchedIds)) {
             Lead::whereIn('id', $touchedIds)->update([
-                'salesperson_id' => $data['salesperson_id'],
+                'salesperson_id' => $targetId,
             ]);
+
+            // Activity tracker — one row per ownership change.
+            foreach ($activity as [$lead, $action, $prevId]) {
+                $prevName = $prevId ? ($prevNames[$prevId] ?? ('User #' . $prevId)) : null;
+                $desc = $prevId
+                    ? "Reassigned from {$prevName} to {$targetName}"
+                    : "Assigned to {$targetName}";
+
+                \App\Support\LeadActivity::log(
+                    $user,
+                    $lead,
+                    $action,
+                    $desc,
+                    $prevId ? ['salesperson_id' => $prevId, 'salesperson_name' => $prevName] : null,
+                    ['salesperson_id' => $targetId, 'salesperson_name' => $targetName],
+                );
+            }
         }
 
         return response()->json([
@@ -655,6 +743,30 @@ class SalesLeadController extends Controller
             'new_assigned'     => $newCount,
             'reassigned'       => $reassignCount,
             'skipped_no_scope' => $skippedCount,
+        ]);
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+     *  ACTIVITY FEED — GET /sales/leads/{id}/activity
+     *
+     *  Per-lead timeline for the worksheet's Activity tracker: when the
+     *  lead was generated, and every ownership change (assigned /
+     *  reassigned) with the actor and from→to salesperson. Tenant-scoped:
+     *  a lead outside the caller's visibility 404s before any rows leak.
+     * ───────────────────────────────────────────────────────────────── */
+    public function activity(Request $request, $id)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $q = Lead::query()->whereKey($id);
+        $this->applyScope($q, $user);
+        $lead = $q->firstOrFail(['id', 'opp_code']);
+
+        return response()->json([
+            'status'   => true,
+            'opp_code' => $lead->opp_code,
+            'data'     => \App\Support\LeadActivity::feed((int) $lead->id),
         ]);
     }
 
@@ -1650,8 +1762,29 @@ class SalesLeadController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
+        // Only SALES-tagged people belong in the assignment picker — a user
+        // qualifies only once their Employee record carries a sales Role
+        // (Sales Manager / Sales Employee / Sales Intern). Anyone not tagged
+        // is excluded; access is granted purely by giving them that role.
+        $salesRoleIds = \App\Models\Masters\Roles::query()
+            ->whereIn('name', [
+                \App\Support\SalesVisibility::ROLE_MANAGER,
+                \App\Support\SalesVisibility::ROLE_EMPLOYEE,
+                \App\Support\SalesVisibility::ROLE_INTERN,
+            ])
+            ->pluck('id')
+            ->all();
+
+        // Map user_id → { role name, designation name } from sales employees.
+        $salesEmps = \App\Models\Employee::query()
+            ->whereNotNull('user_id')
+            ->whereIn('primary_role_id', $salesRoleIds ?: [-1])
+            ->with(['primaryRole:id,name', 'designation:id,name'])
+            ->get(['id', 'user_id', 'primary_role_id', 'designation_id'])
+            ->keyBy('user_id');
+
         $q = User::query()
-            ->whereIn('user_type', ['client_admin', 'client_user', 'branch_user', 'employee'])
+            ->whereIn('id', $salesEmps->keys()->all() ?: [-1])   // sales people only
             ->where('status', 'active');
 
         if ($user->user_type !== 'super_admin') {
@@ -1664,19 +1797,33 @@ class SalesLeadController extends Controller
             }
         }
 
-        $rows = $q->select(['id', 'name', 'user_type', 'designation', 'email'])
+        // Hierarchy narrowing: a sales user may (re)assign only within their
+        // reporting chain (self + manager + reports), so the picker shows just
+        // those people. Admin tiers (null) keep the full sales list.
+        $assignable = \App\Support\SalesVisibility::assignableUserIds($user);
+        if ($assignable !== null) {
+            $q->whereIn('id', $assignable ?: [-1]);
+        }
+
+        $rows = $q->select(['id', 'name', 'user_type', 'email'])
                   ->orderBy('name')
                   ->get();
 
         return response()->json([
             'status' => true,
-            'data'   => $rows->map(fn ($u) => [
-                'id'        => $u->id,
-                'name'      => $u->name,
-                'code'      => 'EMP-' . str_pad((string) $u->id, 3, '0', STR_PAD_LEFT),
-                'role'      => $u->user_type,
-                'subtitle'  => $u->designation ?: ucfirst(str_replace('_', ' ', $u->user_type)),
-            ]),
+            'data'   => $rows->map(function ($u) use ($salesEmps) {
+                $emp  = $salesEmps->get($u->id);
+                $role = $emp?->primaryRole?->name;          // Sales Manager / Employee / Intern
+                $desg = $emp?->designation?->name;          // their designation, if set
+                return [
+                    'id'        => $u->id,
+                    'name'      => $u->name,
+                    'code'      => 'EMP-' . str_pad((string) $u->id, 3, '0', STR_PAD_LEFT),
+                    'role'      => $role ?: $u->user_type,
+                    // Shown next to the name in the picker: designation · role.
+                    'subtitle'  => trim(implode(' · ', array_filter([$desg, $role]))) ?: 'Sales',
+                ];
+            })->values(),
         ]);
     }
 
@@ -1797,12 +1944,17 @@ class SalesLeadController extends Controller
             $q->where(function ($w) use ($user) {
                 $w->whereNull('branch_id')->orWhere('branch_id', $user->branch_id);
             });
+            // Role-based narrowing: a Sales Employee/Intern sees only their own
+            // assigned leads; a Sales Manager sees self + reports (+ unassigned).
+            \App\Support\SalesVisibility::applyToLeads($q, $user);
             return;
         }
 
         // Switchable roles (client-level admins + main-branch users): honour
         // the BranchSwitcher's narrowing when a specific branch is picked.
         $this->applySwitcherBranchFilter($q, $user, $branchFilter);
+        // Same role-based narrowing (no-op for admins / Branch-Admin tiers).
+        \App\Support\SalesVisibility::applyToLeads($q, $user);
     }
 
     /** Narrow an already-tenant-scoped query when the BranchSwitcher injects

@@ -8,6 +8,7 @@ import Tooltip from '../../components/ui/Tooltip';
 import AddNewLeadModal, { type LeadFormValues } from './AddNewLeadModal';
 import AssignLeadsModal from './AssignLeadsModal';
 import LeadDetailsModal from './LeadDetailsModal';
+import LeadActivityModal from './LeadActivityModal';
 import LeadFilterModal, { type LeadFilters, countFilterValues } from './LeadFilterModal';
 
 /* Shape returned by GET /sales/leads — Laravel paginator items. Mapped to
@@ -238,6 +239,10 @@ export default function SalesLeadWorksheet() {
   const [counts, setCounts]     = useState<Record<string, number>>({
     qualified: 0, disqualified: 0, all: 0, key_opportunity: 0, key_in_progress: 0, key_won: 0,
   });
+  // Only Sales Managers / admins may assign leads; the leads API returns this
+  // flag (and enforces it server-side). Default true so the buttons aren't
+  // flashed-then-hidden for managers on first paint.
+  const [canDistribute, setCanDistribute] = useState(true);
   const [tab, setTab]   = useState<TabKey>('qualified');
   /* Active Key-Opportunity sub-tab; only meaningful while tab === 'key_opportunity'. */
   const [dealState, setDealState] = useState<DealState>('in_progress');
@@ -311,6 +316,8 @@ export default function SalesLeadWorksheet() {
   // Quick-view (eye icon) — fetches GET /sales/leads/{id} for the picked
   // row and renders all the row's details in a read-only card layout.
   const [viewLeadId, setViewLeadId] = useState<number | null>(null);
+  // Activity-tracker modal — the per-lead generation/ownership timeline.
+  const [activityLead, setActivityLead] = useState<{ id: number; opp: string } | null>(null);
 
   // Filter modal options + active filters. Options are fetched once when
   // the page mounts so opening the modal is instant.
@@ -433,6 +440,7 @@ export default function SalesLeadWorksheet() {
       setTotal(data.pagination?.total ?? 0);
       setLastPage(data.pagination?.last_page ?? 1);
       if (data.counts) setCounts(data.counts);
+      setCanDistribute((data as any).can_distribute !== false);
     } catch (e: any) {
       toast.error('Load failed', e?.response?.data?.message ?? 'Could not load leads');
       setLeads([]); setTotal(0); setLastPage(1);
@@ -580,6 +588,7 @@ export default function SalesLeadWorksheet() {
   // Eye-icon → quick-view modal. The row-click anywhere else still opens
   // the full matrix detail page; the eye icon is the lightweight peek.
   const onViewLead      = (l: Lead) => setViewLeadId(l.id);
+  const onViewActivity  = (l: Lead) => setActivityLead({ id: l.id, opp: l.oppId });
 
   const onAssignOne     = (l: Lead) => setAssignModal({
     open: true,
@@ -707,18 +716,25 @@ export default function SalesLeadWorksheet() {
             <IconPlus />
             Add New Lead
           </button>
-          <button className="lwp-bact lwp-bact-assign" onClick={onAssignLeads}>
-            <IconUsers />
-            Assign Leads
-          </button>
-          <button className="lwp-bact lwp-bact-assigned" onClick={onAssignedLeads}>
-            <IconUserCheck />
-            Lead Distribution
-          </button>
+          {/* Assign / Lead Distribution — only for Sales Managers & admins
+              (can_distribute from the leads API). Hidden for Sales
+              Employees / Interns, who can only work their own leads. */}
+          {canDistribute && (
+            <>
+              <button className="lwp-bact lwp-bact-assign" onClick={onAssignLeads}>
+                <IconUsers />
+                Assign Leads
+              </button>
+              <button className="lwp-bact lwp-bact-assigned" onClick={onAssignedLeads}>
+                <IconUserCheck />
+                Lead Distribution
+              </button>
+            </>
+          )}
           {/* Pulls leads from every IndiaMart CRM key configured in .env.
               LEAD_SYNC_BRANCH_ID in .env decides which branch sees this
               button. Same flow as IDIMS_6.0's POST /lead_store. */}
-          {syncCfg.enabled && (
+          {syncCfg.enabled && canDistribute && (
             <button
               className={`lwp-bact lwp-bact-sync lwp-bact-icon-only ${syncing ? 'is-syncing' : ''}`}
               onClick={onSyncLeads}
@@ -994,6 +1010,20 @@ export default function SalesLeadWorksheet() {
                             <IconEye />
                           </button>
                         </Tooltip>
+                        {/* Activity tracker — generation + ownership timeline. */}
+                        <Tooltip label="Activity Tracker">
+                          <button
+                            className="lwp-ab lwp-ab-activity"
+                            aria-label="Activity Tracker"
+                            onClick={e => { e.stopPropagation(); onViewActivity(l); }}
+                          >
+                            <IconActivity />
+                          </button>
+                        </Tooltip>
+                        {/* Per-row (re)assign stays available to everyone in the
+                            sales hierarchy — an employee can reassign their lead
+                            up to their manager or down to their own reports. The
+                            picker (and the server) restrict the valid targets. */}
                         {canAssign && (
                           <Tooltip label="Assign Lead">
                             <button
@@ -1200,6 +1230,13 @@ export default function SalesLeadWorksheet() {
         leadId={viewLeadId}
         onClose={() => setViewLeadId(null)}
       />
+
+      <LeadActivityModal
+        open={activityLead !== null}
+        leadId={activityLead?.id ?? null}
+        oppCode={activityLead?.opp ?? null}
+        onClose={() => setActivityLead(null)}
+      />
     </div>
   );
 }
@@ -1246,6 +1283,11 @@ const IconAssign = () => (
   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
     <circle cx="12" cy="7" r="4" />
+  </svg>
+);
+const IconActivity = () => (
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+    <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
   </svg>
 );
 const IconCheck = () => (
@@ -1773,6 +1815,15 @@ const SCOPED_CSS = `
   background: linear-gradient(135deg, #22d3ee, #06b6d4);
   transform: translateY(-1.5px);
   box-shadow: 0 4px 12px rgba(6,182,212,.5);
+}
+.lwp-root .lwp-ab-activity {
+  background: linear-gradient(135deg, #0284c7, #0369a1);
+  color: #fff; box-shadow: 0 2px 6px rgba(2,132,199,.35);
+}
+.lwp-root .lwp-ab-activity:hover {
+  background: linear-gradient(135deg, #0ea5e9, #0284c7);
+  transform: translateY(-1.5px);
+  box-shadow: 0 4px 12px rgba(2,132,199,.5);
 }
 .lwp-root .lwp-ab-assign {
   background: linear-gradient(135deg, #0e7490, #155e75);

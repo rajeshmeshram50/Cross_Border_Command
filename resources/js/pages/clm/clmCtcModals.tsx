@@ -127,6 +127,28 @@ export function AgreementTimelineModal({ t, code, title, stage, versions, signer
   ];
   const doneCount = steps.filter(s => s.status === 'done').length;
 
+  // Full activity log — every recorded version event (oldest → newest), so the
+  // timeline shows each approval, rejection, send, decline and signature round,
+  // not just the latest milestone of each kind. Falls back to the milestone
+  // view for legacy rows that have no version audit.
+  const evMeta = (status: string): { title: string; tone: TStatus; icon: typeof ic.doc } => {
+    switch ((status || '').toLowerCase()) {
+      case 'approved':         return { title: 'Agreement Approved', tone: 'done', icon: ic.check };
+      case 'approving':        return { title: 'Partial Approval', tone: 'done', icon: ic.check };
+      case 'rejected':         return { title: 'Agreement Rejected', tone: 'rejected', icon: ic.shield };
+      case 'declined':         return { title: 'Counterparty Declined', tone: 'rejected', icon: ic.pen };
+      case 'sent for signing': return { title: 'Sent for Counterparty Signing', tone: 'done', icon: ic.send };
+      case 'signed':           return { title: 'Agreement Signed', tone: 'done', icon: ic.pen };
+      case 'under review':     return { title: 'Submitted for Review', tone: 'done', icon: ic.shield };
+      default:                 return { title: status || 'Update', tone: 'done', icon: ic.doc };
+    }
+  };
+  const events: TStep[] = versions.map(v => {
+    const m = evMeta(v.status);
+    return { title: m.title, desc: v.label || '—', status: m.tone, by: v.by || '—', date: v.date || '—', icon: m.icon };
+  });
+  const timelineRows = events.length ? events : steps;
+
   const tone = (s: TStatus) => s === 'done'
     ? { ring: '#059669,#047857', pill: t.dark ? '#6ee7b7' : '#059669', pillBg: t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5', pillBd: t.dark ? 'rgba(16,185,129,.4)' : '#A7F3D0', label: 'Done' }
     : s === 'rejected'
@@ -155,8 +177,8 @@ export function AgreementTimelineModal({ t, code, title, stage, versions, signer
         {/* timeline */}
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 18px' }}>
           <div style={{ fontSize: 8, fontWeight: 800, color: t.textMuted, letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 12 }}>Agreement Timeline</div>
-          {steps.map((s, i) => {
-            const c = tone(s.status); const last = i === steps.length - 1;
+          {timelineRows.map((s, i) => {
+            const c = tone(s.status); const last = i === timelineRows.length - 1;
             return (
               <div key={i} style={{ display: 'flex', gap: 13 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>

@@ -105,6 +105,23 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
     const d = recs.find(r => r.declined);
     return d ? { by: d.name || 'a signer', reason: d.decline_reason || '' } : null;
   })();
+  // Once every counterparty has signed (or the contract is signed/stored) the
+  // agreement is locked: it can be viewed (form + signed document) but never
+  // re-submitted for approval or re-sent for signing.
+  const signedLock = (() => {
+    const recs = (Array.isArray(record?.signing_recipients) ? record!.signing_recipients : []) as { signed?: boolean }[];
+    const allSigned = recs.length > 0 && recs.every(r => r.signed);
+    return allSigned || String(record?.status ?? '') === 'signed' || (Number(record?.stage) || 0) >= 4;
+  })();
+  const signedDocUrl = String((record?.signed_document_url as string) ?? '');
+  // The DRAFT itself is editable only in three states: a fresh draft never sent
+  // for approval, an internally-rejected draft, or one the counterparty declined.
+  // While it's awaiting internal approval, approved/out-for-signature, or signed,
+  // it is view-only — see the user's lifecycle rules.
+  const editLock = !( !approval || approval === 'rejected' || !!signDecline );
+  // Why it's locked — drives the Stage-1 banner copy.
+  const lockReason: 'approval' | 'signing' | 'signed' | null =
+    !editLock ? null : signedLock ? 'signed' : (approval === 'approved' || stage >= 3) ? 'signing' : 'approval';
 
   useEffect(() => { document.body.style.overflow = 'hidden'; document.documentElement.style.overflow = 'hidden'; return () => { document.body.style.overflow = ''; document.documentElement.style.overflow = ''; }; }, []);
 
@@ -382,6 +399,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
               header={header} setHeader={setHeader} footer={footer} setFooter={setFooter}
               isEditing={!!editing?.dbId} onUpdate={saveEdit}
               onSubmitForApproval={submitForApproval}
+              editLock={editLock} lockReason={lockReason} signedUrl={signedDocUrl}
               resubmitMode={!!workingId && (approval === 'rejected' || !!signDecline)} onResubmit={resubmitDraft}
               declineReason={signDecline?.reason} declinedBy={signDecline?.by}
               onNext={() => goStage(2)}
@@ -447,6 +465,9 @@ function Stage1(p: {
   onSubmitForApproval: (approval: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => Promise<boolean>;
   resubmitMode: boolean; onResubmit: () => void;
   declineReason?: string; declinedBy?: string;
+  // Draft is view-only unless it's fresh / internally-rejected / counterparty-
+  // declined. lockReason explains why (awaiting approval, out for signature, signed).
+  editLock?: boolean; lockReason?: 'approval' | 'signing' | 'signed' | null; signedUrl?: string;
   onNext: () => void;
 }) {
   const t = p.t;
@@ -510,7 +531,27 @@ function Stage1(p: {
     { n: 2, label: 'Agreement Basic Details', next: 'Next: Draft Content' },
     { n: 3, label: 'Draft Agreement Content', next: 'Next: Internal Review' },
   ] as const;
-  const midNext = () => { if (midStep < 3) setMidStep((midStep + 1) as 1 | 2 | 3); else p.onNext(); };
+  // Stage-1 validation — counterparty + organisation (Step 1), then title,
+  // type and dates (Step 2) are all required before the draft can be submitted.
+  const toast = useToast();
+  const validateStep1 = (): boolean => {
+    if (!p.cps.length) { toast.error('Counterparty required', 'Add at least one counterparty before continuing.'); setMidStep(1); return false; }
+    if (!p.org)        { toast.error('Organisation required', 'Select your organisation details before continuing.'); setMidStep(1); return false; }
+    return true;
+  };
+  const validateStep2 = (): boolean => {
+    if (!p.agTitle.trim()) { toast.error('Agreement name required', 'Enter the agreement title.'); setMidStep(2); return false; }
+    if (!p.agType)         { toast.error('Agreement type required', 'Select the agreement type.'); setMidStep(2); return false; }
+    if (!p.effDate)        { toast.error('Effective date required', 'Select the effective date.'); setMidStep(2); return false; }
+    if (!p.endDate)        { toast.error('End date required', 'Select the end date.'); setMidStep(2); return false; }
+    return true;
+  };
+  const validateAll = (): boolean => validateStep1() && validateStep2();
+  const midNext = () => {
+    if (midStep === 1) { if (!validateStep1()) return; setMidStep(2); }
+    else if (midStep === 2) { if (!validateStep2()) return; setMidStep(3); }
+    else p.onNext();
+  };
   const midBack = () => { if (midStep > 1) setMidStep((midStep - 1) as 1 | 2 | 3); };
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', gap: 12, flex: 1, minHeight: 0, width: '100%' }}>
@@ -772,7 +813,7 @@ function Stage1(p: {
                 </div>
                 <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#eef0f6', padding: 14 }}>
                   <HeaderFooterPanel header={header} setHeader={setHeader} footer={footer} setFooter={setFooter} uploadLogoEndpoint="/clm/trade-doc-library/upload-header-logo">
-                    <div ref={editorRef} className="ctc-editor" contentEditable suppressContentEditableWarning data-ph="Start drafting your agreement content here…  This Agreement is entered into between [Counter Party 1] and [Counter Party 2]…" onInput={syncDraft} onBlur={syncDraft} style={{ minHeight: 220, padding: '14px 16px', border: 'none', outline: 'none', fontSize: 12, fontFamily: 'inherit', color: t.dark ? '#e8eaed' : '#1f2937', lineHeight: 1.8, background: t.dark ? '#1b2230' : '#fff', boxSizing: 'border-box' }} />
+                    <div ref={editorRef} className="ctc-editor" contentEditable={!p.editLock} suppressContentEditableWarning data-ph="Start drafting your agreement content here…  This Agreement is entered into between [Counter Party 1] and [Counter Party 2]…" onInput={p.editLock ? undefined : syncDraft} onBlur={p.editLock ? undefined : syncDraft} style={{ minHeight: 220, padding: '14px 16px', border: 'none', outline: 'none', fontSize: 12, fontFamily: 'inherit', color: t.dark ? '#e8eaed' : '#1f2937', lineHeight: 1.8, background: t.dark ? '#1b2230' : '#fff', boxSizing: 'border-box' }} />
                   </HeaderFooterPanel>
                 </div>
                 {/* footer hint */}
@@ -799,8 +840,32 @@ function Stage1(p: {
                 <span style={{ fontSize: 9.5, fontWeight: 700, color: '#fff' }}>{MID_STEPS[midStep - 1].next}</span>
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>
               </button>
+            ) : p.editLock ? (
+              // Draft is locked (awaiting approval / out for signature / signed).
+              // View only — no edit, resubmit or approval from here.
+              (() => {
+                const lk = p.lockReason === 'signed'
+                  ? { txt: 'Signed & locked — view only', bg: t.dark ? 'rgba(16,185,129,.12)' : '#ECFDF5', bd: t.dark ? 'rgba(16,185,129,.35)' : '#A7F3D0', fg: t.dark ? '#6ee7b7' : '#059669' }
+                  : p.lockReason === 'signing'
+                    ? { txt: 'Out for counterparty signature — view only (editable only if they decline)', bg: t.dark ? 'rgba(8,145,178,.12)' : '#ECFEFF', bd: t.dark ? 'rgba(6,182,212,.35)' : '#A5F3FC', fg: t.dark ? '#67e8f9' : '#0E7490' }
+                    : { txt: 'Awaiting internal approval — view only (editable only if rejected)', bg: t.dark ? 'rgba(245,158,11,.12)' : '#FFFBEB', bd: t.dark ? 'rgba(245,158,11,.35)' : '#FDE68A', fg: t.dark ? '#fcd34d' : '#B45309' };
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9, background: lk.bg, border: `1.5px solid ${lk.bd}`, color: lk.fg, fontSize: 9.5, fontWeight: 800 }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+                      {lk.txt}
+                    </span>
+                    {p.lockReason === 'signed' && p.signedUrl && (
+                      <button onClick={() => window.open(p.signedUrl, '_blank')} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, background: 'linear-gradient(135deg,#059669,#047857)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 12px rgba(5,150,105,.32)' }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                        <span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>View Signed Document</span>
+                      </button>
+                    )}
+                  </div>
+                );
+              })()
             ) : p.resubmitMode ? (
-              <button onClick={p.onResubmit} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#B45309,#D97706,#F59E0B)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(217,119,6,.4)' }}>
+              <button onClick={() => { if (validateAll()) p.onResubmit(); }} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#B45309,#D97706,#F59E0B)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(217,119,6,.4)' }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
                 <span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>Resubmit for Review</span>
               </button>
@@ -809,7 +874,7 @@ function Stage1(p: {
               // workflow and send for approval (edit updates the existing row
               // via resubmit; see submitForApproval). No more "Save Changes"
               // dead-end that redirected to the list.
-              <button onClick={() => setApprovalOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(109,40,217,.4)' }}>
+              <button onClick={() => { if (validateAll()) setApprovalOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(109,40,217,.4)' }}>
                 <span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{p.isEditing ? 'Update & Send for Approval' : 'Submit & Send for Approval'}</span>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
               </button>
@@ -823,7 +888,7 @@ function Stage1(p: {
       <div style={{ flex: rightOpen ? 2.5 : '0 0 48px', minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', transition: 'flex .25s cubic-bezier(.22,1,.36,1)' }}>
         {!rightOpen ? <CollapsedBar t={t} title="Agreement Summary Details" headGrad="#6D28D9,#7C3AED,#8B5CF6,#A78BFA,#C4B5FD" dir="right" onExpand={() => setRightOpen(true)} /> :
         <Panel t={t} header="Panel 03" title="Agreement Summary Details" headGrad="#6D28D9,#7C3AED,#8B5CF6,#A78BFA,#C4B5FD" onCollapse={() => setRightOpen(false)} collapseDir="right">
-          <RightTools t={t} active={midStep === 3} draft={p.draft} declineReason={p.declineReason} declinedBy={p.declinedBy} onInsert={(tok) => { if (midStep !== 3) return; if (editorRef.current) insertText(tok); else p.setDraft((p.draft ? p.draft + ' ' : '') + tok); }} summary={[['Agreement', p.agTitle || '—'], ['Type', p.agType || '—'], ['Eff. Date', p.effDate || '—'], ['End Date', p.endDate || '—'], ['Counterparties', p.cps.length ? `${p.cps.length} added` : '—'], ['CP 1', cp1?.name || '—'], ['Organisation', p.org?.name || '—']]} />
+          <RightTools t={t} active={midStep === 3 && !p.editLock} draft={p.draft} declineReason={p.declineReason} declinedBy={p.declinedBy} onInsert={(tok) => { if (midStep !== 3 || p.editLock) return; if (editorRef.current) insertText(tok); else p.setDraft((p.draft ? p.draft + ' ' : '') + tok); }} summary={[['Agreement', p.agTitle || '—'], ['Type', p.agType || '—'], ['Eff. Date', p.effDate || '—'], ['End Date', p.endDate || '—'], ['Counterparties', p.cps.length ? `${p.cps.length} added` : '—'], ['CP 1', cp1?.name || '—'], ['Organisation', p.org?.name || '—']]} />
         </Panel>}
       </div>
     </div>
@@ -854,6 +919,9 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
   const allSigned = signers.length > 0 && signers.every(s => s.signed);
   const declinedSigner = signers.find(s => s.declined);
   const isDeclined = !!declinedSigner;
+  // Fully signed / stored → locked. No re-send for signing, no resubmit — only
+  // viewing (and the legitimate "Move to Final Repository" once all signed).
+  const signedLock = allSigned || String(record?.status ?? '') === 'signed' || stage >= 4;
   const code = String((record?.code as string) ?? 'CTC');
   const rejReason = String((record?.rejection_reason as string) ?? '');
   // Clarification thread raised by an approver from "Agreements To Approve".
@@ -987,14 +1055,22 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
           {/* footer nav */}
           <div style={{ flexShrink: 0, padding: '10px 16px', background: t.surface, borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {/* Signed & locked — viewing an earlier stage of a completed
+                  agreement. No re-send / resubmit; just a view-only notice. */}
+              {signedLock && stage < 3 && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9, background: t.dark ? 'rgba(16,185,129,.12)' : '#ECFDF5', border: `1.5px solid ${t.dark ? 'rgba(16,185,129,.35)' : '#A7F3D0'}`, color: t.dark ? '#6ee7b7' : '#059669', fontSize: 9.5, fontWeight: 800 }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+                  Signed &amp; locked — view only
+                </span>
+              )}
               {/* Stage 2 — Internal Review & Approval outcomes */}
-              {stage === 2 && approval === 'rejected' && (
+              {!signedLock && stage === 2 && approval === 'rejected' && (
                 <button onClick={onResubmitEdit} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#B45309,#D97706,#F59E0B)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(217,119,6,.35)' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg> Edit &amp; Resubmit for Review</button>
               )}
-              {stage === 2 && approval === 'approved' && (
+              {!signedLock && stage === 2 && approval === 'approved' && (
                 <button onClick={() => setSigningOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(8,145,178,.35)' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg> Send for Signing &amp; Negotiation</button>
               )}
-              {stage === 2 && approval !== 'approved' && approval !== 'rejected' && (
+              {!signedLock && stage === 2 && approval !== 'approved' && approval !== 'rejected' && (
                 <button disabled title={inClarification ? 'Reply to the clarification in the review panel — the approver decides after you respond' : approverCount > 1 ? `All ${approverCount} approvers must approve before this can be sent for signing` : "Waiting for the approver's decision"} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: t.dark ? 'rgba(255,255,255,.04)' : '#F1F5F9', border: `1.5px solid ${t.dark ? 'rgba(148,163,184,.2)' : '#E2E8F0'}`, cursor: 'not-allowed', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: t.textMuted }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> {inClarification ? 'Clarification Requested' : `Awaiting Approval${approverCount > 1 ? ` · ${approvedCount} of ${approverCount} approved` : ''}`}</button>
               )}
               {/* Stage 3 — declined → must re-run internal approval before it can
@@ -1003,7 +1079,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                 <button onClick={onResubmitEdit} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#B45309,#D97706,#F59E0B)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(217,119,6,.35)' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg> Edit &amp; Resubmit for Approval</button>
               )}
               {/* Stage 3 — awaiting e-signatures → nudge the signers via Zoho Sign */}
-              {stage === 3 && !isDeclined && !allSigned && (
+              {stage === 3 && !isDeclined && !allSigned && !signedLock && (
                 <button onClick={onRemind} disabled={signers.length === 0} title="Re-email the counterparty signers via Zoho Sign" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: signers.length === 0 ? (t.dark ? 'rgba(255,255,255,.04)' : '#F1F5F9') : 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', border: 'none', cursor: signers.length === 0 ? 'not-allowed' : 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: signers.length === 0 ? t.textMuted : '#fff', boxShadow: signers.length === 0 ? 'none' : '0 3px 10px rgba(8,145,178,.35)' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg> Send Reminder</button>
               )}
               {stage === 3 && !isDeclined && allSigned && (
@@ -1171,9 +1247,28 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                 </button>
                 )}
                 <div style={{ fontSize: 7, fontWeight: 800, color: t.textMuted, letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ height: 1, background: t.dark ? 'rgba(148,163,184,.15)' : '#EDE9FE', flex: 1 }} />Review Timeline<div style={{ height: 1, background: t.dark ? 'rgba(148,163,184,.15)' : '#EDE9FE', flex: 1 }} /></div>
-                <TimelineItem t={t} tone="done" title="Draft Submitted" badge="Done" sub="Agreement drafted & submitted for internal review" />
-                <TimelineItem t={t} tone={approval === 'approved' || stage >= 3 ? 'done' : 'active'} title="Internal Review" badge={approval === 'approved' || stage >= 3 ? 'Done' : approval === 'rejected' ? 'Returned' : 'Active'} sub={approval === 'approved' ? `Approved by ${apprName}` : approval === 'rejected' ? `Returned by ${apprName} for changes` : `${apprName} reviewing the agreement`} last={stage < 3} />
-                {stage >= 3 && <TimelineItem t={t} tone={stage === 4 ? 'done' : 'active'} title={stage === 4 ? 'Signed & Stored' : 'Counterparty Signing'} badge={stage === 4 ? 'Done' : allSigned ? 'Signed' : 'Active'} sub={stage === 4 ? 'Final signed agreement archived' : allSigned ? 'All parties signed — ready to store' : 'Awaiting counterparty signature'} last />}
+                {/* Full audit trail from the contract's version history — every
+                    submission, approval, rejection, send, sign & decline, each
+                    with its stored date & time (oldest first). */}
+                {versions.length === 0 ? (
+                  <TimelineItem t={t} tone="active" title="Draft Submitted" badge="Pending" sub="Agreement drafted & submitted for internal review" last />
+                ) : versions.map((v, i) => {
+                  const meta = ctcTimelineMeta(v.status);
+                  const reason = (v as { reason?: string }).reason;
+                  return (
+                    <TimelineItem
+                      key={i}
+                      t={t}
+                      tone={meta.tone}
+                      title={meta.title}
+                      badge={v.status || meta.title}
+                      sub={reason && !v.label.includes(reason) ? `${v.label} — ${reason}` : v.label}
+                      date={v.date}
+                      by={v.by}
+                      last={i === versions.length - 1}
+                    />
+                  );
+                })}
               </div>
             </div>
             </>)}
@@ -1365,22 +1460,50 @@ function ContractHistoryPanel({ t, draftCount, signedUrl, signatureRequestId, on
   );
 }
 
-function TimelineItem({ t, tone, title, badge, sub, last }: { t: OpsTokens; tone: 'done' | 'active'; title: string; badge: string; sub: string; last?: boolean }) {
-  const c = tone === 'done' ? '#059669' : '#7C3AED';
+/* Map a stored version status → a timeline title + dot colour tone. */
+function ctcTimelineMeta(status: string): { title: string; tone: 'done' | 'active' | 'bad' } {
+  switch ((status || '').toLowerCase()) {
+    case 'approved':        return { title: 'Approved', tone: 'done' };
+    case 'signed':          return { title: 'Signed', tone: 'done' };
+    case 'rejected':        return { title: 'Rejected', tone: 'bad' };
+    case 'declined':        return { title: 'Declined', tone: 'bad' };
+    case 'sent for signing':return { title: 'Sent for Signing', tone: 'active' };
+    case 'approving':       return { title: 'Partial Approval', tone: 'active' };
+    case 'under review':    return { title: 'Submitted for Review', tone: 'active' };
+    default:                return { title: status || 'Update', tone: 'active' };
+  }
+}
+
+function TimelineItem({ t, tone, title, badge, sub, date, by, last }: { t: OpsTokens; tone: 'done' | 'active' | 'bad'; title: string; badge: string; sub: string; date?: string; by?: string; last?: boolean }) {
+  const c = tone === 'done' ? '#059669' : tone === 'bad' ? '#DC2626' : '#7C3AED';
+  const grad = tone === 'done' ? '#059669,#047857' : tone === 'bad' ? '#EF4444,#DC2626' : '#7C3AED,#5B21B6';
+  const badgeBg = tone === 'done' ? (t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5') : tone === 'bad' ? (t.dark ? 'rgba(239,68,68,.16)' : '#FEF2F2') : (t.dark ? 'rgba(124,58,237,.18)' : 'linear-gradient(135deg,#EDE9FE,#DDD6FE)');
+  const badgeFg = tone === 'done' ? (t.dark ? '#6ee7b7' : '#059669') : tone === 'bad' ? (t.dark ? '#fca5a5' : '#DC2626') : (t.dark ? '#c4b5fd' : '#6D28D9');
   return (
     <div style={{ display: 'flex', gap: 10 }}>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, width: 24 }}>
-        <div style={{ width: 24, height: 24, borderRadius: '50%', background: `linear-gradient(135deg,${tone === 'done' ? '#059669,#047857' : '#7C3AED,#5B21B6'})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          {tone === 'done' ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg> : <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'rgba(255,255,255,.9)' }} />}
+        <div style={{ width: 24, height: 24, borderRadius: '50%', background: `linear-gradient(135deg,${grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          {tone === 'done'
+            ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
+            : tone === 'bad'
+              ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              : <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'rgba(255,255,255,.9)' }} />}
         </div>
         {!last && <div style={{ width: 2, height: 28, background: `linear-gradient(180deg,${c},${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'})`, margin: '3px 0' }} />}
       </div>
       <div style={{ flex: 1, paddingBottom: last ? 0 : 18 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginBottom: 3 }}>
           <div style={{ fontSize: 10, fontWeight: 800, color: c }}>{title}</div>
-          <span style={{ fontSize: 7, fontWeight: 700, padding: '2px 7px', borderRadius: 10, background: tone === 'done' ? (t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5') : (t.dark ? 'rgba(124,58,237,.18)' : 'linear-gradient(135deg,#EDE9FE,#DDD6FE)'), color: tone === 'done' ? (t.dark ? '#6ee7b7' : '#059669') : (t.dark ? '#c4b5fd' : '#6D28D9') }}>{badge}</span>
+          <span style={{ fontSize: 7, fontWeight: 700, padding: '2px 7px', borderRadius: 10, background: badgeBg, color: badgeFg, whiteSpace: 'nowrap', flexShrink: 0 }}>{badge}</span>
         </div>
         <div style={{ fontSize: 8, color: t.textMuted, lineHeight: 1.55 }}>{sub}</div>
+        {(date || by) && (
+          <div style={{ fontSize: 7.5, color: t.textMuted, fontWeight: 700, marginTop: 3, display: 'flex', alignItems: 'center', gap: 5, opacity: .9 }}>
+            {date && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>{date}</span>}
+            {date && by && <span style={{ opacity: .5 }}>·</span>}
+            {by && <span>{by}</span>}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -32,79 +32,82 @@ class GeographySeeder extends Seeder
         $adminId = $admin->id;
         $now = now();
 
-        // ── COUNTRIES ── upsert by iso_code (stable, unique). Match within the
-        // admin-seeded GLOBAL scope (client_id / branch_id NULL) so tenant rows
-        // are never touched. Existing rows are updated in place → id preserved.
-        $cIns = 0; $cKept = 0;
-        foreach ($this->countries() as $c) {
-            $existing = DB::table('master_countries')
-                ->where('iso_code', $c[1])
-                ->whereNull('client_id')
-                ->whereNull('branch_id')
-                ->first(['id']);
-            if ($existing) {
-                DB::table('master_countries')->where('id', $existing->id)->update([
-                    'name'       => $c[0],
-                    'status'     => 'Active',
-                    'updated_at' => $now,
-                ]);
-                $cKept++;
-            } else {
-                DB::table('master_countries')->insert([
-                    'name'       => $c[0],
-                    'iso_code'   => $c[1],
-                    'status'     => 'Active',
-                    'client_id'  => null,
-                    'branch_id'  => null,
-                    'created_by' => $adminId,
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ]);
-                $cIns++;
-            }
-        }
-        $this->command->info(sprintf('countries: +%d new, %d kept (ids preserved)', $cIns, $cKept));
+        // Wrap the whole geography upsert in ONE transaction with PRELOADED
+        // keys + BATCHED inserts. The previous row-by-row form fired a SELECT
+        // then an INSERT/UPDATE per row (~4k auto-committed round-trips) which
+        // on a remote / managed Postgres took minutes ("looks stuck"). This
+        // version does 2 SELECTs + chunked inserts inside a single commit →
+        // ~1-2s. Behaviour is unchanged: id-stable upsert by natural key
+        // within the global (client_id / branch_id NULL) scope; existing rows
+        // are left in place (id preserved) and only genuinely new rows insert.
+        [$cIns, $cKept, $sIns, $sKept] = DB::transaction(function () use ($adminId, $now) {
 
-        // iso_code -> id map across the global rows (existing + just-inserted).
-        $isoToId = DB::table('master_countries')
-            ->whereNull('client_id')
-            ->whereNull('branch_id')
-            ->pluck('id', 'iso_code')
-            ->all();
+            // ── COUNTRIES ── upsert by iso_code within the global scope. ──
+            $isoToId = DB::table('master_countries')
+                ->whereNull('client_id')->whereNull('branch_id')
+                ->pluck('id', 'iso_code')->all();
 
-        // ── STATES ── upsert by (country_id, name). Same id-preserving rule.
-        $sIns = 0; $sKept = 0;
-        foreach ($this->statesByIso() as $iso => $names) {
-            $countryId = $isoToId[$iso] ?? null;
-            if (! $countryId) continue;
-            foreach ($names as $name) {
-                $existing = DB::table('master_states')
-                    ->where('country_id', (string) $countryId)
-                    ->where('name', $name)
-                    ->whereNull('client_id')
-                    ->whereNull('branch_id')
-                    ->first(['id']);
-                if ($existing) {
-                    DB::table('master_states')->where('id', $existing->id)->update([
-                        'status'     => 'Active',
-                        'updated_at' => $now,
+            $cIns = 0; $cKept = 0; $newCountries = [];
+            foreach ($this->countries() as $c) {
+                [$name, $iso] = $c;
+                if (isset($isoToId[$iso])) {
+                    // Existing global row — refresh name in place (id preserved).
+                    DB::table('master_countries')->where('id', $isoToId[$iso])->update([
+                        'name' => $name, 'status' => 'Active', 'updated_at' => $now,
                     ]);
-                    $sKept++;
+                    $cKept++;
                 } else {
-                    DB::table('master_states')->insert([
-                        'country_id' => (string) $countryId,
-                        'name'       => $name,
-                        'status'     => 'Active',
-                        'client_id'  => null,
-                        'branch_id'  => null,
-                        'created_by' => $adminId,
-                        'created_at' => $now,
-                        'updated_at' => $now,
-                    ]);
+                    $newCountries[] = [
+                        'name' => $name, 'iso_code' => $iso, 'status' => 'Active',
+                        'client_id' => null, 'branch_id' => null,
+                        'created_by' => $adminId, 'created_at' => $now, 'updated_at' => $now,
+                    ];
+                    $cIns++;
+                }
+            }
+            foreach (array_chunk($newCountries, 500) as $chunk) {
+                DB::table('master_countries')->insert($chunk);
+            }
+
+            // Refresh iso -> id map so states of just-inserted countries resolve.
+            $isoToId = DB::table('master_countries')
+                ->whereNull('client_id')->whereNull('branch_id')
+                ->pluck('id', 'iso_code')->all();
+
+            // ── STATES ── upsert by (country_id, name) within the global scope. ──
+            // Preload existing global state keys in ONE query (no per-row SELECT).
+            $existingStates = [];
+            foreach (DB::table('master_states')
+                        ->whereNull('client_id')->whereNull('branch_id')
+                        ->get(['country_id', 'name']) as $r) {
+                $existingStates[$r->country_id . '|' . $r->name] = true;
+            }
+
+            $sIns = 0; $sKept = 0; $newStates = [];
+            foreach ($this->statesByIso() as $iso => $names) {
+                $countryId = $isoToId[$iso] ?? null;
+                if (! $countryId) continue;
+                foreach ($names as $name) {
+                    if (isset($existingStates[((string) $countryId) . '|' . $name])) {
+                        $sKept++;            // already present, id preserved, left as-is
+                        continue;
+                    }
+                    $newStates[] = [
+                        'country_id' => (string) $countryId, 'name' => $name, 'status' => 'Active',
+                        'client_id' => null, 'branch_id' => null,
+                        'created_by' => $adminId, 'created_at' => $now, 'updated_at' => $now,
+                    ];
                     $sIns++;
                 }
             }
-        }
+            foreach (array_chunk($newStates, 500) as $chunk) {
+                DB::table('master_states')->insert($chunk);
+            }
+
+            return [$cIns, $cKept, $sIns, $sKept];
+        });
+
+        $this->command->info(sprintf('countries: +%d new, %d kept (ids preserved)', $cIns, $cKept));
         $this->command->info(sprintf('states: +%d new, %d kept (ids preserved)', $sIns, $sKept));
     }
 

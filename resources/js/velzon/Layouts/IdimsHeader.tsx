@@ -52,8 +52,8 @@ const LEAF_DESC: Record<string, string> = {
   'sales.sign_tracker': 'Track all documents sent for e-signature.',
   // Central CLM
   'clm.analytics': 'Track contract KPIs & legal performance.',
-  'clm.diagnosis': 'Identify blockers, risks & pending approvals.',
-  'clm.resolution_center': 'Resolve legal, approval & contract issues.',
+  'clm.diagnosis_resolution': 'Diagnose contract risks & drive resolution actions.',
+  'clm.regulatory_defense': 'Read-only regulatory defense file repository.',
   'clm.buyer_profile': 'Manage buyer onboarding & agreements.',
   'clm.supplier_profile': 'Manage supplier contracts & compliance.',
   'clm.case_to_case': 'Manage one-time operational contracts.',

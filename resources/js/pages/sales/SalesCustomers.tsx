@@ -1170,6 +1170,9 @@ ${CSTRIP_CSS}
   overflow: hidden;
   flex: 1; min-height: 0;
   padding: 14px 14px 12px;
+  /* Anchor for the empty-state overlay, which is centered in the table
+     body region (between the sticky header and the footer). */
+  position: relative;
   /* Light, subtle scrollbar (Firefox). */
   scrollbar-width: thin;
   scrollbar-color: #d1d5db transparent;
@@ -1548,7 +1551,19 @@ ${CSTRIP_CSS}
 .smc-table tbody tr.even td { background: rgba(250,245,255,.6); }
 .smc-table tbody tr:hover td { background: linear-gradient(90deg, rgba(196,181,253,.25), rgba(167,139,250,.2), rgba(196,181,253,.25)) !important; }
 .smc-table tbody tr:last-child td { border-bottom: none; }
-.smc-empty { text-align: center; padding: 32px !important; color: #a78bfa; font-size: 12px; font-style: italic; }
+/* Empty state — centered OVER the table body (between the sticky header and
+   the footer) instead of dropping below the footer. The TableContainer still
+   renders its header + footer; this overlays the blank body area. */
+.smc-empty {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 16px);            /* nudge below the sticky header band */
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: #a78bfa; font-size: 12px; font-style: italic;
+  pointer-events: none;
+  z-index: 2;
+}
 
 /* List-page shimmer wrapper. CSS grid keeps each shimmer cell
  * aligned with the live column count + lavender header strip. */
