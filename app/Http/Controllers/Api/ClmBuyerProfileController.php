@@ -290,6 +290,10 @@ class ClmBuyerProfileController extends Controller
         // Customer compliance progress reused per opportunity (keyed by id).
         $custProgById = [];
         foreach ($buyers as $b) $custProgById[$b['db_id']] = $b;
+        // Consignee compliance — drives the "Consignee Transactions" view in
+        // the Buyer ≠ Consignee tab.
+        $consProgById = [];
+        foreach ($consOut as $co) $consProgById[$co['db_id']] = $co;
 
         $wsEq = []; $wsNeq = []; $wosEq = []; $wosNeq = [];
         $n = ['wsEq' => 0, 'wsNeq' => 0, 'wosEq' => 0, 'wosNeq' => 0];
@@ -324,7 +328,17 @@ class ClmBuyerProfileController extends Controller
                 'agr'      => $agr,
             ];
             if ($hasShip) $base['shp'] = 'SHP-' . str_pad((string) $lid, 3, '0', STR_PAD_LEFT);
-            if ($separateConsignee) { $base['consignee'] = $cons->company_name; $base['consId'] = (int) $cons->id; }
+            if ($separateConsignee) {
+                $base['consignee'] = $cons->company_name;
+                $base['consId'] = (int) $cons->id;
+                // Consignee-side compliance for the "Consignee Transactions" view.
+                $cp2 = $consProgById[(int) $cons->id] ?? null;
+                $base['c_kyc'] = $cp2 ? $cp2['kyc'] : ['d' => 0, 't' => 0];
+                $base['c_dd']  = $cp2 ? $cp2['dd']  : ['d' => 0, 't' => 0];
+                $base['c_tl']  = $cp2 ? $cp2['tl']  : ['d' => 0, 't' => 0];
+                $base['c_td']  = $cp2 ? $cp2['td']  : ['d' => 0, 't' => 0];
+                $base['c_agr'] = $cp2 ? $cp2['agr'] : ['d' => 0, 't' => 0];
+            }
 
             if ($hasShip && $separateConsignee)        { $base['sr'] = ++$n['wsNeq'];  $wsNeq[]  = $base; }
             elseif ($hasShip && !$separateConsignee)   { $base['sr'] = ++$n['wsEq'];   $wsEq[]   = $base; }
