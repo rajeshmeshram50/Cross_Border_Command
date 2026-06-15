@@ -188,6 +188,33 @@ export const WOS_SUPPLIERS: Record<WosScope, string[]> = {
 };
 export const WOS_OFFSET: Record<WosScope, number> = { svc: 0, mat: 100, logi: 200 };
 
+/* Party Overview panels (Buyer / Consignee / Supplier) — aggregate roll-ups
+ * shown below the transactions table. These are fixed mock figures matching
+ * the prototype; `pend` holds the per-document *pending* count (done = total
+ * − pending). `geo` is omitted for suppliers (all domestic). */
+export type PartyOverview = {
+  noun: string;
+  total: number;
+  compliant: number;
+  geo?: { intl: number; dom: number };
+  pend: { kyc: number; dd: number; tl: number; td: number; agr: number };
+};
+export const BUYER_OVERVIEW: PartyOverview = {
+  noun: 'Buyers', total: 20, compliant: 4,
+  geo: { intl: 10, dom: 10 },
+  pend: { kyc: 5, dd: 8, tl: 10, td: 15, agr: 16 },
+};
+export const CONSIGNEE_OVERVIEW: PartyOverview = {
+  noun: 'Consignees', total: 35, compliant: 6,
+  geo: { intl: 25, dom: 10 },
+  pend: { kyc: 11, dd: 15, tl: 21, td: 26, agr: 28 },
+};
+export const SUPPLIER_OVERVIEW: PartyOverview = {
+  noun: 'Suppliers', total: 46, compliant: 16,
+  // suppliers are all domestic — no geographic split
+  pend: { kyc: 11, dd: 17, tl: 22, td: 28, agr: 29 },
+};
+
 /* Case-to-Case contracts — only the fields the header stats read. */
 export type CtcLite = { status: 'signed' | 'inprogress' | 'rejected'; approval: 'approved' | 'pending' | 'rejected'; endDate: string };
 export const CTC: CtcLite[] = [

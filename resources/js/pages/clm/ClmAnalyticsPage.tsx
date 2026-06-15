@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { useOpsTheme } from './useOpsTheme';
+import { useOpsTheme, type OpsTokens } from './useOpsTheme';
 import {
   WS_ROWS, WOS_ROWS, BUYERS, CONSIGNEES, SUPPLIERS, CTC, ATA_CLARIFICATIONS,
   WOS_SUPPLIERS, WOS_OFFSET, DOC_KEYS, docDone,
-  type WsRow, type DocProg, type DocKey, type WosScope,
+  BUYER_OVERVIEW, CONSIGNEE_OVERVIEW, SUPPLIER_OVERVIEW,
+  type WsRow, type DocProg, type DocKey, type WosScope, type PartyOverview,
 } from './clmAnalyticsData';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -149,6 +150,173 @@ function MetricCard({ value, label, icon, badge, active, onClick, dark }:
   );
 }
 
+// ── Party Overview panel (Buyer / Consignee / Supplier) ──────────────────────
+function PartyOverviewPanel({ title, accent, accent2, tint, icon, data, tk }:
+  { title: string; accent: string; accent2: string; tint: string; icon: string; data: PartyOverview; tk: OpsTokens }) {
+  const compPct = data.total ? Math.round(data.compliant / data.total * 100) : 0;
+  const R = 46, C = 2 * Math.PI * R, dash = C * compPct / 100;
+  const uid = 'pp' + title.replace(/[^a-z]/gi, '');
+  const numColor = tk.dark ? '#f1f5f9' : '#0c4a6e';
+  const legend = tk.dark ? '#cbd5e1' : '#475569';
+  const bars: [string, keyof PartyOverview['pend']][] = [['KYC', 'kyc'], ['Due Diligence', 'dd'], ['Trade Licenses', 'tl'], ['Trade Documents', 'td'], ['Agreements', 'agr']];
+  return (
+    <div style={{ flex: 1, minWidth: 280, display: 'flex', flexDirection: 'column', background: tk.surface, border: `1px solid ${tk.border}`, borderRadius: 14, overflow: 'hidden', boxShadow: '0 4px 16px rgba(8,145,178,.07)' }}>
+      {/* header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 16px', background: tk.dark ? `linear-gradient(110deg,${accent}26,${accent}05 140%)` : `linear-gradient(110deg,${tint},${tint}00 140%)`, borderBottom: `1.5px solid ${accent}22` }}>
+        <div style={{ width: 32, height: 32, borderRadius: 9, background: `linear-gradient(135deg,${accent},${accent2})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: `0 3px 9px ${accent}4d` }}>
+          <Svg d={icon} size={16} w={2.2} />
+        </div>
+        <span style={{ fontSize: 13.5, fontWeight: 800, color: tk.dark ? accent2 : accent, letterSpacing: '-.2px' }}>{title}</span>
+      </div>
+
+      {/* donut + legend */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px 6px' }}>
+        <svg width="132" height="132" viewBox="0 0 120 120" style={{ display: 'block', flexShrink: 0 }}>
+          <defs>
+            <linearGradient id={`${uid}g`} x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor={accent} /><stop offset="100%" stopColor={accent2} /></linearGradient>
+          </defs>
+          <circle cx="60" cy="60" r={R} fill="none" stroke={`${accent}${tk.dark ? '33' : '18'}`} strokeWidth="13" />
+          <circle cx="60" cy="60" r={R} fill="none" stroke={`url(#${uid}g)`} strokeWidth="13" strokeLinecap="round" strokeDasharray={`${dash} ${C}`} transform="rotate(-90 60 60)" />
+          <text x="60" y="56" textAnchor="middle" fontSize="26" fontWeight="900" fill={accent} letterSpacing="-1">{compPct}%</text>
+          <text x="60" y="74" textAnchor="middle" fontSize="9" fontWeight="700" fill={tk.textMuted} letterSpacing=".05em">COMPLIANT</text>
+        </svg>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: tk.textMuted, letterSpacing: '.06em', textTransform: 'uppercase' }}>Total {data.noun}</div>
+          <div style={{ fontSize: 30, fontWeight: 900, color: numColor, lineHeight: 1, letterSpacing: '-1.5px', margin: '2px 0 8px' }}>{pad2(data.total)}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+            <span style={{ width: 9, height: 9, borderRadius: 3, background: `linear-gradient(135deg,${accent},${accent2})` }} />
+            <span style={{ fontSize: 10.5, color: legend, fontWeight: 600 }}>Fully Compliant</span>
+            <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 800, color: accent }}>{pad2(data.compliant)}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 9, height: 9, borderRadius: 3, background: `${accent}22` }} />
+            <span style={{ fontSize: 10.5, color: legend, fontWeight: 600 }}>Action Needed</span>
+            <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 800, color: tk.textMuted }}>{pad2(data.total - data.compliant)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* geographic split */}
+      {data.geo && (
+        <div style={{ padding: '6px 16px 12px' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: tk.textMuted, letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 6 }}>Geographic Split</div>
+          <div style={{ display: 'flex', height: 9, borderRadius: 20, overflow: 'hidden', boxShadow: 'inset 0 1px 2px rgba(0,0,0,.08)' }}>
+            <div style={{ width: `${data.total ? Math.round(data.geo.intl / data.total * 100) : 0}%`, background: `linear-gradient(90deg,${accent},${accent2})` }} />
+            <div style={{ flex: 1, background: `${accent}2e` }} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 7 }}>
+            <span style={{ fontSize: 10, color: legend, fontWeight: 600 }}><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: `linear-gradient(135deg,${accent},${accent2})`, marginRight: 5 }} />International <strong style={{ color: numColor }}>{pad2(data.geo.intl)}</strong></span>
+            <span style={{ fontSize: 10, color: legend, fontWeight: 600 }}>Domestic <strong style={{ color: numColor }}>{pad2(data.geo.dom)}</strong><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: `${accent}2e`, marginLeft: 5 }} /></span>
+          </div>
+        </div>
+      )}
+
+      {/* document completion bars */}
+      <div style={{ padding: '8px 16px 16px', flex: 1 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: tk.textMuted, letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10, borderTop: `1px solid ${accent}14`, paddingTop: 12 }}>Document Completion</div>
+        {bars.map(([label, key]) => {
+          const pend = data.pend[key];
+          const done = data.total - pend;
+          const pct = data.total ? Math.round(done / data.total * 100) : 0;
+          return (
+            <div key={key} style={{ marginBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+                <span style={{ fontSize: 10, fontWeight: 600, color: legend }}>{label}</span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: numColor }}>
+                  <span style={{ color: accent }}>{pad2(done)}</span><span style={{ color: tk.textMuted }}>/{pad2(data.total)}</span> <span style={{ color: '#cbd5e1' }}>·</span> <span style={{ color: '#ef4444', fontWeight: 700 }}>{pad2(pend)} pending</span>
+                </span>
+              </div>
+              <div style={{ height: 6, borderRadius: 20, background: `${accent}14`, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${pct}%`, borderRadius: 20, background: `linear-gradient(90deg,${accent},${accent2})` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Summary panel (Shipments Overview / Case to Case Overview) ───────────────
+type SummaryRow = { l: string; v: number; k: 'total' | 'ok' | 'prog' | 'bad' | 'pend' };
+function SummaryPanel({ title, accent, accent2, tint, icon, rows, tk }:
+  { title: string; accent: string; accent2: string; tint: string; icon: string; rows: SummaryRow[]; tk: OpsTokens }) {
+  const totalRow = rows[0] ?? { l: '', v: 0, k: 'total' as const };
+  const total = totalRow.v || 0;
+  const maxV = total || 1;
+  const uid = 'sum' + title.replace(/[^a-z]/gi, '');
+  const colorFor = (k: SummaryRow['k']) => k === 'ok' ? '#16a34a' : k === 'bad' ? '#ef4444' : k === 'prog' ? '#d97706' : accent;
+  const primary = rows.find(r => r.k === 'ok') ?? rows[1] ?? { v: 0, l: '' };
+  const pct = total ? Math.round(primary.v / total * 100) : 0;
+  const R = 52, SW = 14, C = 2 * Math.PI * R, dash = C * pct / 100;
+  const donutLabel = (primary.l || '').toUpperCase().replace(/ (SHIPMENTS|CONTRACTS)$/, '');
+  const legendRows = rows.filter(r => r.k === 'ok' || r.k === 'prog' || r.k === 'bad');
+  const barRows = rows.filter(r => r.k === 'pend');
+  const numColor = tk.dark ? '#f1f5f9' : '#0c4a6e';
+  const legend = tk.dark ? '#cbd5e1' : '#475569';
+  return (
+    <div style={{ flex: 1, minWidth: 320, display: 'flex', flexDirection: 'column', background: tk.surface, border: `1px solid ${tk.border}`, borderRadius: 14, overflow: 'hidden', boxShadow: '0 4px 16px rgba(8,145,178,.07)' }}>
+      {/* header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 16px', background: tk.dark ? `linear-gradient(110deg,${accent}26,${accent}05 140%)` : `linear-gradient(110deg,${tint},${tint}00 140%)`, borderBottom: `1.5px solid ${accent}22` }}>
+        <div style={{ width: 32, height: 32, borderRadius: 9, background: `linear-gradient(135deg,${accent},${accent2})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: `0 3px 9px ${accent}4d` }}>
+          <Svg d={icon} size={16} w={2.2} />
+        </div>
+        <span style={{ fontSize: 13.5, fontWeight: 800, color: tk.dark ? accent2 : accent, letterSpacing: '-.2px' }}>{title}</span>
+      </div>
+
+      {/* donut + total + status legend */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '16px 16px 10px' }}>
+        <svg width="146" height="146" viewBox="0 0 130 130" style={{ display: 'block', flexShrink: 0 }}>
+          <defs>
+            <linearGradient id={`${uid}g`} x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor={accent} /><stop offset="55%" stopColor={accent2} /><stop offset="100%" stopColor={accent} /></linearGradient>
+          </defs>
+          <circle cx="65" cy="65" r={R} fill="none" stroke={`${accent}${tk.dark ? '2e' : '15'}`} strokeWidth={SW} />
+          <circle cx="65" cy="65" r={R} fill="none" stroke={`url(#${uid}g)`} strokeWidth={SW} strokeLinecap="round" strokeDasharray={`${dash} ${C}`} transform="rotate(-90 65 65)" />
+          <text x="65" y="61" textAnchor="middle" fontSize="29" fontWeight="900" fill={accent} letterSpacing="-1.5">{pct}%</text>
+          <text x="65" y="79" textAnchor="middle" fontSize="8" fontWeight="700" fill={tk.textMuted} letterSpacing=".1em">{donutLabel}</text>
+        </svg>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: tk.textMuted, letterSpacing: '.06em', textTransform: 'uppercase' }}>{totalRow.l}</div>
+          <div style={{ fontSize: 32, fontWeight: 900, color: numColor, lineHeight: 1, letterSpacing: '-1.5px', margin: '2px 0 11px' }}>{pad2(total)}</div>
+          {legendRows.map(s => {
+            const col = colorFor(s.k);
+            return (
+              <div key={s.l} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
+                <span style={{ width: 10, height: 10, borderRadius: 3, background: `linear-gradient(135deg,${col},${col}bb)`, flexShrink: 0, boxShadow: `0 1px 3px ${col}55` }} />
+                <span style={{ fontSize: 11, color: legend, fontWeight: 600 }}>{s.l}</span>
+                <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 900, color: numColor, letterSpacing: '-.5px' }}>{pad2(s.v)}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* pending actions bars */}
+      {barRows.length > 0 && (
+        <div style={{ padding: '6px 16px 16px', flex: 1 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: tk.textMuted, letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 11, borderTop: `1px solid ${accent}14`, paddingTop: 12 }}>Pending Actions</div>
+          {barRows.map(it => {
+            const p = Math.round(it.v / maxV * 100);
+            return (
+              <div key={it.l} style={{ marginBottom: 11 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: legend, display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: accent }} />{it.l}
+                  </span>
+                  <span style={{ fontSize: 13, fontWeight: 900, color: numColor, letterSpacing: '-.5px' }}>{pad2(it.v)}</span>
+                </div>
+                <div style={{ height: 7, borderRadius: 20, background: `${accent}12`, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${p}%`, borderRadius: 20, background: `linear-gradient(90deg,${accent},${accent2})`, boxShadow: `0 1px 4px ${accent}40` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ClmAnalyticsPage() {
   const t = useOpsTheme('cyan');
   const dk = t.dark;
@@ -253,6 +421,33 @@ export default function ClmAnalyticsPage() {
     return { proc: 'PROC-' + pad3(n), code: 'S-' + pad3(n), name: roster.length ? roster[abs % roster.length] : '—' };
   };
   const wosTitle = wosScope === 'svc' ? 'Service Suppliers' : wosScope === 'mat' ? 'Material Suppliers' : 'Logistics Suppliers';
+
+  // ── Bottom summary panels (Shipments + Case to Case) ──────────────────────
+  const shipmentRows = useMemo<SummaryRow[]>(() => {
+    const total = WS_ROWS.length;
+    const compliant = WS_ROWS.filter(r => DOC_KEYS.every(k => docDone(r[k]))).length;
+    const blocked = WS_ROWS.filter(r => DOC_KEYS.every(k => !docDone(r[k]))).length;   // nothing started
+    const inprog = total - compliant - blocked;                                        // partially complete
+    const buyerPend = WS_ROWS.filter(r => (['kyc', 'dd', 'tl'] as DocKey[]).some(k => !docDone(r[k]))).length;
+    const supPend = WS_ROWS.filter(r => (['td', 'agr'] as DocKey[]).some(k => !docDone(r[k]))).length;
+    return [
+      { l: 'Total Shipments', v: total, k: 'total' },
+      { l: 'Fully Compliant Shipments', v: compliant, k: 'ok' },
+      { l: 'In Progress Shipments', v: inprog, k: 'prog' },
+      { l: 'Blocked Shipments', v: blocked, k: 'bad' },
+      { l: 'Buyer Side Pending', v: buyerPend, k: 'pend' },
+      { l: 'Supplier Side Pending', v: supPend, k: 'pend' },
+    ];
+  }, []);
+  const c2cRows = useMemo<SummaryRow[]>(() => [
+    { l: 'Total Case to Case Contracts', v: CTC.length, k: 'total' },
+    { l: 'Signed Contracts', v: CTC.filter(c => c.status === 'signed').length, k: 'ok' },
+    { l: 'Rejected Contracts', v: CTC.filter(c => c.status === 'rejected').length, k: 'bad' },
+    { l: 'In Progress Contracts', v: CTC.filter(c => c.status === 'inprogress').length, k: 'prog' },
+    { l: 'Under Clarification Contracts', v: ATA_CLARIFICATIONS, k: 'pend' },
+    { l: 'Internal Approval Pending', v: CTC.filter(c => c.approval === 'pending').length, k: 'pend' },
+    { l: 'Counterparty Sign Pending', v: 3, k: 'pend' },
+  ], []);
 
   // resolve the per-row code + name for the active scope
   const resolveParty = (row: WsRow, abs: number): { code: string; name: string; proc?: string } => {
@@ -585,6 +780,19 @@ export default function ClmAnalyticsPage() {
             <div style={{ fontSize: 11.5, color: t.textMuted, marginTop: 6 }}>This analytics view is coming next. The With Shipment &amp; Without Shipment views are fully available.</div>
           </div>
         )}
+      </div>
+
+      {/* ── Party Overview panels (Buyer / Consignee / Supplier) ─────────── */}
+      <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'stretch' }}>
+        <PartyOverviewPanel title="Buyer Overview"     accent="#0d9488" accent2="#14b8a6" tint="#e6f6f4" icon={ICON.kyc}     data={BUYER_OVERVIEW}     tk={t} />
+        <PartyOverviewPanel title="Consignee Overview" accent="#be185d" accent2="#ec4899" tint="#fdeef5" icon={ICON.ship}    data={CONSIGNEE_OVERVIEW} tk={t} />
+        <PartyOverviewPanel title="Supplier Overview"  accent="#d97706" accent2="#f59e0b" tint="#fdf4e7" icon={ICON.kpiCons} data={SUPPLIER_OVERVIEW}  tk={t} />
+      </div>
+
+      {/* ── Summary panels (Shipments + Case to Case Contracts) ──────────── */}
+      <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'stretch' }}>
+        <SummaryPanel title="Shipments Overview"             accent="#2563eb" accent2="#38bdf8" tint="#eaf2ff" icon={ICON.kpiWs}  rows={shipmentRows} tk={t} />
+        <SummaryPanel title="Case to Case Contracts Overview" accent="#7c3aed" accent2="#c084fc" tint="#f3edff" icon={ICON.kpiWos} rows={c2cRows}      tk={t} />
       </div>
 
       {chip && <StatModal chipKey={chip} stats={stats} onClose={() => setChip(null)} />}
