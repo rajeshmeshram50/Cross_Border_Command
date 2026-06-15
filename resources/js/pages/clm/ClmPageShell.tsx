@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Standard CLM page chrome — cyan-gradient header strip + expandable
@@ -25,6 +25,14 @@ export type ClmHeaderProps = {
 };
 
 export function ClmPageHeader({ icon, title, sub, addLabel, onAdd, addClassName, rightSlot }: ClmHeaderProps) {
+  // Flag the <body> while a CLM master page is mounted. Global chrome that
+  // lives OUTSIDE the page (e.g. the app footer, which can't be reached by a
+  // `.clm-root` selector) is themed via `body.clm-active …`, and this class is
+  // removed on unmount so non-CLM pages (HR, Sales, …) revert reliably.
+  useEffect(() => {
+    document.body.classList.add('clm-active');
+    return () => document.body.classList.remove('clm-active');
+  }, []);
   return (
     <div className="clm-head-strip">
       <div className="clm-head-strip-left">
