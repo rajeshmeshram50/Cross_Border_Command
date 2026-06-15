@@ -204,8 +204,12 @@ class ClmBuyerProfileController extends Controller
         }
 
         /* ── 7. Buyers (customers). ── */
+        // Count only DISTINCT consignees (exclude "same as customer" entries) so
+        // the list's CONSIGNEES column matches the consignee popup.
         $customers = Customer::query()->forUser($user)
-            ->withCount('consignees')
+            ->withCount(['consignees as consignees_count' => function ($q) {
+                $q->where(fn ($w) => $w->where('same_as_customer', false)->orWhereNull('same_as_customer'));
+            }])
             ->with('primaryAddress:id,customer_id,country')
             ->orderBy('id')
             ->get();
@@ -270,6 +274,7 @@ class ClmBuyerProfileController extends Controller
                 'sc'      => '#0e7490',
                 'sb'      => '#f0fdff',
                 'country' => optional($c->primaryAddress)->country ?: '—',
+                'same_as_customer' => (bool) $c->same_as_customer,
                 'kyc'     => $prog['kyc'],
                 'dd'      => $prog['dd'],
                 'tl'      => $prog['tl'],
