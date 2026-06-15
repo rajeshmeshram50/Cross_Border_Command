@@ -1,10 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
+import { useClmAnalyticsData } from './useClmAnalyticsData';
+import { CTC_CONTRACTS, type CtcContract } from './clmOpsData';
 import {
   WS_ROWS, WOS_ROWS, BUYERS, CONSIGNEES, SUPPLIERS, CTC, ATA_CLARIFICATIONS,
   WOS_SUPPLIERS, WOS_OFFSET, DOC_KEYS, docDone,
   BUYER_OVERVIEW, CONSIGNEE_OVERVIEW, SUPPLIER_OVERVIEW,
-  type WsRow, type DocProg, type DocKey, type WosScope, type PartyOverview,
+  type WsRow, type WosRow, type DocProg, type DocKey, type WosScope, type PartyOverview,
 } from './clmAnalyticsData';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -26,7 +28,13 @@ const pad3 = (n: number) => (n < 10 ? '00' : n < 100 ? '0' : '') + n;
 
 type OvSub = 'ws' | 'wos' | 'c2c';
 type WsScope = 'buyer' | 'consignee' | 'supplier';
+// A table row plus an optional pre-resolved party (code/name). Buyer scope
+// resolves the party from the customer name; consignee scope pre-computes it.
+type WsDisplayRow = WsRow & { _code?: string; _name?: string; _proc?: string };
+// Without-Shipment display row: docs + the supplier's proc / code / name.
+type WosDisplayRow = WosRow & { _proc?: string; _code?: string; _name?: string };
 type WsFilter = 'total' | 'compliant' | DocKey;
+type C2cFilter = 'signed' | 'inprogress' | 'clarification' | 'rejected';
 type ChipKey = 'compliance' | 'active' | 'pending' | 'expiring';
 
 // ── small svg helper ────────────────────────────────────────────────────────
@@ -320,6 +328,17 @@ function SummaryPanel({ title, accent, accent2, tint, icon, rows, tk }:
 export default function ClmAnalyticsPage() {
   const t = useOpsTheme('cyan');
   const dk = t.dark;
+  // Live data layer (Step A). Wired into the UI section-by-section next; for
+  // now it drives a small connection-status badge so we can verify the fetch.
+  const live = useClmAnalyticsData();
+  const liveCount = (live.buyer?.ws_eq.length ?? 0) + (live.buyer?.ws_neq.length ?? 0);
+  const liveStatus = live.loading
+    ? { dot: '#f59e0b', text: 'Loading live data…' }
+    : live.error
+      ? { dot: '#ef4444', text: 'Demo data (live fetch failed)' }
+      : liveCount > 0
+        ? { dot: '#16a34a', text: `Live data connected · ${liveCount} shipment txns` }
+        : { dot: '#94a3b8', text: 'Demo data (no live records yet)' };
   // dark-aware surfaces for the otherwise light cyan strips/bars
   const headGrad = dk ? 'linear-gradient(110deg,#0a2a33 0%,#0b333d 45%,#0a3b46 100%)' : 'linear-gradient(110deg,#e0f9fd 0%,#cef8ff 18%,#d0f4f9 45%,#baeef7 75%,#a0e8f2 100%)';
   const barGrad = dk ? 'linear-gradient(110deg,rgba(6,182,212,.12),rgba(8,145,178,.05))' : 'linear-gradient(110deg,#f0fdff,#e6fafe)';
@@ -336,50 +355,95 @@ export default function ClmAnalyticsPage() {
   const [wosScope, setWosScope] = useState<WosScope>('svc');
   const [wosFilter, setWosFilter] = useState<WsFilter | null>(null);
   const [wosPage, setWosPage] = useState(1);
+  const [c2cFilter, setC2cFilter] = useState<C2cFilter | null>(null);
+  const [c2cPage, setC2cPage] = useState(1);
   const [chip, setChip] = useState<ChipKey | null>(null);
 
-  // ── header stats (computed across every transaction + contract) ───────────
-  const stats = useMemo(() => {
-    const txns = [...WS_ROWS, ...WOS_ROWS];
-    const allDone = (r: { kyc: DocProg; dd: DocProg; tl: DocProg; td: DocProg; agr: DocProg }) =>
-      DOC_KEYS.every(k => docDone(r[k]));
-    const compliant = txns.filter(allDone).length;
-    const compPct = txns.length ? Math.round(compliant / txns.length * 100) : 0;
-    const activeC = CTC.filter(c => c.status === 'inprogress').length;
-    const docPending = txns.reduce((a, r) => a + DOC_KEYS.filter(k => !docDone(r[k])).length, 0);
-    const apprPend = CTC.filter(c => c.approval === 'pending').length;
-    const pendingActions = docPending + ATA_CLARIFICATIONS + apprPend;
-    const expiring = CTC.filter(c => /2026$/.test(c.endDate)).length;
-    return { compPct, activeC, pendingActions, expiring, compliant, total: txns.length, docPending, apprPend };
-  }, []);
-
-  // ── KPI hero values ───────────────────────────────────────────────────────
-  const maxTxn = Math.max(WS_ROWS.length, WOS_ROWS.length, 1);
+  // ── KPI hero values (live counts, demo fallback) ──────────────────────────
+  const kWithShip = live.buyer ? (live.buyer.ws_eq.length + live.buyer.ws_neq.length) : WS_ROWS.length;
+  const kWithoutShip = live.supplier
+    ? (live.supplier.txn_wos_svc.length + live.supplier.txn_wos_mat.length + live.supplier.txn_wos_logi.length)
+    : WOS_ROWS.length;
+  const kCtc = live.ctc ? live.ctc.length : CTC.length;
+  const kBuyers = live.buyer ? live.buyer.buyers.length : BUYERS.length;
+  const kCons = live.buyer ? live.buyer.consignees.length : CONSIGNEES.length;
+  const kSuppliers = live.supplier
+    ? (live.supplier.ws_mat.length + live.supplier.ws_logi.length + live.supplier.wos_svc.length + live.supplier.wos_mat.length + live.supplier.wos_logi.length)
+    : SUPPLIERS.length;
+  const maxTxn = Math.max(kWithShip, kWithoutShip, 1);
   const kpis = [
-    { value: pad2(WS_ROWS.length),    label: 'With Shipment ID Transactions',    accent: '#0891b2', tint: '#e8f4fd', icon: ICON.kpiWs,     ring: Math.round(WS_ROWS.length / maxTxn * 100) },
-    { value: pad2(WOS_ROWS.length),   label: 'Without Shipment ID Transactions', accent: '#0e7490', tint: '#e6f6f7', icon: ICON.kpiWos,    ring: Math.round(WOS_ROWS.length / maxTxn * 100) },
-    { value: pad2(CTC.length),        label: 'Case to Case Contracts',           accent: '#16a34a', tint: '#e8f7ed', icon: ICON.kpiC2c,    ring: Math.min(100, CTC.length * 5) },
-    { value: pad2(BUYERS.length),     label: 'Buyers',                           accent: '#0d9488', tint: '#e6f6f4', icon: ICON.kpiBuyers, ring: Math.min(100, BUYERS.length * 4) },
-    { value: pad2(CONSIGNEES.length), label: 'Consignees',                       accent: '#be185d', tint: '#fdeef5', icon: ICON.kpiCons,   ring: Math.min(100, CONSIGNEES.length * 2) },
-    { value: pad2(SUPPLIERS.length),  label: 'Suppliers',                        accent: '#d97706', tint: '#fdf4e7', icon: ICON.kpiSup,    ring: Math.min(100, SUPPLIERS.length * 2) },
+    { value: pad2(kWithShip),    label: 'With Shipment ID Transactions',    accent: '#0891b2', tint: '#e8f4fd', icon: ICON.kpiWs,     ring: Math.round(kWithShip / maxTxn * 100) },
+    { value: pad2(kWithoutShip), label: 'Without Shipment ID Transactions', accent: '#0e7490', tint: '#e6f6f7', icon: ICON.kpiWos,    ring: Math.round(kWithoutShip / maxTxn * 100) },
+    { value: pad2(kCtc),         label: 'Case to Case Contracts',           accent: '#16a34a', tint: '#e8f7ed', icon: ICON.kpiC2c,    ring: Math.min(100, kCtc * 5) },
+    { value: pad2(kBuyers),      label: 'Buyers',                           accent: '#0d9488', tint: '#e6f6f4', icon: ICON.kpiBuyers, ring: Math.min(100, kBuyers * 4) },
+    { value: pad2(kCons),        label: 'Consignees',                       accent: '#be185d', tint: '#fdeef5', icon: ICON.kpiCons,   ring: Math.min(100, kCons * 2) },
+    { value: pad2(kSuppliers),   label: 'Suppliers',                        accent: '#d97706', tint: '#fdf4e7', icon: ICON.kpiSup,    ring: Math.min(100, kSuppliers * 2) },
   ];
+
+  // ── Real With-Shipment rows ───────────────────────────────────────────────
+  // ws_eq + ws_neq = opportunities that completed the Victory stage and have a
+  // shipment order. The SAME rows feed every scope; only the per-row party
+  // (code/name) and whose compliance we show changes by scope.
+  const realWsRaw = useMemo(() => (live.buyer ? [...live.buyer.ws_eq, ...live.buyer.ws_neq] : null), [live.buyer]);
+  // Buyer code lookup list (live customers when available, else demo).
+  const buyerCodeList: { id: string; name: string }[] = live.buyer?.buyers ?? BUYERS;
+  // Scope-aware source rows. Buyer + Consignee read live data; Supplier (and any
+  // loading/error state) falls back to demo data for now (wired in a later step).
+  const wsSourceRows: WsDisplayRow[] = useMemo(() => {
+    if (wsScope === 'supplier') {
+      // Supplier txns come from a different endpoint (procurement-level):
+      // txn_ws_mat + txn_ws_logi = material + logistics suppliers on shipped procurements.
+      if (live.supplier) {
+        return [...live.supplier.txn_ws_mat, ...live.supplier.txn_ws_logi].map(r => ({
+          shp: r.shpId ?? '—', opp: '—', customer: r.supplier,
+          kyc: r.kyc, dd: r.dd, tl: r.tl, td: r.td, agr: r.agr,
+          _code: r.supId, _name: r.supplier, _proc: r.procId ?? '—',
+        }));
+      }
+      return WS_ROWS;   // loading/error → demo
+    }
+    if (realWsRaw && live.buyer) {
+      if (wsScope === 'buyer') {
+        return realWsRaw.map(r => ({
+          shp: r.shp ?? '—', opp: r.opp, customer: r.customer,
+          kyc: r.kyc, dd: r.dd, tl: r.tl, td: r.td, agr: r.agr,
+        }));
+      }
+      if (wsScope === 'consignee') {
+        // Each opportunity's consignee = the separate consignee (ws_neq) or the
+        // customer itself (ws_eq). Match by name to pull the consignee's own code
+        // + compliance from the consignees roster.
+        const byName = new Map(live.buyer.consignees.map(c => [c.name, c]));
+        return realWsRaw.map(r => {
+          const cname = r.consignee ?? r.customer;
+          const c = byName.get(cname);
+          return {
+            shp: r.shp ?? '—', opp: r.opp, customer: cname,
+            kyc: c?.kyc ?? r.kyc, dd: c?.dd ?? r.dd, tl: c?.tl ?? r.tl, td: c?.td ?? r.td, agr: c?.agr ?? r.agr,
+            _code: c?.id ?? '—', _name: cname,
+          };
+        });
+      }
+    }
+    return WS_ROWS;   // no live data → demo
+  }, [wsScope, realWsRaw, live.buyer, live.supplier]);
 
   // ── With-Shipment metric counts ───────────────────────────────────────────
   const wsMetrics = useMemo(() => {
-    const total = WS_ROWS.length;
-    const compliant = WS_ROWS.filter(r => DOC_KEYS.every(k => docDone(r[k]))).length;
-    const pend = (k: DocKey) => WS_ROWS.filter(r => !docDone(r[k])).length;
+    const total = wsSourceRows.length;
+    const compliant = wsSourceRows.filter(r => DOC_KEYS.every(k => docDone(r[k]))).length;
+    const pend = (k: DocKey) => wsSourceRows.filter(r => !docDone(r[k])).length;
     return { total, compliant, kyc: pend('kyc'), dd: pend('dd'), tl: pend('tl'), td: pend('td'), agr: pend('agr') };
-  }, []);
+  }, [wsSourceRows]);
 
   // ── filtered + paged rows for the table ───────────────────────────────────
   const filteredRows = useMemo(() => {
-    return WS_ROWS.map((row, abs) => ({ row, abs })).filter(({ row }) => {
+    return wsSourceRows.map((row, abs) => ({ row, abs })).filter(({ row }) => {
       if (!wsFilter || wsFilter === 'total') return true;
       if (wsFilter === 'compliant') return DOC_KEYS.every(k => docDone(row[k]));
       return !docDone(row[wsFilter]);
     });
-  }, [wsFilter]);
+  }, [wsFilter, wsSourceRows]);
 
   const PER = 10;
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PER));
@@ -390,21 +454,37 @@ export default function ClmAnalyticsPage() {
   const toggleFilter = (f: WsFilter) => { setWsFilter(prev => (prev === f ? null : f)); setWsPage(1); };
   const switchScope = (s: WsScope) => { setWsScope(s); setWsFilter(null); setWsPage(1); };
 
-  // ── Without-Shipment metric counts (computed over all 40 WOS rows) ────────
+  // ── Without-Shipment source rows ──────────────────────────────────────────
+  // Each category tab reads its own live vendor transactions (procurements with
+  // no shipment): Service → txn_wos_svc, Material → txn_wos_mat, Logistics → txn_wos_logi.
+  const wosSourceRows: WosDisplayRow[] = useMemo(() => {
+    if (live.supplier) {
+      const txns = wosScope === 'mat' ? live.supplier.txn_wos_mat
+        : wosScope === 'logi' ? live.supplier.txn_wos_logi
+          : live.supplier.txn_wos_svc;
+      return txns.map(r => ({
+        kyc: r.kyc, dd: r.dd, tl: r.tl, td: r.td, agr: r.agr,
+        _proc: r.procId ?? '—', _code: r.supId, _name: r.supplier,
+      }));
+    }
+    return WOS_ROWS;   // loading/error → demo
+  }, [wosScope, live.supplier]);
+
+  // ── Without-Shipment metric counts (per active category) ──────────────────
   const wosMetrics = useMemo(() => {
-    const total = WOS_ROWS.length;
-    const compliant = WOS_ROWS.filter(r => DOC_KEYS.every(k => docDone(r[k]))).length;
-    const pend = (k: DocKey) => WOS_ROWS.filter(r => !docDone(r[k])).length;
+    const total = wosSourceRows.length;
+    const compliant = wosSourceRows.filter(r => DOC_KEYS.every(k => docDone(r[k]))).length;
+    const pend = (k: DocKey) => wosSourceRows.filter(r => !docDone(r[k])).length;
     return { total, compliant, kyc: pend('kyc'), dd: pend('dd'), tl: pend('tl'), td: pend('td'), agr: pend('agr') };
-  }, []);
+  }, [wosSourceRows]);
 
   const wosFilteredRows = useMemo(() => {
-    return WOS_ROWS.map((row, abs) => ({ row, abs })).filter(({ row }) => {
+    return wosSourceRows.map((row, abs) => ({ row, abs })).filter(({ row }) => {
       if (!wosFilter || wosFilter === 'total') return true;
       if (wosFilter === 'compliant') return DOC_KEYS.every(k => docDone(row[k]));
       return !docDone(row[wosFilter]);
     });
-  }, [wosFilter]);
+  }, [wosFilter, wosSourceRows]);
 
   const wosTotalPages = Math.max(1, Math.ceil(wosFilteredRows.length / PER));
   const wosPg = Math.min(Math.max(1, wosPage), wosTotalPages);
@@ -413,8 +493,10 @@ export default function ClmAnalyticsPage() {
   const toggleWosFilter = (f: WsFilter) => { setWosFilter(prev => (prev === f ? null : f)); setWosPage(1); };
   const switchWosScope = (s: WosScope) => { setWosScope(s); setWosFilter(null); setWosPage(1); };
 
-  // resolve the per-row supplier name + generated proc/code for the WOS scope
-  const resolveWosParty = (abs: number): { proc: string; code: string; name: string } => {
+  // resolve the per-row supplier proc/code/name for the WOS scope
+  const resolveWosParty = (row: WosDisplayRow, abs: number): { proc: string; code: string; name: string } => {
+    // Live rows carry the real procurement id + vendor code + name.
+    if (row._name !== undefined) return { proc: row._proc ?? '—', code: row._code ?? '—', name: row._name };
     const roster = WOS_SUPPLIERS[wosScope];
     const off = WOS_OFFSET[wosScope];
     const n = off + (abs + 1);
@@ -422,14 +504,97 @@ export default function ClmAnalyticsPage() {
   };
   const wosTitle = wosScope === 'svc' ? 'Service Suppliers' : wosScope === 'mat' ? 'Material Suppliers' : 'Logistics Suppliers';
 
-  // ── Bottom summary panels (Shipments + Case to Case) ──────────────────────
+  // ── Case-to-Case contracts (tab list) — live from /clm/ctc-contracts ──────
+  const ctcList: CtcContract[] = live.ctc ?? CTC_CONTRACTS;
+  const c2cCounts = useMemo(() => ({
+    total: ctcList.length,
+    signed: ctcList.filter(c => c.status === 'signed').length,
+    inprogress: ctcList.filter(c => c.status === 'inprogress').length,
+    clarification: ctcList.filter(c => c.approval === 'pending').length,
+    rejected: ctcList.filter(c => c.status === 'rejected').length,
+  }), [ctcList]);
+  const c2cFilteredRows = useMemo(() => {
+    if (!c2cFilter) return ctcList;
+    if (c2cFilter === 'clarification') return ctcList.filter(c => c.approval === 'pending');
+    return ctcList.filter(c => c.status === c2cFilter);
+  }, [ctcList, c2cFilter]);
+  const c2cTotalPages = Math.max(1, Math.ceil(c2cFilteredRows.length / PER));
+  const c2cPg = Math.min(Math.max(1, c2cPage), c2cTotalPages);
+  const c2cStart = (c2cPg - 1) * PER;
+  const c2cPageRows = c2cFilteredRows.slice(c2cStart, c2cStart + PER);
+  const toggleC2cFilter = (f: C2cFilter) => { setC2cFilter(prev => (prev === f ? null : f)); setC2cPage(1); };
+  // 5 stat cards for the Case-to-Case tab
+  const c2cCards: { value: number; label: string; icon: string; badge: string; badgeColor: string; key: C2cFilter | 'total' }[] = [
+    { value: c2cCounts.total, label: 'Total Case to Case Contracts', icon: ICON.kpiWos, badge: 'TOTAL', badgeColor: '#0891b2', key: 'total' },
+    { value: c2cCounts.signed, label: 'Signed Contracts', icon: ICON.ok, badge: 'SIGNED', badgeColor: '#16a34a', key: 'signed' },
+    { value: c2cCounts.inprogress, label: 'In Progress Contracts', icon: ICON.expiring, badge: 'ACTIVE', badgeColor: '#0891b2', key: 'inprogress' },
+    { value: c2cCounts.clarification, label: 'Under Clarification Contracts', icon: ICON.dd, badge: 'PENDING', badgeColor: '#d97706', key: 'clarification' },
+    { value: c2cCounts.rejected, label: 'Rejected Contracts', icon: '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>', badge: 'REJECTED', badgeColor: '#ef4444', key: 'rejected' },
+  ];
+  const apprCfg: Record<string, { label: string; color: string; bg: string }> = {
+    approved: { label: 'Approved', color: '#16a34a', bg: 'rgba(22,163,74,.1)' },
+    pending: { label: 'Pending', color: '#d97706', bg: 'rgba(217,119,6,.1)' },
+    rejected: { label: 'Rejected', color: '#ef4444', bg: 'rgba(239,68,68,.1)' },
+  };
+
+  // ── Header stat chips — computed across every transaction + contract ──────
+  // Transactions = with-shipment opportunities + without-shipment supplier
+  // procurements (matching the two tabs); contracts from live.ctc.
+  const stats = useMemo<Stats>(() => {
+    const wsT = (realWsRaw ?? WS_ROWS) as { kyc: DocProg; dd: DocProg; tl: DocProg; td: DocProg; agr: DocProg }[];
+    const wosT = (live.supplier
+      ? [...live.supplier.txn_wos_svc, ...live.supplier.txn_wos_mat, ...live.supplier.txn_wos_logi]
+      : WOS_ROWS) as { kyc: DocProg; dd: DocProg; tl: DocProg; td: DocProg; agr: DocProg }[];
+    const txns = [...wsT, ...wosT];
+    const total = txns.length;
+    const allDone = (r: { kyc: DocProg; dd: DocProg; tl: DocProg; td: DocProg; agr: DocProg }) => DOC_KEYS.every(k => docDone(r[k]));
+    const compliant = txns.filter(allDone).length;
+    const docDoneBy = DOC_KEYS.map(k => ({ k, done: txns.filter(r => docDone(r[k])).length, pend: txns.filter(r => !docDone(r[k])).length }));
+    const docPending = docDoneBy.reduce((a, d) => a + d.pend, 0);
+    const activeContracts = ctcList.filter(c => c.status === 'inprogress');
+    const apprPend = ctcList.filter(c => c.approval === 'pending').length;
+    const expiringContracts = ctcList.filter(c => /2026$/.test(c.endDate));
+    return {
+      total, compliant, compPct: total ? Math.round(compliant / total * 100) : 0,
+      wsTotal: wsT.length, wsCompliant: wsT.filter(allDone).length,
+      wosTotal: wosT.length, wosCompliant: wosT.filter(allDone).length,
+      docDoneBy, docPending, apprPend, pendingActions: docPending + apprPend,
+      activeContracts, activeC: activeContracts.length,
+      expiringContracts, expiring: expiringContracts.length,
+    };
+  }, [realWsRaw, live.supplier, ctcList]);
+
+  // ── Bottom panels (live, demo fallback) ───────────────────────────────────
+  // Roll up a party roster (buyers / consignees / vendors) into an overview.
+  const partyOverviewFrom = (
+    rows: { country?: string; kyc: DocProg; dd: DocProg; tl: DocProg; td: DocProg; agr: DocProg }[],
+    noun: string, withGeo: boolean,
+  ): PartyOverview => {
+    const total = rows.length;
+    const compliant = rows.filter(r => DOC_KEYS.every(k => docDone(r[k]))).length;
+    const pend = (k: DocKey) => rows.filter(r => !docDone(r[k])).length;
+    const isIndia = (c?: string) => (c || '').trim().toLowerCase() === 'india';
+    const geo = withGeo
+      ? { intl: rows.filter(r => !isIndia(r.country)).length, dom: rows.filter(r => isIndia(r.country)).length }
+      : undefined;
+    return { noun, total, compliant, geo, pend: { kyc: pend('kyc'), dd: pend('dd'), tl: pend('tl'), td: pend('td'), agr: pend('agr') } };
+  };
+  const allVendors = live.supplier
+    ? [...live.supplier.ws_mat, ...live.supplier.ws_logi, ...live.supplier.wos_svc, ...live.supplier.wos_mat, ...live.supplier.wos_logi]
+    : [];
+  const buyerOverview = live.buyer ? partyOverviewFrom(live.buyer.buyers, 'Buyers', true) : BUYER_OVERVIEW;
+  const consigneeOverview = live.buyer ? partyOverviewFrom(live.buyer.consignees, 'Consignees', true) : CONSIGNEE_OVERVIEW;
+  const supplierOverview = live.supplier ? partyOverviewFrom(allVendors, 'Suppliers', false) : SUPPLIER_OVERVIEW;
+
+  // Shipments Overview — from the real with-shipment opportunities.
   const shipmentRows = useMemo<SummaryRow[]>(() => {
-    const total = WS_ROWS.length;
-    const compliant = WS_ROWS.filter(r => DOC_KEYS.every(k => docDone(r[k]))).length;
-    const blocked = WS_ROWS.filter(r => DOC_KEYS.every(k => !docDone(r[k]))).length;   // nothing started
+    const rows = realWsRaw ?? WS_ROWS;
+    const total = rows.length;
+    const compliant = rows.filter(r => DOC_KEYS.every(k => docDone(r[k]))).length;
+    const blocked = rows.filter(r => DOC_KEYS.every(k => !docDone(r[k]))).length;     // nothing started
     const inprog = total - compliant - blocked;                                        // partially complete
-    const buyerPend = WS_ROWS.filter(r => (['kyc', 'dd', 'tl'] as DocKey[]).some(k => !docDone(r[k]))).length;
-    const supPend = WS_ROWS.filter(r => (['td', 'agr'] as DocKey[]).some(k => !docDone(r[k]))).length;
+    const buyerPend = rows.filter(r => (['kyc', 'dd', 'tl'] as DocKey[]).some(k => !docDone(r[k]))).length;
+    const supPend = rows.filter(r => (['td', 'agr'] as DocKey[]).some(k => !docDone(r[k]))).length;
     return [
       { l: 'Total Shipments', v: total, k: 'total' },
       { l: 'Fully Compliant Shipments', v: compliant, k: 'ok' },
@@ -438,28 +603,37 @@ export default function ClmAnalyticsPage() {
       { l: 'Buyer Side Pending', v: buyerPend, k: 'pend' },
       { l: 'Supplier Side Pending', v: supPend, k: 'pend' },
     ];
-  }, []);
-  const c2cRows = useMemo<SummaryRow[]>(() => [
-    { l: 'Total Case to Case Contracts', v: CTC.length, k: 'total' },
-    { l: 'Signed Contracts', v: CTC.filter(c => c.status === 'signed').length, k: 'ok' },
-    { l: 'Rejected Contracts', v: CTC.filter(c => c.status === 'rejected').length, k: 'bad' },
-    { l: 'In Progress Contracts', v: CTC.filter(c => c.status === 'inprogress').length, k: 'prog' },
-    { l: 'Under Clarification Contracts', v: ATA_CLARIFICATIONS, k: 'pend' },
-    { l: 'Internal Approval Pending', v: CTC.filter(c => c.approval === 'pending').length, k: 'pend' },
-    { l: 'Counterparty Sign Pending', v: 3, k: 'pend' },
-  ], []);
+  }, [realWsRaw]);
+  // Case-to-Case Overview — from live contracts.
+  const c2cRows = useMemo<SummaryRow[]>(() => {
+    const apprPend = ctcList.filter(c => c.approval === 'pending').length;
+    const cpPend = ctcList.filter(c => c.approval === 'approved' && (!c.cpSignedDate || c.cpSignedDate === '—')).length;
+    return [
+      { l: 'Total Case to Case Contracts', v: ctcList.length, k: 'total' },
+      { l: 'Signed Contracts', v: ctcList.filter(c => c.status === 'signed').length, k: 'ok' },
+      { l: 'Rejected Contracts', v: ctcList.filter(c => c.status === 'rejected').length, k: 'bad' },
+      { l: 'In Progress Contracts', v: ctcList.filter(c => c.status === 'inprogress').length, k: 'prog' },
+      { l: 'Under Clarification Contracts', v: apprPend, k: 'pend' },
+      { l: 'Internal Approval Pending', v: apprPend, k: 'pend' },
+      { l: 'Counterparty Sign Pending', v: cpPend, k: 'pend' },
+    ];
+  }, [ctcList]);
 
   // resolve the per-row code + name for the active scope
-  const resolveParty = (row: WsRow, abs: number): { code: string; name: string; proc?: string } => {
+  const resolveParty = (row: WsDisplayRow, abs: number): { code: string; name: string; proc?: string } => {
     if (wsScope === 'supplier') {
+      // Live rows carry the real supplier code + procurement id; demo maps by index.
+      if (row._name !== undefined) return { code: row._code ?? '—', name: row._name, proc: row._proc ?? '—' };
       const sp = SUPPLIERS[abs % SUPPLIERS.length];
       return { code: 'S-' + pad3(abs + 1), name: sp ? sp.name : '—', proc: 'PROC-' + pad3(abs + 1) };
     }
     if (wsScope === 'consignee') {
+      // Live rows carry a pre-resolved consignee; demo rows map by index.
+      if (row._name !== undefined) return { code: row._code ?? '—', name: row._name };
       const c = CONSIGNEES[abs % CONSIGNEES.length];
       return { code: c ? c.id : '—', name: c ? c.name : '—' };
     }
-    const b = BUYERS.find(x => x.name === row.customer);
+    const b = buyerCodeList.find(x => x.name === row.customer);
     return { code: b ? b.id : '—', name: row.customer || '—' };
   };
 
@@ -514,6 +688,10 @@ export default function ClmAnalyticsPage() {
             <div>
               <div style={{ fontSize: 17, fontWeight: 800, color: headStrong, letterSpacing: '-.4px' }}>CLM Analytics</div>
               <div style={{ fontSize: 11, color: headSub, fontWeight: 500, marginTop: 1 }}>Track contract KPIs, compliance health &amp; legal performance across the portfolio.</div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 5 }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: liveStatus.dot, boxShadow: `0 0 0 3px ${liveStatus.dot}33` }} />
+                <span style={{ fontSize: 9.5, fontWeight: 700, color: headSub2, letterSpacing: '.02em' }}>{liveStatus.text}</span>
+              </div>
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', zIndex: 1 }}>
@@ -739,7 +917,7 @@ export default function ClmAnalyticsPage() {
                   <tbody>
                     {wosPageRows.length ? wosPageRows.map(({ row, abs }, i) => {
                       const globalIdx = wosStart + i;
-                      const p = resolveWosParty(abs);
+                      const p = resolveWosParty(row, abs);
                       const bg = globalIdx % 2 === 0 ? t.tableBg : t.rowAlt;
                       const tdL: React.CSSProperties = { padding: '9px 11px', fontSize: 11, textAlign: 'left' };
                       return (
@@ -775,18 +953,120 @@ export default function ClmAnalyticsPage() {
         )}
 
         {ovSub === 'c2c' && (
-          <div style={{ padding: '46px 24px', textAlign: 'center', background: t.surface }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: t.textStrong }}>Case to Case Contracts</div>
-            <div style={{ fontSize: 11.5, color: t.textMuted, marginTop: 6 }}>This analytics view is coming next. The With Shipment &amp; Without Shipment views are fully available.</div>
+          <div>
+            {/* header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '10px 14px 10px 16px', background: subGrad, borderBottom: `1px solid ${dk ? 'rgba(6,182,212,.18)' : '#cdeef5'}`, minHeight: 52 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.32)' }}>
+                <Svg d={ICON.bars} size={15} w={2.4} />
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: headSub }}>Case to Case</span>
+                  <span style={{ width: 1, height: 13, background: '#A5E8F5', display: 'inline-block' }} />
+                  <span style={{ fontSize: 13, fontWeight: 800, color: headStrong, letterSpacing: '-.2px' }}>Analytics Overview</span>
+                  <span style={{ fontSize: 8.5, fontWeight: 700, color: headSub, background: 'rgba(6,182,212,.1)', border: '1px solid rgba(6,182,212,.25)', padding: '2px 7px', borderRadius: 20 }}>5 metrics</span>
+                </div>
+                <div style={{ fontSize: 10, fontWeight: 500, color: headSub2, marginTop: 2 }}>Live snapshot of contract lifecycle, signing status and clarifications.</div>
+              </div>
+            </div>
+
+            {/* 5 stat cards (click to filter) */}
+            <div style={{ padding: '10px 12px 4px', background: dk ? 'transparent' : 'linear-gradient(180deg,#f0fdff,#f4feff)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 8 }}>
+                {c2cCards.map(c => {
+                  const active = c.key === 'total' ? !c2cFilter : c2cFilter === c.key;
+                  return (
+                    <div key={c.key} onClick={() => c.key === 'total' ? setC2cFilter(null) : toggleC2cFilter(c.key as C2cFilter)}
+                      style={{ position: 'relative', overflow: 'hidden', borderRadius: 9, padding: '10px 12px', background: active ? (dk ? 'rgba(6,182,212,.16)' : '#ecfeff') : (dk ? 'rgba(255,255,255,.04)' : '#fff'), border: `1.5px solid ${active ? '#0891b2' : (dk ? 'rgba(6,182,212,.28)' : '#A5F3FC')}`, boxShadow: active ? '0 4px 14px rgba(8,145,178,.22)' : '0 1px 3px rgba(6,182,212,.07)', transition: 'all .15s', cursor: 'pointer' }}>
+                      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg,#06b6d4,#0891b2)', borderRadius: '9px 9px 0 0' }} />
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 5px rgba(6,182,212,.25)' }}>
+                          <Svg d={c.icon} size={13} />
+                        </div>
+                        <span style={{ fontSize: 7.5, fontWeight: 800, padding: '2px 7px', borderRadius: 20, letterSpacing: '.06em', color: c.badgeColor, background: `${c.badgeColor}1a`, border: `1px solid ${c.badgeColor}40` }}>{c.badge}</span>
+                      </div>
+                      <div style={{ fontSize: 24, fontWeight: 900, color: dk ? '#f1f5f9' : '#0c4a6e', letterSpacing: '-1px', lineHeight: 1 }}>{pad2(c.value)}</div>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: dk ? '#7fd4e6' : '#0891b2', marginTop: 5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* contracts table */}
+            <div style={{ padding: '6px 16px 16px', background: dk ? t.surface : 'linear-gradient(180deg,#f4feff,#ffffff 30%)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 0 12px' }}>
+                <div style={{ width: 24, height: 24, borderRadius: 7, background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Svg d={ICON.rows} size={12} />
+                </div>
+                <span style={{ fontSize: 12, fontWeight: 800, color: t.textStrong, letterSpacing: '-.2px' }}>
+                  {c2cFilter ? c2cCards.find(c => c.key === c2cFilter)?.label : 'All Case to Case Contracts'}
+                </span>
+                <span style={{ fontSize: 8.5, fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.1)', border: '1px solid rgba(6,182,212,.22)', padding: '2px 9px', borderRadius: 20, marginLeft: 'auto' }}>{c2cFilteredRows.length} rows</span>
+              </div>
+
+              <div style={{ overflowX: 'auto', border: `1px solid rgba(6,182,212,.12)`, borderRadius: 10, background: t.tableBg }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
+                  <thead>
+                    <tr>
+                      {['Sr. No', 'CTC ID', 'CTC Date', 'Agreement Title', 'Our Organisation', 'Counterparties', 'Created By', 'Internal Approval', 'Eff. Date', 'Expiry Date', 'CP Signed Date'].map((c, i) => (
+                        <th key={c} style={{ padding: '9px 11px', textAlign: i < 7 ? 'left' : 'center', fontSize: 9, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', color: '#0891b2', borderBottom: '1.5px solid rgba(6,182,212,.18)', whiteSpace: 'nowrap' }}>{c}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {c2cPageRows.length ? c2cPageRows.map((c, i) => {
+                      const globalIdx = c2cStart + i;
+                      const bg = globalIdx % 2 === 0 ? t.tableBg : t.rowAlt;
+                      const ap = apprCfg[c.approval] ?? apprCfg.pending;
+                      const tdL: React.CSSProperties = { padding: '9px 11px', fontSize: 11, textAlign: 'left', whiteSpace: 'nowrap' };
+                      const signed = c.cpSignedDate && c.cpSignedDate !== '—';
+                      return (
+                        <tr key={c.id} style={{ background: bg }}>
+                          <td style={{ ...tdL, color: t.textSub }}>{pad2(globalIdx + 1)}</td>
+                          <td style={{ ...tdL }}><span style={{ fontSize: 10, fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.2)', padding: '2px 8px', borderRadius: 5 }}>{c.id}</span></td>
+                          <td style={{ ...tdL, color: t.textSub }}>{c.date}</td>
+                          <td style={{ ...tdL, fontWeight: 700, color: t.textStrong }}>{c.title}</td>
+                          <td style={{ ...tdL, color: t.textSub }}>{c.org}</td>
+                          <td style={{ ...tdL, color: t.textSub }}>{c.cp[0] ?? '—'}{c.cp.length > 1 && <span style={{ marginLeft: 5, fontSize: 9, fontWeight: 800, color: '#0891b2', background: 'rgba(6,182,212,.1)', border: '1px solid rgba(6,182,212,.25)', padding: '1px 5px', borderRadius: 10 }}>+{c.cp.length - 1}</span>}</td>
+                          <td style={{ ...tdL, color: t.textSub }}>{c.createdBy}</td>
+                          <td style={{ padding: '9px 11px', textAlign: 'center' }}>
+                            <span style={{ fontSize: 9.5, fontWeight: 800, color: ap.color, background: ap.bg, border: `1px solid ${ap.color}33`, padding: '2px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>● {ap.label}</span>
+                          </td>
+                          <td style={{ padding: '9px 11px', fontSize: 11, textAlign: 'center', color: t.textSub, whiteSpace: 'nowrap' }}>{c.effDate}</td>
+                          <td style={{ padding: '9px 11px', fontSize: 11, textAlign: 'center', color: t.textSub, whiteSpace: 'nowrap' }}>{c.endDate}</td>
+                          <td style={{ padding: '9px 11px', fontSize: 11, textAlign: 'center', fontWeight: signed ? 700 : 400, color: signed ? '#16a34a' : t.textMuted, whiteSpace: 'nowrap' }}>{signed ? `✓ ${c.cpSignedDate}` : '—'}</td>
+                        </tr>
+                      );
+                    }) : (
+                      <tr><td colSpan={11} style={{ padding: 22, textAlign: 'center', color: t.textMuted, fontSize: 11.5, fontStyle: 'italic' }}>No contracts match this filter.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {c2cFilteredRows.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 600, color: '#0891b2' }}>Showing <strong>{c2cStart + 1}–{Math.min(c2cStart + PER, c2cFilteredRows.length)}</strong> of <strong>{c2cFilteredRows.length}</strong></span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <PagerBtn label="‹ Prev" disabled={c2cPg <= 1} onClick={() => setC2cPage(c2cPg - 1)} />
+                    {Array.from({ length: c2cTotalPages }, (_, i) => i + 1).map(p => (
+                      <PagerBtn key={p} label={String(p)} active={p === c2cPg} onClick={() => setC2cPage(p)} />
+                    ))}
+                    <PagerBtn label="Next ›" disabled={c2cPg >= c2cTotalPages} onClick={() => setC2cPage(c2cPg + 1)} />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
 
       {/* ── Party Overview panels (Buyer / Consignee / Supplier) ─────────── */}
       <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'stretch' }}>
-        <PartyOverviewPanel title="Buyer Overview"     accent="#0d9488" accent2="#14b8a6" tint="#e6f6f4" icon={ICON.kyc}     data={BUYER_OVERVIEW}     tk={t} />
-        <PartyOverviewPanel title="Consignee Overview" accent="#be185d" accent2="#ec4899" tint="#fdeef5" icon={ICON.ship}    data={CONSIGNEE_OVERVIEW} tk={t} />
-        <PartyOverviewPanel title="Supplier Overview"  accent="#d97706" accent2="#f59e0b" tint="#fdf4e7" icon={ICON.kpiCons} data={SUPPLIER_OVERVIEW}  tk={t} />
+        <PartyOverviewPanel title="Buyer Overview"     accent="#0d9488" accent2="#14b8a6" tint="#e6f6f4" icon={ICON.kyc}     data={buyerOverview}     tk={t} />
+        <PartyOverviewPanel title="Consignee Overview" accent="#be185d" accent2="#ec4899" tint="#fdeef5" icon={ICON.ship}    data={consigneeOverview} tk={t} />
+        <PartyOverviewPanel title="Supplier Overview"  accent="#d97706" accent2="#f59e0b" tint="#fdf4e7" icon={ICON.kpiCons} data={supplierOverview}  tk={t} />
       </div>
 
       {/* ── Summary panels (Shipments + Case to Case Contracts) ──────────── */}
@@ -795,7 +1075,7 @@ export default function ClmAnalyticsPage() {
         <SummaryPanel title="Case to Case Contracts Overview" accent="#7c3aed" accent2="#c084fc" tint="#f3edff" icon={ICON.kpiWos} rows={c2cRows}      tk={t} />
       </div>
 
-      {chip && <StatModal chipKey={chip} stats={stats} onClose={() => setChip(null)} />}
+      {chip && <StatModal chipKey={chip} stats={stats} tk={t} onClose={() => setChip(null)} />}
     </div>
   );
 }
@@ -812,45 +1092,103 @@ function PagerBtn({ label, onClick, disabled, active }: { label: string; onClick
 }
 
 // ── header stat detail modal ─────────────────────────────────────────────────
-type Stats = { compPct: number; activeC: number; pendingActions: number; expiring: number; compliant: number; total: number; docPending: number; apprPend: number };
-function StatModal({ chipKey, stats, onClose }: { chipKey: ChipKey; stats: Stats; onClose: () => void }) {
+type DocStat = { k: DocKey; done: number; pend: number };
+type Stats = {
+  total: number; compliant: number; compPct: number;
+  wsTotal: number; wsCompliant: number; wosTotal: number; wosCompliant: number;
+  docDoneBy: DocStat[]; docPending: number; apprPend: number; pendingActions: number;
+  activeContracts: CtcContract[]; activeC: number;
+  expiringContracts: CtcContract[]; expiring: number;
+};
+const DOC_LABEL: Record<DocKey, string> = { kyc: 'KYC', dd: 'Due Diligence', tl: 'Trade Licenses', td: 'Trade Documents', agr: 'Agreements' };
+
+function StatModal({ chipKey, stats, tk, onClose }: { chipKey: ChipKey; stats: Stats; tk: OpsTokens; onClose: () => void }) {
+  // Lock background scroll while the modal is open. Body-only locking doesn't
+  // stop the page scrolling — the <html> element must be locked too.
+  useEffect(() => {
+    const html = document.documentElement, body = document.body;
+    const prevHtml = html.style.overflow, prevBody = body.style.overflow;
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    return () => { html.style.overflow = prevHtml; body.style.overflow = prevBody; };
+  }, []);
   const cfg = {
     compliance: { title: 'Overall Compliance', a: '#0d9488', a2: '#14b8a6', icon: ICON.compliance, big: `${stats.compPct}%`, sub: `${stats.compliant} of ${stats.total} transactions fully compliant` },
     active: { title: 'Active Contracts', a: '#0891b2', a2: '#22d3ee', icon: ICON.active, big: pad2(stats.activeC), sub: 'contracts currently in progress' },
     pending: { title: 'Pending Actions', a: '#d97706', a2: '#f59e0b', icon: ICON.pending, big: pad2(stats.pendingActions), sub: 'total actions awaiting attention' },
     expiring: { title: 'Expiring in 2026', a: '#be185d', a2: '#ec4899', icon: ICON.expiring, big: pad2(stats.expiring), sub: 'contracts expiring in 2026' },
   }[chipKey];
-  const rows: [string, string][] =
-    chipKey === 'pending'
-      ? [['Document Obligations Pending', pad2(stats.docPending)], ['Contracts Under Clarification', pad2(ATA_CLARIFICATIONS)], ['Internal Approval Pending', pad2(stats.apprPend)]]
-      : chipKey === 'compliance'
-        ? [['Fully Compliant', `${stats.compliant} / ${stats.total}`], ['Compliance Rate', `${stats.compPct}%`]]
-        : [];
+  const a = cfg.a, a2 = cfg.a2;
+  const headerBg = tk.dark ? `linear-gradient(110deg,${a}26,${a}0a)` : `linear-gradient(110deg,${a}14,${a}04)`;
+  const sectionLabel = (text: string) => (
+    <div style={{ fontSize: 10, fontWeight: 700, color: tk.textMuted, letterSpacing: '.06em', textTransform: 'uppercase', margin: '16px 0 11px' }}>{text}</div>
+  );
+  const statRow = (label: string, value: string, sub?: string) => (
+    <div key={label + value} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '9px 0', borderBottom: `1px solid ${tk.dark ? 'rgba(148,163,184,.14)' : `${a}12`}` }}>
+      <div style={{ minWidth: 0 }}><div style={{ fontSize: 11.5, fontWeight: 600, color: tk.textSub }}>{label}</div>{sub && <div style={{ fontSize: 9, color: tk.textMuted, marginTop: 2 }}>{sub}</div>}</div>
+      <div style={{ fontSize: 13, fontWeight: 800, color: tk.dark ? a2 : a, letterSpacing: '-.3px', whiteSpace: 'nowrap' }}>{value}</div>
+    </div>
+  );
+  const bar = (label: string, done: number, total: number) => {
+    const pct = total ? Math.round(done / total * 100) : 0;
+    return (
+      <div key={label} style={{ marginBottom: 11 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: tk.textSub }}>{label}</span>
+          <span style={{ fontSize: 11, fontWeight: 800, color: tk.textStrong }}><span style={{ color: tk.dark ? a2 : a }}>{done}</span>/{total} · {pct}%</span>
+        </div>
+        <div style={{ height: 7, borderRadius: 20, background: `${a}${tk.dark ? '2e' : '12'}`, overflow: 'hidden' }}><div style={{ height: '100%', width: `${pct}%`, borderRadius: 20, background: `linear-gradient(90deg,${a},${a2})` }} /></div>
+      </div>
+    );
+  };
+  const empty = (text: string) => <div style={{ padding: 18, textAlign: 'center', color: tk.textMuted, fontSize: 12, fontStyle: 'italic' }}>{text}</div>;
+
   return (
     <div onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{ position: 'fixed', inset: 0, zIndex: 9999990, background: 'rgba(15,23,42,.42)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div style={{ background: '#fff', borderRadius: 18, maxWidth: 460, width: '100%', overflow: 'hidden', boxShadow: '0 30px 70px rgba(8,145,178,.28)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px', background: `linear-gradient(110deg,${cfg.a}14,${cfg.a}04)`, borderBottom: `1.5px solid ${cfg.a}22` }}>
-          <div style={{ width: 38, height: 38, borderRadius: 11, background: `linear-gradient(135deg,${cfg.a},${cfg.a2})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: `0 3px 10px ${cfg.a}4d` }}>
+      <div style={{ background: tk.surface, border: `1px solid ${tk.border}`, borderRadius: 18, maxWidth: 480, width: '100%', maxHeight: '86vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 30px 70px rgba(8,145,178,.28)' }}>
+        {/* header (fixed) */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px', background: headerBg, borderBottom: `1.5px solid ${a}22`, flexShrink: 0 }}>
+          <div style={{ width: 38, height: 38, borderRadius: 11, background: `linear-gradient(135deg,${a},${a2})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: `0 3px 10px ${a}4d` }}>
             <Svg d={cfg.icon} size={19} w={2.2} />
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: cfg.a, letterSpacing: '-.2px' }}>{cfg.title}</div>
-            <div style={{ fontSize: 10, color: '#64748b', fontWeight: 500, marginTop: 1 }}>Portfolio summary</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: tk.dark ? a2 : a, letterSpacing: '-.2px' }}>{cfg.title}</div>
+            <div style={{ fontSize: 10, color: tk.textMuted, fontWeight: 500, marginTop: 1 }}>Portfolio summary</div>
           </div>
-          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: `1px solid ${cfg.a}22`, background: '#fff', color: '#64748b', fontSize: 16, cursor: 'pointer' }}>✕</button>
+          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: `1px solid ${a}22`, background: tk.surface, color: tk.textMuted, fontSize: 16, cursor: 'pointer', flexShrink: 0 }}>✕</button>
         </div>
-        <div style={{ padding: '18px 20px' }}>
+
+        {/* body (scrolls when tall) */}
+        <div style={{ padding: '18px 20px', overflowY: 'auto', minHeight: 0 }}>
           <div style={{ textAlign: 'center', padding: '6px 0 14px' }}>
-            <div style={{ fontSize: 34, fontWeight: 900, color: cfg.a, letterSpacing: '-1.5px', lineHeight: 1 }}>{cfg.big}</div>
-            <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, marginTop: 5 }}>{cfg.sub}</div>
+            <div style={{ fontSize: 34, fontWeight: 900, color: tk.dark ? a2 : a, letterSpacing: '-1.5px', lineHeight: 1 }}>{cfg.big}</div>
+            <div style={{ fontSize: 10, color: tk.textMuted, fontWeight: 600, marginTop: 5 }}>{cfg.sub}</div>
           </div>
-          {rows.map(([label, value]) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '9px 0', borderBottom: `1px solid ${cfg.a}12` }}>
-              <div style={{ fontSize: 11.5, fontWeight: 600, color: '#475569' }}>{label}</div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: cfg.a, letterSpacing: '-.3px', whiteSpace: 'nowrap' }}>{value}</div>
-            </div>
-          ))}
+
+          {chipKey === 'compliance' && (<>
+            {statRow('With Shipment ID', `${stats.wsCompliant} / ${stats.wsTotal}`, 'fully compliant shipments')}
+            {statRow('Without Shipment ID', `${stats.wosCompliant} / ${stats.wosTotal}`, 'fully compliant transactions')}
+            {sectionLabel('Completion by Document')}
+            {stats.docDoneBy.map(d => bar(DOC_LABEL[d.k], d.done, stats.total))}
+          </>)}
+
+          {chipKey === 'active' && (<>
+            {sectionLabel('Active Contracts')}
+            {stats.activeContracts.length ? stats.activeContracts.map(c => statRow(c.title, c.id, `${c.org} · approval ${c.approval}`)) : empty('None in progress.')}
+          </>)}
+
+          {chipKey === 'pending' && (<>
+            {statRow('Document Obligations Pending', pad2(stats.docPending), 'across all transactions')}
+            {statRow('Internal Approval Pending', pad2(stats.apprPend), 'contracts awaiting sign-off')}
+            {sectionLabel('Pending Documents Breakdown')}
+            {stats.docDoneBy.map(d => bar(`${DOC_LABEL[d.k]} Pending`, d.pend, stats.total))}
+          </>)}
+
+          {chipKey === 'expiring' && (<>
+            {sectionLabel('Contracts Expiring This Year')}
+            {stats.expiringContracts.length ? stats.expiringContracts.map(c => statRow(c.title, c.endDate, `${c.id} · ${c.org}`)) : empty('None expiring in 2026.')}
+          </>)}
         </div>
       </div>
     </div>
