@@ -65,6 +65,7 @@ import SalesResolutionCenter from '../pages/sales/SalesResolutionCenter';
 import SalesAnalytics from '../pages/sales/SalesAnalytics';
 import SalesPerformance from '../pages/sales/SalesPerformance';
 import ClmStubPage from '../pages/clm/ClmStubPage';
+import ClmAnalyticsPage from '../pages/clm/ClmAnalyticsPage';
 import ClmSegmentPage from '../pages/clm/ClmSegmentPage';
 import ClmAuthorityPage from '../pages/clm/ClmAuthorityPage';
 import ClmKycPage from '../pages/clm/ClmKycPage';
@@ -760,6 +761,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/clm/supplier-profile" element={<ClmSupplierProfilePage />} />
               {/* Operations · Without Shipment ID — Case to Case Contracts,
                   Agreements We Sent, Agreements To Approve. */}
+              <Route path="/clm/analytics"             element={<ClmAnalyticsPage />} />
               <Route path="/clm/case-to-case"          element={<ClmCaseToCasePage />} />
               <Route path="/clm/agreements-sent"       element={<ClmAgreementsSentPage />} />
               <Route path="/clm/agreements-to-approve" element={<ClmAgreementsToApprovePage />} />
