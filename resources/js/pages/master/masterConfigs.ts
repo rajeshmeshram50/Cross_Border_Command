@@ -390,8 +390,8 @@ const C: Record<string, MasterConfig> = {
       { n: 'reports_to_id', l: 'Reports To', t: 'select', ref: 'designations', refL: 'name', refLFmt: '{name} ({level})', p: '— None (Top Level) —' },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
-    cols: ['code', 'name', 'department_id', 'level', 'reports_to_id', 'status'],
-    colL: ['Code', 'Designation Name', 'Department', 'Designation Level', 'Reports To', 'Status'],
+    cols: ['code', 'name', 'status'],
+    colL: ['Code', 'Designation Name', 'Status'],
     uFields: ['name', 'code'],
     // Seed list — used as the Reports-To fallback when no records exist yet,
     // and as starter data so the dropdown is never empty during onboarding.

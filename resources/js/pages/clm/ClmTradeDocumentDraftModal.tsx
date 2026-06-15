@@ -316,6 +316,31 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     }
   };
 
+  /* Download as PDF — rendered server-side with the FULL page-shell (branded
+   * header + body content + footer), not just the editor body. */
+  const downloadPdf = async () => {
+    if (!editingId) {
+      toast.error('Save first', 'Save the trade document before downloading as PDF.');
+      return;
+    }
+    try {
+      const resp = await api.get(`/clm/trade-doc-library/${editingId}/download-pdf`, { responseType: 'blob' });
+      const url  = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
+      const a    = document.createElement('a');
+      a.href = url;
+      a.download = `${existing?.code || 'trade-document'}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      let msg = 'Please try again.';
+      try {
+        const blob = e?.response?.data;
+        if (blob instanceof Blob) { const json = JSON.parse(await blob.text()); if (json?.message) msg = json.message; }
+        else if (typeof e?.response?.data?.message === 'string') msg = e.response.data.message;
+      } catch { /* keep default */ }
+      toast.error('Download failed', msg);
+    }
+  };
   const uploadDocx = async (file: File) => {
     if (!editingId) {
       toast.error('Save first', 'Save the trade document before uploading a revised DOCX.');
@@ -797,10 +822,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                     </button>
                   </div>
                 </div>
-                {/* Skip preventDefault for native <select> (font-size / block)
-                    so their dropdowns open — they open ON mousedown, which the
-                    selection-preserving preventDefault otherwise swallowed. */}
-                <div className="tdw-toolbar" onMouseDown={e => { if (!(e.target as HTMLElement).closest('select')) e.preventDefault(); }}>
+                <div className="tdw-toolbar" onMouseDown={e => e.preventDefault()}>
                   <select className="tdw-toolbar-sel" value={fontSize} onChange={e => { setFontSizeState(e.target.value); applyFontSize(e.target.value); }} title="Font size">
                     <option value="11">11</option><option value="12">12</option><option value="13">13</option>
                     <option value="14">14</option><option value="16">16</option><option value="18">18</option>
@@ -945,7 +967,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
         <ClmInsertPlaceholderModal
           open={pickerOpen}
           onClose={() => setPickerOpen(false)}
-          onInsert={(token) => { if (/^\s*</.test(token)) insertHtmlAtCaret(token); else insertAtCaret(token); setPickerOpen(false); }}
+          onInsert={(token) => { insertAtCaret(token); setPickerOpen(false); }}
         />
 
         <ClmInsertTableModal
@@ -1137,14 +1159,6 @@ const TDW_CSS = `
 .tdw-input:focus { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.14); }
 .tdw-input.is-err { border-color: #ef4444; }
 .tdw-input::placeholder { color: #94a3b8; }
-/* Dropdowns (MasterSelect / MasterMultiSelect) match the white input border. */
-.tdw-body .master-select-toggle {
-  background: #fff; border: 1.5px solid rgba(6,182,212,.25); border-radius: 9px;
-}
-.tdw-body .master-select-toggle:hover:not(:disabled) { border-color: rgba(6,182,212,.40); box-shadow: none; }
-.tdw-body .master-select-wrap.show .master-select-toggle {
-  border-color: #0891b2 !important; box-shadow: 0 0 0 3px rgba(8,145,178,.14) !important;
-}
 .tdw-hint { font-size: 11px; color: #0891b2; opacity: .8; }
 .tdw-err { font-size: 11px; color: #ef4444; font-weight: 600; }
 
@@ -1391,7 +1405,6 @@ const TDW_CSS = `
 [data-bs-theme="dark"] .tdw-body { background: linear-gradient(160deg, rgba(8,145,178,.06) 0%, rgba(8,145,178,.03) 50%, #0f172a 100%); }
 [data-bs-theme="dark"] .tdw-label { color: #67e8f9; }
 [data-bs-theme="dark"] .tdw-input { background-color: #1e293b; border-color: rgba(6,182,212,.30); color: #e2e8f0; }
-[data-bs-theme="dark"] .tdw-body .master-select-toggle { background: #1e293b; border-color: rgba(6,182,212,.30); }
 [data-bs-theme="dark"] .tdw-input::placeholder { color: #94a3b8; }
 [data-bs-theme="dark"] .tdw-hint { color: #67e8f9; }
 [data-bs-theme="dark"] .tdw-reg, [data-bs-theme="dark"] .tdw-party { background: linear-gradient(180deg, #0f172a 0%, #102234 100%); border-color: rgba(6,182,212,.22); }

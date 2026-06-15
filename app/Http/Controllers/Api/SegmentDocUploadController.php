@@ -3,17 +3,21 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ClmAgreementLibrary;
 use App\Models\ClmDdDocument;
 use App\Models\ClmKycDocument;
 use App\Models\ClmQcDocument;
 use App\Models\ClmSegment;
 use App\Models\ClmSegmentRule;
+use App\Models\ClmSignatureRequest;
 use App\Models\ClmTradeDocLibrary;
 use App\Models\ClmTradeLicense;
 use App\Models\Consignee;
 use App\Models\Customer;
+use App\Models\Lead;
 use App\Models\Product;
 use App\Models\SegmentDocUpload;
+use App\Models\ShipmentOrder;
 use App\Models\Vendor;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -357,6 +361,10 @@ class SegmentDocUploadController extends Controller
         $coreRows     = array_merge($company_dd, $owner_kyc, $trade_licenses);
         $coreVerified = collect($coreRows)->where('status', 'Verified')->count();
 
+        // Per-shipment matrix — each of the party's shipments with its buyer +
+        // consignee Trade Documents and Agreements (split by signature party).
+        $shipments = $this->buildShipmentAgreements($owner, $type, $cid, $company_dd, $owner_kyc, $trade_licenses);
+
         return response()->json([
             'data' => [
                 'same_as_customer'       => $sameAsCustomer,
@@ -369,18 +377,148 @@ class SegmentDocUploadController extends Controller
                 'owner_kyc_count'        => count($owner_kyc),
                 'trade_license_count'    => count($trade_licenses),
                 'trade_documents_count'  => count($trade_documents),
-                'total_shipments'        => 0,
+                'total_shipments'        => count($shipments),
                 'company_dd'             => $company_dd,
                 'owner_kyc'              => $owner_kyc,
                 'trade_licenses'         => $trade_licenses,
                 'trade_documents'        => $trade_documents,
-                /* Per-shipment compliance matrix isn't sourced yet —
-                 * keep the key so the frontend's empty-state branch
-                 * fires instead of crashing on a missing array. */
-                'shipment_agreements'    => [],
+                'shipment_agreements'    => $shipments,
                 'last_updated'           => optional($uploads->max('updated_at'))->format('d/m/Y'),
             ],
         ]);
+    }
+
+    /**
+     * Build the per-shipment matrix for a party's Evidence Vault. Each row is
+     * one of the party's shipment-linked opportunities, carrying its Buyer +
+     * Consignee Trade Documents and Agreements — split by the signature
+     * request's party (Customer vs Consignee). KYC / DD / Trade-License ratios
+     * are the party's standard-doc progress (same across its shipments); the
+     * Trade-Docs / Agreement ratios are per-shipment from signature completion.
+     */
+    private function buildShipmentAgreements(Model $owner, string $type, int $cid, array $companyDd, array $ownerKyc, array $tradeLicenses): array
+    {
+        // Vendors aren't modelled as buyer/consignee shipments here.
+        if (!in_array($type, ['customer', 'consignee'], true) || !$cid) return [];
+
+        // Leads (opportunities) for this party that carry a shipment order.
+        $leadQ = Lead::where('client_id', $cid);
+        if ($type === 'customer') $leadQ->where('customer_id', $owner->id);
+        else                      $leadQ->where('consignee_id', $owner->id);
+        $leads = $leadQ->get(['id', 'opp_code', 'customer_id', 'consignee_id']);
+        if ($leads->isEmpty()) return [];
+
+        $leadIds = $leads->pluck('id')->all();
+        $shipLeadIds = ShipmentOrder::where('client_id', $cid)->whereIn('lead_id', $leadIds)->pluck('lead_id')->map(fn ($v) => (int) $v)->all();
+        $shipLeadIds = array_flip($shipLeadIds);
+
+        // Names for the buyer/consignee columns.
+        $custIds = $leads->pluck('customer_id')->filter()->unique()->all();
+        $consIds = $leads->pluck('consignee_id')->filter()->unique()->all();
+        $custById = $custIds ? Customer::whereIn('id', $custIds)->get(['id', 'company_name'])->keyBy('id') : collect();
+        $consById = $consIds ? Consignee::whereIn('id', $consIds)->get(['id', 'company_name', 'same_as_customer'])->keyBy('id') : collect();
+
+        // All signature requests across these leads, grouped by lead.
+        $sigByLead = ClmSignatureRequest::where('client_id', $cid)
+            ->whereIn('lead_id', $leadIds)
+            ->whereIn('document_type', [ClmSignatureRequest::DOC_TRADE, ClmSignatureRequest::DOC_AGREEMENT])
+            ->orderBy('id')
+            ->get()
+            ->groupBy('lead_id');
+
+        // Standard-doc ratios (shared across the party's shipments).
+        $ratioOf = fn (array $rows) => $this->ratio(collect($rows)->where('status', 'Verified')->count(), count($rows));
+        $ddRatio  = $ratioOf($companyDd);
+        $kycRatio = $ratioOf($ownerKyc);
+        $tlRatio  = $ratioOf($tradeLicenses);
+
+        $rows = [];
+        $sr = 0;
+        foreach ($leads as $lead) {
+            $lid = (int) $lead->id;
+            if (!isset($shipLeadIds[$lid])) continue;   // shipment-linked only
+            $reqs = $sigByLead->get($lid) ?? collect();
+
+            $tradeBuyer = $this->sigDocs($reqs, ClmSignatureRequest::DOC_TRADE, 'Customer');
+            $tradeCons  = $this->sigDocs($reqs, ClmSignatureRequest::DOC_TRADE, 'Consignee');
+            $agrBuyer   = $this->sigDocs($reqs, ClmSignatureRequest::DOC_AGREEMENT, 'Customer');
+            $agrCons    = $this->sigDocs($reqs, ClmSignatureRequest::DOC_AGREEMENT, 'Consignee');
+
+            $tradeAll = array_merge($tradeBuyer, $tradeCons);
+            $agrAll   = array_merge($agrBuyer, $agrCons);
+            $signed   = fn (array $d) => collect($d)->where('status', 'Signed')->count();
+
+            $cons = $lead->consignee_id ? $consById->get($lead->consignee_id) : null;
+            $buyerIsConsignee = !$cons || (bool) ($cons->same_as_customer ?? false);
+
+            $sr++;
+            $rows[] = [
+                'id'             => $lid,
+                'shipment_id'    => 'SHP-' . str_pad((string) $lid, 3, '0', STR_PAD_LEFT),
+                'opportunity_id' => $lead->opp_code ?: ('OPP-' . $lid),
+                'customer'       => optional($custById->get($lead->customer_id))->company_name ?: ($type === 'customer' ? $owner->company_name : '—'),
+                'consignee'      => $cons->company_name ?? '—',
+                'country'        => '',
+                'due_dil'        => $ddRatio,
+                'kyc'            => $kycRatio,
+                'trade_lic'      => $tlRatio,
+                'trade_docs'     => $this->ratio($signed($tradeAll), count($tradeAll)),
+                'agreement'      => $this->ratio($signed($agrAll), count($agrAll)),
+                'risk'           => ($signed($tradeAll) + $signed($agrAll)) >= (count($tradeAll) + count($agrAll)) && (count($tradeAll) + count($agrAll)) > 0 ? 'Compliant' : 'Medium',
+                'buyer_is_consignee' => $buyerIsConsignee,
+                'trade_docs_buyer'      => $tradeBuyer,
+                'trade_docs_consignee'  => $tradeCons,
+                'agreements_buyer'      => $agrBuyer,
+                'agreements_consignee'  => $agrCons,
+            ];
+        }
+        return $rows;
+    }
+
+    /** {ratio:"d/t", pct:int} helper for the shipment matrix donuts. */
+    private function ratio(int $d, int $t): array
+    {
+        return ['ratio' => $d . '/' . $t, 'pct' => $t > 0 ? (int) round($d / $t * 100) : 0];
+    }
+
+    /**
+     * Expand the signature requests of one document_type + party into per-doc
+     * rows for the Evidence Vault's expanded shipment view.
+     */
+    private function sigDocs($reqs, string $docType, string $party): array
+    {
+        $out = [];
+        foreach ($reqs as $r) {
+            if ($r->document_type !== $docType || $r->model_name !== $party) continue;
+            $names = is_array($r->document_names) && $r->document_names ? $r->document_names : [$r->request_name ?: 'Document'];
+            $status = match ($r->status) {
+                'completed'  => 'Signed',
+                'inprogress' => 'Pending',
+                'declined'   => 'Declined',
+                'recalled'   => 'Recalled',
+                'expired'    => 'Expired',
+                default      => 'Draft',
+            };
+            $sentAt = $r->metadata['sent_at'] ?? $r->created_at;
+            $paths = is_array($r->signed_document_paths) ? $r->signed_document_paths : [];
+            foreach ($names as $i => $name) {
+                $p = $paths[$i] ?? $paths[0] ?? null;
+                $signedUrl = $p['file_url'] ?? $p['url'] ?? null;
+                if (!$signedUrl && $r->signed_document_path) {
+                    $signedUrl = Storage::disk('public')->url($r->signed_document_path);
+                }
+                $out[] = [
+                    'sig_req_id'  => (int) $r->id,
+                    'name'        => (string) $name,
+                    'required'    => 'REQ',
+                    'status'      => $status,
+                    'uploaded_on' => $sentAt ? \Illuminate\Support\Carbon::parse($sentAt)->format('d/m/Y') : '—',
+                    'valid_upto'  => $r->expiry_date ? $r->expiry_date->format('d/m/Y') : '—',
+                    'signed_url'  => $signedUrl,
+                ];
+            }
+        }
+        return $out;
     }
 
     /**

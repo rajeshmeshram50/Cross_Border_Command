@@ -62,12 +62,28 @@ const nullable = (v: string | null | undefined): string => {
   return s;
 };
 
+/* IndiaMart query_type codes → friendly labels — MUST match the worksheet
+ * (SalesLeadWorksheet.tsx LEAD_TYPE_LABEL) so the Lead Type column reads the
+ * same here as in My Workplace ("Buy-Leads" not "B"). Unknown codes fall
+ * through to whatever the server sent (or "Manual" for null). */
+const LEAD_TYPE_LABEL: Record<string, string> = {
+  BUY:               'Buy Leads',
+  P:                 'PNS Calls',
+  W:                 'Direct Enquiries',
+  BIZ:               'Catalog-View Leads',
+  'Product Inquiry': 'Product Inquiry',
+  WA:                'WhatsApp-Enquiries',
+  B:                 'Buy-Leads',
+};
+const prettyLeadType = (t: string | null | undefined): string =>
+  LEAD_TYPE_LABEL[t ?? ''] ?? (t || 'Manual');
+
 const mapServerToLead = (r: ServerLead): Lead => {
   const dateSrc = r.query_time ?? r.created_at;
   const date = dateSrc ? new Date(dateSrc).toLocaleDateString('en-GB') : 'N/A';
   return {
     id:       r.id,
-    type:     nullable(r.query_type) === 'N/A' ? 'Manual' : nullable(r.query_type),
+    type:     prettyLeadType(nullable(r.query_type) === 'N/A' ? null : r.query_type),
     date,
     source:   nullable(r.platform),
     assigned: r.salesperson?.name ?? 'Unassigned',

@@ -15,6 +15,9 @@ export function MasterSelect({
   allowDeselect,
   onChange,
   onOpen,
+  onScrollEnd,
+  onSearchChange,
+  loadingMore,
 }: {
   name?: string;
   value?: string;
@@ -36,6 +39,17 @@ export function MasterSelect({
   allowDeselect?: boolean;
   onChange?: (value: string) => void;
   onOpen?: () => void;
+  /* Infinite-scroll: called when the option list is scrolled near the bottom.
+   * The parent appends the next page (and guards with its own hasMore/loading
+   * flags). When provided, the option list pages in instead of loading all. */
+  onScrollEnd?: () => void;
+  /* Server-side search: called (debounced) as the user types. When provided,
+   * MasterSelect stops client-side filtering — the parent supplies the
+   * already-filtered `options` for the current query. */
+  onSearchChange?: (query: string) => void;
+  /* Shows a "Loading…" row at the bottom of the list while the parent fetches
+   * the next page. */
+  loadingMore?: boolean;
 }) {
   const [internal, setInternal] = useState<string>(defaultValue ?? '');
   useEffect(() => {
@@ -48,9 +62,11 @@ export function MasterSelect({
   // Also surface the open→true transition so consumers can refresh their
   // option source (e.g. reload the Departments master) before the user picks.
   useEffect(() => {
-    if (!open) setSearch('');
+    if (!open) { setSearch(''); onSearchChange?.(''); }
     else onOpen?.();
   }, [open]);
+  // Debounce timer for server-side search so we don't fire a request per keystroke.
+  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Auto-flip — when the menu would extend below the viewport (or sit close to
   // the bottom edge of a parent modal), open upward instead so it doesn't hide
   // action buttons below the field.
@@ -84,9 +100,14 @@ export function MasterSelect({
    * different component. The search is functionally harmless on
    * short lists; it just becomes a no-op. */
   const showSearch = true;
-  const filtered = search.trim()
-    ? options.filter(o => o.label.toLowerCase().includes(search.trim().toLowerCase()))
-    : options;
+  // Server-search mode (onSearchChange provided): the parent owns filtering +
+  // paging, so render `options` as-is. Otherwise keep the client-side filter.
+  const serverMode = typeof onSearchChange === 'function';
+  const filtered = serverMode
+    ? options
+    : (search.trim()
+        ? options.filter(o => o.label.toLowerCase().includes(search.trim().toLowerCase()))
+        : options);
   const handlePick = (val: string) => {
     // With allowDeselect, re-clicking the current selection clears it.
     const next = allowDeselect && val === currentValue ? '' : val;
@@ -109,6 +130,11 @@ export function MasterSelect({
         >
           {selected ? (
             <span className="master-select-value">{selected.label}</span>
+          ) : currentValue ? (
+            /* Value set but not in the currently-loaded options (e.g. a
+               paginated/async list before its page loads) — show the raw
+               value so the field isn't blank on edit. */
+            <span className="master-select-value">{currentValue}</span>
           ) : loading ? (
             <span className="master-select-shimmer" aria-label="Loading" />
           ) : (
@@ -143,27 +169,48 @@ export function MasterSelect({
                 className="master-select-search-input"
                 placeholder="Search…"
                 value={search}
-                onChange={e => setSearch(e.target.value)}
+                onChange={e => {
+                  const q = e.target.value;
+                  setSearch(q);
+                  if (onSearchChange) {
+                    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+                    searchDebounce.current = setTimeout(() => onSearchChange(q), 300);
+                  }
+                }}
                 onKeyDown={e => e.stopPropagation()}
                 autoFocus
               />
             </div>
           )}
-          <div className="master-select-list">
-            {filtered.length === 0 ? (
+          <div
+            className="master-select-list"
+            onScroll={onScrollEnd ? (e) => {
+              const el = e.currentTarget;
+              // Near the bottom → ask the parent for the next page.
+              if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) onScrollEnd();
+            } : undefined}
+          >
+            {filtered.length === 0 && !loadingMore ? (
               <div className="master-select-empty">
                 {options.length === 0 ? 'No options' : 'No results'}
               </div>
-            ) : filtered.map(opt => (
-              <DropdownItem
-                key={opt.value}
-                active={opt.value === currentValue}
-                onClick={() => handlePick(opt.value)}
-                className="master-select-item"
-              >
-                {opt.label}
-              </DropdownItem>
-            ))}
+            ) : (
+              <>
+                {filtered.map(opt => (
+                  <DropdownItem
+                    key={opt.value}
+                    active={opt.value === currentValue}
+                    onClick={() => handlePick(opt.value)}
+                    className="master-select-item"
+                  >
+                    {opt.label}
+                  </DropdownItem>
+                ))}
+                {loadingMore && (
+                  <div className="master-select-empty">Loading…</div>
+                )}
+              </>
+            )}
           </div>
         </DropdownMenu>
       </Dropdown>
