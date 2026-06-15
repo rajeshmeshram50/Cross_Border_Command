@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import {
@@ -6,6 +8,7 @@ import {
   inits, pad2, PER_PAGE,
 } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
+import { VersionHistoryModal, AgreementTimelineModal, type CtcVersion, type CtcSigner } from './clmCtcModals';
 import { ShimmerTable } from '../../components/ui/Shimmer';
 import Tooltip from '../../components/ui/Tooltip';
 
@@ -40,6 +43,7 @@ const AP_CFG = {
 
 export default function ClmAgreementsSentPage() {
   const toast = useToast();
+  const navigate = useNavigate();
   const t = useOpsTheme('cyan');
   const [tab, setTab]     = useState<AwsTab>('all');
   const [page, setPage]   = useState(1);
@@ -96,6 +100,55 @@ export default function ClmAgreementsSentPage() {
       toast.success('Clarification submitted', `Response sent to ${row.approver ?? 'approver'}`);
       load();
     } catch { toast.error('Could not submit', 'Please try again.'); }
+  };
+
+  // Version-history / timeline modals reuse the same Case-to-Case records, so
+  // the agreement's full version + signing history shows identically here.
+  type CtcDetail = { code: string; title: string; dbId: number | null; stage: number; versions: CtcVersion[]; signers: CtcSigner[] };
+  const [verFor, setVerFor] = useState<CtcDetail | null>(null);
+  const [tlFor, setTlFor] = useState<CtcDetail | null>(null);
+  const openLifecycle = async (c: SentRow, kind: 'version' | 'timeline') => {
+    if (!c.dbId) { toast.error('Not available', 'This agreement has no saved record yet.'); return; }
+    try {
+      const res = await api.get(`/clm/ctc-contracts/${c.dbId}`);
+      const r = (res.data?.data ?? res.data ?? {}) as Record<string, unknown>;
+      const detail: CtcDetail = {
+        code: String(r.code ?? c.id), title: String(r.title ?? c.title ?? ''), dbId: c.dbId, stage: Number(r.stage) || 1,
+        versions: (Array.isArray(r.versions) ? r.versions : []) as CtcVersion[],
+        signers: (Array.isArray(r.signing_recipients) ? r.signing_recipients : []) as CtcSigner[],
+      };
+      if (kind === 'version') setVerFor(detail); else setTlFor(detail);
+    } catch { toast.error('Could not load', 'Failed to fetch the agreement history.'); }
+  };
+
+  // Download the agreement. PDF prefers the signed Zoho copy when available;
+  // DOCX always renders the latest drafted version to an editable Word file.
+  const downloadContract = async (c: SentRow, fmt: string) => {
+    if (!c.dbId) { toast.error('Not available', 'This agreement has no saved record yet.'); return; }
+    const docx = fmt === 'DOCX';
+    const grab = async (url: string, name: string) => {
+      const f = await api.get(url, { responseType: 'blob' });
+      const u = URL.createObjectURL(f.data as Blob);
+      const a = document.createElement('a'); a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(u);
+    };
+    try {
+      const res = await api.get(`/clm/ctc-contracts/${c.dbId}`);
+      const r = (res.data?.data ?? res.data ?? {}) as Record<string, unknown>;
+      // Signed PDF copy is only available as PDF — DOCX skips straight to the draft render.
+      if (!docx) {
+        const signedUrl = String(r.signed_document_url ?? '');
+        const srId = Number(r.signature_request_id) || null;
+        if (signedUrl && srId) {
+          try { await grab(`/clm/signature-requests/${srId}/download-file/0`, `${c.id}-signed.pdf`); toast.success('Signed copy downloaded', c.id); return; }
+          catch { window.open(signedUrl, '_blank'); return; }
+        }
+      }
+      const versions = (Array.isArray(r.versions) ? r.versions : []) as { v: number }[];
+      const latestV = versions.length ? Math.max(...versions.map(v => Number(v.v) || 0)) : 1;
+      await grab(`/clm/ctc-contracts/${c.dbId}/versions/${latestV}/download${docx ? '?format=docx' : ''}`, `${c.id}.${docx ? 'docx' : 'pdf'}`);
+      toast.success('Download started', `${c.id} · ${fmt}`);
+    } catch { toast.error('Download failed', `Could not download the ${fmt} file.`); }
   };
 
   return (
@@ -179,13 +232,16 @@ export default function ClmAgreementsSentPage() {
           : tab === 'clarify'
           ? <ClarifyTable rows={clarifyList} onRespond={setRespondId} t={t} />
           : tab === 'rejected'
-            ? <RejectedTable rows={filtered} ata={sent} page={page} setPage={setPage} dlOpen={dlOpen} setDlOpen={setDlOpen} toast={toast} t={t} />
-            : <StandardTable rows={filtered} page={page} setPage={setPage} tab={tab} dlOpen={dlOpen} setDlOpen={setDlOpen} cpOpen={cpOpen} setCpOpen={setCpOpen} toast={toast} t={t} />}
+            ? <RejectedTable rows={filtered} ata={sent} page={page} setPage={setPage} dlOpen={dlOpen} setDlOpen={setDlOpen} onDownload={downloadContract} toast={toast} t={t} />
+            : <StandardTable rows={filtered} page={page} setPage={setPage} tab={tab} dlOpen={dlOpen} setDlOpen={setDlOpen} cpOpen={cpOpen} setCpOpen={setCpOpen} onVersion={(c) => openLifecycle(c, 'version')} onTimeline={(c) => openLifecycle(c, 'timeline')} onDownload={downloadContract} onEdit={(c) => navigate(`/clm/case-to-case?edit=${c.dbId}`)} toast={toast} t={t} />}
       </div>
 
       {respondContract && (
         <RespondModal contract={respondContract} onClose={() => setRespondId(null)} onSubmit={submitResponse} t={t} />
       )}
+
+      {verFor && <VersionHistoryModal t={t} code={verFor.code} workingId={verFor.dbId} versions={verFor.versions} onClose={() => setVerFor(null)} />}
+      {tlFor && <AgreementTimelineModal t={t} code={tlFor.code} title={tlFor.title} stage={tlFor.stage} versions={tlFor.versions} signers={tlFor.signers} onClose={() => setTlFor(null)} />}
 
       {/* All-counterparties popover (opened from the +N badge) */}
       {cpOpen && (
@@ -300,28 +356,40 @@ function ActionBtn({ title, color, bg, border, t, onClick, children }: { title: 
   );
 }
 
-function DownloadMenu({ id, dlOpen, setDlOpen, toast, t }: { id: string; dlOpen: string | null; setDlOpen: (s: string | null) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
+function DownloadMenu({ id, dlOpen, setDlOpen, onPick, t }: { id: string; dlOpen: string | null; setDlOpen: (s: string | null) => void; onPick: (fmt: string) => void; t: OpsTokens }) {
   const open = dlOpen === id;
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const toggle = () => {
+    if (open) { setDlOpen(null); return; }
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) setPos({ left: Math.max(8, Math.min(r.right - 168, window.innerWidth - 176)), top: r.bottom + 6 });
+    setDlOpen(id);
+  };
   return (
-    <div style={{ position: 'relative', display: 'inline-block' }}>
-      <button title="Download Contract" onClick={() => setDlOpen(open ? null : id)} style={{ width: 28, height: 28, borderRadius: 7, border: `1.5px solid ${t.dark ? 'color-mix(in srgb, #06b6d4 45%, transparent)' : '#7DD3FC'}`, background: t.dark ? 'color-mix(in srgb, #06b6d4 20%, transparent)' : '#B2EBF2', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: t.dark ? '#67e8f9' : '#0369A1', opacity: .85, flexShrink: 0 }}>{ICO_DL}</button>
-      {open && (
-        <div style={{ position: 'absolute', top: 32, right: 0, zIndex: 50, background: t.surface, borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.25)', border: `1.5px solid ${t.dark ? t.border : '#E8E4F9'}`, minWidth: 160, overflow: 'hidden' }}>
-          {[['PDF', '#0369A1', '#B2EBF2', '#A7F3D0'], ['DOCX', '#0891b2', '#B2EBF2', '#7DD3FC']].map(([fmt, col, sbg, sbd]) => (
-            <button key={fmt} onClick={() => { setDlOpen(null); toast.info('Download started', `${id} · ${fmt}`); }} style={{ width: '100%', padding: '10px 14px', border: 'none', background: t.surface, fontFamily: 'inherit', fontSize: 11.5, fontWeight: 700, color: t.dark ? '#67e8f9' : col, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 9, textAlign: 'left' }}
-              onMouseEnter={e => (e.currentTarget.style.background = t.dark ? 'rgba(255,255,255,.06)' : '#E0F7FA')} onMouseLeave={e => (e.currentTarget.style.background = t.surface)}>
-              <span style={{ width: 26, height: 26, borderRadius: 7, background: t.dark ? 'rgba(6,182,212,.18)' : sbg, border: `1px solid ${sbd}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: col }}>{ICO_DL}</span>
-              Download as {fmt}
-            </button>
-          ))}
-        </div>
+    <>
+      <button ref={btnRef} title="Download Contract" onClick={toggle} style={{ width: 28, height: 28, borderRadius: 7, border: `1.5px solid ${t.dark ? 'color-mix(in srgb, #06b6d4 45%, transparent)' : '#7DD3FC'}`, background: t.dark ? 'color-mix(in srgb, #06b6d4 20%, transparent)' : '#B2EBF2', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: t.dark ? '#67e8f9' : '#0369A1', opacity: .85, flexShrink: 0 }}>{ICO_DL}</button>
+      {open && pos && createPortal(
+        <>
+          <div onClick={() => setDlOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000 }} />
+          <div style={{ position: 'fixed', left: pos.left, top: pos.top, zIndex: 1001, background: t.surface, borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.25)', border: `1.5px solid ${t.dark ? t.border : '#E8E4F9'}`, minWidth: 160, overflow: 'hidden', fontFamily: "'Rubik', system-ui, sans-serif" }}>
+            {[['PDF', '#0369A1', '#B2EBF2', '#A7F3D0'], ['DOCX', '#0891b2', '#B2EBF2', '#7DD3FC']].map(([fmt, col, sbg, sbd]) => (
+              <button key={fmt} onClick={() => { setDlOpen(null); onPick(fmt); }} style={{ width: '100%', padding: '10px 14px', border: 'none', background: t.surface, fontFamily: 'inherit', fontSize: 11.5, fontWeight: 700, color: t.dark ? '#67e8f9' : col, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 9, textAlign: 'left' }}
+                onMouseEnter={e => (e.currentTarget.style.background = t.dark ? 'rgba(255,255,255,.06)' : '#E0F7FA')} onMouseLeave={e => (e.currentTarget.style.background = t.surface)}>
+                <span style={{ width: 26, height: 26, borderRadius: 7, background: t.dark ? 'rgba(6,182,212,.18)' : sbg, border: `1px solid ${sbd}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: col }}>{ICO_DL}</span>
+                Download as {fmt}
+              </button>
+            ))}
+          </div>
+        </>,
+        document.body,
       )}
-    </div>
+    </>
   );
 }
 
 /* ── Standard contracts table (all / approved / pending) ── */
-function StandardTable({ rows, page, setPage, tab, dlOpen, setDlOpen, cpOpen, setCpOpen, toast, t }: { rows: AwsContract[]; page: number; setPage: (n: number) => void; tab: AwsTab; dlOpen: string | null; setDlOpen: (s: string | null) => void; cpOpen: { id: string; names: string[]; x: number; y: number } | null; setCpOpen: (s: { id: string; names: string[]; x: number; y: number } | null) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
+function StandardTable({ rows, page, setPage, tab, dlOpen, setDlOpen, cpOpen, setCpOpen, onVersion, onTimeline, onDownload, onEdit, toast, t }: { rows: SentRow[]; page: number; setPage: (n: number) => void; tab: AwsTab; dlOpen: string | null; setDlOpen: (s: string | null) => void; cpOpen: { id: string; names: string[]; x: number; y: number } | null; setCpOpen: (s: { id: string; names: string[]; x: number; y: number } | null) => void; onVersion: (c: SentRow) => void; onTimeline: (c: SentRow) => void; onDownload: (c: SentRow, fmt: string) => void; onEdit: (c: SentRow) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
   const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const safe = Math.min(page, totalPages);
   const start = (safe - 1) * PER_PAGE;
@@ -375,10 +443,10 @@ function StandardTable({ rows, page, setPage, tab, dlOpen, setDlOpen, cpOpen, se
                       <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.endDate}</span></td>
                       <td style={TD_C}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                          <DownloadMenu id={c.id} dlOpen={dlOpen} setDlOpen={setDlOpen} toast={toast} t={t} />
-                          <ActionBtn title="Edit Agreement" color="#0891b2" bg="#B2EBF2" border="#7DD3FC" t={t} onClick={() => toast.info('Edit Agreement', `Open ${c.id} in Case to Case Contracts`)}>{ICO_EDIT}</ActionBtn>
-                          <ActionBtn title="Version History" color="#7C3AED" bg="#EDE9FE" border="#C4B5FD" t={t} onClick={() => toast.info('Version History', c.id)}>{ICO_VER}</ActionBtn>
-                          <ActionBtn title="Agreement Timeline" color="#B45309" bg="#FEF3C7" border="#FCD34D" t={t} onClick={() => toast.info('Agreement Timeline', c.id)}>{ICO_TL}</ActionBtn>
+                          <DownloadMenu id={c.id} dlOpen={dlOpen} setDlOpen={setDlOpen} onPick={(fmt) => onDownload(c, fmt)} t={t} />
+                          <ActionBtn title="Edit Agreement" color="#0891b2" bg="#B2EBF2" border="#7DD3FC" t={t} onClick={() => onEdit(c)}>{ICO_EDIT}</ActionBtn>
+                          <ActionBtn title="Version History" color="#7C3AED" bg="#EDE9FE" border="#C4B5FD" t={t} onClick={() => onVersion(c)}>{ICO_VER}</ActionBtn>
+                          <ActionBtn title="Agreement Timeline" color="#B45309" bg="#FEF3C7" border="#FCD34D" t={t} onClick={() => onTimeline(c)}>{ICO_TL}</ActionBtn>
                         </div>
                       </td>
                     </tr>
@@ -395,7 +463,7 @@ function StandardTable({ rows, page, setPage, tab, dlOpen, setDlOpen, cpOpen, se
 }
 
 /* ── Rejected contracts table ── */
-function RejectedTable({ rows, ata, page, setPage, dlOpen, setDlOpen, toast, t }: { rows: AwsContract[]; ata: SentRow[]; page: number; setPage: (n: number) => void; dlOpen: string | null; setDlOpen: (s: string | null) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
+function RejectedTable({ rows, ata, page, setPage, dlOpen, setDlOpen, onDownload, toast, t }: { rows: SentRow[]; ata: SentRow[]; page: number; setPage: (n: number) => void; dlOpen: string | null; setDlOpen: (s: string | null) => void; onDownload: (c: SentRow, fmt: string) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
   const getRej = (id: string) => { const a = ata.find(x => x.id === id); return { by: a?.approver ?? '—', reason: a?.rejReason ?? '—' }; };
   const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const safe = Math.min(page, totalPages);
@@ -437,7 +505,7 @@ function RejectedTable({ rows, ata, page, setPage, dlOpen, setDlOpen, toast, t }
                       <td style={{ ...TD_L, maxWidth: 220 }}><div style={{ display: 'flex', alignItems: 'flex-start', gap: 5 }}><div style={{ width: 16, height: 16, borderRadius: '50%', background: '#FEE2E2', border: '1px solid #FECACA', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg></div><div style={{ fontSize: 10.5, color: t.dark ? '#fca5a5' : '#7F1D1D', fontWeight: 500, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }} title={rej.reason}>{rej.reason}</div></div></td>
                       <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.endDate}</span></td>
                       <td style={TD_C}><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                        <DownloadMenu id={c.id} dlOpen={dlOpen} setDlOpen={setDlOpen} toast={toast} t={t} />
+                        <DownloadMenu id={c.id} dlOpen={dlOpen} setDlOpen={setDlOpen} onPick={(fmt) => onDownload(c, fmt)} t={t} />
                         <ActionBtn title="View" color="#DC2626" bg="#FEF2F2" border="#FEE2E2" t={t} onClick={() => toast.info('View Agreement', c.id)}>{ICO_VIEW}</ActionBtn>
                       </div></td>
                     </tr>

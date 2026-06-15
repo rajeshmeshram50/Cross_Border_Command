@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
 import { useToast } from '../../contexts/ToastContext';
+import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { signatureRequestsToVaultDocs, mergeTradeDocuments, type SigReqRow } from '../../utils/vaultSignatureRows';
 import { downloadFile } from '../../utils/downloadFile';
 import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
@@ -76,11 +77,23 @@ export interface VaultDoc {
   certificate_url?: string | null;
 }
 
+/** One document inside a shipment's Buyer/Consignee sub-table. */
+export interface VaultShipmentDoc {
+  sig_req_id: number;
+  name: string;
+  required: string;                // REQ | OPT
+  status: 'Signed' | 'Pending' | 'Declined' | 'Recalled' | 'Expired' | 'Draft';
+  uploaded_on: string;
+  valid_upto: string;
+  signed_url?: string | null;
+}
+
 export interface VaultShipmentRow {
   id: number;
   shipment_id: string;             // SHP-2026-00487
   opportunity_id: string;          // OPP-107
   customer: string;
+  consignee?: string;
   country: string;
   due_dil:    { ratio: string; pct: number };   // "2/2"  + 100
   kyc:        { ratio: string; pct: number };
@@ -89,6 +102,10 @@ export interface VaultShipmentRow {
   agreement:  { ratio: string; pct: number };
   risk: 'Compliant' | 'Medium' | 'High';
   buyer_is_consignee: boolean;
+  trade_docs_buyer?:     VaultShipmentDoc[];
+  trade_docs_consignee?: VaultShipmentDoc[];
+  agreements_buyer?:     VaultShipmentDoc[];
+  agreements_consignee?: VaultShipmentDoc[];
 }
 
 export interface VaultData {
@@ -710,14 +727,16 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
               </div>
             </div>
             <div className="cev-section-right">
-              <div className="cev-section-count">{vault[tabMeta.countKey] as number}</div>
-              <div className="cev-section-count-label">{tab === 'shipment-agreements' ? 'SHIPMENTS' : 'DOCUMENTS'}</div>
+              <div className="cev-section-count">{(tab === 'shipment-agreements' || tab === 'trade-documents') ? vault.total_shipments : (vault[tabMeta.countKey] as number)}</div>
+              <div className="cev-section-count-label">{(tab === 'shipment-agreements' || tab === 'trade-documents') ? 'SHIPMENTS' : 'DOCUMENTS'}</div>
             </div>
           </div>
 
-          {/* Tables */}
-          {tab === 'shipment-agreements'
-            ? <ShipmentTable rows={vault.shipment_agreements} filter={shipmentFilter} setFilter={setShipmentFilter} />
+          {/* Tables — Trade Documents + Agreements are shipment-ID-wise
+              (expandable Buyer / Consignee sub-tables); the standard-doc tabs
+              stay as flat document tables. */}
+          {(tab === 'shipment-agreements' || tab === 'trade-documents')
+            ? <ShipmentTable rows={vault.shipment_agreements} kind={tab === 'trade-documents' ? 'trade' : 'agreement'} filter={shipmentFilter} setFilter={setShipmentFilter} />
             : <DocsTable rows={docsForTab} tab={tab} ownerType="customer" ownerId={customer?.db_id ?? null} onReload={reloadVault}
                          onSendTradeDoc={(d) => { if (d.db_id) setSendDocIds([d.db_id]); }}
                          onRemindTradeDoc={handleRemind} />}
@@ -1098,18 +1117,23 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   );
 }
 
-/* ─── Shipment agreements matrix — different shape from the docs
- *      tables, so it gets its own renderer. */
-function ShipmentTable({ rows, filter, setFilter }: {
+/* ─── Shipment-ID-wise matrix — one row per shipment, expandable into the
+ *      shipment's Buyer / Consignee documents for the active kind (Trade
+ *      Documents or Agreements). */
+function ShipmentTable({ rows, kind, filter, setFilter }: {
   rows: VaultShipmentRow[];
+  kind: 'trade' | 'agreement';
   filter: 'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee';
   setFilter: (f: 'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee') => void;
 }) {
+  const [openId, setOpenId] = useState<number | null>(null);
   const filtered = rows.filter(r =>
     filter === 'all' ? true
     : filter === 'buyer-eq-consignee' ? r.buyer_is_consignee
     : !r.buyer_is_consignee
   );
+  const lastCol = kind === 'trade' ? 'Trade Docs' : 'Agreement';
+  const COLS = 10;   // caret + SR + ship + opp + customer + consignee + 3 ratios + last ratio
   return (
     <>
       <div className="cev-ship-filter">
@@ -1122,46 +1146,65 @@ function ShipmentTable({ rows, filter, setFilter }: {
         <table className="cev-table">
           <thead>
             <tr>
-              <th style={{ width: 56 }}>SR</th>
+              <th style={{ width: 34 }} />
+              <th style={{ width: 46 }}>SR</th>
               <th>Shipment ID</th>
               <th>Opportunity ID</th>
-              <th>Customer</th>
-              <th>Country</th>
+              <th>Customer (Buyer)</th>
+              <th>Consignee</th>
               <th>Due Dil.</th>
               <th>KYC</th>
               <th>Trade Lic.</th>
-              <th>Trade Docs</th>
-              <th>Agreement</th>
-              <th>Risk</th>
+              <th>{lastCol}</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={11} className="cev-empty">No shipments match the filter.</td></tr>
-            ) : filtered.map((r, i) => (
-              <tr key={r.id}>
-                <td>{i + 1}</td>
-                <td><span className="cev-chip-pill">● {r.shipment_id}</span></td>
-                <td><span className="cev-chip-pill cev-chip-pill-warm">● {r.opportunity_id}</span></td>
-                <td>
-                  <span className="cev-cust-cell">
-                    <span className="cev-cust-mono">{r.customer.charAt(0)}</span>
-                    {r.customer}
-                  </span>
-                </td>
-                <td>{r.country}</td>
-                <td><Ratio r={r.due_dil} /></td>
-                <td><Ratio r={r.kyc} /></td>
-                <td><Ratio r={r.trade_lic} /></td>
-                <td><Ratio r={r.trade_docs} /></td>
-                <td><Ratio r={r.agreement} /></td>
-                <td>
-                  <span className={`cev-pill cev-risk-${r.risk.toLowerCase()}`}>
-                    {r.risk === 'Compliant' ? '✓' : '⚠'} {r.risk}
-                  </span>
-                </td>
-              </tr>
-            ))}
+              <tr><td colSpan={COLS} className="cev-empty">No shipments match the filter.</td></tr>
+            ) : filtered.map((r, i) => {
+              const open = openId === r.id;
+              return (
+                <Fragment key={r.id}>
+                  <tr className="cev-ship-row" style={{ cursor: 'pointer' }} onClick={() => setOpenId(open ? null : r.id)}>
+                    <td style={{ textAlign: 'center' }}>
+                      <span style={{ display: 'inline-block', transition: 'transform .18s', transform: open ? 'rotate(90deg)' : 'none', color: '#0891b2', fontWeight: 800 }}>▸</span>
+                    </td>
+                    <td>{i + 1}</td>
+                    <td><span className="cev-chip-pill">● {r.shipment_id}</span></td>
+                    <td><span className="cev-chip-pill cev-chip-pill-warm">● {r.opportunity_id}</span></td>
+                    <td>
+                      <span className="cev-cust-cell">
+                        <span className="cev-cust-mono">{r.customer.charAt(0)}</span>
+                        {r.customer}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="cev-cust-cell">
+                        <span className="cev-cust-mono" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>{(r.consignee || '—').charAt(0)}</span>
+                        {r.consignee || '—'}
+                      </span>
+                    </td>
+                    <td><Ratio r={r.due_dil} /></td>
+                    <td><Ratio r={r.kyc} /></td>
+                    <td><Ratio r={r.trade_lic} /></td>
+                    <td><Ratio r={kind === 'trade' ? r.trade_docs : r.agreement} /></td>
+                  </tr>
+                  {open && (
+                    <tr className="cev-ship-expand">
+                      <td colSpan={COLS} style={{ padding: 0, background: '#f0fdff' }}>
+                        <ShipmentDocPanel
+                          buyer={kind === 'trade' ? (r.trade_docs_buyer ?? []) : (r.agreements_buyer ?? [])}
+                          consignee={kind === 'trade' ? (r.trade_docs_consignee ?? []) : (r.agreements_consignee ?? [])}
+                          buyerName={r.customer}
+                          consigneeName={r.consignee || '—'}
+                          buyerIsConsignee={r.buyer_is_consignee}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
         </div>
@@ -1169,6 +1212,82 @@ function ShipmentTable({ rows, filter, setFilter }: {
     </>
   );
 }
+
+/* Expanded shipment row — Buyer / Consignee sub-tabs + the document table.
+ * Inline-styled (no scoped classes) so the Consignee vault reuses it as-is. */
+export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, buyerIsConsignee }: {
+  buyer: VaultShipmentDoc[]; consignee: VaultShipmentDoc[]; buyerName: string; consigneeName: string; buyerIsConsignee: boolean;
+}) {
+  const toast = useToast();
+  const [party, setParty] = useState<'buyer' | 'consignee'>('buyer');
+  const [busy, setBusy] = useState<number | null>(null);
+  const docs = party === 'buyer' ? buyer : consignee;
+
+  const remind = async (d: VaultShipmentDoc) => {
+    setBusy(d.sig_req_id);
+    try {
+      await api.post(`/clm/signature-requests/${d.sig_req_id}/remind`);
+      toast.success('Reminder sent', `${d.name} — the signer has been reminded.`);
+    } catch (e: any) {
+      toast.error('Could not send reminder', e?.response?.data?.message || 'Please try again.');
+    } finally { setBusy(null); }
+  };
+
+  const stTone = (s: string) => s === 'Signed' ? '#059669' : (s === 'Declined' || s === 'Expired') ? '#dc2626' : '#d97706';
+
+  return (
+    <div style={{ padding: '12px 16px 16px' }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+        <button type="button" onClick={() => setParty('buyer')} style={partyTabStyle(party === 'buyer')}>👤 Buyer Documents <b>{buyer.length}</b></button>
+        {!buyerIsConsignee && (
+          <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(party === 'consignee')}>🏢 Consignee Documents <b>{consignee.length}</b></button>
+        )}
+      </div>
+      <div style={{ fontSize: 11, fontWeight: 600, color: '#0e7490', marginBottom: 6 }}>{party === 'buyer' ? buyerName : consigneeName}</div>
+      {docs.length === 0 ? (
+        <div style={{ padding: '18px', textAlign: 'center', color: '#64748b', fontSize: 12, background: '#fff', border: '1px dashed #a5f3fc', borderRadius: 8 }}>No {party === 'buyer' ? 'buyer' : 'consignee'} documents on this shipment.</div>
+      ) : (
+        <div style={{ background: '#fff', border: '1px solid #d6eef5', borderRadius: 10, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
+            <thead>
+              <tr style={{ background: 'linear-gradient(90deg,#0e7490,#0891b2)', color: '#fff' }}>
+                {['#', 'Document Name', 'Required', 'Uploaded On', 'Valid Upto', 'Status', 'Actions'].map((h) => (
+                  <th key={h} style={{ padding: '8px 10px', textAlign: h === 'Document Name' ? 'left' : 'center', fontSize: 9, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {docs.map((d, i) => (
+                <tr key={d.sig_req_id + '-' + i} style={{ borderBottom: '1px solid #ecfeff' }}>
+                  <td style={{ padding: '8px 10px', textAlign: 'center', color: '#94a3b8', fontWeight: 700 }}>{i + 1}</td>
+                  <td style={{ padding: '8px 10px', fontWeight: 700, color: '#0f172a' }}>{d.name}</td>
+                  <td style={{ padding: '8px 10px', textAlign: 'center' }}><span style={{ fontSize: 8.5, fontWeight: 800, color: d.required === 'OPT' ? '#64748b' : '#b45309', background: d.required === 'OPT' ? '#f1f5f9' : '#fef3c7', border: `1px solid ${d.required === 'OPT' ? '#e2e8f0' : '#fde68a'}`, padding: '2px 7px', borderRadius: 20 }}>{d.required}</span></td>
+                  <td style={{ padding: '8px 10px', textAlign: 'center', color: '#475569' }}>{d.uploaded_on}</td>
+                  <td style={{ padding: '8px 10px', textAlign: 'center', color: '#475569' }}>{d.valid_upto}</td>
+                  <td style={{ padding: '8px 10px', textAlign: 'center' }}><span style={{ fontSize: 9.5, fontWeight: 800, color: stTone(d.status) }}>● {d.status}</span></td>
+                  <td style={{ padding: '8px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                    {d.signed_url && <button type="button" onClick={() => window.open(resolveFileUrl(d.signed_url!), '_blank', 'noopener')} style={docActStyle('#0891b2')}>View</button>}
+                    {d.status !== 'Signed' && <button type="button" disabled={busy === d.sig_req_id} onClick={() => remind(d)} style={docActStyle('#7c3aed')}>{busy === d.sig_req_id ? '…' : 'Remind'}</button>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const partyTabStyle = (on: boolean): CSSProperties => ({
+  display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
+  fontFamily: 'inherit', fontSize: 11.5, fontWeight: 700, color: on ? '#fff' : '#0e7490',
+  background: on ? 'linear-gradient(135deg,#06b6d4,#0891b2)' : '#e0f7fa',
+});
+const docActStyle = (c: string): CSSProperties => ({
+  display: 'inline-flex', alignItems: 'center', margin: '0 3px', padding: '4px 10px', borderRadius: 7, border: `1.5px solid ${c}`,
+  background: '#fff', color: c, fontFamily: 'inherit', fontSize: 10, fontWeight: 700, cursor: 'pointer',
+});
 
 function Ratio({ r }: { r: { ratio: string; pct: number } }) {
   /* Compact SVG donut — 38px circle, ratio inside, hover-portal

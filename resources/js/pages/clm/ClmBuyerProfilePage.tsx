@@ -27,18 +27,18 @@ type BuyerRow = {
 
 type ConsRow = {
   sr: number; id: string; cid: string; db_id?: number; name: string; seg: string; sc: string; sb: string;
-  country: string; kyc: Prog; dd: Prog; tl: Prog; td: Prog; agr: Prog; ship: number;
+  country: string; same_as_customer?: boolean; kyc: Prog; dd: Prog; tl: Prog; td: Prog; agr: Prog; ship: number;
 };
 
 type Reg = 'High' | 'Low' | 'Both';
 
 type WsEqRow = {
-  sr: number; shp: string; opp: string; customer: string; pi: string; reg: Reg;
+  sr: number; shp: string; opp: string; customer: string; custId?: number; consId?: number; country?: string; pi: string; reg: Reg;
   kyc: Prog; dd: Prog; tl: Prog; td: Prog; agr: Prog;
 };
 type WsNeqRow = WsEqRow & { consignee: string };
 type WosEqRow = {
-  sr: number; opp: string; customer: string; pi: string; reg: Reg;
+  sr: number; opp: string; customer: string; custId?: number; consId?: number; country?: string; pi: string; reg: Reg;
   kyc: Prog; dd: Prog; tl: Prog; td: Prog; agr: Prog;
 };
 type WosNeqRow = WosEqRow & { consignee: string };
@@ -375,13 +375,15 @@ function WsProgCell({ obj }: { obj: Prog }) {
   return <ProgCell obj={obj} big={false} />;
 }
 
-function EvidenceVaultBtn({ icon }: { icon: 'shield' | 'box' }) {
+function EvidenceVaultBtn({ icon, onClick, disabled }: { icon: 'shield' | 'box'; onClick?: () => void; disabled?: boolean }) {
   return (
     <td style={{ padding: '8px 10px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
       <button
         title={icon === 'shield' ? 'Shipment Evidence Vault' : 'Opportunity Evidence Vault'}
-        style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 10px', borderRadius: '7px', border: '1.5px solid rgba(6,182,212,.3)', background: 'linear-gradient(135deg,#f0fdff,#e8fbfd)', cursor: 'pointer', fontFamily: 'inherit', fontSize: '10px', fontWeight: 700, color: '#0891b2', transition: 'all .15s', whiteSpace: 'nowrap' }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = 'linear-gradient(135deg,#06b6d4,#0891b2)'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = '#0891b2'; }}
+        onClick={onClick}
+        disabled={disabled}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 10px', borderRadius: '7px', border: '1.5px solid rgba(6,182,212,.3)', background: 'linear-gradient(135deg,#f0fdff,#e8fbfd)', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, fontFamily: 'inherit', fontSize: '10px', fontWeight: 700, color: '#0891b2', transition: 'all .15s', whiteSpace: 'nowrap' }}
+        onMouseEnter={(e) => { if (disabled) return; e.currentTarget.style.background = 'linear-gradient(135deg,#06b6d4,#0891b2)'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = '#0891b2'; }}
         onMouseLeave={(e) => { e.currentTarget.style.background = 'linear-gradient(135deg,#f0fdff,#e8fbfd)'; e.currentTarget.style.color = '#0891b2'; e.currentTarget.style.borderColor = 'rgba(6,182,212,.3)'; }}
       >
         {icon === 'shield'
@@ -480,6 +482,25 @@ export default function ClmBuyerProfilePage() {
   const [brefCollapsed, setBrefCollapsed] = useState(false);
   const [clmTab, setClmTab] = useState<'party' | 'txn'>('party');
   const [bpaTab, setBpaTab] = useState<'buyer' | 'consignee'>('buyer');
+  const [buyerScope, setBuyerScope] = useState<'international' | 'domestic'>('international');
+  const [consScope, setConsScope] = useState<'international' | 'domestic'>('international');
+  // Analytics KPI cards double as list filters. 'all' clears the filter; the
+  // others narrow the list below to the matching compliance state.
+  type CardFilter = 'all' | 'compliant' | 'kyc' | 'dd' | 'tl' | 'td' | 'agr';
+  const [cardFilter, setCardFilter] = useState<CardFilter>('all');
+  const CARD_KEYS: CardFilter[] = ['all', 'compliant', 'kyc', 'dd', 'tl', 'td', 'agr'];
+  const matchCard = (r: { kyc: Prog; dd: Prog; tl: Prog; td: Prog; agr: Prog }): boolean => {
+    switch (cardFilter) {
+      case 'compliant': return r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t;
+      case 'kyc': return r.kyc.d < r.kyc.t;
+      case 'dd':  return r.dd.d < r.dd.t;
+      case 'tl':  return r.tl.d < r.tl.t;
+      case 'td':  return r.td.d < r.td.t;
+      case 'agr': return r.agr.d < r.agr.t;
+      default:    return true;
+    }
+  };
+  const [txnScope, setTxnScope] = useState<'international' | 'domestic'>('international');
   const [shipTab, setShipTab] = useState<'with' | 'without'>('with');
   const [wsSub, setWsSub] = useState<'eq' | 'neq'>('eq');
   const [wosSub, setWosSub] = useState<'eq' | 'neq'>('eq');
@@ -523,6 +544,16 @@ export default function ClmBuyerProfilePage() {
     setConsVaultTab(tab);
     setConsVault({ id: r.id, db_id: r.db_id, company: r.name, segment: r.seg, country: r.country, customerId: r.cid });
   };
+  // Open the buyer (customer) Evidence Vault from a transaction row. Reuses the
+  // full buyer record (segment, code) when the customer is in the buyer list,
+  // else falls back to a minimal target keyed on the customer's db_id.
+  const openTxnBuyerVault = (custId?: number, custName?: string, country?: string) => {
+    if (!custId) return;
+    const row = bp.buyers.find((b) => b.db_id === custId);
+    if (row) { openBuyerVault(row, 'company-dd'); return; }
+    setBuyerVaultTab('company-dd');
+    setBuyerVault({ id: '—', db_id: custId, company: custName || '—', segment: '', country: country || '' });
+  };
 
   // Open the single-bucket documents popup for a row's progress cell.
   // No-ops without a db_id (the row has no backing record to fetch).
@@ -548,30 +579,42 @@ export default function ClmBuyerProfilePage() {
   // existing render + pagination code below consumes live data unchanged.
   const bpBuyerData = bp.buyers;
   const bpConsData  = bp.consignees;
-  const wsEqData    = bp.ws_eq;
-  const wsNeqData   = bp.ws_neq;
-  const wosEqData   = bp.wos_eq;
-  const wosNeqData  = bp.wos_neq;
+  // International vs Domestic buyer scope. Domestic = the exporter's home
+  // country (India); International = every other country. Drives the Buyer
+  // List + the buyer analytics cards so both reflect the chosen tab.
+  const HOME_COUNTRY = 'india';
+  const isDomesticCountry = (c: string) => (c || '').trim().toLowerCase() === HOME_COUNTRY;
+  const isDomesticBuyer = isDomesticCountry;
+  const scopedBuyers = bpBuyerData.filter((r) => buyerScope === 'domestic' ? isDomesticBuyer(r.country) : !isDomesticBuyer(r.country));
+  const scopedCons = bpConsData.filter((r) => consScope === 'domestic' ? isDomesticCountry(r.country) : !isDomesticCountry(r.country));
+  // International vs Domestic transactions — scoped by the buyer's country so
+  // the transaction-wise analytics + all four tables follow the chosen tab.
+  const txnInScope = <T extends { country?: string }>(rows: T[]): T[] =>
+    rows.filter((r) => txnScope === 'domestic' ? isDomesticCountry(r.country || '') : !isDomesticCountry(r.country || ''));
+  const wsEqData    = txnInScope(bp.ws_eq);
+  const wsNeqData   = txnInScope(bp.ws_neq);
+  const wosEqData   = txnInScope(bp.wos_eq);
+  const wosNeqData  = txnInScope(bp.wos_neq);
 
   // ── derived buyer analytics (syncBpaCards) ──
   const pad = (n: number) => (n < 10 ? '0' + n : '' + n);
-  const buyerTotal = bpBuyerData.length;
+  const buyerTotal = scopedBuyers.length;
   // Compliant buyer = KYC + DD + Trade License all fully completed.
-  const buyerCompliant = bpBuyerData.filter((r) => r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t).length;
-  const buyerKyc = bpBuyerData.filter((r) => r.kyc.d < r.kyc.t).length;
-  const buyerDd = bpBuyerData.filter((r) => r.dd.d < r.dd.t).length;
-  const buyerTl = bpBuyerData.filter((r) => r.tl.d < r.tl.t).length;
-  const buyerTd = bpBuyerData.filter((r) => r.td.d < r.td.t).length;
-  const buyerAgr = bpBuyerData.filter((r) => r.agr.d < r.agr.t).length;
+  const buyerCompliant = scopedBuyers.filter((r) => r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t).length;
+  const buyerKyc = scopedBuyers.filter((r) => r.kyc.d < r.kyc.t).length;
+  const buyerDd = scopedBuyers.filter((r) => r.dd.d < r.dd.t).length;
+  const buyerTl = scopedBuyers.filter((r) => r.tl.d < r.tl.t).length;
+  const buyerTd = scopedBuyers.filter((r) => r.td.d < r.td.t).length;
+  const buyerAgr = scopedBuyers.filter((r) => r.agr.d < r.agr.t).length;
 
   // ── derived consignee analytics ──
-  const consTotal = bpConsData.length;
-  const consCompliant = bpConsData.filter((r) => r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t).length;
-  const consKyc = bpConsData.filter((r) => r.kyc.d < r.kyc.t).length;
-  const consDd = bpConsData.filter((r) => r.dd.d < r.dd.t).length;
-  const consTl = bpConsData.filter((r) => r.tl.d < r.tl.t).length;
-  const consTd = bpConsData.filter((r) => r.td.d < r.td.t).length;
-  const consAgr = bpConsData.filter((r) => r.agr.d < r.agr.t).length;
+  const consTotal = scopedCons.length;
+  const consCompliant = scopedCons.filter((r) => r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t).length;
+  const consKyc = scopedCons.filter((r) => r.kyc.d < r.kyc.t).length;
+  const consDd = scopedCons.filter((r) => r.dd.d < r.dd.t).length;
+  const consTl = scopedCons.filter((r) => r.tl.d < r.tl.t).length;
+  const consTd = scopedCons.filter((r) => r.td.d < r.td.t).length;
+  const consAgr = scopedCons.filter((r) => r.agr.d < r.agr.t).length;
 
   // ── derived transaction (opportunity) analytics ──
   const allTxn: (WsEqRow | WsNeqRow | WosEqRow | WosNeqRow)[] = [...wsEqData, ...wsNeqData, ...wosEqData, ...wosNeqData];
@@ -587,21 +630,19 @@ export default function ClmBuyerProfilePage() {
    * Segment and Country. Buyer segments are an array; consignee segment is a
    * single string. Falls back to the full list when the box is empty. */
   const buyerQ = buyerSearch.trim().toLowerCase();
-  const buyerFiltered = buyerQ
-    ? bpBuyerData.filter((r) =>
-        r.name.toLowerCase().includes(buyerQ) ||
-        r.id.toLowerCase().includes(buyerQ) ||
-        r.country.toLowerCase().includes(buyerQ) ||
-        r.seg.some((s) => s.toLowerCase().includes(buyerQ)))
-    : bpBuyerData;
+  const buyerFiltered = scopedBuyers.filter((r) =>
+    matchCard(r) && (!buyerQ ||
+      r.name.toLowerCase().includes(buyerQ) ||
+      r.id.toLowerCase().includes(buyerQ) ||
+      r.country.toLowerCase().includes(buyerQ) ||
+      r.seg.some((s) => s.toLowerCase().includes(buyerQ))));
   const consQ = consSearch.trim().toLowerCase();
-  const consFiltered = consQ
-    ? bpConsData.filter((r) =>
-        r.name.toLowerCase().includes(consQ) ||
-        r.id.toLowerCase().includes(consQ) ||
-        r.country.toLowerCase().includes(consQ) ||
-        r.seg.toLowerCase().includes(consQ))
-    : bpConsData;
+  const consFiltered = scopedCons.filter((r) =>
+    matchCard(r) && (!consQ ||
+      r.name.toLowerCase().includes(consQ) ||
+      r.id.toLowerCase().includes(consQ) ||
+      r.country.toLowerCase().includes(consQ) ||
+      r.seg.toLowerCase().includes(consQ)));
   const buyerListTotal = buyerFiltered.length;
   const consListTotal = consFiltered.length;
 
@@ -713,8 +754,24 @@ export default function ClmBuyerProfilePage() {
                   <div style={{ fontSize: '9px', fontWeight: 500, color: '#0e7490', marginTop: '2px' }}>Live snapshot of transaction compliance status, pending actions and document health.</div>
                 </div>
               </div>
-              <div onClick={() => setTxnAnalyticsOpen((o) => !o)} style={{ width: '26px', height: '26px', borderRadius: '7px', background: 'rgba(255,255,255,.75)', border: '1.5px solid rgba(8,145,178,.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#0891b2', transition: 'all .15s', flexShrink: 0 }}>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" style={{ transition: 'transform .24s cubic-bezier(.22,1,.36,1)', transform: txnAnalyticsOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}><polyline points="6 9 12 15 18 9" /></svg>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {/* International / Domestic transaction scope */}
+                <div style={{ display: 'flex', gap: '3px', padding: '3px', height: '34px', borderRadius: '9px', background: 'rgba(6,182,212,.08)', border: '1.5px solid #A5F3FC' }}>
+                  {([['international', 'International Transactions'], ['domestic', 'Domestic Transactions']] as const).map(([key, label]) => {
+                    const on = txnScope === key;
+                    return (
+                      <button key={key} onClick={() => { setTxnScope(key); setWsEqPage(1); setWsNeqPage(1); setWosEqPage(1); setWosNeqPage(1); }} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0 12px', border: 'none', borderRadius: '7px', fontFamily: 'inherit', fontSize: '10.5px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all .15s', color: on ? '#fff' : '#0e7490', background: on ? 'linear-gradient(135deg,#06b6d4,#0891b2)' : 'transparent', boxShadow: on ? '0 2px 8px rgba(8,145,178,.35)' : 'none' }}>
+                        {key === 'international'
+                          ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
+                          : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>}
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div onClick={() => setTxnAnalyticsOpen((o) => !o)} style={{ width: '26px', height: '26px', borderRadius: '7px', background: 'rgba(255,255,255,.75)', border: '1.5px solid rgba(8,145,178,.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#0891b2', transition: 'all .15s', flexShrink: 0 }}>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" style={{ transition: 'transform .24s cubic-bezier(.22,1,.36,1)', transform: txnAnalyticsOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}><polyline points="6 9 12 15 18 9" /></svg>
+                </div>
               </div>
             </div>
             <div style={{ maxHeight: txnAnalyticsOpen ? '200px' : '0px', opacity: txnAnalyticsOpen ? 1 : 0, padding: txnAnalyticsOpen ? '6px 8px 8px' : '0 8px', background: 'linear-gradient(180deg,#f0fdff,#f4feff)', overflow: 'hidden', transition: 'max-height .32s cubic-bezier(.22,1,.36,1),opacity .22s,padding .22s' }}>
@@ -792,7 +849,7 @@ export default function ClmBuyerProfilePage() {
                               <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={piChip}>{r.pi}</span></td>
                               <RegBadge reg={r.reg} />
                               <WsProgCell obj={r.kyc} /><WsProgCell obj={r.dd} /><WsProgCell obj={r.tl} /><WsProgCell obj={r.td} /><WsProgCell obj={r.agr} />
-                              <EvidenceVaultBtn icon="shield" />
+                              <EvidenceVaultBtn icon="shield" disabled={!r.custId} onClick={() => openTxnBuyerVault(r.custId, r.customer, r.country)} />
                             </tr>
                           );
                         })}
@@ -827,7 +884,7 @@ export default function ClmBuyerProfilePage() {
                               <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={piChip}>{r.pi}</span></td>
                               <RegBadge reg={r.reg} />
                               <WsProgCell obj={r.kyc} /><WsProgCell obj={r.dd} /><WsProgCell obj={r.tl} /><WsProgCell obj={r.td} /><WsProgCell obj={r.agr} />
-                              <EvidenceVaultBtn icon="shield" />
+                              <EvidenceVaultBtn icon="shield" disabled={!r.custId} onClick={() => openTxnBuyerVault(r.custId, r.customer, r.country)} />
                             </tr>
                           );
                         })}
@@ -874,7 +931,7 @@ export default function ClmBuyerProfilePage() {
                               <RegBadge reg={r.reg} />
                               <WsProgCell obj={r.kyc} /><WsProgCell obj={r.dd} /><WsProgCell obj={r.tl} /><WsProgCell obj={r.td} />
                               <WosAgrCell row={r} />
-                              <EvidenceVaultBtn icon="box" />
+                              <EvidenceVaultBtn icon="box" disabled={!r.custId} onClick={() => openTxnBuyerVault(r.custId, r.customer, r.country)} />
                             </tr>
                           );
                         })}
@@ -912,7 +969,7 @@ export default function ClmBuyerProfilePage() {
                               <RegBadge reg={r.reg} />
                               <WsProgCell obj={r.kyc} /><WsProgCell obj={r.dd} /><WsProgCell obj={r.tl} /><WsProgCell obj={r.td} />
                               <WosAgrCell row={r} />
-                              <EvidenceVaultBtn icon="box" />
+                              <EvidenceVaultBtn icon="box" disabled={!r.custId} onClick={() => openTxnBuyerVault(r.custId, r.customer, r.country)} />
                             </tr>
                           );
                         })}
@@ -952,8 +1009,8 @@ export default function ClmBuyerProfilePage() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <div className="bpa-seg">
-                    <button className={`bpa-tab ${bpaTab === 'buyer' ? 'bpa-tab-active' : 'bpa-tab-inactive'}`} onClick={() => setBpaTab('buyer')}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>Buyer</button>
-                    <button className={`bpa-tab ${bpaTab === 'consignee' ? 'bpa-tab-active' : 'bpa-tab-inactive'}`} onClick={() => setBpaTab('consignee')}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>Consignee</button>
+                    <button className={`bpa-tab ${bpaTab === 'buyer' ? 'bpa-tab-active' : 'bpa-tab-inactive'}`} onClick={() => { setBpaTab('buyer'); setCardFilter('all'); }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>Buyer</button>
+                    <button className={`bpa-tab ${bpaTab === 'consignee' ? 'bpa-tab-active' : 'bpa-tab-inactive'}`} onClick={() => { setBpaTab('consignee'); setCardFilter('all'); }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>Consignee</button>
                   </div>
                   <div onClick={() => setPartyAnalyticsOpen((o) => !o)} style={{ width: '26px', height: '26px', borderRadius: '7px', background: 'rgba(255,255,255,.75)', border: '1.5px solid rgba(8,145,178,.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#0891b2', transition: 'all .15s' }}>
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" style={{ transition: 'transform .24s cubic-bezier(.22,1,.36,1)', transform: partyAnalyticsOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}><polyline points="6 9 12 15 18 9" /></svg>
@@ -964,7 +1021,7 @@ export default function ClmBuyerProfilePage() {
                 {bpaTab === 'buyer' && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: '6px' }}>
                     {[
-                      { num: pad(buyerTotal), label: 'Total Buyers', tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> },
+                      { num: pad(buyerTotal), label: `Total ${buyerScope === 'domestic' ? 'Domestic' : 'International'} Buyers`, tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> },
                       { num: pad(buyerCompliant), label: 'Compliant Buyers', tag: 'OK', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg> },
                       { num: pad(buyerKyc), label: 'KYC Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg> },
                       { num: pad(buyerDd), label: 'Due Diligence Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg> },
@@ -972,7 +1029,7 @@ export default function ClmBuyerProfilePage() {
                       { num: pad(buyerTd), label: 'Trade Documents Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg> },
                       { num: pad(buyerAgr), label: 'Agreements Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><polyline points="9 15 12 18 15 15" /></svg> },
                     ].map((c, idx) => (
-                      <div key={idx} style={cardStyle} onMouseEnter={cardHoverIn} onMouseLeave={cardHoverOut}>
+                      <div key={idx} onClick={() => { const k = CARD_KEYS[idx]; setCardFilter(cardFilter === k ? 'all' : k); setBuyerPage(1); setConsPage(1); }} style={{ ...cardStyle, cursor: 'pointer', ...(cardFilter === CARD_KEYS[idx] && CARD_KEYS[idx] !== 'all' ? { background: '#ecfeff', borderColor: '#0891b2' } : {}) }} onMouseEnter={cardHoverIn} onMouseLeave={cardHoverOut}>
                         <div style={cardTopBar} />
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
                           <div style={cardIco}>{c.ico}</div>
@@ -987,7 +1044,7 @@ export default function ClmBuyerProfilePage() {
                 {bpaTab === 'consignee' && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: '6px' }}>
                     {[
-                      { num: pad(consTotal), label: 'Total Consignees', tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> },
+                      { num: pad(consTotal), label: `Total ${consScope === 'domestic' ? 'Domestic' : 'International'} Consignees`, tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> },
                       { num: pad(consCompliant), label: 'Compliant Consignees', tag: 'OK', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg> },
                       { num: pad(consKyc), label: 'KYC Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg> },
                       { num: pad(consDd), label: 'Due Diligence Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg> },
@@ -995,7 +1052,7 @@ export default function ClmBuyerProfilePage() {
                       { num: pad(consTd), label: 'Trade Documents Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg> },
                       { num: pad(consAgr), label: 'Agreements Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><polyline points="9 15 12 18 15 15" /></svg> },
                     ].map((c, idx) => (
-                      <div key={idx} style={cardStyle} onMouseEnter={cardHoverIn} onMouseLeave={cardHoverOut}>
+                      <div key={idx} onClick={() => { const k = CARD_KEYS[idx]; setCardFilter(cardFilter === k ? 'all' : k); setBuyerPage(1); setConsPage(1); }} style={{ ...cardStyle, cursor: 'pointer', ...(cardFilter === CARD_KEYS[idx] && CARD_KEYS[idx] !== 'all' ? { background: '#ecfeff', borderColor: '#0891b2' } : {}) }} onMouseEnter={cardHoverIn} onMouseLeave={cardHoverOut}>
                         <div style={cardTopBar} />
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
                           <div style={cardIco}>{c.ico}</div>
@@ -1030,6 +1087,20 @@ export default function ClmBuyerProfilePage() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '7px', height: '36px', padding: '0 12px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)' }}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
                       <input type="text" placeholder="Search by name, segment, country, ID..." value={buyerSearch} onChange={(e) => { setBuyerSearch(e.target.value); setBuyerPage(1); }} style={{ border: 'none', outline: 'none', fontSize: '11px', fontFamily: 'inherit', color: '#0c4a6e', width: '280px', background: 'transparent' }} />
+                    </div>
+                    {/* International / Domestic buyer scope */}
+                    <div style={{ display: 'flex', gap: '3px', padding: '3px', height: '36px', borderRadius: '9px', background: 'rgba(6,182,212,.08)', border: '1.5px solid #A5F3FC' }}>
+                      {([['international', 'International Buyers'], ['domestic', 'Domestic Buyers']] as const).map(([key, label]) => {
+                        const on = buyerScope === key;
+                        return (
+                          <button key={key} onClick={() => { setBuyerScope(key); setBuyerPage(1); }} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0 13px', border: 'none', borderRadius: '7px', fontFamily: 'inherit', fontSize: '11px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all .15s', color: on ? '#fff' : '#0e7490', background: on ? 'linear-gradient(135deg,#06b6d4,#0891b2)' : 'transparent', boxShadow: on ? '0 2px 8px rgba(8,145,178,.35)' : 'none' }}>
+                            {key === 'international'
+                              ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
+                              : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>}
+                            {label}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -1108,11 +1179,20 @@ export default function ClmBuyerProfilePage() {
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
                       <input type="text" placeholder="Search by name, segment, country, ID..." value={consSearch} onChange={(e) => { setConsSearch(e.target.value); setConsPage(1); }} style={{ border: 'none', outline: 'none', fontSize: '11px', fontFamily: 'inherit', color: '#0c4a6e', width: '280px', background: 'transparent' }} />
                     </div>
-                    <button style={{ position: 'relative', overflow: 'hidden', display: 'inline-flex', alignItems: 'center', gap: '7px', height: '36px', padding: '0 18px', border: 'none', borderRadius: '10px', fontFamily: 'inherit', fontSize: '12px', fontWeight: 700, color: '#fff', cursor: 'pointer', background: 'linear-gradient(135deg,#06b6d4,#0891b2,#0e7490)', boxShadow: '0 4px 14px rgba(8,145,178,.4),inset 0 1px 0 rgba(255,255,255,.18)', transition: 'all .18s' }}>
-                      <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.18),transparent)', borderRadius: '10px 10px 0 0', pointerEvents: 'none' }} />
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" style={{ position: 'relative', zIndex: 1, flexShrink: 0 }}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                      <span style={{ position: 'relative', zIndex: 1 }}>Add Consignee</span>
-                    </button>
+                    {/* International / Domestic consignee scope */}
+                    <div style={{ display: 'flex', gap: '3px', padding: '3px', height: '36px', borderRadius: '9px', background: 'rgba(6,182,212,.08)', border: '1.5px solid #A5F3FC' }}>
+                      {([['international', 'International Consignees'], ['domestic', 'Domestic Consignees']] as const).map(([key, label]) => {
+                        const on = consScope === key;
+                        return (
+                          <button key={key} onClick={() => { setConsScope(key); setConsPage(1); }} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0 13px', border: 'none', borderRadius: '7px', fontFamily: 'inherit', fontSize: '11px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all .15s', color: on ? '#fff' : '#0e7490', background: on ? 'linear-gradient(135deg,#06b6d4,#0891b2)' : 'transparent', boxShadow: on ? '0 2px 8px rgba(8,145,178,.35)' : 'none' }}>
+                            {key === 'international'
+                              ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
+                              : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>}
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
                 <div style={{ overflowX: 'auto' }}>
@@ -1185,7 +1265,7 @@ export default function ClmBuyerProfilePage() {
       {consListBuyer && (
         <BuyerConsigneesModal
           buyer={consListBuyer}
-          rows={bpConsData.filter((c) => c.cid === consListBuyer.id)}
+          rows={bpConsData.filter((c) => c.cid === consListBuyer.id && !c.same_as_customer)}
           onClose={() => setConsListBuyer(null)}
         />
       )}

@@ -204,8 +204,12 @@ class ClmBuyerProfileController extends Controller
         }
 
         /* ── 7. Buyers (customers). ── */
+        // Count only DISTINCT consignees (exclude "same as customer" entries) so
+        // the list's CONSIGNEES column matches the consignee popup.
         $customers = Customer::query()->forUser($user)
-            ->withCount('consignees')
+            ->withCount(['consignees as consignees_count' => function ($q) {
+                $q->where(fn ($w) => $w->where('same_as_customer', false)->orWhereNull('same_as_customer'));
+            }])
             ->with('primaryAddress:id,customer_id,country')
             ->orderBy('id')
             ->get();
@@ -270,6 +274,7 @@ class ClmBuyerProfileController extends Controller
                 'sc'      => '#0e7490',
                 'sb'      => '#f0fdff',
                 'country' => optional($c->primaryAddress)->country ?: '—',
+                'same_as_customer' => (bool) $c->same_as_customer,
                 'kyc'     => $prog['kyc'],
                 'dd'      => $prog['dd'],
                 'tl'      => $prog['tl'],
@@ -306,7 +311,10 @@ class ClmBuyerProfileController extends Controller
 
             $base = [
                 'opp'      => $l->opp_code ?: ('OPP-' . $lid),
+                'leadId'   => $lid,
                 'customer' => $cust->company_name,
+                'custId'   => (int) $cust->id,
+                'country'  => optional($cust->primaryAddress)->country ?: '',
                 'pi'       => $pi ? (string) ($pi->code ?? '') : '',
                 'reg'      => $regFor($segIds),
                 'kyc'      => $cp ? $cp['kyc'] : ['d' => 0, 't' => 0],
@@ -316,7 +324,7 @@ class ClmBuyerProfileController extends Controller
                 'agr'      => $agr,
             ];
             if ($hasShip) $base['shp'] = 'SHP-' . str_pad((string) $lid, 3, '0', STR_PAD_LEFT);
-            if ($separateConsignee) $base['consignee'] = $cons->company_name;
+            if ($separateConsignee) { $base['consignee'] = $cons->company_name; $base['consId'] = (int) $cons->id; }
 
             if ($hasShip && $separateConsignee)        { $base['sr'] = ++$n['wsNeq'];  $wsNeq[]  = $base; }
             elseif ($hasShip && !$separateConsignee)   { $base['sr'] = ++$n['wsEq'];   $wsEq[]   = $base; }

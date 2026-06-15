@@ -12,9 +12,9 @@ import { useParams } from 'react-router-dom';
 
 const CLM_TITLES: Record<string, { title: string; group: string }> = {
   // Command Center
-  analytics:             { title: 'CLM Analytics',           group: 'CLM Command Center' },
-  diagnosis:             { title: 'Diagnosis View',          group: 'CLM Command Center' },
-  'resolution-center':   { title: 'Resolution Center',       group: 'CLM Command Center' },
+  analytics:               { title: 'CLM Analytics',                    group: 'CLM Command Center' },
+  'diagnosis-resolution':  { title: 'Diagnosis & Resolution Center',     group: 'CLM Command Center' },
+  'regulatory-defense':    { title: 'Regulatory Defense File',          group: 'CLM Command Center' },
   // Operations — With Shipment ID
   'buyer-profile':       { title: 'Buyer Profile',           group: 'CLM Operations · With Shipment ID' },
   'supplier-profile':    { title: 'Supplier Profile',        group: 'CLM Operations · With Shipment ID' },

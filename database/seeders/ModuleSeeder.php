@@ -343,8 +343,8 @@ class ModuleSeeder extends Seeder
         $clmLeaves = [
             'clm.command' => [
                 ['name' => 'CLM Analytics',             'slug' => 'clm.analytics',             'icon' => 'BarChart3',     'description' => 'Track contract KPIs & legal performance'],
-                ['name' => 'Diagnosis View',            'slug' => 'clm.diagnosis',             'icon' => 'Stethoscope',   'description' => 'Identify blockers, risks & pending approvals'],
-                ['name' => 'Resolution Center',         'slug' => 'clm.resolution_center',     'icon' => 'Wrench',        'description' => 'Resolve legal, approval & contract issues'],
+                ['name' => 'Diagnosis & Resolution Center', 'slug' => 'clm.diagnosis_resolution', 'icon' => 'Stethoscope', 'description' => 'Diagnose contract risks & drive resolution actions'],
+                ['name' => 'Regulatory Defense File',   'slug' => 'clm.regulatory_defense',    'icon' => 'ShieldCheck',   'description' => 'Read-only regulatory defense file repository'],
             ],
             'clm.ops_with' => [
                 ['name' => 'Buyer Profile',             'slug' => 'clm.buyer_profile',         'icon' => 'User',          'description' => 'Manage buyer onboarding & agreements'],

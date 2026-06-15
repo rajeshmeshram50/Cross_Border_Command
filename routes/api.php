@@ -10,6 +10,8 @@ use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\ClmAgreementController;
 use App\Http\Controllers\Api\ClmBuyerProfileController;
 use App\Http\Controllers\Api\ClmSupplierProfileController;
+use App\Http\Controllers\Api\ClmDiagnosisResolutionController;
+use App\Http\Controllers\Api\ClmRegulatoryDefenseFileController;
 use App\Http\Controllers\Api\ClmAuthorityController;
 use App\Http\Controllers\Api\ClmClauseController;
 use App\Http\Controllers\Api\ClmDdController;
@@ -343,6 +345,12 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/clm/leads/{leadId}/agreement-applicable',    [ClmAgreementController::class, 'applicableForLead'])->whereNumber('leadId');
     Route::get   ('/clm/buyer-profile',                          [ClmBuyerProfileController::class, 'index']);
     Route::get   ('/clm/supplier-profile',                       [ClmSupplierProfileController::class, 'index']);
+    // CLM Command Center → combined Diagnosis & Resolution Center (buyer +
+    // supplier + case-to-case in one payload) and the read-only Regulatory
+    // Defense File repository (with / without shipment + case-to-case lists).
+    Route::get   ('/clm/diagnosis-resolution',                   [ClmDiagnosisResolutionController::class, 'index']);
+    Route::post  ('/clm/diagnosis-resolution/escalate',          [ClmDiagnosisResolutionController::class, 'escalate']);
+    Route::get   ('/clm/regulatory-defense',                     [ClmRegulatoryDefenseFileController::class, 'index']);
     Route::post  ('/clm/signature-requests/agreement-preview',   [ClmSignatureController::class, 'agreementPreview']);
     Route::post  ('/clm/signature-requests/agreement-send',      [ClmSignatureController::class, 'agreementSend']);
     // Sales Matrix Stage 5 — send a Quotation / Proforma Invoice for e-signature.

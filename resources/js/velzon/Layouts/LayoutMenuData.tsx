@@ -139,8 +139,8 @@ const salesLeafLink = (leafId: string): string => {
 const clmLeafLink = (leafId: string): string => {
   switch (leafId) {
     case "clm.analytics":             return "/clm/analytics";
-    case "clm.diagnosis":             return "/clm/diagnosis";
-    case "clm.resolution_center":     return "/clm/resolution-center";
+    case "clm.diagnosis_resolution":  return "/clm/diagnosis-resolution";
+    case "clm.regulatory_defense":    return "/clm/regulatory-defense";
     case "clm.buyer_profile":         return "/clm/buyer-profile";
     case "clm.supplier_profile":      return "/clm/supplier-profile";
     case "clm.case_to_case":          return "/clm/case-to-case";
