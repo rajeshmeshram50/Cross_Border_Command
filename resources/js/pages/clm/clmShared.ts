@@ -400,6 +400,13 @@ body.clm-active footer.footer, body.clm-active footer.footer * { color: #0c4a6e 
  * bottom. Opt-in via the .clm-table-fill class so other pages are unaffected. */
 .clm-table-fill { display: flex; flex-direction: column; }
 .clm-table-fill > .clm-pag { margin-top: auto; }
+/* The pager lives inside the horizontally-scrolling table wrap. Without this it
+ * stretches to the table's full scroll width (e.g. 1100px), so on zoom / narrow
+ * viewports the "Showing…" pill and the page arrows are pushed outside the
+ * visible area and only reappear when you scroll the table sideways. Pin it to
+ * the wrap's *visible* width (% resolves against client width, not scroll width)
+ * and make it sticky so it stays in view while the table scrolls horizontally. */
+.clm-table-wrap > .wl-pager { position: sticky; left: 0; width: 100%; box-sizing: border-box; }
 .clm-table { width: 100%; border-collapse: collapse; min-width: 880px; }
 .clm-table thead th {
   padding: 8px 16px;

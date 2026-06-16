@@ -745,7 +745,7 @@ const TOP_BAR: CSSProperties = { display: 'flex', alignItems: 'center', justifyC
 /* ───────────────────────── Main component ───────────────────────── */
 export default function ClmSupplierProfilePage() {
   const [clmTab, setClmTab] = useState<'party' | 'txn'>('party');
-  const [brefCollapsed, setBrefCollapsed] = useState(false);
+  const [brefCollapsed, setBrefCollapsed] = useState(true);
 
   // Party-wise
   const [partyShip, setPartyShip] = useState<'with' | 'without'>('with');

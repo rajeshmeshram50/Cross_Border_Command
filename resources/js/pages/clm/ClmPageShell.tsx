@@ -76,11 +76,11 @@ export type ClmBrefBoxProps = {
   steps: ClmStep[];
   /** SVG icon for the rounded badge in the header (white stroke, 13×13) */
   icon:  ReactNode;
-  /** Whether the box starts collapsed (defaults to expanded) */
+  /** Whether the box starts collapsed (defaults to collapsed) */
   defaultCollapsed?: boolean;
 };
 
-export function ClmBrefBox({ label, sub, steps, icon, defaultCollapsed = false }: ClmBrefBoxProps) {
+export function ClmBrefBox({ label, sub, steps, icon, defaultCollapsed = true }: ClmBrefBoxProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   return (
     <div className="clm-page-card">

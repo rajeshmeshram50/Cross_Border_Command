@@ -487,7 +487,7 @@ function txnRowHover(bg: string) {
  * ────────────────────────────────────────────────────────────────────────── */
 export default function ClmBuyerProfilePage() {
   // tab state
-  const [brefCollapsed, setBrefCollapsed] = useState(false);
+  const [brefCollapsed, setBrefCollapsed] = useState(true);
   const [clmTab, setClmTab] = useState<'party' | 'txn'>('party');
   const [bpaTab, setBpaTab] = useState<'buyer' | 'consignee'>('buyer');
   const [buyerScope, setBuyerScope] = useState<'international' | 'domestic'>('international');
