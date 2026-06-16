@@ -364,7 +364,10 @@ class SegmentDocUploadController extends Controller
 
         // Per-shipment matrix — each of the party's shipments with its buyer +
         // consignee Trade Documents and Agreements (split by signature party).
-        $shipments = $this->buildShipmentAgreements($owner, $type, $cid, $company_dd, $owner_kyc, $trade_licenses);
+        // Pass the ORIGINAL route id ($id) for the shipment lookup. For a
+        // "same as customer" consignee, $owner was swapped to the linked
+        // Customer above, so $owner->id can't be trusted for the lead filter.
+        $shipments = $this->buildShipmentAgreements($owner, $type, $cid, $company_dd, $owner_kyc, $trade_licenses, $id);
 
         return response()->json([
             'data' => [
@@ -397,15 +400,19 @@ class SegmentDocUploadController extends Controller
      * are the party's standard-doc progress (same across its shipments); the
      * Trade-Docs / Agreement ratios are per-shipment from signature completion.
      */
-    private function buildShipmentAgreements(Model $owner, string $type, int $cid, array $companyDd, array $ownerKyc, array $tradeLicenses): array
+    private function buildShipmentAgreements(Model $owner, string $type, int $cid, array $companyDd, array $ownerKyc, array $tradeLicenses, int $entityId): array
     {
         // Vendors aren't modelled as buyer/consignee shipments here.
         if (!in_array($type, ['customer', 'consignee'], true) || !$cid) return [];
 
         // Leads (opportunities) for this party that carry a shipment order.
+        // NOTE: use $entityId (the route id), NOT $owner->id — for a
+        // "same as customer" consignee, resolveOwner swaps $owner to the
+        // linked Customer, so $owner->id would be the customer's id and the
+        // consignee_id filter would miss this consignee's shipments.
         $leadQ = Lead::where('client_id', $cid);
-        if ($type === 'customer') $leadQ->where('customer_id', $owner->id);
-        else                      $leadQ->where('consignee_id', $owner->id);
+        if ($type === 'customer') $leadQ->where('customer_id', $entityId);
+        else                      $leadQ->where('consignee_id', $entityId);
         $leads = $leadQ->get(['id', 'opp_code', 'customer_id', 'consignee_id']);
         if ($leads->isEmpty()) return [];
 
