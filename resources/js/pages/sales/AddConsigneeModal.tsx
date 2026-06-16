@@ -5935,7 +5935,8 @@ const SCOPED_CSS = `
      (single row table), and Stage 3 no longer makes the modal grow
      or shrink. min() caps the height so tall monitors don't get an
      oversized modal; body scrolls internally, header + footer anchored. */
-  height: min(660px, calc(100vh - 64px));
+  /* Tall like the Customer form (.acm-card) — 92vh instead of a fixed 660px. */
+  height: min(92vh, calc(100vh - 24px));
   background: #f0fdf4; border-radius: 16px; overflow: hidden;
   box-shadow: 0 30px 80px rgba(0,0,0,.40);
   display: flex; flex-direction: column;

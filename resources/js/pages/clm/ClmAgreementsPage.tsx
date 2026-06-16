@@ -212,6 +212,8 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
   const [editing, setEditing] = useState<AgrLib | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<AgrLib | null>(null);
+  // All-segments popover — opened from the +N badge in the SEGMENT column.
+  const [segOpen, setSegOpen] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
   // Blocked-action popup state — set when the user clicks Edit/Delete on an
   // agreement that has already been signed.
   const [locked, setLocked] = useState<{ mode: 'edit' | 'delete'; row: AgrLib } | null>(null);
@@ -355,19 +357,32 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                         </Tooltip>
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        {/* Show every mapped segment as its own badge (r.segment
-                            may be a CSV like "Tobacco, Rice"), regardless of
-                            regulatory tier. Only fall back to "All segments"
-                            when no segment is mapped at all. */}
-                        {r.segment
-                          ? <Tooltip label={`Segment scope · ${r.segment}`}>
-                              <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
-                                {r.segment.split(',').map(s => s.trim()).filter(Boolean).map((s, i) => (
-                                  <span key={i} className="clm-badge clm-badge-teal">{s}</span>
-                                ))}
-                              </span>
-                            </Tooltip>
-                          : <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>All segments</span>}
+                        {/* Show only the first mapped segment as a badge; if the
+                            agreement maps to more (r.segment is a CSV like
+                            "Tobacco, Rice"), surface the rest behind a +N badge
+                            that opens a popover. Fall back to "All segments"
+                            when nothing is mapped. */}
+                        {(() => {
+                          const segList = r.segment ? r.segment.split(',').map(s => s.trim()).filter(Boolean) : [];
+                          if (segList.length === 0) return <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>All segments</span>;
+                          const extra = segList.length - 1;
+                          return (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+                              <Tooltip label={`Segment scope · ${segList[0]}`}>
+                                <span className="clm-badge clm-badge-teal">{segList[0]}</span>
+                              </Tooltip>
+                              {extra > 0 && (
+                                <button
+                                  type="button"
+                                  title="View all segments"
+                                  onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(segOpen?.id === r.id ? null : { id: r.id, names: segList, x: b.left, y: b.bottom + 4 }); }}
+                                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
+                                  +{extra}
+                                </button>
+                              )}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="clm-td-desc">
                         <Tooltip label={r.party.split(',').map(s => s.trim()).filter(Boolean).join(' · ')} maxWidth={320}>
@@ -405,6 +420,22 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
       </div>
 
       {pendingDelete && createPortal(<DeleteConf title="Delete agreement?" sub={`${pendingDelete.title} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
+
+      {/* All-segments popover (opened from the +N badge in the SEGMENT column) */}
+      {segOpen && createPortal(
+        <>
+          <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
+          <div style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 230), top: segOpen.y, zIndex: 601, width: 210, maxHeight: 280, overflowY: 'auto', background: '#fff', borderRadius: 12, border: '1.5px solid #99f6e4', boxShadow: '0 16px 40px rgba(0,0,0,.18)', padding: 8 }}>
+            <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#0d9488', padding: '4px 8px 7px' }}>Segments ({segOpen.names.length})</div>
+            {segOpen.names.map((name, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8, background: i % 2 ? '#f0fdfa' : 'transparent' }}>
+                <span className="clm-badge clm-badge-teal">{name}</span>
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
 
       {locked && (
         <LockedConf
