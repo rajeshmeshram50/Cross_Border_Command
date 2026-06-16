@@ -152,12 +152,9 @@ class SalesVisibility
      *
      * @return int[]
      */
-    public static function salesDepartmentUserIds(User $user): array
+    public static function salesDepartmentUserIds(User $user, ?int $branchId = null): array
     {
-        $deptIds = \App\Models\Masters\Departments::query()
-            ->whereRaw('LOWER(name) = ?', ['sales'])
-            ->pluck('id')
-            ->all();
+        $deptIds = self::salesDepartmentIds();
         if (empty($deptIds)) return [];
 
         $q = Employee::query()
@@ -166,7 +163,21 @@ class SalesVisibility
         if ($user->client_id) {
             $q->where('client_id', $user->client_id);
         }
+        if ($branchId) {
+            $q->where('branch_id', $branchId);   // only this branch's Sales people
+        }
         return $q->pluck('user_id')->map(fn ($v) => (int) $v)->unique()->values()->all();
+    }
+
+    /** Master-department ids whose name is "Sales" (case-insensitive). Empty
+     *  array = no Sales department defined at all. */
+    public static function salesDepartmentIds(): array
+    {
+        return \App\Models\Masters\Departments::query()
+            ->whereRaw('LOWER(name) = ?', ['sales'])
+            ->pluck('id')
+            ->map(fn ($v) => (int) $v)
+            ->all();
     }
 
     /**
