@@ -1193,21 +1193,27 @@ export default function SalesQPI() {
     const signedHint = 'Document already signed — open the history icon to view it.';
     return (
       <>
+        {/* Send-for-Signature — only on PI rows; hidden for Quotation. */}
+        {kind === 'pi' && (
         <ActionBtn
           title={readOnly ? 'View-only — this record belongs to the main branch.' : notSent ? 'Send for Signature' : signed ? signedHint : 'Already sent — awaiting signature'}
           color="#0ea5e9" disabled={readOnly || !notSent}
           onClick={() => notSent && setSigSendFor({ kind, id, code, customerName: customer || null, leadId: leadId ?? null })}
           icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>} />
+        )}
         <ActionBtn
           title={inProgress ? 'View sent document' : signed ? signedHint : 'No document sent yet'}
           color="#0ea5e9" disabled={!inProgress}
           onClick={() => inProgress && void onViewSentPdf(kind, id)}
           icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>} />
+        {/* Signing reminder — only on PI rows; hidden for Quotation. */}
+        {kind === 'pi' && (
         <ActionBtn
           title={inProgress ? 'Send signing reminder' : signed ? signedHint : 'Reminders available once the document is sent'}
           color="#f59e0b" disabled={!inProgress}
           onClick={() => inProgress && void onRemindSig(sig!.id)}
           icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>} />
+        )}
         <ActionBtn
           title={hasSig ? 'Signing tracker' : 'No signing activity yet'}
           color="#7c3aed" disabled={!hasSig}
@@ -3748,7 +3754,8 @@ function BasicForm(props: {
                 placeholder="Enter final destination"
                 maxLength={100}
                 value={form.finalDestination}
-                onChange={(e) => set('finalDestination', e.target.value)}
+                /* Auto-capitalise the first letter (e.g. "pune" → "Pune"). */
+                onChange={(e) => { const v = e.target.value; set('finalDestination', v.charAt(0).toUpperCase() + v.slice(1)); }}
               />
             </Field>
 
@@ -3934,6 +3941,9 @@ function ProductsStep(props: {
   //   target_price > product master base_price.
   // Priority for qty:  lead-product quantity (Product Directory) > draft qty.
   // Tax: product master taxPct. Never overwrite a value the user has typed.
+  // International documents are tax-free → Tax % is locked at 0%; Domestic is
+  // free-entry. Drives the draft tax input + the value used when adding a line.
+  const isIntl = form.docType === 'International';
   const onProductPick = (label: string) => {
     const code = (label || '').split(' – ')[0]?.trim() ?? '';
     const p = productsRaw.find(pr => pr.code === code);
@@ -3950,7 +3960,7 @@ function ProductsStep(props: {
       hsn:       p.hsn,
       qty:    draft.qty    > 0 ? draft.qty    : (leadPrice?.qty  ?? draft.qty),
       rate:   draft.rate   > 0 ? draft.rate   : (latestQuoted ?? leadPrice?.rate ?? p.rate),
-      taxPct: draft.taxPct > 0 ? draft.taxPct : p.taxPct,
+      taxPct: isIntl ? 0 : (draft.taxPct > 0 ? draft.taxPct : p.taxPct),
     });
   };
 
@@ -4007,14 +4017,14 @@ function ProductsStep(props: {
           {/* Product Name is the dominant column (matches the figma); the
               numeric columns are sized just wide enough for their inputs. */}
           <colgroup>
-            <col style={{ width: '36%' }} />
-            <col style={{ width: '8%' }} />
-            <col style={{ width: '10%' }} />
-            <col style={{ width: '8%' }} />
-            <col style={{ width: '10%' }} />
+            <col style={{ width: '30%' }} />
+            <col style={{ width: '7%' }} />
             <col style={{ width: '11%' }} />
-            <col style={{ width: '9%' }} />
-            <col style={{ width: '8%' }} />
+            <col style={{ width: '7%' }} />
+            <col style={{ width: '11%' }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: '10%' }} />
           </colgroup>
           <thead>
             <tr>
@@ -4068,10 +4078,26 @@ function ProductsStep(props: {
               </td>
               <td><input className="qpi-input qpi-input-num" type="number" min="0" value={draft.qty || ''} onChange={(e) => setDraft({ ...draft, qty: Number(e.target.value) })} /></td>
               <td><input className="qpi-input qpi-input-num" type="number" min="0" value={draft.rate || ''} onChange={(e) => setDraft({ ...draft, rate: Number(e.target.value) })} /></td>
-              <td><input className="qpi-input qpi-input-num" type="number" min="0" value={draft.taxPct || 0} onChange={(e) => setDraft({ ...draft, taxPct: Number(e.target.value) })} /></td>
-              <td className="qpi-em-center">—</td>
-              <td className="qpi-em-center">—</td>
-              <td className="qpi-em-center">—</td>
+              <td><input className="qpi-input qpi-input-num" type="number" min="0"
+                disabled={isIntl}
+                placeholder="0"
+                title={isIntl ? 'International documents are tax-free — Tax % is locked at 0%.' : undefined}
+                /* Show empty (not "0") when zero so typing replaces it instead of
+                 * leaving a leading zero like "012". International stays a fixed 0. */
+                value={isIntl ? 0 : (draft.taxPct || '')}
+                onChange={(e) => setDraft({ ...draft, taxPct: Number(e.target.value) })} /></td>
+              {/* Computed columns — read-only boxes that fill live from qty ×
+                  rate × tax once both qty and rate are entered (not editable). */}
+              {(() => {
+                const dc = calcRow(draft);
+                const has = draft.qty > 0 && draft.rate > 0;
+                const cell = (val: number) => (
+                  <td><input className="qpi-input qpi-input-num" type="text" readOnly tabIndex={-1}
+                    style={{ cursor: 'default', fontWeight: 600 }}
+                    placeholder="—" value={has ? val.toFixed(2) : ''} /></td>
+                );
+                return <>{cell(dc.taxAmt)}{cell(dc.rateWithTax)}{cell(dc.amount)}</>;
+              })()}
               <td>
                 <button className={`qpi-prod-add qpi-prod-add-${theme}`} onClick={addProduct}>
                   <IconPlus /> Add
@@ -4342,6 +4368,10 @@ const SCOPED_CSS = `
 .qpi-sig-none   { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
 .qpi-sig-sent   { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
 .qpi-sig-signed { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+/* Dark mode — translucent fills + light text, like the other app badges. */
+[data-bs-theme="dark"] .qpi-sig-none   { background: rgba(148,163,184,.16); color: #cbd5e1; border-color: rgba(148,163,184,.34); }
+[data-bs-theme="dark"] .qpi-sig-sent   { background: rgba(234,179,8,.16);   color: #fde68a; border-color: rgba(234,179,8,.40); }
+[data-bs-theme="dark"] .qpi-sig-signed { background: rgba(34,197,94,.16);    color: #86efac; border-color: rgba(34,197,94,.40); }
 
 /* ─── What We Are Doing Here ─── */
 /* Matches the Customer page .smc-wdh-card design: lavender gradient card,
@@ -4983,6 +5013,15 @@ const SCOPED_CSS = `
   color: var(--vz-secondary-color, #878a99);
 }
 [data-bs-theme="dark"] .qpi-creator-sub { color: rgba(255,255,255,.55); }
+/* Dark mode — the pill colours are set inline (light tints), so override with
+   translucent fills + light text (!important to beat the inline style), matching
+   how the other app badges read in dark mode. */
+[data-bs-theme="dark"] .qpi-creator-self   { background: rgba(99,102,241,.20) !important;  color: #c7d2fe !important; }
+[data-bs-theme="dark"] .qpi-creator-main,
+[data-bs-theme="dark"] .qpi-creator-super  { background: rgba(139,92,246,.20) !important;  color: #ddd6fe !important; }
+[data-bs-theme="dark"] .qpi-creator-client { background: rgba(59,130,246,.20) !important;   color: #bfdbfe !important; }
+[data-bs-theme="dark"] .qpi-creator-branch { background: rgba(20,184,166,.20) !important;   color: #99f6e4 !important; }
+[data-bs-theme="dark"] .qpi-creator-other  { background: rgba(148,163,184,.20) !important;  color: #cbd5e1 !important; }
 
 .qpi-bt-badge {
   display: inline-flex; align-items: center;
@@ -5321,8 +5360,8 @@ const SCOPED_CSS = `
 }
 .qpi-req-star { color: #ef4444; margin-left: 2px; }
 .qpi-input {
-  width: 100%; height: 32px;
-  padding: 0 10px;
+  width: 100%; height: 32px; box-sizing: border-box;
+  padding: 0 8px;
   border: 1px solid #e2e8f0; border-radius: 7px;
   background: #fff;
   font-family: inherit; font-size: 12.5px; color: #0f172a;
@@ -5515,6 +5554,11 @@ const SCOPED_CSS = `
   box-shadow: inset 0 1px 0 0 #ede9fe;
 }
 .qpi-amt { font-weight: 800; color: #0f172a; font-variant-numeric: tabular-nums; }
+/* Numeric columns (QTY … Amount = cols 2–7) right-aligned across the header,
+   the data rows AND the draft input boxes, so every value lines up neatly
+   under its header (inputs are already right-aligned via .qpi-input-num). */
+.qpi-products-table thead th:nth-child(n+2):nth-child(-n+7),
+.qpi-products-table tbody td:nth-child(n+2):nth-child(-n+7) { text-align: right; }
 .qpi-prod-remove {
   width: 30px; height: 30px; border-radius: 8px;
   border: 1.5px solid #fecaca; background: #fef2f2;
