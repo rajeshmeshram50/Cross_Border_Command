@@ -213,7 +213,10 @@ export default function CreateProcurementModal({
     });
   };
 
-  const validate = (): boolean => {
+  /** Validate and return the error map (also pushed into state for inline
+   *  rendering). Returning the map lets onSubmit build an accurate summary
+   *  toast instead of always naming every field. */
+  const validate = (): Record<string, string> => {
     const next: Record<string, string> = {};
     if (!procDate) next.procDate = 'Required';
     if (!assignTo) next.assignTo = 'Required';
@@ -226,7 +229,7 @@ export default function CreateProcurementModal({
       if (priceMsg) next[`price_${d.key}`] = priceMsg;
     });
     setErrors(next);
-    return Object.keys(next).length === 0;
+    return next;
   };
 
   const onSubmit = async () => {
@@ -238,8 +241,19 @@ export default function CreateProcurementModal({
       toast.warning('Add a product', 'At least one product is required');
       return;
     }
-    if (!validate()) {
-      toast.warning('Fill required fields', 'TAT, Assign To, product, qty and target price are mandatory');
+    const errs = validate();
+    if (Object.keys(errs).length > 0) {
+      // Name only the fields that actually failed, so the alert can't blame
+      // TAT (or anything else) when that field is fine. Previously this was a
+      // fixed "TAT, Assign To, …" string that misfired on a bad qty/price.
+      const labels: string[] = [];
+      if (errs.procDate) labels.push('TAT');
+      if (errs.assignTo) labels.push('Assign To');
+      if (Object.keys(errs).some(k => k.startsWith('prod_')))  labels.push('Product');
+      if (Object.keys(errs).some(k => k.startsWith('qty_')))   labels.push('Qty');
+      if (Object.keys(errs).some(k => k.startsWith('price_'))) labels.push('Target price');
+      if (errs.notes) labels.push('Notes');
+      toast.warning('Fix required fields', `Please correct: ${labels.join(', ')}.`);
       return;
     }
     setSubmitting(true);
@@ -457,7 +471,10 @@ export default function CreateProcurementModal({
                                   type="text" inputMode="decimal"
                                   className={`cps-row-input ${qtyMsg ? 'cps-input-err' : ''}`}
                                   value={d.qty}
-                                  onChange={e => setDraft(d.key, { qty: e.target.value.replace(/[^0-9.\-]/g, '') })}
+                                  // Strip the minus sign on input — qty can't be
+                                  // negative, so "-5" auto-converts to "5" rather
+                                  // than failing the "> 0" check and blocking submit.
+                                  onChange={e => setDraft(d.key, { qty: e.target.value.replace(/[^0-9.]/g, '') })}
                                   placeholder="Qty"
                                 />
                                 {qtyMsg && <div className="cps-row-err">{qtyMsg}</div>}
@@ -476,7 +493,10 @@ export default function CreateProcurementModal({
                                     type="text" inputMode="decimal"
                                     className={`cps-row-input cps-row-price ${priceMsg ? 'cps-input-err' : ''}`}
                                     value={d.target_price}
-                                    onChange={e => setDraft(d.key, { target_price: e.target.value.replace(/[^0-9.\-]/g, '') })}
+                                    // Strip the minus sign on input — price can't be
+                                    // negative, so "-5" auto-converts to "5" rather
+                                    // than failing the "> 0" check and blocking submit.
+                                    onChange={e => setDraft(d.key, { target_price: e.target.value.replace(/[^0-9.]/g, '') })}
                                     placeholder="Price"
                                   />
                                 </div>

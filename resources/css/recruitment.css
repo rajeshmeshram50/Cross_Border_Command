@@ -881,7 +881,7 @@
      outline now. The previous inset highlight was making it look
      "raised" against the page surface. */
 }
-.rec-btn-ghost:hover {
+.rec-btn-ghost:hover:not(:disabled) {
   border-color: #a78bfa;
   color: #7c5cfc;
   background: linear-gradient(180deg, #f5f3ff 0%, #ede9fe 100%);
@@ -891,7 +891,8 @@
   transform: translateY(-1px);
   box-shadow: 0 4px 14px rgba(124,92,252,0.18);
 }
-.rec-btn-ghost:active { transform: translateY(0); box-shadow: 0 1px 3px rgba(124,92,252,0.14); }
+.rec-btn-ghost:active:not(:disabled) { transform: translateY(0); box-shadow: 0 1px 3px rgba(124,92,252,0.14); }
+.rec-btn-ghost:disabled { opacity: 0.6; cursor: not-allowed; }
 [data-bs-theme="dark"] .rec-btn-ghost,
 [data-layout-mode="dark"] .rec-btn-ghost {
   background: var(--vz-secondary-bg);
@@ -902,8 +903,8 @@
 /* Dark-mode hover — a subtle violet tint that mirrors the light-mode
    hover state. Without this rule the dark-mode button stayed visually
    inert under the cursor. */
-[data-bs-theme="dark"] .rec-btn-ghost:hover,
-[data-layout-mode="dark"] .rec-btn-ghost:hover {
+[data-bs-theme="dark"] .rec-btn-ghost:hover:not(:disabled),
+[data-layout-mode="dark"] .rec-btn-ghost:hover:not(:disabled) {
   background: rgba(124,92,252,0.16);
   border-color: rgba(167,139,250,0.55);
   color: #c4b5fd;
@@ -3576,9 +3577,24 @@
     0 2px 4px rgba(185,28,28,0.22),
     inset 0 1px 0 rgba(255,255,255,0.28);
 }
-.cand-confirm-submit:hover {
+.cand-confirm-submit:hover:not(:disabled) {
   transform: translateY(-1px);
   filter: brightness(1.05);
+}
+/* Loading / disabled — dim the button, kill the hover lift and pointer so a
+   submit that's already in flight reads as inert. The spinner-border swap in
+   the markup carries the "working" cue; this just removes the affordance. */
+.cand-confirm-submit:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+  filter: none;
+  box-shadow: none;
+}
+.cand-confirm-submit .spinner-border-sm {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-width: 0.15em;
 }
 .cand-confirm-modal--select .cand-confirm-submit:hover {
   box-shadow:

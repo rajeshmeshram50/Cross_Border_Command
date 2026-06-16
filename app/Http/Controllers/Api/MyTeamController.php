@@ -117,9 +117,14 @@ class MyTeamController extends Controller
         // the pending queue. Documents have their own history endpoint, so the
         // history response carries acted expense claims only.
         if ($request->boolean('history')) {
+            // Both modules share the inbox history tab. Merge acted expense
+            // claims + acted advance requests and surface the freshest
+            // decision first across both.
+            $history = array_merge($this->actedExpenseClaims($user), $this->actedAdvanceRequests($user));
+            usort($history, fn ($a, $b) => strcmp((string) ($b['acted_at'] ?? ''), (string) ($a['acted_at'] ?? '')));
             return response()->json([
                 'scope'     => $this->describeScope($user),
-                'approvals' => $this->actedExpenseClaims($user),
+                'approvals' => $history,
             ]);
         }
 
@@ -136,6 +141,15 @@ class MyTeamController extends Controller
             $items[] = $entry;
         }
 
+        // Advance requests pending the user's action — same two-stage flow
+        // (manager → HR/Finance) as expense claims, streamed through the same
+        // queue with module = 'advance'. Without this, advances were only
+        // reachable via Expense Management → Team Advance Requests and never
+        // surfaced in the inbox for HR/manager action.
+        foreach ($this->pendingAdvanceRequests($user) as $entry) {
+            $items[] = $entry;
+        }
+
         return response()->json([
             'scope'      => $this->describeScope($user),
             'approvals'  => $items,
@@ -143,6 +157,7 @@ class MyTeamController extends Controller
                 'total'              => count($items),
                 'document_signature' => count(array_filter($items, fn ($i) => $i['module'] === 'document_signature')),
                 'expense'            => count(array_filter($items, fn ($i) => $i['module'] === 'expense')),
+                'advance'            => count(array_filter($items, fn ($i) => $i['module'] === 'advance')),
                 'leave'              => 0,  // placeholder
             ],
         ]);
@@ -318,6 +333,175 @@ class MyTeamController extends Controller
                     'category_name' => $row->category?->name ?? $row->category_name,
                     'vendor'        => $row->vendor,
                     'purpose'       => $row->purpose,
+                    'employee_name' => $employeeName,
+                    'employee_code' => $emp?->emp_code,
+                    'department_name' => $emp?->department?->name,
+                ],
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Pending advance-request approvals for the current user. Mirrors
+     * pendingExpenseClaims one-for-one: advance requests run the same
+     * manager → HR/Finance two-stage flow and share the hr.expense approval
+     * right (AdvanceRequestController::guardHrPermission also gates on the
+     * hr.expense module). Reuses applyExpenseTenantScope since the advance
+     * table carries the same client_id / branch_id / manager_id columns.
+     */
+    private function pendingAdvanceRequests($user): array
+    {
+        $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
+        $canHrApprove = $this->userCanHrApproveExpense($user);
+        if (!$myEmployeeId && !$canHrApprove) return [];
+
+        $q = AdvanceRequest::query()
+            ->with([
+                'employee:id,display_name,first_name,last_name,emp_code,department_id,branch_id,client_id',
+                'employee.department:id,name',
+                'manager:id,display_name,first_name,last_name,emp_code',
+                'creator:id,name',
+            ])
+            ->where('status', 'pending')
+            ->where(function ($w) use ($myEmployeeId, $canHrApprove) {
+                if ($myEmployeeId) {
+                    $w->orWhere(function ($wm) use ($myEmployeeId) {
+                        $wm->where('manager_id', $myEmployeeId)
+                           ->where('manager_status', 'pending');
+                    });
+                }
+                if ($canHrApprove) {
+                    $w->orWhere(function ($wh) {
+                        $wh->where('manager_status', 'approved')
+                           ->where('hr_status', 'pending');
+                    });
+                }
+            });
+
+        $this->applyExpenseTenantScope($q, $user, $myEmployeeId);
+
+        $out = [];
+        foreach ($q->orderByDesc('id')->get() as $row) {
+            $stage = null;
+            if ($myEmployeeId
+                && (int) $row->manager_id === (int) $myEmployeeId
+                && $row->manager_status === 'pending') {
+                $stage = 'manager';
+            } elseif ($canHrApprove
+                && $row->manager_status === 'approved'
+                && $row->hr_status === 'pending') {
+                $stage = 'hr';
+            }
+            if (!$stage) continue;
+
+            $emp = $row->employee;
+            $employeeName = $emp
+                ? ($emp->display_name ?: trim(($emp->first_name ?? '') . ' ' . ($emp->last_name ?? '')))
+                : '—';
+            $typeLabel = $row->advance_type
+                ? ('Advance · ' . $row->advance_type . ($row->advance_type_other ? ' · ' . $row->advance_type_other : ''))
+                : 'Advance Request';
+
+            $out[] = [
+                'module'        => 'advance',
+                'id'            => $row->id,
+                'code'          => $row->advance_no,
+                'title'         => $typeLabel,
+                'subject_name'  => $employeeName ?: '—',
+                'subject_dept'  => $emp?->department?->name ?? '—',
+                'action'        => 'Approve',
+                'status'        => $row->status,
+                'days_left'     => null,
+                'created_at'    => $row->created_at,
+                'raw'           => [
+                    'stage'          => $stage,
+                    'amount'         => (float) $row->amount,
+                    'currency'       => 'INR',
+                    'advance_type'   => $row->advance_type,
+                    'category_name'  => $row->advance_type,
+                    'reason'         => $row->reason,
+                    'manager_status' => $row->manager_status,
+                    'hr_status'      => $row->hr_status,
+                    'manager_name'   => $row->manager
+                        ? ($row->manager->display_name
+                            ?: trim(($row->manager->first_name ?? '') . ' ' . ($row->manager->last_name ?? '')))
+                        : null,
+                    'employee_name'  => $employeeName,
+                    'employee_code'  => $emp?->emp_code,
+                    'department_name'=> $emp?->department?->name,
+                    'creator_name'   => $row->creator?->name,
+                ],
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Acted advance requests for the inbox "Updated (History)" tab — the
+     * advance counterpart of actedExpenseClaims (same stage-resolution rules).
+     */
+    private function actedAdvanceRequests($user): array
+    {
+        $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
+        $canHrApprove = $this->userCanHrApproveExpense($user);
+        if (!$myEmployeeId && !$canHrApprove) return [];
+
+        $q = AdvanceRequest::query()
+            ->with([
+                'employee:id,display_name,first_name,last_name,emp_code,department_id,branch_id,client_id',
+                'employee.department:id,name',
+                'manager:id,display_name,first_name,last_name,emp_code',
+            ])
+            ->where(function ($w) use ($myEmployeeId, $canHrApprove) {
+                if ($myEmployeeId) {
+                    $w->orWhere(function ($wm) use ($myEmployeeId) {
+                        $wm->where('manager_id', $myEmployeeId)
+                           ->whereIn('manager_status', ['approved', 'rejected']);
+                    });
+                }
+                if ($canHrApprove) {
+                    $w->orWhere(function ($wh) {
+                        $wh->whereIn('hr_status', ['approved', 'rejected']);
+                    });
+                }
+            });
+
+        $this->applyExpenseTenantScope($q, $user, $myEmployeeId);
+
+        $out = [];
+        foreach ($q->orderByDesc('updated_at')->limit(60)->get() as $row) {
+            $stage = null; $verdict = null;
+            if ($myEmployeeId && (int) $row->manager_id === (int) $myEmployeeId
+                && in_array($row->manager_status, ['approved', 'rejected'], true)) {
+                $stage = 'manager'; $verdict = $row->manager_status;
+            } elseif ($canHrApprove && in_array($row->hr_status, ['approved', 'rejected'], true)) {
+                $stage = 'hr'; $verdict = $row->hr_status;
+            }
+            if (!$stage) continue;
+
+            $emp = $row->employee;
+            $employeeName = $emp ? ($emp->display_name ?: trim(($emp->first_name ?? '') . ' ' . ($emp->last_name ?? ''))) : '—';
+
+            $out[] = [
+                'module'       => 'advance',
+                'id'           => $row->id,
+                'code'         => $row->advance_no,
+                'title'        => $row->advance_type
+                    ? ('Advance · ' . $row->advance_type . ($row->advance_type_other ? ' · ' . $row->advance_type_other : ''))
+                    : 'Advance Request',
+                'subject_name' => $employeeName ?: '—',
+                'subject_dept' => $emp?->department?->name ?? '—',
+                'verdict'      => $verdict,
+                'acted_at'     => optional($row->updated_at)->toIso8601String(),
+                'status'       => $row->status,
+                'created_at'   => $row->created_at,
+                'raw'          => [
+                    'stage'         => $stage,
+                    'amount'        => (float) $row->amount,
+                    'currency'      => 'INR',
+                    'category_name' => $row->advance_type,
+                    'reason'        => $row->reason,
                     'employee_name' => $employeeName,
                     'employee_code' => $emp?->emp_code,
                     'department_name' => $emp?->department?->name,

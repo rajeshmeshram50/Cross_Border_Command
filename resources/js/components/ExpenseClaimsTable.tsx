@@ -668,6 +668,20 @@ function ExpenseConfirmModal({
   onClose: () => void;
   onConfirm: () => void | Promise<void>;
 }) {
+  // Loading state for the approve/reject round-trip. While the backend call
+  // is in flight we disable both footer buttons, the close (×) button, and
+  // the click-outside dismiss so the action can't be double-submitted, and
+  // swap the submit label for a spinner.
+  const [submitting, setSubmitting] = useState(false);
+  const handleConfirm = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await onConfirm();
+    } finally {
+      setSubmitting(false);
+    }
+  };
   if (!target) return null;
   const { claim, action } = target;
   const isApprove = action.verdict === 'approve';
@@ -689,7 +703,7 @@ function ExpenseConfirmModal({
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 16,
       }}
-      onClick={onClose}
+      onClick={() => { if (!submitting) onClose(); }}
     >
       <div
         onClick={e => e.stopPropagation()}
@@ -718,7 +732,7 @@ function ExpenseConfirmModal({
                 : 'Closes the claim — employee will see the rejection in their audit log'}
             </div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="cand-confirm-close">
+          <button type="button" onClick={onClose} aria-label="Close" className="cand-confirm-close" disabled={submitting}>
             <i className="ri-close-line" />
           </button>
         </div>
@@ -774,10 +788,19 @@ function ExpenseConfirmModal({
 
         {/* Footer */}
         <div className="cand-confirm-footer">
-          <button type="button" className="rec-btn-ghost" onClick={onClose}>Cancel</button>
-          <button type="button" className="cand-confirm-submit" onClick={onConfirm}>
-            <i className={isApprove ? 'ri-check-line' : 'ri-close-line'} />
-            {isApprove ? 'Confirm Approval' : 'Confirm Rejection'}
+          <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={submitting}>Cancel</button>
+          <button type="button" className="cand-confirm-submit" onClick={handleConfirm} disabled={submitting}>
+            {submitting ? (
+              <>
+                <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
+                Processing…
+              </>
+            ) : (
+              <>
+                <i className={isApprove ? 'ri-check-line' : 'ri-close-line'} />
+                {isApprove ? 'Confirm Approval' : 'Confirm Rejection'}
+              </>
+            )}
           </button>
         </div>
       </div>

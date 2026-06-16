@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import * as XLSX from 'xlsx';
 import { Button, Card, CardBody, Col, Row, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
@@ -26,6 +27,28 @@ import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { leaveTypesApi, leaveRequestsApi, ApiLeaveRequest } from '../hrms/leavePlansApi';
 import LeaveSummaryPanel from './LeaveSummaryPanel';
+
+// Supporting-documents upload rules — shared by the expense-claim "Proof &
+// Receipt" picker and the advance-request "Supporting Documents" picker.
+// Only PDF / JPG / PNG up to 5 MB each. The browser `accept` attribute is a
+// soft hint only (it doesn't block drag-drop or "All files"), so we hard-
+// validate here and surface a message for anything rejected.
+const UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
+const UPLOAD_ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/png'];
+const UPLOAD_ALLOWED_EXT = /\.(pdf|jpe?g|png)$/i;
+function filterValidUploads(picked: File[]): { accepted: File[]; errors: string[] } {
+  const accepted: File[] = [];
+  const errors: string[] = [];
+  for (const f of picked) {
+    // Some browsers leave File.type empty (e.g. drag-drop on Windows), so
+    // fall back to the extension when the MIME type isn't conclusive.
+    const typeOk = UPLOAD_ALLOWED_MIME.includes(f.type) || UPLOAD_ALLOWED_EXT.test(f.name);
+    if (!typeOk) { errors.push(`${f.name}: unsupported format (only PDF, JPG, PNG)`); continue; }
+    if (f.size > UPLOAD_MAX_BYTES) { errors.push(`${f.name}: larger than 5 MB`); continue; }
+    accepted.push(f);
+  }
+  return { accepted, errors };
+}
 
 // Custom portal-based modal — renders directly to document.body so it always
 // escapes the .ep-fullscreen-overlay stacking context. Reactstrap's Modal had
@@ -1672,9 +1695,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     // a plain string compare. Both dates must be today or later; recovery
     // additionally must be on/after the requested date.
     const todayIso = new Date().toISOString().slice(0, 10);
+    const oneYearIso = (() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().slice(0, 10); })();
     if (advRequestedDate && advRequestedDate < todayIso) {
       errs.requested = 'Requested date cannot be in the past';
       summary.push('Requested date cannot be in the past');
+    } else if (advRequestedDate && advRequestedDate > oneYearIso) {
+      errs.requested = 'Requested date cannot be more than one year ahead';
+      summary.push('Requested date cannot be more than one year ahead');
     }
     if (advRecoveryStart && advRecoveryStart < todayIso) {
       errs.recovery_start = 'Recovery start cannot be in the past';
@@ -2273,6 +2300,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       if (!d.date) {
         draftErrs.date = 'Expense date is required';
         errors.push(`${label}: Expense date is required`);
+      } else {
+        // No future dates; only the last 30 days are claimable.
+        const todayIso = new Date().toISOString().slice(0, 10);
+        const minIso = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+        if (d.date > todayIso) {
+          draftErrs.date = 'Expense date cannot be in the future';
+          errors.push(`${label}: Expense date cannot be in the future`);
+        } else if (d.date < minIso) {
+          draftErrs.date = 'Expense date must be within the last 30 days';
+          errors.push(`${label}: Expense date must be within the last 30 days`);
+        }
       }
       if (!d.category) {
         draftErrs.category = 'Category is required';
@@ -2281,6 +2319,15 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       if (!d.purpose.trim()) {
         draftErrs.purpose = 'Business purpose is required';
         errors.push(`${label}: Business purpose is required`);
+      }
+      // Proof & receipt is mandatory — every claim must carry at least one
+      // supporting document before it can be submitted for approval. Drafts
+      // parked via "Save Draft" lose their File objects on resume (File can't
+      // survive JSON), so the user is forced to re-attach here — the same
+      // trade-off already called out where drafts are restored.
+      if (!(d.files && d.files.length > 0)) {
+        draftErrs.files = 'At least one proof / receipt is required';
+        errors.push(`${label}: At least one proof / receipt is required`);
       }
       // Budget cap — categoryById carries the monthly_limit configured in
       // Master > Expense Categories. We treat it as a hard ceiling per
@@ -2475,6 +2522,101 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const filteredAdvances: AdvanceRequestRow[] = expenseFilter === 'all'
     ? activeAdvancesSource
     : activeAdvancesSource.filter(a => a.status === expenseFilter);
+
+  // ── Export (Excel / PDF / CSV) for the active module's filtered rows ──
+  // The Export button used to be a no-op (no onClick) — clicking it did
+  // nothing. It's now a format picker that exports whichever list is in
+  // view (expense claims or advance requests), honouring the active
+  // status filter + My/Team sub-tab.
+  const [exportOpen, setExportOpen] = useState(false);
+  const runProfileExport = (fmt: 'xlsx' | 'pdf' | 'csv') => {
+    setExportOpen(false);
+    const isAdvance = expenseModuleTab === 'advance';
+    const stamp = new Date().toISOString().slice(0, 10);
+    const baseName = `${isAdvance ? 'advance-requests' : 'expense-claims'}-${profileEmpCode || 'employee'}-${stamp}`;
+    const label = isAdvance ? 'Advance Requests' : 'Expense Claims';
+
+    let header: string[];
+    let rows: (string | number | null)[][];
+    if (isAdvance) {
+      header = ['Advance No', 'Employee', 'Emp Code', 'Type', 'Amount', 'Requested Date', 'Recovery Start', 'Recovery Mode', 'Months', 'Monthly EMI', 'Reason', 'Status', 'Manager Status', 'HR Status', 'Created At'];
+      rows = filteredAdvances.map(a => [
+        a.advance_no, a.employee_name, a.employee_code,
+        a.advance_type === 'Other' && a.advance_type_other ? `Other · ${a.advance_type_other}` : a.advance_type,
+        a.amount, a.requested_date, a.recovery_start, a.recovery_mode, a.recovery_months, a.monthly_emi,
+        a.reason, a.status, a.manager_status, a.hr_status, a.created_at,
+      ]);
+    } else {
+      header = ['Claim No', 'Employee', 'Emp Code', 'Category', 'Description', 'Expense Date', 'Amount', 'Currency', 'Supplier', 'Project', 'Payment Method', 'Status', 'Manager Status', 'HR Status', 'Created At'];
+      rows = filteredExpenses.map(c => [
+        c.claim_no, c.employee_name, c.employee_code, c.category_name, c.title, c.expense_date,
+        c.amount, c.currency, c.vendor, c.project, c.payment_method, c.status, c.manager_status, c.hr_status, c.created_at,
+      ]);
+    }
+    if (rows.length === 0) {
+      toast.error('Nothing to export', `No ${isAdvance ? 'advance requests' : 'expense claims'} match the current filter.`);
+      return;
+    }
+    const noun = isAdvance ? 'advance request' : 'claim';
+    const done = (f: string) => toast.success('Export ready', `${rows.length} ${noun}${rows.length === 1 ? '' : 's'} exported to ${f}.`);
+
+    if (fmt === 'csv') {
+      const esc = (v: any) => { if (v === null || v === undefined) return ''; const s = String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+      const lines = [header.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))];
+      // BOM keeps ₹ + accented names intact when opened in Excel.
+      const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${baseName}.csv`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      done('CSV');
+      return;
+    }
+    if (fmt === 'xlsx') {
+      try {
+        const ws = XLSX.utils.aoa_to_sheet([header, ...rows.map(r => r.map(v => v ?? ''))]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, label);
+        XLSX.writeFile(wb, `${baseName}.xlsx`);
+        done('Excel');
+      } catch {
+        toast.error('Export failed', 'Could not generate the Excel file. Please try again.');
+      }
+      return;
+    }
+    // pdf — open a printable HTML report; user picks "Save as PDF". Same
+    // dependency-free approach used elsewhere (payslip print, HR export).
+    const escHtml = (v: any) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const thead = `<tr>${header.map(h => `<th>${escHtml(h)}</th>`).join('')}</tr>`;
+    const tbody = rows.map(r => `<tr>${r.map(c => `<td>${escHtml(c)}</td>`).join('')}</tr>`).join('');
+    const title = `${label} — ${escHtml(employee?.name || profileEmpCode || '')}`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escHtml(baseName)}</title>
+      <style>
+        * { box-sizing: border-box; }
+        body { font-family: Arial, Helvetica, sans-serif; color: #1f2937; margin: 24px; }
+        h1 { font-size: 16px; margin: 0 0 4px; }
+        .meta { font-size: 11px; color: #6b7280; margin: 0 0 16px; }
+        table { border-collapse: collapse; width: 100%; font-size: 9px; }
+        th, td { border: 1px solid #d1d5db; padding: 4px 6px; text-align: left; vertical-align: top; }
+        thead th { background: #f3f4f6; font-weight: 700; }
+        tbody tr:nth-child(even) { background: #fafafa; }
+        @media print { @page { size: landscape; margin: 12mm; } }
+      </style></head>
+      <body>
+        <h1>${title}</h1>
+        <p class="meta">${rows.length} ${noun}(s) · generated ${escHtml(stamp)}</p>
+        <table><thead>${thead}</thead><tbody>${tbody}</tbody></table>
+        <script>window.onload = function () { window.focus(); window.print(); };<\/script>
+      </body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) {
+      toast.error('Pop-up blocked', 'Allow pop-ups for this site to export as PDF.');
+      return;
+    }
+    w.document.open(); w.document.write(html); w.document.close();
+    toast.success('Print view opened', `Choose "Save as PDF" in the print dialog · ${rows.length} ${noun}${rows.length === 1 ? '' : 's'}.`);
+  };
 
   // Snap back to the All view when the user is sitting on the Drafts pill
   // but their saved draft for the active module just got submitted /
@@ -4899,38 +5041,42 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 </div>
               </div>
               <div className="d-flex align-items-center gap-2 flex-wrap">
-                <div className="search-box" style={{ minWidth: 200 }}>
+                <div className="search-box ep-exp-search" style={{ minWidth: 200 }}>
                   <input type="text" className="form-control form-control-sm" placeholder="Search…" style={{ fontSize: 12, height: 30 }} />
                   <i className="ri-search-line search-icon" style={{ fontSize: 12 }} />
                 </div>
-                {/* Export — text was hardcoded `#374151` which disappeared
-                    against the dark card in dark mode. Theme variable now
-                    drives both modes, with a small accent-tinted hover. */}
-                <button
-                  type="button"
-                  className="btn btn-sm rounded-pill fw-semibold d-inline-flex align-items-center gap-1"
-                  style={{
-                    background: 'var(--vz-card-bg)',
-                    color: 'var(--vz-body-color)',
-                    border: '1px solid var(--vz-border-color)',
-                    fontSize: 11.5, padding: '4px 12px',
-                    transition: 'background .15s ease, border-color .15s ease, color .15s ease',
-                  }}
-                  onMouseEnter={e => {
-                    const t = e.currentTarget;
-                    t.style.background = 'rgba(168,85,247,0.10)';
-                    t.style.borderColor = 'rgba(168,85,247,0.45)';
-                    t.style.color = '#7c3aed';
-                  }}
-                  onMouseLeave={e => {
-                    const t = e.currentTarget;
-                    t.style.background = 'var(--vz-card-bg)';
-                    t.style.borderColor = 'var(--vz-border-color)';
-                    t.style.color = 'var(--vz-body-color)';
-                  }}
-                >
-                  <i className="ri-download-2-line" /> Export
-                </button>
+                {/* Export — opens a format picker (Excel / PDF / CSV) and
+                    exports the active module's filtered rows. Was previously
+                    a dead button with no handler. */}
+                <Dropdown isOpen={exportOpen} toggle={() => setExportOpen(o => !o)}>
+                  <DropdownToggle
+                    tag="button"
+                    type="button"
+                    caret={false}
+                    className="btn btn-sm rounded-pill fw-semibold d-inline-flex align-items-center gap-1"
+                    style={{
+                      background: 'var(--vz-card-bg)',
+                      color: 'var(--vz-body-color)',
+                      border: '1px solid var(--vz-border-color)',
+                      fontSize: 11.5, padding: '4px 12px',
+                    }}
+                  >
+                    <i className="ri-download-2-line" /> Export
+                    <i className="ri-arrow-down-s-line" />
+                  </DropdownToggle>
+                  <DropdownMenu end>
+                    <DropdownItem header>Download as</DropdownItem>
+                    <DropdownItem onClick={() => runProfileExport('xlsx')}>
+                      <i className="ri-file-excel-2-line me-2 text-success" />Excel (.xlsx)
+                    </DropdownItem>
+                    <DropdownItem onClick={() => runProfileExport('pdf')}>
+                      <i className="ri-file-pdf-2-line me-2 text-danger" />PDF (.pdf)
+                    </DropdownItem>
+                    <DropdownItem onClick={() => runProfileExport('csv')}>
+                      <i className="ri-file-text-line me-2 text-primary" />CSV (.csv)
+                    </DropdownItem>
+                  </DropdownMenu>
+                </Dropdown>
                 {/* Raise New Claim — inline styles can't carry :hover, so
                     we drive the brightening + lift via mouse handlers. */}
                 <button
@@ -5913,6 +6059,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       value={claimDate}
                       onChange={(v) => { setClaimDate(v); clearClaimErr('date'); }}
                       invalid={!!claimErrors.date}
+                      // No future dates; only the last 30 days are claimable.
+                      minDate={new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10)}
+                      maxDate={new Date().toISOString().slice(0, 10)}
                     />
                     {claimErrors.date && <div className="ep-claim-err"><i className="ri-error-warning-line" />{claimErrors.date}</div>}
                   </Col>
@@ -5938,8 +6087,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               <Col lg={6}>
                 <div className="ep-claim-section-head">
                   <span className="ep-claim-dot is-faded" /> C — Proof &amp; Receipt
+                  <span className="text-danger ms-1">*</span>
                 </div>
-                <label className="ep-claim-upload mb-2 d-block" style={{ cursor: 'pointer' }}>
+                <label
+                  className={`ep-claim-upload mb-2 d-block${claimErrors.files ? ' is-invalid' : ''}`}
+                  style={{ cursor: 'pointer' }}
+                >
                   <input
                     type="file"
                     multiple
@@ -5947,7 +6100,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     style={{ display: 'none' }}
                     onChange={(e) => {
                       const picked = Array.from(e.target.files || []);
-                      if (picked.length) setClaimFiles(prev => [...prev, ...picked]);
+                      const { accepted, errors } = filterValidUploads(picked);
+                      if (errors.length) toast.error('Some files were not added', errors.slice(0, 3).join(' · '));
+                      if (accepted.length) { setClaimFiles(prev => [...prev, ...accepted]); clearClaimErr('files'); }
                       e.target.value = '';
                     }}
                   />
@@ -5957,6 +6112,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <div className="fw-semibold" style={{ fontSize: 13 }}>Click to upload or drag &amp; drop</div>
                   <small className="text-muted" style={{ fontSize: 11.5 }}>PDF, JPG, PNG · Multiple files allowed · Max 5 MB each</small>
                 </label>
+                {claimErrors.files && (
+                  <div className="ep-claim-err mb-2"><i className="ri-error-warning-line" />{claimErrors.files}</div>
+                )}
                 {claimFiles.length > 0 && (
                   <div className="ep-claim-file-list mb-4">
                     {claimFiles.map((f, i) => (
@@ -6112,6 +6270,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       onChange={(v) => { setAdvRequestedDate(v); clearAdvErr('requested'); }}
                       invalid={!!advErrors.requested}
                       minDate={new Date().toISOString().slice(0, 10)}
+                      // Allow scheduling up to a year out, but no further.
+                      maxDate={(() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().slice(0, 10); })()}
                     />
                     {advErrors.requested && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.requested}</div>}
                   </Col>
@@ -6201,7 +6361,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     style={{ display: 'none' }}
                     onChange={(e) => {
                       const picked = Array.from(e.target.files || []);
-                      if (picked.length) setAdvFiles(prev => [...prev, ...picked]);
+                      const { accepted, errors } = filterValidUploads(picked);
+                      if (errors.length) toast.error('Some files were not added', errors.slice(0, 3).join(' · '));
+                      if (accepted.length) setAdvFiles(prev => [...prev, ...accepted]);
                       e.target.value = '';
                     }}
                   />
