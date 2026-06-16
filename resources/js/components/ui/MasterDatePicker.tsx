@@ -1,6 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import './MasterDatePicker.css';
+
+/* Shared event name with MasterTimePicker — opening any one picker closes
+ * every other open date/time picker so they never stack on screen. Keep this
+ * string identical to the one in MasterTimePicker.tsx. */
+const PICKER_OPEN_EVENT = 'master-picker-open';
 
 
 export function MasterDatePicker({
@@ -31,7 +36,8 @@ export function MasterDatePicker({
   const currentValue = value !== undefined ? value : internal;
 
   const [open, setOpen] = useState(false);
-  
+  const pickerId = useId();
+
   const [viewDate, setViewDate] = useState<Date>(() => {
     if (currentValue) return new Date(currentValue);
     if (maxDate)      return new Date(maxDate);
@@ -43,6 +49,18 @@ export function MasterDatePicker({
   const popupRef = useRef<HTMLDivElement>(null);
 
   
+  /* Single-open coordination: announce when we open so other open date/time
+   * pickers close, and close ourselves when another picker opens. */
+  useEffect(() => {
+    if (!open) return;
+    document.dispatchEvent(new CustomEvent(PICKER_OPEN_EVENT, { detail: pickerId }));
+    const onOther = (e: Event) => {
+      if ((e as CustomEvent).detail !== pickerId) setOpen(false);
+    };
+    document.addEventListener(PICKER_OPEN_EVENT, onOther);
+    return () => document.removeEventListener(PICKER_OPEN_EVENT, onOther);
+  }, [open, pickerId]);
+
   useEffect(() => {
     if (!open || !wrapRef.current) { setPopupPos(null); return; }
     const update = () => {

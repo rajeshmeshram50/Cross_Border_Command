@@ -64,6 +64,8 @@ export default function MeetingsForLeadModal({
   const [link, setLink]           = useState('');
   const [venue, setVenue]         = useState('');
   const [date, setDate]           = useState('');
+  // Meetings can only be scheduled for today or a future date — block past days.
+  const today = new Date().toISOString().slice(0, 10);
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime]     = useState('');
   const [agenda, setAgenda]       = useState('');
@@ -331,7 +333,7 @@ export default function MeetingsForLeadModal({
           <div className="mfl-grid mfl-grid-3">
             <div className="mfl-fld">
               <label className="mfl-lbl">MEETING DATE <span className="mfl-req">*</span></label>
-              <MasterDatePicker value={date} onChange={(v) => { setDate(v); clearErr('date'); }} placeholder="dd-mm-yyyy" invalid={!!errors.date} />
+              <MasterDatePicker value={date} onChange={(v) => { setDate(v); clearErr('date'); }} minDate={today} placeholder="dd-mm-yyyy" invalid={!!errors.date} />
               {errors.date && <div className="mfl-err">{errors.date}</div>}
             </div>
             <div className="mfl-fld">

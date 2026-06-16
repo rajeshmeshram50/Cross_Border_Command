@@ -1586,6 +1586,9 @@ export default function SalesTodo() {
                         value={toInputDate(form.date)}
                         onChange={iso => setForm(p => ({ ...p, date: fromInputDate(iso) }))}
                         placeholder="dd-mm-yyyy"
+                        // New meetings can't be scheduled in the past; existing
+                        // rows stay editable so historic data isn't blocked.
+                        minDate={form.editId ? undefined : toInputDate(TODAY_STR)}
                       />
                     </Field>
                     <Field label="Start Time" required>
