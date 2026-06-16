@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Card, CardBody, Col, Row, Modal, ModalBody, Spinner, Input } from 'reactstrap';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
+import { useTheme } from '../../contexts/ThemeContext';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
 import WorklistPager from '../../components/ui/WorklistPager';
@@ -98,6 +99,8 @@ export default function HrCandidates() {
   const { id: recruitmentId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const toast = useToast();
+  const { theme } = useTheme();
+  const dark = theme === 'dark';   // priority/status pills use inline colours
 
   const [recruitment, setRecruitment] = useState<RecruitmentInfo | null>(null);
   const [candidates, setCandidates]   = useState<CandidateRow[]>([]);
@@ -305,21 +308,19 @@ export default function HrCandidates() {
                           // pill further down — used to be a hardcoded red
                           // here, which looked wrong for Medium/Low and
                           // disagreed with the field-level pill below.
-                          background:
-                            recruitment.priority === 'High'   ? '#ffe4e1' :
-                            recruitment.priority === 'Medium' ? '#fef3c7' :
-                                                                '#dbeafe',
-                          color:
-                            recruitment.priority === 'High'   ? '#b91c1c' :
-                            recruitment.priority === 'Medium' ? '#92400e' :
-                                                                '#1d4ed8',
+                          background: dark
+                            ? (recruitment.priority === 'High' ? 'rgba(239,68,68,.18)' : recruitment.priority === 'Medium' ? 'rgba(245,158,11,.18)' : 'rgba(59,130,246,.18)')
+                            : (recruitment.priority === 'High' ? '#ffe4e1' : recruitment.priority === 'Medium' ? '#fef3c7' : '#dbeafe'),
+                          color: dark
+                            ? (recruitment.priority === 'High' ? '#fca5a5' : recruitment.priority === 'Medium' ? '#fcd34d' : '#93c5fd')
+                            : (recruitment.priority === 'High' ? '#b91c1c' : recruitment.priority === 'Medium' ? '#92400e' : '#1d4ed8'),
                         }}
                       >
                         <i className="ri-alarm-warning-line" style={{ fontSize: 11, marginRight: 3 }} />
                         {recruitment.priority}
                       </span>
                     )}
-                    <span className="rec-pill" style={{ background: '#dcfce7', color: '#15803d' }}>
+                    <span className="rec-pill" style={{ background: dark ? 'rgba(34,197,94,.18)' : '#dcfce7', color: dark ? '#86efac' : '#15803d' }}>
                       <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', marginRight: 4 }} />
                       {recruitment.status}
                     </span>
@@ -345,14 +346,12 @@ export default function HrCandidates() {
                         <span
                           className="rec-pill"
                           style={{
-                            background:
-                              recruitment.priority === 'High'   ? '#ffe4e1' :
-                              recruitment.priority === 'Medium' ? '#fef3c7' :
-                                                                  '#dbeafe',
-                            color:
-                              recruitment.priority === 'High'   ? '#b91c1c' :
-                              recruitment.priority === 'Medium' ? '#92400e' :
-                                                                  '#1d4ed8',
+                            background: dark
+                              ? (recruitment.priority === 'High' ? 'rgba(239,68,68,.18)' : recruitment.priority === 'Medium' ? 'rgba(245,158,11,.18)' : 'rgba(59,130,246,.18)')
+                              : (recruitment.priority === 'High' ? '#ffe4e1' : recruitment.priority === 'Medium' ? '#fef3c7' : '#dbeafe'),
+                            color: dark
+                              ? (recruitment.priority === 'High' ? '#fca5a5' : recruitment.priority === 'Medium' ? '#fcd34d' : '#93c5fd')
+                              : (recruitment.priority === 'High' ? '#b91c1c' : recruitment.priority === 'Medium' ? '#92400e' : '#1d4ed8'),
                           }}
                         >
                           {recruitment.priority}
@@ -491,7 +490,7 @@ export default function HrCandidates() {
                               />
                             </td>
                             <td>
-                              <span className={`badge rounded-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2 fs-13`}>
+                              <span className={`badge rounded-pill rec-status-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2 fs-13`}>
                                 {c.status}
                               </span>
                             </td>
@@ -500,14 +499,9 @@ export default function HrCandidates() {
                                 <Tooltip label="Edit Candidate">
                                   <button
                                     type="button"
-                                    className="rec-act rec-act--icon"
+                                    className="rec-act rec-act-view rec-act--icon"
                                     aria-label="Edit Candidate"
                                     onClick={() => { setEditing(c); setModalOpen(true); }}
-                                    style={{
-                                      background: '#ede9fe',
-                                      color: '#5b3fd1',
-                                      borderColor: '#ddd6fe',
-                                    }}
                                   >
                                     <i className="ri-pencil-line" />
                                   </button>
@@ -2007,7 +2001,7 @@ function CandidateConfirmModal({
             </div>
             <div className="cand-confirm-stage">
               <div className="cand-confirm-stage-label">Current Stage</div>
-              <span className={`badge rounded-pill bg-${stageColor}-subtle text-${stageColor} fw-semibold px-3 py-2 fs-13`}>{row.status}</span>
+              <span className={`badge rounded-pill rec-status-pill bg-${stageColor}-subtle text-${stageColor} fw-semibold px-3 py-2 fs-13`}>{row.status}</span>
             </div>
           </div>
 
