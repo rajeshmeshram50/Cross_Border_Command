@@ -794,7 +794,9 @@ export default function SalesMatrixDetail() {
             <span className="smd-cust-avatar-dot" />
           </div>
           <div>
-            <div className="smd-cust-name">{header.customer}</div>
+            {/* Once a customer is mapped to the lead, show the mapped customer's
+                company name here; otherwise fall back to the lead/buyer name. */}
+            <div className="smd-cust-name">{(serverHeader.customerRow?.company_name as string | undefined)?.trim() || header.customer}</div>
             <span className="smd-cust-tag">
               <span className="smd-cust-tag-dot" />
               <span className="smd-cust-tag-text">Customer</span>
