@@ -996,8 +996,14 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
      * real completeness can't be computed and they'd falsely paint green.
      * Loading here keeps the stepper's done/incomplete state honest. A
      * fresh "Add" (maxStage=1) still skips the fetch — Stages 2 & 3 are
-     * pending/gray there, so their completeness is never read. */
-    if (stage < 2 && maxStage < 2) return;
+     * pending/gray there, so their completeness is never read.
+     *
+     * In EDIT mode we ALWAYS load (even on Stage 1 with maxStage=1): the
+     * segment-remove guard needs `segCodeMap` to know which documents each
+     * segment owns. Without this, opening an existing customer on Stage 1
+     * (no stage memory → maxStage=1) left segCodeMap empty, so a segment
+     * with uploaded docs could be removed. */
+    if (stage < 2 && maxStage < 2 && !isEdit) return;
 
     const names = (form.coSeg ?? []).filter(Boolean);
     if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setTdDocs([]); setSegmentDocsLoading(false); return; }

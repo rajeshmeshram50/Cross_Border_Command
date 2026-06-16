@@ -1114,7 +1114,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
      * maxStage>=2 (e.g. editing an existing consignee while sitting on
      * Stage 1) so the stepper's per-stage completeness is accurate
      * rather than defaulting later stages to a false "done". */
-    if (stage < 2 && maxStage < 2) return;
+    /* In EDIT mode always load (even on Stage 1 with maxStage=1): the
+     * segment-remove guard needs segCodeMap to know which documents each
+     * segment owns, otherwise a segment with uploaded docs on an existing
+     * consignee could be removed. */
+    if (stage < 2 && maxStage < 2 && !consignee) return;
     const names = (form1.segment ?? []).filter(Boolean);
     if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setSegmentDocsLoading(false); return; }
     const segRows = names

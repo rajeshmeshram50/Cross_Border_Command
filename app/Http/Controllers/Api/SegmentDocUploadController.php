@@ -16,6 +16,7 @@ use App\Models\Consignee;
 use App\Models\Customer;
 use App\Models\Lead;
 use App\Models\Product;
+use App\Models\ProformaInvoice;
 use App\Models\SegmentDocUpload;
 use App\Models\ShipmentOrder;
 use App\Models\Vendor;
@@ -363,7 +364,10 @@ class SegmentDocUploadController extends Controller
 
         // Per-shipment matrix — each of the party's shipments with its buyer +
         // consignee Trade Documents and Agreements (split by signature party).
-        $shipments = $this->buildShipmentAgreements($owner, $type, $cid, $company_dd, $owner_kyc, $trade_licenses);
+        // Pass the ORIGINAL route id ($id) for the shipment lookup. For a
+        // "same as customer" consignee, $owner was swapped to the linked
+        // Customer above, so $owner->id can't be trusted for the lead filter.
+        $shipments = $this->buildShipmentAgreements($owner, $type, $cid, $company_dd, $owner_kyc, $trade_licenses, $id);
 
         return response()->json([
             'data' => [
@@ -396,15 +400,19 @@ class SegmentDocUploadController extends Controller
      * are the party's standard-doc progress (same across its shipments); the
      * Trade-Docs / Agreement ratios are per-shipment from signature completion.
      */
-    private function buildShipmentAgreements(Model $owner, string $type, int $cid, array $companyDd, array $ownerKyc, array $tradeLicenses): array
+    private function buildShipmentAgreements(Model $owner, string $type, int $cid, array $companyDd, array $ownerKyc, array $tradeLicenses, int $entityId): array
     {
         // Vendors aren't modelled as buyer/consignee shipments here.
         if (!in_array($type, ['customer', 'consignee'], true) || !$cid) return [];
 
         // Leads (opportunities) for this party that carry a shipment order.
+        // NOTE: use $entityId (the route id), NOT $owner->id — for a
+        // "same as customer" consignee, resolveOwner swaps $owner to the
+        // linked Customer, so $owner->id would be the customer's id and the
+        // consignee_id filter would miss this consignee's shipments.
         $leadQ = Lead::where('client_id', $cid);
-        if ($type === 'customer') $leadQ->where('customer_id', $owner->id);
-        else                      $leadQ->where('consignee_id', $owner->id);
+        if ($type === 'customer') $leadQ->where('customer_id', $entityId);
+        else                      $leadQ->where('consignee_id', $entityId);
         $leads = $leadQ->get(['id', 'opp_code', 'customer_id', 'consignee_id']);
         if ($leads->isEmpty()) return [];
 
@@ -432,6 +440,15 @@ class SegmentDocUploadController extends Controller
         $kycRatio = $ratioOf($ownerKyc);
         $tlRatio  = $ratioOf($tradeLicenses);
 
+        // Proforma Invoice of each shipment — surfaced as the FIRST Trade
+        // Document (and counted in the Trade-Docs ratio). Keyed by lead/opp.
+        $piByLead = ProformaInvoice::where('client_id', $cid)
+            ->whereIn('opp_id', $leadIds)
+            ->where('status', '!=', ProformaInvoice::STATUS_CANCELLED)
+            ->orderBy('id')
+            ->get(['id', 'opp_id', 'code', 'status', 'emailed_at', 'created_at'])
+            ->groupBy('opp_id');
+
         $rows = [];
         $sr = 0;
         foreach ($leads as $lead) {
@@ -443,6 +460,28 @@ class SegmentDocUploadController extends Controller
             $tradeCons  = $this->sigDocs($reqs, ClmSignatureRequest::DOC_TRADE, 'Consignee');
             $agrBuyer   = $this->sigDocs($reqs, ClmSignatureRequest::DOC_AGREEMENT, 'Customer');
             $agrCons    = $this->sigDocs($reqs, ClmSignatureRequest::DOC_AGREEMENT, 'Consignee');
+
+            // Prepend this shipment's Proforma Invoice(s) as the first Trade
+            // Documents on the Buyer side. They count toward the Trade-Docs
+            // ratio. A finalised PI (sent/approved/converted) reads as Signed;
+            // a draft is still Pending. sig_req_id is 0 → no Zoho Remind action.
+            foreach (($piByLead->get($lid) ?? collect()) as $pi) {
+                $piSigned = in_array($pi->status, [
+                    ProformaInvoice::STATUS_SENT,
+                    ProformaInvoice::STATUS_APPROVED,
+                    ProformaInvoice::STATUS_CONVERTED_TO_CONTRACT,
+                ], true);
+                $piDate = $pi->emailed_at ?? $pi->created_at;
+                array_unshift($tradeBuyer, [
+                    'sig_req_id'  => 0,
+                    'name'        => 'Proforma Invoice (' . ($pi->code ?: ('PI-' . $pi->id)) . ')',
+                    'required'    => 'REQ',
+                    'status'      => $piSigned ? 'Signed' : 'Pending',
+                    'uploaded_on' => $piDate ? \Illuminate\Support\Carbon::parse($piDate)->format('d/m/Y') : '—',
+                    'valid_upto'  => '—',
+                    'signed_url'  => null,
+                ]);
+            }
 
             $tradeAll = array_merge($tradeBuyer, $tradeCons);
             $agrAll   = array_merge($agrBuyer, $agrCons);
