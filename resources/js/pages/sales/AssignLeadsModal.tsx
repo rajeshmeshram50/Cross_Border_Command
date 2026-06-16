@@ -348,6 +348,14 @@ export default function AssignLeadsModal({
               invalid={!!errors.spId}
             />
             {errors.spId && <div className="alm-err">{errors.spId}</div>}
+            {/* No Sales-department people exist → the dropdown has nothing to
+                show. Explain why + how to fix instead of a bare "No options". */}
+            {!loadingSp && spOptions.length === 0 && (
+              <div className="alm-empty-hint">
+                No Sales-department employees found. Add a person to the <strong>Sales</strong> department
+                (HR → Employees) before assigning leads.
+              </div>
+            )}
           </div>
 
           {mode === 'selection' && (
@@ -477,6 +485,15 @@ const ALM_CSS = `
 .alm-label-icon svg { color: #0891b2; flex-shrink: 0; }
 .alm-req { color: #ef4444; }
 .alm-err { font-size: 10.5px; color: #ef4444; margin-top: 2px; }
+.alm-empty-hint {
+  font-size: 11px; line-height: 1.45; margin-top: 8px;
+  padding: 8px 10px; border-radius: 8px;
+  color: #b45309; background: #fffbeb; border: 1px solid #fde68a;
+}
+.alm-empty-hint strong { font-weight: 800; }
+[data-bs-theme="dark"] .alm-empty-hint {
+  color: #fcd34d; background: rgba(252,191,36,.10); border-color: rgba(252,191,36,.30);
+}
 .alm-note {
   font-size: 11.5px; color: #155e75; background: #ecfeff;
   border: 1px solid #a5f3fc; border-radius: 8px; padding: 8px 10px;
