@@ -242,6 +242,23 @@ class ConsigneeController extends Controller
             : (bool) $consignee->same_as_customer;
         $this->assertSingleMirrorPerCustomer((int) $data['customer_id'], $intendsMirror, $consignee->id);
 
+        // Segment-document protection — a segment with uploaded documents
+        // cannot be removed from the consignee (it would orphan the evidence).
+        $blockedSegments = \App\Support\SegmentGuard::blockedRemovals(
+            \App\Models\Consignee::class,
+            (int) $consignee->id,
+            (int) $consignee->client_id,
+            $consignee->segment,
+            $data['segment'] ?? null,
+        );
+        if (!empty($blockedSegments)) {
+            return response()->json([
+                'message' => 'Cannot remove the segment(s): ' . implode(', ', $blockedSegments)
+                    . ' — documents have already been uploaded for them. Remove those documents first.',
+                'errors'  => ['segment' => ['Segment(s) with uploaded documents cannot be removed: ' . implode(', ', $blockedSegments) . '.']],
+            ], 422);
+        }
+
         $row = DB::transaction(function () use ($consignee, $data) {
             $primary = $data['primary_address'];
 

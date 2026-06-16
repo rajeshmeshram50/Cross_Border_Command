@@ -487,26 +487,26 @@ const SCOPED_CSS = `
 .psm-tab-all.psm-tab-active .psm-tab-count { background: rgba(255, 255, 255, .25); color: #fff; }
 .psm-tab-all:not(.psm-tab-active) .psm-tab-count { background: #ede9fe; color: #6d28d9; }
 
-/* Required tab — amber outline / solid */
-.psm-tab-req          { border-color: #fed7aa; color: #c2410c; background: #fff; }
-.psm-tab-req:not(.psm-tab-active):hover { background: #fff7ed; }
+/* Required tab — Sales-Matrix violet (was amber) */
+.psm-tab-req          { border-color: #ddd6fe; color: #6d28d9; background: #fff; }
+.psm-tab-req:not(.psm-tab-active):hover { background: #faf5ff; }
 .psm-tab-req.psm-tab-active {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
   border-color: transparent; color: #fff;
-  box-shadow: 0 4px 12px rgba(245, 158, 11, .35);
+  box-shadow: 0 4px 12px rgba(124, 58, 237, .30);
 }
-.psm-tab-req .psm-tab-count        { background: #fed7aa; color: #c2410c; }
+.psm-tab-req .psm-tab-count        { background: #ede9fe; color: #6d28d9; }
 .psm-tab-req.psm-tab-active .psm-tab-count { background: rgba(255, 255, 255, .25); color: #fff; }
 
-/* Not Required tab — emerald outline / solid */
-.psm-tab-not          { border-color: #bbf7d0; color: #15803d; background: #fff; }
-.psm-tab-not:not(.psm-tab-active):hover { background: #f0fdf4; }
+/* Not Required tab — Sales-Matrix violet (was emerald) */
+.psm-tab-not          { border-color: #ddd6fe; color: #6d28d9; background: #fff; }
+.psm-tab-not:not(.psm-tab-active):hover { background: #faf5ff; }
 .psm-tab-not.psm-tab-active {
-  background: linear-gradient(135deg, #22c55e, #15803d);
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
   border-color: transparent; color: #fff;
-  box-shadow: 0 4px 12px rgba(34, 197, 94, .35);
+  box-shadow: 0 4px 12px rgba(124, 58, 237, .30);
 }
-.psm-tab-not .psm-tab-count        { background: #bbf7d0; color: #15803d; }
+.psm-tab-not .psm-tab-count        { background: #ede9fe; color: #6d28d9; }
 .psm-tab-not.psm-tab-active .psm-tab-count { background: rgba(255, 255, 255, .25); color: #fff; }
 
 /* ── Body ── */

@@ -189,6 +189,15 @@ class MasterVisibility
     {
         if (!$user || $user->user_type === 'super_admin') return null;
 
+        // Customers & Consignees are intentionally open: ANYONE in the tenant
+        // (employees included) may edit/delete any customer/consignee — no
+        // ownership/tier lock on these. (Tenant scoping still applies on the
+        // query that fetched the row.) Segment-document protection is enforced
+        // separately in the Customer/Consignee update path.
+        if ($row instanceof \App\Models\Customer || $row instanceof \App\Models\Consignee) {
+            return null;
+        }
+
         // Always allow the row's own creator to manage it. (When
         // created_by is null, this short-circuit doesn't fire — we
         // fall through to the tier check below.)

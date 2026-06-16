@@ -285,6 +285,24 @@ class CustomerController extends Controller
 
         $data = $this->validatePayload($request, (int) $customer->id, $customer->client_id);
 
+        // Segment-document protection: a segment that already has uploaded
+        // documents cannot be removed from the customer (its evidence would be
+        // orphaned). Reject the edit naming the offending segment(s).
+        $blockedSegments = \App\Support\SegmentGuard::blockedRemovals(
+            \App\Models\Customer::class,
+            (int) $customer->id,
+            (int) $customer->client_id,
+            $customer->segment,
+            $data['segment'] ?? null,
+        );
+        if (!empty($blockedSegments)) {
+            return response()->json([
+                'message' => 'Cannot remove the segment(s): ' . implode(', ', $blockedSegments)
+                    . ' — documents have already been uploaded for them. Remove those documents first.',
+                'errors'  => ['segment' => ['Segment(s) with uploaded documents cannot be removed: ' . implode(', ', $blockedSegments) . '.']],
+            ], 422);
+        }
+
         $row = DB::transaction(function () use ($customer, $data) {
             $primary = $data['primary_address'];
 
