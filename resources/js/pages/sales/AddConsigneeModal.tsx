@@ -493,6 +493,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   type SegmentDocs = { kyc: SegDocRow[]; dd: SegDocRow[]; tl: SegDocRow[]; td: SegDocRow[]; qc: SegDocRow[] };
   const EMPTY_SEG_DOCS: SegmentDocs = { kyc:[], dd:[], tl:[], td:[], qc:[] };
   const [segmentDocs, setSegmentDocs] = useState<SegmentDocs>(EMPTY_SEG_DOCS);
+  /* segment name → its required KYC/DD/Trade-License doc codes (from the DCP
+   * rules). Lets us block removing a segment in edit mode once any of its
+   * documents have been uploaded. Built alongside the Stage 2 doc fetch. */
+  const [segCodeMap, setSegCodeMap] = useState<Record<string, string[]>>({});
   /* True while the Stage 2 segment-rule document catalog is being fetched from
    * the DB — drives the table shimmer so the Company-DD / Owner-KYC / Trade-
    * Licence grids don't flash empty while the call is in flight (it fires after
@@ -1161,6 +1165,20 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         td:  mergedTd,
         qc:  mergeCat('qc'),
       });
+      /* Per-segment doc-code map (KYC/DD/Trade License) — `results[i]`
+       * aligns with `segRows[i]`. Drives the remove-segment guard. */
+      const codeMap: Record<string, string[]> = {};
+      results.forEach((r: any, i: number) => {
+        const seg = segRows[i];
+        if (!seg) return;
+        const codes = new Set<string>();
+        (['kyc', 'dd', 'tl'] as const).forEach(cat => {
+          const rows: SegDocRow[] = Array.isArray(r?.[cat]) ? r[cat] : [];
+          rows.forEach(d => { if (d?.code) codes.add(d.code); });
+        });
+        codeMap[seg.name] = Array.from(codes);
+      });
+      setSegCodeMap(codeMap);
       // Parallel state for the Send-for-Signature flow — same shape
       // as in [[AddCustomerModal]] so Stage3TradeDocs is portable.
       setTdDocs(mergedTd.map(d => ({
@@ -2160,6 +2178,13 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               setTab={requestIdTab}
               form={form1}
               setForm={setForm1}
+              lockedSegments={Object.entries(segCodeMap)
+                .filter(([, codes]) => {
+                  const uploaded = new Set(Object.keys(segmentRefUploads).map(k => k.split('::')[1]));
+                  return codes.some(c => uploaded.has(c));
+                })
+                .map(([name]) => name)}
+              onBlockedSegmentRemove={(segs) => toast.error('Cannot remove segment', `${segs.join(', ')} ${segs.length > 1 ? 'have' : 'has'} uploaded documents. Remove those documents first to drop the segment.`)}
               errors={errors1}
               clearErr={(k) => setErrors1(prev => { if (!prev[k]) return prev; const n = { ...prev }; delete n[k]; return n; })}
               validateField={validateField1}
@@ -2321,6 +2346,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               segmentRefUploads={segmentRefUploads}
               setSegmentRefUploads={setSegmentRefUploads}
               persistSegmentRefUpload={persistSegmentRefUpload}
+              segments={mSegmentIds}
             />
           )}
           {/* Stage 3 (Evidence Vault) body removed — KYC / Trade-document
@@ -2746,6 +2772,7 @@ const Stage1 = ({
   tab, setTab, form, setForm, masters, errors, clearErr, validateField,
   sameAsCustomer, setSameAsCustomer, customer, mirrorAlreadyTakenByOther, mirrorLocked, onBlockedClick,
   locations, onAddLocation, onEditLocation, onDeleteLocation,
+  lockedSegments = [], onBlockedSegmentRemove,
 }: {
   tab: IdentityTab;
   setTab: (t: IdentityTab) => void;
@@ -2776,6 +2803,10 @@ const Stage1 = ({
   onAddLocation: () => void;
   onEditLocation: (id: string) => void;
   onDeleteLocation: (id: string) => void;
+  /** Segment names that have uploaded documents — cannot be removed. */
+  lockedSegments?: string[];
+  /** Fired with the segment names the user tried (and failed) to remove. */
+  onBlockedSegmentRemove?: (segs: string[]) => void;
 }) => {
   /* When the "Same as Customer" toggle is on, Stage 1's basic
    * company + primary address fields lock to read-only — every
@@ -2903,7 +2934,19 @@ const Stage1 = ({
                 placeholder="Select Segment"
                 invalid={!!errors.segment}
                 disabled={lock}
-                onChange={vs => set('segment', vs)}
+                onChange={vs => {
+                  /* Block removing a segment whose KYC/DD/Trade-License docs
+                   * are already uploaded. Adding / removing empty segments is
+                   * always allowed. */
+                  const prev = Array.isArray(form.segment) ? form.segment : (form.segment ? [form.segment] : []);
+                  const removed = prev.filter((s: string) => !vs.includes(s));
+                  const blocked = removed.filter((s: string) => lockedSegments.includes(s));
+                  if (blocked.length) {
+                    onBlockedSegmentRemove?.(blocked);
+                    vs = [...vs, ...blocked.filter((s: string) => !vs.includes(s))];
+                  }
+                  set('segment', vs);
+                }}
                 maxChips={2}
               />
             </Field>
@@ -3329,7 +3372,7 @@ const Stage2 = ({
   sub, setSub, search, setSearch, docs, owners,
   onAddDoc, onEditDoc, onDeleteDoc, onAddOwner, onEditOwner, onDeleteOwner,
   form1, locations, consigneeCode, sameAsCustomer, segmentName, segmentDocs, loading,
-  segmentRefUploads, setSegmentRefUploads, persistSegmentRefUpload,
+  segmentRefUploads, setSegmentRefUploads, persistSegmentRefUpload, segments = [],
 }: {
   sub: KycSubTab;
   setSub: (s: KycSubTab) => void;
@@ -3359,6 +3402,8 @@ const Stage2 = ({
   segmentRefUploads: Record<string, { file: File | null; url: string; name: string }>;
   setSegmentRefUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
   persistSegmentRefUpload: (refKey: string, file: File, docName: string) => Promise<void> | void;
+  /** Segment master rows (name + code) for the "S-001: Name" review display. */
+  segments?: { name: string; code?: string }[];
 }) => {
   const meta = KYC_SUB_META[sub];
   const isOwners = sub === 'owner-kyc';
@@ -3401,7 +3446,7 @@ const Stage2 = ({
         </div>
       ) : (
         <ConsigneeHistoryPanel stagesCompleted={1}>
-          <ConsigneeHistoryStage1 form={form1} locations={locations} consigneeCode={consigneeCode} segments={mSegmentIds} />
+          <ConsigneeHistoryStage1 form={form1} locations={locations} consigneeCode={consigneeCode} segments={segments} />
         </ConsigneeHistoryPanel>
       )}
 
@@ -3940,8 +3985,9 @@ function ConsigneeTradeDocsTable({ docs, onToggle, onToggleAll, onSend, onSendSe
   );
 }
 
-const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwners, locations, sameAsCustomer, segmentDocs, segmentRefUploads, tdDocs, onToggleTd, onToggleAllTd, onSendTd, onSendSelectedTd }: {
+const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwners, locations, sameAsCustomer, segmentDocs, segmentRefUploads, tdDocs, onToggleTd, onToggleAllTd, onSendTd, onSendSelectedTd, segments = [] }: {
   locations: LocationRow[];
+  segments?: { name: string; code?: string }[];
   vaultTab: VaultTab;
   setVaultTab: (t: VaultTab) => void;
   evSub: EvSubTab;
@@ -3983,7 +4029,7 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
           Stage 1 data so the panel still earns its place. */}
       {!sameAsCustomer && (
         <ConsigneeHistoryPanel stagesCompleted={2}>
-          <ConsigneeHistoryStage1 form={form1} locations={locations} segments={mSegmentIds} />
+          <ConsigneeHistoryStage1 form={form1} locations={locations} segments={segments} />
           <ConsigneeHistoryStage2 ddCount={ddCount} ownerCount={ownerCount} tlCount={tlCount} />
         </ConsigneeHistoryPanel>
       )}
