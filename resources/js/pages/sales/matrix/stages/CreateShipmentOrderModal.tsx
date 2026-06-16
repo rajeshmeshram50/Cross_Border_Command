@@ -25,6 +25,7 @@ export type ShipmentInitialContext = {
   piCode?:         string | null;
   piDate?:         string | null;
   piId?:           number | null;
+  piCurrency?:     string | null;   // currency from the PI — drives the Freight Cost prefix
   customerCode?:   string | null;
   customerName?:   string | null;
   consigneeCode?:  string | null;
@@ -176,12 +177,30 @@ export default function CreateShipmentOrderModal({
    * modal first opened (closed render = N hooks, open render = N+1)
    * and crashed the Stage 6 page with the "change in the order of
    * Hooks" warning. */
-  const previewShpCode = useMemo(() => 'SHP-' + String(Math.floor(Date.now() / 1000) % 1000).padStart(3, '0'), []);
+  /* Real next Shipment ID from the server (per-client sequential, SHP-001…),
+   * fetched when the modal opens. The actual code is allocated on save. */
+  const [previewShpCode, setPreviewShpCode] = useState('…');
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    api.get<{ status: boolean; code: string }>('/sales/shipment-orders/next-code')
+      .then(({ data }) => { if (!cancelled) setPreviewShpCode(data.code || '—'); })
+      .catch(() => { if (!cancelled) setPreviewShpCode('—'); });
+    return () => { cancelled = true; };
+  }, [open]);
 
   /* Master-backed dropdown options (INCO Term / Ports / Origin Country).
    * Reuses the cached QPI masters loader, so this is a no-op fetch when
    * the user already opened a Create Quotation/PI in the session. */
   const masters = useQpiMasters(open);
+
+  /* The PI stores currency as a full label ("SGD – Singapore Dollar"); show
+   * just the short code ("SGD") on the Freight Cost field. */
+  const curCode = (() => {
+    const raw = (context.piCurrency || '').trim();
+    if (!raw) return '';
+    return raw.split(/[–-]/)[0].trim().split(/\s+/)[0] || raw;
+  })();
 
   if (!open) return null;
 
@@ -261,9 +280,10 @@ export default function CreateShipmentOrderModal({
                 value={zipCode} onChange={(e) => setZipCode(e.target.value)} placeholder="Enter zip code" />
             </Field>
 
-            <Field label="Freight Cost" required error={errors.freightCost}>
+            <Field label={`Freight Cost${curCode ? ` (${curCode})` : ''}`} required error={errors.freightCost}>
               <div className="cso-input-prefix">
-                <span>$</span>
+                {/* Currency follows the PI — short code only (e.g. SGD), not $. */}
+                <span className="cso-input-cur">{curCode || '—'}</span>
                 <input className={`cso-input cso-input-prefix-input ${errors.freightCost ? 'cso-input-err' : ''}`}
                   type="number" min="0" step="any"
                   value={freightCost} onChange={(e) => setFreightCost(e.target.value)} placeholder="0.00" />
@@ -559,10 +579,11 @@ const SCOPED_CSS = `
 .cso-input-prefix { display: flex; align-items: center; gap: 0; position: relative; }
 .cso-input-prefix > span {
   position: absolute; left: 12px;
-  font-size: 13px; color: #b45309; font-weight: 800;
-  pointer-events: none;
+  font-size: 11px; color: #b45309; font-weight: 800;
+  pointer-events: none; letter-spacing: .02em;
 }
-.cso-input-prefix-input { padding-left: 22px; }
+/* Wider left pad so a 3-letter currency code (e.g. SGD) clears the input text. */
+.cso-input-prefix-input { padding-left: 46px; }
 
 /* Attach */
 .cso-att-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 36px; }
@@ -664,6 +685,15 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .cso-textarea {
   background: rgba(252,191,36,.06); border-color: rgba(252,191,36,.30); color: #ede9fe;
 }
+/* Dark-mode dropdown (MasterSelect) toggles + currency prefix — without these
+   the form forced a near-white toggle in dark mode and the value was unreadable. */
+[data-bs-theme="dark"] .cso-grid .master-select-toggle {
+  background: rgba(252,191,36,.06); border-color: rgba(252,191,36,.30);
+}
+[data-bs-theme="dark"] .cso-grid .master-select-toggle:hover:not(:disabled) {
+  border-color: rgba(252,191,36,.5);
+}
+[data-bs-theme="dark"] .cso-input-prefix > span { color: #fbbf24; }
 [data-bs-theme="dark"] .cso-att-btn {
   background: rgba(252,191,36,.10); color: #fde68a; border-color: rgba(252,191,36,.45);
 }

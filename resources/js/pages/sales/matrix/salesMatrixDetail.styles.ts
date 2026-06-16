@@ -484,15 +484,15 @@ export const SALES_MATRIX_DETAIL_CSS = `
     inset 0 1px 0 rgba(255,255,255,.90);
   white-space: nowrap;
 }
-.smd-act:hover {
+.smd-act:not(.smd-act-locked):hover {
   background: linear-gradient(135deg, #7c3aed, #6d28d9);
   color: #fff;
   border-color: #6d28d9;
   transform: translateY(-1px);
   box-shadow: 0 5px 14px rgba(124,58,237,.32);
 }
-.smd-act:hover .smd-act-icon,
-.smd-act:hover .smd-act-trail { color: #fff; }
+.smd-act:not(.smd-act-locked):hover .smd-act-icon,
+.smd-act:not(.smd-act-locked):hover .smd-act-trail { color: #fff; }
 .smd-act:active { transform: translateY(0); }
 .smd-act-disabled {
   opacity: .45; cursor: not-allowed; pointer-events: none;
@@ -505,6 +505,16 @@ export const SALES_MATRIX_DETAIL_CSS = `
 }
 [data-bs-theme="dark"] .smd-act-disabled .smd-act-icon,
 [data-bs-theme="dark"] .smd-act-disabled .smd-act-trail { color: #64748b; }
+/* Deal-locked toolbar button (PI signed) — KEEP the button's original colour;
+   just lay a subtle translucent veil over it (no grey-out, no recolour). The
+   button is still clickable so a click can raise the "deal locked" toast. */
+.smd-act-locked { position: relative; cursor: not-allowed; }
+.smd-act-locked::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  /* Rose veil — clearly signals "locked" without recolouring the button. */
+  background: rgba(244,63,94,.20); pointer-events: none;
+}
+[data-bs-theme="dark"] .smd-act-locked::after { background: rgba(244,63,94,.28); }
 .smd-act-icon { display: inline-flex; align-items: center; color: #7c3aed; }
 .smd-act-icon svg { width: 12px; height: 12px; }
 .smd-act-label { line-height: 1; }
@@ -1161,14 +1171,14 @@ export const SALES_MATRIX_DETAIL_CSS = `
     inset 0 1px 0 rgba(255, 255, 255, .05);
 }
 [data-bs-theme="dark"] .smd-root .smd-act-icon { color: #a78bfa; }
-[data-bs-theme="dark"] .smd-root .smd-act:hover {
+[data-bs-theme="dark"] .smd-root .smd-act:not(.smd-act-locked):hover {
   background: linear-gradient(135deg, #7c3aed, #6d28d9);
   border-color: #6d28d9;
   color: #fff;
   box-shadow: 0 5px 14px rgba(124, 58, 237, .40);
 }
-[data-bs-theme="dark"] .smd-root .smd-act:hover .smd-act-icon,
-[data-bs-theme="dark"] .smd-root .smd-act:hover .smd-act-trail { color: #fff; }
+[data-bs-theme="dark"] .smd-root .smd-act:not(.smd-act-locked):hover .smd-act-icon,
+[data-bs-theme="dark"] .smd-root .smd-act:not(.smd-act-locked):hover .smd-act-trail { color: #fff; }
 /* Header WhatsApp pill — keep the green wash in dark mode but soften
    the glow so it doesn't blow out against the darker banner. */
 [data-bs-theme="dark"] .smd-root .smd-hdr-wa {

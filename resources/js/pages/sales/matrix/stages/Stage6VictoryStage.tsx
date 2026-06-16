@@ -24,6 +24,8 @@ import CreateShipmentOrderModal, { type ShipmentInitialContext } from './CreateS
 type LeadDetail = {
   id:            number;
   won_at:        string | null;
+  created_at?:   string | null;
+  pi_signed_at?: string | null;   // when the PI was e-signed (null = not signed)
   qualified:     boolean;
   lead_stage_id: number;
   sender_country_iso?: string | null;
@@ -179,15 +181,17 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
 
   const wonOn = useMemo(() => fmtDate(lead?.won_at ?? null), [lead?.won_at]);
 
-  // Days the opportunity took: from its open date to the won date (or
-  // today if it isn't stamped yet). Null when dates are unusable.
+  // Days the deal took: from when the LEAD was created to the moment its PI
+  // was SIGNED. Null (shows "—") until the PI is signed. Falls back to the
+  // opportunity date if the lead's created_at isn't present.
   const days = useMemo(() => {
-    const start = header.oppDate ? new Date(header.oppDate) : null;
-    const end   = lead?.won_at ? new Date(lead.won_at) : new Date();
-    if (!start || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+    const startSrc = lead?.created_at ?? header.oppDate ?? null;
+    const start = startSrc ? new Date(startSrc) : null;
+    const end   = lead?.pi_signed_at ? new Date(lead.pi_signed_at) : null;
+    if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
     const d = Math.floor((end.getTime() - start.getTime()) / 86_400_000);
     return d >= 0 ? d : null;
-  }, [header.oppDate, lead?.won_at]);
+  }, [lead?.created_at, lead?.pi_signed_at, header.oppDate]);
 
   const dealValue = useMemo(() => {
     if (latestPi?.grand_total != null) return fmtMoney(latestPi.grand_total, latestPi.currency);
@@ -201,6 +205,7 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
     piCode:          latestPi?.code ?? null,
     piDate:          latestPi?.created_at ?? null,
     piId:            latestPi?.id ?? null,
+    piCurrency:      latestPi?.currency ?? null,
     customerCode:    lead?.customer?.customer_code ?? null,
     customerName:    lead?.customer?.company_name ?? header.customer,
     consigneeCode:   lead?.consignee?.consignee_code ?? null,

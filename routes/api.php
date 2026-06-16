@@ -487,6 +487,8 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
 
     // Sales Matrix → Stage 6 (Victory) → Shipment Order. One per won
     // opportunity. Ported from IDIMS's `bt` (Business Task) module.
+    Route::get ('/sales/shipment-orders/next-code',
+        [\App\Http\Controllers\Api\ShipmentOrderController::class, 'nextCode']);
     Route::post('/sales/shipment-orders',
         [\App\Http\Controllers\Api\ShipmentOrderController::class, 'store']);
     Route::get ('/sales/shipment-orders/{id}',

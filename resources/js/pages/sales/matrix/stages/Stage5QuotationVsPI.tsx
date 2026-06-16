@@ -98,7 +98,7 @@ const ccyCode = (c: string | null): string => {
   return code || '—';
 };
 
-export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead, onPiChange, mandatoryIncomplete = false }: StageProps) {
+export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead, onPiChange, mandatoryIncomplete = false, locked = false }: StageProps) {
   const toast = useToast();
   const confirm = useConfirm();
   const leadId = header.leadId ?? null;
@@ -592,19 +592,31 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
             </button>
           </div>
           <div className="s5-create-group">
-            <button type="button" className="s5-create-btn s5-create-q" onClick={() => onCreate('quotation')}>
+            <button
+              type="button"
+              className="s5-create-btn s5-create-q"
+              style={locked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+              title={locked ? 'Locked — the Proforma Invoice has been signed' : undefined}
+              onClick={() => {
+                if (locked) { toast.warning('Deal locked', 'The Proforma Invoice is signed — this opportunity is read-only.'); return; }
+                onCreate('quotation');
+              }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Create Quotation
             </button>
             <span className="s5-create-div" />
             {/* One PI per opportunity: once a (non-cancelled) PI exists the
                 Create PI button stays VISIBLE but greyed; clicking it explains
-                why instead of opening the form. */}
+                why instead of opening the form. Also locked once the PI is signed. */}
             <button
               type="button"
               className="s5-create-btn s5-create-p"
-              style={(livePisCount > 0 || mandatoryIncomplete) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+              style={(locked || livePisCount > 0 || mandatoryIncomplete) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
               onClick={() => {
+                if (locked) {
+                  toast.warning('Deal locked', 'The Proforma Invoice is signed — this opportunity is read-only.');
+                  return;
+                }
                 if (livePisCount > 0) {
                   toast.warning('Only one PI per opportunity', 'A single lead can have only one Proforma Invoice.');
                   return;

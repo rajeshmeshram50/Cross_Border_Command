@@ -350,6 +350,7 @@ export default function SalesMatrixDetail() {
     whatsappStatus?:      'connected' | 'pending' | 'not_connected' | 'opted_out' | null;
     whatsappReason?:      string | null;
     whatsappScreenshot?:  string | null;
+    piSignedAt?:          string | null;
   }>({});
 
   /* Resolved leadId — initially the one passed via router state. If that's
@@ -403,6 +404,7 @@ export default function SalesMatrixDetail() {
       whatsapp_screenshot_url: string | null;
       task_manager: StageTaskManager | null;
       acknowledgements: StageAcknowledgement[];
+      pi_signed_at: string | null;
     }}>(`/sales/leads/${resolvedLeadId}`)
       .then(({ data }) => {
         const d = data.data;
@@ -425,6 +427,7 @@ export default function SalesMatrixDetail() {
           // Prefer the server-resolved URL (points at the real file host);
           // fall back to the raw path for older API responses.
           whatsappScreenshot:  d.whatsapp_screenshot_url ?? d.whatsapp_screenshot,
+          piSignedAt:          d.pi_signed_at,
         });
       })
       .catch(() => toast.error('Load failed', 'Could not load this lead'))
@@ -580,6 +583,18 @@ export default function SalesMatrixDetail() {
    * follow-up reloadLead() refreshes the toolbar from authoritative
    * server state instead of optimistic-toggling. */
   const isKeyOpportunity = !!serverHeader.keyOpportunity;
+  /* Deal lock — once the Proforma Invoice is e-signed the opportunity is
+   * read-only: every edit action (toolbar, Create Quotation/PI, the right
+   * Deal Execution panel) is disabled. Only CLM tracking (left panel) and the
+   * Victory-stage "Create Shipment" remain usable. */
+  const isSigned = !!serverHeader.piSignedAt;
+  /* Shown when a locked action is clicked — explains why and what's still allowed. */
+  const onLockedClick = useCallback(() => {
+    toast.warning(
+      'Deal locked',
+      'This Proforma Invoice is signed — the opportunity is read-only. You can still track CLM documents and create the Shipment.',
+    );
+  }, [toast]);
 
   const header: OppHeaderData = {
     ...seedHeader,
@@ -864,30 +879,41 @@ export default function SalesMatrixDetail() {
         {/* ─── Action Toolbar — same container as the stepper ─── */}
         <div className="smd-toolbar">
         <ActionBtn icon={<IconUser />}     label="Customer" trailing="edit"
+          locked={isSigned} onLocked={onLockedClick}
           onClick={onCustomerClick} />
         <ActionBtn icon={<IconTruck />}    label="Consignees" trailing="edit"
           className={!serverHeader.customerId ? 'smd-act-disabled' : ''}
+          locked={isSigned} onLocked={onLockedClick}
           onClick={onConsigneeClick} />
         <span className="smd-act-sep" aria-hidden="true" />
         <ActionBtn icon={<IconPlusSq />}   label="Add Product"
+          locked={isSigned} onLocked={onLockedClick}
           onClick={() => setProductAddOpen(true)} />
         <ActionBtn icon={<IconBook />}     label="Product Directory"
+          locked={isSigned} onLocked={onLockedClick}
           onClick={() => setProductDirectoryOpen(true)} />
         <ActionBtn icon={<IconSourcing />} label="Product Sourcing"
+          locked={isSigned} onLocked={onLockedClick}
           onClick={() => setProductSourcingOpen(true)} />
         <ActionBtn icon={<IconDollar />}   label="Share Prices"
+          locked={isSigned} onLocked={onLockedClick}
           onClick={() => setPriceSharedOpen(true)} />
         <ActionBtn icon={<IconUserCog />}  label="Change Owner"
+          locked={isSigned} onLocked={onLockedClick}
           onClick={() => setChangeOwnerOpen(true)} />
         <ActionBtn icon={<IconMsg />}      label="Remark"
+          locked={isSigned} onLocked={onLockedClick}
           onClick={() => setRemarksOpen(true)} />
         <ActionBtn icon={<IconStar />}     label="Key Opportunity"
           className={isKeyOpportunity ? 'smd-act-key' : ''}
+          locked={isSigned} onLocked={onLockedClick}
           onClick={() => setKeyOppOpen(true)} />
         <span className="smd-act-sep" aria-hidden="true" />
         <ActionBtn icon={<IconBell />}     label="Reminder"
+          locked={isSigned} onLocked={onLockedClick}
           onClick={() => setRemindersOpen(true)} />
         <ActionBtn icon={<IconCalSmall />} label="Meetings"
+          locked={isSigned} onLocked={onLockedClick}
           onClick={() => setMeetingsOpen(true)} />
         </div>
       </div>
@@ -1114,6 +1140,7 @@ export default function SalesMatrixDetail() {
             onPrev={goPrev}
             onNext={goNext}
             reloadLead={reloadLead}
+            locked={isSigned}
             /* Create-PI gate for Stage 5, derived from the vault tallies this
                parent already fetches (custTally / consTally) — saves Stage 5
                from re-calling /segment-uploads/{party}/vault. A party with
@@ -1182,6 +1209,7 @@ export default function SalesMatrixDetail() {
 
           <TaskManagerPanel
             leadId={resolvedLeadId}
+            locked={isSigned}
             salespersonName={serverHeader.salespersonName || ''}
             initial={serverHeader.taskManager ?? null}
             onSaved={(row: TaskManagerRow) => {
@@ -1501,11 +1529,19 @@ function Meta({ icon, label, value }: { icon: React.ReactNode; label: string; va
   );
 }
 
-function ActionBtn({ icon, label, trailing, className, onClick }: {
-  icon: React.ReactNode; label: string; trailing?: 'edit'; className?: string; onClick?: () => void;
+function ActionBtn({ icon, label, trailing, className, onClick, locked, onLocked }: {
+  icon: React.ReactNode; label: string; trailing?: 'edit'; className?: string; onClick?: () => void; locked?: boolean; onLocked?: () => void;
 }) {
   return (
-    <button className={`smd-act ${className || ''}`} onClick={onClick} type="button">
+    <button
+      /* When locked we DON'T disable the button — it stays clickable so a tap
+         raises the "deal locked" toast. The colour is unchanged; a translucent
+         veil (.smd-act-locked::after) signals the locked state. */
+      className={`smd-act ${className || ''}${locked ? ' smd-act-locked' : ''}`}
+      onClick={locked ? onLocked : onClick}
+      title={locked ? 'Locked — the Proforma Invoice has been signed' : undefined}
+      type="button"
+    >
       <span className="smd-act-icon">{icon}</span>
       <span className="smd-act-label">{label}</span>
       {trailing === 'edit' && (

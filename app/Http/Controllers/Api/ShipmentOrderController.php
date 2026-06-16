@@ -92,6 +92,7 @@ class ShipmentOrderController extends Controller
         try {
             $shipment = ShipmentOrder::create([
                 'client_id'           => $user->client_id,
+                'shipment_code'       => $this->nextShipmentCode($user->client_id),
                 'lead_id'             => $data['lead_id'],
                 'proforma_invoice_id' => $data['proforma_invoice_id']  ?? null,
                 'shipping_liability'  => $data['shipping_liability']   ?? null,
@@ -122,6 +123,40 @@ class ShipmentOrderController extends Controller
             'status' => true,
             'data'   => $shipment->load(['proformaInvoice:id,code', 'creator:id,name']),
         ], 201);
+    }
+
+    /**
+     * Next per-client sequential Shipment ID — SHP-001, SHP-002, … Derives the
+     * highest existing numeric suffix for the tenant and adds one. Postgres
+     * `regexp_replace` strips non-digits so legacy/odd codes don't break it.
+     */
+    private function nextShipmentCode(int $clientId): string
+    {
+        // Take the GREATER of (highest existing code number) and (row count) so
+        // legacy rows with a NULL shipment_code (created before the column
+        // existed) are still counted — e.g. 2 un-coded rows ⇒ next is SHP-003.
+        $row = ShipmentOrder::query()
+            ->where('client_id', $clientId)
+            ->selectRaw("
+                COALESCE(MAX(CAST(NULLIF(regexp_replace(COALESCE(shipment_code, ''), '\\D', '', 'g'), '') AS INTEGER)), 0) AS max_code,
+                COUNT(*) AS cnt
+            ")
+            ->first();
+
+        $next = max((int) ($row->max_code ?? 0), (int) ($row->cnt ?? 0)) + 1;
+        return 'SHP-' . str_pad((string) $next, 3, '0', STR_PAD_LEFT);
+    }
+
+    /** GET /sales/shipment-orders/next-code — preview the next Shipment ID for
+     *  the create form's header (the actual code is allocated on store). */
+    public function nextCode(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        if (!$user->client_id) {
+            return response()->json(['status' => false, 'message' => 'No client tenant on user'], 422);
+        }
+        return response()->json(['status' => true, 'code' => $this->nextShipmentCode($user->client_id)]);
     }
 
     public function show(Request $request, int $id)

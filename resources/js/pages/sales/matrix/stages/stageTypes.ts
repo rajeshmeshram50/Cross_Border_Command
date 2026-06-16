@@ -32,6 +32,10 @@ export type StageProps = {
    * cards, then passed down — so Stage 5 no longer re-fetches the vault
    * itself (the call was a duplicate of the parent's). Gates Create PI. */
   mandatoryIncomplete?: boolean;
+  /* Deal lock — true once the Proforma Invoice has been e-signed. Stages
+   * become read-only (Stage 5 disables Create Quotation / Create PI / convert).
+   * Stage 6 ignores it so "Create Shipment" stays usable. */
+  locked?: boolean;
 };
 
 /* Shared stage shell styles — each stage imports SHARED_STAGE_CSS once. */

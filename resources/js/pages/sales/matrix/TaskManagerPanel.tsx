@@ -44,12 +44,15 @@ type Props = {
   /* Fired after a successful save, with the freshly-persisted row.
    * Parent uses this to update the Stage 1 read-only display. */
   onSaved: (row: TaskManagerRow) => void;
+  /* When true the deal is locked (PI signed) — the form is read-only and
+   * Save is disabled. */
+  locked?: boolean;
 };
 
 const digitsOnly = (s: string) => s.replace(/\D/g, '').slice(0, 15);
 const isValidEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
 
-export default function TaskManagerPanel({ leadId, salespersonName, initial, onSaved }: Props) {
+export default function TaskManagerPanel({ leadId, salespersonName, initial, onSaved, locked = false }: Props) {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -92,6 +95,10 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
   };
 
   const onSave = async () => {
+    if (locked) {
+      toast.warning('Deal locked', 'The Proforma Invoice is signed — this opportunity is read-only.');
+      return;
+    }
     if (!leadId) {
       toast.warning('No lead in context', 'Open this stage from the Lead Worksheet to enable saving');
       return;
@@ -318,9 +325,10 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
             type="button"
             className="smd-deal-save-btn"
             onClick={() => void onSave()}
-            disabled={saving || !leadId}
+            disabled={saving || !leadId || locked}
+            title={locked ? 'Locked — the Proforma Invoice has been signed' : undefined}
           >
-            {saving ? 'Saving…' : 'Save'}
+            {locked ? 'Locked' : (saving ? 'Saving…' : 'Save')}
           </button>
         </div>
       </div>

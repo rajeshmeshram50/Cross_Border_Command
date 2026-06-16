@@ -446,6 +446,19 @@ class SalesLeadController extends Controller
         // malformed/legacy paths so we don't surface a broken "View" link.
         $lead->setAttribute('whatsapp_screenshot_url', file_url($lead->whatsapp_screenshot));
 
+        // When the opportunity's Proforma Invoice has been e-signed (a completed
+        // signature request), the deal is locked: the matrix detail becomes
+        // read-only except CLM tracking + Create Shipment. Expose the signed
+        // timestamp so the frontend can lock the UI and compute the
+        // "lead → PI signed" duration. Null = not signed yet.
+        $piSignedAt = \App\Models\ClmSignatureRequest::query()
+            ->where('lead_id', $lead->id)
+            ->where('document_type', \App\Models\ClmSignatureRequest::DOC_PROFORMA_INVOICE)
+            ->where('status', 'completed')
+            ->orderByDesc('completed_at')
+            ->value('completed_at');
+        $lead->setAttribute('pi_signed_at', $piSignedAt ? \Illuminate\Support\Carbon::parse($piSignedAt)->toIso8601String() : null);
+
         return response()->json(['status' => true, 'data' => $lead]);
     }
 
