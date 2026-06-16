@@ -243,22 +243,41 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
 
       <div className="smd-stg-body s6-body">
         {confetti && (
-          <div className="s6-confetti" aria-hidden="true">
-            {Array.from({ length: 170 }).map((_, i) => {
-              const size  = 9 + (i % 5) * 4;            // 9…25px — bigger pieces
-              const round = i % 3 === 0;                // every 3rd is a dot
+          <div className="s6-confetti s6-money-rain" aria-hidden="true">
+            {Array.from({ length: 80 }).map((_, i) => {
+              // Rupee-rain confetti — small, scattered currency symbols in mixed
+              // colours, an occasional gold coin, plus green bank-notes tumbling
+              // down among them.
+              const SYMBOLS = ['₹','$','€','£','¥','₩','¢','₪','৳','฿'];
+              const COLORS  = ['#f59e0b','#16a34a','#14b8a6','#f97316','#22c55e','#eab308','#0ea5e9','#84cc16'];
+              const isNote  = i % 4 === 0;                 // every 4th piece is a green note
+              const isCoin  = !isNote && i % 6 === 0;      // some of the rest are coins
+              const size    = 13 + (i % 5) * 4;            // 13…29px — small & light
+              const common  = {
+                left: `${(i * 6.17) % 100}%`,
+                // Staggered starts + varied fall time so it keeps raining
+                // across the full ~10s celebration.
+                animationDelay: `${(i % 26) * 0.22}s`,
+                animationDuration: `${3.6 + (i % 5) * 0.5}s`,
+              } as React.CSSProperties;
+              if (isNote) {
+                // Green bank-note — a small bill rectangle with a paler inner
+                // border so it reads as cash while tumbling.
+                const w = 26 + (i % 3) * 6;                // 26…38px wide
+                return (
+                  <span key={i} className="s6-note" style={{
+                    ...common,
+                    width: `${w}px`, height: `${Math.round(w * 0.52)}px`,
+                  }} />
+                );
+              }
               return (
                 <span key={i} style={{
-                  left: `${(i * 4.27) % 100}%`,
-                  width: `${size}px`,
-                  height: `${round ? size : size + (i % 4) * 5}px`,
-                  borderRadius: round ? '50%' : '2px',
-                  // Spread starts across ~5.4s and let each piece fall for
-                  // ~3.6–5s so the burst keeps raining for the full 10s.
-                  animationDelay: `${(i % 27) * 0.2}s`,
-                  animationDuration: `${3.6 + (i % 5) * 0.5}s`,
-                  background: ['#fbbf24','#a78bfa','#34d399','#f87171','#60a5fa','#f59e0b','#ec4899','#06b6d4','#fde047','#c084fc'][i % 10],
-                }} />
+                  ...common,
+                  fontSize: `${isCoin ? size + 4 : size}px`,
+                  fontWeight: 800,
+                  color: isCoin ? undefined : COLORS[i % COLORS.length],
+                }}>{isCoin ? '🪙' : SYMBOLS[i % SYMBOLS.length]}</span>
               );
             })}
             <div className="s6-burst"><span className="s6-burst-emoji">🎉</span></div>
@@ -528,13 +547,16 @@ function Cell({ label, value, amber, blue, emerald }: {
   );
 }
 
-/* Corner confetti cannon — a party-popper that keeps bursting from a bottom
- * corner, shooting particles diagonally up-inward in an arc. `left` fires
- * toward the upper-right, `right` toward the upper-left. Each particle's
- * trajectory (--tx / --ty) is fanned out by index; the burst repeats for the
- * lifetime of the confetti container (~10s). */
+/* Corner celebration cannon — a party-popper that keeps bursting from a bottom
+ * corner, shooting a mix of confetti + coins/currency symbols diagonally
+ * up-inward in an arc. `left` fires toward the upper-right, `right` toward the
+ * upper-left. Trajectory (--tx / --ty) is fanned out by index; the burst
+ * repeats for the lifetime of the celebration (~10s). */
 function CornerCannon({ side }: { side: 'left' | 'right' }) {
-  const COLORS = ['#fbbf24', '#a78bfa', '#34d399', '#f87171', '#60a5fa', '#f59e0b', '#ec4899', '#06b6d4', '#fde047', '#c084fc'];
+  // Violet + yellow confetti for the celebration burst — mid-tone (lighter
+  // than the earlier dark set) to match the stage's violet theme with gold.
+  const COLORS  = ['#7c3aed', '#8b5cf6', '#9333ea', '#a855f7', '#6d28d9', '#f59e0b', '#eab308', '#facc15', '#fbbf24', '#ca8a04'];
+  const MONEY   = ['🪙', '💵', '₹', '$', '€'];
   const N = 46;
   return (
     <div className={`s6-cannon s6-cannon-${side}`} aria-hidden="true">
@@ -543,18 +565,34 @@ function CornerCannon({ side }: { side: 'left' | 'right' }) {
         const dist  = 170 + (i % 6) * 52;                       // 170…430px
         const dx    = Math.cos(angle) * dist * (side === 'left' ? 1 : -1);
         const dy    = -Math.sin(angle) * dist;                  // up = negative
+        const isMoney = i % 3 === 0;                            // every 3rd is money
         const size  = 8 + (i % 4) * 4;
+        const common = {
+          ['--tx' as string]: `${dx.toFixed(0)}px`,
+          ['--ty' as string]: `${dy.toFixed(0)}px`,
+          animationDelay: `${(i % 5) * 0.06}s`,
+          animationDuration: `${1.5 + (i % 4) * 0.28}s`,
+        } as React.CSSProperties;
+        if (isMoney) {
+          const glyph = MONEY[i % MONEY.length];
+          const isSym = glyph.length === 1;                     // text symbol vs emoji
+          return (
+            <span key={i} className="s6-cannon-money" style={{
+              ...common,
+              fontSize: `${size + 8}px`,
+              fontWeight: 800,
+              color: isSym ? COLORS[i % COLORS.length] : undefined,
+            }}>{glyph}</span>
+          );
+        }
         return (
           <span key={i} style={{
-            ['--tx' as string]: `${dx.toFixed(0)}px`,
-            ['--ty' as string]: `${dy.toFixed(0)}px`,
+            ...common,
             width: `${size}px`,
-            height: `${i % 3 === 0 ? size : size + 4}px`,
-            borderRadius: i % 3 === 0 ? '50%' : '2px',
+            height: `${i % 3 === 1 ? size : size + 4}px`,
+            borderRadius: i % 3 === 1 ? '50%' : '2px',
             background: COLORS[i % COLORS.length],
-            animationDelay: `${(i % 5) * 0.06}s`,
-            animationDuration: `${1.5 + (i % 4) * 0.28}s`,
-          } as React.CSSProperties} />
+          }} />
         );
       })}
     </div>
@@ -594,6 +632,28 @@ const STAGE6_CSS = `
      the rain staggers and keeps falling for the full ~10s celebration. */
   animation: s6-confetti-fall 4s cubic-bezier(.21,.62,.42,1) forwards;
 }
+/* Rupee-rain — the falling pieces are currency-symbol glyphs (and coins), not
+   blocks, so strip the box styling and let them tumble lightly as they drop. */
+.s6-money-rain span {
+  width: auto; height: auto; border-radius: 0;
+  box-shadow: none; line-height: 1;
+  text-shadow: 0 1px 2px rgba(0,0,0,.18);
+  animation-name: s6-money-fall;
+}
+/* Green bank-notes — flat bills that tumble down among the symbols. The inset
+   border + tiny radius give a cash look without an image asset. */
+.s6-money-rain span.s6-note {
+  border-radius: 3px; text-shadow: none;
+  background: linear-gradient(135deg, #4ade80 0%, #22c55e 55%, #16a34a 100%);
+  border: 1.5px solid rgba(255,255,255,.55);
+  box-shadow: inset 0 0 0 1px rgba(22,101,52,.35), 0 1px 3px rgba(0,0,0,.18);
+}
+@keyframes s6-money-fall {
+  0%   { transform: translateY(-30px) translateX(0) rotate(-18deg); opacity: 0; }
+  8%   { opacity: 1; }
+  92%  { opacity: 1; }
+  100% { transform: translateY(760px) translateX(34px) rotate(380deg); opacity: 0; }
+}
 /* Center burst emoji — a big pop that scales in then gently fades. */
 @keyframes s6-burst-pop {
   0%   { transform: scale(.2) rotate(-12deg); opacity: 0; }
@@ -618,6 +678,12 @@ const STAGE6_CSS = `
   width: 10px; height: 12px; border-radius: 2px;
   box-shadow: 0 1px 2px rgba(0,0,0,.12);
   animation: s6-cannon-burst 1.8s cubic-bezier(.15,.7,.35,1) infinite;
+}
+/* Money pieces in the cannon stream — glyphs, not blocks. */
+.s6-cannon .s6-cannon-money {
+  width: auto; height: auto; border-radius: 0;
+  box-shadow: none; line-height: 1;
+  text-shadow: 0 1px 2px rgba(0,0,0,.20);
 }
 .s6-cannon-right span { left: auto; right: 0; }
 @keyframes s6-cannon-burst {

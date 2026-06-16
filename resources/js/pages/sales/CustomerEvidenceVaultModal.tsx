@@ -1342,7 +1342,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
                   <td style={{ padding: '8px 10px', textAlign: 'center' }}><span style={{ fontSize: 9.5, fontWeight: 800, color: stTone(d.status) }}>● {d.status}</span></td>
                   <td style={{ padding: '8px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                     {d.signed_url && <button type="button" onClick={() => window.open(resolveFileUrl(d.signed_url!), '_blank', 'noopener')} style={docActStyle('#0891b2')}>View</button>}
-                    {d.status !== 'Signed' && <button type="button" disabled={busy === d.sig_req_id} onClick={() => remind(d)} style={docActStyle('#06b6d4')}>{busy === d.sig_req_id ? '…' : 'Remind'}</button>}
+                    {d.status !== 'Signed' && d.sig_req_id > 0 && <button type="button" disabled={busy === d.sig_req_id} onClick={() => remind(d)} style={docActStyle('#06b6d4')}>{busy === d.sig_req_id ? '…' : 'Remind'}</button>}
                   </td>
                 </tr>
               ))}

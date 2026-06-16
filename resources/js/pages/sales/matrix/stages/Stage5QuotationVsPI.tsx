@@ -262,10 +262,12 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
 
   /* ── Per-row actions ─────────────────────────────────────────────── */
   const onViewPdf = async (kind: DocType, id: number, signature: boolean) => {
-    // "With Signature" opens ONLY the actual Zoho-signed PDF — never the
-    // locally rendered preview. If the doc hasn't been signed through Zoho
-    // yet there's nothing to show, so warn and stop.
-    if (signature) {
+    // PIs: "With Signature" opens ONLY the actual Zoho-signed PDF — never the
+    // locally rendered preview. If the PI hasn't been signed through Zoho yet
+    // there's nothing to show, so warn and stop.
+    // Quotations are NOT e-signed through Zoho here, so "With Signature" simply
+    // renders the stamped preview variant (the old stamp output).
+    if (signature && kind === 'pi') {
       const sig = sigByRow[`${kind}:${id}`];
       if (!sig?.id || sig.status !== 'completed') {
         toast.warning('Not signed yet', 'The signed PDF is available only after the document has been signed via Zoho.');
@@ -294,9 +296,10 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   };
 
   const onDownloadPdf = async (kind: DocType, id: number, code: string | null, signature: boolean) => {
-    // "With Signature" downloads ONLY the actual Zoho-signed PDF — never the
-    // re-rendered preview. Warn and stop if the doc isn't Zoho-signed yet.
-    if (signature) {
+    // PIs: "With Signature" downloads ONLY the actual Zoho-signed PDF — never
+    // the re-rendered preview. Warn and stop if the PI isn't Zoho-signed yet.
+    // Quotations: "With Signature" downloads the stamped preview variant.
+    if (signature && kind === 'pi') {
       const sig = sigByRow[`${kind}:${id}`];
       if (!sig?.id || sig.status !== 'completed') {
         toast.warning('Not signed yet', 'The signed PDF is available only after the document has been signed via Zoho.');
@@ -736,15 +739,24 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               </button>
                             )
                           )}
-                          {/* Send for Signature (Zoho Sign) — status-aware:
-                              Send → Awaiting Sign (+Remind) → Signed (+View). */}
-                          {(() => {
+                          {/* Send for Signature (Zoho Sign) — PI ONLY.
+                              Quotations are not e-signed through Zoho here, so the
+                              Send/Sent/Signed pill is hidden on the Quotation tab
+                              (matches the standalone Quotations V/S PI page).
+                              Status-aware: Send → Awaiting Sign (+Remind) → Signed. */}
+                          {docType === 'pi' && (() => {
                             const sig = sigByRow[`${docType}:${r.id}`];
                             const st  = sig?.status;
                             if (st === 'inprogress') {
                               return (
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                  {/* Sent → View the document that was sent + Remind the signer. */}
+                                  {/* Sent → indigo "Sent" pill (locked) + View the
+                                      sent document + Remind the signer. */}
+                                  <button type="button" className="s5-convert2" title="Already sent — awaiting signature" disabled
+                                    style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)', boxShadow: '0 2px 8px rgba(99,102,241,.3)', opacity: 1, cursor: 'not-allowed' }}>
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>
+                                    Sent
+                                  </button>
                                   <Tooltip label="View sent document">
                                     <button type="button" className="s5-icn" onClick={() => void onViewPdf(docType, r.id, true)} disabled={anyActing}>
                                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -759,10 +771,15 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               );
                             }
                             if (st === 'completed') {
-                              // Signed: no separate "Signed PDF" button — the 3-dot
-                              // More Actions menu already handles Download / View
-                              // (With Signature) and the signed certificate.
-                              return null;
+                              // Signed → green "Signed" pill (locked). View/Download
+                              // the signed copy + certificate live in the 3-dot menu.
+                              return (
+                                <button type="button" className="s5-convert2" title="Document already signed — open More Actions to view it" disabled
+                                  style={{ background: 'linear-gradient(135deg,#16a34a,#15803d)', boxShadow: '0 2px 8px rgba(22,163,74,.3)', opacity: 1, cursor: 'not-allowed' }}>
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                  Signed
+                                </button>
+                              );
                             }
                             return (
                               <button
@@ -776,10 +793,10 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               </button>
                             );
                           })()}
-                          {/* Signing Tracker — appears once a document has been
-                              sent for signature (sent or signed). Opens the
-                              shared activity-timeline modal. */}
-                          {(() => {
+                          {/* Signing Tracker — PI ONLY (quotations have no signing
+                              flow here). Appears once a PI has been sent for
+                              signature; opens the shared activity-timeline modal. */}
+                          {docType === 'pi' && (() => {
                             const sig = sigByRow[`${docType}:${r.id}`];
                             if (!sig?.id) return null;
                             return (
