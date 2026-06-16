@@ -151,6 +151,11 @@
      more often (less flipping above and covering the form). Still scrolls. */
   max-height: 150px;
   overflow-y: auto;
+  /* Keep the wheel inside the column — without this, scrolling the HH/MM list
+     leaks to the modal body behind the portalled popup and the list feels
+     "stuck". `touch-action` keeps the same true on touch devices. */
+  overscroll-behavior: contain;
+  touch-action: pan-y;
   display: flex;
   flex-direction: column;
   gap: 2px;

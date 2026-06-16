@@ -135,19 +135,6 @@ export const MASTER_GROUPS: MenuGroup[] = [
       { id: 'master.freezers',          icon: 'Snowflake',   label: 'Freezer Management' },
     ],
   },
-  // Attendance Master Management — branch-level configuration of leave
-  // categories & leave plans. Visibility on this dashboard is permission-
-  // driven; the matching HR_GROUPS entry below mirrors these leaves into the
-  // branch-only HR sidebar.
-  {
-    id: 'master.attendance',
-    label: 'Attendance Master Management',
-    icon: 'CalendarCheck',
-    children: [
-      { id: 'master.leave_type', icon: 'CalendarOff',   label: 'Leave Type Master' },
-      { id: 'master.leave_plan', icon: 'CalendarRange', label: 'Leave Plan Master' },
-    ],
-  },
 ];
 
 export const HR_GROUPS: MenuGroup[] = [
@@ -157,8 +144,6 @@ export const HR_GROUPS: MenuGroup[] = [
     icon: 'LayoutDashboard',
     children: [
       { id: 'hr.overview',  icon: 'LayoutGrid',     label: 'HRMS Overview' },
-      { id: 'hr.pip',       icon: 'ClipboardCheck', label: 'PIP' },
-      { id: 'hr.reports',   icon: 'BarChart3',      label: 'HR Reports' },
     ],
   },
   {
@@ -182,7 +167,6 @@ export const HR_GROUPS: MenuGroup[] = [
         ? [{ id: 'hr.attendance', icon: 'CalendarCheck', label: 'Attendance' } as MenuItem]
         : []),
       { id: 'hr.leave',              icon: 'CalendarOff',   label: 'Leave' },
-      { id: 'hr.leave_approvals',    icon: 'BadgeCheck',    label: 'Leave Approvals' },
       { id: 'hr.holiday',            icon: 'CalendarDays',  label: 'Holiday' },
       { id: 'hr.expense',            icon: 'Receipt',       label: 'Expense Management' },
     ],
@@ -204,18 +188,6 @@ export const HR_GROUPS: MenuGroup[] = [
       // modules (Onboarding, Offboarding, Event-Based) used by Doc Generation
       // Rules. Routes through /master/trigger_point (master.* convention).
       { id: 'master.trigger_point', icon: 'Zap', label: 'Trigger Point Master' },
-    ],
-  },
-  // Attendance Master Management — branch-only configuration of leave
-  // categories & leave plans. Items use `master.*` ids so they leverage the
-  // generic MasterController + MasterPage shell (CRUD + delete confirm + toast).
-  {
-    id: 'master.attendance',
-    label: 'Attendance Master Management',
-    icon: 'CalendarCheck',
-    children: [
-      { id: 'master.leave_type', icon: 'CalendarOff',   label: 'Leave Type Master' },
-      { id: 'master.leave_plan', icon: 'CalendarRange', label: 'Leave Plan Master' },
     ],
   },
 ];

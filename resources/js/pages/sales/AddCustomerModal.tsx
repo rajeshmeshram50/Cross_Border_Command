@@ -65,7 +65,7 @@ const DEFAULT_ADDRESS_TYPE = 'Registered Office';
  *    underlying column (segments uses `title`, the rest use `name`).
  *    States additionally carry country_id so we can filter by selected
  *    country at the UI layer. */
-interface MasterOpt { id: number; name: string; }
+interface MasterOpt { id: number; name: string; code?: string; }
 interface StateOpt extends MasterOpt { country_id: number; }
 interface MasterLists {
   customerTypes:     MasterOpt[];
@@ -92,6 +92,21 @@ const EMPTY_MASTERS: MasterLists = {
 // API later switches to storing master ids, this is the one place to swap
 // `String(o.id)` in.
 const toSelectOpts = (rows: MasterOpt[]) => rows.map(o => ({ value: o.name, label: o.name }));
+
+/* Render a saved segment value (name, or comma-joined / array of names) as
+ * "S-001: Name" using the segment master codes, so read-only summaries match
+ * the "code: name" labels the segment dropdown shows. Falls back to the bare
+ * name when no code is known. */
+function segDisplay(value: string | string[] | null | undefined, segs: { name: string; code?: string }[]): string {
+  const arr = Array.isArray(value)
+    ? value
+    : String(value ?? '').split(',').map(s => s.trim()).filter(Boolean);
+  if (arr.length === 0) return '';
+  return arr.map(n => {
+    const code = segs.find(s => s.name === n)?.code;
+    return code ? `${code}: ${n}` : n;
+  }).join(', ');
+}
 
 /**
  * Same as `toSelectOpts` but also injects the currently-selected
@@ -263,7 +278,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     type IdNamed = { id: number | string; name?: string | null };
     type Bundle = {
       customer_types: IdNamed[];
-      segments: Array<{ id: number | string; name?: string | null; title?: string | null }>;
+      segments: Array<{ id: number | string; name?: string | null; title?: string | null; code?: string | null }>;
       customer_classifications: IdNamed[];
       risk_levels: IdNamed[];
       address_types: IdNamed[];
@@ -284,7 +299,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       // Segments — server returns `name`; the model also appends `title`
       // (alias) for legacy consumers. Read whichever is present.
       const segments: MasterOpt[] = (b.segments || [])
-        .map(r => ({ id: Number(r.id), name: String(r.title ?? r.name ?? '') }))
+        .map(r => ({ id: Number(r.id), name: String(r.title ?? r.name ?? ''), code: String(r.code ?? '') }))
         .filter(r => r.name);
       // Countries — alpha-sort for the dropdown to mirror the previous
       // client-side sort.
@@ -583,6 +598,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   type SegmentDocs = { kyc: SegDocRow[]; dd: SegDocRow[]; tl: SegDocRow[]; td: SegDocRow[]; qc: SegDocRow[] };
   const EMPTY_SEG_DOCS: SegmentDocs = { kyc:[], dd:[], tl:[], td:[], qc:[] };
   const [segmentDocs, setSegmentDocs] = useState<SegmentDocs>(EMPTY_SEG_DOCS);
+  /* segment name → its required KYC/DD/Trade-License doc codes (from the DCP
+   * rules). Lets us block removing a segment in edit mode once any of its
+   * documents have been uploaded (you can still add segments / remove empty
+   * ones). Built alongside the Stage 2 doc-catalog fetch below. */
+  const [segCodeMap, setSegCodeMap] = useState<Record<string, string[]>>({});
   /* True while the Stage 2 segment-rule document catalog is being fetched from
    * the DB (CLM segment-rules + trade-doc-library). Drives the table shimmer so
    * the Company-DD / Owner-KYC / Trade-Licence grids don't flash empty while the
@@ -1031,6 +1051,20 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         qc:  mergeCat('qc'),
       };
       setSegmentDocs(merged);
+      /* Per-segment doc-code map (KYC/DD/Trade License) — `results[i]`
+       * aligns with `segRows[i]`. Used by the remove-segment guard. */
+      const codeMap: Record<string, string[]> = {};
+      results.forEach((r: any, i: number) => {
+        const seg = segRows[i];
+        if (!seg) return;
+        const codes = new Set<string>();
+        (['kyc', 'dd', 'tl'] as const).forEach(cat => {
+          const rows: SegDocRow[] = Array.isArray(r?.[cat]) ? r[cat] : [];
+          rows.forEach(d => { if (d?.code) codes.add(d.code); });
+        });
+        codeMap[seg.name] = Array.from(codes);
+      });
+      setSegCodeMap(codeMap);
       /* Stage 3 Trade Documents = the merged segment-rule `td` set
        * intersected with the party=Buyer trade-doc library. No hardcoded
        * fallback — when the intersection is empty the table is empty, so
@@ -1636,7 +1670,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
                   recap shows just the legal-identity summary. The former
                   Stage 2 KYC recap (HistoryStage2) belonged to Stage 3,
                   which has been removed. */}
-              <HistoryStage1 form={form} locations={locations} customerId={customer?.id} />
+              <HistoryStage1 form={form} locations={locations} customerId={customer?.id} segments={masters.segments} />
             </div>
           </div>
         )}
@@ -1676,7 +1710,27 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               additional fields populate. */}
           {stage === 1 && showShimmer && <Stage1FormShimmer />}
           {stage === 1 && !showShimmer && tab === 'identification' && (
-            <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} validateField={validateField} />
+            <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} validateField={validateField} guardSegmentRemove={(prev, vs) => {
+              const removed = prev.filter(s => !vs.includes(s));
+              if (!removed.length) return vs;
+              // Doc codes with an ACTUAL upload (file or URL). Hydration seeds an
+              // empty entry per reference row, so check the value.
+              const uploaded = new Set(
+                Object.entries(segmentRefUploads)
+                  .filter(([, v]) => !!(v && (v.url || v.file)))
+                  .map(([k]) => k.split('::')[1])
+              );
+              // A segment can't be removed if ANY of its standard documents have
+              // already been uploaded. Segments with no uploaded docs drop freely.
+              const locked = removed.filter(seg =>
+                (segCodeMap[seg] ?? []).some(c => uploaded.has(c))
+              );
+              if (locked.length) {
+                toast.error('Cannot remove segment', `You can't remove ${locked.join(', ')} — ${locked.length > 1 ? 'they have' : 'it has'} completed standard documents. Delete those documents first to drop the segment.`);
+                return [...vs, ...locked.filter(s => !vs.includes(s))];
+              }
+              return vs;
+            }} />
           )}
           {stage === 1 && !showShimmer && tab === 'address-contact' && (
             <Stage1AdditionalLocations
@@ -2140,8 +2194,8 @@ function Stage2Shimmer() {
 /* Stage 3 (Evidence Vault) shimmer removed along with the stage itself. */
 
 /* ───── Stage 1 — Identification + Primary Address & Contact ───── */
-function Stage1Identification({ form, setF, masters, errors, clearErr, validateField }:
-  { form: any; setF: (k: any, v: any) => void; masters: MasterLists; errors: Record<string, string>; clearErr: (k: string) => void; validateField: (k: string, nextForm: any) => void }) {
+function Stage1Identification({ form, setF, masters, errors, clearErr, validateField, guardSegmentRemove }:
+  { form: any; setF: (k: any, v: any) => void; masters: MasterLists; errors: Record<string, string>; clearErr: (k: string) => void; validateField: (k: string, nextForm: any) => void; guardSegmentRemove: (prev: string[], next: string[]) => string[] }) {
   // States filter against the selected country: look up the country
   // name → its id from the countries master, then filter states by it.
   const selectedCountry = masters.countries.find(c => c.name === form.country);
@@ -2182,10 +2236,17 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                   the singular name. */}
               <MasterMultiSelect
                 value={form.coSeg}
-                options={toSelectOpts(masters.segments)}
+                options={masters.segments.map(o => ({ value: o.name, label: o.code ? `${o.code}: ${o.name}` : o.name }))}
                 placeholder="Select segment"
                 invalid={!!errors.coSeg}
-                onChange={vs => set('coSeg', vs)}
+                onChange={vs => {
+                  /* Block removing a segment whose KYC/DD/Trade-License docs
+                   * are already uploaded (edit mode). Additions and removing
+                   * empty segments are always allowed. The guard lives in the
+                   * parent (it needs segmentRefUploads/segCodeMap/toast) and
+                   * returns the possibly-adjusted selection. */
+                  set('coSeg', guardSegmentRemove(form.coSeg ?? [], vs));
+                }}
                 maxChips={2}
               />
             </Field>
@@ -3990,7 +4051,7 @@ function ReadInline({ label, value, span }: { label: string; value?: string | nu
  * Dense horizontal layout — every Stage 1 field shown as a tight
  * "Label : Value" pair laid out in a 4-column grid. No card chrome;
  * the parent history panel already frames the content. */
-function HistoryStage1({ form, locations, customerId }: { form: any; locations: LocationRow[]; customerId?: string }) {
+function HistoryStage1({ form, locations, customerId, segments = [] }: { form: any; locations: LocationRow[]; customerId?: string; segments?: { name: string; code?: string }[] }) {
   const wa = form.cpWa === 'yes' ? 'Yes' : form.cpWa === 'no' ? 'No' : '';
   return (
     <div className="acm-hs-mirror">
@@ -4001,7 +4062,7 @@ function HistoryStage1({ form, locations, customerId }: { form: any; locations: 
         <ReadInline label="Customer Type"             value={form.coType} />
 
         <ReadInline label="Company Website"           value={form.coWeb} />
-        <ReadInline label="Customer Segment"          value={(form.coSeg ?? []).join(', ')} />
+        <ReadInline label="Customer Segment"          value={segDisplay(form.coSeg, segments)} />
         <ReadInline label="Classification"            value={form.coClass} />
         <ReadInline label="Risk Level"                value={form.coRisk} />
 

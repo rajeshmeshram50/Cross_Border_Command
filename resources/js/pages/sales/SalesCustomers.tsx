@@ -330,6 +330,7 @@ export default function SalesCustomers() {
     {
       header: 'Customer ID',
       accessorKey: 'id',
+      meta: { align: 'center' },
       cell: (info: any) => <span className="smc-id-chip">{info.getValue()}</span>,
     },
     {
@@ -340,6 +341,7 @@ export default function SalesCustomers() {
     {
       header: 'Customer Type',
       accessorKey: 'type',
+      meta: { align: 'center' },
       cell: (info: any) => {
         const v = info.getValue() as string | null;
         if (!v) return <span className="text-muted">—</span>;
@@ -354,6 +356,7 @@ export default function SalesCustomers() {
     {
       header: 'Segment',
       accessorKey: 'segment',
+      meta: { align: 'center' },
       cell: (info: any) => {
         const segList = String(info.getValue() ?? '').split(',').map((s: string) => s.trim()).filter(Boolean);
         if (segList.length === 0) return <span className="text-muted">—</span>;
@@ -374,9 +377,9 @@ export default function SalesCustomers() {
         );
       },
     },
-    { header: 'Country',        accessorKey: 'country', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-country" max={16} /> },
+    { header: 'Country',        accessorKey: 'country', meta: { align: 'center' }, cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-country" max={16} /> },
     { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-contact" max={16} /> },
-    { header: 'Contact No',     accessorKey: 'phone',   cell: (i: any) => <span className="smc-mono">{i.getValue() || '—'}</span> },
+    { header: 'Contact No',     accessorKey: 'phone',   meta: { align: 'center' }, cell: (i: any) => <span className="smc-mono">{i.getValue() || '—'}</span> },
     { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-email" max={18} caseSensitive /> },
     {
       header: () => <div className="text-center">WhatsApp</div>,

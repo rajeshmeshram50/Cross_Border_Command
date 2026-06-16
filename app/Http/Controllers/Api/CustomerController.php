@@ -677,7 +677,7 @@ class CustomerController extends Controller
 
             return [
                 'customer_types'           => $active(CustomerTypes::class,           ['id', 'name']),
-                'segments'                 => $active(Segments::class,                ['id', 'name']),
+                'segments'                 => $active(Segments::class,                ['id', 'name', 'code']),
                 'customer_classifications' => $active(CustomerClassifications::class, ['id', 'name']),
                 'risk_levels'              => $active(RiskLevels::class,              ['id', 'name']),
                 'address_types'            => $active(AddressTypes::class,            ['id', 'name']),

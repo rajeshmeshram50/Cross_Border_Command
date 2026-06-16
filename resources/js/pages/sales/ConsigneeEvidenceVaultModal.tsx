@@ -217,6 +217,8 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
 
   const [tab, setTab] = useState<TabKey>('company-dd');
   const [group, setGroup] = useState<GroupKey>('standard');
+  // "Document Overview" popup — set to a group key to open the all-docs list.
+  const [overview, setOverview] = useState<GroupKey | null>(null);
   const [shipmentFilter, setShipmentFilter] = useState<'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee'>('all');
 
   /* Switch the active group and jump to its first sub-tab. */
@@ -485,10 +487,10 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
 
   const StatusPill = ({ s }: { s: VaultStatus }) => {
     const tone =
-      s === 'Verified' ? { bg: '#d1fae5', fg: '#047857', mark: '✓' }
+      s === 'Verified' ? { bg: '#ecfdf5', fg: '#059669', mark: '✓' }
       : s === 'Signed'   ? { bg: '#dbeafe', fg: '#1e40af', mark: '✓' }
       : s === 'Expiring' ? { bg: '#fef3c7', fg: '#92400e', mark: '⚠' }
-      :                    { bg: '#fee2e2', fg: '#b91c1c', mark: '⌛' };
+      :                    { bg: '#fef2f2', fg: '#dc2626', mark: '⌛' };
     return (
       <span className="cnev-pill" style={{ background: tone.bg, color: tone.fg }}>
         {tone.mark} {s}
@@ -501,10 +503,12 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
     : tab === 'trade-licenses' ? vault.trade_licenses
     : tab === 'trade-documents' ? vault.trade_documents
     : [];
+  // A document counts as "uploaded" once it has an attachment; everything
+  // else is "pending". These two are the only header badges we surface.
+  const isUploaded = (d: VaultDoc) => !!(d.attachment_url || (d.attachment && d.attachment !== '—'));
   const counts = {
-    Verified: docsForTab.filter(d => d.status === 'Verified' || d.status === 'Signed').length,
-    Expiring: docsForTab.filter(d => d.status === 'Expiring').length,
-    Pending:  docsForTab.filter(d => d.status === 'Pending').length,
+    Uploaded: docsForTab.filter(isUploaded).length,
+    Pending:  docsForTab.filter(d => !isUploaded(d)).length,
   };
 
   const tabMeta = TABS.find(t => t.key === tab)!;
@@ -535,18 +539,18 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                 </span>
               </div>
               <div className="cnev-header-text">
-                <div className="cnev-header-eyebrow">— EVIDENCE VAULT</div>
+                <div className="cnev-header-eyebrow">— PARTY WISE CLM: CONSIGNEE EVIDENCE VAULT</div>
                 <div className="cnev-header-title">{consignee.company}</div>
                 <div className="cnev-header-chips">
-                  <span className="cnev-chip cnev-chip-id">● {consignee.id}</span>
-                  {consignee.customerId && <span className="cnev-chip cnev-chip-link">↳ {consignee.customerId}</span>}
-                  <span className="cnev-chip cnev-chip-risk" data-risk={(consignee.risk ?? 'Low').toLowerCase()}>● {consignee.risk ?? 'Low'} Risk</span>
                   {consignee.contact && (
                     <span className="cnev-chip cnev-chip-contact">
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                       {consignee.contact}{consignee.contactCity ? ` · ${consignee.contactCity}` : ''}
                     </span>
                   )}
+                  <span className="cnev-chip cnev-chip-id">● {consignee.id}</span>
+                  {consignee.customerId && <span className="cnev-chip cnev-chip-link">↳ {consignee.customerId}</span>}
+                  <span className="cnev-chip cnev-chip-risk" data-risk={(consignee.risk ?? 'Low').toLowerCase()}>● {consignee.risk ?? 'Low'} Risk</span>
                 </div>
               </div>
             </div>
@@ -564,52 +568,17 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
 
         {showSkeleton ? <VaultSkeleton /> : (<>
         {/* ─── KPI STRIP ─── */}
-        <div
-          className="cnev-kpi-outer"
-          onMouseEnter={() => setKpiPaused(true)}
-          onMouseLeave={() => setKpiPaused(false)}
-          onTouchStart={() => setKpiPaused(true)}
-          onTouchEnd={() => setKpiPaused(false)}
-        >
-          <span className="cnev-kpi-fade cnev-kpi-fade-l" aria-hidden />
-          <span className="cnev-kpi-fade cnev-kpi-fade-r" aria-hidden />
-          <button
-            type="button"
-            className="cnev-kpi-nav cnev-kpi-nav-prev"
-            aria-label="Scroll KPIs left"
-            onClick={() => kpiStripRef.current?.scrollBy({ left: -260, behavior: 'smooth' })}
-          >
-            <i className="ri-arrow-left-s-line" />
-          </button>
-          <button
-            type="button"
-            className="cnev-kpi-nav cnev-kpi-nav-next"
-            aria-label="Scroll KPIs right"
-            onClick={() => kpiStripRef.current?.scrollBy({ left: 260, behavior: 'smooth' })}
-          >
-            <i className="ri-arrow-right-s-line" />
-          </button>
-          <div
-            ref={kpiStripRef}
-            className="cnev-kpi-strip"
-            onWheel={(e) => {
-              if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-                e.currentTarget.scrollLeft += e.deltaY;
-              }
-            }}
-          >
-          {[0, 1].map((cycle) => (
-            <div key={cycle} className="cnev-kpi-cycle" aria-hidden={cycle === 1 ? true : undefined}>
-              <KpiTile label="Total Documents"        value={vault.total_documents}        icon="ri-file-list-3-line"        gradient="linear-gradient(135deg, #047857 0%, #10b981 100%)" />
-              <KpiTile label="Verified / Signed"      value={vault.verified_signed}        icon="ri-shield-check-line"       gradient="linear-gradient(135deg, #16a34a 0%, #4ade80 100%)" />
-              <KpiTile label="Pending"                value={vault.pending}                icon="ri-time-line"               gradient="linear-gradient(135deg, #d97706 0%, #f59e0b 100%)" />
-              <KpiTile label="Company Due Diligence"  value={vault.company_dd_count}       icon="ri-building-line"           gradient="linear-gradient(135deg, #059669 0%, #34d399 100%)" />
-              <KpiTile label="Owner KYC"              value={vault.owner_kyc_count}        icon="ri-user-3-line"             gradient="linear-gradient(135deg, #047857 0%, #059669 100%)" />
-              <KpiTile label="Trade License"          value={vault.trade_license_count}    icon="ri-government-line"         gradient="linear-gradient(135deg, #10b981 0%, #6ee7b7 100%)" />
-              <KpiTile label="Trade Documents"        value={vault.trade_documents_count}  icon="ri-article-line"            gradient="linear-gradient(135deg, #0d9488 0%, #5eead4 100%)" />
-              <KpiTile label="Total Shipments"        value={vault.total_shipments}        icon="ri-truck-line"              gradient="linear-gradient(135deg, #064e3b 0%, #047857 100%)" />
-            </div>
-          ))}
+        <div className="cnev-kpi-outer">
+          {/* Static full-width stat row — all columns fit without scrolling. */}
+          <div className="cnev-kpi-strip">
+            <KpiTile label="Total Documents"        value={vault.total_documents}        accent="#0e7490" />
+            <KpiTile label="Verified / Signed"      value={vault.verified_signed}        accent="#16a34a" subtitle="✓ COMPLIANT" subTone="good" />
+            <KpiTile label="Pending"                value={vault.pending}                accent="#dc2626" subtitle="⚠ ACTION"    subTone="bad" />
+            <KpiTile label="Company Due Diligence"  value={vault.company_dd_count}       accent="#0891b2" />
+            <KpiTile label="Owner KYC"              value={vault.owner_kyc_count}        accent="#0e7490" />
+            <KpiTile label="Trade License"          value={vault.trade_license_count}    accent="#0891b2" />
+            <KpiTile label="Trade Documents"        value={vault.trade_documents_count}  accent="#0d9488" />
+            <KpiTile label="Total Shipments"        value={vault.total_shipments}        accent="#0c4a6e" />
           </div>
         </div>
 
@@ -617,18 +586,27 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
         <div className="cnev-groups-wrap">
           <div className="cnev-groups">
             {GROUPS.map(g => (
-              <button
-                key={g.key}
-                type="button"
-                className={`cnev-group ${group === g.key ? 'is-active' : ''}`}
-                onClick={() => selectGroup(g.key)}
-              >
-                <span className="cnev-group-icon"><i className={g.icon} aria-hidden /></span>
-                <span className="cnev-group-text">
-                  <span className="cnev-group-title">{g.title}</span>
-                  <span className="cnev-group-sub">{g.sub}</span>
-                </span>
-              </button>
+              <div key={g.key} className={`cnev-group ${group === g.key ? 'is-active' : ''}`}>
+                <button
+                  type="button"
+                  className="cnev-group-main"
+                  onClick={() => selectGroup(g.key)}
+                >
+                  <span className="cnev-group-icon"><i className={g.icon} aria-hidden /></span>
+                  <span className="cnev-group-text">
+                    <span className="cnev-group-title">{g.title}</span>
+                    <span className="cnev-group-sub">{g.sub}</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="cnev-group-overview"
+                  onClick={() => setOverview(g.key)}
+                  title="View all documents in one list"
+                >
+                  <i className="ri-list-check-2" aria-hidden /> Document Overview
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -662,8 +640,14 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
               </div>
             </div>
             <div className="cnev-section-right">
-              <div className="cnev-section-count">{(tab === 'shipment-agreements' || tab === 'trade-documents') ? vault.total_shipments : (vault[tabMeta.countKey] as number)}</div>
-              <div className="cnev-section-count-label">{(tab === 'shipment-agreements' || tab === 'trade-documents') ? 'SHIPMENTS' : 'DOCUMENTS'}</div>
+              {(tab === 'shipment-agreements' || tab === 'trade-documents') ? (
+                <span className="cnev-sec-pill cnev-sec-pill-docs">{vault.total_shipments} Shipments</span>
+              ) : (
+                <>
+                  {counts.Uploaded > 0 && <span className="cnev-sec-pill cnev-sec-pill-ok"><span className="cnev-sec-dot" />Uploaded {counts.Uploaded}</span>}
+                  {counts.Pending > 0 && <span className="cnev-sec-pill cnev-sec-pill-bad"><span className="cnev-sec-dot" />Pending {counts.Pending}</span>}
+                </>
+              )}
             </div>
           </div>
 
@@ -715,24 +699,75 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
         onClose={() => setSendDocIds(null)}
         onSent={() => { setSendDocIds(null); void reloadSignatures(); }}
       />
+
+      {/* Document Overview popup — all documents for the chosen group in one
+          flat list (name + status + download). */}
+      {overview && (() => {
+        const isStd = overview === 'standard';
+        const docs: VaultDoc[] = isStd
+          ? [...vault.company_dd, ...vault.owner_kyc, ...vault.trade_licenses]
+          : [...vault.trade_documents];
+        const title = isStd ? 'Standard Documents — Overview' : 'Case to Case Agreements — Overview';
+        const sub = isStd
+          ? 'All Company Due Diligence, Owner KYC & Trade Licenses documents in one list'
+          : 'All Trade Documents & Agreements for this consignee in one list';
+        return (
+          <div className="cnev-ov-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) setOverview(null); }}>
+            <div className="cnev-ov-card">
+              <div className="cnev-ov-head">
+                <span className="cnev-ov-head-icon"><i className="ri-list-check-2" aria-hidden /></span>
+                <div className="cnev-ov-head-text">
+                  <div className="cnev-ov-title">{title}</div>
+                  <div className="cnev-ov-sub">{sub}</div>
+                </div>
+                <button type="button" className="cnev-ov-close" onClick={() => setOverview(null)} aria-label="Close"><i className="ri-close-line" /></button>
+              </div>
+              <div className="cnev-ov-body">
+                <table className="cnev-ov-table">
+                  <thead><tr><th style={{ width: 48 }}>#</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
+                  <tbody>
+                    {docs.length === 0 ? (
+                      <tr><td colSpan={4} className="cnev-ov-empty">No documents available.</td></tr>
+                    ) : docs.map((d, i) => {
+                      const url = d.attachment_url || null;
+                      return (
+                        <tr key={`${d.id}-${i}`}>
+                          <td className="cnev-ov-num">{i + 1}</td>
+                          <td className="cnev-ov-name">{d.name}</td>
+                          <td><StatusPill s={d.status} /></td>
+                          <td>
+                            <button
+                              type="button"
+                              className="cnev-ov-dl"
+                              disabled={!url}
+                              onClick={() => { if (url) void downloadFile(url, d.attachment || `${d.name}.pdf`); }}
+                            >
+                              <i className="ri-download-2-line" aria-hidden /> Download
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>,
     document.body
   );
 }
 
-function KpiTile({ label, value, icon, gradient }: { label: string; value: number; icon: string; gradient: string }) {
+function KpiTile({ label, value, accent, subtitle, subTone }: { label: string; value: number; accent?: string; subtitle?: string; subTone?: 'good' | 'bad' }) {
+  /* Flat stat column (matches the CLM prototype): small uppercase label, a
+     large tone-coloured number, and an optional status sub-line. */
   return (
     <div className="cnev-kpi-tile">
-      <span className="cnev-kpi-strip-top" style={{ background: gradient }} aria-hidden />
-      <div className="cnev-kpi-body">
-        <div className="cnev-kpi-text">
-          <div className="cnev-kpi-label">{label.toUpperCase()}</div>
-          <div className="cnev-kpi-value">{value.toLocaleString()}</div>
-        </div>
-        <div className="cnev-kpi-icon" style={{ background: gradient }}>
-          <i className={icon} aria-hidden />
-        </div>
-      </div>
+      <div className="cnev-kpi-label">{label.toUpperCase()}</div>
+      <div className="cnev-kpi-value" style={accent ? { color: accent } : undefined}>{value.toLocaleString()}</div>
+      {subtitle && <div className={`cnev-kpi-sub ${subTone === 'bad' ? 'is-bad' : 'is-good'}`}>{subtitle}</div>}
     </div>
   );
 }
@@ -841,6 +876,8 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [reminding, setReminding] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [viewing, setViewing] = useState(false);
   const [trackerOpen, setTrackerOpen] = useState(false);
   const canViewOrDownload = !!doc.attachment_url;
   const canReupload = !!ownerId && !!doc.doc_code;
@@ -866,7 +903,12 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
 
   // Blob download so it works on the deployed server too (a plain <a download>
   // is ignored cross-origin / for inline-served files → opens instead of saving).
-  const download = () => { void downloadFile(doc.attachment_url, doc.attachment); };
+  const download = async () => {
+    if (downloading || !doc.attachment_url) return;
+    setDownloading(true);
+    try { await downloadFile(doc.attachment_url, doc.attachment); }
+    finally { setDownloading(false); }
+  };
 
   const onPick = async (f: File | undefined) => {
     if (!f || !ownerId || !doc.doc_code) return;
@@ -973,21 +1015,25 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           rel="noreferrer"
           aria-disabled={!canViewOrDownload}
           className={`cnev-row-act cnev-row-act-view ${!canViewOrDownload ? 'is-disabled' : ''}`}
-          onClick={e => { if (!canViewOrDownload) e.preventDefault(); }}
+          onClick={e => { if (!canViewOrDownload) { e.preventDefault(); return; } setViewing(true); window.setTimeout(() => setViewing(false), 1200); }}
           aria-label="View"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          {viewing
+            ? <i className="ri-loader-4-line cnev-spin" style={{ fontSize: 14 }} aria-hidden />
+            : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>}
         </a>
       </Tooltip>
-      <Tooltip label={canViewOrDownload ? `Download ${doc.attachment}` : 'No attachment yet'}>
+      <Tooltip label={canViewOrDownload ? (downloading ? 'Downloading…' : `Download ${doc.attachment}`) : 'No attachment yet'}>
         <button
           type="button"
-          aria-disabled={!canViewOrDownload}
-          onClick={() => { if (canViewOrDownload) download(); }}
+          aria-disabled={!canViewOrDownload || downloading}
+          onClick={() => { if (canViewOrDownload) void download(); }}
           className={`cnev-row-act cnev-row-act-download ${!canViewOrDownload ? 'is-disabled' : ''}`}
           aria-label="Download"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          {downloading
+            ? <i className="ri-loader-4-line cnev-spin" style={{ fontSize: 14 }} aria-hidden />
+            : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}
         </button>
       </Tooltip>
       {/* Upload / Re-upload is hidden on the Case-to-Case Trade Documents
@@ -1099,7 +1145,7 @@ function ShipmentTable({ rows, kind, filter, setFilter }: {
                     </td>
                     <td>
                       <span className="cnev-cust-cell">
-                        <span className="cnev-cust-mono" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>{(r.consignee || '—').charAt(0)}</span>
+                        <span className="cnev-cust-mono" style={{ background: 'linear-gradient(135deg,#0891b2,#06b6d4)' }}>{(r.consignee || '—').charAt(0)}</span>
                         {r.consignee || '—'}
                       </span>
                     </td>
@@ -1211,7 +1257,7 @@ function sectionSub(tab: TabKey): string {
 const CNEV_CSS = `
 .cnev-overlay {
   position: fixed; inset: 0;
-  background: rgba(6,78,59,0.45);
+  background: rgba(12,74,110,0.45);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   z-index: 11200;
@@ -1224,11 +1270,11 @@ const CNEV_CSS = `
   position: relative;
   width: min(1280px, 90vw);
   height: 100vh;
-  background: #f0fdf4;
+  background: #f0fdff;
   border-radius: 0;
   overflow: hidden;
   display: flex; flex-direction: column;
-  box-shadow: -32px 0 80px rgba(6,78,59,.40), -12px 0 30px rgba(6,78,59,.18);
+  box-shadow: -32px 0 80px rgba(12,74,110,.40), -12px 0 30px rgba(12,74,110,.18);
   animation: cnevSlide .26s cubic-bezier(.22,1,.36,1) both;
 }
 @keyframes cnevSlide { from { transform: translateX(40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
@@ -1238,7 +1284,7 @@ const CNEV_CSS = `
   position: relative;
   flex-shrink: 0;
   padding: 14px 22px;
-  background: linear-gradient(135deg, #064e3b 0%, #047857 35%, #059669 65%, #34d399 100%);
+  background: linear-gradient(125deg, #083344 0%, #0c4a6e 25%, #0e7490 50%, #0891b2 75%, #06b6d4 100%);
   color: #fff;
   overflow: hidden;
 }
@@ -1247,8 +1293,8 @@ const CNEV_CSS = `
   pointer-events: none;
   overflow: hidden;
   background:
-    radial-gradient(circle at 100% 0%, rgba(167,243,208,0.32), transparent 45%),
-    radial-gradient(circle at 0% 100%, rgba(110,231,183,0.30), transparent 55%);
+    radial-gradient(circle at 100% 0%, rgba(165,243,252,0.32), transparent 45%),
+    radial-gradient(circle at 0% 100%, rgba(103,232,249,0.30), transparent 55%);
 }
 .cnev-header-bg::before,
 .cnev-header-bg::after {
@@ -1260,7 +1306,7 @@ const CNEV_CSS = `
 }
 .cnev-header-bg::before { width: 220px; height: 220px; top: -80px; right: -40px; }
 .cnev-header-bg::after  { width: 130px; height: 130px; bottom: -45px; right: 130px;
-  background: radial-gradient(circle at 30% 30%, rgba(110,231,183,0.30), rgba(110,231,183,0.06) 60%, transparent 75%); }
+  background: radial-gradient(circle at 30% 30%, rgba(103,232,249,0.30), rgba(103,232,249,0.06) 60%, transparent 75%); }
 .cnev-header-orb {
   position: absolute;
   width: 90px; height: 90px;
@@ -1288,18 +1334,18 @@ const CNEV_CSS = `
 .cnev-vault-icon-tick {
   position: absolute; top: -3px; right: -3px;
   width: 18px; height: 18px; border-radius: 50%;
-  background: #6ee7b7; color: #064e3b;
+  background: #67e8f9; color: #0c4a6e;
   display: inline-flex; align-items: center; justify-content: center;
-  border: 2px solid #047857;
+  border: 2px solid #0e7490;
 }
 .cnev-header-text { min-width: 0; }
 .cnev-header-eyebrow { font-size: 9.5px; font-weight: 700; letter-spacing: .12em; color: rgba(255,255,255,.78); margin-bottom: 2px; }
 .cnev-header-title { font-size: 18px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.15; margin-bottom: 6px; color: #fff; }
 .cnev-header-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.cnev-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 600; background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.24); color: #ecfdf5; }
+.cnev-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 600; background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.24); color: #ecfeff; }
 .cnev-chip-id { background: rgba(255,255,255,0.20); }
-.cnev-chip-link { background: rgba(255,255,255,0.14); color: #d1fae5; }
-.cnev-chip-risk[data-risk="low"]      { background: rgba(16,185,129,0.30); color: #ecfdf5; }
+.cnev-chip-link { background: rgba(255,255,255,0.14); color: #cffafe; }
+.cnev-chip-risk[data-risk="low"]      { background: rgba(8,145,178,0.30); color: #ecfeff; }
 .cnev-chip-risk[data-risk="medium"]   { background: rgba(245,158,11,0.30); color: #fef3c7; }
 .cnev-chip-risk[data-risk="high"]     { background: rgba(239,68,68,0.30);  color: #fee2e2; }
 .cnev-chip-risk[data-risk="critical"] { background: rgba(220,38,38,0.40);  color: #fee2e2; }
@@ -1320,25 +1366,23 @@ const CNEV_CSS = `
 .cnev-kpi-outer {
   position: relative;
   flex-shrink: 0;
-  background: linear-gradient(180deg, #f0fdf4 0%, #ecfdf5 100%);
-  border-bottom: 1px solid #d1fae5;
+  background: #fff;
+  border-bottom: 1.5px solid #e0f2f7;
 }
+/* Animated top accent line (matches the prototype .ev-stats::before). */
+.cnev-kpi-outer::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2.5px; z-index: 2;
+  background: linear-gradient(90deg, #0e7490, #0891b2, #06b6d4, #67e8f9, #06b6d4, #0891b2, #0e7490);
+  background-size: 200% 100%;
+  animation: cnevStatsAccent 4s linear infinite;
+}
+@keyframes cnevStatsAccent { 0% { background-position: 0% 0%; } 100% { background-position: 200% 0%; } }
+/* Full-width static row — all stat columns fit; NO horizontal scroll. */
 .cnev-kpi-strip {
-  display: flex; gap: 12px; align-items: stretch;
-  padding: 14px 64px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  scroll-behavior: smooth;
+  display: flex; gap: 0; align-items: stretch;
+  padding: 12px 16px;
+  overflow: visible;
 }
-.cnev-kpi-strip::-webkit-scrollbar { display: none; }
-.cnev-kpi-cycle {
-  display: flex; gap: 12px; align-items: stretch;
-  flex-shrink: 0;
-  margin-right: 12px;
-}
-.cnev-kpi-cycle:last-child { margin-right: 0; }
 .cnev-kpi-fade {
   position: absolute;
   top: 0; bottom: 0;
@@ -1346,8 +1390,8 @@ const CNEV_CSS = `
   pointer-events: none;
   z-index: 3;
 }
-.cnev-kpi-fade-l { left: 0;  background: linear-gradient(90deg,  #f0fdf4 0%, #f0fdf4 25%, rgba(240,253,244,0) 100%); }
-.cnev-kpi-fade-r { right: 0; background: linear-gradient(270deg, #ecfdf5 0%, #ecfdf5 25%, rgba(236,253,245,0) 100%); }
+.cnev-kpi-fade-l { left: 0;  background: linear-gradient(90deg,  #f0fdff 0%, #f0fdff 25%, rgba(240,253,255,0) 100%); }
+.cnev-kpi-fade-r { right: 0; background: linear-gradient(270deg, #ecfeff 0%, #ecfeff 25%, rgba(236,254,255,0) 100%); }
 .cnev-kpi-nav {
   position: absolute;
   top: 50%;
@@ -1356,59 +1400,57 @@ const CNEV_CSS = `
   width: 34px; height: 34px;
   border-radius: 50%;
   border: none;
-  background: linear-gradient(135deg, #ffffff 0%, #ecfdf5 100%);
-  color: #047857;
+  background: linear-gradient(135deg, #ffffff 0%, #ecfeff 100%);
+  color: #0e7490;
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer;
   box-shadow:
-    0 2px 6px rgba(16,185,129,0.18),
-    0 8px 22px rgba(6,78,59,0.18),
-    inset 0 0 0 1px rgba(16,185,129,0.20);
+    0 2px 6px rgba(8,145,178,0.18),
+    0 8px 22px rgba(12,74,110,0.18),
+    inset 0 0 0 1px rgba(8,145,178,0.20);
   transition: all .18s ease;
   font-size: 18px;
 }
 .cnev-kpi-nav:hover {
-  background: linear-gradient(135deg, #047857, #10b981);
+  background: linear-gradient(135deg, #0e7490, #06b6d4);
   color: #fff;
   transform: translateY(-50%) scale(1.10);
   box-shadow:
-    0 4px 10px rgba(16,185,129,0.30),
-    0 10px 26px rgba(16,185,129,0.45);
+    0 4px 10px rgba(8,145,178,0.30),
+    0 10px 26px rgba(8,145,178,0.45);
 }
 .cnev-kpi-nav:active { transform: translateY(-50%) scale(0.96); }
 .cnev-kpi-nav-prev { left: 14px; }
 .cnev-kpi-nav-next { right: 14px; }
 .cnev-kpi-tile {
   position: relative;
-  flex: 0 0 220px;
-  background: var(--vz-card-bg, #fff);
-  border: 1px solid rgba(16,185,129,0.16);
-  border-radius: 12px;
-  padding: 12px 14px;
-  box-shadow: 0 2px 10px rgba(6,78,59,0.06);
-  overflow: hidden;
+  flex: 1 1 0;                /* equal-width columns — fill the row, no scroll */
   min-width: 0;
-  transition: transform 180ms ease, box-shadow 220ms ease, border-color 180ms ease;
+  padding: 4px 16px;
+  border-right: 1px solid rgba(8,145,178,0.16);   /* thin column divider */
 }
-.cnev-kpi-tile:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(6,78,59,0.10);
-  border-color: rgba(16,185,129,0.30);
-}
+.cnev-kpi-tile:last-child { border-right: none; }
 .cnev-kpi-strip-top { position: absolute; top: 0; left: 0; right: 0; height: 3px; }
 .cnev-kpi-body { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .cnev-kpi-text { min-width: 0; }
 .cnev-kpi-label {
-  font-size: 10.5px; font-weight: 700; letter-spacing: .06em;
-  color: var(--vz-secondary-color, #6b7280);
+  font-size: 8px; font-weight: 700; letter-spacing: .1em;
+  color: #94a3b8;
   text-transform: uppercase;
   margin-bottom: 6px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .cnev-kpi-value {
   font-size: 22px; font-weight: 800; line-height: 1;
-  color: var(--vz-heading-color, #2b3245);
+  color: #083344;
+  font-variant-numeric: tabular-nums;
 }
+.cnev-kpi-sub {
+  margin-top: 3px;
+  font-size: 7px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+}
+.cnev-kpi-sub.is-good { color: #16a34a; }
+.cnev-kpi-sub.is-bad  { color: #dc2626; }
 .cnev-kpi-icon {
   width: 38px; height: 38px; border-radius: 10px;
   display: inline-flex; align-items: center; justify-content: center;
@@ -1422,154 +1464,244 @@ const CNEV_CSS = `
 /* ─── GROUP CARDS — Standard Documents vs Case to Case (green variant). */
 .cnev-groups-wrap {
   flex-shrink: 0;
-  background: linear-gradient(180deg, #f0fdf4 0%, #ecfdf5 100%);
+  background: linear-gradient(180deg, #f0fdff 0%, #ecfeff 100%);
   padding: 14px 18px 0;
 }
 .cnev-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .cnev-group {
-  display: flex; align-items: center; gap: 14px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 13px 18px;
   background: #ffffff;
-  border: 1.5px solid #d6f5e3;
+  border: 1.5px solid #cffafe;
   border-radius: 14px;
-  cursor: pointer;
   text-align: left;
   transition: all .2s ease;
 }
-.cnev-group:hover { border-color: #6ee7b7; background: #f0fdf4; }
+.cnev-group:hover { border-color: #67e8f9; background: #f0fdff; }
+.cnev-group-main {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 14px;
+  background: transparent; border: 0; padding: 0; cursor: pointer;
+  text-align: left; font-family: inherit;
+}
+.cnev-group-overview {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 13px; border-radius: 9px;
+  background: #ecfeff; color: #0e7490; border: 1.5px solid #a5f3fc;
+  font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
+  white-space: nowrap; transition: all .18s ease;
+}
+.cnev-group-overview:hover { background: #fff; border-color: #06b6d4; color: #0891b2; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(8,145,178,.22); }
+.cnev-group-overview i { font-size: 14px; }
+.cnev-group.is-active .cnev-group-overview { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.35); }
+.cnev-group.is-active .cnev-group-overview:hover { background: #fff; color: #0891b2; border-color: #fff; }
+
+/* ─── Document Overview popup ─── */
+.cnev-ov-overlay {
+  position: fixed; inset: 0; z-index: 11400;
+  background: rgba(8,51,68,.45); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.cnev-ov-card {
+  width: min(760px, 96vw); max-height: 86vh;
+  background: #fff; border-radius: 16px; overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 30px 80px rgba(8,51,68,.45);
+}
+.cnev-ov-head {
+  display: flex; align-items: center; gap: 14px; padding: 16px 20px;
+  background: linear-gradient(120deg, #083344 0%, #0c4a6e 30%, #0e7490 65%, #0891b2 100%);
+  color: #fff; flex-shrink: 0;
+}
+.cnev-ov-head-icon {
+  width: 40px; height: 40px; border-radius: 11px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.22); font-size: 19px;
+}
+.cnev-ov-head-text { flex: 1; min-width: 0; }
+.cnev-ov-title { font-size: 16px; font-weight: 800; letter-spacing: -.01em; }
+.cnev-ov-sub { font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.82); margin-top: 2px; }
+.cnev-ov-close {
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+  border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.12); color: #fff;
+  cursor: pointer; font-size: 18px; display: inline-flex; align-items: center; justify-content: center;
+  transition: all .15s ease;
+}
+.cnev-ov-close:hover { background: rgba(255,255,255,.25); }
+.cnev-ov-body { overflow: auto; padding: 14px 18px 18px; }
+.cnev-ov-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.cnev-ov-table thead th {
+  position: sticky; top: 0; z-index: 5; background: #083344; color: #fff;
+  font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  padding: 10px 12px; text-align: left; white-space: nowrap;
+}
+.cnev-ov-table thead th:first-child { border-radius: 8px 0 0 8px; }
+.cnev-ov-table thead th:last-child  { border-radius: 0 8px 8px 0; }
+.cnev-ov-table tbody td { padding: 11px 12px; border-bottom: 1px solid #e6f7fb; vertical-align: middle; }
+.cnev-ov-table tbody tr:hover td { background: #f0fdff; }
+.cnev-ov-num { color: #5e94a1; font-weight: 700; }
+.cnev-ov-name { font-weight: 700; color: #0a2630; }
+.cnev-ov-empty { text-align: center; color: #5e94a1; padding: 28px 12px !important; font-weight: 600; }
+.cnev-ov-dl {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px; border-radius: 7px;
+  background: #ecfeff; color: #0e7490; border: 1.5px solid #a5f3fc;
+  font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all .15s ease;
+}
+.cnev-ov-dl:hover:not(:disabled) { background: #fff; border-color: #06b6d4; color: #0891b2; }
+.cnev-ov-dl:disabled { opacity: .45; cursor: not-allowed; }
+[data-bs-theme="dark"] .cnev-ov-card { background: #0a2630; }
+[data-bs-theme="dark"] .cnev-ov-table tbody td { border-bottom-color: rgba(8,145,178,.18); color: #cffafe; }
+[data-bs-theme="dark"] .cnev-ov-name { color: #e6f7fb; }
+[data-bs-theme="dark"] .cnev-ov-table tbody tr:hover td { background: rgba(8,145,178,.10); }
 .cnev-group.is-active {
-  background: linear-gradient(120deg, #064e3b 0%, #047857 55%, #10b981 100%);
-  border-color: #047857;
-  box-shadow: 0 6px 18px rgba(16,185,129,.35);
+  background: linear-gradient(120deg, #0c4a6e 0%, #0e7490 55%, #06b6d4 100%);
+  border-color: #0e7490;
+  box-shadow: 0 6px 18px rgba(8,145,178,.35);
 }
 .cnev-group-icon {
   width: 42px; height: 42px; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
   border-radius: 12px;
-  background: #e7f9ef; color: #047857; border: 1px solid #c7f0d8;
+  background: #cffafe; color: #0e7490; border: 1px solid #a5f3fc;
   font-size: 20px;
 }
 .cnev-group.is-active .cnev-group-icon { background: rgba(255,255,255,.18); color: #fff; border-color: rgba(255,255,255,.25); }
 .cnev-group-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.cnev-group-title { font-size: 15px; font-weight: 800; color: #064e3b; letter-spacing: -.01em; }
+.cnev-group-title { font-size: 15px; font-weight: 800; color: #0c4a6e; letter-spacing: -.01em; }
 .cnev-group.is-active .cnev-group-title { color: #ffffff; }
 .cnev-group-sub { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; color: #6b9e85; }
 .cnev-group.is-active .cnev-group-sub { color: rgba(255,255,255,.8); }
 
 .cnev-tabs-wrap {
   flex-shrink: 0;
-  background: linear-gradient(180deg, #f0fdf4 0%, #ecfdf5 100%);
-  border-bottom: 1px solid #d1fae5;
-  padding: 12px 18px;
+  background: #fff;
+  border-bottom: 2px solid #d6eef5;
+  padding: 0 18px;
 }
 .cnev-tabs {
-  display: flex; gap: 8px;
+  display: flex; align-items: center; gap: 2px;
   overflow-x: auto;
   scrollbar-width: none;
-  padding-bottom: 2px;
 }
 .cnev-tabs::-webkit-scrollbar { display: none; }
-/* Tab pill — restyled to match AddCustomerModal's .acm-tab (Stage 1
- * Customer Identification pill). Clean rounded-rectangle pill +
- * solid 1.5px border + single-stop gradient on active. Icons and
- * count badges kept (functionality preserved) but the icon circle's
- * heavy gradient background was dropped so the icon sits inline
- * with the label instead of looking like a stuck-on chip. Green
- * palette stays — this is the consignee variant. */
+/* Underline sub-tabs — matches the CLM prototype's .ev-tab. */
 .cnev-tab {
   flex: 0 0 auto;
   position: relative;
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 8px 16px;
-  background: #ffffff;
-  border: 1.5px solid #6ee7b7;
-  border-radius: 12px;
-  color: #047857;
-  font-size: 12.5px; font-weight: 700;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 12px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 2.5px solid transparent;
+  margin-bottom: -2px;
+  color: #94a3b8;
+  font-size: 11.5px; font-weight: 600;
   cursor: pointer;
-  transition: all .2s ease;
+  transition: color .18s ease, border-color .18s ease;
   white-space: nowrap;
 }
 .cnev-tab-icon {
-  width: 18px; height: 18px;
+  width: 22px; height: 22px; border-radius: 6px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: transparent;
-  color: #047857;
-  font-size: 15px;
+  background: rgba(148,163,184,.08);
+  color: #94a3b8;
+  font-size: 13px;
   flex-shrink: 0;
-  transition: color .18s ease;
+  transition: all .18s ease;
 }
 .cnev-tab-label { white-space: nowrap; }
-.cnev-tab:hover {
-  background: #ecfdf5;
-  border-color: #10b981;
-  color: #064e3b;
-}
-.cnev-tab:hover .cnev-tab-icon { color: #064e3b; }
+.cnev-tab:hover { color: #0891b2; }
+.cnev-tab:hover .cnev-tab-icon { background: rgba(6,182,212,.1); color: #0891b2; }
 .cnev-tab.is-active {
-  background: linear-gradient(135deg, #10b981, #047857);
-  border-color: #10b981;
-  color: #ffffff;
-  box-shadow: 0 3px 10px rgba(16,185,129,.35);
+  color: #0e7490; font-weight: 700;
+  border-bottom-color: #0891b2;
 }
-.cnev-tab.is-active .cnev-tab-icon { color: #ffffff; }
+.cnev-tab.is-active::after {
+  content: ''; position: absolute; bottom: -2px; left: 10px; right: 10px; height: 2.5px;
+  background: linear-gradient(90deg, #06b6d4, #22d3ee);
+  border-radius: 2px 2px 0 0;
+  box-shadow: 0 0 8px rgba(6,182,212,.6);
+}
+.cnev-tab.is-active .cnev-tab-icon {
+  background: linear-gradient(135deg, #ecfeff, #cffafe);
+  color: #0891b2;
+}
 .cnev-tab-count {
-  background: #d1fae5; color: #047857;
-  font-size: 10.5px; font-weight: 800; letter-spacing: 0.02em;
-  padding: 2px 8px; border-radius: 999px;
-  min-width: 22px; text-align: center;
+  background: #f0fdff; color: #22d3ee; border: 1px solid #a5f3fc;
+  font-size: 9px; font-weight: 800; letter-spacing: 0;
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 20px;
+  display: inline-flex; align-items: center; justify-content: center;
   transition: all .18s ease;
 }
 .cnev-tab.is-active .cnev-tab-count {
-  background: rgba(255,255,255,0.28);
-  color: #ffffff;
+  background: linear-gradient(135deg, #06b6d4, #22d3ee);
+  color: #fff; border-color: transparent;
+  box-shadow: 0 2px 6px rgba(6,182,212,.38);
 }
 
 /* ─── BODY ─── */
 .cnev-body {
   flex: 1; min-height: 0; overflow-y: auto;
   padding: 18px 24px 22px;
+  background: #f7f8fc;
   display: flex; flex-direction: column; gap: 14px;
   /* Match the visible scrollbar pattern used by [[AddVendorModal]]'s
      .avm-body so the rail is obvious when a tab's table grows past
      the body. Solid emerald replaces the prior near-invisible rgba(.30). */
-  scrollbar-width: thin; scrollbar-color: #6ee7b7 transparent;
+  scrollbar-width: thin; scrollbar-color: #67e8f9 transparent;
 }
 .cnev-body::-webkit-scrollbar { width: 8px; }
-.cnev-body::-webkit-scrollbar-thumb { background: #6ee7b7; border-radius: 99px; }
-.cnev-body::-webkit-scrollbar-thumb:hover { background: #10b981; }
+.cnev-body::-webkit-scrollbar-thumb { background: #67e8f9; border-radius: 99px; }
+.cnev-body::-webkit-scrollbar-thumb:hover { background: #06b6d4; }
 
 .cnev-section {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 14px 18px;
-  background: linear-gradient(110deg, #ecfdf5, #d1fae5 70%, #a7f3d0);
-  border: 1px solid rgba(16,185,129,.18);
+  background: linear-gradient(110deg, #ecfeff, #cffafe 70%, #a5f3fc);
+  border: 1px solid rgba(8,145,178,.18);
   border-radius: 14px;
 }
 .cnev-section-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .cnev-section-icon {
   width: 38px; height: 38px; border-radius: 10px;
-  background: linear-gradient(135deg, #10b981, #047857);
+  background: linear-gradient(135deg, #06b6d4, #0e7490);
   color: #fff;
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 18px;
-  box-shadow: 0 4px 12px rgba(16,185,129,.30);
+  box-shadow: 0 4px 12px rgba(8,145,178,.30);
 }
-.cnev-section-title { font-size: 15px; font-weight: 800; color: #064e3b; }
-.cnev-section-sub   { font-size: 12px; color: #047857; margin-top: 1px; }
-.cnev-section-right { text-align: right; }
-.cnev-section-count { font-size: 26px; font-weight: 800; color: #064e3b; line-height: 1; }
-.cnev-section-count-label { font-size: 9.5px; font-weight: 700; letter-spacing: .12em; color: #047857; margin-top: 2px; }
+.cnev-section-title { font-size: 15px; font-weight: 800; color: #0c4a6e; }
+.cnev-section-sub   { font-size: 12px; color: #0e7490; margin-top: 1px; }
+.cnev-section-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.cnev-section-count { font-size: 26px; font-weight: 800; color: #0c4a6e; line-height: 1; }
+.cnev-section-count-label { font-size: 9.5px; font-weight: 700; letter-spacing: .12em; color: #0e7490; margin-top: 2px; }
+/* Figma-style status count pills on the section header band. */
+.cnev-sec-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 11px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 700; white-space: nowrap;
+  border: 1px solid transparent;
+}
+.cnev-sec-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.cnev-sec-pill-ok   { background: #ecfdf5; color: #059669; border-color: #a7f3d0; }
+.cnev-sec-pill-ok   .cnev-sec-dot { background: #10b981; }
+.cnev-sec-pill-warn { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+.cnev-sec-pill-warn .cnev-sec-dot { background: #f59e0b; }
+.cnev-sec-pill-bad  { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
+.cnev-sec-pill-bad  .cnev-sec-dot { background: #ef4444; }
+.cnev-sec-pill-docs { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; }
 
 .cnev-filter-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .cnev-filter { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; font-size: 11.5px; font-weight: 700; border: 1px solid transparent; }
-.cnev-filter-verified { background: #d1fae5; color: #047857; border-color: rgba(5,150,105,.30); }
+.cnev-filter-verified { background: #dcfce7; color: #15803d; border-color: rgba(21,128,61,.30); }
 .cnev-filter-expiring { background: #fef3c7; color: #92400e; border-color: rgba(217,119,6,.30); }
 .cnev-filter-pending  { background: #fee2e2; color: #b91c1c; border-color: rgba(239,68,68,.30); }
 
 .cnev-table-wrap {
   background: #fff;
-  border: 1px solid rgba(16,185,129,.18);
+  border: 1px solid rgba(8,145,178,.18);
   border-radius: 14px;
   overflow: hidden;
   scrollbar-width: thin;
@@ -1587,33 +1719,35 @@ const CNEV_CSS = `
   scrollbar-width: thin;
 }
 .cnev-table-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
-.cnev-table-scroll::-webkit-scrollbar-thumb { background: rgba(16,185,129,.30); border-radius: 999px; }
-.cnev-table-scroll::-webkit-scrollbar-thumb:hover { background: rgba(16,185,129,.55); }
+.cnev-table-scroll::-webkit-scrollbar-thumb { background: rgba(8,145,178,.30); border-radius: 999px; }
+.cnev-table-scroll::-webkit-scrollbar-thumb:hover { background: rgba(8,145,178,.55); }
 .cnev-table { width: 100%; min-width: 980px; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+/* ONE continuous gradient across the whole header row (not per-column).
+   The gradient + sticky both live on the <tr> so it spans left→right as a
+   single band AND stays pinned on scroll; the <th> cells are transparent
+   so they don't restart the gradient per column. */
+.cnev-table thead tr {
+  position: sticky; top: 0; z-index: 3;
+  background: linear-gradient(110deg, #083344 0%, #0c4a6e 60%, #0e7490 100%);
+}
 .cnev-table thead th {
-  position: sticky; top: 0;
-  z-index: 3;
   padding: 9px 14px;
   text-align: left;
-  background:
-    linear-gradient(180deg, #ecfdf5 0%, #d1fae5 55%, #a7f3d0 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.65),
-    inset 0 -1px 0 rgba(16,185,129,0.25),
-    0 4px 10px -8px rgba(16,185,129,0.30);
-  font-size: 10.5px; font-weight: 800; letter-spacing: .08em;
-  color: #047857; text-transform: uppercase;
+  background: transparent;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .08em;
+  color: rgba(255,255,255,.75); text-transform: uppercase;
   white-space: nowrap;
 }
-.cnev-table tbody td { padding: 13px 14px; border-bottom: 1px solid #ecfdf5; vertical-align: middle; }
+.cnev-table tbody td { padding: 13px 14px; border-bottom: 1px solid #f0f2fa; vertical-align: middle; color: #334155; background: #fff; }
+.cnev-table tbody tr:nth-child(even) td { background: #fafbff; }
 .cnev-table tbody tr:last-child td { border-bottom: none; }
-.cnev-table tbody tr:hover td { background: #f0fdf4; }
-.cnev-doc-name { font-weight: 700; color: #064e3b; }
+.cnev-table tbody tr:hover td { background: #f0fdff; }
+.cnev-doc-name { font-weight: 700; color: #083344; }
 .cnev-mono { font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace; font-size: 12px; color: #1f2937; }
 .cnev-empty { padding: 30px !important; text-align: center; color: #94a3b8; font-style: italic; }
 /* ─── Loading skeleton (shimmer) — emerald-tinted to match the consignee theme. */
 .cnev-skel { flex: 1; min-height: 0; overflow: hidden; padding: 16px 22px; display: flex; flex-direction: column; gap: 16px; }
-.cnev-sk { position: relative; overflow: hidden; background: #d8f5e6; border-radius: 12px; }
+.cnev-sk { position: relative; overflow: hidden; background: #cffafe; border-radius: 12px; }
 .cnev-sk::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255,255,255,.7), transparent); animation: cnevShimmer 1.3s ease-in-out infinite; }
 @keyframes cnevShimmer { 100% { transform: translateX(100%); } }
 .cnev-skel-kpis { display: flex; gap: 12px; }
@@ -1626,7 +1760,7 @@ const CNEV_CSS = `
 .cnev-skel-table { display: flex; flex-direction: column; gap: 10px; }
 .cnev-skel-thead { height: 38px; }
 .cnev-skel-row { height: 46px; border-radius: 10px; }
-[data-bs-theme="dark"] .cnev-sk { background: rgba(16,185,129,.14); }
+[data-bs-theme="dark"] .cnev-sk { background: rgba(8,145,178,.14); }
 [data-bs-theme="dark"] .cnev-sk::after { background: linear-gradient(90deg, transparent, rgba(255,255,255,.10), transparent); }
 .cnev-muted { color: #94a3b8; font-style: italic; font-size: 12px; }
 
@@ -1634,7 +1768,7 @@ const CNEV_CSS = `
   display: inline-block;
   font-size: 11.5px; font-weight: 600;
   padding: 3px 9px; border-radius: 6px;
-  background: #ecfdf5; color: #047857;
+  background: #ecfeff; color: #0e7490;
 }
 .cnev-date-expiry[data-status="expiring"] { background: #fef3c7; color: #92400e; }
 .cnev-date-expiry[data-status="pending"]  { background: #fee2e2; color: #b91c1c; }
@@ -1642,9 +1776,9 @@ const CNEV_CSS = `
 .cnev-attach {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 3px 9px; border-radius: 6px;
-  background: #d1fae5; color: #047857;
+  background: #cffafe; color: #0e7490;
   font-size: 11.5px; font-weight: 600;
-  border: 1px solid rgba(16,185,129,.30);
+  border: 1px solid rgba(8,145,178,.30);
 }
 
 /* Row Actions — View / Download / Re-upload icons. */
@@ -1660,8 +1794,8 @@ const CNEV_CSS = `
 .cnev-row-act-view:hover:not(.is-disabled)     { background: rgba(37,99,235,.18); transform: translateY(-1px); }
 .cnev-row-act-download { color: #0891b2; background: rgba(8,145,178,.08);  border-color: rgba(8,145,178,.20); }
 .cnev-row-act-download:hover:not(.is-disabled) { background: rgba(8,145,178,.18); transform: translateY(-1px); }
-.cnev-row-act-upload   { color: #047857; background: rgba(16,185,129,.10); border-color: rgba(16,185,129,.30); }
-.cnev-row-act-upload:hover:not(.is-disabled)   { background: rgba(16,185,129,.20); transform: translateY(-1px); }
+.cnev-row-act-upload   { color: #0e7490; background: rgba(8,145,178,.10); border-color: rgba(8,145,178,.30); }
+.cnev-row-act-upload:hover:not(.is-disabled)   { background: rgba(8,145,178,.20); transform: translateY(-1px); }
 .cnev-row-act.is-disabled, .cnev-row-act:disabled { opacity: .45; cursor: not-allowed; pointer-events: none; }
 /* Dark mode — lift the action-button fills + icon colours. Send / Reminder /
  * Certificate set colours inline, so those need !important. */
@@ -1669,9 +1803,9 @@ const CNEV_CSS = `
 [data-bs-theme="dark"] .cnev-row-act-view:hover:not(.is-disabled)     { background: rgba(59,130,246,.28); }
 [data-bs-theme="dark"] .cnev-row-act-download { color: #67e8f9; background: rgba(8,145,178,.18); border-color: rgba(8,145,178,.36); }
 [data-bs-theme="dark"] .cnev-row-act-download:hover:not(.is-disabled) { background: rgba(8,145,178,.30); }
-[data-bs-theme="dark"] .cnev-row-act-upload   { color: #6ee7b7; background: rgba(16,185,129,.18); border-color: rgba(16,185,129,.38); }
-[data-bs-theme="dark"] .cnev-row-act-upload:hover:not(.is-disabled)   { background: rgba(16,185,129,.30); }
-[data-bs-theme="dark"] .cnev-row-act-send   { background: rgba(16,185,129,.22) !important; color: #6ee7b7 !important; border-color: rgba(16,185,129,.42) !important; }
+[data-bs-theme="dark"] .cnev-row-act-upload   { color: #67e8f9; background: rgba(8,145,178,.18); border-color: rgba(8,145,178,.38); }
+[data-bs-theme="dark"] .cnev-row-act-upload:hover:not(.is-disabled)   { background: rgba(8,145,178,.30); }
+[data-bs-theme="dark"] .cnev-row-act-send   { background: rgba(8,145,178,.22) !important; color: #67e8f9 !important; border-color: rgba(8,145,178,.42) !important; }
 [data-bs-theme="dark"] .cnev-row-act-remind { background: rgba(245,158,11,.20) !important; color: #fcd34d !important; border-color: rgba(245,158,11,.42) !important; }
 [data-bs-theme="dark"] .cnev-row-act-cert   { background: rgba(8,145,178,.22) !important; color: #67e8f9 !important; border-color: rgba(8,145,178,.42) !important; }
 
@@ -1680,17 +1814,17 @@ const CNEV_CSS = `
   padding: 3px 10px; border-radius: 999px;
   font-size: 11px; font-weight: 700;
 }
-.cnev-risk-compliant { background: #d1fae5; color: #047857; }
+.cnev-risk-compliant { background: #dcfce7; color: #15803d; }
 .cnev-risk-medium    { background: #fef3c7; color: #92400e; }
 .cnev-risk-high      { background: #fee2e2; color: #b91c1c; }
 
-.cnev-chip-pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 6px; background: #d1fae5; color: #047857; font-size: 11.5px; font-weight: 700; border: 1px solid rgba(16,185,129,.30); font-family: 'JetBrains Mono', ui-monospace, monospace; }
+.cnev-chip-pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 6px; background: #cffafe; color: #0e7490; font-size: 11.5px; font-weight: 700; border: 1px solid rgba(8,145,178,.30); font-family: 'JetBrains Mono', ui-monospace, monospace; }
 .cnev-chip-pill-warm { background: #fef3c7; color: #92400e; border-color: rgba(217,119,6,.30); }
 .cnev-cust-cell { display: inline-flex; align-items: center; gap: 8px; }
 .cnev-cust-mono {
   width: 26px; height: 26px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #10b981, #047857); color: #fff;
+  background: linear-gradient(135deg, #06b6d4, #0e7490); color: #fff;
   font-size: 11.5px; font-weight: 800;
   flex-shrink: 0;
 }
@@ -1703,8 +1837,8 @@ const CNEV_CSS = `
   line-height: 1;
 }
 .cnev-ratio svg { display: block; transition: filter .2s ease; }
-.cnev-ratio:hover svg { filter: drop-shadow(0 2px 6px rgba(6,78,59,0.20)); }
-.cnev-ratio-track { stroke: #d1fae5; }
+.cnev-ratio:hover svg { filter: drop-shadow(0 2px 6px rgba(12,74,110,0.20)); }
+.cnev-ratio-track { stroke: #cffafe; }
 .cnev-ratio-arc {
   transition: stroke-dashoffset .6s cubic-bezier(.22,1,.36,1), stroke .2s ease;
 }
@@ -1715,10 +1849,10 @@ const CNEV_CSS = `
   position: absolute; inset: 0;
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 10.5px; font-weight: 800; letter-spacing: -0.02em;
-  color: #064e3b;
+  color: #0c4a6e;
   font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace;
 }
-.cnev-ratio[data-tone="good"] .cnev-ratio-label { color: #047857; }
+.cnev-ratio[data-tone="good"] .cnev-ratio-label { color: #0e7490; }
 .cnev-ratio[data-tone="mid"]  .cnev-ratio-label { color: #b45309; }
 .cnev-ratio[data-tone="bad"]  .cnev-ratio-label { color: #b91c1c; }
 
@@ -1756,7 +1890,7 @@ const CNEV_CSS = `
   font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace;
   color: #ffffff;
 }
-.cnev-ratio-tip-pct[data-tone="good"] { color: #6ee7b7; }
+.cnev-ratio-tip-pct[data-tone="good"] { color: #67e8f9; }
 .cnev-ratio-tip-pct[data-tone="mid"]  { color: #fcd34d; }
 .cnev-ratio-tip-pct[data-tone="bad"]  { color: #fca5a5; }
 .cnev-ratio-tip-meta {
@@ -1770,28 +1904,34 @@ const CNEV_CSS = `
   flex: 1; min-width: 160px;
   padding: 10px 18px;
   background: #fff;
-  border: 1px solid rgba(16,185,129,.20);
+  border: 1px solid rgba(8,145,178,.20);
   border-radius: 10px;
   color: #475569;
   font-size: 12.5px; font-weight: 700;
   cursor: pointer; transition: all .15s;
 }
-.cnev-ship-fbtn:hover { background: #f0fdf4; color: #047857; }
+.cnev-ship-fbtn:hover { background: #f0fdff; color: #0e7490; }
 .cnev-ship-fbtn.is-active {
-  background: linear-gradient(135deg, #047857, #10b981);
+  background: linear-gradient(135deg, #0e7490, #06b6d4);
   color: #fff; border-color: transparent;
-  box-shadow: 0 4px 12px rgba(16,185,129,.30);
+  box-shadow: 0 4px 12px rgba(8,145,178,.30);
 }
 
 /* ─── FOOTER ─── */
 .cnev-footer {
+  position: relative;
   flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 14px 24px;
-  background: #fff;
-  border-top: 1px solid #d1fae5;
+  background: linear-gradient(110deg, #f0fdff 0%, #e6fafd 50%, #f0fdff 100%);
+  border-top: 1.5px solid #bdf1fb;
+  overflow: hidden;
 }
-.cnev-footer-meta { font-size: 12px; color: #475569; }
+.cnev-footer::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1.5px;
+  background: linear-gradient(90deg, transparent 0%, #67e8f9 30%, #06b6d4 50%, #67e8f9 70%, transparent 100%);
+}
+.cnev-footer-meta { font-size: 12px; color: #64748b; }
 .cnev-footer-actions { display: flex; gap: 10px; }
 .cnev-btn {
   display: inline-flex; align-items: center; gap: 7px;
@@ -1801,79 +1941,79 @@ const CNEV_CSS = `
   cursor: pointer; border: 1px solid transparent;
   transition: all .15s;
 }
-.cnev-btn-light { background: #fff; color: #047857; border-color: rgba(16,185,129,.30); }
-.cnev-btn-light:hover { background: #ecfdf5; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(16,185,129,.20); }
-.cnev-btn-dark  { background: linear-gradient(135deg, #064e3b, #047857); color: #fff; box-shadow: 0 4px 14px rgba(6,78,59,.30); }
-.cnev-btn-dark:hover  { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(6,78,59,.45); }
+.cnev-btn-light { background: #fff; color: #0e7490; border-color: rgba(8,145,178,.30); }
+.cnev-btn-light:hover { background: #ecfeff; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(8,145,178,.20); }
+.cnev-btn-dark  { background: linear-gradient(135deg, #0c4a6e, #0e7490); color: #fff; box-shadow: 0 4px 14px rgba(12,74,110,.30); }
+.cnev-btn-dark:hover  { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(12,74,110,.45); }
 
 /* ─── DARK MODE ─── */
-[data-bs-theme="dark"] .cnev-card { background: #0c2218; }
-[data-bs-theme="dark"] .cnev-groups-wrap { background: linear-gradient(180deg, #0c2218 0%, #102b21 100%); }
-[data-bs-theme="dark"] .cnev-group { background: #102b21; border-color: rgba(16,185,129,.30); }
-[data-bs-theme="dark"] .cnev-group:hover { background: #14352a; border-color: rgba(16,185,129,.5); }
-[data-bs-theme="dark"] .cnev-group.is-active { background: linear-gradient(120deg,#064e3b,#047857); border-color: #10b981; }
-[data-bs-theme="dark"] .cnev-group-icon { background: rgba(16,185,129,.20); color: #6ee7b7; border-color: rgba(16,185,129,.3); }
+[data-bs-theme="dark"] .cnev-card { background: #08222b; }
+[data-bs-theme="dark"] .cnev-groups-wrap { background: linear-gradient(180deg, #08222b 0%, #0a2a33 100%); }
+[data-bs-theme="dark"] .cnev-group { background: #0a2a33; border-color: rgba(8,145,178,.30); }
+[data-bs-theme="dark"] .cnev-group:hover { background: #14352a; border-color: rgba(8,145,178,.5); }
+[data-bs-theme="dark"] .cnev-group.is-active { background: linear-gradient(120deg,#0c4a6e,#0e7490); border-color: #06b6d4; }
+[data-bs-theme="dark"] .cnev-group-icon { background: rgba(8,145,178,.20); color: #67e8f9; border-color: rgba(8,145,178,.3); }
 [data-bs-theme="dark"] .cnev-group.is-active .cnev-group-icon { background: rgba(255,255,255,.18); color: #fff; }
-[data-bs-theme="dark"] .cnev-group-title { color: #d1fae5; }
+[data-bs-theme="dark"] .cnev-group-title { color: #cffafe; }
 [data-bs-theme="dark"] .cnev-group-sub { color: #8fbfa6; }
-[data-bs-theme="dark"] .cnev-tabs-wrap { background: linear-gradient(180deg, #0c2218 0%, #102b21 100%); border-bottom-color: rgba(16,185,129,.22); }
-[data-bs-theme="dark"] .cnev-tab { background: transparent; color: #6ee7b7; border: 1.5px solid rgba(16,185,129,0.40); box-shadow: none; }
-[data-bs-theme="dark"] .cnev-tab-icon { background: transparent; color: #6ee7b7; }
-[data-bs-theme="dark"] .cnev-tab:hover { background: rgba(16,185,129,0.10); border-color: #10b981; color: #d1fae5; box-shadow: none; }
-[data-bs-theme="dark"] .cnev-tab:hover .cnev-tab-icon { background: transparent; color: #d1fae5; }
-[data-bs-theme="dark"] .cnev-tab.is-active { background: linear-gradient(135deg, #047857, #064e3b); color: #fff; border-color: #10b981; }
-[data-bs-theme="dark"] .cnev-tab.is-active .cnev-tab-icon { background: transparent; color: #fff; }
-[data-bs-theme="dark"] .cnev-tab-count { background: rgba(16,185,129,.22); color: #6ee7b7; }
-[data-bs-theme="dark"] .cnev-tab.is-active .cnev-tab-count { background: rgba(255,255,255,.28); color: #fff; }
-[data-bs-theme="dark"] .cnev-kpi-outer { background: linear-gradient(180deg, #0c2218 0%, #102b21 100%); border-bottom-color: rgba(16,185,129,.22); }
-[data-bs-theme="dark"] .cnev-kpi-fade-l { background: linear-gradient(90deg,  #0c2218 0%, #0c2218 25%, rgba(12,34,24,0) 100%); }
-[data-bs-theme="dark"] .cnev-kpi-fade-r { background: linear-gradient(270deg, #102b21 0%, #102b21 25%, rgba(16,43,33,0) 100%); }
-[data-bs-theme="dark"] .cnev-kpi-nav { background: linear-gradient(135deg, #143829 0%, #0c2218 100%); color: #6ee7b7; box-shadow: 0 2px 6px rgba(0,0,0,.40), 0 8px 22px rgba(0,0,0,.50), inset 0 0 0 1px rgba(16,185,129,.30); }
-[data-bs-theme="dark"] .cnev-kpi-nav:hover { background: linear-gradient(135deg, #047857, #10b981); color: #fff; }
-[data-bs-theme="dark"] .cnev-kpi-tile { background: #102b21; border-color: rgba(16,185,129,.28); box-shadow: 0 2px 10px rgba(0,0,0,0.30); }
-[data-bs-theme="dark"] .cnev-kpi-tile:hover { border-color: rgba(16,185,129,.45); box-shadow: 0 6px 18px rgba(0,0,0,0.40); }
+[data-bs-theme="dark"] .cnev-tabs-wrap { background: #0a2a33; border-bottom-color: rgba(8,145,178,.30); }
+[data-bs-theme="dark"] .cnev-tab { color: #7bb5c2; }
+[data-bs-theme="dark"] .cnev-tab-icon { background: rgba(255,255,255,.05); color: #7bb5c2; }
+[data-bs-theme="dark"] .cnev-tab:hover { color: #67e8f9; }
+[data-bs-theme="dark"] .cnev-tab:hover .cnev-tab-icon { background: rgba(8,145,178,0.12); color: #67e8f9; }
+[data-bs-theme="dark"] .cnev-tab.is-active { color: #67e8f9; border-bottom-color: #22d3ee; }
+[data-bs-theme="dark"] .cnev-tab.is-active .cnev-tab-icon { background: rgba(34,211,238,0.18); color: #67e8f9; }
+[data-bs-theme="dark"] .cnev-tab-count { background: rgba(8,145,178,.18); color: #67e8f9; border-color: rgba(8,145,178,.35); }
+[data-bs-theme="dark"] .cnev-tab.is-active .cnev-tab-count { background: linear-gradient(135deg,#06b6d4,#22d3ee); color: #fff; border-color: transparent; }
+[data-bs-theme="dark"] .cnev-kpi-outer { background: linear-gradient(180deg, #08222b 0%, #0a2a33 100%); border-bottom-color: rgba(8,145,178,.22); }
+[data-bs-theme="dark"] .cnev-kpi-fade-l { background: linear-gradient(90deg,  #08222b 0%, #08222b 25%, rgba(8,34,43,0) 100%); }
+[data-bs-theme="dark"] .cnev-kpi-fade-r { background: linear-gradient(270deg, #0a2a33 0%, #0a2a33 25%, rgba(10,42,51,0) 100%); }
+[data-bs-theme="dark"] .cnev-kpi-nav { background: linear-gradient(135deg, #143829 0%, #08222b 100%); color: #67e8f9; box-shadow: 0 2px 6px rgba(0,0,0,.40), 0 8px 22px rgba(0,0,0,.50), inset 0 0 0 1px rgba(8,145,178,.30); }
+[data-bs-theme="dark"] .cnev-kpi-nav:hover { background: linear-gradient(135deg, #0e7490, #06b6d4); color: #fff; }
+[data-bs-theme="dark"] .cnev-kpi-tile { background: #0a2a33; border-color: rgba(8,145,178,.28); box-shadow: 0 2px 10px rgba(0,0,0,0.30); }
+[data-bs-theme="dark"] .cnev-kpi-tile:hover { border-color: rgba(8,145,178,.45); box-shadow: 0 6px 18px rgba(0,0,0,0.40); }
 [data-bs-theme="dark"] .cnev-kpi-label { color: #94a3b8; }
-[data-bs-theme="dark"] .cnev-kpi-value { color: #d1fae5; }
-[data-bs-theme="dark"] .cnev-body { background: #0c2218; scrollbar-color: #047857 transparent; }
-[data-bs-theme="dark"] .cnev-body::-webkit-scrollbar-thumb { background: #047857; }
-[data-bs-theme="dark"] .cnev-body::-webkit-scrollbar-thumb:hover { background: #10b981; }
-[data-bs-theme="dark"] .cnev-section { background: linear-gradient(110deg, rgba(16,185,129,.14), rgba(110,231,183,.10)); border-color: rgba(16,185,129,.30); }
-[data-bs-theme="dark"] .cnev-section-title { color: #d1fae5; }
-[data-bs-theme="dark"] .cnev-section-sub { color: #6ee7b7; }
-[data-bs-theme="dark"] .cnev-section-count { color: #d1fae5; }
-[data-bs-theme="dark"] .cnev-section-count-label { color: #6ee7b7; }
-[data-bs-theme="dark"] .cnev-table-wrap { background: #102b21; border-color: rgba(16,185,129,.28); }
+[data-bs-theme="dark"] .cnev-kpi-value { color: #cffafe; }
+[data-bs-theme="dark"] .cnev-body { background: #08222b; scrollbar-color: #0e7490 transparent; }
+[data-bs-theme="dark"] .cnev-body::-webkit-scrollbar-thumb { background: #0e7490; }
+[data-bs-theme="dark"] .cnev-body::-webkit-scrollbar-thumb:hover { background: #06b6d4; }
+[data-bs-theme="dark"] .cnev-section { background: linear-gradient(110deg, rgba(8,145,178,.14), rgba(103,232,249,.10)); border-color: rgba(8,145,178,.30); }
+[data-bs-theme="dark"] .cnev-section-title { color: #cffafe; }
+[data-bs-theme="dark"] .cnev-section-sub { color: #67e8f9; }
+[data-bs-theme="dark"] .cnev-section-count { color: #cffafe; }
+[data-bs-theme="dark"] .cnev-section-count-label { color: #67e8f9; }
+[data-bs-theme="dark"] .cnev-table-wrap { background: #0a2a33; border-color: rgba(8,145,178,.28); }
 [data-bs-theme="dark"] .cnev-table thead th {
   background:
-    linear-gradient(180deg, rgba(16,185,129,.22) 0%, rgba(16,185,129,.16) 55%, rgba(6,78,59,.18) 100%);
-  color: #6ee7b7;
+    linear-gradient(180deg, rgba(8,145,178,.22) 0%, rgba(8,145,178,.16) 55%, rgba(12,74,110,.18) 100%);
+  color: #67e8f9;
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.08),
-    inset 0 -1px 0 rgba(16,185,129,0.40),
+    inset 0 -1px 0 rgba(8,145,178,0.40),
     0 4px 10px -8px rgba(0,0,0,0.40);
 }
-[data-bs-theme="dark"] .cnev-table tbody td { color: #e2e8f0; border-bottom-color: rgba(16,185,129,.10); }
-[data-bs-theme="dark"] .cnev-table tbody tr:hover td { background: rgba(16,185,129,.06); }
-[data-bs-theme="dark"] .cnev-doc-name { color: #d1fae5; }
+[data-bs-theme="dark"] .cnev-table tbody td { color: #e2e8f0; border-bottom-color: rgba(8,145,178,.10); }
+[data-bs-theme="dark"] .cnev-table tbody tr:hover td { background: rgba(8,145,178,.06); }
+[data-bs-theme="dark"] .cnev-doc-name { color: #cffafe; }
 [data-bs-theme="dark"] .cnev-mono { color: #e2e8f0; }
-[data-bs-theme="dark"] .cnev-date { background: rgba(16,185,129,.16); color: #6ee7b7; }
+[data-bs-theme="dark"] .cnev-date { background: rgba(8,145,178,.16); color: #67e8f9; }
 [data-bs-theme="dark"] .cnev-date-expiry[data-status="expiring"] { background: rgba(245,158,11,.18); color: #fcd34d; }
 [data-bs-theme="dark"] .cnev-date-expiry[data-status="pending"]  { background: rgba(239,68,68,.18); color: #fca5a5; }
-[data-bs-theme="dark"] .cnev-attach { background: rgba(16,185,129,.16); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
-[data-bs-theme="dark"] .cnev-chip-pill { background: rgba(16,185,129,.16); color: #6ee7b7; }
+[data-bs-theme="dark"] .cnev-attach { background: rgba(8,145,178,.16); color: #67e8f9; border-color: rgba(8,145,178,.30); }
+[data-bs-theme="dark"] .cnev-chip-pill { background: rgba(8,145,178,.16); color: #67e8f9; }
 [data-bs-theme="dark"] .cnev-chip-pill-warm { background: rgba(217,119,6,.18); color: #fcd34d; border-color: rgba(217,119,6,.30); }
-[data-bs-theme="dark"] .cnev-ratio-track { stroke: rgba(16,185,129,.22); }
-[data-bs-theme="dark"] .cnev-ratio-label { color: #d1fae5; }
-[data-bs-theme="dark"] .cnev-ratio[data-tone="good"] .cnev-ratio-label { color: #6ee7b7; }
+[data-bs-theme="dark"] .cnev-ratio-track { stroke: rgba(8,145,178,.22); }
+[data-bs-theme="dark"] .cnev-ratio-label { color: #cffafe; }
+[data-bs-theme="dark"] .cnev-ratio[data-tone="good"] .cnev-ratio-label { color: #67e8f9; }
 [data-bs-theme="dark"] .cnev-ratio[data-tone="mid"]  .cnev-ratio-label { color: #fcd34d; }
 [data-bs-theme="dark"] .cnev-ratio[data-tone="bad"]  .cnev-ratio-label { color: #fca5a5; }
-[data-bs-theme="dark"] .cnev-footer { background: #0c2218; border-top-color: rgba(16,185,129,.22); }
+[data-bs-theme="dark"] .cnev-footer { background: #08222b; border-top-color: rgba(8,145,178,.22); }
 [data-bs-theme="dark"] .cnev-footer-meta { color: #cbd5e1; }
-[data-bs-theme="dark"] .cnev-btn-light { background: rgba(16,185,129,.12); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
-[data-bs-theme="dark"] .cnev-btn-light:hover { background: rgba(16,185,129,.18); }
-[data-bs-theme="dark"] .cnev-ship-fbtn { background: #102b21; color: #94a3b8; border-color: rgba(16,185,129,.28); }
-[data-bs-theme="dark"] .cnev-ship-fbtn:hover { color: #6ee7b7; background: rgba(16,185,129,.10); }
-[data-bs-theme="dark"] .cnev-filter-verified { background: rgba(16,185,129,.18); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
+[data-bs-theme="dark"] .cnev-btn-light { background: rgba(8,145,178,.12); color: #67e8f9; border-color: rgba(8,145,178,.30); }
+[data-bs-theme="dark"] .cnev-btn-light:hover { background: rgba(8,145,178,.18); }
+[data-bs-theme="dark"] .cnev-ship-fbtn { background: #0a2a33; color: #94a3b8; border-color: rgba(8,145,178,.28); }
+[data-bs-theme="dark"] .cnev-ship-fbtn:hover { color: #67e8f9; background: rgba(8,145,178,.10); }
+[data-bs-theme="dark"] .cnev-filter-verified { background: rgba(8,145,178,.18); color: #67e8f9; border-color: rgba(8,145,178,.30); }
 [data-bs-theme="dark"] .cnev-filter-expiring { background: rgba(245,158,11,.18); color: #fcd34d; border-color: rgba(217,119,6,.30); }
 [data-bs-theme="dark"] .cnev-filter-pending  { background: rgba(239,68,68,.18);  color: #fca5a5; border-color: rgba(239,68,68,.30); }
 
@@ -1887,14 +2027,10 @@ const CNEV_CSS = `
   .cnev-vault-icon { width: 38px; height: 38px; border-radius: 10px; }
   .cnev-header-content { flex-direction: column; align-items: flex-start; gap: 10px; }
   .cnev-header-right { width: 100%; justify-content: space-between; }
-  .cnev-kpi-strip { padding: 12px 52px; gap: 8px; }
-  .cnev-kpi-tile { flex: 0 0 190px; padding: 10px 12px; }
-  .cnev-kpi-value { font-size: 20px; }
-  .cnev-kpi-icon { width: 32px; height: 32px; font-size: 15px; }
-  .cnev-kpi-fade { width: 50px; }
-  .cnev-kpi-nav { width: 30px; height: 30px; font-size: 16px; }
-  .cnev-kpi-nav-prev { left: 10px; }
-  .cnev-kpi-nav-next { right: 10px; }
+  /* Narrow screens: wrap the columns instead of scrolling. */
+  .cnev-kpi-strip { padding: 10px 12px; gap: 4px 0; flex-wrap: wrap; }
+  .cnev-kpi-tile { flex: 1 1 140px; padding: 8px 12px; }
+  .cnev-kpi-value { font-size: 22px; }
   .cnev-groups-wrap { padding: 12px 14px 0; }
   .cnev-groups { grid-template-columns: 1fr; gap: 10px; }
   .cnev-tabs-wrap { padding: 10px 14px; }
@@ -1911,7 +2047,7 @@ const CNEV_CSS = `
 }
 @media (max-width: 640px) {
   .cnev-card { width: 100vw; }
-  .cnev-kpi-tile { flex: 0 0 170px; }
+  .cnev-kpi-tile { flex: 1 1 130px; }
   .cnev-tab { padding: 6px 12px; font-size: 11.5px; }
   .cnev-tab-icon { width: 14px; height: 14px; font-size: 12px; }
   .cnev-tab-count { font-size: 9.5px; padding: 1px 6px; }

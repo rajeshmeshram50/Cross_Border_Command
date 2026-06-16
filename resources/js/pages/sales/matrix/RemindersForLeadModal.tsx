@@ -516,14 +516,22 @@ const RFL_CSS = `
   cursor: not-allowed;
 }
 .rfl-textarea {
-  resize: vertical;
+  /* Locked to the exact same height as the ATTACHMENT box. Resize is disabled
+     so dragging the handle can't desync the two fields — they stay identical.
+     box-sizing keeps the 76px total (border + padding) matched to the box. */
+  resize: none;
+  box-sizing: border-box;
+  height: 76px;
   min-height: 76px;
 }
 
 /* File picker */
 .rfl-file-btn {
-  display: inline-flex; align-items: center; gap: 8px;
+  display: inline-flex; align-items: flex-start; gap: 8px;
   width: 100%;
+  /* Exact same height as the REMARK textarea so the two fields stay identical. */
+  box-sizing: border-box;
+  height: 76px;
   padding: 9px 12px;
   border: 1.5px dashed rgba(20, 184, 166, .50);
   border-radius: 9px;
@@ -544,7 +552,10 @@ const RFL_CSS = `
   border: 1.5px solid rgba(20, 184, 166, .40);
   border-radius: 9px;
   background: #fff;
-  min-height: 38px;
+  /* Same height as the file button + REMARK textarea so swapping in the
+     picked-file chip doesn't shrink the row. */
+  box-sizing: border-box;
+  height: 76px;
 }
 .rfl-file-chip-ico { color: #0d9488; flex-shrink: 0; }
 .rfl-file-chip-name {

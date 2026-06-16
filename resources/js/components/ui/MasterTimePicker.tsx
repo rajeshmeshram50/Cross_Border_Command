@@ -1,6 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import './MasterTimePicker.css';
+
+/* Shared across every MasterDatePicker / MasterTimePicker instance: opening
+ * one announces itself so any other open picker closes itself. Without this,
+ * sibling date/time fields (e.g. Start Time + End Time + Meeting Date) each
+ * keep their own `open` state and stack on top of each other. */
+const PICKER_OPEN_EVENT = 'master-picker-open';
 
 /* MasterTimePicker — themed two-column (HH / MM) time picker, paired
  * visually with MasterSelect + MasterDatePicker. Outputs `HH:MM` in
@@ -35,6 +41,7 @@ export function MasterTimePicker({
   const currentValue = value !== undefined ? value : internal;
 
   const [open, setOpen] = useState(false);
+  const pickerId = useId();
   const [popupPos, setPopupPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
@@ -48,6 +55,19 @@ export function MasterTimePicker({
 
   const hours = Array.from({ length: 24 }, (_, i) => i);
   const minutes = Array.from({ length: Math.floor(60 / minuteStep) }, (_, i) => i * minuteStep);
+
+  /* Single-open coordination: when this picker opens, broadcast so any other
+   * open date/time picker closes itself; and while open, listen for other
+   * pickers opening and close ourselves. */
+  useEffect(() => {
+    if (!open) return;
+    document.dispatchEvent(new CustomEvent(PICKER_OPEN_EVENT, { detail: pickerId }));
+    const onOther = (e: Event) => {
+      if ((e as CustomEvent).detail !== pickerId) setOpen(false);
+    };
+    document.addEventListener(PICKER_OPEN_EVENT, onOther);
+    return () => document.removeEventListener(PICKER_OPEN_EVENT, onOther);
+  }, [open, pickerId]);
 
   useEffect(() => {
     if (!open || !wrapRef.current) { setPopupPos(null); return; }

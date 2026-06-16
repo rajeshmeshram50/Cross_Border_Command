@@ -1361,9 +1361,9 @@ export default function SalesTodo() {
                         value={toInputDate(form.setDate)}
                         onChange={iso => setForm(p => ({ ...p, setDate: fromInputDate(iso) }))}
                         placeholder="dd-mm-yyyy"
-                        // New reminders can't be dated in the past (QA bug 30).
-                        // Existing rows are exempt so historic data stays editable.
-                        minDate={form.editId ? undefined : toInputDate(TODAY_STR)}
+                        // Reminders can't be dated in the past — applies to both
+                        // add AND edit, so editing a row also can't pick an old date.
+                        minDate={toInputDate(TODAY_STR)}
                       />
                     </Field>
                     <Field label="TAT" required>
@@ -1586,6 +1586,9 @@ export default function SalesTodo() {
                         value={toInputDate(form.date)}
                         onChange={iso => setForm(p => ({ ...p, date: fromInputDate(iso) }))}
                         placeholder="dd-mm-yyyy"
+                        // Meetings can't be scheduled in the past — applies to both
+                        // add AND edit, so editing a row also can't pick an old date.
+                        minDate={toInputDate(TODAY_STR)}
                       />
                     </Field>
                     <Field label="Start Time" required>
