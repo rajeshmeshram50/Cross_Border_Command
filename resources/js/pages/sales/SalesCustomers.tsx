@@ -920,7 +920,7 @@ ${CSTRIP_CSS}
   width: 100%;
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px;
-  padding: 7px 18px;
+  padding: 7px 18px 2px;
   background: transparent;
   border: 0;
   cursor: pointer;
@@ -969,7 +969,7 @@ ${CSTRIP_CSS}
 .smc-wdh-body {
   display: flex; align-items: stretch;
   gap: 8px;
-  padding: 14px 18px 18px;
+  padding: 0 18px 14px;
   flex-wrap: wrap;
 }
 /* Step tiles — solid WHITE background with a colored left-side
@@ -984,8 +984,8 @@ ${CSTRIP_CSS}
   border: 1px solid rgba(124,58,237,0.18);
   border-left: 4px solid #7c3aed;
   border-radius: 12px;
-  padding: 14px 16px;
-  display: flex; flex-direction: column; gap: 6px;
+  padding: 9px 16px;
+  display: flex; flex-direction: column; gap: 4px;
   box-shadow: 0 2px 8px rgba(18,38,63,0.04);
   cursor: default;
   transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
