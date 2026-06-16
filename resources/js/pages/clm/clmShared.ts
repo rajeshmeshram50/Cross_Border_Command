@@ -27,12 +27,25 @@ export const CLM_CSS = `
    the reliable scope. !important beats Velzon's own footer styles. */
 body.clm-active footer.footer { background: linear-gradient(110deg, #e0f9fd 0%, #cef8ff 18%, #d0f4f9 45%, #baeef7 75%, #a0e8f2 100%) !important; border-top: 1px solid #a5e8f5 !important; }
 body.clm-active footer.footer, body.clm-active footer.footer * { color: #0c4a6e !important; font-weight: 600; }
+/* Dark mode — deep slate footer with cyan accents so it matches the dark UI
+   instead of staying a glaring light-cyan band. */
+body.clm-active[data-bs-theme="dark"] footer.footer,
+[data-bs-theme="dark"] body.clm-active footer.footer { background: linear-gradient(110deg, #0b1220 0%, #0e1726 45%, #0b1a24 100%) !important; border-top: 1px solid rgba(6,182,212,.30) !important; }
+body.clm-active[data-bs-theme="dark"] footer.footer, body.clm-active[data-bs-theme="dark"] footer.footer *,
+[data-bs-theme="dark"] body.clm-active footer.footer, [data-bs-theme="dark"] body.clm-active footer.footer * { color: #67e8f9 !important; }
 /* WorklistPager is violet app-wide; recolour to CLM cyan, scoped to .clm-root
    (the pager renders inside it) so other modules keep the violet pager. */
 .clm-root .wl-pager, .clm-root .tc-wl-pag { border-top-color: #a5e8f5; background: linear-gradient(90deg, #f0fdff 0%, #e6fafe 40%, #f0fdff 100%); }
 .clm-root .tc-wl-info, .clm-root .tc-wl-rows { color: #0e7490; border-color: #a5e8f5; }
 .clm-root .tc-wl-info .tc-wl-hl, .clm-root .tc-wl-rows select { color: #0891b2; }
 .clm-root .tc-wl-range { background: linear-gradient(135deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%); box-shadow: 0 3px 12px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset; }
+/* Dark mode — the light-cyan overrides above out-specify the base dark pager
+   styles, so re-state them for dark with a higher-specificity .clm-root prefix.
+   The cyan page-count pill (.tc-wl-range) stays as-is; it reads fine on dark. */
+[data-bs-theme="dark"] .clm-root .wl-pager, [data-bs-theme="dark"] .clm-root .tc-wl-pag { border-top-color: rgba(6,182,212,.30); background: linear-gradient(90deg, #0b1220 0%, #0e1726 45%, #0b1220 100%); }
+[data-bs-theme="dark"] .clm-root .tc-wl-info, [data-bs-theme="dark"] .clm-root .tc-wl-rows, [data-bs-theme="dark"] .clm-root .tc-wl-btn { color: #67e8f9; border-color: rgba(6,182,212,.30); background: rgba(255,255,255,.05); }
+[data-bs-theme="dark"] .clm-root .tc-wl-info .tc-wl-hl, [data-bs-theme="dark"] .clm-root .tc-wl-rows select { color: #a5f3fc; }
+[data-bs-theme="dark"] .clm-root .tc-wl-btn:hover:not(:disabled) { background: rgba(255,255,255,.10); border-color: #22d3ee; }
 .clm-root .tc-wl-btn { border-color: #a5e8f5; color: #0891b2; }
 .clm-root .tc-wl-btn:hover:not(:disabled) { border-color: #0891b2; box-shadow: 0 4px 12px rgba(8,145,178,.25); }
 .clm-root {
@@ -441,6 +454,15 @@ body.clm-active footer.footer, body.clm-active footer.footer * { color: #0c4a6e 
   border: 1px solid rgba(6,182,212,.25);
   white-space: nowrap;
 }
+
+/* Overflow popover (opened from a +N count badge in a table cell). Positioned
+   inline (fixed left/top), but colours come from here so it follows dark mode. */
+.clm-pop { background: #fff; border: 1.5px solid #99f6e4; box-shadow: 0 16px 40px rgba(0,0,0,.18); }
+.clm-pop-title { color: #0d9488; }
+.clm-pop-row-alt { background: #f0fdfa; }
+[data-bs-theme="dark"] .clm-pop { background: #0f172a; border-color: rgba(6,182,212,.35); box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+[data-bs-theme="dark"] .clm-pop-title { color: #5eead4; }
+[data-bs-theme="dark"] .clm-pop-row-alt { background: rgba(255,255,255,.04); }
 
 /* Badges */
 .clm-badge {

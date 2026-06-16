@@ -205,6 +205,8 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
   const [editing, setEditing] = useState<TdLib | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<TdLib | null>(null);
+  // All-segments popover — opened from the +N badge in the SEGMENT column.
+  const [segOpen, setSegOpen] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
   // Blocked-action popup state — set when the user clicks Edit/Delete on a
   // draft that has already been signed.
   const [locked, setLocked] = useState<{ mode: 'edit' | 'delete'; row: TdLib } | null>(null);
@@ -346,9 +348,25 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
                       })()}
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      {r.segment
-                        ? <span className="clm-badge clm-badge-teal" title={`Segment scope · ${r.segment}`}>{r.segment}</span>
-                        : <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>All segments</span>}
+                      {(() => {
+                        const segList = r.segment ? r.segment.split(',').map(s => s.trim()).filter(Boolean) : [];
+                        if (segList.length === 0) return <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>All segments</span>;
+                        const extra = segList.length - 1;
+                        return (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+                            <span className="clm-badge clm-badge-teal" title={`Segment scope · ${segList[0]}`}>{segList[0]}</span>
+                            {extra > 0 && (
+                              <button
+                                type="button"
+                                title="View all segments"
+                                onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(segOpen?.id === r.id ? null : { id: r.id, names: segList, x: b.left, y: b.bottom + 4 }); }}
+                                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
+                                +{extra}
+                              </button>
+                            )}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="clm-td-desc">{r.purpose}</td>
                     <td className="clm-td-desc">{r.party}</td>
@@ -379,6 +397,22 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
       </div>
 
       {pendingDelete && createPortal(<DeleteConf title="Delete library entry?" sub={`${pendingDelete.title} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={() => void onDelete()} />, document.body)}
+
+      {/* All-segments popover (opened from the +N badge in the SEGMENT column) */}
+      {segOpen && createPortal(
+        <>
+          <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 230), top: segOpen.y, zIndex: 601, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+            <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Segments ({segOpen.names.length})</div>
+            {segOpen.names.map((name, i) => (
+              <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
+                <span className="clm-badge clm-badge-teal">{name}</span>
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
 
       {locked && (
         <LockedConf

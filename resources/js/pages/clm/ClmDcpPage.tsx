@@ -128,6 +128,8 @@ export default function ClmDcpPage() {
   const [editing, setEditing] = useState<SegRule | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [viewDocs, setViewDocs] = useState<{ rule: SegRule; cat: keyof DocSelections | 'all' } | null>(null);
+  // All-authorities popover — opened from the +N badge in the AUTHORITIES column.
+  const [authOpen, setAuthOpen] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
 
   const reload = () => {
     setLoading(true);
@@ -344,11 +346,25 @@ export default function ClmDcpPage() {
                             : <span style={{ color: '#dc2626', fontWeight: 700, fontSize: 12 }}>✗ No</span>}
                         </td>
                         <td style={{ textAlign: 'center' }}>
-                          {(r.auths_json && r.auths_json.length > 0) ? (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
-                              {r.auths_json.map(a => <span key={a} className="clm-code-pill">{authName.get(String(a)) ?? a}</span>)}
-                            </div>
-                          ) : <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>}
+                          {(() => {
+                            const auths = (r.auths_json ?? []).map(a => authName.get(String(a)) ?? String(a));
+                            if (auths.length === 0) return <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>;
+                            const extra = auths.length - 1;
+                            return (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+                                <span className="clm-code-pill">{auths[0]}</span>
+                                {extra > 0 && (
+                                  <button
+                                    type="button"
+                                    title="View all authorities"
+                                    onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setAuthOpen(authOpen?.id === r.id ? null : { id: r.id, names: auths, x: b.left, y: b.bottom + 4 }); }}
+                                    style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
+                                    +{extra}
+                                  </button>
+                                )}
+                              </span>
+                            );
+                          })()}
                         </td>
                         {CAT_KEYS.map(c => {
                           const n = segCount(c);
@@ -403,6 +419,22 @@ export default function ClmDcpPage() {
           boot={boot}
           onClose={() => setViewDocs(null)}
         />
+      )}
+
+      {/* All-authorities popover (opened from the +N badge in the AUTHORITIES column) */}
+      {authOpen && createPortal(
+        <>
+          <div onClick={() => setAuthOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(authOpen.x, window.innerWidth - 230), top: authOpen.y, zIndex: 601, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+            <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Authorities ({authOpen.names.length})</div>
+            {authOpen.names.map((name, i) => (
+              <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
+                <span className="clm-code-pill">{name}</span>
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body
       )}
     </div>
   );
