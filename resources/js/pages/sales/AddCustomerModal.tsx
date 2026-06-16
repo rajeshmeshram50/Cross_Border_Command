@@ -65,7 +65,7 @@ const DEFAULT_ADDRESS_TYPE = 'Registered Office';
  *    underlying column (segments uses `title`, the rest use `name`).
  *    States additionally carry country_id so we can filter by selected
  *    country at the UI layer. */
-interface MasterOpt { id: number; name: string; }
+interface MasterOpt { id: number; name: string; code?: string; }
 interface StateOpt extends MasterOpt { country_id: number; }
 interface MasterLists {
   customerTypes:     MasterOpt[];
@@ -92,6 +92,21 @@ const EMPTY_MASTERS: MasterLists = {
 // API later switches to storing master ids, this is the one place to swap
 // `String(o.id)` in.
 const toSelectOpts = (rows: MasterOpt[]) => rows.map(o => ({ value: o.name, label: o.name }));
+
+/* Render a saved segment value (name, or comma-joined / array of names) as
+ * "S-001: Name" using the segment master codes, so read-only summaries match
+ * the "code: name" labels the segment dropdown shows. Falls back to the bare
+ * name when no code is known. */
+function segDisplay(value: string | string[] | null | undefined, segs: { name: string; code?: string }[]): string {
+  const arr = Array.isArray(value)
+    ? value
+    : String(value ?? '').split(',').map(s => s.trim()).filter(Boolean);
+  if (arr.length === 0) return '';
+  return arr.map(n => {
+    const code = segs.find(s => s.name === n)?.code;
+    return code ? `${code}: ${n}` : n;
+  }).join(', ');
+}
 
 /**
  * Same as `toSelectOpts` but also injects the currently-selected
@@ -263,7 +278,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     type IdNamed = { id: number | string; name?: string | null };
     type Bundle = {
       customer_types: IdNamed[];
-      segments: Array<{ id: number | string; name?: string | null; title?: string | null }>;
+      segments: Array<{ id: number | string; name?: string | null; title?: string | null; code?: string | null }>;
       customer_classifications: IdNamed[];
       risk_levels: IdNamed[];
       address_types: IdNamed[];
@@ -284,7 +299,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       // Segments — server returns `name`; the model also appends `title`
       // (alias) for legacy consumers. Read whichever is present.
       const segments: MasterOpt[] = (b.segments || [])
-        .map(r => ({ id: Number(r.id), name: String(r.title ?? r.name ?? '') }))
+        .map(r => ({ id: Number(r.id), name: String(r.title ?? r.name ?? ''), code: String(r.code ?? '') }))
         .filter(r => r.name);
       // Countries — alpha-sort for the dropdown to mirror the previous
       // client-side sort.
@@ -1636,7 +1651,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
                   recap shows just the legal-identity summary. The former
                   Stage 2 KYC recap (HistoryStage2) belonged to Stage 3,
                   which has been removed. */}
-              <HistoryStage1 form={form} locations={locations} customerId={customer?.id} />
+              <HistoryStage1 form={form} locations={locations} customerId={customer?.id} segments={masters.segments} />
             </div>
           </div>
         )}
@@ -2182,7 +2197,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                   the singular name. */}
               <MasterMultiSelect
                 value={form.coSeg}
-                options={toSelectOpts(masters.segments)}
+                options={masters.segments.map(o => ({ value: o.name, label: o.code ? `${o.code}: ${o.name}` : o.name }))}
                 placeholder="Select segment"
                 invalid={!!errors.coSeg}
                 onChange={vs => set('coSeg', vs)}
@@ -3990,7 +4005,7 @@ function ReadInline({ label, value, span }: { label: string; value?: string | nu
  * Dense horizontal layout — every Stage 1 field shown as a tight
  * "Label : Value" pair laid out in a 4-column grid. No card chrome;
  * the parent history panel already frames the content. */
-function HistoryStage1({ form, locations, customerId }: { form: any; locations: LocationRow[]; customerId?: string }) {
+function HistoryStage1({ form, locations, customerId, segments = [] }: { form: any; locations: LocationRow[]; customerId?: string; segments?: { name: string; code?: string }[] }) {
   const wa = form.cpWa === 'yes' ? 'Yes' : form.cpWa === 'no' ? 'No' : '';
   return (
     <div className="acm-hs-mirror">
@@ -4001,7 +4016,7 @@ function HistoryStage1({ form, locations, customerId }: { form: any; locations: 
         <ReadInline label="Customer Type"             value={form.coType} />
 
         <ReadInline label="Company Website"           value={form.coWeb} />
-        <ReadInline label="Customer Segment"          value={(form.coSeg ?? []).join(', ')} />
+        <ReadInline label="Customer Segment"          value={segDisplay(form.coSeg, segments)} />
         <ReadInline label="Classification"            value={form.coClass} />
         <ReadInline label="Risk Level"                value={form.coRisk} />
 

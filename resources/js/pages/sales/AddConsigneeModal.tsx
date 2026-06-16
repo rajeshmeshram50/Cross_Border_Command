@@ -57,6 +57,21 @@ const TD_STATUS_BADGE: Record<TdSigStatus, { label: string; bg: string; fg: stri
   expired:    { label: 'Expired',            bg: '#fee2e2', fg: '#7f1d1d' },
 };
 
+/* Render a saved segment value (a name, or a comma-joined / array list of
+ * names) as "S-001: Name" using the segment master codes. Falls back to the
+ * bare name when no code is known. Keeps every read-only display in sync with
+ * the "code: name" labels the segment dropdown now shows. */
+function segDisplay(value: string | string[] | null | undefined, segs: { name: string; code?: string }[]): string {
+  const arr = Array.isArray(value)
+    ? value
+    : String(value ?? '').split(',').map(s => s.trim()).filter(Boolean);
+  if (arr.length === 0) return '';
+  return arr.map(n => {
+    const code = segs.find(s => s.name === n)?.code;
+    return code ? `${code}: ${n}` : n;
+  }).join(', ');
+}
+
 /* Each row in the Address & Contact Details table — mirrors the
  * shape used by AddCustomerModal so the JSX patterns line up. */
 interface LocationRow {
@@ -299,7 +314,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * segment name stored in form1.segment back to its DB id for the
    * /clm/segment-rules/for-segment/{id} call that drives Stage 2 doc
    * auto-population. MasterSelect itself only needs {value,label}. */
-  const [mSegmentIds, setMSegmentIds] = useState<{ id: number; name: string }[]>([]);
+  const [mSegmentIds, setMSegmentIds] = useState<{ id: number; name: string; code?: string }[]>([]);
   const [mClassifications, setMClassifications] = useState<Opt[]>([]);
   const [mRiskLevels,      setMRiskLevels]      = useState<Opt[]>([]);
   const [mAddressTypes,    setMAddressTypes]    = useState<Opt[]>([]);
@@ -996,7 +1011,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     type IdNamed = { id: number | string; name?: string | null };
     type Bundle = {
       customer_types: IdNamed[];
-      segments: Array<{ id: number | string; name?: string | null; title?: string | null }>;
+      segments: Array<{ id: number | string; name?: string | null; title?: string | null; code?: string | null }>;
       customer_classifications: IdNamed[];
       risk_levels: IdNamed[];
       address_types: IdNamed[];
@@ -1022,8 +1037,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       const segmentRows = (b.segments || []).map(x => ({
         id: Number(x.id),
         name: String(x.title ?? x.name ?? ''),
+        code: String(x.code ?? ''),
       })).filter(s => s.name);
-      setMSegments(segmentRows.map(s => ({ value: s.name, label: s.name })));
+      // Label shows "<segment code>: <name>" (e.g. "S-001: Tobacco") in the
+      // dropdown/chips; value stays the plain name so saving + DCP rule lookup
+      // logic is unchanged.
+      setMSegments(segmentRows.map(s => ({ value: s.name, label: s.code ? `${s.code}: ${s.name}` : s.name })));
       setMSegmentIds(segmentRows);
 
       setMClassifications(pickName(b.customer_classifications));
@@ -2023,7 +2042,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                       <ReadInlineG label="Company Legal Name"    value={customer.legalName} />
                       <ReadInlineG label="Customer Type"        value={customer.type} />
 
-                      <ReadInlineG label="Customer Segment"     value={customer.segment} />
+                      <ReadInlineG label="Customer Segment"     value={segDisplay(customer.segment, mSegmentIds)} />
                       <ReadInlineG label="Classification"       value={customer.classification} />
                       <ReadInlineG label="Risk Level"           value={customer.risk} />
                       <ReadInlineG label="Company Website"      value={customer.website} />
@@ -3382,7 +3401,7 @@ const Stage2 = ({
         </div>
       ) : (
         <ConsigneeHistoryPanel stagesCompleted={1}>
-          <ConsigneeHistoryStage1 form={form1} locations={locations} consigneeCode={consigneeCode} />
+          <ConsigneeHistoryStage1 form={form1} locations={locations} consigneeCode={consigneeCode} segments={mSegmentIds} />
         </ConsigneeHistoryPanel>
       )}
 
@@ -3964,7 +3983,7 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
           Stage 1 data so the panel still earns its place. */}
       {!sameAsCustomer && (
         <ConsigneeHistoryPanel stagesCompleted={2}>
-          <ConsigneeHistoryStage1 form={form1} locations={locations} />
+          <ConsigneeHistoryStage1 form={form1} locations={locations} segments={mSegmentIds} />
           <ConsigneeHistoryStage2 ddCount={ddCount} ownerCount={ownerCount} tlCount={tlCount} />
         </ConsigneeHistoryPanel>
       )}
@@ -4113,10 +4132,11 @@ const ReadInlineG = ({ label, value, span }: { label: string; value?: string | n
 /* ─── Stage 1 summary — dense 4-column "Label : Value" grid of every
  * Stage 1 field the user filled. Same compact layout the Customer
  * modal uses, just emerald-themed via .acg-hs-* classes. */
-function ConsigneeHistoryStage1({ form, locations, consigneeCode }: {
+function ConsigneeHistoryStage1({ form, locations, consigneeCode, segments = [] }: {
   form: { companyName: string; legalName: string; website: string; segment: string[]; classification: string; risk: string; addressType: string; address: string; country: string; state: string; city: string; pin: string; contactName: string; designation: string; contactNo: string; email: string; whatsapp: string };
   locations: LocationRow[];
   consigneeCode?: string;
+  segments?: { name: string; code?: string }[];
 }) {
   return (
     <div className="acg-hs-mirror">
@@ -4124,7 +4144,7 @@ function ConsigneeHistoryStage1({ form, locations, consigneeCode }: {
         {consigneeCode && <ReadInlineG label="Consignee ID" value={consigneeCode} />}
         <ReadInlineG label="Company Name"        value={form.companyName} />
         <ReadInlineG label="Company Legal Name"  value={form.legalName} />
-        <ReadInlineG label="Customer Segment"    value={(form.segment ?? []).join(', ')} />
+        <ReadInlineG label="Customer Segment"    value={segDisplay(form.segment, segments)} />
 
         <ReadInlineG label="Classification"      value={form.classification} />
         <ReadInlineG label="Risk Level"          value={form.risk} />

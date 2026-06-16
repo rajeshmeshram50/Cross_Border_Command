@@ -311,11 +311,13 @@ export default function SalesConsignee() {
     {
       header: 'Consignee ID',
       accessorKey: 'id',
+      meta: { align: 'center' },
       cell: (info: any) => <span className="smcg-id-chip">{info.getValue()}</span>,
     },
     {
       header: 'Customer ID',
       accessorKey: 'customerId',
+      meta: { align: 'center' },
       cell: (info: any) => <span className="smcg-cust-chip">{info.getValue()}</span>,
     },
     {
@@ -326,6 +328,7 @@ export default function SalesConsignee() {
     {
       header: 'Segment',
       accessorKey: 'segment',
+      meta: { align: 'center' },
       cell: (info: any) => {
         const segList = String(info.getValue() ?? '').split(',').map((s: string) => s.trim()).filter(Boolean);
         if (segList.length === 0) return <span className="text-muted">—</span>;
@@ -349,6 +352,7 @@ export default function SalesConsignee() {
     {
       header: 'Risk Level',
       accessorKey: 'risk',
+      meta: { align: 'center' },
       cell: (info: any) => {
         const v = String(info.getValue() ?? '');
         const r = RISK_COLORS[v] || RISK_COLORS['Low'];
@@ -372,10 +376,11 @@ export default function SalesConsignee() {
     },
     { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smcg-contact" max={16} /> },
     { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smcg-email" max={18} caseSensitive /> },
-    { header: 'Contact No',     accessorKey: 'phone',   cell: (i: any) => <span className="smcg-mono">{i.getValue() || '—'}</span> },
+    { header: 'Contact No',     accessorKey: 'phone',   meta: { align: 'center' }, cell: (i: any) => <span className="smcg-mono">{i.getValue() || '—'}</span> },
     {
       header: 'Country',
       accessorKey: 'country',
+      meta: { align: 'center' },
       cell: (info: any) => {
         const c = info.row.original as Consignee;
         const country = (c.country ?? '').trim();

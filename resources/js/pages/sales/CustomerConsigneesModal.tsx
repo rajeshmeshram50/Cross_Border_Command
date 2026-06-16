@@ -339,7 +339,7 @@ const SCOPED_CSS = `
   font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
 }
 .ccm-card {
-  width: min(1280px, 100%);
+  width: min(1460px, 97vw);
   max-height: calc(100vh - 48px);
   background: #fff;
   border-radius: 16px;
@@ -469,7 +469,7 @@ const SCOPED_CSS = `
   background: linear-gradient(110deg, #059669 0%, #047857 55%, #065f46 100%);
 }
 .ccm-table thead th {
-  padding: 11px 14px;
+  padding: 11px 9px;
   text-align: left;
   font-weight: 700; font-size: 10px; letter-spacing: .08em;
   color: #ffffff; text-transform: uppercase;
@@ -479,13 +479,23 @@ const SCOPED_CSS = `
 .ccm-table tbody tr { background: #ffffff; }
 .ccm-table tbody tr:nth-child(even) { background: #f6fefb; }
 .ccm-table tbody td {
-  padding: 13px 14px;
+  padding: 13px 9px;
   border-bottom: 1px solid #dcf5ec;
   vertical-align: middle;
   white-space: nowrap;
   color: #064e3b;
   background: transparent;
 }
+/* Alignment: short single-value columns centered (Sr No, Consignee ID,
+   Segment, Risk Level, Same as Customer, Contact No, Actions); the big
+   text columns (Company Name, Contact Person, Email, Location) stay left. */
+.ccm-table th:nth-child(1), .ccm-table td:nth-child(1),
+.ccm-table th:nth-child(2), .ccm-table td:nth-child(2),
+.ccm-table th:nth-child(4), .ccm-table td:nth-child(4),
+.ccm-table th:nth-child(5), .ccm-table td:nth-child(5),
+.ccm-table th:nth-child(6), .ccm-table td:nth-child(6),
+.ccm-table th:nth-child(9), .ccm-table td:nth-child(9),
+.ccm-table th:nth-child(11), .ccm-table td:nth-child(11) { text-align: center; }
 .ccm-table tbody tr:last-child td { border-bottom: none; }
 .ccm-table tbody tr:hover { background: #ecfdf5; }
 /* SR No — purple rounded-square badge. */
