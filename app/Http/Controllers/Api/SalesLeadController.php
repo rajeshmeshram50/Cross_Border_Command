@@ -706,14 +706,17 @@ class SalesLeadController extends Controller
             ], 403);
         }
 
-        // Department gate — the target must be a SALES-department member; a lead
-        // can never be handed to someone from another department.
-        $salesUserIds = \App\Support\SalesVisibility::salesDepartmentUserIds($user);
-        if (!empty($salesUserIds) && !in_array((int) $data['salesperson_id'], $salesUserIds, true)) {
-            return response()->json([
-                'status'  => false,
-                'message' => 'You can only assign leads to Sales-department members.',
-            ], 403);
+        // Department gate — the target must be a SALES-department member in the
+        // SAME branch; a lead can never be handed to another department or
+        // another branch. Enforced whenever a Sales department exists.
+        if (!empty(\App\Support\SalesVisibility::salesDepartmentIds())) {
+            $salesUserIds = \App\Support\SalesVisibility::salesDepartmentUserIds($user, $user->branch_id ?: null);
+            if (!in_array((int) $data['salesperson_id'], $salesUserIds, true)) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'You can only assign leads to Sales-department members in this branch.',
+                ], 403);
+            }
         }
 
         $q = Lead::query()->whereIn('id', $data['lead_ids']);
@@ -1813,32 +1816,35 @@ class SalesLeadController extends Controller
             ->get(['id', 'user_id', 'designation_id', 'department_id'])
             ->keyBy('user_id');
 
+        // Active branch — prefer the switcher's branch_id (Axios injects it on
+        // GETs), else the caller's own branch. The picker is scoped to ONE
+        // branch so other branches' people never leak in.
+        $branchId = (int) ($request->query('branch_id') ?: $user->branch_id ?: 0);
+
         $q = User::query()
             ->where('status', 'active');
 
         if ($user->user_type !== 'super_admin') {
             $q->where('client_id', $user->client_id);
-            $isMain = $user->branch?->is_main ?? false;
-            if ($user->user_type === 'branch_user' && !$isMain) {
-                $q->where(function ($w) use ($user) {
-                    $w->whereNull('branch_id')->orWhere('branch_id', $user->branch_id);
-                });
-            }
+        }
+        // Strict branch scope (everyone except super-admin without a branch).
+        if ($branchId) {
+            $q->where('branch_id', $branchId);
         }
 
-        // Only distributors get a populated picker; everyone else may assign to
-        // nobody but themselves (assignableUserIds returns [self]).
+        // Per-user assignable narrowing (null = no narrowing — assignment is flat).
         $assignable = \App\Support\SalesVisibility::assignableUserIds($user);
         if ($assignable !== null) {
             $q->whereIn('id', $assignable ?: [-1]);
         }
 
-        // Department gate — a lead may only be assigned to a SALES-department
-        // member, never to someone from another department. When a Sales
-        // department exists, restrict the picker to its people.
-        $salesUserIds = \App\Support\SalesVisibility::salesDepartmentUserIds($user);
-        if (!empty($salesUserIds)) {
-            $q->whereIn('id', $salesUserIds);
+        // Department gate — a lead may ONLY be assigned to a SALES-department
+        // member. If a Sales department exists, always restrict to its people
+        // (scoped to the active branch); an empty result shows nobody rather
+        // than falling back to every department.
+        if (!empty(\App\Support\SalesVisibility::salesDepartmentIds())) {
+            $salesUserIds = \App\Support\SalesVisibility::salesDepartmentUserIds($user, $branchId ?: null);
+            $q->whereIn('id', $salesUserIds ?: [-1]);
         }
 
         $rows = $q->select(['id', 'name', 'user_type', 'email'])
