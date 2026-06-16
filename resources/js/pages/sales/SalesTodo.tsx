@@ -1457,7 +1457,9 @@ export default function SalesTodo() {
                         maxLength={2000}
                         onChange={e => setForm(p => ({ ...p, remark: e.target.value }))}
                         placeholder="Add a remark or note…"
-                        style={{ resize: 'none', minHeight: 72 }}
+                        // Fixed height matches the ATTACHMENT box so the two
+                        // fields stay identical (rows=3 alone rendered taller).
+                        style={{ resize: 'none', height: 76 }}
                       />
                       <span className="td-char-count">{(form.remark || '').length}/2000</span>
                     </Field>
@@ -2744,11 +2746,13 @@ const SCOPED_CSS = `
 
 /* Attachment dropzone */
 .td-file-drop {
-  display: flex; align-items: center; gap: 9px;
+  display: flex; align-items: flex-start; gap: 9px;
   cursor: pointer;
   border: 1.5px dashed #99f6e4; border-radius: 8px;
   padding: 9px 12px; background: #f0fdfa;
-  height: 36px; transition: all .15s;
+  /* Same height as the Remark textarea so the two fields line up evenly,
+     matching the lead-matrix reminder modal. */
+  height: 76px; transition: all .15s;
 }
 .td-file-drop:hover { border-color: #14b8a6; background: #ccfbf1; }
 .td-file-label {
@@ -2772,7 +2776,9 @@ const SCOPED_CSS = `
   display: flex; align-items: center; gap: 9px;
   border: 1.5px solid #5eead4; border-radius: 8px;
   padding: 7px 12px; background: #ccfbf1;
-  height: 36px;
+  /* Same height as the file picker + Remark textarea so the row stays even
+     when an existing attachment chip is shown. */
+  height: 76px;
 }
 .td-file-existing-link {
   flex: 1;
