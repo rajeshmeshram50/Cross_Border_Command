@@ -16,6 +16,7 @@ use App\Models\Consignee;
 use App\Models\Customer;
 use App\Models\Lead;
 use App\Models\Product;
+use App\Models\ProformaInvoice;
 use App\Models\SegmentDocUpload;
 use App\Models\ShipmentOrder;
 use App\Models\Vendor;
@@ -432,6 +433,15 @@ class SegmentDocUploadController extends Controller
         $kycRatio = $ratioOf($ownerKyc);
         $tlRatio  = $ratioOf($tradeLicenses);
 
+        // Proforma Invoice of each shipment — surfaced as the FIRST Trade
+        // Document (and counted in the Trade-Docs ratio). Keyed by lead/opp.
+        $piByLead = ProformaInvoice::where('client_id', $cid)
+            ->whereIn('opp_id', $leadIds)
+            ->where('status', '!=', ProformaInvoice::STATUS_CANCELLED)
+            ->orderBy('id')
+            ->get(['id', 'opp_id', 'code', 'status', 'emailed_at', 'created_at'])
+            ->groupBy('opp_id');
+
         $rows = [];
         $sr = 0;
         foreach ($leads as $lead) {
@@ -443,6 +453,28 @@ class SegmentDocUploadController extends Controller
             $tradeCons  = $this->sigDocs($reqs, ClmSignatureRequest::DOC_TRADE, 'Consignee');
             $agrBuyer   = $this->sigDocs($reqs, ClmSignatureRequest::DOC_AGREEMENT, 'Customer');
             $agrCons    = $this->sigDocs($reqs, ClmSignatureRequest::DOC_AGREEMENT, 'Consignee');
+
+            // Prepend this shipment's Proforma Invoice(s) as the first Trade
+            // Documents on the Buyer side. They count toward the Trade-Docs
+            // ratio. A finalised PI (sent/approved/converted) reads as Signed;
+            // a draft is still Pending. sig_req_id is 0 → no Zoho Remind action.
+            foreach (($piByLead->get($lid) ?? collect()) as $pi) {
+                $piSigned = in_array($pi->status, [
+                    ProformaInvoice::STATUS_SENT,
+                    ProformaInvoice::STATUS_APPROVED,
+                    ProformaInvoice::STATUS_CONVERTED_TO_CONTRACT,
+                ], true);
+                $piDate = $pi->emailed_at ?? $pi->created_at;
+                array_unshift($tradeBuyer, [
+                    'sig_req_id'  => 0,
+                    'name'        => 'Proforma Invoice (' . ($pi->code ?: ('PI-' . $pi->id)) . ')',
+                    'required'    => 'REQ',
+                    'status'      => $piSigned ? 'Signed' : 'Pending',
+                    'uploaded_on' => $piDate ? \Illuminate\Support\Carbon::parse($piDate)->format('d/m/Y') : '—',
+                    'valid_upto'  => '—',
+                    'signed_url'  => null,
+                ]);
+            }
 
             $tradeAll = array_merge($tradeBuyer, $tradeCons);
             $agrAll   = array_merge($agrBuyer, $agrCons);
