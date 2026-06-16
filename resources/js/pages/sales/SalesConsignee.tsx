@@ -1242,6 +1242,14 @@ const SCOPED_CSS = `
    column doesn't need the full default width. */
 .smcg-table-wrap .table th:nth-child(6),
 .smcg-table-wrap .table td:nth-child(6) { width: 96px; padding-left: 8px !important; padding-right: 8px !important; }
+/* Same as Customer (7th column) — short Yes/No pill, so trim its width.
+   The single-line header is the widest part; allow it to wrap (override the
+   global thead nowrap) so the column can shrink below the one-line header
+   width. Without this, auto table-layout keeps the column as wide as the
+   un-wrapped header and the width below is ignored. */
+.smcg-table-wrap .table th:nth-child(7),
+.smcg-table-wrap .table td:nth-child(7) { width: 84px; padding-left: 8px !important; padding-right: 8px !important; }
+.smcg-table-wrap .table thead th:nth-child(7) { white-space: normal !important; line-height: 1.2; }
 
 /* Body — white rows with soft emerald hover. */
 .smcg-table-wrap .table tbody tr { background: transparent; transition: background .12s ease; }

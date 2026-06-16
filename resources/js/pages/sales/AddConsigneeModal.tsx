@@ -2020,7 +2020,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                     <div className="acg-hs-grid">
                       <ReadInlineG label="Customer ID"          value={customer.id} />
                       <ReadInlineG label="Company Name"         value={customer.name} />
-                      <ReadInlineG label="Customer Legal Name"   value={customer.legalName} />
+                      <ReadInlineG label="Company Legal Name"    value={customer.legalName} />
                       <ReadInlineG label="Customer Type"        value={customer.type} />
 
                       <ReadInlineG label="Customer Segment"     value={customer.segment} />
@@ -2028,13 +2028,13 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                       <ReadInlineG label="Risk Level"           value={customer.risk} />
                       <ReadInlineG label="Company Website"      value={customer.website} />
 
-                      <ReadInlineG label="Registered Address"   value={customer.address} span={2} />
+                      <ReadInlineG label="Registered Office Address" value={customer.address} span={2} />
                       <ReadInlineG label="Country"              value={customer.country} />
                       <ReadInlineG label="State"                value={customer.state} />
 
                       <ReadInlineG label="City"                 value={customer.city} />
                       <ReadInlineG label="PIN / Postal Code"    value={customer.pin} />
-                      <ReadInlineG label="Contact Person"       value={customer.contactPerson} />
+                      <ReadInlineG label="Contact Person Name"  value={customer.contactPerson} />
                       <ReadInlineG label="Designation"          value={customer.designation} />
 
                       <ReadInlineG label="Contact No"           value={customer.phone} />

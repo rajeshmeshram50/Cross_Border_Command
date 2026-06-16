@@ -104,6 +104,9 @@ interface TableContainerProps {
   worklistPagination?: boolean;
   /** Page-size options for the worklist Rows-per-page selector. */
   pageSizeOptions?: number[];
+  /** Fired when the user picks a new size in the Rows-per-page selector.
+   *  Lets the parent stop any auto-fit page sizing so the manual choice sticks. */
+  onPageSizeChange?: (size: number) => void;
 }
 
 const TableContainer = ({
