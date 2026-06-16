@@ -1710,7 +1710,27 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               additional fields populate. */}
           {stage === 1 && showShimmer && <Stage1FormShimmer />}
           {stage === 1 && !showShimmer && tab === 'identification' && (
-            <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} validateField={validateField} />
+            <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} validateField={validateField} guardSegmentRemove={(prev, vs) => {
+              const removed = prev.filter(s => !vs.includes(s));
+              if (!removed.length) return vs;
+              // Doc codes with an ACTUAL upload (file or URL). Hydration seeds an
+              // empty entry per reference row, so check the value.
+              const uploaded = new Set(
+                Object.entries(segmentRefUploads)
+                  .filter(([, v]) => !!(v && (v.url || v.file)))
+                  .map(([k]) => k.split('::')[1])
+              );
+              // A segment can't be removed if ANY of its standard documents have
+              // already been uploaded. Segments with no uploaded docs drop freely.
+              const locked = removed.filter(seg =>
+                (segCodeMap[seg] ?? []).some(c => uploaded.has(c))
+              );
+              if (locked.length) {
+                toast.error('Cannot remove segment', `You can't remove ${locked.join(', ')} — ${locked.length > 1 ? 'they have' : 'it has'} completed standard documents. Delete those documents first to drop the segment.`);
+                return [...vs, ...locked.filter(s => !vs.includes(s))];
+              }
+              return vs;
+            }} />
           )}
           {stage === 1 && !showShimmer && tab === 'address-contact' && (
             <Stage1AdditionalLocations
@@ -2174,8 +2194,8 @@ function Stage2Shimmer() {
 /* Stage 3 (Evidence Vault) shimmer removed along with the stage itself. */
 
 /* ───── Stage 1 — Identification + Primary Address & Contact ───── */
-function Stage1Identification({ form, setF, masters, errors, clearErr, validateField }:
-  { form: any; setF: (k: any, v: any) => void; masters: MasterLists; errors: Record<string, string>; clearErr: (k: string) => void; validateField: (k: string, nextForm: any) => void }) {
+function Stage1Identification({ form, setF, masters, errors, clearErr, validateField, guardSegmentRemove }:
+  { form: any; setF: (k: any, v: any) => void; masters: MasterLists; errors: Record<string, string>; clearErr: (k: string) => void; validateField: (k: string, nextForm: any) => void; guardSegmentRemove: (prev: string[], next: string[]) => string[] }) {
   // States filter against the selected country: look up the country
   // name → its id from the countries master, then filter states by it.
   const selectedCountry = masters.countries.find(c => c.name === form.country);
@@ -2222,18 +2242,10 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 onChange={vs => {
                   /* Block removing a segment whose KYC/DD/Trade-License docs
                    * are already uploaded (edit mode). Additions and removing
-                   * empty segments are always allowed. */
-                  const prev = form.coSeg ?? [];
-                  const removed = prev.filter(s => !vs.includes(s));
-                  if (removed.length) {
-                    const uploaded = new Set(Object.keys(segmentRefUploads).map(k => k.split('::')[1]));
-                    const locked = removed.filter(seg => (segCodeMap[seg] ?? []).some(c => uploaded.has(c)));
-                    if (locked.length) {
-                      toast.error('Cannot remove segment', `${locked.join(', ')} ${locked.length > 1 ? 'have' : 'has'} uploaded documents. Remove those documents first to drop the segment.`);
-                      vs = [...vs, ...locked.filter(s => !vs.includes(s))];
-                    }
-                  }
-                  set('coSeg', vs);
+                   * empty segments are always allowed. The guard lives in the
+                   * parent (it needs segmentRefUploads/segCodeMap/toast) and
+                   * returns the possibly-adjusted selection. */
+                  set('coSeg', guardSegmentRemove(form.coSeg ?? [], vs));
                 }}
                 maxChips={2}
               />
