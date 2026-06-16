@@ -219,7 +219,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   const [group, setGroup] = useState<GroupKey>('standard');
   // "Document Overview" popup — set to a group key to open the all-docs list.
   const [overview, setOverview] = useState<GroupKey | null>(null);
-  const [shipmentFilter, setShipmentFilter] = useState<'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee'>('all');
+  const [shipmentFilter, setShipmentFilter] = useState<'buyer-eq-consignee' | 'buyer-neq-consignee'>('buyer-eq-consignee');
 
   /* Switch the active group and jump to its first sub-tab. */
   const selectGroup = (g: GroupKey) => {
@@ -260,7 +260,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
     const startTab = initialTab ?? 'company-dd';
     setTab(startTab);
     setGroup(groupOfTab(startTab));
-    setShipmentFilter('all');
+    setShipmentFilter('buyer-eq-consignee');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, consignee?.db_id, initialTab]);
 
@@ -513,6 +513,17 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
 
   const tabMeta = TABS.find(t => t.key === tab)!;
 
+  /* Tab badge count. Trade Documents / Agreements are shipment-wise, so
+   * their badge reflects the real number of trade docs / agreements across
+   * all shipments (sum of each shipment's ratio total), not the standard KPI. */
+  const ratioTotal = (ratio: string) => { const p = (ratio || '').split('/'); return parseInt(p[1] ?? p[0], 10) || 0; };
+  const shipmentDocCount = (key: 'trade_docs' | 'agreement') =>
+    vault.shipment_agreements.reduce((acc, r) => acc + ratioTotal(r[key].ratio), 0);
+  const tabCount = (t: typeof TABS[number]): number =>
+    t.key === 'trade-documents'     ? shipmentDocCount('trade_docs')
+    : t.key === 'shipment-agreements' ? shipmentDocCount('agreement')
+    : (vault[t.countKey] as number);
+
   /* Show the skeleton only on the FIRST load (live data not in yet, no
    * explicit data prop). Re-fetches keep the current content visible. */
   const showSkeleton = loading && !vaultLive && !data;
@@ -623,7 +634,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
               >
                 <span className="cnev-tab-icon"><i className={t.icon} aria-hidden /></span>
                 <span className="cnev-tab-label">{t.label}</span>
-                <span className="cnev-tab-count">{vault[t.countKey] as number}</span>
+                <span className="cnev-tab-count">{tabCount(t)}</span>
               </button>
             ))}
           </div>
@@ -1090,23 +1101,19 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
 function ShipmentTable({ rows, kind, filter, setFilter }: {
   rows: VaultShipmentRow[];
   kind: 'trade' | 'agreement';
-  filter: 'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee';
-  setFilter: (f: 'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee') => void;
+  filter: 'buyer-eq-consignee' | 'buyer-neq-consignee';
+  setFilter: (f: 'buyer-eq-consignee' | 'buyer-neq-consignee') => void;
 }) {
   const [openId, setOpenId] = useState<number | null>(null);
-  const filtered = rows.filter(r =>
-    filter === 'all' ? true
-    : filter === 'buyer-eq-consignee' ? r.buyer_is_consignee
-    : !r.buyer_is_consignee
-  );
-  const lastCol = kind === 'trade' ? 'Trade Docs' : 'Agreement';
-  const COLS = 10;
+  const buyerNeq = filter === 'buyer-neq-consignee';
+  const filtered = rows.filter(r => buyerNeq ? !r.buyer_is_consignee : r.buyer_is_consignee);
+  const isAgreement = kind === 'agreement';
+  const COLS = isAgreement ? 11 : 10;
   return (
     <>
-      <div className="cnev-ship-filter">
-        <button type="button" className={`cnev-ship-fbtn ${filter === 'all' ? 'is-active' : ''}`} onClick={() => setFilter('all')}>All Shipments</button>
-        <button type="button" className={`cnev-ship-fbtn ${filter === 'buyer-eq-consignee' ? 'is-active' : ''}`} onClick={() => setFilter('buyer-eq-consignee')}>✓ Buyer = Consignee</button>
-        <button type="button" className={`cnev-ship-fbtn ${filter === 'buyer-neq-consignee' ? 'is-active' : ''}`} onClick={() => setFilter('buyer-neq-consignee')}>✕ Buyer ≠ Consignee</button>
+      <div className="cnev-ship-filter cnev-ship-filter-2">
+        <button type="button" className={`cnev-ship-fbtn ${filter === 'buyer-eq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-eq-consignee'); setOpenId(null); }}>Buyer = Consignee</button>
+        <button type="button" className={`cnev-ship-fbtn ${filter === 'buyer-neq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-neq-consignee'); setOpenId(null); }}>Buyer &ne; Consignee</button>
       </div>
       <div className="cnev-table-wrap">
         <div className="cnev-table-scroll">
@@ -1122,7 +1129,8 @@ function ShipmentTable({ rows, kind, filter, setFilter }: {
               <th>Due Dil.</th>
               <th>KYC</th>
               <th>Trade Lic.</th>
-              <th>{lastCol}</th>
+              <th>Trade Docs</th>
+              {isAgreement && <th>Agreement</th>}
             </tr>
           </thead>
           <tbody>
@@ -1152,7 +1160,8 @@ function ShipmentTable({ rows, kind, filter, setFilter }: {
                     <td><Ratio r={r.due_dil} /></td>
                     <td><Ratio r={r.kyc} /></td>
                     <td><Ratio r={r.trade_lic} /></td>
-                    <td><Ratio r={kind === 'trade' ? r.trade_docs : r.agreement} /></td>
+                    <td><Ratio r={r.trade_docs} /></td>
+                    {isAgreement && <td><Ratio r={r.agreement} /></td>}
                   </tr>
                   {open && (
                     <tr>
@@ -1179,65 +1188,16 @@ function ShipmentTable({ rows, kind, filter, setFilter }: {
 }
 
 function Ratio({ r }: { r: { ratio: string; pct: number } }) {
-  /* Compact SVG donut — 38px circle with ratio inside, hover-portal
-   * tooltip with completion %. Self-contained so it stacks above
-   * the modal overlay (z-index 11200) without relying on the global
-   * Tooltip's stacking layer. */
+  /* Plain stacked count — bold "X/Y" with the percentage beneath, tinted
+   * by completion (green = complete, amber = partial, red = missing). No
+   * donut/circle — matches the Figma's coloured-number columns. */
   const tone = r.pct >= 100 ? 'good' : r.pct >= 50 ? 'mid' : 'bad';
   const status = tone === 'good' ? 'Complete' : tone === 'mid' ? 'Partial' : 'Missing';
-  const radius = 15;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (Math.min(100, Math.max(0, r.pct)) / 100) * circumference;
-
-  const triggerRef = useRef<HTMLSpanElement | null>(null);
-  const [tip, setTip] = useState<{ top: number; left: number } | null>(null);
-
-  const showTip = () => {
-    const rect = triggerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const W = 86, H = 50, gap = 8;
-    let left = rect.left + rect.width / 2 - W / 2;
-    let top  = rect.top - H - gap;
-    if (top < 6) top = rect.bottom + gap;
-    left = Math.max(6, Math.min(left, window.innerWidth - W - 6));
-    setTip({ top, left });
-  };
-  const hideTip = () => setTip(null);
-
   return (
-    <>
-      <span
-        ref={triggerRef}
-        className="cnev-ratio"
-        data-tone={tone}
-        onMouseEnter={showTip}
-        onMouseLeave={hideTip}
-        onFocus={showTip}
-        onBlur={hideTip}
-        tabIndex={0}
-      >
-        <svg width="38" height="38" viewBox="0 0 38 38" aria-hidden>
-          <circle className="cnev-ratio-track" cx="19" cy="19" r={radius} fill="none" strokeWidth="3.5" />
-          <circle
-            className="cnev-ratio-arc"
-            cx="19" cy="19" r={radius}
-            fill="none" strokeWidth="3.5"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            strokeLinecap="round"
-            transform="rotate(-90 19 19)"
-          />
-        </svg>
-        <span className="cnev-ratio-label">{r.ratio}</span>
-      </span>
-      {tip && createPortal(
-        <div className="cnev-ratio-tip" style={{ top: tip.top, left: tip.left }} role="tooltip">
-          <b className="cnev-ratio-tip-pct" data-tone={tone}>{r.pct}%</b>
-          <span className="cnev-ratio-tip-meta">{r.ratio} · {status}</span>
-        </div>,
-        document.body,
-      )}
-    </>
+    <span className="cnev-ratio-num" data-tone={tone} title={`${r.ratio} · ${status}`}>
+      <span className="cnev-ratio-num-main">{r.ratio}</span>
+      <span className="cnev-ratio-num-pct">{r.pct}%</span>
+    </span>
   );
 }
 
@@ -1428,6 +1388,7 @@ const CNEV_CSS = `
   min-width: 0;
   padding: 4px 16px;
   border-right: 1px solid rgba(8,145,178,0.16);   /* thin column divider */
+  text-align: center;        /* centre label, value & status sub-line */
 }
 .cnev-kpi-tile:last-child { border-right: none; }
 .cnev-kpi-strip-top { position: absolute; top: 0; left: 0; right: 0; height: 3px; }
@@ -1829,54 +1790,16 @@ const CNEV_CSS = `
   flex-shrink: 0;
 }
 
-/* Compact donut + portal tooltip */
-.cnev-ratio {
-  position: relative;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 38px; height: 38px;
-  line-height: 1;
+/* Coloured-number compliance cell — bold ratio + % beneath, no circle. */
+.cnev-ratio-num {
+  display: inline-flex; flex-direction: column; align-items: center;
+  line-height: 1.1; font-variant-numeric: tabular-nums;
 }
-.cnev-ratio svg { display: block; transition: filter .2s ease; }
-.cnev-ratio:hover svg { filter: drop-shadow(0 2px 6px rgba(12,74,110,0.20)); }
-.cnev-ratio-track { stroke: #cffafe; }
-.cnev-ratio-arc {
-  transition: stroke-dashoffset .6s cubic-bezier(.22,1,.36,1), stroke .2s ease;
-}
-.cnev-ratio[data-tone="good"] .cnev-ratio-arc { stroke: #16a34a; }
-.cnev-ratio[data-tone="mid"]  .cnev-ratio-arc { stroke: #f59e0b; }
-.cnev-ratio[data-tone="bad"]  .cnev-ratio-arc { stroke: #dc2626; }
-.cnev-ratio-label {
-  position: absolute; inset: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 10.5px; font-weight: 800; letter-spacing: -0.02em;
-  color: #0c4a6e;
-  font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace;
-}
-.cnev-ratio[data-tone="good"] .cnev-ratio-label { color: #0e7490; }
-.cnev-ratio[data-tone="mid"]  .cnev-ratio-label { color: #b45309; }
-.cnev-ratio[data-tone="bad"]  .cnev-ratio-label { color: #b91c1c; }
-
-.cnev-ratio-tip {
-  position: fixed;
-  z-index: 12500;
-  display: inline-flex; flex-direction: column; align-items: center; gap: 1px;
-  padding: 6px 12px;
-  border-radius: 9px;
-  background: linear-gradient(180deg, #2a3444 0%, #1f2937 100%);
-  border: 1px solid rgba(255,255,255,0.06);
-  box-shadow:
-    0 12px 26px -6px rgba(15,23,42,0.45),
-    0 4px 10px rgba(15,23,42,0.22);
-  color: #fff;
-  line-height: 1.15;
-  pointer-events: none;
-  white-space: nowrap;
-  animation: cnevTipPop .18s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-}
-@keyframes cnevTipPop {
-  0%   { opacity: 0; transform: translateY(4px) scale(0.92); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
-}
+.cnev-ratio-num-main { font-size: 14px; font-weight: 800; letter-spacing: -0.01em; }
+.cnev-ratio-num-pct  { font-size: 9.5px; font-weight: 700; margin-top: 1px; opacity: .9; }
+.cnev-ratio-num[data-tone="good"] { color: #16a34a; }
+.cnev-ratio-num[data-tone="mid"]  { color: #f59e0b; }
+.cnev-ratio-num[data-tone="bad"]  { color: #dc2626; }
 /* Spinner used by the Export All button while the XLSX workbook is
  * being built. Class-scoped to .cnev-spin so it does not collide
  * with any global ri-spin rule the project may add later. */
@@ -1885,21 +1808,17 @@ const CNEV_CSS = `
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
 }
-.cnev-ratio-tip-pct {
-  font-size: 15px; font-weight: 800; letter-spacing: -0.01em;
-  font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace;
-  color: #ffffff;
-}
-.cnev-ratio-tip-pct[data-tone="good"] { color: #67e8f9; }
-.cnev-ratio-tip-pct[data-tone="mid"]  { color: #fcd34d; }
-.cnev-ratio-tip-pct[data-tone="bad"]  { color: #fca5a5; }
-.cnev-ratio-tip-meta {
-  font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
-  text-transform: uppercase;
-  opacity: 0.82;
-}
-
 .cnev-ship-filter { display: flex; gap: 8px; flex-wrap: wrap; }
+/* 2-tab toggle (Buyer = / ≠ Consignee) — compact pills in a tray. */
+.cnev-ship-filter-2 {
+  display: inline-flex; gap: 6px; padding: 4px;
+  background: #eef2f7; border-radius: 12px; align-self: flex-start;
+}
+.cnev-ship-filter-2 .cnev-ship-fbtn {
+  flex: 0 0 auto; min-width: 0;
+  padding: 8px 18px; border: none; background: transparent; border-radius: 9px;
+}
+.cnev-ship-filter-2 .cnev-ship-fbtn:not(.is-active):hover { background: rgba(8,145,178,.08); color: #0891b2; }
 .cnev-ship-fbtn {
   flex: 1; min-width: 160px;
   padding: 10px 18px;
@@ -2002,11 +1921,9 @@ const CNEV_CSS = `
 [data-bs-theme="dark"] .cnev-attach { background: rgba(8,145,178,.16); color: #67e8f9; border-color: rgba(8,145,178,.30); }
 [data-bs-theme="dark"] .cnev-chip-pill { background: rgba(8,145,178,.16); color: #67e8f9; }
 [data-bs-theme="dark"] .cnev-chip-pill-warm { background: rgba(217,119,6,.18); color: #fcd34d; border-color: rgba(217,119,6,.30); }
-[data-bs-theme="dark"] .cnev-ratio-track { stroke: rgba(8,145,178,.22); }
-[data-bs-theme="dark"] .cnev-ratio-label { color: #cffafe; }
-[data-bs-theme="dark"] .cnev-ratio[data-tone="good"] .cnev-ratio-label { color: #67e8f9; }
-[data-bs-theme="dark"] .cnev-ratio[data-tone="mid"]  .cnev-ratio-label { color: #fcd34d; }
-[data-bs-theme="dark"] .cnev-ratio[data-tone="bad"]  .cnev-ratio-label { color: #fca5a5; }
+[data-bs-theme="dark"] .cnev-ratio-num[data-tone="good"] { color: #4ade80; }
+[data-bs-theme="dark"] .cnev-ratio-num[data-tone="mid"]  { color: #fcd34d; }
+[data-bs-theme="dark"] .cnev-ratio-num[data-tone="bad"]  { color: #fca5a5; }
 [data-bs-theme="dark"] .cnev-footer { background: #08222b; border-top-color: rgba(8,145,178,.22); }
 [data-bs-theme="dark"] .cnev-footer-meta { color: #cbd5e1; }
 [data-bs-theme="dark"] .cnev-btn-light { background: rgba(8,145,178,.12); color: #67e8f9; border-color: rgba(8,145,178,.30); }

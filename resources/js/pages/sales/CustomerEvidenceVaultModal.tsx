@@ -225,9 +225,24 @@ function buildDemoVault(customer: CustomerVaultTarget): VaultData {
     ],
     shipment_agreements: [
       { id: 1, shipment_id: 'SHP-2026-00487', opportunity_id: 'OPP-107', customer: customer.company,    country: customer.country ?? 'India',
-        due_dil: { ratio: '2/2', pct: 100 }, kyc: { ratio: '3/3', pct: 100 }, trade_lic: { ratio: '1/1', pct: 100 }, trade_docs: { ratio: '4/4', pct: 100 }, agreement: { ratio: '1/1', pct: 100 }, risk: 'Compliant', buyer_is_consignee: true },
-      { id: 2, shipment_id: 'SHP-2026-00328', opportunity_id: 'OPP-028', customer: 'GreenHarvest Global Ltd', country: 'United States',
-        due_dil: { ratio: '0/2', pct: 0 },   kyc: { ratio: '0/4', pct: 0 },   trade_lic: { ratio: '0/1', pct: 0 },   trade_docs: { ratio: '0/4', pct: 0 },   agreement: { ratio: '0/1', pct: 0 },   risk: 'Medium', buyer_is_consignee: false },
+        due_dil: { ratio: '2/2', pct: 100 }, kyc: { ratio: '3/3', pct: 100 }, trade_lic: { ratio: '1/1', pct: 100 }, trade_docs: { ratio: '4/4', pct: 100 }, agreement: { ratio: '1/1', pct: 100 }, risk: 'Compliant', buyer_is_consignee: true,
+        // Trade docs = the shipment's Proforma Invoice + its other trade documents.
+        trade_docs_buyer: [
+          { sig_req_id: 1001, name: 'Proforma Invoice (PI/2026-27/0107)', required: 'REQ', status: 'Signed',  uploaded_on: '11/01/2026', valid_upto: '—' },
+          { sig_req_id: 1002, name: 'Commercial Invoice',                  required: 'REQ', status: 'Signed',  uploaded_on: '12/01/2026', valid_upto: '—' },
+          { sig_req_id: 1003, name: 'Packing List',                        required: 'REQ', status: 'Signed',  uploaded_on: '12/01/2026', valid_upto: '—' },
+          { sig_req_id: 1004, name: 'Certificate of Origin',               required: 'OPT', status: 'Signed',  uploaded_on: '13/01/2026', valid_upto: '13/01/2027' },
+        ] },
+      { id: 2, shipment_id: 'SHP-2026-00328', opportunity_id: 'OPP-028', customer: 'GreenHarvest Global Ltd', consignee: 'AgroLink FZE', country: 'United States',
+        due_dil: { ratio: '1/2', pct: 50 },  kyc: { ratio: '2/4', pct: 50 },  trade_lic: { ratio: '1/1', pct: 100 }, trade_docs: { ratio: '2/4', pct: 50 },  agreement: { ratio: '0/1', pct: 0 },   risk: 'Medium', buyer_is_consignee: false,
+        trade_docs_buyer: [
+          { sig_req_id: 2001, name: 'Proforma Invoice (PI/2026-27/0028)', required: 'REQ', status: 'Signed',  uploaded_on: '10/01/2026', valid_upto: '—' },
+          { sig_req_id: 2002, name: 'Self Declaration',                   required: 'REQ', status: 'Pending', uploaded_on: '—',          valid_upto: '—' },
+        ],
+        trade_docs_consignee: [
+          { sig_req_id: 2003, name: 'End Use Declaration',                required: 'REQ', status: 'Signed',  uploaded_on: '10/01/2026', valid_upto: '—' },
+          { sig_req_id: 2004, name: 'Consignee KYC Acknowledgement',      required: 'OPT', status: 'Pending', uploaded_on: '—',          valid_upto: '—' },
+        ] },
       { id: 3, shipment_id: 'SHP-2026-00512', opportunity_id: 'OPP-134', customer: 'Eastern Harvest Co.',    country: 'UAE',
         due_dil: { ratio: '1/2', pct: 50 },  kyc: { ratio: '2/3', pct: 67 },  trade_lic: { ratio: '1/1', pct: 100 }, trade_docs: { ratio: '2/4', pct: 50 },  agreement: { ratio: '0/1', pct: 0 },   risk: 'Medium', buyer_is_consignee: true },
       { id: 4, shipment_id: 'SHP-2026-00601', opportunity_id: 'OPP-156', customer: 'International Buyer LLC', country: 'UAE',
@@ -243,7 +258,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
   const [group, setGroup] = useState<GroupKey>('standard');
   // "Document Overview" popup — set to a group key to open the all-docs list.
   const [overview, setOverview] = useState<GroupKey | null>(null);
-  const [shipmentFilter, setShipmentFilter] = useState<'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee'>('all');
+  const [shipmentFilter, setShipmentFilter] = useState<'buyer-eq-consignee' | 'buyer-neq-consignee'>('buyer-eq-consignee');
 
   /* Switch the active group and jump to its first sub-tab. */
   const selectGroup = (g: GroupKey) => {
@@ -304,7 +319,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
     const startTab = initialTab ?? 'company-dd';
     setTab(startTab);
     setGroup(groupOfTab(startTab));
-    setShipmentFilter('all');
+    setShipmentFilter('buyer-eq-consignee');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, customer?.db_id, initialTab]);
 
@@ -568,6 +583,18 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
 
   const tabMeta = TABS.find(t => t.key === tab)!;
 
+  /* Tab badge count. Trade Documents / Agreements are shipment-wise, so
+   * their badge must reflect the real number of trade docs / agreements
+   * across all shipments (sum of each shipment's ratio total) — not the
+   * standard-doc KPI. Standard tabs keep their own count key. */
+  const ratioTotal = (ratio: string) => { const p = (ratio || '').split('/'); return parseInt(p[1] ?? p[0], 10) || 0; };
+  const shipmentDocCount = (key: 'trade_docs' | 'agreement') =>
+    vault.shipment_agreements.reduce((acc, r) => acc + ratioTotal(r[key].ratio), 0);
+  const tabCount = (t: typeof TABS[number]): number =>
+    t.key === 'trade-documents'     ? shipmentDocCount('trade_docs')
+    : t.key === 'shipment-agreements' ? shipmentDocCount('agreement')
+    : (vault[t.countKey] as number);
+
   /* Show the skeleton only on the FIRST load (live data not in yet and no
    * explicit data prop). Re-fetches after that keep the current content
    * visible — no skeleton flash. Until live data lands we'd otherwise show
@@ -684,7 +711,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
               >
                 <span className="cev-tab-icon"><i className={t.icon} aria-hidden /></span>
                 <span className="cev-tab-label">{t.label}</span>
-                <span className="cev-tab-count">{vault[t.countKey] as number}</span>
+                <span className="cev-tab-count">{tabCount(t)}</span>
               </button>
             ))}
           </div>
@@ -1168,23 +1195,21 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
 function ShipmentTable({ rows, kind, filter, setFilter }: {
   rows: VaultShipmentRow[];
   kind: 'trade' | 'agreement';
-  filter: 'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee';
-  setFilter: (f: 'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee') => void;
+  filter: 'buyer-eq-consignee' | 'buyer-neq-consignee';
+  setFilter: (f: 'buyer-eq-consignee' | 'buyer-neq-consignee') => void;
 }) {
   const [openId, setOpenId] = useState<number | null>(null);
-  const filtered = rows.filter(r =>
-    filter === 'all' ? true
-    : filter === 'buyer-eq-consignee' ? r.buyer_is_consignee
-    : !r.buyer_is_consignee
-  );
-  const lastCol = kind === 'trade' ? 'Trade Docs' : 'Agreement';
-  const COLS = 10;   // caret + SR + ship + opp + customer + consignee + 3 ratios + last ratio
+  const buyerNeq = filter === 'buyer-neq-consignee';
+  const filtered = rows.filter(r => buyerNeq ? !r.buyer_is_consignee : r.buyer_is_consignee);
+  const isAgreement = kind === 'agreement';
+  // caret + SR + ship + opp + customer + consignee + Due Dil + KYC + Trade Lic
+  // + Trade Docs (always) + Agreement (only on the Agreements tab).
+  const COLS = isAgreement ? 11 : 10;
   return (
     <>
-      <div className="cev-ship-filter">
-        <button type="button" className={`cev-ship-fbtn ${filter === 'all' ? 'is-active' : ''}`} onClick={() => setFilter('all')}>All Shipments</button>
-        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-eq-consignee' ? 'is-active' : ''}`} onClick={() => setFilter('buyer-eq-consignee')}>✓ Buyer = Consignee</button>
-        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-neq-consignee' ? 'is-active' : ''}`} onClick={() => setFilter('buyer-neq-consignee')}>✕ Buyer ≠ Consignee</button>
+      <div className="cev-ship-filter cev-ship-filter-2">
+        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-eq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-eq-consignee'); setOpenId(null); }}>Buyer = Consignee</button>
+        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-neq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-neq-consignee'); setOpenId(null); }}>Buyer &ne; Consignee</button>
       </div>
       <div className="cev-table-wrap">
         <div className="cev-table-scroll">
@@ -1200,7 +1225,8 @@ function ShipmentTable({ rows, kind, filter, setFilter }: {
               <th>Due Dil.</th>
               <th>KYC</th>
               <th>Trade Lic.</th>
-              <th>{lastCol}</th>
+              <th>Trade Docs</th>
+              {isAgreement && <th>Agreement</th>}
             </tr>
           </thead>
           <tbody>
@@ -1232,7 +1258,8 @@ function ShipmentTable({ rows, kind, filter, setFilter }: {
                     <td><Ratio r={r.due_dil} /></td>
                     <td><Ratio r={r.kyc} /></td>
                     <td><Ratio r={r.trade_lic} /></td>
-                    <td><Ratio r={kind === 'trade' ? r.trade_docs : r.agreement} /></td>
+                    <td><Ratio r={r.trade_docs} /></td>
+                    {isAgreement && <td><Ratio r={r.agreement} /></td>}
                   </tr>
                   {open && (
                     <tr className="cev-ship-expand">
@@ -1264,9 +1291,9 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
   buyer: VaultShipmentDoc[]; consignee: VaultShipmentDoc[]; buyerName: string; consigneeName: string; buyerIsConsignee: boolean;
 }) {
   const toast = useToast();
-  const [party, setParty] = useState<'buyer' | 'consignee'>('buyer');
+  const [party, setParty] = useState<'buyer' | 'consignee' | 'both'>('buyer');
   const [busy, setBusy] = useState<number | null>(null);
-  const docs = party === 'buyer' ? buyer : consignee;
+  const docs = party === 'both' ? [...buyer, ...consignee] : party === 'buyer' ? buyer : consignee;
 
   const remind = async (d: VaultShipmentDoc) => {
     setBusy(d.sig_req_id);
@@ -1285,12 +1312,15 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
       <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
         <button type="button" onClick={() => setParty('buyer')} style={partyTabStyle(party === 'buyer')}>👤 Buyer Documents <b>{buyer.length}</b></button>
         {!buyerIsConsignee && (
-          <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(party === 'consignee')}>🏢 Consignee Documents <b>{consignee.length}</b></button>
+          <>
+            <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(party === 'consignee')}>🏢 Consignee Documents <b>{consignee.length}</b></button>
+            <button type="button" onClick={() => setParty('both')} style={partyTabStyle(party === 'both')}>🗂 Both <b>{buyer.length + consignee.length}</b></button>
+          </>
         )}
       </div>
-      <div style={{ fontSize: 11, fontWeight: 600, color: '#0e7490', marginBottom: 6 }}>{party === 'buyer' ? buyerName : consigneeName}</div>
+      <div style={{ fontSize: 11, fontWeight: 600, color: '#0e7490', marginBottom: 6 }}>{party === 'both' ? `${buyerName} + ${consigneeName}` : party === 'buyer' ? buyerName : consigneeName}</div>
       {docs.length === 0 ? (
-        <div style={{ padding: '18px', textAlign: 'center', color: '#64748b', fontSize: 12, background: '#fff', border: '1px dashed #a5f3fc', borderRadius: 8 }}>No {party === 'buyer' ? 'buyer' : 'consignee'} documents on this shipment.</div>
+        <div style={{ padding: '18px', textAlign: 'center', color: '#64748b', fontSize: 12, background: '#fff', border: '1px dashed #a5f3fc', borderRadius: 8 }}>No {party === 'both' ? '' : party === 'buyer' ? 'buyer ' : 'consignee '}documents on this shipment.</div>
       ) : (
         <div style={{ background: '#fff', border: '1px solid #d6eef5', borderRadius: 10, overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
@@ -1335,72 +1365,16 @@ const docActStyle = (c: string): CSSProperties => ({
 });
 
 function Ratio({ r }: { r: { ratio: string; pct: number } }) {
-  /* Compact SVG donut — 38px circle, ratio inside, hover-portal
-   * tooltip with completion percentage and a status word.
-   *
-   * Self-contained tooltip (not the project Tooltip component) so it
-   * is guaranteed to render above the modal overlay (z-index 11200)
-   * regardless of any other stacking gotchas. Position is computed
-   * from the trigger's getBoundingClientRect and clamped to the
-   * viewport so it never falls offscreen. */
+  /* Plain stacked count — bold "X/Y" with the percentage beneath, tinted
+   * by completion (green = complete, amber = partial, red = missing). No
+   * donut/circle — matches the Figma's coloured-number columns. */
   const tone = r.pct >= 100 ? 'good' : r.pct >= 50 ? 'mid' : 'bad';
   const status = tone === 'good' ? 'Complete' : tone === 'mid' ? 'Partial' : 'Missing';
-  const radius = 15;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (Math.min(100, Math.max(0, r.pct)) / 100) * circumference;
-
-  const triggerRef = useRef<HTMLSpanElement | null>(null);
-  const [tip, setTip] = useState<{ top: number; left: number } | null>(null);
-
-  const showTip = () => {
-    const rect = triggerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    // Tooltip is ~80×46px; centre horizontally above the donut.
-    const W = 86, H = 50, gap = 8;
-    let left = rect.left + rect.width / 2 - W / 2;
-    let top  = rect.top - H - gap;
-    // Flip below the donut if there isn't room above.
-    if (top < 6) top = rect.bottom + gap;
-    // Clamp to viewport.
-    left = Math.max(6, Math.min(left, window.innerWidth - W - 6));
-    setTip({ top, left });
-  };
-  const hideTip = () => setTip(null);
-
   return (
-    <>
-      <span
-        ref={triggerRef}
-        className="cev-ratio"
-        data-tone={tone}
-        onMouseEnter={showTip}
-        onMouseLeave={hideTip}
-        onFocus={showTip}
-        onBlur={hideTip}
-        tabIndex={0}
-      >
-        <svg width="38" height="38" viewBox="0 0 38 38" aria-hidden>
-          <circle className="cev-ratio-track" cx="19" cy="19" r={radius} fill="none" strokeWidth="3.5" />
-          <circle
-            className="cev-ratio-arc"
-            cx="19" cy="19" r={radius}
-            fill="none" strokeWidth="3.5"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            strokeLinecap="round"
-            transform="rotate(-90 19 19)"
-          />
-        </svg>
-        <span className="cev-ratio-label">{r.ratio}</span>
-      </span>
-      {tip && createPortal(
-        <div className="cev-ratio-tip" style={{ top: tip.top, left: tip.left }} role="tooltip">
-          <b className="cev-ratio-tip-pct" data-tone={tone}>{r.pct}%</b>
-          <span className="cev-ratio-tip-meta">{r.ratio} · {status}</span>
-        </div>,
-        document.body,
-      )}
-    </>
+    <span className="cev-ratio-num" data-tone={tone} title={`${r.ratio} · ${status}`}>
+      <span className="cev-ratio-num-main">{r.ratio}</span>
+      <span className="cev-ratio-num-pct">{r.pct}%</span>
+    </span>
   );
 }
 
@@ -1609,6 +1583,7 @@ const CEV_CSS = `
   min-width: 0;
   padding: 4px 16px;
   border-right: 1px solid rgba(8,145,178,0.16);   /* thin column divider */
+  text-align: center;        /* centre label, value & status sub-line */
 }
 .cev-kpi-tile:last-child { border-right: none; }
 .cev-kpi-strip-top {
@@ -2051,71 +2026,29 @@ const CEV_CSS = `
   font-size: 11.5px; font-weight: 800;
   flex-shrink: 0;
 }
-.cev-ratio {
-  position: relative;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 38px; height: 38px;
-  line-height: 1;
+/* Coloured-number compliance cell — bold ratio + % beneath, no circle. */
+.cev-ratio-num {
+  display: inline-flex; flex-direction: column; align-items: center;
+  line-height: 1.1; font-variant-numeric: tabular-nums;
 }
-.cev-ratio svg { display: block; transition: filter .2s ease; }
-.cev-ratio:hover svg { filter: drop-shadow(0 2px 6px rgba(12,74,110,0.20)); }
-.cev-ratio-track { stroke: #cffafe; }
-.cev-ratio-arc {
-  transition: stroke-dashoffset .6s cubic-bezier(.22,1,.36,1), stroke .2s ease;
-}
-.cev-ratio[data-tone="good"] .cev-ratio-arc { stroke: #16a34a; }
-.cev-ratio[data-tone="mid"]  .cev-ratio-arc { stroke: #f59e0b; }
-.cev-ratio[data-tone="bad"]  .cev-ratio-arc { stroke: #dc2626; }
-.cev-ratio-label {
-  position: absolute; inset: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 10.5px; font-weight: 800; letter-spacing: -0.02em;
-  color: #0c4a6e;
-  font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace;
-}
-.cev-ratio[data-tone="good"] .cev-ratio-label { color: #047857; }
-.cev-ratio[data-tone="mid"]  .cev-ratio-label { color: #b45309; }
-.cev-ratio[data-tone="bad"]  .cev-ratio-label { color: #b91c1c; }
-
-/* Self-contained portal tooltip for the donut. Dark glossy pill,
-   centred above (or flipped below) the donut, z-index above every
-   modal in this project (highest known overlay is 11200). */
-.cev-ratio-tip {
-  position: fixed;
-  z-index: 12500;
-  display: inline-flex; flex-direction: column; align-items: center; gap: 1px;
-  padding: 6px 12px;
-  border-radius: 9px;
-  background: linear-gradient(180deg, #2a3444 0%, #1f2937 100%);
-  border: 1px solid rgba(255,255,255,0.06);
-  box-shadow:
-    0 12px 26px -6px rgba(15,23,42,0.45),
-    0 4px 10px rgba(15,23,42,0.22);
-  color: #fff;
-  line-height: 1.15;
-  pointer-events: none;
-  white-space: nowrap;
-  animation: cevTipPop .18s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-}
-@keyframes cevTipPop {
-  0%   { opacity: 0; transform: translateY(4px) scale(0.92); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
-}
-.cev-ratio-tip-pct {
-  font-size: 15px; font-weight: 800; letter-spacing: -0.01em;
-  font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace;
-  color: #ffffff;
-}
-.cev-ratio-tip-pct[data-tone="good"] { color: #6ee7b7; }
-.cev-ratio-tip-pct[data-tone="mid"]  { color: #fcd34d; }
-.cev-ratio-tip-pct[data-tone="bad"]  { color: #fca5a5; }
-.cev-ratio-tip-meta {
-  font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
-  text-transform: uppercase;
-  opacity: 0.82;
-}
+.cev-ratio-num-main { font-size: 14px; font-weight: 800; letter-spacing: -0.01em; }
+.cev-ratio-num-pct  { font-size: 9.5px; font-weight: 700; margin-top: 1px; opacity: .9; }
+.cev-ratio-num[data-tone="good"] { color: #16a34a; }
+.cev-ratio-num[data-tone="mid"]  { color: #f59e0b; }
+.cev-ratio-num[data-tone="bad"]  { color: #dc2626; }
 
 .cev-ship-filter { display: flex; gap: 8px; flex-wrap: wrap; }
+/* 2-tab toggle (Buyer = / ≠ Consignee) — compact pills in a tray, not
+   full-width, matching the Figma. */
+.cev-ship-filter-2 {
+  display: inline-flex; gap: 6px; padding: 4px;
+  background: #eef2f7; border-radius: 12px; align-self: flex-start;
+}
+.cev-ship-filter-2 .cev-ship-fbtn {
+  flex: 0 0 auto; min-width: 0;
+  padding: 8px 18px; border: none; background: transparent; border-radius: 9px;
+}
+.cev-ship-filter-2 .cev-ship-fbtn:not(.is-active):hover { background: rgba(8,145,178,.08); color: #0891b2; }
 .cev-ship-fbtn {
   flex: 1; min-width: 160px;
   padding: 10px 18px;
@@ -2221,11 +2154,9 @@ const CEV_CSS = `
 [data-bs-theme="dark"] .cev-date-expiry[data-status="expiring"] { background: rgba(245,158,11,.18); color: #fcd34d; }
 [data-bs-theme="dark"] .cev-date-expiry[data-status="pending"]  { background: rgba(239,68,68,.18); color: #fca5a5; }
 [data-bs-theme="dark"] .cev-attach { background: rgba(8,145,178,.16); color: #67e8f9; border-color: rgba(8,145,178,.30); }
-[data-bs-theme="dark"] .cev-ratio-track { stroke: rgba(8,145,178,.22); }
-[data-bs-theme="dark"] .cev-ratio-label { color: #cffafe; }
-[data-bs-theme="dark"] .cev-ratio[data-tone="good"] .cev-ratio-label { color: #6ee7b7; }
-[data-bs-theme="dark"] .cev-ratio[data-tone="mid"]  .cev-ratio-label { color: #fcd34d; }
-[data-bs-theme="dark"] .cev-ratio[data-tone="bad"]  .cev-ratio-label { color: #fca5a5; }
+[data-bs-theme="dark"] .cev-ratio-num[data-tone="good"] { color: #4ade80; }
+[data-bs-theme="dark"] .cev-ratio-num[data-tone="mid"]  { color: #fcd34d; }
+[data-bs-theme="dark"] .cev-ratio-num[data-tone="bad"]  { color: #fca5a5; }
 [data-bs-theme="dark"] .cev-chip-pill { background: rgba(8,145,178,.16); color: #67e8f9; }
 [data-bs-theme="dark"] .cev-chip-pill-warm { background: rgba(217,119,6,.18); color: #fcd34d; border-color: rgba(217,119,6,.30); }
 [data-bs-theme="dark"] .cev-footer { background: #08222b; border-top-color: rgba(8,145,178,.22); }
