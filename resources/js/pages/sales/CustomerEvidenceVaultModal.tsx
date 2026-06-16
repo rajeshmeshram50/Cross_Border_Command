@@ -241,6 +241,8 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
   const toast = useToast();
   const [tab, setTab] = useState<TabKey>('company-dd');
   const [group, setGroup] = useState<GroupKey>('standard');
+  // "Document Overview" popup — set to a group key to open the all-docs list.
+  const [overview, setOverview] = useState<GroupKey | null>(null);
   const [shipmentFilter, setShipmentFilter] = useState<'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee'>('all');
 
   /* Switch the active group and jump to its first sub-tab. */
@@ -664,14 +666,14 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
               the halfway mark, so the wrap is invisible. */}
           {[0, 1].map((cycle) => (
             <div key={cycle} className="cev-kpi-cycle" aria-hidden={cycle === 1 ? true : undefined}>
-              <KpiTile label="Total Documents"        value={vault.total_documents}        icon="ri-file-list-3-line"        gradient="linear-gradient(135deg, #0891b2 0%, #06b6d4 100%)" />
-              <KpiTile label="Verified / Signed"      value={vault.verified_signed}        icon="ri-shield-check-line"       gradient="linear-gradient(135deg, #16a34a 0%, #4ade80 100%)" />
-              <KpiTile label="Pending"                value={vault.pending}                icon="ri-time-line"               gradient="linear-gradient(135deg, #d97706 0%, #f59e0b 100%)" />
-              <KpiTile label="Company Due Diligence"  value={vault.company_dd_count}       icon="ri-building-line"           gradient="linear-gradient(135deg, #06b6d4 0%, #22d3ee 100%)" />
-              <KpiTile label="Owner KYC"              value={vault.owner_kyc_count}        icon="ri-user-3-line"             gradient="linear-gradient(135deg, #0e7490 0%, #06b6d4 100%)" />
-              <KpiTile label="Trade License"          value={vault.trade_license_count}    icon="ri-government-line"         gradient="linear-gradient(135deg, #8b5cf6 0%, #67e8f9 100%)" />
-              <KpiTile label="Trade Documents"        value={vault.trade_documents_count}  icon="ri-article-line"            gradient="linear-gradient(135deg, #6366f1 0%, #a5b4fc 100%)" />
-              <KpiTile label="Total Shipments"        value={vault.total_shipments}        icon="ri-truck-line"              gradient="linear-gradient(135deg, #0c4a6e 0%, #06b6d4 100%)" />
+              <KpiTile label="Total Documents"        value={vault.total_documents}        accent="#0e7490" />
+              <KpiTile label="Verified / Signed"      value={vault.verified_signed}        accent="#16a34a" subtitle="✓ COMPLIANT" subTone="good" />
+              <KpiTile label="Pending"                value={vault.pending}                accent="#dc2626" subtitle="⚠ ACTION"    subTone="bad" />
+              <KpiTile label="Company Due Diligence"  value={vault.company_dd_count}       accent="#0891b2" />
+              <KpiTile label="Owner KYC"              value={vault.owner_kyc_count}        accent="#0e7490" />
+              <KpiTile label="Trade License"          value={vault.trade_license_count}    accent="#0891b2" />
+              <KpiTile label="Trade Documents"        value={vault.trade_documents_count}  accent="#0d9488" />
+              <KpiTile label="Total Shipments"        value={vault.total_shipments}        accent="#0c4a6e" />
             </div>
           ))}
           </div>
@@ -681,18 +683,27 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
         <div className="cev-groups-wrap">
           <div className="cev-groups">
             {GROUPS.map(g => (
-              <button
-                key={g.key}
-                type="button"
-                className={`cev-group ${group === g.key ? 'is-active' : ''}`}
-                onClick={() => selectGroup(g.key)}
-              >
-                <span className="cev-group-icon"><i className={g.icon} aria-hidden /></span>
-                <span className="cev-group-text">
-                  <span className="cev-group-title">{g.title}</span>
-                  <span className="cev-group-sub">{g.sub}</span>
-                </span>
-              </button>
+              <div key={g.key} className={`cev-group ${group === g.key ? 'is-active' : ''}`}>
+                <button
+                  type="button"
+                  className="cev-group-main"
+                  onClick={() => selectGroup(g.key)}
+                >
+                  <span className="cev-group-icon"><i className={g.icon} aria-hidden /></span>
+                  <span className="cev-group-text">
+                    <span className="cev-group-title">{g.title}</span>
+                    <span className="cev-group-sub">{g.sub}</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="cev-group-overview"
+                  onClick={() => setOverview(g.key)}
+                  title="View all documents in one list"
+                >
+                  <i className="ri-list-check-2" aria-hidden /> Document Overview
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -783,6 +794,63 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
         onClose={() => setSendDocIds(null)}
         onSent={() => { setSendDocIds(null); void reloadSignatures(); }}
       />
+
+      {/* Document Overview popup — all documents for the chosen group in one
+          flat list (name + status + download). Opened from the "Document
+          Overview" button on each group card. */}
+      {overview && (() => {
+        const isStd = overview === 'standard';
+        const docs: VaultDoc[] = isStd
+          ? [...vault.company_dd, ...vault.owner_kyc, ...vault.trade_licenses]
+          : [...vault.trade_documents];
+        const title = isStd ? 'Standard Documents — Overview' : 'Case to Case Agreements — Overview';
+        const sub = isStd
+          ? 'All Company Due Diligence, Owner KYC & Trade Licenses documents in one list'
+          : 'All Trade Documents & Agreements for this customer in one list';
+        return (
+          <div className="cev-ov-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) setOverview(null); }}>
+            <div className="cev-ov-card">
+              <div className="cev-ov-head">
+                <span className="cev-ov-head-icon"><i className="ri-list-check-2" aria-hidden /></span>
+                <div className="cev-ov-head-text">
+                  <div className="cev-ov-title">{title}</div>
+                  <div className="cev-ov-sub">{sub}</div>
+                </div>
+                <button type="button" className="cev-ov-close" onClick={() => setOverview(null)} aria-label="Close"><i className="ri-close-line" /></button>
+              </div>
+              <div className="cev-ov-body">
+                <table className="cev-ov-table">
+                  <thead><tr><th style={{ width: 48 }}>#</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
+                  <tbody>
+                    {docs.length === 0 ? (
+                      <tr><td colSpan={4} className="cev-ov-empty">No documents available.</td></tr>
+                    ) : docs.map((d, i) => {
+                      const url = d.attachment_url ? resolveFileUrl(d.attachment_url) : null;
+                      return (
+                        <tr key={`${d.id}-${i}`}>
+                          <td className="cev-ov-num">{i + 1}</td>
+                          <td className="cev-ov-name">{d.name}</td>
+                          <td><StatusPill s={d.status} /></td>
+                          <td>
+                            <button
+                              type="button"
+                              className="cev-ov-dl"
+                              disabled={!url}
+                              onClick={() => { if (url) void downloadFile(url, d.attachment || `${d.name}.pdf`); }}
+                            >
+                              <i className="ri-download-2-line" aria-hidden /> Download
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>,
     document.body
   );
@@ -791,19 +859,15 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
 /* ─── KPI tile — project-standard card pattern (mirrors the Master
  *      pages' .mp-kpi-tile). Top gradient accent strip, label +
  *      value on the left, gradient icon square on the right. */
-function KpiTile({ label, value, icon, gradient }: { label: string; value: number; icon: string; gradient: string }) {
+function KpiTile({ label, value, accent, subtitle, subTone }: { label: string; value: number; accent?: string; subtitle?: string; subTone?: 'good' | 'bad' }) {
+  /* Flat stat column (matches the CLM prototype): small uppercase label, a
+     large tone-coloured number, and an optional status sub-line
+     (✓ COMPLIANT / ⚠ ACTION). No icon box / gradient chrome. */
   return (
     <div className="cev-kpi-tile">
-      <span className="cev-kpi-strip-top" style={{ background: gradient }} aria-hidden />
-      <div className="cev-kpi-body">
-        <div className="cev-kpi-text">
-          <div className="cev-kpi-label">{label.toUpperCase()}</div>
-          <div className="cev-kpi-value">{value.toLocaleString()}</div>
-        </div>
-        <div className="cev-kpi-icon" style={{ background: gradient }}>
-          <i className={icon} aria-hidden />
-        </div>
-      </div>
+      <div className="cev-kpi-label">{label.toUpperCase()}</div>
+      <div className="cev-kpi-value" style={accent ? { color: accent } : undefined}>{value.toLocaleString()}</div>
+      {subtitle && <div className={`cev-kpi-sub ${subTone === 'bad' ? 'is-bad' : 'is-good'}`}>{subtitle}</div>}
     </div>
   );
 }
@@ -1562,13 +1626,13 @@ const CEV_CSS = `
 .cev-kpi-nav-next { right: 14px; }
 .cev-kpi-tile {
   position: relative;
-  flex: 0 0 220px;            /* fixed width — strip scrolls when many */
+  flex: 0 0 168px;            /* fixed width — strip scrolls when many */
   scroll-snap-align: start;
   background: var(--vz-card-bg, #fff);
-  border: 1px solid rgba(8,145,178,0.16);
+  border: 1px solid rgba(8,145,178,0.14);
   border-radius: 12px;
-  padding: 12px 14px;
-  box-shadow: 0 2px 10px rgba(8,51,68,0.06);
+  padding: 12px 16px;
+  box-shadow: 0 1px 5px rgba(8,51,68,0.05);
   overflow: hidden;
   min-width: 0;
   transition: transform 180ms ease, box-shadow 220ms ease, border-color 180ms ease;
@@ -1593,9 +1657,17 @@ const CEV_CSS = `
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .cev-kpi-value {
-  font-size: 22px; font-weight: 800; line-height: 1;
-  color: var(--vz-heading-color, #2b3245);
+  font-size: 26px; font-weight: 800; line-height: 1.05;
+  color: var(--vz-heading-color, #0c4a6e);
 }
+/* Status sub-line under the number (✓ COMPLIANT / ⚠ ACTION). */
+.cev-kpi-sub {
+  margin-top: 5px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.cev-kpi-sub.is-good { color: #16a34a; }
+.cev-kpi-sub.is-bad  { color: #dc2626; }
 .cev-kpi-icon {
   width: 38px; height: 38px; border-radius: 10px;
   display: inline-flex; align-items: center; justify-content: center;
@@ -1617,16 +1689,95 @@ const CEV_CSS = `
 }
 .cev-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .cev-group {
-  display: flex; align-items: center; gap: 14px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 13px 18px;
   background: #ffffff;
   border: 1.5px solid #cffafe;
   border-radius: 14px;
-  cursor: pointer;
   text-align: left;
   transition: all .2s ease;
 }
 .cev-group:hover { border-color: #67e8f9; background: #f0fdff; }
+/* The icon+text selector (picks the active group). */
+.cev-group-main {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 14px;
+  background: transparent; border: 0; padding: 0; cursor: pointer;
+  text-align: left; font-family: inherit;
+}
+/* "Document Overview" button on the right of each group card. */
+.cev-group-overview {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 13px; border-radius: 9px;
+  background: #ecfeff; color: #0e7490; border: 1.5px solid #a5f3fc;
+  font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
+  white-space: nowrap; transition: all .18s ease;
+}
+.cev-group-overview:hover { background: #fff; border-color: #06b6d4; color: #0891b2; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(8,145,178,.22); }
+.cev-group-overview i { font-size: 14px; }
+.cev-group.is-active .cev-group-overview { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.35); }
+.cev-group.is-active .cev-group-overview:hover { background: #fff; color: #0891b2; border-color: #fff; }
+
+/* ─── Document Overview popup ─── */
+.cev-ov-overlay {
+  position: fixed; inset: 0; z-index: 11400;
+  background: rgba(8,51,68,.45); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+  animation: cevFade .16s ease both;
+}
+.cev-ov-card {
+  width: min(760px, 96vw); max-height: 86vh;
+  background: #fff; border-radius: 16px; overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 30px 80px rgba(8,51,68,.45);
+}
+.cev-ov-head {
+  display: flex; align-items: center; gap: 14px; padding: 16px 20px;
+  background: linear-gradient(120deg, #083344 0%, #0c4a6e 30%, #0e7490 65%, #0891b2 100%);
+  color: #fff; flex-shrink: 0;
+}
+.cev-ov-head-icon {
+  width: 40px; height: 40px; border-radius: 11px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.22); font-size: 19px;
+}
+.cev-ov-head-text { flex: 1; min-width: 0; }
+.cev-ov-title { font-size: 16px; font-weight: 800; letter-spacing: -.01em; }
+.cev-ov-sub { font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.82); margin-top: 2px; }
+.cev-ov-close {
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+  border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.12); color: #fff;
+  cursor: pointer; font-size: 18px; display: inline-flex; align-items: center; justify-content: center;
+  transition: all .15s ease;
+}
+.cev-ov-close:hover { background: rgba(255,255,255,.25); }
+.cev-ov-body { overflow: auto; padding: 14px 18px 18px; }
+.cev-ov-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.cev-ov-table thead th {
+  position: sticky; top: 0; background: #083344; color: #fff;
+  font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  padding: 10px 12px; text-align: left; white-space: nowrap;
+}
+.cev-ov-table thead th:first-child { border-radius: 8px 0 0 8px; }
+.cev-ov-table thead th:last-child  { border-radius: 0 8px 8px 0; }
+.cev-ov-table tbody td { padding: 11px 12px; border-bottom: 1px solid #e6f7fb; vertical-align: middle; }
+.cev-ov-table tbody tr:hover td { background: #f0fdff; }
+.cev-ov-num { color: #5e94a1; font-weight: 700; }
+.cev-ov-name { font-weight: 700; color: #0a2630; }
+.cev-ov-empty { text-align: center; color: #5e94a1; padding: 28px 12px !important; font-weight: 600; }
+.cev-ov-dl {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px; border-radius: 7px;
+  background: #ecfeff; color: #0e7490; border: 1.5px solid #a5f3fc;
+  font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all .15s ease;
+}
+.cev-ov-dl:hover:not(:disabled) { background: #fff; border-color: #06b6d4; color: #0891b2; }
+.cev-ov-dl:disabled { opacity: .45; cursor: not-allowed; }
+[data-bs-theme="dark"] .cev-ov-card { background: #0a2630; }
+[data-bs-theme="dark"] .cev-ov-table tbody td { border-bottom-color: rgba(8,145,178,.18); color: #cffafe; }
+[data-bs-theme="dark"] .cev-ov-name { color: #e6f7fb; }
+[data-bs-theme="dark"] .cev-ov-table tbody tr:hover td { background: rgba(8,145,178,.10); }
 .cev-group.is-active {
   background: linear-gradient(120deg, #0c4a6e 0%, #0891b2 55%, #06b6d4 100%);
   border-color: #0891b2;

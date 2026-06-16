@@ -598,6 +598,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   type SegmentDocs = { kyc: SegDocRow[]; dd: SegDocRow[]; tl: SegDocRow[]; td: SegDocRow[]; qc: SegDocRow[] };
   const EMPTY_SEG_DOCS: SegmentDocs = { kyc:[], dd:[], tl:[], td:[], qc:[] };
   const [segmentDocs, setSegmentDocs] = useState<SegmentDocs>(EMPTY_SEG_DOCS);
+  /* segment name → its required KYC/DD/Trade-License doc codes (from the DCP
+   * rules). Lets us block removing a segment in edit mode once any of its
+   * documents have been uploaded (you can still add segments / remove empty
+   * ones). Built alongside the Stage 2 doc-catalog fetch below. */
+  const [segCodeMap, setSegCodeMap] = useState<Record<string, string[]>>({});
   /* True while the Stage 2 segment-rule document catalog is being fetched from
    * the DB (CLM segment-rules + trade-doc-library). Drives the table shimmer so
    * the Company-DD / Owner-KYC / Trade-Licence grids don't flash empty while the
@@ -1046,6 +1051,20 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         qc:  mergeCat('qc'),
       };
       setSegmentDocs(merged);
+      /* Per-segment doc-code map (KYC/DD/Trade License) — `results[i]`
+       * aligns with `segRows[i]`. Used by the remove-segment guard. */
+      const codeMap: Record<string, string[]> = {};
+      results.forEach((r: any, i: number) => {
+        const seg = segRows[i];
+        if (!seg) return;
+        const codes = new Set<string>();
+        (['kyc', 'dd', 'tl'] as const).forEach(cat => {
+          const rows: SegDocRow[] = Array.isArray(r?.[cat]) ? r[cat] : [];
+          rows.forEach(d => { if (d?.code) codes.add(d.code); });
+        });
+        codeMap[seg.name] = Array.from(codes);
+      });
+      setSegCodeMap(codeMap);
       /* Stage 3 Trade Documents = the merged segment-rule `td` set
        * intersected with the party=Buyer trade-doc library. No hardcoded
        * fallback — when the intersection is empty the table is empty, so
@@ -2200,7 +2219,22 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 options={masters.segments.map(o => ({ value: o.name, label: o.code ? `${o.code}: ${o.name}` : o.name }))}
                 placeholder="Select segment"
                 invalid={!!errors.coSeg}
-                onChange={vs => set('coSeg', vs)}
+                onChange={vs => {
+                  /* Block removing a segment whose KYC/DD/Trade-License docs
+                   * are already uploaded (edit mode). Additions and removing
+                   * empty segments are always allowed. */
+                  const prev = form.coSeg ?? [];
+                  const removed = prev.filter(s => !vs.includes(s));
+                  if (removed.length) {
+                    const uploaded = new Set(Object.keys(segmentRefUploads).map(k => k.split('::')[1]));
+                    const locked = removed.filter(seg => (segCodeMap[seg] ?? []).some(c => uploaded.has(c)));
+                    if (locked.length) {
+                      toast.error('Cannot remove segment', `${locked.join(', ')} ${locked.length > 1 ? 'have' : 'has'} uploaded documents. Remove those documents first to drop the segment.`);
+                      vs = [...vs, ...locked.filter(s => !vs.includes(s))];
+                    }
+                  }
+                  set('coSeg', vs);
+                }}
                 maxChips={2}
               />
             </Field>
