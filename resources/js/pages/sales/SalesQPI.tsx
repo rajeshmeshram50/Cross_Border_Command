@@ -283,6 +283,15 @@ function piPayloadFromQuotation(q: Quotation) {
   };
 }
 
+/* Currency values are stored as full labels like "SGD - Singapore Dollar".
+ * In the table we only want the code ("SGD") so the column stays narrow and
+ * the table doesn't need horizontal scroll. Splits on the first dash/en-dash;
+ * plain codes ("USD") and symbols ("$") pass through unchanged. */
+function currencyCode(v: string | null | undefined): string {
+  if (!v) return '';
+  return String(v).split(/\s*[-–—]\s*/)[0].trim();
+}
+
 function piPayloadFromPI(p: PI) {
   // `id` is the only field openSalesPdf actually uses now — both backends
   // read the row from the DB by id. The rest is kept for backwards-compat
@@ -513,7 +522,13 @@ function MoreOptionsMenu(props: {
             type="button" role="menuitem"
             className="qpi-moremenu-item"
             disabled={busy !== null}
-            onClick={() => { onError(`Not signed yet — sign this ${docLabel} via Zoho to view the signed PDF.`); onClose(); }}
+            /* Quotations aren't e-signed through Zoho here, so "with Signature"
+               renders the stamped PDF variant directly (the old stamp output).
+               PIs still gate this behind the Zoho signing flow. */
+            onClick={() => {
+              if (kind === 'quotation') { pick('view', true); return; }
+              onError(`Not signed yet — sign this ${docLabel} via Zoho to view the signed PDF.`); onClose();
+            }}
           >
             <IconEyeSm />
             <span>View {docLabel} with Signature</span>
@@ -534,7 +549,11 @@ function MoreOptionsMenu(props: {
             type="button" role="menuitem"
             className="qpi-moremenu-item"
             disabled={busy !== null}
-            onClick={() => { onError(`Not signed yet — sign this ${docLabel} via Zoho to download the signed PDF.`); onClose(); }}
+            /* Quotations: stamped PDF variant directly; PIs: Zoho-gated. */
+            onClick={() => {
+              if (kind === 'quotation') { pick('download', true); return; }
+              onError(`Not signed yet — sign this ${docLabel} via Zoho to download the signed PDF.`); onClose();
+            }}
           >
             <IconDownloadSm />
             <span>Download {docLabel} with Signature</span>
@@ -1203,13 +1222,35 @@ export default function SalesQPI() {
     const signedHint = 'Document already signed — open the history icon to view it.';
     return (
       <>
-        {/* Send-for-Signature — only on PI rows; hidden for Quotation. */}
+        {/* Send-for-Signature — only on PI rows; hidden for Quotation.
+            Rendered as a labelled pill (same shape as the Quotation "Convert
+            to PI" button) instead of a bare icon, with three states:
+            Send for Sign (active) → Sent (awaiting) → Signed (done). */}
         {kind === 'pi' && (
-        <ActionBtn
-          title={readOnly ? 'View-only — this record belongs to the main branch.' : notSent ? 'Send for Signature' : signed ? signedHint : 'Already sent — awaiting signature'}
-          color="#0ea5e9" disabled={readOnly || !notSent}
-          onClick={() => notSent && setSigSendFor({ kind, id, code, customerName: customer || null, leadId: leadId ?? null })}
-          icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>} />
+          signed ? (
+            <Tooltip label={signedHint}>
+              <button type="button" disabled className="qpi-convert-btn qpi-send-btn qpi-send-btn-signed" aria-label="Signed">
+                <IconCheck /><span className="qpi-convert-btn-label">Signed</span>
+              </button>
+            </Tooltip>
+          ) : inProgress ? (
+            <Tooltip label="Already sent — awaiting signature">
+              <button type="button" disabled className="qpi-convert-btn qpi-send-btn qpi-send-btn-sent" aria-label="Sent">
+                <IconPaperPlaneSm /><span className="qpi-convert-btn-label">Sent</span>
+              </button>
+            </Tooltip>
+          ) : (
+            <Tooltip label={readOnly ? 'View-only — this record belongs to the main branch.' : 'Send for Signature'}>
+              <button
+                type="button"
+                className="qpi-convert-btn qpi-send-btn"
+                disabled={readOnly}
+                onClick={() => setSigSendFor({ kind, id, code, customerName: customer || null, leadId: leadId ?? null })}
+              >
+                <IconPaperPlaneSm /><span className="qpi-convert-btn-label">Send for Sign</span>
+              </button>
+            </Tooltip>
+          )
         )}
         <ActionBtn
           title={inProgress ? 'View sent document' : signed ? signedHint : 'No document sent yet'}
@@ -1270,7 +1311,7 @@ export default function SalesQPI() {
     },
     {
       header: 'Currency', accessorKey: 'currency',
-      cell: (info: any) => info.getValue() ? <span className="qpi-currency">{info.getValue()}</span> : <span className="qpi-em">—</span>,
+      cell: (info: any) => info.getValue() ? <span className="qpi-currency">{currencyCode(info.getValue())}</span> : <span className="qpi-em">—</span>,
     },
     {
       header: 'Sales Manager', accessorKey: 'salesManager',
@@ -1288,19 +1329,6 @@ export default function SalesQPI() {
           r.createdBy, r.createdById, r.creatorUserType, r.creatorBranchIsMain, r.branchName,
           currentUser?.id, currentUser?.is_main_branch === true,
         );
-      },
-    },
-    {
-      // Signature status — mirrors the Send-for-Sign lifecycle:
-      // Not Sent -> Sent (awaiting signature) -> Signed.
-      header: () => <div className="text-center">Status</div>,
-      id: '__sigstatus', meta: { align: 'center' },
-      cell: (info: any) => {
-        const r  = info.row.original as Quotation;
-        const st = r.id ? sigByRow[`quotation:${r.id}`]?.status : undefined;
-        if (st === 'completed')  return <span className="qpi-sig-pill qpi-sig-signed">Signed</span>;
-        if (st === 'inprogress') return <span className="qpi-sig-pill qpi-sig-sent">Sent</span>;
-        return <span className="qpi-sig-pill qpi-sig-none">Not Sent</span>;
       },
     },
     {
@@ -1339,8 +1367,10 @@ export default function SalesQPI() {
                 </button>
               </Tooltip>
             )}
-            {/* Send for Signature (Zoho Sign) — status-aware control. */}
-            {renderSignAction('quotation', r.id, r.qtNo, r.customer, r.leadId, readOnly)}
+            {/* Signing icons (view-sent + tracker) intentionally NOT rendered
+                for Quotations — quotations are not sent through Zoho Sign here,
+                so the view-sent and signing-tracker actions are hidden. They
+                remain on the PI tab via renderSignAction('pi', …). */}
             {/* Email button — matches the in-matrix Stage 5 table: stays
                 available after every send (no one-time disable) so the
                 quotation can be re-emailed; each send fires a toast.
@@ -1479,7 +1509,7 @@ export default function SalesQPI() {
         : <span className="qpi-em">—</span> },
     { header: 'Document Type', accessorKey: 'docType' },
     { header: 'Currency', accessorKey: 'currency',
-      cell: (info: any) => info.getValue() ? <span className="qpi-currency">{info.getValue()}</span> : <span className="qpi-em">—</span> },
+      cell: (info: any) => info.getValue() ? <span className="qpi-currency">{currencyCode(info.getValue())}</span> : <span className="qpi-em">—</span> },
     { header: 'Sales Manager', accessorKey: 'salesManager',
       cell: (info: any) => <span className="qpi-sm">{info.getValue() || '—'}</span> },
     {
@@ -1740,7 +1770,11 @@ export default function SalesQPI() {
               divClass="table-responsive table-card"
               SearchPlaceholder="Search quotations..."
               condensedPagination
-              rowClassName={(row: any) => (pdfBusyRowId != null && Number(row.original?.id) === pdfBusyRowId ? 'qpi-row-busy' : '')}
+              rowClassName={(row: any) => {
+                const rid = Number(row.original?.id);
+                const busy = (pdfBusyRowId != null && rid === pdfBusyRowId) || isEmailing('quotation', rid);
+                return busy ? 'qpi-row-busy' : '';
+              }}
             />
           ) : piSub === 'with' ? (
             <TableContainer
@@ -1753,7 +1787,11 @@ export default function SalesQPI() {
               divClass="table-responsive table-card"
               SearchPlaceholder="Search PIs..."
               condensedPagination
-              rowClassName={(row: any) => (pdfBusyRowId != null && Number(row.original?.id) === pdfBusyRowId ? 'qpi-row-busy' : '')}
+              rowClassName={(row: any) => {
+                const rid = Number(row.original?.id);
+                const busy = (pdfBusyRowId != null && rid === pdfBusyRowId) || isEmailing('pi', rid);
+                return busy ? 'qpi-row-busy' : '';
+              }}
             />
           ) : (
             <TableContainer
@@ -1766,7 +1804,11 @@ export default function SalesQPI() {
               divClass="table-responsive table-card"
               SearchPlaceholder="Search PIs..."
               condensedPagination
-              rowClassName={(row: any) => (pdfBusyRowId != null && Number(row.original?.id) === pdfBusyRowId ? 'qpi-row-busy' : '')}
+              rowClassName={(row: any) => {
+                const rid = Number(row.original?.id);
+                const busy = (pdfBusyRowId != null && rid === pdfBusyRowId) || isEmailing('pi', rid);
+                return busy ? 'qpi-row-busy' : '';
+              }}
             />
           )}
 
@@ -4281,6 +4323,13 @@ const IconCheck = () => (
     <polyline points="20 6 9 17 4 12" />
   </svg>
 );
+/* Paper-plane glyph for the PI "Send for Sign" pill. White stroke since the
+   pill has a coloured (sky/amber) background — matches IconCheck's treatment. */
+const IconPaperPlaneSm = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M22 2 11 13" /><path d="M22 2 15 22l-4-9-9-4 20-7z" />
+  </svg>
+);
 const IconWarn = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
     <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
@@ -5062,7 +5111,10 @@ const SCOPED_CSS = `
 /* Convert to PI — restrained pill matching .smc-add-btn weight (gradient
    fill, modest shadow, NO heavy inset highlight). */
 .qpi-convert-btn {
-  display: inline-flex; align-items: center; gap: 6px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  /* Fixed width so the "Convert to PI" and "Converted" pills are identical —
+     keeps the trailing action icons vertically aligned across every row. */
+  min-width: 132px;
   padding: 0 12px; height: 30px;
   border: 0; border-radius: 999px;
   background: linear-gradient(135deg, #7c3aed, #6d28d9);
@@ -5093,6 +5145,27 @@ const SCOPED_CSS = `
   cursor: not-allowed;
 }
 .qpi-convert-btn-done:hover { transform: none; }
+
+/* Send-for-Signature pill (PI tab) — same pill shape as the convert button,
+   in sky blue. "Sent" turns amber, "Signed" turns green; both are locked. */
+.qpi-send-btn {
+  background: linear-gradient(135deg, #0ea5e9, #0284c7);
+  box-shadow: 0 3px 10px rgba(14,165,233,.30);
+}
+.qpi-send-btn:hover:not(:disabled) { box-shadow: 0 4px 14px rgba(14,165,233,.40); }
+.qpi-send-btn:disabled { cursor: not-allowed; }
+.qpi-send-btn-sent, .qpi-send-btn-sent:disabled {
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  box-shadow: 0 3px 10px rgba(99,102,241,.28);
+  opacity: 1; cursor: not-allowed;
+}
+.qpi-send-btn-sent:hover { transform: none; }
+.qpi-send-btn-signed, .qpi-send-btn-signed:disabled {
+  background: linear-gradient(135deg, #16a34a, #15803d);
+  box-shadow: 0 3px 10px rgba(22,163,74,.25);
+  opacity: 1; cursor: not-allowed;
+}
+.qpi-send-btn-signed:hover { transform: none; }
 
 /* "Signed PDF" download button — green pill, clickable (unlike the locked
    "converted" state above). Shown on completed e-signature rows. */
@@ -6177,9 +6250,10 @@ const SCOPED_CSS = `
   .qpi-table-host .table thead.table-light th:last-child,
   .qpi-table-host .table tbody td:last-child  { padding-right: 12px !important; }
 
-  /* Action buttons compress — Convert label hides, icon stays */
+  /* Action buttons compress — Convert label hides, icon stays.
+     Drop the fixed pill width here so the icon-only button stays compact. */
   .qpi-convert-btn-label { display: none; }
-  .qpi-convert-btn { padding: 0 9px; }
+  .qpi-convert-btn { padding: 0 9px; min-width: 0; }
 
   /* Modal backdrop hugs the edge — give the modal more breathing room */
   .qpi-modal-backdrop { padding: 8px; }
