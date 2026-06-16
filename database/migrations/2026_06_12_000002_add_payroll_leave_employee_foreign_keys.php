@@ -71,6 +71,23 @@ return new class extends Migration
             });
         }
 
+        // ── De-duplicate emp_code per client BEFORE the unique index ─────────
+        // Some environments carry duplicate codes (e.g. a seeder run twice or a
+        // restored snapshot). Keep the lowest-id row of each (client_id, emp_code)
+        // group and suffix the rest with "-<id>" — the code is preserved
+        // (non-destructive) yet made unique so the index below can be created.
+        DB::statement("
+            UPDATE employees e
+            SET emp_code = e.emp_code || '-' || e.id::text
+            WHERE e.emp_code IS NOT NULL AND e.emp_code <> ''
+              AND EXISTS (
+                SELECT 1 FROM employees e2
+                WHERE e2.client_id = e.client_id
+                  AND e2.emp_code = e.emp_code
+                  AND e2.id < e.id
+              )
+        ");
+
         // ── emp_code uniqueness per client (OB-10) ───────────────────────────
         // Partial unique index — only real codes are constrained; null/blank
         // codes (incomplete onboarding) are exempt, and Postgres treats NULLs as
