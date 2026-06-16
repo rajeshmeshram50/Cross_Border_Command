@@ -33,6 +33,7 @@ use App\Models\User;
 class SalesVisibility
 {
     /** Designation that always acts as the Sales Manager (full + distribute). */
+    public const DESIGNATION_DIRECTOR    = 'Director / CEO';
     public const DESIGNATION_MANAGER     = 'Head of Department (HOD)';
     /** Designation that MAY distribute to its team when granted the permission. */
     public const DESIGNATION_TEAM_LEADER = 'Team Leader';
@@ -61,8 +62,8 @@ class SalesVisibility
             $result = 'all';
         } else {
             $designation = self::designationOf($user);
-            if ($designation === self::DESIGNATION_MANAGER) {
-                $result = 'all';                              // HOD = Sales Manager
+            if (in_array($designation, [self::DESIGNATION_DIRECTOR, self::DESIGNATION_MANAGER], true)) {
+                $result = 'all';                              // Director/CEO + HOD = full access
             } elseif ($designation === self::DESIGNATION_TEAM_LEADER && self::hasDistributePermission($user)) {
                 $result = 'team';                            // delegated Team Leader
             }
