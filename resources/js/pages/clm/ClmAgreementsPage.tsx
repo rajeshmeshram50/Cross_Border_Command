@@ -425,10 +425,10 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
       {segOpen && createPortal(
         <>
           <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 230), top: segOpen.y, zIndex: 601, width: 210, maxHeight: 280, overflowY: 'auto', background: '#fff', borderRadius: 12, border: '1.5px solid #99f6e4', boxShadow: '0 16px 40px rgba(0,0,0,.18)', padding: 8 }}>
-            <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#0d9488', padding: '4px 8px 7px' }}>Segments ({segOpen.names.length})</div>
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 230), top: segOpen.y, zIndex: 601, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+            <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Segments ({segOpen.names.length})</div>
             {segOpen.names.map((name, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8, background: i % 2 ? '#f0fdfa' : 'transparent' }}>
+              <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
                 <span className="clm-badge clm-badge-teal">{name}</span>
               </div>
             ))}

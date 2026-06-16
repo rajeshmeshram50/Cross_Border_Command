@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -74,7 +75,9 @@ export default function SalesConsignee() {
   const canEdit = isSuperAdmin || !!perm?.can_edit;
 
   const [q, setQ] = useState('');
-  const [wdhOpen, setWdhOpen] = useState(true);
+  const [wdhOpen, setWdhOpen] = useState(false);
+  // All-segments popover — opened from the +N badge in the Segment column.
+  const [segOpen, setSegOpen] = useState<{ id: string | number; names: string[]; x: number; y: number } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<ConsigneeRow | null>(null);
 
@@ -323,7 +326,25 @@ export default function SalesConsignee() {
     {
       header: 'Segment',
       accessorKey: 'segment',
-      cell: (info: any) => info.getValue() ? <span className="smcg-seg">{info.getValue()}</span> : <span className="text-muted">—</span>,
+      cell: (info: any) => {
+        const segList = String(info.getValue() ?? '').split(',').map((s: string) => s.trim()).filter(Boolean);
+        if (segList.length === 0) return <span className="text-muted">—</span>;
+        const extra = segList.length - 1;
+        const rowId = (info.row.original as ConsigneeRow).id;
+        return (
+          <span className="d-inline-flex align-items-center" style={{ gap: 4 }}>
+            <span className="smcg-seg">{segList[0]}</span>
+            {extra > 0 && (
+              <button
+                type="button"
+                className="smcg-seg-more"
+                title="View all segments"
+                onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(prev => prev?.id === rowId ? null : { id: rowId, names: segList, x: b.left, y: b.bottom + 4 }); }}
+              >+{extra}</button>
+            )}
+          </span>
+        );
+      },
     },
     {
       header: 'Risk Level',
@@ -341,6 +362,7 @@ export default function SalesConsignee() {
     {
       header: 'Same as Customer',
       accessorKey: 'same_as_customer',
+      meta: { align: 'center' },
       cell: (info: any) => {
         const yes = !!info.getValue();
         return (
@@ -385,25 +407,26 @@ export default function SalesConsignee() {
                 </button>
               </Tooltip>
             )}
-            {/* Evidence Vault — icon + "Vault" label pill (Figma). */}
-            <button
-              type="button"
-              className="smcg-act smcg-act-vault"
-              onClick={() => setVaultTarget({
-                id: c.id,
-                db_id: c.db_id,
-                company: c.company,
-                risk: c.risk,
-                segment: c.segment,
-                country: c.country,
-                contact: c.contact,
-                contactCity: c.countryDetail,
-                customerId: c.customerId,
-              })}
-            >
-              <i className="ri-archive-line" />
-              Vault
-            </button>
+            {/* Evidence Vault — icon-only square button (label shown on hover). */}
+            <Tooltip label="Evidence Vault">
+              <button
+                type="button"
+                className="smcg-act smcg-act-vault"
+                onClick={() => setVaultTarget({
+                  id: c.id,
+                  db_id: c.db_id,
+                  company: c.company,
+                  risk: c.risk,
+                  segment: c.segment,
+                  country: c.country,
+                  contact: c.contact,
+                  contactCity: c.countryDetail,
+                  customerId: c.customerId,
+                })}
+              >
+                <i className="ri-archive-line" />
+              </button>
+            </Tooltip>
             {/* Delete action removed per product request — consignees
                 are kept (soft-delete only via API if ever needed). The
                 handleDelete + DeleteConfirmModal wiring is intentionally
@@ -602,6 +625,22 @@ export default function SalesConsignee() {
         consignee={vaultTarget}
         onClose={() => setVaultTarget(null)}
       />
+
+      {/* All-segments popover (opened from the +N badge in the Segment column) */}
+      {segOpen && createPortal(
+        <>
+          <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 1090 }} />
+          <div className="smcg-seg-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 230), top: segOpen.y, zIndex: 1091, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+            <div className="smcg-seg-pop-title">Segments ({segOpen.names.length})</div>
+            {segOpen.names.map((name, i) => (
+              <div key={i} className={`smcg-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
+                <span className="smcg-seg">{name}</span>
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
     </div>
   );
 }
@@ -867,7 +906,7 @@ const SCOPED_CSS = `
   width: 100%;
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px;
-  padding: 14px 18px;
+  padding: 14px 18px 4px;
   background: transparent;
   border: 0;
   cursor: pointer;
@@ -921,7 +960,7 @@ const SCOPED_CSS = `
 .smcg-wdh-body {
   display: flex; align-items: stretch;
   gap: 8px;
-  padding: 14px 18px 18px;
+  padding: 0 18px 14px;
   flex-wrap: wrap;
 }
 /* Step tiles — solid WHITE background with a colored left-side
@@ -936,8 +975,8 @@ const SCOPED_CSS = `
   border: 1px solid rgba(13,148,136,0.18);
   border-left: 4px solid #0d9488;
   border-radius: 12px;
-  padding: 14px 16px;
-  display: flex; flex-direction: column; gap: 6px;
+  padding: 9px 16px;
+  display: flex; flex-direction: column; gap: 4px;
   box-shadow: 0 2px 8px rgba(16,185,129,0.06);
   cursor: default;
   transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
@@ -1046,6 +1085,7 @@ const SCOPED_CSS = `
   flex-wrap: wrap;
   position: relative;
   z-index: 1;
+  margin-bottom: 3px;
 }
 .smcg-toolbar .smcg-search {
   position: relative;
@@ -1194,6 +1234,14 @@ const SCOPED_CSS = `
   vertical-align: middle !important;
 }
 .smcg-table-wrap .table thead th i { font-size: 12px; opacity: 0.85; color: #ffffff; }
+/* Sr No (first column) — slim it down: small fixed width + tighter side
+   padding so the row-number column doesn't eat horizontal space. */
+.smcg-table-wrap .table th:first-child,
+.smcg-table-wrap .table td:first-child { width: 46px; padding-left: 8px !important; padding-right: 8px !important; }
+/* Risk Level (6th column) — narrow it a bit; the pill is short so the
+   column doesn't need the full default width. */
+.smcg-table-wrap .table th:nth-child(6),
+.smcg-table-wrap .table td:nth-child(6) { width: 96px; padding-left: 8px !important; padding-right: 8px !important; }
 
 /* Body — white rows with soft emerald hover. */
 .smcg-table-wrap .table tbody tr { background: transparent; transition: background .12s ease; }
@@ -1468,6 +1516,30 @@ const SCOPED_CSS = `
   border: 1px solid #a7f3d0; border-radius: 20px;
   padding: 3px 10px; white-space: nowrap;
 }
+/* "+N" overflow badge in the Segment column — emerald to match the page. */
+.smcg-seg-more {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 20px;
+  border: 0; cursor: pointer; flex-shrink: 0;
+  font-size: 10px; font-weight: 800; color: #fff; font-family: inherit;
+  background: linear-gradient(135deg, #14b8a6, #0d9488);
+  box-shadow: 0 2px 8px rgba(13,148,136,.35);
+}
+.smcg-seg-more:hover { filter: brightness(1.06); }
+/* All-segments popover */
+.smcg-seg-pop {
+  background: #fff; border: 1.5px solid #a7f3d0;
+  box-shadow: 0 16px 40px rgba(0,0,0,.18);
+}
+.smcg-seg-pop-title {
+  font-size: 8px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  color: #0d9488; padding: 4px 8px 7px;
+}
+.smcg-seg-pop-row { display: flex; align-items: center; padding: 6px 8px; border-radius: 8px; }
+.smcg-seg-pop-row.alt { background: #f0fdf9; }
+[data-bs-theme="dark"] .smcg-seg-pop { background: #0f1f1b; border-color: rgba(13,148,136,.4); box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+[data-bs-theme="dark"] .smcg-seg-pop-title { color: #5eead4; }
+[data-bs-theme="dark"] .smcg-seg-pop-row.alt { background: rgba(255,255,255,.04); }
 /* Segment chip leading dot removed — matches the SalesCustomers
    cleanup where pill badges don't carry a leading dot indicator. */
 /* Same-as-Customer Yes/No pill — green for a mirror, neutral grey otherwise. */
@@ -1513,8 +1585,8 @@ const SCOPED_CSS = `
 /* Edit — square, light-mint fill, teal pencil (Figma). */
 .smcg-act-edit  { width:32px; padding:0; border-color:#5eead4; background:#ecfdf5; color:#0d9488; }
 .smcg-act-edit i { font-size:15px; }
-/* Vault — white pill with the safe icon + "Vault" label, teal border. */
-.smcg-act-vault { padding:0 13px; border-color:#5eead4; background:#fff; color:#0d9488; }
+/* Vault — square icon-only button (was a pill with a "Vault" label), teal border. */
+.smcg-act-vault { width:32px; padding:0; border-color:#5eead4; background:#fff; color:#0d9488; }
 .smcg-act-vault i { font-size:15px; }
 .smcg-act-edit:hover  { background: linear-gradient(135deg, #34d399, #047857); color:#fff; border-color:transparent; box-shadow:0 4px 14px rgba(5,150,105,.4); transform:translateY(-2px); }
 .smcg-act-vault:hover { background: linear-gradient(135deg, #34d399, #047857); color:#fff; border-color:transparent; box-shadow:0 4px 14px rgba(5,150,105,.4); transform:translateY(-2px); }
