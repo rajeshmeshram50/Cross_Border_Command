@@ -82,10 +82,21 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
   const [loading, setLoading] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const [submittingId, setSubmittingId] = useState<number | null>(null);
+  /* Which shared-price entry's PDF is being opened/downloaded — disables its
+   * buttons + shows a spinner so a double-click can't fire two requests. */
+  const [pdfBusy, setPdfBusy] = useState<number | null>(null);
 
   const [products, setProducts]     = useState<LeadProductRow[]>([]);
   const [sharedRows, setSharedRows] = useState<SharedRow[]>([]);
   const [quotedDraft, setQuotedDraft] = useState<Record<number, string>>({});
+
+  /* How many times each product's price has been submitted (shared) — drives
+   * the "View price history" tooltip count. Keyed by lead_product id. */
+  const submitCountByProduct = useMemo(() => {
+    const m: Record<number, number> = {};
+    for (const s of sharedRows) m[s.lead_product_id] = (m[s.lead_product_id] ?? 0) + 1;
+    return m;
+  }, [sharedRows]);
 
   /* History sub-view state */
   const [historyHeader, setHistoryHeader] = useState<LeadProductRow | null>(null);
@@ -197,6 +208,9 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
   };
 
   const onViewPdf = async (entryId: number) => {
+    if (pdfBusy !== null) return;                 // a PDF is already loading — ignore the click
+    setPdfBusy(entryId);
+    toast.info('Opening PDF…', 'Generating the quotation PDF');
     try {
       const blob = await fetchPdfBlob(entryId);
       const url = URL.createObjectURL(blob);
@@ -204,10 +218,15 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
       setTimeout(() => URL.revokeObjectURL(url), 30_000);
     } catch {
       toast.error('Open failed', 'Could not open the quotation PDF');
+    } finally {
+      setPdfBusy(null);
     }
   };
 
   const onDownloadPdf = async (entryId: number) => {
+    if (pdfBusy !== null) return;                 // a PDF is already loading — ignore the click
+    setPdfBusy(entryId);
+    toast.info('Preparing download…', 'Generating the quotation PDF');
     try {
       const blob = await fetchPdfBlob(entryId);
       const url = URL.createObjectURL(blob);
@@ -218,6 +237,8 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
       URL.revokeObjectURL(url);
     } catch {
       toast.error('Download failed', 'Could not download the quotation PDF');
+    } finally {
+      setPdfBusy(null);
     }
   };
 
@@ -287,20 +308,20 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
         {view === 'history' && (
           <div className="s4-card s4-card-navy smd-fade-in" key="history">
             <div className="s4-card-head s4-card-head-navy">
+              {/* Left: product name + id (no "Price History" title, no count). */}
+              <div className="s4-card-head-titlewrap">
+                <div className="s4-card-title s4-history-titlerow">
+                  <span className="s4-history-code">{historyHeader?.product_code ?? '—'}</span>
+                  <span>{historyHeader?.product_name ?? '—'}</span>
+                </div>
+              </div>
+              {/* Right: back button. */}
               <button type="button" className="s4-back-btn" onClick={goBackToList}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
                   <line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" />
                 </svg>
                 Back
               </button>
-              <div className="s4-card-head-titlewrap">
-                <div className="s4-card-title">Price History</div>
-                <div className="s4-card-sub">
-                  <span className="s4-history-code">{historyHeader?.product_code ?? '—'}</span>
-                  <span>{historyHeader?.product_name ?? '—'}</span>
-                </div>
-              </div>
-              <span className="s4-card-count s4-card-count-navy">{historyRows.length}</span>
             </div>
 
             <div className="s4-table-wrap">
@@ -336,7 +357,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                   {!historyLoading && historyRows.map((h, idx) => {
                     const { date, time } = formatDateTime(h.shared_at);
                     return (
-                      <tr key={h.id}>
+                      <tr key={h.id} className={pdfBusy === h.id ? 's4-row-busy' : undefined}>
                         <td><span className="s4-sr s4-sr-navy">{idx + 1}</span></td>
                         <td><span className="s4-code s4-code-navy">{historyHeader?.product_code ?? '—'}</span></td>
                         <td><div className="s4-prod-name">{historyHeader?.product_name ?? '—'}</div></td>
@@ -357,12 +378,13 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                         </td>
                         <td>
                           <div className="s4-pdf-actions">
-                            <button type="button" className="s4-icon-btn" title="View PDF" onClick={() => void onViewPdf(h.id)}>
+                            {/* Whole row shows the loader (s4-row-busy) — buttons just disable. */}
+                            <button type="button" className="s4-icon-btn" title="View PDF" onClick={() => void onViewPdf(h.id)} disabled={pdfBusy !== null}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
                               </svg>
                             </button>
-                            <button type="button" className="s4-icon-btn" title="Download PDF" onClick={() => void onDownloadPdf(h.id)}>
+                            <button type="button" className="s4-icon-btn" title="Download PDF" onClick={() => void onDownloadPdf(h.id)} disabled={pdfBusy !== null}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
                               </svg>
@@ -507,7 +529,8 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                                 </button>
                                 <button
                                   type="button"
-                                  className="s4-icon-btn"
+                                  className="s4-icon-btn s4-eye-btn"
+                                  /* Count shows as the corner badge; tooltip is the plain action. */
                                   title={blocked ? 'Complete product status first' : 'View price history'}
                                   onClick={() => void openHistory(r)}
                                   disabled={blocked}
@@ -515,6 +538,9 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
                                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
                                   </svg>
+                                  {(submitCountByProduct[r.id] ?? 0) > 0 && (
+                                    <span className="s4-eye-count">{submitCountByProduct[r.id]}</span>
+                                  )}
                                 </button>
                               </div>
                             </td>
@@ -566,7 +592,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                       {!loading && filteredShared.map((r, idx) => {
                         const { date, time } = formatDateTime(r.shared_at);
                         return (
-                          <tr key={r.id}>
+                          <tr key={r.id} className={pdfBusy === r.id ? 's4-row-busy' : undefined}>
                             <td><span className="s4-sr s4-sr-navy">{idx + 1}</span></td>
                             <td><span className="s4-code s4-code-navy">{r.product_code ?? `P-${String(r.product_id ?? 0).padStart(3,'0')}`}</span></td>
                             <td>
@@ -590,12 +616,13 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                             </td>
                             <td>
                               <div className="s4-pdf-actions">
-                                <button type="button" className="s4-icon-btn" title="View PDF" onClick={() => void onViewPdf(r.id)}>
+                                {/* Whole row shows the loader (s4-row-busy) — buttons just disable. */}
+                                <button type="button" className="s4-icon-btn" title="View PDF" onClick={() => void onViewPdf(r.id)} disabled={pdfBusy !== null}>
                                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
                                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
                                   </svg>
                                 </button>
-                                <button type="button" className="s4-icon-btn" title="Download PDF" onClick={() => void onDownloadPdf(r.id)}>
+                                <button type="button" className="s4-icon-btn" title="Download PDF" onClick={() => void onDownloadPdf(r.id)} disabled={pdfBusy !== null}>
                                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
                                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
                                   </svg>
@@ -770,23 +797,23 @@ const STAGE4_CSS = `
 .s4-search input::placeholder { color: #94a3b8; }
 
 /* ═══════════════════════════════ TABLE ═══════════════════════════════ */
-.s4-table-wrap { overflow: auto; max-height: 380px; background: #fff; scrollbar-width: thin; scrollbar-color: #c4b5fd #f5f3ff; }
+.s4-table-wrap { overflow: auto; max-height: 380px; background: #fff; scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
 .s4-table-wrap::-webkit-scrollbar { width: 9px; height: 9px; }
-.s4-table-wrap::-webkit-scrollbar-track { background: #f5f3ff; }
-.s4-table-wrap::-webkit-scrollbar-thumb { background: #c4b5fd; border-radius: 6px; border: 2px solid #f5f3ff; }
-.s4-table-wrap::-webkit-scrollbar-thumb:hover { background: #a78bfa; }
+.s4-table-wrap::-webkit-scrollbar-track { background: transparent; }
+.s4-table-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+.s4-table-wrap::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 .s4-table { width: 100%; border-collapse: collapse; min-width: 880px; }
 .s4-table thead th { position: sticky; top: 0; z-index: 2; }
 .s4-thead-navy th {
   padding: 12px 14px; text-align: left;
   font-size: 11.5px; font-weight: 800; color: #fff;
-  background: #7c3aed;
+  background: linear-gradient(180deg, #7c3aed, #6d28d9);
   white-space: nowrap;
 }
 .s4-thead-emerald th {
   padding: 12px 14px; text-align: left;
   font-size: 11.5px; font-weight: 800; color: #fff;
-  background: #047857;
+  background: linear-gradient(180deg, #7c3aed, #6d28d9);
   white-space: nowrap;
 }
 .s4-table tbody td {
@@ -893,6 +920,42 @@ const STAGE4_CSS = `
   background: linear-gradient(135deg, #94a3b8, #64748b);
 }
 
+/* History header: product code + name on one row (no "Price History" title). */
+.s4-history-titlerow { display: flex; align-items: center; gap: 8px; }
+/* Eye (view history) button with a corner count badge = # of times submitted. */
+.s4-eye-btn { position: relative; overflow: visible; }
+.s4-eye-count {
+  position: absolute; top: -6px; right: -6px;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 999px; background: #7c3aed; color: #fff;
+  font-size: 9px; font-weight: 800; line-height: 16px; text-align: center;
+  box-shadow: 0 0 0 2px #fff;
+}
+[data-bs-theme="dark"] .s4-eye-count { box-shadow: 0 0 0 2px #14102a; }
+
+/* Row-level loader — while a row's PDF is generating, the WHOLE row shows a
+   violet shimmer sweep, its content dims, and clicks are blocked. */
+@keyframes s4-row-sweep { 0% { background-position: -360px 0; } 100% { background-position: 360px 0; } }
+.s4-row-busy { pointer-events: none; }
+.s4-row-busy td {
+  background-image: linear-gradient(90deg, rgba(124,58,237,0) 0%, rgba(124,58,237,.16) 50%, rgba(124,58,237,0) 100%) !important;
+  background-size: 360px 100% !important;
+  background-repeat: no-repeat !important;
+  animation: s4-row-sweep 1.1s ease-in-out infinite;
+}
+.s4-row-busy td > * { opacity: .4; }
+[data-bs-theme="dark"] .s4-row-busy td {
+  background-image: linear-gradient(90deg, rgba(167,139,250,0) 0%, rgba(167,139,250,.20) 50%, rgba(167,139,250,0) 100%) !important;
+}
+/* PDF-action loading spinner (prevents double-click + shows it's working). */
+.s4-spin {
+  display: inline-block; width: 13px; height: 13px;
+  border: 2px solid rgba(124,58,237,.30); border-top-color: #7c3aed;
+  border-radius: 50%; animation: s4-spin-rot .65s linear infinite;
+}
+@keyframes s4-spin-rot { to { transform: rotate(360deg); } }
+[data-bs-theme="dark"] .s4-spin { border-color: rgba(167,139,250,.35); border-top-color: #c4b5fd; }
+
 .s4-icon-btn {
   width: 30px; height: 30px;
   background: #fff; border: 1.5px solid #ddd6fe;
@@ -937,7 +1000,10 @@ const STAGE4_CSS = `
 [data-bs-theme="dark"] .s4-back-btn:hover { background: #2a2150; }
 [data-bs-theme="dark"] .s4-search { background: #1f1845; border-color: rgba(167,139,250,.35); color: #c4b5fd; }
 [data-bs-theme="dark"] .s4-search input { color: #ede9fe; }
-[data-bs-theme="dark"] .s4-table-wrap { background: #14102a; }
+[data-bs-theme="dark"] .s4-table-wrap { background: #14102a; scrollbar-color: rgba(148,163,184,.45) transparent; }
+[data-bs-theme="dark"] .s4-table-wrap::-webkit-scrollbar-track { background: transparent; }
+[data-bs-theme="dark"] .s4-table-wrap::-webkit-scrollbar-thumb { background: rgba(148,163,184,.45); }
+[data-bs-theme="dark"] .s4-table-wrap::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,.65); }
 [data-bs-theme="dark"] .s4-thead-navy th    { background: #5b21b6; }
 [data-bs-theme="dark"] .s4-thead-emerald th { background: #065f46; }
 [data-bs-theme="dark"] .s4-table tbody td { color: #ede9fe; border-bottom-color: rgba(167,139,250,.18); }

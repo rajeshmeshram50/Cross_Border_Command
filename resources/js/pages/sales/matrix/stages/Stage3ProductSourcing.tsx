@@ -794,8 +794,10 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                               {updatingId === r.id ? (
                                 <span className="s3-convert-spin" />
                               ) : (
+                                /* Revert / send-back arrow — this row goes BACK
+                                   into "Sourcing Required". */
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                                  <line x1="7" y1="17" x2="17" y2="7" /><polyline points="8 7 17 7 17 16" />
+                                  <polyline points="9 14 4 9 9 4" /><path d="M20 20v-7a4 4 0 0 0-4-4H4" />
                                 </svg>
                               )}
                             </button>
@@ -1030,20 +1032,23 @@ const STAGE3_CSS = `
 .s3-warn {
   display: flex; align-items: center; gap: 10px;
   padding: 11px 16px; margin-bottom: 12px;
-  background: linear-gradient(135deg,#fffbeb,#fef3c7);
-  border: 1.5px solid #fcd34d; border-radius: 12px;
-  color: #92400e; font-size: 12.5px; font-weight: 600;
+  background: linear-gradient(135deg,#faf5ff,#ede9fe);
+  border: 1.5px solid #ddd6fe; border-radius: 12px;
+  color: #5b21b6; font-size: 12.5px; font-weight: 600;
 }
 .s3-warn-ico {
   display: inline-flex; align-items: center; justify-content: center;
   width: 22px; height: 22px; border-radius: 7px;
-  background: #fef3c7; color: #b45309; font-size: 13px; flex-shrink: 0;
+  background: #ede9fe; color: #6d28d9; font-size: 13px; flex-shrink: 0;
 }
 
 /* ═══════════════════════════════ CARD ═══════════════════════════════ */
 .s3-card {
   background: #fff;
   border: 1.5px solid; border-radius: 14px;
+  /* solid violet top bar — !important so the per-variant border-color
+     (.s3-card-violet / -amber / -mint) doesn't repaint the top edge. */
+  border-top: 3px solid #7c3aed !important;
   overflow: hidden;
 }
 .s3-card-violet { border-color: #ddd6fe; }
@@ -1052,11 +1057,17 @@ const STAGE3_CSS = `
 .s3-card-mint   { border-color: #ddd6fe; background: linear-gradient(180deg,#faf5ff,#fff); }
 
 .s3-card-head {
+  position: relative;
   display: flex; justify-content: space-between; align-items: center;
   padding: 13px 18px;
   background: linear-gradient(180deg, #faf5ff, #f5f3ff);
   border-bottom: 1.5px solid #ede9fe;
   gap: 12px; flex-wrap: wrap;
+}
+/* Left vertical accent strip (Figma) — solid violet bar on the header div. */
+.s3-card-head::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 4px; background: linear-gradient(180deg, #7c3aed, #6d28d9);
 }
 .s3-card-head-amber {
   background: linear-gradient(180deg, #faf5ff, #f5f3ff);
@@ -1102,26 +1113,36 @@ const STAGE3_CSS = `
 .s3-legend-off { background: #fee2e2; color: #b91c1c; }
 
 /* ═══════════════════════════════ TABLE ═══════════════════════════════ */
-.s3-table-wrap { overflow-x: auto; background: #fff; }
+.s3-table-wrap {
+  overflow-x: auto; background: #fff;
+  border-top: 1px solid #ede9fe;   /* top border on the table div (Figma) */
+  /* Plain, neutral horizontal scrollbar (not the themed violet one). */
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.s3-table-wrap::-webkit-scrollbar { height: 9px; }
+.s3-table-wrap::-webkit-scrollbar-track { background: transparent; }
+.s3-table-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+.s3-table-wrap::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 .s3-table { width: 100%; border-collapse: collapse; min-width: 880px; }
 /* Table header — light lavender gradient matching the Product Sourcing
    popup's table (gradient on the tr so it sweeps the whole row; cells stay
    transparent). The amber Sourcing-Required table keeps its own header via
    the .s3-table-amber override below. */
-.s3-table thead tr {
-  background: linear-gradient(135deg, #f8f5ff, #ede9fe);
-}
+/* All three tabs (Details / Required / Not-Required) share ONE header look:
+   the solid violet bar with white labels. */
+.s3-table thead tr { background: transparent; }
 .s3-table thead th {
   padding: 11px 14px; text-align: left;
-  font-size: 10px; font-weight: 800; letter-spacing: .09em; color: #a78bfa;
-  background: transparent;
-  border-bottom: 1px solid #e9d5ff;
+  font-size: 10px; font-weight: 800; letter-spacing: .09em; color: #fff;
+  background: linear-gradient(180deg, #7c3aed, #6d28d9);
+  border-bottom: 1.5px solid #6d28d9;
   white-space: nowrap;
 }
 .s3-table-amber thead th {
-  background: linear-gradient(180deg, #f8f5ff, #ede9fe);
-  color: #6d28d9;
-  border-bottom: 1.5px solid #e9d5ff;
+  background: linear-gradient(180deg, #7c3aed, #6d28d9);
+  color: #fff;
+  border-bottom: 1.5px solid #6d28d9;
 }
 .s3-table-mint thead tr { background: transparent; }
 .s3-table-mint thead th {
@@ -1236,7 +1257,7 @@ const STAGE3_CSS = `
 [data-bs-theme="dark"] .s3-vc-amber:hover { background: rgba(124,58,237,.28); }
 [data-bs-theme="dark"] .s3-vc-mint  { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.40); }
 [data-bs-theme="dark"] .s3-vc-mint:hover  { background: rgba(124,58,237,.28); }
-.s3-pending { color: #d97706; font-style: italic; font-size: 11.5px; font-weight: 600; }
+.s3-pending { color: #6d28d9; font-style: italic; font-size: 11.5px; font-weight: 600; }
 .s3-mark-btn {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 6px 12px; border: none; cursor: pointer;
@@ -1374,11 +1395,13 @@ const STAGE3_CSS = `
 [data-bs-theme="dark"] .s3-card-head-amber .s3-card-title { color: #ede9fe; }
 [data-bs-theme="dark"] .s3-card-head-mint .s3-card-title { color: #ede9fe; }
 [data-bs-theme="dark"] .s3-card-sub { color: rgba(196,181,253,.55); }
-[data-bs-theme="dark"] .s3-table-wrap { background: #14102a; }
+[data-bs-theme="dark"] .s3-table-wrap { background: #14102a; border-top-color: rgba(167,139,250,.20); scrollbar-color: rgba(148,163,184,.45) transparent; }
+[data-bs-theme="dark"] .s3-table-wrap::-webkit-scrollbar-thumb { background: rgba(148,163,184,.45); }
+[data-bs-theme="dark"] .s3-table-wrap::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,.65); }
 /* The light thead-tr gradient bleeds through the translucent th in dark
    mode — neutralise it so the header reads as a dark amber bar. */
 [data-bs-theme="dark"] .s3-table thead tr { background: transparent; }
-[data-bs-theme="dark"] .s3-table-amber thead th { background: linear-gradient(180deg, rgba(124,58,237,.30), rgba(124,58,237,.20)); color: #c4b5fd; border-bottom-color: rgba(167,139,250,.35); }
+[data-bs-theme="dark"] .s3-table-amber thead th { background: linear-gradient(180deg, #7c3aed, #6d28d9); color: #fff; border-bottom-color: #6d28d9; }
 [data-bs-theme="dark"] .s3-table tbody td { color: #ede9fe; border-bottom-color: rgba(167,139,250,.18); }
 [data-bs-theme="dark"] .s3-table tbody tr:hover { background: rgba(124,58,237,.12); }
 [data-bs-theme="dark"] .s3-table-amber tbody tr:hover { background: rgba(124,58,237,.12); }
@@ -1408,9 +1431,9 @@ const STAGE3_CSS = `
 [data-bs-theme="dark"] .s3-progress-amber .s3-progress-bar { background: rgba(167,139,250,.20); }
 [data-bs-theme="dark"] .s3-progress-count { color: #c4b5fd; }
 [data-bs-theme="dark"] .s3-progress-amber .s3-progress-count { color: #c4b5fd; }
-[data-bs-theme="dark"] .s3-warn { background: rgba(252,191,36,.14); border-color: rgba(252,191,36,.40); color: #fbbf24; }
-[data-bs-theme="dark"] .s3-warn-ico { background: rgba(252,191,36,.20); color: #fde68a; }
-[data-bs-theme="dark"] .s3-pending { color: #fbbf24; }
+[data-bs-theme="dark"] .s3-warn { background: rgba(124,58,237,.14); border-color: rgba(167,139,250,.40); color: #c4b5fd; }
+[data-bs-theme="dark"] .s3-warn-ico { background: rgba(124,58,237,.22); color: #c4b5fd; }
+[data-bs-theme="dark"] .s3-pending { color: #c4b5fd; }
 [data-bs-theme="dark"] .s3-done    { background: rgba(16,185,129,.18); color: #6ee7b7; }
 [data-bs-theme="dark"] .s3-skip    { background: rgba(16,185,129,.18); color: #6ee7b7; }
 [data-bs-theme="dark"] .s3-created { color: #c4b5fd; border-color: rgba(167,139,250,.40); }

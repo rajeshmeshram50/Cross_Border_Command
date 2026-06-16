@@ -225,9 +225,24 @@ function buildDemoVault(customer: CustomerVaultTarget): VaultData {
     ],
     shipment_agreements: [
       { id: 1, shipment_id: 'SHP-2026-00487', opportunity_id: 'OPP-107', customer: customer.company,    country: customer.country ?? 'India',
-        due_dil: { ratio: '2/2', pct: 100 }, kyc: { ratio: '3/3', pct: 100 }, trade_lic: { ratio: '1/1', pct: 100 }, trade_docs: { ratio: '4/4', pct: 100 }, agreement: { ratio: '1/1', pct: 100 }, risk: 'Compliant', buyer_is_consignee: true },
-      { id: 2, shipment_id: 'SHP-2026-00328', opportunity_id: 'OPP-028', customer: 'GreenHarvest Global Ltd', country: 'United States',
-        due_dil: { ratio: '0/2', pct: 0 },   kyc: { ratio: '0/4', pct: 0 },   trade_lic: { ratio: '0/1', pct: 0 },   trade_docs: { ratio: '0/4', pct: 0 },   agreement: { ratio: '0/1', pct: 0 },   risk: 'Medium', buyer_is_consignee: false },
+        due_dil: { ratio: '2/2', pct: 100 }, kyc: { ratio: '3/3', pct: 100 }, trade_lic: { ratio: '1/1', pct: 100 }, trade_docs: { ratio: '4/4', pct: 100 }, agreement: { ratio: '1/1', pct: 100 }, risk: 'Compliant', buyer_is_consignee: true,
+        // Trade docs = the shipment's Proforma Invoice + its other trade documents.
+        trade_docs_buyer: [
+          { sig_req_id: 1001, name: 'Proforma Invoice (PI/2026-27/0107)', required: 'REQ', status: 'Signed',  uploaded_on: '11/01/2026', valid_upto: '—' },
+          { sig_req_id: 1002, name: 'Commercial Invoice',                  required: 'REQ', status: 'Signed',  uploaded_on: '12/01/2026', valid_upto: '—' },
+          { sig_req_id: 1003, name: 'Packing List',                        required: 'REQ', status: 'Signed',  uploaded_on: '12/01/2026', valid_upto: '—' },
+          { sig_req_id: 1004, name: 'Certificate of Origin',               required: 'OPT', status: 'Signed',  uploaded_on: '13/01/2026', valid_upto: '13/01/2027' },
+        ] },
+      { id: 2, shipment_id: 'SHP-2026-00328', opportunity_id: 'OPP-028', customer: 'GreenHarvest Global Ltd', consignee: 'AgroLink FZE', country: 'United States',
+        due_dil: { ratio: '1/2', pct: 50 },  kyc: { ratio: '2/4', pct: 50 },  trade_lic: { ratio: '1/1', pct: 100 }, trade_docs: { ratio: '2/4', pct: 50 },  agreement: { ratio: '0/1', pct: 0 },   risk: 'Medium', buyer_is_consignee: false,
+        trade_docs_buyer: [
+          { sig_req_id: 2001, name: 'Proforma Invoice (PI/2026-27/0028)', required: 'REQ', status: 'Signed',  uploaded_on: '10/01/2026', valid_upto: '—' },
+          { sig_req_id: 2002, name: 'Self Declaration',                   required: 'REQ', status: 'Pending', uploaded_on: '—',          valid_upto: '—' },
+        ],
+        trade_docs_consignee: [
+          { sig_req_id: 2003, name: 'End Use Declaration',                required: 'REQ', status: 'Signed',  uploaded_on: '10/01/2026', valid_upto: '—' },
+          { sig_req_id: 2004, name: 'Consignee KYC Acknowledgement',      required: 'OPT', status: 'Pending', uploaded_on: '—',          valid_upto: '—' },
+        ] },
       { id: 3, shipment_id: 'SHP-2026-00512', opportunity_id: 'OPP-134', customer: 'Eastern Harvest Co.',    country: 'UAE',
         due_dil: { ratio: '1/2', pct: 50 },  kyc: { ratio: '2/3', pct: 67 },  trade_lic: { ratio: '1/1', pct: 100 }, trade_docs: { ratio: '2/4', pct: 50 },  agreement: { ratio: '0/1', pct: 0 },   risk: 'Medium', buyer_is_consignee: true },
       { id: 4, shipment_id: 'SHP-2026-00601', opportunity_id: 'OPP-156', customer: 'International Buyer LLC', country: 'UAE',
@@ -243,7 +258,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
   const [group, setGroup] = useState<GroupKey>('standard');
   // "Document Overview" popup — set to a group key to open the all-docs list.
   const [overview, setOverview] = useState<GroupKey | null>(null);
-  const [shipmentFilter, setShipmentFilter] = useState<'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee'>('all');
+  const [shipmentFilter, setShipmentFilter] = useState<'buyer-eq-consignee' | 'buyer-neq-consignee'>('buyer-eq-consignee');
 
   /* Switch the active group and jump to its first sub-tab. */
   const selectGroup = (g: GroupKey) => {
@@ -304,7 +319,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
     const startTab = initialTab ?? 'company-dd';
     setTab(startTab);
     setGroup(groupOfTab(startTab));
-    setShipmentFilter('all');
+    setShipmentFilter('buyer-eq-consignee');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, customer?.db_id, initialTab]);
 
@@ -540,10 +555,10 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
    *      Pending (rose), Signed (sky). Same palette across all tabs. */
   const StatusPill = ({ s }: { s: VaultStatus }) => {
     const tone =
-      s === 'Verified' ? { bg: '#d1fae5', fg: '#047857', mark: '✓' }
+      s === 'Verified' ? { bg: '#ecfdf5', fg: '#059669', mark: '✓' }
       : s === 'Signed'   ? { bg: '#dbeafe', fg: '#1e40af', mark: '✓' }
       : s === 'Expiring' ? { bg: '#fef3c7', fg: '#92400e', mark: '⚠' }
-      :                    { bg: '#fee2e2', fg: '#b91c1c', mark: '⌛' };
+      :                    { bg: '#fef2f2', fg: '#dc2626', mark: '⌛' };
     return (
       <span className="cev-pill" style={{ background: tone.bg, color: tone.fg }}>
         {tone.mark} {s}
@@ -558,13 +573,27 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
     : tab === 'trade-licenses' ? vault.trade_licenses
     : tab === 'trade-documents' ? vault.trade_documents
     : [];
+  // A document counts as "uploaded" once it has an attachment; everything
+  // else is "pending". These two are the only header badges we surface.
+  const isUploaded = (d: VaultDoc) => !!(d.attachment_url || (d.attachment && d.attachment !== '—'));
   const counts = {
-    Verified: docsForTab.filter(d => d.status === 'Verified' || d.status === 'Signed').length,
-    Expiring: docsForTab.filter(d => d.status === 'Expiring').length,
-    Pending:  docsForTab.filter(d => d.status === 'Pending').length,
+    Uploaded: docsForTab.filter(isUploaded).length,
+    Pending:  docsForTab.filter(d => !isUploaded(d)).length,
   };
 
   const tabMeta = TABS.find(t => t.key === tab)!;
+
+  /* Tab badge count. Trade Documents / Agreements are shipment-wise, so
+   * their badge must reflect the real number of trade docs / agreements
+   * across all shipments (sum of each shipment's ratio total) — not the
+   * standard-doc KPI. Standard tabs keep their own count key. */
+  const ratioTotal = (ratio: string) => { const p = (ratio || '').split('/'); return parseInt(p[1] ?? p[0], 10) || 0; };
+  const shipmentDocCount = (key: 'trade_docs' | 'agreement') =>
+    vault.shipment_agreements.reduce((acc, r) => acc + ratioTotal(r[key].ratio), 0);
+  const tabCount = (t: typeof TABS[number]): number =>
+    t.key === 'trade-documents'     ? shipmentDocCount('trade_docs')
+    : t.key === 'shipment-agreements' ? shipmentDocCount('agreement')
+    : (vault[t.countKey] as number);
 
   /* Show the skeleton only on the FIRST load (live data not in yet and no
    * explicit data prop). Re-fetches after that keep the current content
@@ -594,17 +623,17 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                 </span>
               </div>
               <div className="cev-header-text">
-                <div className="cev-header-eyebrow">— EVIDENCE VAULT</div>
+                <div className="cev-header-eyebrow">— PARTY WISE CLM: BUYER EVIDENCE VAULT</div>
                 <div className="cev-header-title">{customer.company}</div>
                 <div className="cev-header-chips">
-                  <span className="cev-chip cev-chip-id">● {customer.id}</span>
-                  <span className="cev-chip cev-chip-risk"  data-risk={(customer.risk ?? 'Low').toLowerCase()}>● {customer.risk ?? 'Low'} Risk</span>
                   {customer.contact && (
                     <span className="cev-chip cev-chip-contact">
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                       {customer.contact}{customer.contactCity ? ` · ${customer.contactCity}` : ''}
                     </span>
                   )}
+                  <span className="cev-chip cev-chip-id">● {customer.id}</span>
+                  <span className="cev-chip cev-chip-risk"  data-risk={(customer.risk ?? 'Low').toLowerCase()}>● {customer.risk ?? 'Low'} Risk</span>
                 </div>
               </div>
             </div>
@@ -626,56 +655,18 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
              pauses on hover/touch, with manual prev/next arrows for
              accessible control. Edge fade-masks soften the boundary
              where tiles meet the arrow buttons. */}
-        <div
-          className="cev-kpi-outer"
-          onMouseEnter={() => setKpiPaused(true)}
-          onMouseLeave={() => setKpiPaused(false)}
-          onTouchStart={() => setKpiPaused(true)}
-          onTouchEnd={() => setKpiPaused(false)}
-        >
-          <span className="cev-kpi-fade cev-kpi-fade-l" aria-hidden />
-          <span className="cev-kpi-fade cev-kpi-fade-r" aria-hidden />
-          <button
-            type="button"
-            className="cev-kpi-nav cev-kpi-nav-prev"
-            aria-label="Scroll KPIs left"
-            onClick={() => kpiStripRef.current?.scrollBy({ left: -260, behavior: 'smooth' })}
-          >
-            <i className="ri-arrow-left-s-line" />
-          </button>
-          <button
-            type="button"
-            className="cev-kpi-nav cev-kpi-nav-next"
-            aria-label="Scroll KPIs right"
-            onClick={() => kpiStripRef.current?.scrollBy({ left: 260, behavior: 'smooth' })}
-          >
-            <i className="ri-arrow-right-s-line" />
-          </button>
-          <div
-            ref={kpiStripRef}
-            className="cev-kpi-strip"
-            onWheel={(e) => {
-              if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-                e.currentTarget.scrollLeft += e.deltaY;
-              }
-            }}
-          >
-          {/* Tiles rendered twice — the duplicate set powers the
-              seamless infinite loop. The auto-scroll effect snaps
-              scrollLeft back by exactly one cycle when it crosses
-              the halfway mark, so the wrap is invisible. */}
-          {[0, 1].map((cycle) => (
-            <div key={cycle} className="cev-kpi-cycle" aria-hidden={cycle === 1 ? true : undefined}>
-              <KpiTile label="Total Documents"        value={vault.total_documents}        accent="#0e7490" />
-              <KpiTile label="Verified / Signed"      value={vault.verified_signed}        accent="#16a34a" subtitle="✓ COMPLIANT" subTone="good" />
-              <KpiTile label="Pending"                value={vault.pending}                accent="#dc2626" subtitle="⚠ ACTION"    subTone="bad" />
-              <KpiTile label="Company Due Diligence"  value={vault.company_dd_count}       accent="#0891b2" />
-              <KpiTile label="Owner KYC"              value={vault.owner_kyc_count}        accent="#0e7490" />
-              <KpiTile label="Trade License"          value={vault.trade_license_count}    accent="#0891b2" />
-              <KpiTile label="Trade Documents"        value={vault.trade_documents_count}  accent="#0d9488" />
-              <KpiTile label="Total Shipments"        value={vault.total_shipments}        accent="#0c4a6e" />
-            </div>
-          ))}
+        <div className="cev-kpi-outer">
+          {/* Static full-width stat row — all columns fit without scrolling
+              (matches the CLM prototype: flat columns split by thin dividers). */}
+          <div className="cev-kpi-strip">
+            <KpiTile label="Total Documents"        value={vault.total_documents}        accent="#0e7490" />
+            <KpiTile label="Verified / Signed"      value={vault.verified_signed}        accent="#16a34a" subtitle="✓ COMPLIANT" subTone="good" />
+            <KpiTile label="Pending"                value={vault.pending}                accent="#dc2626" subtitle="⚠ ACTION"    subTone="bad" />
+            <KpiTile label="Company Due Diligence"  value={vault.company_dd_count}       accent="#0891b2" />
+            <KpiTile label="Owner KYC"              value={vault.owner_kyc_count}        accent="#0e7490" />
+            <KpiTile label="Trade License"          value={vault.trade_license_count}    accent="#0891b2" />
+            <KpiTile label="Trade Documents"        value={vault.trade_documents_count}  accent="#0d9488" />
+            <KpiTile label="Total Shipments"        value={vault.total_shipments}        accent="#0c4a6e" />
           </div>
         </div>
 
@@ -720,7 +711,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
               >
                 <span className="cev-tab-icon"><i className={t.icon} aria-hidden /></span>
                 <span className="cev-tab-label">{t.label}</span>
-                <span className="cev-tab-count">{vault[t.countKey] as number}</span>
+                <span className="cev-tab-count">{tabCount(t)}</span>
               </button>
             ))}
           </div>
@@ -738,8 +729,14 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
               </div>
             </div>
             <div className="cev-section-right">
-              <div className="cev-section-count">{(tab === 'shipment-agreements' || tab === 'trade-documents') ? vault.total_shipments : (vault[tabMeta.countKey] as number)}</div>
-              <div className="cev-section-count-label">{(tab === 'shipment-agreements' || tab === 'trade-documents') ? 'SHIPMENTS' : 'DOCUMENTS'}</div>
+              {(tab === 'shipment-agreements' || tab === 'trade-documents') ? (
+                <span className="cev-sec-pill cev-sec-pill-docs">{vault.total_shipments} Shipments</span>
+              ) : (
+                <>
+                  {counts.Uploaded > 0 && <span className="cev-sec-pill cev-sec-pill-ok"><span className="cev-sec-dot" />Uploaded {counts.Uploaded}</span>}
+                  {counts.Pending > 0 && <span className="cev-sec-pill cev-sec-pill-bad"><span className="cev-sec-dot" />Pending {counts.Pending}</span>}
+                </>
+              )}
             </div>
           </div>
 
@@ -980,6 +977,8 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [reminding, setReminding] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [viewing, setViewing] = useState(false);
   const [trackerOpen, setTrackerOpen] = useState(false);
   const canViewOrDownload = !!doc.attachment_url;
   const canReupload = !!ownerId && !!doc.doc_code;
@@ -1005,7 +1004,12 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
 
   // Blob download so it works on the deployed server too (a plain <a download>
   // is ignored cross-origin / for inline-served files → opens instead of saving).
-  const download = () => { void downloadFile(doc.attachment_url, doc.attachment ?? undefined); };
+  const download = async () => {
+    if (downloading || !doc.attachment_url) return;
+    setDownloading(true);
+    try { await downloadFile(doc.attachment_url, doc.attachment ?? undefined); }
+    finally { setDownloading(false); }
+  };
 
   const onPick = async (f: File | undefined) => {
     if (!f || !ownerId || !doc.doc_code) return;
@@ -1113,21 +1117,25 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           rel="noreferrer"
           aria-disabled={!canViewOrDownload}
           className={`cev-row-act cev-row-act-view ${!canViewOrDownload ? 'is-disabled' : ''}`}
-          onClick={e => { if (!canViewOrDownload) e.preventDefault(); }}
+          onClick={e => { if (!canViewOrDownload) { e.preventDefault(); return; } setViewing(true); window.setTimeout(() => setViewing(false), 1200); }}
           aria-label="View"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          {viewing
+            ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 14 }} aria-hidden />
+            : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>}
         </a>
       </Tooltip>
-      <Tooltip label={canViewOrDownload ? `Download ${doc.attachment}` : 'No attachment yet'}>
+      <Tooltip label={canViewOrDownload ? (downloading ? 'Downloading…' : `Download ${doc.attachment}`) : 'No attachment yet'}>
         <button
           type="button"
-          disabled={!canViewOrDownload}
+          disabled={!canViewOrDownload || downloading}
           onClick={download}
           className={`cev-row-act cev-row-act-download ${!canViewOrDownload ? 'is-disabled' : ''}`}
           aria-label="Download"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          {downloading
+            ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 14 }} aria-hidden />
+            : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}
         </button>
       </Tooltip>
       {/* Upload / Re-upload is hidden on the Case-to-Case Trade Documents
@@ -1187,23 +1195,21 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
 function ShipmentTable({ rows, kind, filter, setFilter }: {
   rows: VaultShipmentRow[];
   kind: 'trade' | 'agreement';
-  filter: 'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee';
-  setFilter: (f: 'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee') => void;
+  filter: 'buyer-eq-consignee' | 'buyer-neq-consignee';
+  setFilter: (f: 'buyer-eq-consignee' | 'buyer-neq-consignee') => void;
 }) {
   const [openId, setOpenId] = useState<number | null>(null);
-  const filtered = rows.filter(r =>
-    filter === 'all' ? true
-    : filter === 'buyer-eq-consignee' ? r.buyer_is_consignee
-    : !r.buyer_is_consignee
-  );
-  const lastCol = kind === 'trade' ? 'Trade Docs' : 'Agreement';
-  const COLS = 10;   // caret + SR + ship + opp + customer + consignee + 3 ratios + last ratio
+  const buyerNeq = filter === 'buyer-neq-consignee';
+  const filtered = rows.filter(r => buyerNeq ? !r.buyer_is_consignee : r.buyer_is_consignee);
+  const isAgreement = kind === 'agreement';
+  // caret + SR + ship + opp + customer + consignee + Due Dil + KYC + Trade Lic
+  // + Trade Docs (always) + Agreement (only on the Agreements tab).
+  const COLS = isAgreement ? 11 : 10;
   return (
     <>
-      <div className="cev-ship-filter">
-        <button type="button" className={`cev-ship-fbtn ${filter === 'all' ? 'is-active' : ''}`} onClick={() => setFilter('all')}>All Shipments</button>
-        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-eq-consignee' ? 'is-active' : ''}`} onClick={() => setFilter('buyer-eq-consignee')}>✓ Buyer = Consignee</button>
-        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-neq-consignee' ? 'is-active' : ''}`} onClick={() => setFilter('buyer-neq-consignee')}>✕ Buyer ≠ Consignee</button>
+      <div className="cev-ship-filter cev-ship-filter-2">
+        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-eq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-eq-consignee'); setOpenId(null); }}>Buyer = Consignee</button>
+        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-neq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-neq-consignee'); setOpenId(null); }}>Buyer &ne; Consignee</button>
       </div>
       <div className="cev-table-wrap">
         <div className="cev-table-scroll">
@@ -1219,7 +1225,8 @@ function ShipmentTable({ rows, kind, filter, setFilter }: {
               <th>Due Dil.</th>
               <th>KYC</th>
               <th>Trade Lic.</th>
-              <th>{lastCol}</th>
+              <th>Trade Docs</th>
+              {isAgreement && <th>Agreement</th>}
             </tr>
           </thead>
           <tbody>
@@ -1251,7 +1258,8 @@ function ShipmentTable({ rows, kind, filter, setFilter }: {
                     <td><Ratio r={r.due_dil} /></td>
                     <td><Ratio r={r.kyc} /></td>
                     <td><Ratio r={r.trade_lic} /></td>
-                    <td><Ratio r={kind === 'trade' ? r.trade_docs : r.agreement} /></td>
+                    <td><Ratio r={r.trade_docs} /></td>
+                    {isAgreement && <td><Ratio r={r.agreement} /></td>}
                   </tr>
                   {open && (
                     <tr className="cev-ship-expand">
@@ -1283,9 +1291,9 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
   buyer: VaultShipmentDoc[]; consignee: VaultShipmentDoc[]; buyerName: string; consigneeName: string; buyerIsConsignee: boolean;
 }) {
   const toast = useToast();
-  const [party, setParty] = useState<'buyer' | 'consignee'>('buyer');
+  const [party, setParty] = useState<'buyer' | 'consignee' | 'both'>('buyer');
   const [busy, setBusy] = useState<number | null>(null);
-  const docs = party === 'buyer' ? buyer : consignee;
+  const docs = party === 'both' ? [...buyer, ...consignee] : party === 'buyer' ? buyer : consignee;
 
   const remind = async (d: VaultShipmentDoc) => {
     setBusy(d.sig_req_id);
@@ -1304,12 +1312,15 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
       <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
         <button type="button" onClick={() => setParty('buyer')} style={partyTabStyle(party === 'buyer')}>👤 Buyer Documents <b>{buyer.length}</b></button>
         {!buyerIsConsignee && (
-          <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(party === 'consignee')}>🏢 Consignee Documents <b>{consignee.length}</b></button>
+          <>
+            <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(party === 'consignee')}>🏢 Consignee Documents <b>{consignee.length}</b></button>
+            <button type="button" onClick={() => setParty('both')} style={partyTabStyle(party === 'both')}>🗂 Both <b>{buyer.length + consignee.length}</b></button>
+          </>
         )}
       </div>
-      <div style={{ fontSize: 11, fontWeight: 600, color: '#0e7490', marginBottom: 6 }}>{party === 'buyer' ? buyerName : consigneeName}</div>
+      <div style={{ fontSize: 11, fontWeight: 600, color: '#0e7490', marginBottom: 6 }}>{party === 'both' ? `${buyerName} + ${consigneeName}` : party === 'buyer' ? buyerName : consigneeName}</div>
       {docs.length === 0 ? (
-        <div style={{ padding: '18px', textAlign: 'center', color: '#64748b', fontSize: 12, background: '#fff', border: '1px dashed #a5f3fc', borderRadius: 8 }}>No {party === 'buyer' ? 'buyer' : 'consignee'} documents on this shipment.</div>
+        <div style={{ padding: '18px', textAlign: 'center', color: '#64748b', fontSize: 12, background: '#fff', border: '1px dashed #a5f3fc', borderRadius: 8 }}>No {party === 'both' ? '' : party === 'buyer' ? 'buyer ' : 'consignee '}documents on this shipment.</div>
       ) : (
         <div style={{ background: '#fff', border: '1px solid #d6eef5', borderRadius: 10, overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
@@ -1354,72 +1365,16 @@ const docActStyle = (c: string): CSSProperties => ({
 });
 
 function Ratio({ r }: { r: { ratio: string; pct: number } }) {
-  /* Compact SVG donut — 38px circle, ratio inside, hover-portal
-   * tooltip with completion percentage and a status word.
-   *
-   * Self-contained tooltip (not the project Tooltip component) so it
-   * is guaranteed to render above the modal overlay (z-index 11200)
-   * regardless of any other stacking gotchas. Position is computed
-   * from the trigger's getBoundingClientRect and clamped to the
-   * viewport so it never falls offscreen. */
+  /* Plain stacked count — bold "X/Y" with the percentage beneath, tinted
+   * by completion (green = complete, amber = partial, red = missing). No
+   * donut/circle — matches the Figma's coloured-number columns. */
   const tone = r.pct >= 100 ? 'good' : r.pct >= 50 ? 'mid' : 'bad';
   const status = tone === 'good' ? 'Complete' : tone === 'mid' ? 'Partial' : 'Missing';
-  const radius = 15;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (Math.min(100, Math.max(0, r.pct)) / 100) * circumference;
-
-  const triggerRef = useRef<HTMLSpanElement | null>(null);
-  const [tip, setTip] = useState<{ top: number; left: number } | null>(null);
-
-  const showTip = () => {
-    const rect = triggerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    // Tooltip is ~80×46px; centre horizontally above the donut.
-    const W = 86, H = 50, gap = 8;
-    let left = rect.left + rect.width / 2 - W / 2;
-    let top  = rect.top - H - gap;
-    // Flip below the donut if there isn't room above.
-    if (top < 6) top = rect.bottom + gap;
-    // Clamp to viewport.
-    left = Math.max(6, Math.min(left, window.innerWidth - W - 6));
-    setTip({ top, left });
-  };
-  const hideTip = () => setTip(null);
-
   return (
-    <>
-      <span
-        ref={triggerRef}
-        className="cev-ratio"
-        data-tone={tone}
-        onMouseEnter={showTip}
-        onMouseLeave={hideTip}
-        onFocus={showTip}
-        onBlur={hideTip}
-        tabIndex={0}
-      >
-        <svg width="38" height="38" viewBox="0 0 38 38" aria-hidden>
-          <circle className="cev-ratio-track" cx="19" cy="19" r={radius} fill="none" strokeWidth="3.5" />
-          <circle
-            className="cev-ratio-arc"
-            cx="19" cy="19" r={radius}
-            fill="none" strokeWidth="3.5"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            strokeLinecap="round"
-            transform="rotate(-90 19 19)"
-          />
-        </svg>
-        <span className="cev-ratio-label">{r.ratio}</span>
-      </span>
-      {tip && createPortal(
-        <div className="cev-ratio-tip" style={{ top: tip.top, left: tip.left }} role="tooltip">
-          <b className="cev-ratio-tip-pct" data-tone={tone}>{r.pct}%</b>
-          <span className="cev-ratio-tip-meta">{r.ratio} · {status}</span>
-        </div>,
-        document.body,
-      )}
-    </>
+    <span className="cev-ratio-num" data-tone={tone} title={`${r.ratio} · ${status}`}>
+      <span className="cev-ratio-num-main">{r.ratio}</span>
+      <span className="cev-ratio-num-pct">{r.pct}%</span>
+    </span>
   );
 }
 
@@ -1470,7 +1425,7 @@ const CEV_CSS = `
   position: relative;
   flex-shrink: 0;
   padding: 14px 22px;
-  background: linear-gradient(135deg, #0c4a6e 0%, #0891b2 35%, #06b6d4 65%, #22d3ee 100%);
+  background: linear-gradient(125deg, #083344 0%, #0c4a6e 25%, #0e7490 50%, #0891b2 75%, #06b6d4 100%);
   color: #fff;
   overflow: hidden;
 }
@@ -1560,25 +1515,23 @@ const CEV_CSS = `
 .cev-kpi-outer {
   position: relative;
   flex-shrink: 0;
-  background: linear-gradient(180deg, #f0fdff 0%, #ecfeff 100%);
-  border-bottom: 1px solid #cffafe;
+  background: #fff;
+  border-bottom: 1.5px solid #e0f2f7;
 }
+/* Animated top accent line (matches the prototype .ev-stats::before). */
+.cev-kpi-outer::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2.5px; z-index: 2;
+  background: linear-gradient(90deg, #0e7490, #0891b2, #06b6d4, #67e8f9, #06b6d4, #0891b2, #0e7490);
+  background-size: 200% 100%;
+  animation: cevStatsAccent 4s linear infinite;
+}
+@keyframes cevStatsAccent { 0% { background-position: 0% 0%; } 100% { background-position: 200% 0%; } }
+/* Full-width static row — all stat columns fit; NO horizontal scroll. */
 .cev-kpi-strip {
-  display: flex; gap: 12px; align-items: stretch;
-  padding: 14px 64px;          /* room for the absolute arrow buttons */
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;       /* Firefox */
-  -ms-overflow-style: none;    /* Edge legacy */
-  scroll-behavior: smooth;
+  display: flex; gap: 0; align-items: stretch;
+  padding: 12px 16px;
+  overflow: visible;
 }
-.cev-kpi-strip::-webkit-scrollbar { display: none; }
-.cev-kpi-cycle {
-  display: flex; gap: 12px; align-items: stretch;
-  flex-shrink: 0;
-  margin-right: 12px;        /* match strip gap between the two cycles */
-}
-.cev-kpi-cycle:last-child { margin-right: 0; }
 .cev-kpi-fade {
   position: absolute;
   top: 0; bottom: 0;
@@ -1626,22 +1579,13 @@ const CEV_CSS = `
 .cev-kpi-nav-next { right: 14px; }
 .cev-kpi-tile {
   position: relative;
-  flex: 0 0 168px;            /* fixed width — strip scrolls when many */
-  scroll-snap-align: start;
-  background: var(--vz-card-bg, #fff);
-  border: 1px solid rgba(8,145,178,0.14);
-  border-radius: 12px;
-  padding: 12px 16px;
-  box-shadow: 0 1px 5px rgba(8,51,68,0.05);
-  overflow: hidden;
+  flex: 1 1 0;                /* equal-width columns — fill the row, no scroll */
   min-width: 0;
-  transition: transform 180ms ease, box-shadow 220ms ease, border-color 180ms ease;
+  padding: 4px 16px;
+  border-right: 1px solid rgba(8,145,178,0.16);   /* thin column divider */
+  text-align: center;        /* centre label, value & status sub-line */
 }
-.cev-kpi-tile:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(8,51,68,0.10);
-  border-color: rgba(8,145,178,0.30);
-}
+.cev-kpi-tile:last-child { border-right: none; }
 .cev-kpi-strip-top {
   position: absolute; top: 0; left: 0; right: 0; height: 3px;
 }
@@ -1650,20 +1594,21 @@ const CEV_CSS = `
 }
 .cev-kpi-text { min-width: 0; }
 .cev-kpi-label {
-  font-size: 10.5px; font-weight: 700; letter-spacing: .06em;
-  color: var(--vz-secondary-color, #6b7280);
+  font-size: 8px; font-weight: 700; letter-spacing: .1em;
+  color: #94a3b8;
   text-transform: uppercase;
   margin-bottom: 6px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .cev-kpi-value {
-  font-size: 26px; font-weight: 800; line-height: 1.05;
-  color: var(--vz-heading-color, #0c4a6e);
+  font-size: 22px; font-weight: 800; line-height: 1;
+  color: #083344;
+  font-variant-numeric: tabular-nums;
 }
 /* Status sub-line under the number (✓ COMPLIANT / ⚠ ACTION). */
 .cev-kpi-sub {
-  margin-top: 5px;
-  font-size: 9.5px; font-weight: 800; letter-spacing: .04em;
+  margin-top: 3px;
+  font-size: 7px; font-weight: 700; letter-spacing: .05em;
   text-transform: uppercase;
 }
 .cev-kpi-sub.is-good { color: #16a34a; }
@@ -1755,7 +1700,7 @@ const CEV_CSS = `
 .cev-ov-body { overflow: auto; padding: 14px 18px 18px; }
 .cev-ov-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
 .cev-ov-table thead th {
-  position: sticky; top: 0; background: #083344; color: #fff;
+  position: sticky; top: 0; z-index: 5; background: #083344; color: #fff;
   font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
   padding: 10px 12px; text-align: left; white-space: nowrap;
 }
@@ -1799,77 +1744,78 @@ const CEV_CSS = `
 
 .cev-tabs-wrap {
   flex-shrink: 0;
-  background: linear-gradient(180deg, #f0fdff 0%, #ecfeff 100%);
-  border-bottom: 1px solid #cffafe;
-  padding: 12px 18px;
+  background: #fff;
+  border-bottom: 2px solid #d6eef5;
+  padding: 0 18px;
 }
 .cev-tabs {
-  display: flex; gap: 8px;
+  display: flex; align-items: center; gap: 2px;
   overflow-x: auto;
   scrollbar-width: none;
-  padding-bottom: 2px;
 }
 .cev-tabs::-webkit-scrollbar { display: none; }
-/* Tab pill — restyled to match AddCustomerModal's .acm-tab (Stage 1
- * Customer Identification / Address & Contact Details). Same clean
- * rounded-rectangle pill + solid 1.5px border + simpler gradient on
- * active. Icons and count badges are retained (functionality stays
- * intact) but the icon circle's heavy background was dropped so the
- * icon reads as part of the label, not as a separate chip stuck to
- * the tab. */
+/* Underline sub-tabs — matches the CLM prototype's .ev-tab: a flat row of
+ * tabs with a glowing cyan underline on the active one, an icon chip and a
+ * pill count badge. */
 .cev-tab {
   flex: 0 0 auto;
   position: relative;
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 8px 16px;
-  background: #ffffff;
-  border: 1.5px solid #67e8f9;
-  border-radius: 12px;
-  color: #0891b2;
-  font-size: 12.5px; font-weight: 700;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 12px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 2.5px solid transparent;
+  margin-bottom: -2px;
+  color: #94a3b8;
+  font-size: 11.5px; font-weight: 600;
   cursor: pointer;
-  transition: all .2s ease;
+  transition: color .18s ease, border-color .18s ease;
   white-space: nowrap;
 }
 .cev-tab-icon {
-  width: 18px; height: 18px;
+  width: 22px; height: 22px; border-radius: 6px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: transparent;
-  color: #0891b2;
-  font-size: 15px;
+  background: rgba(148,163,184,.08);
+  color: #94a3b8;
+  font-size: 13px;
   flex-shrink: 0;
-  transition: color .18s ease;
+  transition: all .18s ease;
 }
 .cev-tab-label { white-space: nowrap; }
-.cev-tab:hover {
-  background: #cffafe;
-  border-color: #06b6d4;
-  color: #0c4a6e;
-}
-.cev-tab:hover .cev-tab-icon { color: #0c4a6e; }
+.cev-tab:hover { color: #0891b2; }
+.cev-tab:hover .cev-tab-icon { background: rgba(6,182,212,.1); color: #0891b2; }
 .cev-tab.is-active {
-  background: linear-gradient(135deg, #06b6d4, #0891b2);
-  border-color: #06b6d4;
-  color: #ffffff;
-  box-shadow: 0 3px 10px rgba(14,116,144,.35);
+  color: #0e7490; font-weight: 700;
+  border-bottom-color: #0891b2;
 }
-.cev-tab.is-active .cev-tab-icon { color: #ffffff; }
+.cev-tab.is-active::after {
+  content: ''; position: absolute; bottom: -2px; left: 10px; right: 10px; height: 2.5px;
+  background: linear-gradient(90deg, #06b6d4, #22d3ee);
+  border-radius: 2px 2px 0 0;
+  box-shadow: 0 0 8px rgba(6,182,212,.6);
+}
+.cev-tab.is-active .cev-tab-icon {
+  background: linear-gradient(135deg, #ecfeff, #cffafe);
+  color: #0891b2;
+}
 .cev-tab-count {
-  background: #cffafe; color: #0e7490;
-  font-size: 10.5px; font-weight: 800; letter-spacing: 0.02em;
-  padding: 2px 8px; border-radius: 999px;
-  min-width: 22px; text-align: center;
+  background: #f0fdff; color: #22d3ee; border: 1px solid #a5f3fc;
+  font-size: 9px; font-weight: 800; letter-spacing: 0;
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 20px;
+  display: inline-flex; align-items: center; justify-content: center;
   transition: all .18s ease;
 }
 .cev-tab.is-active .cev-tab-count {
-  background: rgba(255,255,255,0.28);
-  color: #ffffff;
+  background: linear-gradient(135deg, #06b6d4, #22d3ee);
+  color: #fff; border-color: transparent;
+  box-shadow: 0 2px 6px rgba(6,182,212,.38);
 }
 
 /* ─── BODY ─── */
 .cev-body {
   flex: 1; min-height: 0; overflow-y: auto;
   padding: 18px 24px 22px;
+  background: #f7f8fc;
   display: flex; flex-direction: column; gap: 14px;
   /* Match the visible scrollbar pattern used by [[AddVendorModal]]'s
      .avm-body so the rail is obvious when a tab's table grows past
@@ -1898,9 +1844,24 @@ const CEV_CSS = `
 }
 .cev-section-title { font-size: 15px; font-weight: 800; color: #0c4a6e; }
 .cev-section-sub   { font-size: 12px; color: #0891b2; margin-top: 1px; }
-.cev-section-right { text-align: right; }
+.cev-section-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .cev-section-count { font-size: 26px; font-weight: 800; color: #0c4a6e; line-height: 1; }
 .cev-section-count-label { font-size: 9.5px; font-weight: 700; letter-spacing: .12em; color: #0891b2; margin-top: 2px; }
+/* Figma-style status count pills on the section header band. */
+.cev-sec-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 11px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 700; white-space: nowrap;
+  border: 1px solid transparent;
+}
+.cev-sec-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.cev-sec-pill-ok   { background: #ecfdf5; color: #059669; border-color: #a7f3d0; }
+.cev-sec-pill-ok   .cev-sec-dot { background: #10b981; }
+.cev-sec-pill-warn { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+.cev-sec-pill-warn .cev-sec-dot { background: #f59e0b; }
+.cev-sec-pill-bad  { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
+.cev-sec-pill-bad  .cev-sec-dot { background: #ef4444; }
+.cev-sec-pill-docs { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; }
 /* ─── Loading skeleton (shimmer) ─── */
 .cev-skel { flex: 1; min-height: 0; overflow: hidden; padding: 16px 22px; display: flex; flex-direction: column; gap: 16px; }
 .cev-sk { position: relative; overflow: hidden; background: #cffafe; border-radius: 12px; }
@@ -1961,29 +1922,27 @@ const CEV_CSS = `
 .cev-table-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
 .cev-table-scroll::-webkit-scrollbar-thumb { background: rgba(8,145,178,.30); border-radius: 999px; }
 .cev-table { width: 100%; min-width: 980px; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+/* ONE continuous gradient across the whole header row (not per-column).
+   The gradient + sticky both live on the <tr> so it spans left→right as a
+   single band AND stays pinned on scroll; the <th> cells are transparent
+   so they don't restart the gradient per column. */
+.cev-table thead tr {
+  position: sticky; top: 0; z-index: 3;
+  background: linear-gradient(110deg, #083344 0%, #0c4a6e 60%, #0e7490 100%);
+}
 .cev-table thead th {
-  position: sticky; top: 0;
-  z-index: 3;                /* sits above row cells AND above any
-                                 backdrop the body might leak under */
   padding: 9px 14px;         /* tighter than 12px — visually slim band */
   text-align: left;
-  /* Glossy lavender band: top highlight → core fill → soft shadow line
-     at the bottom. Looks lifted off the surface so the sticky scroll
-     state reads cleanly even when rows pass underneath. */
-  background:
-    linear-gradient(180deg, #ecfeff 0%, #cffafe 55%, #a5f3fc 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.65),
-    inset 0 -1px 0 rgba(8,145,178,0.25),
-    0 4px 10px -8px rgba(8,145,178,0.30);
-  font-size: 10.5px; font-weight: 800; letter-spacing: .08em;
-  color: #0e7490; text-transform: uppercase;
+  background: transparent;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .08em;
+  color: rgba(255,255,255,.75); text-transform: uppercase;
   white-space: nowrap;
 }
-.cev-table tbody td { padding: 13px 14px; border-bottom: 1px solid #ecfeff; vertical-align: middle; }
+.cev-table tbody td { padding: 13px 14px; border-bottom: 1px solid #f0f2fa; vertical-align: middle; color: #334155; background: #fff; }
+.cev-table tbody tr:nth-child(even) td { background: #fafbff; }
 .cev-table tbody tr:last-child td { border-bottom: none; }
 .cev-table tbody tr:hover td { background: #f0fdff; }
-.cev-doc-name { font-weight: 700; color: #0c4a6e; }
+.cev-doc-name { font-weight: 700; color: #083344; }
 .cev-mono { font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace; font-size: 12px; color: #1f2937; }
 .cev-date { font-size: 12px; color: #475569; white-space: nowrap; }
 .cev-attach { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: #0891b2; text-decoration: none; padding: 4px 10px; border: 1px solid #a5f3fc; border-radius: 8px; background: #f0fdff; white-space: nowrap; transition: all .15s; }
@@ -2067,71 +2026,29 @@ const CEV_CSS = `
   font-size: 11.5px; font-weight: 800;
   flex-shrink: 0;
 }
-.cev-ratio {
-  position: relative;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 38px; height: 38px;
-  line-height: 1;
+/* Coloured-number compliance cell — bold ratio + % beneath, no circle. */
+.cev-ratio-num {
+  display: inline-flex; flex-direction: column; align-items: center;
+  line-height: 1.1; font-variant-numeric: tabular-nums;
 }
-.cev-ratio svg { display: block; transition: filter .2s ease; }
-.cev-ratio:hover svg { filter: drop-shadow(0 2px 6px rgba(12,74,110,0.20)); }
-.cev-ratio-track { stroke: #cffafe; }
-.cev-ratio-arc {
-  transition: stroke-dashoffset .6s cubic-bezier(.22,1,.36,1), stroke .2s ease;
-}
-.cev-ratio[data-tone="good"] .cev-ratio-arc { stroke: #16a34a; }
-.cev-ratio[data-tone="mid"]  .cev-ratio-arc { stroke: #f59e0b; }
-.cev-ratio[data-tone="bad"]  .cev-ratio-arc { stroke: #dc2626; }
-.cev-ratio-label {
-  position: absolute; inset: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 10.5px; font-weight: 800; letter-spacing: -0.02em;
-  color: #0c4a6e;
-  font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace;
-}
-.cev-ratio[data-tone="good"] .cev-ratio-label { color: #047857; }
-.cev-ratio[data-tone="mid"]  .cev-ratio-label { color: #b45309; }
-.cev-ratio[data-tone="bad"]  .cev-ratio-label { color: #b91c1c; }
-
-/* Self-contained portal tooltip for the donut. Dark glossy pill,
-   centred above (or flipped below) the donut, z-index above every
-   modal in this project (highest known overlay is 11200). */
-.cev-ratio-tip {
-  position: fixed;
-  z-index: 12500;
-  display: inline-flex; flex-direction: column; align-items: center; gap: 1px;
-  padding: 6px 12px;
-  border-radius: 9px;
-  background: linear-gradient(180deg, #2a3444 0%, #1f2937 100%);
-  border: 1px solid rgba(255,255,255,0.06);
-  box-shadow:
-    0 12px 26px -6px rgba(15,23,42,0.45),
-    0 4px 10px rgba(15,23,42,0.22);
-  color: #fff;
-  line-height: 1.15;
-  pointer-events: none;
-  white-space: nowrap;
-  animation: cevTipPop .18s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-}
-@keyframes cevTipPop {
-  0%   { opacity: 0; transform: translateY(4px) scale(0.92); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
-}
-.cev-ratio-tip-pct {
-  font-size: 15px; font-weight: 800; letter-spacing: -0.01em;
-  font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace;
-  color: #ffffff;
-}
-.cev-ratio-tip-pct[data-tone="good"] { color: #6ee7b7; }
-.cev-ratio-tip-pct[data-tone="mid"]  { color: #fcd34d; }
-.cev-ratio-tip-pct[data-tone="bad"]  { color: #fca5a5; }
-.cev-ratio-tip-meta {
-  font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
-  text-transform: uppercase;
-  opacity: 0.82;
-}
+.cev-ratio-num-main { font-size: 14px; font-weight: 800; letter-spacing: -0.01em; }
+.cev-ratio-num-pct  { font-size: 9.5px; font-weight: 700; margin-top: 1px; opacity: .9; }
+.cev-ratio-num[data-tone="good"] { color: #16a34a; }
+.cev-ratio-num[data-tone="mid"]  { color: #f59e0b; }
+.cev-ratio-num[data-tone="bad"]  { color: #dc2626; }
 
 .cev-ship-filter { display: flex; gap: 8px; flex-wrap: wrap; }
+/* 2-tab toggle (Buyer = / ≠ Consignee) — compact pills in a tray, not
+   full-width, matching the Figma. */
+.cev-ship-filter-2 {
+  display: inline-flex; gap: 6px; padding: 4px;
+  background: #eef2f7; border-radius: 12px; align-self: flex-start;
+}
+.cev-ship-filter-2 .cev-ship-fbtn {
+  flex: 0 0 auto; min-width: 0;
+  padding: 8px 18px; border: none; background: transparent; border-radius: 9px;
+}
+.cev-ship-filter-2 .cev-ship-fbtn:not(.is-active):hover { background: rgba(8,145,178,.08); color: #0891b2; }
 .cev-ship-fbtn {
   flex: 1; min-width: 160px;
   padding: 10px 18px;
@@ -2151,13 +2068,19 @@ const CEV_CSS = `
 
 /* ─── FOOTER ─── */
 .cev-footer {
+  position: relative;
   flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 14px 24px;
-  background: #fff;
-  border-top: 1px solid #cffafe;
+  background: linear-gradient(110deg, #f0fdff 0%, #e6fafd 50%, #f0fdff 100%);
+  border-top: 1.5px solid #bdf1fb;
+  overflow: hidden;
 }
-.cev-footer-meta { font-size: 12px; color: #475569; }
+.cev-footer::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1.5px;
+  background: linear-gradient(90deg, transparent 0%, #67e8f9 30%, #06b6d4 50%, #67e8f9 70%, transparent 100%);
+}
+.cev-footer-meta { font-size: 12px; color: #64748b; }
 .cev-footer-actions { display: flex; gap: 10px; }
 .cev-btn {
   display: inline-flex; align-items: center; gap: 7px;
@@ -2187,15 +2110,15 @@ const CEV_CSS = `
 [data-bs-theme="dark"] .cev-group.is-active .cev-group-icon { background: rgba(255,255,255,.18); color: #fff; }
 [data-bs-theme="dark"] .cev-group-title { color: #cffafe; }
 [data-bs-theme="dark"] .cev-group-sub { color: #7bb5c2; }
-[data-bs-theme="dark"] .cev-tabs-wrap { background: linear-gradient(180deg, #08222b 0%, #0a2a33 100%); border-bottom-color: rgba(8,145,178,.22); }
-[data-bs-theme="dark"] .cev-tab { background: transparent; color: #67e8f9; border: 1.5px solid rgba(34,211,238,0.40); box-shadow: none; }
-[data-bs-theme="dark"] .cev-tab-icon { background: transparent; color: #67e8f9; }
-[data-bs-theme="dark"] .cev-tab:hover { background: rgba(34,211,238,0.10); border-color: #22d3ee; color: #cffafe; box-shadow: none; }
-[data-bs-theme="dark"] .cev-tab:hover .cev-tab-icon { background: transparent; color: #cffafe; }
-[data-bs-theme="dark"] .cev-tab.is-active { background: linear-gradient(135deg,#0891b2,#0c4a6e); color: #fff; border-color: #06b6d4; }
-[data-bs-theme="dark"] .cev-tab.is-active .cev-tab-icon { background: transparent; color: #fff; }
-[data-bs-theme="dark"] .cev-tab-count { background: rgba(8,145,178,.22); color: #67e8f9; }
-[data-bs-theme="dark"] .cev-tab.is-active .cev-tab-count { background: rgba(255,255,255,.28); color: #fff; }
+[data-bs-theme="dark"] .cev-tabs-wrap { background: #0a2a33; border-bottom-color: rgba(8,145,178,.30); }
+[data-bs-theme="dark"] .cev-tab { color: #7bb5c2; }
+[data-bs-theme="dark"] .cev-tab-icon { background: rgba(255,255,255,.05); color: #7bb5c2; }
+[data-bs-theme="dark"] .cev-tab:hover { color: #67e8f9; }
+[data-bs-theme="dark"] .cev-tab:hover .cev-tab-icon { background: rgba(34,211,238,0.12); color: #67e8f9; }
+[data-bs-theme="dark"] .cev-tab.is-active { color: #67e8f9; border-bottom-color: #22d3ee; }
+[data-bs-theme="dark"] .cev-tab.is-active .cev-tab-icon { background: rgba(34,211,238,0.18); color: #67e8f9; }
+[data-bs-theme="dark"] .cev-tab-count { background: rgba(8,145,178,.18); color: #67e8f9; border-color: rgba(8,145,178,.35); }
+[data-bs-theme="dark"] .cev-tab.is-active .cev-tab-count { background: linear-gradient(135deg,#06b6d4,#22d3ee); color: #fff; border-color: transparent; }
 [data-bs-theme="dark"] .cev-kpi-outer { background: linear-gradient(180deg, #08222b 0%, #0a2a33 100%); border-bottom-color: rgba(8,145,178,.22); }
 [data-bs-theme="dark"] .cev-kpi-fade-l { background: linear-gradient(90deg, #08222b 0%, #08222b 25%, rgba(8,34,43,0) 100%); }
 [data-bs-theme="dark"] .cev-kpi-fade-r { background: linear-gradient(270deg, #0a2a33 0%, #0a2a33 25%, rgba(8,42,51,0) 100%); }
@@ -2231,11 +2154,9 @@ const CEV_CSS = `
 [data-bs-theme="dark"] .cev-date-expiry[data-status="expiring"] { background: rgba(245,158,11,.18); color: #fcd34d; }
 [data-bs-theme="dark"] .cev-date-expiry[data-status="pending"]  { background: rgba(239,68,68,.18); color: #fca5a5; }
 [data-bs-theme="dark"] .cev-attach { background: rgba(8,145,178,.16); color: #67e8f9; border-color: rgba(8,145,178,.30); }
-[data-bs-theme="dark"] .cev-ratio-track { stroke: rgba(8,145,178,.22); }
-[data-bs-theme="dark"] .cev-ratio-label { color: #cffafe; }
-[data-bs-theme="dark"] .cev-ratio[data-tone="good"] .cev-ratio-label { color: #6ee7b7; }
-[data-bs-theme="dark"] .cev-ratio[data-tone="mid"]  .cev-ratio-label { color: #fcd34d; }
-[data-bs-theme="dark"] .cev-ratio[data-tone="bad"]  .cev-ratio-label { color: #fca5a5; }
+[data-bs-theme="dark"] .cev-ratio-num[data-tone="good"] { color: #4ade80; }
+[data-bs-theme="dark"] .cev-ratio-num[data-tone="mid"]  { color: #fcd34d; }
+[data-bs-theme="dark"] .cev-ratio-num[data-tone="bad"]  { color: #fca5a5; }
 [data-bs-theme="dark"] .cev-chip-pill { background: rgba(8,145,178,.16); color: #67e8f9; }
 [data-bs-theme="dark"] .cev-chip-pill-warm { background: rgba(217,119,6,.18); color: #fcd34d; border-color: rgba(217,119,6,.30); }
 [data-bs-theme="dark"] .cev-footer { background: #08222b; border-top-color: rgba(8,145,178,.22); }
@@ -2262,14 +2183,10 @@ const CEV_CSS = `
   .cev-vault-icon { width: 38px; height: 38px; border-radius: 10px; }
   .cev-header-content { flex-direction: column; align-items: flex-start; gap: 10px; }
   .cev-header-right { width: 100%; justify-content: space-between; }
-  .cev-kpi-strip { padding: 12px 52px; gap: 8px; }
-  .cev-kpi-tile { flex: 0 0 190px; padding: 10px 12px; }
-  .cev-kpi-value { font-size: 20px; }
-  .cev-kpi-icon { width: 32px; height: 32px; font-size: 15px; }
-  .cev-kpi-fade { width: 50px; }
-  .cev-kpi-nav { width: 30px; height: 30px; font-size: 16px; }
-  .cev-kpi-nav-prev { left: 10px; }
-  .cev-kpi-nav-next { right: 10px; }
+  /* Narrow screens: wrap the columns instead of scrolling. */
+  .cev-kpi-strip { padding: 10px 12px; gap: 4px 0; flex-wrap: wrap; }
+  .cev-kpi-tile { flex: 1 1 140px; padding: 8px 12px; }
+  .cev-kpi-value { font-size: 22px; }
   .cev-groups-wrap { padding: 12px 14px 0; }
   .cev-groups { grid-template-columns: 1fr; gap: 10px; }
   .cev-tabs-wrap { padding: 10px 14px; }
@@ -2286,7 +2203,7 @@ const CEV_CSS = `
 }
 @media (max-width: 640px) {
   .cev-card { width: 100vw; }
-  .cev-kpi-tile { flex: 0 0 170px; }
+  .cev-kpi-tile { flex: 1 1 130px; }
   .cev-tab { padding: 6px 12px; font-size: 11.5px; }
   .cev-tab-icon { width: 14px; height: 14px; font-size: 12px; }
   .cev-tab-count { font-size: 9.5px; padding: 1px 6px; }

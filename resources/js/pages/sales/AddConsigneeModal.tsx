@@ -1114,7 +1114,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
      * maxStage>=2 (e.g. editing an existing consignee while sitting on
      * Stage 1) so the stepper's per-stage completeness is accurate
      * rather than defaulting later stages to a false "done". */
-    if (stage < 2 && maxStage < 2) return;
+    /* In EDIT mode always load (even on Stage 1 with maxStage=1): the
+     * segment-remove guard needs segCodeMap to know which documents each
+     * segment owns, otherwise a segment with uploaded docs on an existing
+     * consignee could be removed. */
+    if (stage < 2 && maxStage < 2 && !consignee) return;
     const names = (form1.segment ?? []).filter(Boolean);
     if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setSegmentDocsLoading(false); return; }
     const segRows = names
@@ -2178,13 +2182,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               setTab={requestIdTab}
               form={form1}
               setForm={setForm1}
-              lockedSegments={Object.entries(segCodeMap)
-                .filter(([, codes]) => {
-                  const uploaded = new Set(Object.keys(segmentRefUploads).map(k => k.split('::')[1]));
-                  return codes.some(c => uploaded.has(c));
-                })
-                .map(([name]) => name)}
-              onBlockedSegmentRemove={(segs) => toast.error('Cannot remove segment', `${segs.join(', ')} ${segs.length > 1 ? 'have' : 'has'} uploaded documents. Remove those documents first to drop the segment.`)}
+              segCodeMap={segCodeMap}
+              uploadedCodes={Object.entries(segmentRefUploads)
+                .filter(([, v]) => !!(v && (v.url || v.file)))
+                .map(([k]) => k.split('::')[1])}
+              onBlockedSegmentRemove={(segs) => toast.error('Cannot remove segment', `You can't remove ${segs.join(', ')} — ${segs.length > 1 ? 'they have' : 'it has'} completed standard documents. Delete those documents first to drop the segment.`)}
               errors={errors1}
               clearErr={(k) => setErrors1(prev => { if (!prev[k]) return prev; const n = { ...prev }; delete n[k]; return n; })}
               validateField={validateField1}
@@ -2772,7 +2774,7 @@ const Stage1 = ({
   tab, setTab, form, setForm, masters, errors, clearErr, validateField,
   sameAsCustomer, setSameAsCustomer, customer, mirrorAlreadyTakenByOther, mirrorLocked, onBlockedClick,
   locations, onAddLocation, onEditLocation, onDeleteLocation,
-  lockedSegments = [], onBlockedSegmentRemove,
+  segCodeMap = {}, uploadedCodes = [], onBlockedSegmentRemove,
 }: {
   tab: IdentityTab;
   setTab: (t: IdentityTab) => void;
@@ -2803,8 +2805,10 @@ const Stage1 = ({
   onAddLocation: () => void;
   onEditLocation: (id: string) => void;
   onDeleteLocation: (id: string) => void;
-  /** Segment names that have uploaded documents — cannot be removed. */
-  lockedSegments?: string[];
+  /** segment name → its required KYC/DD/TL doc codes (DCP rules). */
+  segCodeMap?: Record<string, string[]>;
+  /** Doc codes that actually have an uploaded file/URL. */
+  uploadedCodes?: string[];
   /** Fired with the segment names the user tried (and failed) to remove. */
   onBlockedSegmentRemove?: (segs: string[]) => void;
 }) => {
@@ -2935,15 +2939,20 @@ const Stage1 = ({
                 invalid={!!errors.segment}
                 disabled={lock}
                 onChange={vs => {
-                  /* Block removing a segment whose KYC/DD/Trade-License docs
-                   * are already uploaded. Adding / removing empty segments is
-                   * always allowed. */
+                  /* Block removing a segment if ANY of its standard documents
+                   * have already been uploaded. Segments with no uploaded docs
+                   * drop freely. Adding is always allowed. */
                   const prev = Array.isArray(form.segment) ? form.segment : (form.segment ? [form.segment] : []);
                   const removed = prev.filter((s: string) => !vs.includes(s));
-                  const blocked = removed.filter((s: string) => lockedSegments.includes(s));
-                  if (blocked.length) {
-                    onBlockedSegmentRemove?.(blocked);
-                    vs = [...vs, ...blocked.filter((s: string) => !vs.includes(s))];
+                  if (removed.length) {
+                    const uploaded = new Set(uploadedCodes);
+                    const blocked = removed.filter((s: string) =>
+                      (segCodeMap[s] ?? []).some(c => uploaded.has(c))
+                    );
+                    if (blocked.length) {
+                      onBlockedSegmentRemove?.(blocked);
+                      vs = [...vs, ...blocked.filter((s: string) => !vs.includes(s))];
+                    }
                   }
                   set('segment', vs);
                 }}
