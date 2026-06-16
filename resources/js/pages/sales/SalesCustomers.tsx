@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
@@ -106,7 +107,9 @@ export default function SalesCustomers() {
   // smooth "loading new view" feel (same as the HR Employees tabs).
   const [tabSwitching, setTabSwitching] = useState(false);
   const [q, setQ] = useState('');
-  const [wdhOpen, setWdhOpen] = useState(true);
+  const [wdhOpen, setWdhOpen] = useState(false);
+  // All-segments popover — opened from the +N badge in the Segment column.
+  const [segOpen, setSegOpen] = useState<{ id: string | number; names: string[]; x: number; y: number } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<EditCustomer | null>(null);
   /* "Map Consignee" popup — opened from the row action; shows every
@@ -351,7 +354,25 @@ export default function SalesCustomers() {
     {
       header: 'Segment',
       accessorKey: 'segment',
-      cell: (info: any) => info.getValue() ? <span className="smc-seg">{info.getValue()}</span> : <span className="text-muted">—</span>,
+      cell: (info: any) => {
+        const segList = String(info.getValue() ?? '').split(',').map((s: string) => s.trim()).filter(Boolean);
+        if (segList.length === 0) return <span className="text-muted">—</span>;
+        const extra = segList.length - 1;
+        const rowId = (info.row.original as Customer).id;
+        return (
+          <span className="d-inline-flex align-items-center" style={{ gap: 4 }}>
+            <span className="smc-seg">{segList[0]}</span>
+            {extra > 0 && (
+              <button
+                type="button"
+                className="smc-seg-more"
+                title="View all segments"
+                onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(prev => prev?.id === rowId ? null : { id: rowId, names: segList, x: b.left, y: b.bottom + 4 }); }}
+              >+{extra}</button>
+            )}
+          </span>
+        );
+      },
     },
     { header: 'Country',        accessorKey: 'country', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-country" max={16} /> },
     { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-contact" max={16} /> },
@@ -563,7 +584,7 @@ export default function SalesCustomers() {
               customPageSize={pageSize}
               tableClass="table align-middle table-nowrap mb-0"
               theadClass="table-light"
-              divClass="table-responsive table-card border rounded"
+              divClass="table-responsive table-card border rounded "
               SearchPlaceholder="Search customers..."
               condensedPagination
               pageOfTotalPagination
@@ -638,6 +659,22 @@ export default function SalesCustomers() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* All-segments popover (opened from the +N badge in the Segment column) */}
+      {segOpen && createPortal(
+        <>
+          <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 1090 }} />
+          <div className="smc-seg-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 230), top: segOpen.y, zIndex: 1091, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+            <div className="smc-seg-pop-title">Segments ({segOpen.names.length})</div>
+            {segOpen.names.map((name, i) => (
+              <div key={i} className={`smc-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
+                <span className="smc-seg">{name}</span>
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body
       )}
     </div>
   );
@@ -1045,6 +1082,7 @@ ${CSTRIP_CSS}
   flex-wrap: wrap;
   position: relative;
   z-index: 1;
+  margin-bottom: 3px;
 }
 .smc-toolbar .smc-search {
   position: relative;
@@ -1719,6 +1757,30 @@ ${CSTRIP_CSS}
   border: 1px solid #ddd6fe; border-radius: 20px;
   padding: 3px 10px; white-space: nowrap;
 }
+/* "+N" overflow badge in the Segment column — violet to match the page. */
+.smc-seg-more {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 20px;
+  border: 0; cursor: pointer; flex-shrink: 0;
+  font-size: 10px; font-weight: 800; color: #fff; font-family: inherit;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  box-shadow: 0 2px 8px rgba(124,58,237,.35);
+}
+.smc-seg-more:hover { filter: brightness(1.06); }
+/* All-segments popover */
+.smc-seg-pop {
+  background: #fff; border: 1.5px solid #ddd6fe;
+  box-shadow: 0 16px 40px rgba(0,0,0,.18);
+}
+.smc-seg-pop-title {
+  font-size: 8px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  color: #6d28d9; padding: 4px 8px 7px;
+}
+.smc-seg-pop-row { display: flex; align-items: center; padding: 6px 8px; border-radius: 8px; }
+.smc-seg-pop-row.alt { background: #f7f4ff; }
+[data-bs-theme="dark"] .smc-seg-pop { background: #1c1438; border-color: rgba(124,58,237,.4); box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+[data-bs-theme="dark"] .smc-seg-pop-title { color: #c4b5fd; }
+[data-bs-theme="dark"] .smc-seg-pop-row.alt { background: rgba(255,255,255,.04); }
 
 .smc-country { color: #495057; font-weight: 500; }
 .smc-contact { color: #495057; font-weight: 500; }
