@@ -75,6 +75,19 @@ const SEM_CSS = `
 /* Reserve room on the right of the stage header so its "ACTIVE" badge
    doesn't collide with the modal's close button. */
 .sem-panel > .smd-stg-head { padding-right: 52px; }
+/* In the modal, give the stage header the deep-violet / white look of the
+   Product Directory popup (the in-page stage header keeps its light style). */
+.sem-panel > .smd-stg-head {
+  background: linear-gradient(115deg, #7c3aed 0%, #8b5cf6 45%, #a78bfa 80%, #c4b5fd 100%);
+  border-bottom: none;
+}
+.sem-panel > .smd-stg-head .smd-stg-head-title { color: #fff; }
+.sem-panel > .smd-stg-head .smd-stg-head-sub   { color: #fff; opacity: .9; }
+.sem-panel > .smd-stg-head .smd-stg-head-icon  { background: rgba(255,255,255,.18); color: #fff; }
+.sem-panel > .smd-stg-head .smd-stg-head-badge { background: rgba(255,255,255,.20); color: #fff; border-color: rgba(255,255,255,.35); }
+/* On the violet header, the close pill reads better as translucent white. */
+.sem-panel .sem-close { background: rgba(255,255,255,.20); border-color: rgba(255,255,255,.35); color: #fff; }
+.sem-panel .sem-close:hover { background: rgba(255,255,255,.32); }
 .sem-close {
   position: absolute; top: 11px; right: 12px; z-index: 5;
   width: 30px; height: 30px; border-radius: 8px;

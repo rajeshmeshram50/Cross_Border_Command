@@ -331,8 +331,11 @@ function MoreOptionsMenu(props: {
   onDownloadSigned?: () => void | Promise<void>;
   onClose: () => void;
   onError: (msg: string) => void;
+  /* Reports when any PDF/cert action is in flight so the parent can show a
+   * row-level loader on this row. */
+  onBusyChange?: (busy: boolean) => void;
 }) {
-  const { rect, kind, payload, sigId, docCode, onViewSigned, onDownloadSigned, onClose, onError } = props;
+  const { rect, kind, payload, sigId, docCode, onViewSigned, onDownloadSigned, onClose, onError, onBusyChange } = props;
   const docLabel = kind === 'quotation' ? 'Quotation' : 'PI';
   const menuRef = useRef<HTMLDivElement>(null);
   /* Busy key encodes mode + signature so only the clicked item shows a
@@ -341,6 +344,10 @@ function MoreOptionsMenu(props: {
   type BusyKey = 'view-sig' | 'view-nosig' | 'dl-sig' | 'dl-nosig' | 'cert';
   const [busy, setBusy] = useState<BusyKey | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  /* Bubble busy → parent (for the row loader); clear on unmount so a row never
+   * gets stuck shimmering if the menu closes mid-flight. */
+  useEffect(() => { onBusyChange?.(busy !== null); }, [busy, onBusyChange]);
+  useEffect(() => () => { onBusyChange?.(false); }, [onBusyChange]);
 
   // Measure menu against captured rect before paint — no flash.
   useLayoutEffect(() => {
@@ -1118,6 +1125,9 @@ export default function SalesQPI() {
   // at top-left.
   const [qtMenuFor, setQtMenuFor] = useState<{ id: string; rect: AnchorRect; payload: Record<string, unknown>; sigId: number | null } | null>(null);
   const [piMenuFor, setPiMenuFor] = useState<{ id: string; rect: AnchorRect; payload: Record<string, unknown>; sigId: number | null } | null>(null);
+  /* Row id whose PDF (view/download/cert) is currently generating — drives the
+   * row-level loading shimmer (matches Stage 4's row loader). */
+  const [pdfBusyRowId, setPdfBusyRowId] = useState<number | null>(null);
   // Signing Tracker modal — opened from the "Tracker" action on sent rows.
   const [trackerFor, setTrackerFor] = useState<{ sigId: number; code: string } | null>(null);
 
@@ -1724,6 +1734,7 @@ export default function SalesQPI() {
               divClass="table-responsive table-card"
               SearchPlaceholder="Search quotations..."
               condensedPagination
+              rowClassName={(row: any) => (pdfBusyRowId != null && Number(row.original?.id) === pdfBusyRowId ? 'qpi-row-busy' : '')}
             />
           ) : piSub === 'with' ? (
             <TableContainer
@@ -1736,6 +1747,7 @@ export default function SalesQPI() {
               divClass="table-responsive table-card"
               SearchPlaceholder="Search PIs..."
               condensedPagination
+              rowClassName={(row: any) => (pdfBusyRowId != null && Number(row.original?.id) === pdfBusyRowId ? 'qpi-row-busy' : '')}
             />
           ) : (
             <TableContainer
@@ -1748,6 +1760,7 @@ export default function SalesQPI() {
               divClass="table-responsive table-card"
               SearchPlaceholder="Search PIs..."
               condensedPagination
+              rowClassName={(row: any) => (pdfBusyRowId != null && Number(row.original?.id) === pdfBusyRowId ? 'qpi-row-busy' : '')}
             />
           )}
 
@@ -1810,6 +1823,7 @@ export default function SalesQPI() {
             docCode={qtMenuFor.id}
             onViewSigned={qtMenuFor.sigId != null ? () => onViewSignedSig(qtMenuFor.sigId!) : undefined}
             onDownloadSigned={qtMenuFor.sigId != null ? () => onDownloadSignedSig(qtMenuFor.sigId!, qtMenuFor.id) : undefined}
+            onBusyChange={(b) => setPdfBusyRowId(b ? Number(qtMenuFor.payload.id) : null)}
             onClose={() => setQtMenuFor(null)}
             onError={(msg) => toast.error('Preview failed', msg)}
           />
@@ -1823,6 +1837,7 @@ export default function SalesQPI() {
             docCode={piMenuFor.id}
             onViewSigned={piMenuFor.sigId != null ? () => onViewSignedSig(piMenuFor.sigId!) : undefined}
             onDownloadSigned={piMenuFor.sigId != null ? () => onDownloadSignedSig(piMenuFor.sigId!, piMenuFor.id) : undefined}
+            onBusyChange={(b) => setPdfBusyRowId(b ? Number(piMenuFor.payload.id) : null)}
             onClose={() => setPiMenuFor(null)}
             onError={(msg) => toast.error('Preview failed', msg)}
           />
@@ -5332,6 +5347,22 @@ const SCOPED_CSS = `
 .qpi-input:focus  { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.14); }
 .qpi-input-readonly { background: #f8fafc; color: #64748b; cursor: not-allowed; }
 .qpi-input-num { text-align: right; }
+
+/* Row-level loader while a PDF (view / download / certificate) generates —
+ * the whole row sweeps violet and its buttons dim, matching Stage 4's loader.
+ * Prevents double-clicks and makes it obvious which row is working. */
+@keyframes qpi-row-sweep { 0% { background-position: -360px 0; } 100% { background-position: 360px 0; } }
+.qpi-row-busy { pointer-events: none; }
+.qpi-row-busy td {
+  background-image: linear-gradient(90deg, rgba(124,58,237,0) 0%, rgba(124,58,237,.16) 50%, rgba(124,58,237,0) 100%) !important;
+  background-size: 360px 100% !important;
+  background-repeat: no-repeat !important;
+  animation: qpi-row-sweep 1.1s ease-in-out infinite;
+}
+.qpi-row-busy td > * { opacity: .4; }
+[data-bs-theme="dark"] .qpi-row-busy td {
+  background-image: linear-gradient(90deg, rgba(167,139,250,0) 0%, rgba(167,139,250,.20) 50%, rgba(167,139,250,0) 100%) !important;
+}
 
 /* Edit-mode hydration shimmer */
 @keyframes qpi-shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }

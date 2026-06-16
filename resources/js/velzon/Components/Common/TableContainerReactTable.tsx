@@ -104,6 +104,9 @@ interface TableContainerProps {
   worklistPagination?: boolean;
   /** Page-size options for the worklist Rows-per-page selector. */
   pageSizeOptions?: number[];
+  /** Optional per-row class — receives the TanStack row, returns a className
+   *  for its <tr> (e.g. a loading-shimmer class). */
+  rowClassName?: (row: any) => string | undefined;
 }
 
 const TableContainer = ({
@@ -122,6 +125,7 @@ const TableContainer = ({
   pageOfTotalPagination = false,
   worklistPagination = false,
   pageSizeOptions = [10, 25, 50],
+  rowClassName,
 
 }: TableContainerProps) => {
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -248,7 +252,7 @@ const TableContainer = ({
           <tbody>
             {getRowModel().rows.map((row: any) => {
               return (
-                <tr key={row.id}>
+                <tr key={row.id} className={rowClassName ? rowClassName(row) : undefined}>
                   {row.getVisibleCells().map((cell: any) => {
                     // Mirror the header alignment on the data cell so the
                     // column reads as one tidy vertical strip regardless
