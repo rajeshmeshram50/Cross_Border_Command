@@ -174,9 +174,10 @@ function renderCreatorCell(
       ? { bg: '#ccfbf1', fg: '#0d9488', kind: 'branch' as const }
       : { bg: '#f1f5f9', fg: '#475569', kind: 'other' as const };
 
-  // Primary pill text per rule above.
+  // Primary pill text per rule above. Self-created rows show the creator's
+  // actual NAME (not "You"); the self tone/colour still marks it as yours.
   const primary =
-    isSelf            ? 'You'
+    isSelf            ? (name || 'You')
     : showAsMainBranch ? 'Main Branch'
     : (name || '—');
 
@@ -5215,8 +5216,8 @@ const SCOPED_CSS = `
 /* Loading state — shown until the first signing-status poll resolves so a PI
    can't be re-sent before we know it was already sent/signed. */
 .qpi-send-btn-loading, .qpi-send-btn-loading:disabled {
-  background: linear-gradient(135deg, #94a3b8, #64748b);
-  box-shadow: 0 3px 10px rgba(100,116,139,.25);
+  background: linear-gradient(135deg, #a78bfa, #7c3aed);
+  box-shadow: 0 3px 10px rgba(124,58,237,.28);
   opacity: 1; cursor: wait;
 }
 .qpi-send-spin {
