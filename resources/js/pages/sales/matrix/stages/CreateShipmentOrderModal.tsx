@@ -33,6 +33,7 @@ export type ShipmentInitialContext = {
   /* Pre-fills carried over from the PI / quotation if available. */
   incoTerm?:       string | null;
   portOfLoading?:  string | null;
+  portOfDischarge?: string | null;   // → seeds Port of Unloading
   finalDestination?: string | null;
   originCountry?:  string | null;
 };
@@ -48,7 +49,6 @@ type Props = {
 const LIABILITY_OPTIONS = [
   { value: 'Seller',  label: 'Seller'  },
   { value: 'Buyer',   label: 'Buyer'   },
-  { value: 'Shared',  label: 'Shared'  },
 ];
 
 const COLD_CHAIN_OPTIONS = [
@@ -57,11 +57,10 @@ const COLD_CHAIN_OPTIONS = [
 ];
 
 const SHIPPING_MODE_OPTIONS = [
-  { value: 'Sea Freight', label: 'Sea Freight' },
-  { value: 'Air Freight', label: 'Air Freight' },
-  { value: 'Road',        label: 'Road' },
-  { value: 'Rail',        label: 'Rail' },
-  { value: 'Courier',     label: 'Courier' },
+  { value: 'Air',     label: 'Air' },
+  { value: 'Water',   label: 'Water' },
+  { value: 'By Road', label: 'By Road' },
+  { value: 'Train',   label: 'Train' },
 ];
 
 function fmtDate(s: string | null | undefined): string {
@@ -107,7 +106,7 @@ export default function CreateShipmentOrderModal({
     setFreightCost(''); setShippingMode('');
     setIncoTerm(context.incoTerm ?? '');
     setPOL(context.portOfLoading ?? '');
-    setPOU('');
+    setPOU(context.portOfDischarge ?? '');
     setFinalDest(context.finalDestination ?? '');
     setOrigin(context.originCountry ?? '');
     setRemarks('');
@@ -330,7 +329,8 @@ export default function CreateShipmentOrderModal({
             </Field>
             <Field label="Final Destination" required error={errors.finalDestination}>
               <input className={`cso-input ${errors.finalDestination ? 'cso-input-err' : ''}`}
-                value={finalDestination} onChange={(e) => setFinalDest(e.target.value)} placeholder="e.g. Dubai, UAE" />
+                value={finalDestination}
+                onChange={(e) => setFinalDest(e.target.value)} placeholder="e.g. Dubai, UAE" />
             </Field>
 
             <Field label="Origin Country">

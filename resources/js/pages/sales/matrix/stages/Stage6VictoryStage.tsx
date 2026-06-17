@@ -42,6 +42,13 @@ type DealDoc = {
   currency:   string | null;
   grand_total:number | string | null;
   created_at: string;
+  // Logistics fields carried over to the Create-Shipment form (PI rows
+  // return the full model, so these are present on the latest PI).
+  inco_term?:         string | null;
+  port_of_loading?:   string | null;
+  port_of_discharge?: string | null;
+  final_destination?: string | null;
+  origin_country?:    string | null;
 };
 
 type Shipment = {
@@ -231,6 +238,14 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
     customerName:    lead?.customer?.company_name ?? header.customer,
     consigneeCode:   lead?.consignee?.consignee_code ?? null,
     consigneeName:   lead?.consignee?.company_name ?? null,
+    // Auto-fill the shipping/logistics fields shared with the Proforma
+    // Invoice form so ops doesn't re-key them. PI's port_of_discharge maps
+    // to the shipment's Port of Unloading.
+    incoTerm:         latestPi?.inco_term ?? null,
+    portOfLoading:    latestPi?.port_of_loading ?? null,
+    portOfDischarge:  latestPi?.port_of_discharge ?? null,
+    finalDestination: latestPi?.final_destination ?? null,
+    originCountry:    latestPi?.origin_country ?? null,
   }), [header.oppId, header.oppDate, header.customer, latestPi, lead]);
 
   const onShipmentCreated = () => {
