@@ -26,7 +26,9 @@ type LeadDetail = {
   id:            number;
   won_at:        string | null;
   created_at?:   string | null;
+  opportunity_date_iso?: string | null;  // ISO opportunity date (query_time ?? created_at)
   pi_signed_at?: string | null;   // when the PI was e-signed (null = not signed)
+  pi_sent_at?:   string | null;   // when the PI was sent for signature (fallback end-date)
   qualified:     boolean;
   lead_stage_id: number;
   sender_country_iso?: string | null;
@@ -186,13 +188,31 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
   // was SIGNED. Null (shows "—") until the PI is signed. Falls back to the
   // opportunity date if the lead's created_at isn't present.
   const days = useMemo(() => {
-    const startSrc = lead?.created_at ?? header.oppDate ?? null;
-    const start = startSrc ? new Date(startSrc) : null;
-    const end   = lead?.pi_signed_at ? new Date(lead.pi_signed_at) : null;
-    if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
-    const d = Math.floor((end.getTime() - start.getTime()) / 86_400_000);
+    /* Parse a date that may be ISO (from the server) OR a dd/mm/yyyy display
+     * string (header.oppDate). `new Date('10/04/2026')` mis-reads dd/mm as
+     * mm/dd, so reorder dd/mm/yyyy to yyyy-mm-dd before parsing. */
+    const parse = (s?: string | null): Date | null => {
+      if (!s) return null;
+      const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s.trim());
+      const d = m ? new Date(`${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}T00:00:00`)
+                  : new Date(s);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
+    // Start = opportunity date. Prefer the server's ISO opportunity date (the
+    // SAME source the header shows — query_time ?? created_at), then created_at,
+    // then the dd/mm/yyyy header string (which falls back to a hardcoded default
+    // on a fresh page load). End = PI signed date, or — while the PI is still
+    // pending — the date it was sent (pi_sent_at).
+    const start = parse(lead?.opportunity_date_iso) ?? parse(lead?.created_at) ?? parse(header.oppDate);
+    const end   = parse(lead?.pi_signed_at) ?? parse(lead?.pi_sent_at);
+    if (!start || !end) return null;
+    // Compare calendar dates only (ignore time-of-day) so the same date always
+    // reads as 0 days, regardless of the timestamps' hours.
+    const startDay = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+    const endDay   = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+    const d = Math.round((endDay - startDay) / 86_400_000);
     return d >= 0 ? d : null;
-  }, [lead?.created_at, lead?.pi_signed_at, header.oppDate]);
+  }, [lead?.opportunity_date_iso, lead?.created_at, lead?.pi_signed_at, lead?.pi_sent_at, header.oppDate]);
 
   const dealValue = useMemo(() => {
     if (latestPi?.grand_total != null) return fmtMoney(latestPi.grand_total, latestPi.currency);
@@ -298,7 +318,7 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
                 icon={<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></>} />
               <KpiTile tone="green"   label="PI ISSUED"  value={counts.pis}        loading={loading}
                 icon={<><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3h6v3H9zM8 11h8M8 15h5"/></>} />
-              <KpiTile tone="amber"   label="DAYS"       value={days ?? '—'}       loading={loading}
+              <KpiTile tone="amber"   label="DAYS"       value={days ?? '0'}       loading={loading}
                 icon={<><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>} />
             </div>
           </>
