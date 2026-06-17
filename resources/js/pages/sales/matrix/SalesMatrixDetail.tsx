@@ -583,18 +583,14 @@ export default function SalesMatrixDetail() {
    * follow-up reloadLead() refreshes the toolbar from authoritative
    * server state instead of optimistic-toggling. */
   const isKeyOpportunity = !!serverHeader.keyOpportunity;
-  /* Deal lock — DISABLED per request: the opportunity stays fully editable even
-   * after the Proforma Invoice is e-signed. Previously a signed PI made the
-   * matrix read-only (toolbar / Create Quotation+PI / Deal Execution panel all
-   * disabled with a "deal locked" veil). Force `false` to keep all actions
-   * usable; flip back to `!!serverHeader.piSignedAt` to re-enable the lock. */
-  const isSigned = false;
-  /* Shown when a locked action is clicked — explains why and what's still allowed. */
+  /* Deal lock — once the Proforma Invoice is e-signed, ONLY the centre stage
+   * column (2nd column / StageComponent) becomes read-only. The action toolbar
+   * and the right-hand Deal Execution panel (3rd column) stay fully usable, and
+   * the user can still navigate stages via the stepper / Save & Next. */
+  const isSigned = !!serverHeader.piSignedAt;
+  /* Shown when the user clicks anywhere on the locked (signed-PI) stage area. */
   const onLockedClick = useCallback(() => {
-    toast.warning(
-      'Deal locked',
-      'This Proforma Invoice is signed — the opportunity is read-only. You can still track CLM documents and create the Shipment.',
-    );
+    toast.warning('PI is signed', 'You cannot edit anything — this opportunity is read-only.');
   }, [toast]);
 
   const header: OppHeaderData = {
@@ -881,43 +877,26 @@ export default function SalesMatrixDetail() {
 
         {/* ─── Action Toolbar — same container as the stepper ─── */}
         <div className="smd-toolbar">
-        <ActionBtn icon={<IconUser />}     label="Customer" trailing="edit"
-          locked={isSigned} onLocked={onLockedClick}
-          onClick={onCustomerClick} />
+        <ActionBtn icon={<IconUser />}     label="Customer" trailing="edit"          onClick={onCustomerClick} />
         <ActionBtn icon={<IconTruck />}    label="Consignees" trailing="edit"
-          className={!serverHeader.customerId ? 'smd-act-disabled' : ''}
-          locked={isSigned} onLocked={onLockedClick}
-          onClick={onConsigneeClick} />
+          className={!serverHeader.customerId ? 'smd-act-disabled' : ''}          onClick={onConsigneeClick} />
         <span className="smd-act-sep" aria-hidden="true" />
         <ActionBtn icon={<IconPlusSq />}   label="Add Product"
-          locked={isSigned} onLocked={onLockedClick}
-          onClick={() => setProductAddOpen(true)} />
+          locked={isSigned} onLocked={onLockedClick}          onClick={() => setProductAddOpen(true)} />
         <ActionBtn icon={<IconBook />}     label="Product Directory"
-          locked={isSigned} onLocked={onLockedClick}
-          onClick={() => setProductDirectoryOpen(true)} />
+          locked={isSigned} onLocked={onLockedClick}          onClick={() => setProductDirectoryOpen(true)} />
         <ActionBtn icon={<IconSourcing />} label="Product Sourcing"
-          locked={isSigned} onLocked={onLockedClick}
-          onClick={() => setProductSourcingOpen(true)} />
+          locked={isSigned} onLocked={onLockedClick}          onClick={() => setProductSourcingOpen(true)} />
         <ActionBtn icon={<IconDollar />}   label="Share Prices"
-          locked={isSigned} onLocked={onLockedClick}
-          onClick={() => setPriceSharedOpen(true)} />
+          locked={isSigned} onLocked={onLockedClick}          onClick={() => setPriceSharedOpen(true)} />
         <ActionBtn icon={<IconUserCog />}  label="Change Owner"
-          locked={isSigned} onLocked={onLockedClick}
-          onClick={() => setChangeOwnerOpen(true)} />
-        <ActionBtn icon={<IconMsg />}      label="Remark"
-          locked={isSigned} onLocked={onLockedClick}
-          onClick={() => setRemarksOpen(true)} />
+          locked={isSigned} onLocked={onLockedClick}          onClick={() => setChangeOwnerOpen(true)} />
+        <ActionBtn icon={<IconMsg />}      label="Remark"          onClick={() => setRemarksOpen(true)} />
         <ActionBtn icon={<IconStar />}     label="Key Opportunity"
-          className={isKeyOpportunity ? 'smd-act-key' : ''}
-          locked={isSigned} onLocked={onLockedClick}
-          onClick={() => setKeyOppOpen(true)} />
+          className={isKeyOpportunity ? 'smd-act-key' : ''}          onClick={() => setKeyOppOpen(true)} />
         <span className="smd-act-sep" aria-hidden="true" />
-        <ActionBtn icon={<IconBell />}     label="Reminder"
-          locked={isSigned} onLocked={onLockedClick}
-          onClick={() => setRemindersOpen(true)} />
-        <ActionBtn icon={<IconCalSmall />} label="Meetings"
-          locked={isSigned} onLocked={onLockedClick}
-          onClick={() => setMeetingsOpen(true)} />
+        <ActionBtn icon={<IconBell />}     label="Reminder"          onClick={() => setRemindersOpen(true)} />
+        <ActionBtn icon={<IconCalSmall />} label="Meetings"          onClick={() => setMeetingsOpen(true)} />
         </div>
       </div>
 
@@ -1135,7 +1114,26 @@ export default function SalesMatrixDetail() {
             scrolls internally when a stage's content (e.g. Stage 6's shipment
             summary) is taller than the column, so the centre matches the side
             panels' height instead of stretching the whole row. */}
-        <section className="smd-stage-card">
+        <section className={`smd-stage-card${(isSigned && stage <= 4) ? ' smd-stage-card-locked' : ''}`}>
+          {/* Signed-PI lock — Stages 1-4 are fully read-only (a translucent veil
+              covers the stage and raises the "PI is signed" toaster on click).
+              Stage 5 stays visible but its create/edit actions are disabled via
+              the `locked` prop below; Stage 6 stays fully editable (work happens
+              there after signing). */}
+          {isSigned && stage <= 4 && (
+            <div
+              className="smd-stage-veil"
+              onClick={onLockedClick}
+              role="button"
+              tabIndex={-1}
+              aria-label="PI signed — read-only"
+            >
+              <span className="smd-stage-veil-badge">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                PI signed — read-only
+              </span>
+            </div>
+          )}
           <div className="smd-stg-scroll">
           <StageComponent
             header={header}
@@ -1143,7 +1141,9 @@ export default function SalesMatrixDetail() {
             onPrev={goPrev}
             onNext={goNext}
             reloadLead={reloadLead}
-            locked={isSigned}
+            /* Stage 5 keeps its in-stage create/edit lock; Stage 6 stays fully
+               editable so the user can work there after the PI is signed. */
+            locked={isSigned && stage <= 5}
             /* Create-PI gate for Stage 5, derived from the vault tallies this
                parent already fetches (custTally / consTally) — saves Stage 5
                from re-calling /segment-uploads/{party}/vault. A party with
@@ -1212,7 +1212,6 @@ export default function SalesMatrixDetail() {
 
           <TaskManagerPanel
             leadId={resolvedLeadId}
-            locked={isSigned}
             salespersonName={serverHeader.salespersonName || ''}
             initial={serverHeader.taskManager ?? null}
             onSaved={(row: TaskManagerRow) => {

@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class ShipmentOrder extends Model
 {
     protected $fillable = [
-        'client_id', 'shipment_code', 'lead_id', 'proforma_invoice_id',
+        'client_id', 'branch_id', 'shipment_code', 'lead_id', 'proforma_invoice_id',
         'shipping_liability', 'cold_chain', 'zip_code',
         'freight_cost', 'shipping_mode', 'inco_term',
         'port_of_loading', 'port_of_unloading',

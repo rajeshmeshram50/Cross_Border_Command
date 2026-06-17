@@ -39,7 +39,7 @@ type Counts = { all: number; highly: number; less: number };
 
 type Segment   = { id: number; code: string; name: string; regulatory_status: 'highly'|'less'; buyer_consignee: 'allowed'|'not_allowed' };
 type Authority = { id: number; code: string; name: string; description: string };
-type DocItem   = { id: number; code: string; name: string; authority?: string; issued_by?: string; title?: string };
+type DocItem   = { id: number; code: string; name: string; authority?: string; issued_by?: string; title?: string; authority_list?: string[] };
 
 type Bootstrap = {
   segments: Segment[]; authorities: Authority[];
@@ -129,7 +129,10 @@ export default function ClmDcpPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [viewDocs, setViewDocs] = useState<{ rule: SegRule; cat: keyof DocSelections | 'all' } | null>(null);
   // All-authorities popover — opened from the +N badge in the AUTHORITIES column.
-  const [authOpen, setAuthOpen] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
+  // `flipUp` opens it above the badge when there isn't room below (bottom rows),
+  // so the last entries aren't clipped off the bottom of the viewport. `y` is the
+  // badge's bottom edge when opening down, or its top edge when flipping up.
+  const [authOpen, setAuthOpen] = useState<{ id: number; names: string[]; x: number; y: number; flipUp: boolean } | null>(null);
 
   const reload = () => {
     setLoading(true);
@@ -168,15 +171,19 @@ export default function ClmDcpPage() {
   // authority/type (the same value shown in the configure modal's
   // "Authority / Type" column), then collect the distinct authorities across
   // every selected document on a rule.
-  // The bootstrap resolves each document's authority ids to a comma-joined
-  // names string (a document can carry several authorities), so split it into
-  // the individual authority names per document code.
+  // The bootstrap ships each document's resolved authority names BOTH as a
+  // comma-joined display string (`authority`/`issued_by`) and as a structured
+  // array (`authority_list`). Prefer the array — splitting the joined string on
+  // commas over-counts authorities whose own names contain commas (e.g.
+  // "Aadhaar, Passport, Voter ID, Driving License" would split into 4). Fall
+  // back to the string split only for older payloads that omit the array.
   const docAuthByCat = useMemo(() => {
     const make = (list: DocItem[] = []) => {
       const m = new Map<string, string[]>();
       for (const d of list) {
-        const raw = d.authority || d.issued_by || '';
-        const names = raw.split(',').map(s => s.trim()).filter(Boolean);
+        const names = Array.isArray(d.authority_list)
+          ? d.authority_list.map(s => s.trim()).filter(Boolean)
+          : (d.authority || d.issued_by || '').split(',').map(s => s.trim()).filter(Boolean);
         if (names.length) m.set(d.code, names);
       }
       return m;
@@ -382,7 +389,17 @@ export default function ClmDcpPage() {
                                   <button
                                     type="button"
                                     title="View all authorities"
-                                    onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setAuthOpen(authOpen?.id === r.id ? null : { id: r.id, names: auths, x: b.left, y: b.bottom + 4 }); }}
+                                    onClick={e => {
+                                      if (authOpen?.id === r.id) { setAuthOpen(null); return; }
+                                      const b = e.currentTarget.getBoundingClientRect();
+                                      // Estimate the popover height (header + a row per authority, capped at
+                                      // the 280px max-height) and flip it above the badge when there's not
+                                      // enough room below — otherwise the bottom rows clip off-screen.
+                                      const estH = Math.min(280, 34 + auths.length * 34);
+                                      const spaceBelow = window.innerHeight - b.bottom;
+                                      const flipUp = spaceBelow < estH + 12 && b.top > spaceBelow;
+                                      setAuthOpen({ id: r.id, names: auths, x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp });
+                                    }}
                                     style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
                                     +{extra}
                                   </button>
@@ -450,7 +467,7 @@ export default function ClmDcpPage() {
       {authOpen && createPortal(
         <>
           <div onClick={() => setAuthOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(authOpen.x, window.innerWidth - 340), top: authOpen.y, zIndex: 601, width: 320, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(authOpen.x, window.innerWidth - 340), top: authOpen.flipUp ? undefined : authOpen.y, bottom: authOpen.flipUp ? (window.innerHeight - authOpen.y) : undefined, zIndex: 601, width: 320, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
             <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Authorities ({authOpen.names.length})</div>
             {authOpen.names.map((name, i) => (
               <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>

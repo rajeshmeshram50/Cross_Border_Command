@@ -90,9 +90,14 @@ class ShipmentOrderController extends Controller
         }
 
         try {
+            // Shipment IDs are sequenced per BRANCH. Use the opportunity's
+            // branch (falling back to the creator's branch when the lead has
+            // none) so the counter is scoped correctly.
+            $branchId = Lead::where('id', $data['lead_id'])->value('branch_id') ?? $user->branch_id;
             $shipment = ShipmentOrder::create([
                 'client_id'           => $user->client_id,
-                'shipment_code'       => $this->nextShipmentCode($user->client_id),
+                'branch_id'           => $branchId,
+                'shipment_code'       => $this->nextShipmentCode($user->client_id, $branchId),
                 'lead_id'             => $data['lead_id'],
                 'proforma_invoice_id' => $data['proforma_invoice_id']  ?? null,
                 'shipping_liability'  => $data['shipping_liability']   ?? null,
@@ -126,17 +131,20 @@ class ShipmentOrderController extends Controller
     }
 
     /**
-     * Next per-client sequential Shipment ID — SHP-001, SHP-002, … Derives the
-     * highest existing numeric suffix for the tenant and adds one. Postgres
+     * Next per-BRANCH sequential Shipment ID — SHP-001, SHP-002, … Derives the
+     * highest existing numeric suffix for the branch and adds one. Postgres
      * `regexp_replace` strips non-digits so legacy/odd codes don't break it.
+     * Each branch keeps its own SHP sequence (scoped within the client tenant).
      */
-    private function nextShipmentCode(int $clientId): string
+    private function nextShipmentCode(int $clientId, ?int $branchId): string
     {
         // Take the GREATER of (highest existing code number) and (row count) so
         // legacy rows with a NULL shipment_code (created before the column
         // existed) are still counted — e.g. 2 un-coded rows ⇒ next is SHP-003.
         $row = ShipmentOrder::query()
             ->where('client_id', $clientId)
+            ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
+            ->when($branchId === null, fn ($q) => $q->whereNull('branch_id'))
             ->selectRaw("
                 COALESCE(MAX(CAST(NULLIF(regexp_replace(COALESCE(shipment_code, ''), '\\D', '', 'g'), '') AS INTEGER)), 0) AS max_code,
                 COUNT(*) AS cnt
@@ -156,7 +164,12 @@ class ShipmentOrderController extends Controller
         if (!$user->client_id) {
             return response()->json(['status' => false, 'message' => 'No client tenant on user'], 422);
         }
-        return response()->json(['status' => true, 'code' => $this->nextShipmentCode($user->client_id)]);
+        // Preview against the lead's branch when known (matches what store()
+        // allocates), else the creator's branch.
+        $branchId = $request->integer('lead_id')
+            ? (Lead::where('id', $request->integer('lead_id'))->value('branch_id') ?? $user->branch_id)
+            : $user->branch_id;
+        return response()->json(['status' => true, 'code' => $this->nextShipmentCode($user->client_id, $branchId)]);
     }
 
     public function show(Request $request, int $id)

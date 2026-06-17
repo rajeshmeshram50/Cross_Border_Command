@@ -58,6 +58,25 @@ const SDS_CSS = `
 [data-bs-theme="dark"] .sds-step2 .ssf-notes-label textarea { background: #0f172a; border-color: #334155; color: #e2e8f0; }
 [data-bs-theme="dark"] .sds-step2 .ssf-notes-label span,
 [data-bs-theme="dark"] .sds-step2 .ssf-inline label span { color: #94a3b8; }
+
+/* Full-shell blocking veil shown while the document is being sent — prevents
+   any change to the signature box / page / position / options mid-send. */
+.ssf-shell { position: relative; }
+.ssf-sending-veil {
+  position: absolute; inset: 0; z-index: 50;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; cursor: wait; border-radius: inherit;
+  background: rgba(255,255,255,.74);
+}
+.ssf-sending-spin {
+  width: 34px; height: 34px;
+  border: 3px solid rgba(124,58,237,.25); border-top-color: #7c3aed;
+  border-radius: 50%; animation: ssf-sending-rot .7s linear infinite;
+}
+@keyframes ssf-sending-rot { to { transform: rotate(360deg); } }
+.ssf-sending-text { font-size: 13px; font-weight: 700; color: #5b21b6; }
+[data-bs-theme="dark"] .ssf-sending-veil { background: rgba(15,23,42,.72); }
+[data-bs-theme="dark"] .ssf-sending-text { color: #c4b5fd; }
 `;
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -326,6 +345,15 @@ export default function SalesDocSendForSignatureModal({
     <div className="ssf-overlay" onMouseDown={e => { if (e.target === e.currentTarget && !sending) onClose(); }} role="dialog" aria-modal="true">
       <style>{SSF_CSS}{SDS_CSS}</style>
       <div className="ssf-shell" onMouseDown={e => e.stopPropagation()}>
+        {/* While sending, a full overlay blocks ALL interaction (drag the
+            signature box, change page / X / Y / size, edit expiry / notes) so
+            nothing can change mid-send. */}
+        {sending && (
+          <div className="ssf-sending-veil" aria-live="polite">
+            <span className="ssf-sending-spin" />
+            <span className="ssf-sending-text">Sending {label} for signature…</span>
+          </div>
+        )}
         {/* ── Header ── */}
         <div className="ssf-head">
           <div className="ssf-head-left">

@@ -8,7 +8,7 @@
         /* Reserve a bottom band on every page for the fixed footer so it
        never overlaps content. */
         @page {
-            margin-bottom: 34px;
+            margin-bottom: 26px;
         }
 
         .pdf-footer {
@@ -18,7 +18,7 @@
             left: 0;
             right: 0;
             width: 100%;
-            height: 30px;
+            height: 23px;
             /* Thin top border in the tenant's primary brand colour (same as
                the table headers / section rules); falls back to the reference
                green only when the branch has no brand colour set. */
@@ -1275,10 +1275,10 @@ if (isset($pdf)) {
     $x     = ($pdf->get_width() - $width) / 2 + 2;
     // Sits just under the footer strip. Larger subtraction = higher up (closer
     // to the footer line), which tightens the gap below the barcode/company row.
-    // Lowered from 36 → 22 in step with the smaller footer band (height 30,
-    // @page margin-bottom 34) so the whole footer assembly sits closer to the
-    // page edge — reclaiming vertical space so the T&C is no longer clipped.
-    $y     = $pdf->get_height() - 22;
+    // Lowered again (→ 15) in step with the smaller footer band (height 23,
+    // @page margin-bottom 26) so the whole footer assembly sits closer to the
+    // page edge — reclaiming more vertical space so content/T&C isn't clipped.
+    $y     = $pdf->get_height() - 15;
     $pdf->page_text($x, $y, $text, $font, $size, [0.30, 0.30, 0.30]);
 }
 </script>

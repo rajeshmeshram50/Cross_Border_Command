@@ -60,6 +60,26 @@ class ClmAuthority extends Model
     }
 
     /**
+     * Like displayNames() but returns the resolved names as an ARRAY rather
+     * than a comma-joined string. Use this wherever the consumer must count or
+     * iterate the distinct authorities: a comma is NOT a safe delimiter to
+     * split the joined string back on, because authority names themselves may
+     * contain commas (e.g. "Aadhaar, Passport, Voter ID, Driving License").
+     * Splitting the joined string would over-count each such authority.
+     */
+    public static function displayNamesList(?string $stored, array $idToName): array
+    {
+        if ($stored === null || trim($stored) === '') return [];
+        $out = [];
+        foreach (explode(',', $stored) as $tok) {
+            $tok = trim($tok);
+            if ($tok === '') continue;
+            $out[] = $idToName[$tok] ?? $tok;
+        }
+        return $out;
+    }
+
+    /**
      * Normalize an incoming authority value (comma-joined ids and/or names) to
      * a canonical, de-duplicated comma-joined list of authority IDS for this
      * tenant. Names are matched case-insensitively; unknown tokens are dropped.

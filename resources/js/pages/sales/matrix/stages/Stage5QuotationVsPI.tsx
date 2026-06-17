@@ -134,6 +134,10 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     { kind: DocType; id: number; code: string | null; customerName: string | null } | null
   >(null);
   const [sigByRow, setSigByRow] = useState<Record<string, SigStatusRow>>({});
+  /* False until the first signature-status fetch resolves. While loading we DON'T
+   * yet know if a doc was already sent/signed, so the Send-for-Signature button
+   * shows a loader and is disabled — preventing a premature duplicate send. */
+  const [sigLoaded, setSigLoaded] = useState(false);
   // Signing Tracker (shared modal) target — opened from the history icon on any
   // row that has a signature request (sent or signed).
   const [trackerFor, setTrackerFor] = useState<{ sigId: number; code: string } | null>(null);
@@ -203,6 +207,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
       });
       setSigByRow(map);
     } catch { /* signature status is best-effort — never blocks the table */ }
+    finally { setSigLoaded(true); }
   }, [leadId, docType]);
 
   useEffect(() => {
@@ -599,13 +604,17 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
             </button>
           </div>
           <div className="s5-create-group">
+            {/* Once a (non-cancelled) PI exists on this opportunity, a new
+                Quotation can no longer be created against it — the button stays
+                visible but greyed; clicking explains why. Also locked once signed. */}
             <button
               type="button"
               className="s5-create-btn s5-create-q"
-              style={locked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-              title={locked ? 'Locked — the Proforma Invoice has been signed' : undefined}
+              style={(locked || livePisCount > 0) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+              title={locked ? 'Locked — the Proforma Invoice has been signed' : (livePisCount > 0 ? 'A Proforma Invoice already exists for this opportunity' : undefined)}
               onClick={() => {
                 if (locked) { toast.warning('Deal locked', 'The Proforma Invoice is signed — this opportunity is read-only.'); return; }
+                if (livePisCount > 0) { toast.warning('PI already created', 'A Proforma Invoice already exists for this opportunity — you cannot create a new quotation against it.'); return; }
                 onCreate('quotation');
               }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -749,6 +758,17 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               (matches the standalone Quotations V/S PI page).
                               Status-aware: Send → Awaiting Sign (+Remind) → Signed. */}
                           {docType === 'pi' && (() => {
+                            // Still loading signature status → show a disabled
+                            // loader so the user can't fire a premature send
+                            // before we know whether it's already sent/signed.
+                            if (!sigLoaded) {
+                              return (
+                                <button type="button" className="s5-convert2" disabled
+                                  style={{ background: 'linear-gradient(135deg,#a78bfa,#7c3aed)', opacity: 1, cursor: 'wait' }}>
+                                  <span className="s5-sig-spin" /> Checking…
+                                </button>
+                              );
+                            }
                             const sig = sigByRow[`${docType}:${r.id}`];
                             const st  = sig?.status;
                             if (st === 'inprogress') {
@@ -1416,6 +1436,14 @@ const STAGE5_CSS = `
 /* ─── Table card ─── */
 .s5-tbl-card { border: 1.5px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,.06); background: #fff; }
 .s5-tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* Plain neutral-grey scrollbar (not the themed violet one) — matches Stage 3/4. */
+.s5-tbl-wrap::-webkit-scrollbar { width: 9px; height: 9px; }
+.s5-tbl-wrap::-webkit-scrollbar-track { background: transparent; }
+.s5-tbl-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+.s5-tbl-wrap::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+[data-bs-theme="dark"] .s5-tbl-wrap::-webkit-scrollbar-track { background: transparent; }
+[data-bs-theme="dark"] .s5-tbl-wrap::-webkit-scrollbar-thumb { background: rgba(148,163,184,.45); }
+[data-bs-theme="dark"] .s5-tbl-wrap::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,.65); }
 .s5-tbl { width: 100%; min-width: 880px; border-collapse: collapse; }
 .s5-tbl thead tr { background: linear-gradient(90deg, #5b21b6 0%, #7c3aed 55%, #5b21b6 100%); box-shadow: 0 2px 8px rgba(124,58,237,.28); }
 .s5-tbl thead th {
@@ -1475,6 +1503,13 @@ const STAGE5_CSS = `
 }
 .s5-convert2:hover:not(:disabled) { background: linear-gradient(135deg, #6d28d9, #4c1d95); box-shadow: 0 4px 12px rgba(124,58,237,.45); transform: translateY(-1px); }
 .s5-convert2:disabled { opacity: .55; cursor: not-allowed; }
+/* Tiny white spinner for the "Checking…" signing-status loader pill. */
+.s5-sig-spin {
+  display: inline-block; width: 11px; height: 11px;
+  border: 2px solid rgba(255,255,255,.45); border-top-color: #fff;
+  border-radius: 50%; animation: s5-sig-spin-rot .6s linear infinite;
+}
+@keyframes s5-sig-spin-rot { to { transform: rotate(360deg); } }
 .s5-converted-chip { display: inline-flex; align-items: center; padding: 4px 11px; border-radius: 20px; font-size: 9.5px; font-weight: 800; background: #ede9fe; color: #6d28d9; border: 1px solid #ddd6fe; white-space: nowrap; }
 /* All action icon buttons (view, reminder, email, edit, more, delete) share
    ONE neutral resting style so the row reads as a tidy, uniform toolbar. Each

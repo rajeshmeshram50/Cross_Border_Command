@@ -174,9 +174,10 @@ function renderCreatorCell(
       ? { bg: '#ccfbf1', fg: '#0d9488', kind: 'branch' as const }
       : { bg: '#f1f5f9', fg: '#475569', kind: 'other' as const };
 
-  // Primary pill text per rule above.
+  // Primary pill text per rule above. Self-created rows show the creator's
+  // actual NAME (not "You"); the self tone/colour still marks it as yours.
   const primary =
-    isSelf            ? 'You'
+    isSelf            ? (name || 'You')
     : showAsMainBranch ? 'Main Branch'
     : (name || '—');
 
@@ -856,6 +857,10 @@ export default function SalesQPI() {
   >(null);
   const [sigByRow, setSigByRow] = useState<Record<string, { id: number; status: string }>>({});
   const [sigTick, setSigTick] = useState(0);
+  /* False until the first signature-status poll resolves — while loading, the
+   * Send-for-Signature pill shows a loader and is disabled so a row can't be
+   * sent again before we know it was already sent/signed. */
+  const [sigLoaded, setSigLoaded] = useState(false);
 
   /* Poll signature status for ALL quotations + PIs of this client (no
    * lead filter — this page spans many leads). `sync=1` round-trips Zoho
@@ -880,6 +885,7 @@ export default function SalesQPI() {
         if (pr.status === 'fulfilled') ingest((pr.value as any).data?.data, 'pi');
         setSigByRow(map);
       } catch { /* signature status is best-effort — never blocks the table */ }
+      finally { if (alive) setSigLoaded(true); }
     };
     void load();
     const t = setInterval(load, 20000);
@@ -1230,7 +1236,13 @@ export default function SalesQPI() {
             to PI" button) instead of a bare icon, with three states:
             Send for Sign (active) → Sent (awaiting) → Signed (done). */}
         {kind === 'pi' && (
-          signed ? (
+          !sigLoaded ? (
+            <Tooltip label="Checking signing status…">
+              <button type="button" disabled className="qpi-convert-btn qpi-send-btn qpi-send-btn-loading" aria-label="Checking signing status">
+                <span className="qpi-send-spin" /><span className="qpi-convert-btn-label">Checking…</span>
+              </button>
+            </Tooltip>
+          ) : signed ? (
             <Tooltip label={signedHint}>
               <button type="button" disabled className="qpi-convert-btn qpi-send-btn qpi-send-btn-signed" aria-label="Signed">
                 <IconCheck /><span className="qpi-convert-btn-label">Signed</span>
@@ -2507,12 +2519,14 @@ export function CreateQuotationModal(props: {
   const onSaveNext = () => {
     const errs = new Set<string>();
     const labels: Record<string, string> = {
-      customer: 'Customer', consignee: 'Consignee', incoTerm: 'INCO Term', portOfLoading: 'Port of Loading',
+      customer: 'Customer', consignee: 'Consignee', bankName: 'Bank Name',
+      incoTerm: 'INCO Term', portOfLoading: 'Port of Loading',
       portOfDischarge: 'Port of Discharge', finalDestination: 'Final Destination',
       originCountry: 'Origin Country', stateCode: 'State Code',
     };
     if (!form.customerId)            errs.add('customer');
     if (!form.consigneeId)           errs.add('consignee');
+    if (!form.bankName)              errs.add('bankName');
     if (form.docType === 'International') {
       if (!form.incoTerm)            errs.add('incoTerm');
       if (!form.portOfLoading)       errs.add('portOfLoading');
@@ -2853,11 +2867,6 @@ export function CreatePIModal(props: {
   const toast = useToast();
   useScrollLock();   // freeze background scroll while the modal is open
   const [step, setStep] = useState<1 | 2>(1);
-  /* Once the user advances to Step 2 (Product Details), the core document &
-   * party fields — Document Type, Opportunity, Customer, Consignee — lock so
-   * that going Back to Step 1 can't change them out from under the products
-   * already added. All other Step-1 fields stay editable. */
-  const [coreLocked, setCoreLocked] = useState(false);
   // Existing PI metadata shown in the top-right pills + used for the
   // PUT URL when in edit mode.
   const [existingCode, setExistingCode] = useState<string | null>(null);
@@ -2904,12 +2913,14 @@ export function CreatePIModal(props: {
   const onSaveNext = () => {
     const errs = new Set<string>();
     const labels: Record<string, string> = {
-      customer: 'Customer', consignee: 'Consignee', incoTerm: 'INCO Term', portOfLoading: 'Port of Loading',
+      customer: 'Customer', consignee: 'Consignee', bankName: 'Bank Name',
+      incoTerm: 'INCO Term', portOfLoading: 'Port of Loading',
       portOfDischarge: 'Port of Discharge', finalDestination: 'Final Destination',
       originCountry: 'Origin Country', stateCode: 'State Code',
     };
     if (!form.customerId)            errs.add('customer');
     if (!form.consigneeId)           errs.add('consignee');
+    if (!form.bankName)              errs.add('bankName');
     if (form.docType === 'International') {
       if (!form.incoTerm)            errs.add('incoTerm');
       if (!form.portOfLoading)       errs.add('portOfLoading');
@@ -2925,7 +2936,6 @@ export function CreatePIModal(props: {
       toast.error('Missing required fields', `Please fill: ${list}`);
       return;
     }
-    setCoreLocked(true);   // lock the core fields once Step 2 is reached
     setStep(2);
   };
 
@@ -3141,11 +3151,12 @@ export function CreatePIModal(props: {
               form={form} setForm={setForm}
               masters={masters} theme="purple"
               titleLabel="Basic PI Details" partyKind="PI"
-              lockParty={!!initialOpp || isEdit || coreLocked}
-              /* Consignee stays EDITABLE after Step 2 — only Document Type,
-                 Opportunity and Customer lock via coreLocked. */
+              /* All Step-1 fields stay editable when going back from Step 2
+                 (the post-Step-2 core lock was removed). Lead-opened (initialOpp)
+                 and edit-mode locks still apply. */
+              lockParty={!!initialOpp || isEdit}
               lockConsignee={isEdit || !!initialOpp?.consigneeId}
-              lockDocType={isEdit || coreLocked}
+              lockDocType={isEdit}
               errors={step1Errors}
               clearError={(k) => setStep1Errors(prev => {
                 if (!prev.has(k)) return prev;
@@ -3250,11 +3261,14 @@ function BasicFormSkeleton({ theme }: { theme: 'teal' | 'purple' }) {
  *  the fully-mapped LeadRow so the cascade (customer/consignee/currency)
  *  works without a second lookup. */
 function OpportunitySelect({
-  value, customerId, disabled, onPick,
+  value, customerId, disabled, excludeWithPi, onPick,
 }: {
   value: string;
   customerId: number | null;
   disabled?: boolean;
+  /* When true (Create Quotation), opportunities that already have a Proforma
+   * Invoice are hidden — a quotation can't be created against an opp with a PI. */
+  excludeWithPi?: boolean;
   onPick: (oppValue: string, row: LeadRow | null) => void;
 }) {
   const [open, setOpen]       = useState(false);
@@ -3307,10 +3321,13 @@ function OpportunitySelect({
           page: pageNum, per_page: 50, with_counts: 0,
           search:      q.trim() || undefined,
           customer_id: customerId || undefined,
-          // Only offer opportunities whose Price-Shared stage (Stage 4) is
-          // complete — every product in the opp's directory has a shared
-          // price. Opps still mid price-sharing are hidden here.
-          price_shared_complete: 1,
+          // Only offer opportunities whose Stage 2 (Lead Acknowledgement) is
+          // complete — i.e. the lead is QUALIFIED. Opps that haven't cleared
+          // Stage 2 are hidden regardless of any later progress (price shared,
+          // etc.). The customer_id filter (when set) stacks on top.
+          lead_ack_complete: 1,
+          // Create Quotation: hide opps that already have a Proforma Invoice.
+          exclude_with_pi: excludeWithPi ? 1 : undefined,
         },
       });
       const rows   = Array.isArray(res.data?.data) ? res.data.data : [];
@@ -3325,7 +3342,7 @@ function OpportunitySelect({
     } finally {
       setLoading(false);
     }
-  }, [customerId]);
+  }, [customerId, excludeWithPi]);
 
   // (Re)load page 1 on open and whenever the search text or customer
   // changes while open. Debounce typed searches so we don't fire per key.
@@ -3679,6 +3696,9 @@ function BasicForm(props: {
             <OpportunitySelect
               value={form.opportunity}
               customerId={form.customerId}
+              /* Hide opportunities that already have a PI — applies to BOTH the
+                 Quotation and PI pickers (one PI per opp; no quoting after PI). */
+              excludeWithPi
               onPick={(val, row) => onOpportunityChange(val, row)}
             />
           )}
@@ -3719,14 +3739,14 @@ function BasicForm(props: {
             />
           )}
         </Field>
-        <Field label="Bank Name" required>
+        <Field label="Bank Name" required error={hasError('bankName')}>
           <MasterSelect
             key={`bank-${masters.banks.length}`}
             value={form.bankName}
             loading={masters.loading}
             placeholder="— Select Bank —"
             options={withCurrent(masters.banks, form.bankName)}
-            onChange={onBankChange}
+            onChange={(v) => { onBankChange(v); if (v) clearError?.('bankName'); }}
           />
         </Field>
 
@@ -5201,6 +5221,19 @@ const SCOPED_CSS = `
   opacity: 1; cursor: not-allowed;
 }
 .qpi-send-btn-signed:hover { transform: none; }
+/* Loading state — shown until the first signing-status poll resolves so a PI
+   can't be re-sent before we know it was already sent/signed. */
+.qpi-send-btn-loading, .qpi-send-btn-loading:disabled {
+  background: linear-gradient(135deg, #a78bfa, #7c3aed);
+  box-shadow: 0 3px 10px rgba(124,58,237,.28);
+  opacity: 1; cursor: wait;
+}
+.qpi-send-spin {
+  display: inline-block; width: 11px; height: 11px;
+  border: 2px solid rgba(255,255,255,.45); border-top-color: #fff;
+  border-radius: 50%; animation: qpi-send-spin-rot .6s linear infinite;
+}
+@keyframes qpi-send-spin-rot { to { transform: rotate(360deg); } }
 
 /* "Signed PDF" download button — green pill, clickable (unlike the locked
    "converted" state above). Shown on completed e-signature rows. */
@@ -5653,12 +5686,14 @@ const SCOPED_CSS = `
   margin-bottom: 18px;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
 }
 .qpi-products-wrap::-webkit-scrollbar { width: 8px; height: 8px; }
+.qpi-products-wrap::-webkit-scrollbar-track { background: transparent; }
 .qpi-products-wrap::-webkit-scrollbar-thumb {
-  background: rgba(124,58,237,.35); border-radius: 999px;
+  background: #d1d5db; border-radius: 999px;
 }
-.qpi-products-wrap::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,.55); }
+.qpi-products-wrap::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
 .qpi-products-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; min-width: 800px; table-layout: fixed; }
 /* Header matches the modal's popup chrome — teal gradient for the
    Quotation modal, purple for PI — using the same gradient as the modal
@@ -5728,7 +5763,13 @@ const SCOPED_CSS = `
   font-family: inherit; font-size: 12px; color: #1e1b4b;
   resize: vertical;
   outline: none;
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
 }
+.qpi-textarea::-webkit-scrollbar { width: 8px; height: 8px; }
+.qpi-textarea::-webkit-scrollbar-track { background: transparent; }
+.qpi-textarea::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 999px; }
+.qpi-textarea::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
 .qpi-textarea:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.12); }
 
 /* Totals summary panel (right column on step 2) — tightened to match
@@ -6164,12 +6205,16 @@ const SCOPED_CSS = `
   background: #1c1538;
   box-shadow: inset 0 1px 0 0 rgba(167,139,250,.25);
 }
+[data-bs-theme="dark"] .qpi-products-wrap { scrollbar-color: rgba(255,255,255,.18) transparent; }
 [data-bs-theme="dark"] .qpi-products-wrap::-webkit-scrollbar-thumb {
-  background: rgba(167,139,250,.35);
+  background: rgba(255,255,255,.18);
 }
 [data-bs-theme="dark"] .qpi-products-wrap::-webkit-scrollbar-thumb:hover {
-  background: rgba(167,139,250,.55);
+  background: rgba(255,255,255,.28);
 }
+[data-bs-theme="dark"] .qpi-textarea { scrollbar-color: rgba(255,255,255,.18) transparent; }
+[data-bs-theme="dark"] .qpi-textarea::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); }
+[data-bs-theme="dark"] .qpi-textarea::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.28); }
 [data-bs-theme="dark"] .qpi-amt { color: #f1f5f9; }
 [data-bs-theme="dark"] .qpi-prod-remove {
   background: rgba(220,38,38,.18); border-color: rgba(239,68,68,.40); color: #fca5a5;

@@ -36,6 +36,7 @@ export type ShipmentInitialContext = {
   portOfDischarge?: string | null;   // → seeds Port of Unloading
   finalDestination?: string | null;
   originCountry?:  string | null;
+  shippingCost?:   number | string | null;   // PI shipping cost → seeds Freight Cost (editable)
 };
 
 type Props = {
@@ -103,7 +104,13 @@ export default function CreateShipmentOrderModal({
   useEffect(() => {
     if (!open) return;
     setLiability(''); setColdChain(''); setZipCode('');
-    setFreightCost(''); setShippingMode('');
+    // Freight Cost seeds from the PI's Shipping Cost (stays editable).
+    setFreightCost(
+      context.shippingCost != null && Number(context.shippingCost) > 0
+        ? String(context.shippingCost)
+        : '',
+    );
+    setShippingMode('');
     setIncoTerm(context.incoTerm ?? '');
     setPOL(context.portOfLoading ?? '');
     setPOU(context.portOfDischarge ?? '');
@@ -176,17 +183,18 @@ export default function CreateShipmentOrderModal({
    * modal first opened (closed render = N hooks, open render = N+1)
    * and crashed the Stage 6 page with the "change in the order of
    * Hooks" warning. */
-  /* Real next Shipment ID from the server (per-client sequential, SHP-001…),
-   * fetched when the modal opens. The actual code is allocated on save. */
+  /* Real next Shipment ID from the server (per-BRANCH sequential, SHP-001…),
+   * fetched when the modal opens. The actual code is allocated on save.
+   * Pass lead_id so the preview is scoped to the opportunity's branch. */
   const [previewShpCode, setPreviewShpCode] = useState('…');
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    api.get<{ status: boolean; code: string }>('/sales/shipment-orders/next-code')
+    api.get<{ status: boolean; code: string }>('/sales/shipment-orders/next-code', { params: { lead_id: leadId ?? undefined } })
       .then(({ data }) => { if (!cancelled) setPreviewShpCode(data.code || '—'); })
       .catch(() => { if (!cancelled) setPreviewShpCode('—'); });
     return () => { cancelled = true; };
-  }, [open]);
+  }, [open, leadId]);
 
   /* Master-backed dropdown options (INCO Term / Ports / Origin Country).
    * Reuses the cached QPI masters loader, so this is a no-op fetch when
