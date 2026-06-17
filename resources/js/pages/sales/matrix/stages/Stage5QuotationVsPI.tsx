@@ -760,7 +760,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                             if (!sigLoaded) {
                               return (
                                 <button type="button" className="s5-convert2" disabled
-                                  style={{ background: 'linear-gradient(135deg,#94a3b8,#64748b)', opacity: 1, cursor: 'wait' }}>
+                                  style={{ background: 'linear-gradient(135deg,#a78bfa,#7c3aed)', opacity: 1, cursor: 'wait' }}>
                                   <span className="s5-sig-spin" /> Checking…
                                 </button>
                               );
