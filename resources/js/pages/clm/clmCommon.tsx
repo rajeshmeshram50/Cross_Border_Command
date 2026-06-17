@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { ShimmerTableRows } from '../../components/ui/Shimmer';
 
 /* Locks scroll while a modal is mounted so the page behind the overlay can't
  * scroll-chain. Locks BOTH <html> and <body> — the viewport scroll is owned by
@@ -110,6 +111,19 @@ export function findClmDuplicate<T extends { id?: string | number; name?: string
     if (editingId != null && r.id === editingId) return false;
     return String((r as Record<string, unknown>)[field] ?? '').trim().toLowerCase() === target;
   });
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Shimmer skeleton rows for CLM master tables while data loads.
+ *
+ * Drop-in replacement for the old `<tr><td colSpan>Loading…</td></tr>` text
+ * row. Delegates to the project-canonical `ShimmerTableRows` (the same
+ * `.shimmer` light-sweep used on Customer / Dashboard / Master pages) so the
+ * CLM masters match the rest of the app instead of using a one-off look.
+ * Keeps CLM table cell padding via `clm-skel-cell`.
+ * ───────────────────────────────────────────────────────────────────────── */
+export function ClmSkeletonRows({ cols, rows = 6 }: { cols: number; rows?: number }) {
+  return <ShimmerTableRows rows={rows} cols={cols} cellClassName="clm-skel-cell" keyPrefix="clm-shim" />;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────

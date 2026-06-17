@@ -5,7 +5,7 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
-import { DeleteConf } from './clmCommon';
+import { ClmSkeletonRows, DeleteConf } from './clmCommon';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 
 /* Locks <body> scroll while a modal is mounted, so the page behind the
@@ -52,7 +52,7 @@ export default function ClmClauseLibraryPage() {
   const [tab, setTab]       = useState<'type'|'lib'>('type');
   const [types, setTypes]   = useState<ClType[]>([]);
   const [lib, setLib]       = useState<ClLib[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // start true so the shimmer shows from frame 1 (not the empty-state icon)
 
   const reload = () => {
     setLoading(true);
@@ -181,7 +181,7 @@ function TypesPane({ rows, loading, reload }: { rows: ClType[]; loading: boolean
       </div>
 
       <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
-        {slice.length === 0 ? (
+        {slice.length === 0 && !loading ? (
           <div className="clm-empty">
             <div className="clm-empty-ico">{ICO.bCl}</div>
             <div className="clm-empty-title">No clause types yet</div>
@@ -197,7 +197,7 @@ function TypesPane({ rows, loading, reload }: { rows: ClType[]; loading: boolean
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {loading && <tr><td colSpan={4} className="clm-status">Loading…</td></tr>}
+                {loading && <ClmSkeletonRows cols={4} />}
                 {!loading && slice.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
@@ -307,7 +307,7 @@ function LibraryPane({ rows, types, loading, reload }: { rows: ClLib[]; types: C
       </div>
 
       <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
-        {slice.length === 0 ? (
+        {slice.length === 0 && !loading ? (
           <div className="clm-empty">
             <div className="clm-empty-ico">{ICO.bCl}</div>
             <div className="clm-empty-title">No clauses yet</div>
@@ -324,7 +324,7 @@ function LibraryPane({ rows, types, loading, reload }: { rows: ClLib[]; types: C
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {loading && <tr><td colSpan={5} className="clm-status">Loading…</td></tr>}
+                {loading && <ClmSkeletonRows cols={5} />}
                 {!loading && slice.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>

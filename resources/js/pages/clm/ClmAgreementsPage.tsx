@@ -5,7 +5,7 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
-import { DeleteConf, LockedConf, SimpleDescModal } from './clmCommon';
+import { ClmSkeletonRows, DeleteConf, LockedConf, SimpleDescModal } from './clmCommon';
 import Tooltip from '../../components/ui/Tooltip';
 import ClmAgreementWizardModal from './ClmAgreementWizardModal';
 
@@ -25,7 +25,7 @@ export default function ClmAgreementsPage() {
   const [types, setTypes]   = useState<AgrType[]>([]);
   const [lib, setLib]       = useState<AgrLib[]>([]);
   const [segs, setSegs]     = useState<Seg[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // start true so the shimmer shows from frame 1 (not the empty-state icon)
 
   const reload = () => {
     setLoading(true);
@@ -154,7 +154,7 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
       </div>
 
       <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
-        {slice.length === 0 ? (
+        {slice.length === 0 && !loading ? (
           <div className="clm-empty">
             <div className="clm-empty-ico">{ICO.bAgr}</div>
             <div className="clm-empty-title">No agreement types yet</div>
@@ -171,7 +171,7 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {loading && <tr><td colSpan={5} className="clm-status">Loading…</td></tr>}
+                {loading && <ClmSkeletonRows cols={5} />}
                 {!loading && slice.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
@@ -315,7 +315,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
       </div>
 
       <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
-        {slice.length === 0 ? (
+        {slice.length === 0 && !loading ? (
           <div className="clm-empty">
             <div className="clm-empty-ico">{ICO.bAgr}</div>
             <div className="clm-empty-title">No agreements yet</div>
@@ -336,7 +336,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                 <th style={{ width: 128, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {loading && <tr><td colSpan={9} className="clm-status">Loading…</td></tr>}
+                {loading && <ClmSkeletonRows cols={9} />}
                 {!loading && slice.map((r, i) => {
                   const isHigh = r.regulatory === 'highly';
                   return (

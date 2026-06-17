@@ -119,7 +119,7 @@ export default function ClmDcpPage() {
   const toast = useToast();
 
   const [rows, setRows]       = useState<SegRule[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // start true so the shimmer shows from frame 1 (not the empty-state icon)
   const [tab, setTab]         = useState<'all'|'highly'|'less'>('all');
   const [search, setSearch]   = useState('');
   const [page, setPage]       = useState(1);
@@ -304,7 +304,7 @@ export default function ClmDcpPage() {
         </div>
 
         <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
-          {slice.length === 0 ? (
+          {slice.length === 0 && !loading ? (
             <div className="clm-empty">
               <div className="clm-empty-ico">{ICO.bDcp}</div>
               <div className="clm-empty-title">No Segment Rules Yet</div>

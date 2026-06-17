@@ -5,7 +5,7 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
-import { DeleteConf } from './clmCommon';
+import { ClmSkeletonRows, DeleteConf } from './clmCommon';
 import ClmTncWizardModal from './ClmTncWizardModal';
 import Tooltip from '../../components/ui/Tooltip';
 
@@ -36,7 +36,7 @@ export default function ClmTncPage() {
   const [cats, setCats]   = useState<Cat[]>([]);
   const [lib, setLib]     = useState<Lib[]>([]);
   const [segs, setSegs]   = useState<Seg[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // start true so the shimmer shows from frame 1 (not the empty-state icon)
 
   const reload = () => {
     setLoading(true);
@@ -147,7 +147,7 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
       </div>
 
       <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
-        {slice.length === 0 ? (
+        {slice.length === 0 && !loading ? (
           <div className="clm-empty">
             <div className="clm-empty-ico">{ICO.bTnc}</div>
             <div className="clm-empty-title">No categories yet</div>
@@ -162,13 +162,7 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
                 <th>DOCUMENT CATEGORY NAME</th>
               </tr></thead>
               <tbody>
-                {loading && Array.from({ length: Math.max(4, slice.length || 5) }).map((_, i) => (
-                  <tr key={`skel-${i}`}>
-                    <td className="clm-skel-cell"><span className="clm-skel" style={{ width: 24, margin: '0 auto' }} /></td>
-                    <td className="clm-skel-cell"><span className="clm-skel clm-skel-pill" style={{ width: 80, margin: '0 auto' }} /></td>
-                    <td className="clm-skel-cell"><span className="clm-skel" style={{ width: '60%' }} /></td>
-                  </tr>
-                ))}
+                {loading && <ClmSkeletonRows cols={3} />}
                 {!loading && slice.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
@@ -199,6 +193,9 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
   const [editing, setEditing] = useState<Lib | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Lib | null>(null);
+  // All-segments popover — opened from the +N badge in the SEGMENT column
+  // (same pattern as the DCP authorities popover).
+  const [segPop, setSegPop] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return rows;
@@ -262,7 +259,7 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
       </div>
 
       <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
-        {slice.length === 0 ? (
+        {slice.length === 0 && !loading ? (
           <div className="clm-empty">
             <div className="clm-empty-ico">{ICO.bTnc}</div>
             <div className="clm-empty-title">No T&amp;C blocks yet</div>
@@ -274,22 +271,14 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                 <th style={{ width: 110, textAlign: 'center' }}>T&amp;C ID</th>
-                <th style={{ width: 170, textAlign: 'center' }}>SEGMENT</th>
+                <th style={{ width: 150, textAlign: 'center' }}>SEGMENT</th>
+                <th style={{ width: 150, textAlign: 'center' }}>STATUS</th>
                 <th>DOCUMENT CATEGORY</th>
                 <th>APPLIES TO</th>
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {loading && Array.from({ length: Math.max(4, slice.length || 5) }).map((_, i) => (
-                  <tr key={`skel-${i}`}>
-                    <td className="clm-skel-cell"><span className="clm-skel" style={{ width: 24, margin: '0 auto' }} /></td>
-                    <td className="clm-skel-cell"><span className="clm-skel clm-skel-pill" style={{ width: 64, margin: '0 auto' }} /></td>
-                    <td className="clm-skel-cell"><span className="clm-skel clm-skel-pill" style={{ width: 90, margin: '0 auto' }} /></td>
-                    <td className="clm-skel-cell"><span className="clm-skel" style={{ width: '70%' }} /></td>
-                    <td className="clm-skel-cell"><span className="clm-skel" style={{ width: '85%' }} /></td>
-                    <td className="clm-skel-cell"><span className="clm-skel" style={{ width: 60, margin: '0 auto' }} /></td>
-                  </tr>
-                ))}
+                {loading && <ClmSkeletonRows cols={7} />}
                 {!loading && slice.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
@@ -299,21 +288,33 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
                       </Tooltip>
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                        <span
-                          className={`clm-badge ${r.regulatory === 'less' ? 'clm-badge-green' : 'clm-badge-red'}`}
-                          style={{ fontSize: 9.5, fontWeight: 800 }}
-                        >
-                          {r.regulatory === 'less' ? 'Less Reg.' : 'High Reg.'}
-                        </span>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
-                          {(r.segment ?? '').split(',').map(s => s.trim()).filter(Boolean).map(seg => (
-                            <Tooltip key={seg} label={`Segment scope · ${seg}`}>
-                              <span className="clm-badge clm-badge-teal">{seg}</span>
+                      {(() => {
+                        const list = (r.segment ?? '').split(',').map(s => s.trim()).filter(Boolean);
+                        if (list.length === 0) return <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>;
+                        const extra = list.length - 1;
+                        return (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+                            <Tooltip label={`Segment scope · ${list[0]}`}>
+                              <span className="clm-badge clm-badge-teal">{list[0]}</span>
                             </Tooltip>
-                          ))}
-                        </div>
-                      </div>
+                            {extra > 0 && (
+                              <button
+                                type="button"
+                                title="View all segments"
+                                onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(segPop?.id === r.id ? null : { id: r.id, names: list, x: b.left, y: b.bottom + 4 }); }}
+                                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
+                                +{extra}
+                              </button>
+                            )}
+                          </span>
+                        );
+                      })()}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span className={`clm-badge ${r.regulatory === 'less' ? 'clm-badge-green' : 'clm-badge-red'}`}>
+                        <span className="clm-badge-dot" />
+                        {r.regulatory === 'less' ? 'Less Regulatory' : 'Highly Regulatory'}
+                      </span>
                     </td>
                     <td className="clm-td-name">{r.category}</td>
                     <td className="clm-td-desc">
@@ -343,6 +344,22 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
       </div>
 
       {pendingDelete && createPortal(<DeleteConf title="Delete T&C block?" sub={`${pendingDelete.category} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={() => void onDelete()} />, document.body)}
+
+      {/* All-segments popover (opened from the +N badge in the SEGMENT column) */}
+      {segPop && createPortal(
+        <>
+          <div onClick={() => setSegPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(segPop.x, window.innerWidth - 230), top: segPop.y, zIndex: 601, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+            <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Segments ({segPop.names.length})</div>
+            {segPop.names.map((name, i) => (
+              <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
+                <span className="clm-badge clm-badge-teal">{name}</span>
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
 
       <ClmTncWizardModal
         open={modalOpen}

@@ -15,11 +15,12 @@ import {
   isMeaningfulClmValue,
   findClmDuplicate,
   useScrollLock,
+  ClmSkeletonRows,
 } from './clmCommon';
 
 /* Central CLM → Authority Master. 3-card faithful port of the prototype. */
 
-type Authority = { id: number; code: string; name: string; description: string; status: 'active'|'inactive' };
+type Authority = { id: number; code: string; name: string; description: string; status: 'active'|'inactive'; in_use?: boolean };
 
 /**
  * Mirrors the backend allocator in ClmAuthorityController::nextCode — walks
@@ -52,11 +53,14 @@ export default function ClmAuthorityPage() {
 
   const [rows, setRows]       = useState<Authority[]>([]);
   const [count, setCount]     = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // start true so the shimmer shows from frame 1 (not the empty-state icon)
   const [search, setSearch]   = useState('');
   const [page, setPage]       = useState(1);
   // Fixed pagination — exactly 5 rows per page, consistent across next/back.
   const rpp = 5;
+  // fillH stretches the table card to fill the viewport so the table footer
+  // (pagination) sits at the bottom of the card, like the other CLM masters.
+  const [fillH, setFillH]     = useState<number | undefined>(undefined);
   const scrollRef             = useRef<HTMLDivElement | null>(null);
   const rootRef               = useRef<HTMLDivElement | null>(null);
 
@@ -81,6 +85,24 @@ export default function ClmAuthorityPage() {
     return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.description.toLowerCase().includes(s));
   }, [rows, search]);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
+
+  // Stretch the table card to fill the viewport — pushes the table footer
+  // (pagination) to the bottom of the card even with few rows. Rows stay fixed.
+  useEffect(() => {
+    const recompute = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const fh = Math.max(0, window.innerHeight - top - 64);
+      setFillH(prev => (prev === fh ? prev : fh));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    const ro = new ResizeObserver(recompute);
+    if (rootRef.current) ro.observe(rootRef.current);
+    window.addEventListener('resize', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+  }, [filtered.length]);
 
   const onSave = async (form: { name: string; description: string }, id?: number) => {
     try {
@@ -152,14 +174,14 @@ export default function ClmAuthorityPage() {
         </div>
 
         <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
-          {slice.length === 0 ? (
+          {slice.length === 0 && !loading ? (
             <div className="clm-empty">
               <div className="clm-empty-ico">{ICO.bShield}</div>
               <div className="clm-empty-title">No authorities yet</div>
               <div className="clm-empty-sub">{rows.length === 0 ? 'Click + Add Authority to create the first record.' : 'No results match the current search.'}</div>
             </div>
           ) : (
-            <div className="clm-table-wrap clm-table-fill" ref={scrollRef}>
+            <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
               <table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -169,7 +191,7 @@ export default function ClmAuthorityPage() {
                   <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
                 </tr></thead>
                 <tbody>
-                  {loading && <tr><td colSpan={5} className="clm-status">Loading authorities…</td></tr>}
+                  {loading && <ClmSkeletonRows cols={5} />}
                   {!loading && slice.map((r, i) => (
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
@@ -183,8 +205,17 @@ export default function ClmAuthorityPage() {
                               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                             </button>
                           </Tooltip>
-                          <Tooltip label="Delete authority">
-                            <button type="button" aria-label="Delete authority" className="clm-act clm-act-del" onClick={() => setPendingDelete(r)}>
+                          <Tooltip label={r.in_use ? 'In use elsewhere — remove those references to delete' : 'Delete authority'}>
+                            <button
+                              type="button"
+                              aria-label="Delete authority"
+                              className="clm-act clm-act-del"
+                              style={r.in_use ? { opacity: 0.32, cursor: 'not-allowed' } : undefined}
+                              onClick={() => {
+                                if (r.in_use) { toast.warning('Authority locked', 'This authority is used in other records and cannot be deleted. Remove those references first.'); return; }
+                                setPendingDelete(r);
+                              }}
+                            >
                               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
                             </button>
                           </Tooltip>

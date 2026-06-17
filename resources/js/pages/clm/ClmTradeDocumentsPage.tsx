@@ -5,7 +5,7 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
-import { DeleteConf, LockedConf, SimpleNameModal } from './clmCommon';
+import { ClmSkeletonRows, DeleteConf, LockedConf, SimpleNameModal } from './clmCommon';
 import ClmTradeDocumentDraftModal from './ClmTradeDocumentDraftModal';
 
 /* Central CLM → Trade Documents Master (two tabs: List + Library). */
@@ -20,7 +20,7 @@ export default function ClmTradeDocumentsPage() {
   const [names, setNames]       = useState<TdName[]>([]);
   const [lib, setLib]           = useState<TdLib[]>([]);
   const [segments, setSegments] = useState<Seg[]>([]);
-  const [loading, setLoading]   = useState(false);
+  const [loading, setLoading]   = useState(true); // start true so the shimmer shows from frame 1 (not the empty-state icon)
 
   const reload = () => {
     setLoading(true);
@@ -151,7 +151,7 @@ function NamesPane({ rows, loading, reload }: { rows: TdName[]; loading: boolean
       </div>
 
       <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
-        {slice.length === 0 ? (
+        {slice.length === 0 && !loading ? (
           <div className="clm-empty">
             <div className="clm-empty-ico">{ICO.bTrade}</div>
             <div className="clm-empty-title">No trade documents yet</div>
@@ -167,7 +167,7 @@ function NamesPane({ rows, loading, reload }: { rows: TdName[]; loading: boolean
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {loading && <tr><td colSpan={4} className="clm-status">Loading…</td></tr>}
+                {loading && <ClmSkeletonRows cols={4} />}
                 {!loading && slice.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
@@ -307,7 +307,7 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
       </div>
 
       <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
-        {slice.length === 0 ? (
+        {slice.length === 0 && !loading ? (
           <div className="clm-empty">
             <div className="clm-empty-ico">{ICO.bTrade}</div>
             <div className="clm-empty-title">No library entries yet</div>
@@ -328,7 +328,7 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {loading && <tr><td colSpan={9} className="clm-status">Loading…</td></tr>}
+                {loading && <ClmSkeletonRows cols={9} />}
                 {!loading && slice.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
