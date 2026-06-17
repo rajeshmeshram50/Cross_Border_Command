@@ -459,6 +459,34 @@ class SalesLeadController extends Controller
             ->value('completed_at');
         $lead->setAttribute('pi_signed_at', $piSignedAt ? \Illuminate\Support\Carbon::parse($piSignedAt)->toIso8601String() : null);
 
+        // Opportunity date = the SAME source the lead list/header show as
+        // "Opportunity Date" (inbound query_time, else the lead's created_at).
+        // Exposed as ISO so the Victory-stage day count parses it reliably and
+        // matches the displayed date (the dd/mm/yyyy header string mis-parses).
+        $oppDate = $lead->query_time ?? $lead->created_at;
+        $lead->setAttribute('opportunity_date_iso', $oppDate ? \Illuminate\Support\Carbon::parse($oppDate)->toIso8601String() : null);
+
+        // Date the PI was sent (the duration end-date until the PI is signed).
+        // Preference order:
+        //   1. signature request created_at (sent for e-signature), else
+        //   2. the PI's emailed_at (sent to the customer), else
+        //   3. the PI's created_at (PI raised) — so a PI that exists but was
+        //      never sent for signature still yields a day count instead of "—".
+        $piSentAt = \App\Models\ClmSignatureRequest::query()
+            ->where('lead_id', $lead->id)
+            ->where('document_type', \App\Models\ClmSignatureRequest::DOC_PROFORMA_INVOICE)
+            ->orderByDesc('created_at')
+            ->value('created_at');
+        if (!$piSentAt) {
+            $pi = \App\Models\ProformaInvoice::where('client_id', $lead->client_id)
+                ->where('opp_id', $lead->id)
+                ->where('status', '!=', \App\Models\ProformaInvoice::STATUS_CANCELLED)
+                ->orderByDesc('id')
+                ->first(['id', 'emailed_at', 'created_at']);
+            $piSentAt = $pi?->emailed_at ?? $pi?->created_at;
+        }
+        $lead->setAttribute('pi_sent_at', $piSentAt ? \Illuminate\Support\Carbon::parse($piSentAt)->toIso8601String() : null);
+
         return response()->json(['status' => true, 'data' => $lead]);
     }
 

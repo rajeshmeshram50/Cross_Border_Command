@@ -523,6 +523,10 @@ body.clm-active[data-bs-theme="dark"] footer.footer, body.clm-active[data-bs-the
 }
 .clm-skel-pill { height: 20px; border-radius: 999px; }
 .clm-skel-cell { padding: 13px 14px !important; }
+/* Full-page master shimmer — while <ShimmerClmMaster> is mounted (only during
+   load), hide every other direct child of .clm-root so the skeleton replaces
+   the whole page instead of stacking on top of the real content. */
+.clm-root:has(> .clm-fullpage-shimmer) > *:not(.clm-fullpage-shimmer):not(style) { display: none !important; }
 @keyframes clmShimmer {
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }

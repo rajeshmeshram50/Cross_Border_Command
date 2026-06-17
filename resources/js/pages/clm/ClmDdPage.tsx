@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import WorklistPager from "../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../api';
+import { ShimmerClmMaster } from '../../components/ui/Shimmer';
 import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
@@ -12,7 +13,9 @@ import { ClmSkeletonRows, SimpleDescModal, useScrollLock } from './clmCommon';
 
 /* Central CLM → Due Diligence Master. 3-card faithful port. */
 
-type Dd = { id: number; code: string; name: string; authority: string; status: 'active'|'inactive' };
+// `authority` holds comma-joined authority IDs; `authority_names` is the
+// resolved display string returned by the API.
+type Dd = { id: number; code: string; name: string; authority: string; authority_names?: string; status: 'active'|'inactive' };
 type Authority = { id: number; code: string; name: string };
 
 export default function ClmDdPage() {
@@ -48,7 +51,7 @@ export default function ClmDdPage() {
   const filtered = useMemo(() => {
     if (!search.trim()) return rows;
     const s = search.toLowerCase();
-    return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.authority.toLowerCase().includes(s));
+    return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || (r.authority_names ?? '').toLowerCase().includes(s));
   }, [rows, search]);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
 
@@ -98,6 +101,7 @@ export default function ClmDdPage() {
   return (
     <div className="clm-root" ref={rootRef}>
       <style>{CLM_CSS}</style>
+      {loading && <ShimmerClmMaster cols={5} />}
       {/* Add DD Document — same springy hover affordance as the Add Client button:
           lift + slight scale + brightness on hover, press-down on active. */}
       <style>{`
@@ -173,7 +177,7 @@ export default function ClmDdPage() {
                       <td className="clm-td-num">{start + i + 1}</td>
                       <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
                       <td className="clm-td-name">{r.name}</td>
-                      <td className="clm-td-desc">{r.authority}</td>
+                      <td className="clm-td-desc">{r.authority_names || '—'}</td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">
                           <Tooltip label="Edit"><button type="button" aria-label="Edit" className="clm-act clm-act-edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></Tooltip>
@@ -244,7 +248,7 @@ export function DdModal(props: { existing: Dd | null; authorities: Authority[]; 
       const r = await api.post<{ status: boolean; data: Authority }>('/clm/authorities', form);
       const created = r.data.data;
       setAuthorities(prev => [...prev, created]);
-      setAuthList(prev => prev.includes(created.name) ? prev : [...prev, created.name]);
+      setAuthList(prev => prev.includes(String(created.id)) ? prev : [...prev, String(created.id)]);
       setErrors(p => ({ ...p, auth: '' }));
       setQuickAddOpen(false);
       toast.success('Added', created.name);
@@ -289,8 +293,8 @@ export function DdModal(props: { existing: Dd | null; authorities: Authority[]; 
                   invalid={!!errors.auth}
                   placeholder="— Select Authorities —"
                   options={[
-                    ...authorities.map(a => ({ value: a.name, label: a.name })),
-                    ...authList.filter(a => !authorities.find(x => x.name === a)).map(a => ({ value: a, label: a })),
+                    ...authorities.map(a => ({ value: String(a.id), label: a.name })),
+                    ...authList.filter(v => !authorities.find(x => String(x.id) === v)).map(v => ({ value: v, label: v })),
                   ]}
                   onChange={(vals) => { setAuthList(vals); setErrors(p => ({ ...p, auth: '' })); }}
                 />

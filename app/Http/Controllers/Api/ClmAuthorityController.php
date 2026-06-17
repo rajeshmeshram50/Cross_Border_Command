@@ -22,15 +22,17 @@ class ClmAuthorityController extends Controller
             ? ClmAuthority::where('client_id', $user->client_id)->orderBy('id')->get()
             : collect();
 
-        // Flag each authority that's referenced elsewhere (documents, trade
-        // licences, segment rules, …). The frontend uses `in_use` to lock the
-        // edit / delete actions so a referenced authority can't be renamed or
-        // removed — which would orphan those references (they store the NAME).
+        // Flag each authority that's referenced elsewhere. The frontend uses
+        // `in_use` to lock the DELETE action (deleting would orphan those
+        // references). Editing stays allowed — CLM masters reference by id and
+        // the legacy name-based tables are kept in sync by cascadeRename().
         if ($rows->isNotEmpty()) {
-            $usedNames = $this->usedNameSet();
+            $usedIds   = $this->usedIdSet($user->client_id);
+            $usedNames = $this->usedNameSet($user->client_id);
             $usedCodes = $this->usedCodeSet($user->client_id);
-            $rows->each(function ($r) use ($usedNames, $usedCodes) {
-                $r->in_use = isset($usedNames[mb_strtolower(trim((string) $r->name))])
+            $rows->each(function ($r) use ($usedIds, $usedNames, $usedCodes) {
+                $r->in_use = isset($usedIds[(string) $r->id])
+                    || isset($usedNames[mb_strtolower(trim((string) $r->name))])
                     || isset($usedCodes[(string) $r->code]);
             });
         }
@@ -130,11 +132,10 @@ class ClmAuthorityController extends Controller
         if (!$user) abort(401);
         $row  = ClmAuthority::where('client_id', $user->client_id)->findOrFail($id);
 
-        // Authority is referenced by NAME across downstream document tables
-        // (kyc, dd, trade-license, qc, vendor/customer docs), and by CODE inside
-        // the JSON `auths_json` column on segment rules. Shared with update()'s
-        // edit guard and index()'s in_use flag.
-        $usedIn = $this->authorityUsage($row->name, $row->code);
+        // Referenced by ID in the CLM document masters (kyc, dd, trade-license,
+        // qc), by NAME in the legacy vendor/customer tables, and by CODE inside
+        // the segment-rule `auths_json`. Shared with index()'s in_use flag.
+        $usedIn = $this->authorityUsage((int) $user->client_id, (int) $row->id, $row->name, $row->code);
 
         if (!empty($usedIn)) {
             return response()->json([
@@ -150,17 +151,27 @@ class ClmAuthorityController extends Controller
     }
 
     /**
-     * Downstream tables that reference an authority by NAME. `split => true`
-     * marks columns that may store a comma-joined list (e.g. a trade licence's
-     * multiple issuing authorities) so each token is checked individually.
+     * CLM document masters that reference an authority by ID (stored as a
+     * comma-joined list — a document can map to several authorities). Renames
+     * need no cascade here: the display name is resolved live from the id.
+     */
+    private function idUsageTables(): array
+    {
+        return [
+            ['table' => 'clm_kyc_documents',  'col' => 'authority', 'label' => 'KYC Documents'],
+            ['table' => 'clm_dd_documents',   'col' => 'authority', 'label' => 'Due Diligence Documents'],
+            ['table' => 'clm_trade_licenses', 'col' => 'authority', 'label' => 'Trade Licenses'],
+            ['table' => 'clm_qc_documents',   'col' => 'issued_by', 'label' => 'Quality & Compliance Docs'],
+        ];
+    }
+
+    /**
+     * Legacy tables that still reference an authority by NAME. These are kept in
+     * sync on rename via cascadeRename().
      */
     private function nameUsageTables(): array
     {
         return [
-            ['table' => 'clm_kyc_documents',  'col' => 'authority',         'label' => 'KYC Documents'],
-            ['table' => 'clm_dd_documents',   'col' => 'authority',         'label' => 'Due Diligence Documents'],
-            ['table' => 'clm_trade_licenses', 'col' => 'authority',         'label' => 'Trade Licenses', 'split' => true],
-            ['table' => 'clm_qc_documents',   'col' => 'issued_by',         'label' => 'Quality & Compliance Docs'],
             ['table' => 'vendor_documents',   'col' => 'issuing_authority', 'label' => 'Vendor Documents'],
             ['table' => 'customer_documents', 'col' => 'issuing_authority', 'label' => 'Customer Documents'],
             ['table' => 'vendor_owners',      'col' => 'issuing_authority', 'label' => 'Vendor Owners'],
@@ -168,34 +179,29 @@ class ClmAuthorityController extends Controller
     }
 
     /**
-     * Returns the list of human-readable places a single authority is used.
-     * Empty array => safe to edit / delete. Used by update(), destroy().
+     * Human-readable list of places a single authority is referenced. Empty
+     * array => safe to delete. Checks id-based CLM masters, name-based legacy
+     * tables, and the code-based segment-rule JSON. Used by destroy().
      */
-    private function authorityUsage(string $name, ?string $code): array
+    private function authorityUsage(int $clientId, int $id, string $name, ?string $code): array
     {
         $usedIn = [];
-        $needle = mb_strtolower(trim($name));
 
+        // id-based CLM masters — token-match the id within the comma-joined col.
+        foreach ($this->idUsageTables() as $t) {
+            if (!Schema::hasTable($t['table']) || !Schema::hasColumn($t['table'], $t['col'])) continue;
+            $q = DB::table($t['table'])->where($t['col'], 'like', '%' . $id . '%');
+            if (Schema::hasColumn($t['table'], 'client_id')) $q->where('client_id', $clientId);
+            $hit = $q->pluck($t['col'])->contains(fn ($v) => ClmAuthority::storedContainsId($v, $id));
+            if ($hit) $usedIn[] = $t['label'];
+        }
+
+        // name-based legacy tables — exact name match (scoped where possible).
         foreach ($this->nameUsageTables() as $t) {
             if (!Schema::hasTable($t['table']) || !Schema::hasColumn($t['table'], $t['col'])) continue;
-
-            if (!empty($t['split'])) {
-                // Column may hold a comma-joined list. A loose LIKE narrows the
-                // candidates, then we confirm an exact token match so "FSSAI"
-                // doesn't falsely match "FSSAIs".
-                $hit = DB::table($t['table'])
-                    ->where($t['col'], 'like', '%' . $name . '%')
-                    ->pluck($t['col'])
-                    ->contains(function ($v) use ($needle) {
-                        foreach (explode(',', (string) $v) as $piece) {
-                            if (mb_strtolower(trim($piece)) === $needle) return true;
-                        }
-                        return false;
-                    });
-                if ($hit) $usedIn[] = $t['label'];
-            } elseif (DB::table($t['table'])->where($t['col'], $name)->exists()) {
-                $usedIn[] = $t['label'];
-            }
+            $q = DB::table($t['table'])->where($t['col'], $name);
+            if (Schema::hasColumn($t['table'], 'client_id')) $q->where('client_id', $clientId);
+            if ($q->exists()) $usedIn[] = $t['label'];
         }
 
         // Segment Rules stores the CODE inside a JSON array — substring match
@@ -211,56 +217,50 @@ class ClmAuthorityController extends Controller
     }
 
     /**
-     * Propagate an authority rename to every downstream table that stores the
-     * name, scoped to the same client. Exact-name columns get a single bulk
-     * UPDATE; comma-joined columns (trade-licence authorities) are token-
-     * replaced per row so only the matching token changes ("FSSAI, DGFT" →
-     * "FSSAI India, DGFT", without touching "FSSAIs").
+     * Propagate an authority rename to the legacy NAME-based tables, scoped to
+     * the tenant. The CLM document masters store the id, so they need no update.
      */
     private function cascadeRename(int $clientId, string $oldName, string $newName): void
     {
         if ($oldName === $newName) return;
-        $needle = mb_strtolower($oldName);
 
         foreach ($this->nameUsageTables() as $t) {
             if (!Schema::hasTable($t['table']) || !Schema::hasColumn($t['table'], $t['col'])) continue;
-            $hasClient = Schema::hasColumn($t['table'], 'client_id');
-
-            if (!empty($t['split'])) {
-                $q = DB::table($t['table'])->where($t['col'], 'like', '%' . $oldName . '%');
-                if ($hasClient) $q->where('client_id', $clientId);
-                foreach ($q->get() as $r) {
-                    $tokens  = array_map('trim', explode(',', (string) $r->{$t['col']}));
-                    $changed = false;
-                    foreach ($tokens as &$tok) {
-                        if (mb_strtolower($tok) === $needle) { $tok = $newName; $changed = true; }
-                    }
-                    unset($tok);
-                    if ($changed) {
-                        DB::table($t['table'])->where('id', $r->id)->update([$t['col'] => implode(', ', $tokens)]);
-                    }
-                }
-            } else {
-                $q = DB::table($t['table'])->where($t['col'], $oldName);
-                if ($hasClient) $q->where('client_id', $clientId);
-                $q->update([$t['col'] => $newName]);
-            }
+            $q = DB::table($t['table'])->where($t['col'], $oldName);
+            if (Schema::hasColumn($t['table'], 'client_id')) $q->where('client_id', $clientId);
+            $q->update([$t['col'] => $newName]);
         }
     }
 
-    /** Set of lowercased authority NAMES used anywhere downstream (for index's in_use flag). */
-    private function usedNameSet(): array
+    /** Set of authority IDS referenced by the CLM document masters (for in_use). */
+    private function usedIdSet(?int $clientId): array
+    {
+        $used = [];
+        foreach ($this->idUsageTables() as $t) {
+            if (!Schema::hasTable($t['table']) || !Schema::hasColumn($t['table'], $t['col'])) continue;
+            $q = DB::table($t['table'])->whereNotNull($t['col']);
+            if ($clientId && Schema::hasColumn($t['table'], 'client_id')) $q->where('client_id', $clientId);
+            foreach ($q->pluck($t['col']) as $v) {
+                foreach (explode(',', (string) $v) as $tok) {
+                    $tok = trim($tok);
+                    if ($tok !== '') $used[$tok] = true;
+                }
+            }
+        }
+        return $used;
+    }
+
+    /** Set of lowercased authority NAMES used by the legacy tables (for in_use). */
+    private function usedNameSet(?int $clientId): array
     {
         $used = [];
         foreach ($this->nameUsageTables() as $t) {
             if (!Schema::hasTable($t['table']) || !Schema::hasColumn($t['table'], $t['col'])) continue;
-            $vals = DB::table($t['table'])->whereNotNull($t['col'])->distinct()->pluck($t['col']);
-            foreach ($vals as $v) {
-                $pieces = !empty($t['split']) ? explode(',', (string) $v) : [(string) $v];
-                foreach ($pieces as $piece) {
-                    $p = mb_strtolower(trim($piece));
-                    if ($p !== '') $used[$p] = true;
-                }
+            $q = DB::table($t['table'])->whereNotNull($t['col'])->distinct();
+            if ($clientId && Schema::hasColumn($t['table'], 'client_id')) $q->where('client_id', $clientId);
+            foreach ($q->pluck($t['col']) as $v) {
+                $p = mb_strtolower(trim((string) $v));
+                if ($p !== '') $used[$p] = true;
             }
         }
         return $used;

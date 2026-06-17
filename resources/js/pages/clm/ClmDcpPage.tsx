@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import WorklistPager from "../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../api';
+import { ShimmerClmMaster } from '../../components/ui/Shimmer';
 import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import { MasterMultiSelect } from '../master/masterFormKit';
-import { ShimmerTableRows } from '../../components/ui/Shimmer';
 import { KycModal } from './ClmKycPage';
 import { DdModal } from './ClmDdPage';
 import { QcModal } from './ClmQcPage';
@@ -161,18 +161,42 @@ export default function ClmDcpPage() {
   // saved with (bug: Rice showed "High" though it's a less-regulated segment).
   const regOf = (r: SegRule) => boot?.segments.find(seg => seg.code === r.segment_code)?.regulatory_status ?? r.regulatory_status;
 
-  // Resolve an authority reference (stored in auths_json) to its display name.
-  // Rules persist authority *ids*, so the table mapped raw ids before — look
-  // them up against the bootstrap authority master and fall back to code → name
-  // (and finally the raw value) so nothing renders a bare numeric id.
-  const authName = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const a of boot?.authorities ?? []) {
-      m.set(String(a.id), a.name);
-      if (a.code) m.set(a.code, a.name);
-    }
-    return m;
+  // Real-time authorities for the AUTHORITIES column. The column must reflect
+  // the authorities of the documents actually selected in each rule (KYC / DD /
+  // Trade License / QC) rather than the static auths_json (which stored party
+  // types like "Customer"). Build a per-category map of document code → its
+  // authority/type (the same value shown in the configure modal's
+  // "Authority / Type" column), then collect the distinct authorities across
+  // every selected document on a rule.
+  // The bootstrap resolves each document's authority ids to a comma-joined
+  // names string (a document can carry several authorities), so split it into
+  // the individual authority names per document code.
+  const docAuthByCat = useMemo(() => {
+    const make = (list: DocItem[] = []) => {
+      const m = new Map<string, string[]>();
+      for (const d of list) {
+        const raw = d.authority || d.issued_by || '';
+        const names = raw.split(',').map(s => s.trim()).filter(Boolean);
+        if (names.length) m.set(d.code, names);
+      }
+      return m;
+    };
+    return {
+      kyc: make(boot?.kyc), dd: make(boot?.dd), tl: make(boot?.tl), qc: make(boot?.qc),
+    } as Record<keyof DocSelections, Map<string, string[]>>;
   }, [boot]);
+
+  const authsForRule = (r: SegRule): string[] => {
+    const set = new Set<string>();
+    for (const c of CAT_KEYS) {
+      const sel = r.doc_selections?.[c];
+      if (!sel) continue;
+      for (const code of Object.keys(sel)) {
+        for (const a of docAuthByCat[c].get(code) ?? []) set.add(a);
+      }
+    }
+    return Array.from(set);
+  };
 
   // Tab counts derived from the segment-master tier (matches the badges).
   const tierCounts = useMemo<Counts>(() => ({
@@ -261,6 +285,7 @@ export default function ClmDcpPage() {
   return (
     <div className="clm-root">
       <style>{CLM_CSS + DCP_PAGE_CSS}</style>
+      {loading && <ShimmerClmMaster cols={11} />}
 
       <ClmPageHeader
         icon={ICO.hDcp}
@@ -327,7 +352,7 @@ export default function ClmDcpPage() {
                   <th style={{ width: 90, textAlign: 'center' }}>ACTION</th>
                 </tr></thead>
                 <tbody>
-                  {loading && <ShimmerTableRows rows={6} cols={11} cellClassName="" keyPrefix="dcp-shim" />}
+                  {/* Shimmer disabled by request — empty tbody while loading. */}
                   {!loading && slice.map((r, i) => {
                     const seg = boot?.segments.find(s => s.code === r.segment_code);
                     const isHigh = (seg?.regulatory_status ?? r.regulatory_status) === 'highly';
@@ -347,7 +372,7 @@ export default function ClmDcpPage() {
                         </td>
                         <td style={{ textAlign: 'center' }}>
                           {(() => {
-                            const auths = (r.auths_json ?? []).map(a => authName.get(String(a)) ?? String(a));
+                            const auths = authsForRule(r);
                             if (auths.length === 0) return <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>;
                             const extra = auths.length - 1;
                             return (
@@ -425,11 +450,11 @@ export default function ClmDcpPage() {
       {authOpen && createPortal(
         <>
           <div onClick={() => setAuthOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(authOpen.x, window.innerWidth - 230), top: authOpen.y, zIndex: 601, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(authOpen.x, window.innerWidth - 340), top: authOpen.y, zIndex: 601, width: 320, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
             <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Authorities ({authOpen.names.length})</div>
             {authOpen.names.map((name, i) => (
               <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
-                <span className="clm-code-pill">{name}</span>
+                <span className="clm-code-pill" style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{name}</span>
               </div>
             ))}
           </div>

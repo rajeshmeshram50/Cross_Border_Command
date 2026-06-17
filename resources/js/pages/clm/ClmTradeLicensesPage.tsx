@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import WorklistPager from "../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../api';
+import { ShimmerClmMaster } from '../../components/ui/Shimmer';
 import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
@@ -12,7 +13,9 @@ import { ClmSkeletonRows, SimpleDescModal, useScrollLock } from './clmCommon';
 
 /* Central CLM → Trade Licences Master. 3-card faithful port. */
 
-type Tl = { id: number; code: string; name: string; authority: string; status: 'active'|'inactive' };
+// `authority` holds comma-joined authority IDs; `authority_names` is the
+// resolved display string returned by the API.
+type Tl = { id: number; code: string; name: string; authority: string; authority_names?: string; status: 'active'|'inactive' };
 type Authority = { id: number; code: string; name: string };
 
 export default function ClmTradeLicensesPage() {
@@ -51,7 +54,7 @@ export default function ClmTradeLicensesPage() {
   const filtered = useMemo(() => {
     if (!search.trim()) return rows;
     const s = search.toLowerCase();
-    return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.authority.toLowerCase().includes(s));
+    return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || (r.authority_names ?? '').toLowerCase().includes(s));
   }, [rows, search]);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
 
@@ -100,6 +103,7 @@ export default function ClmTradeLicensesPage() {
   return (
     <div className="clm-root" ref={rootRef}>
       <style>{CLM_CSS}</style>
+      {loading && <ShimmerClmMaster cols={5} />}
 
       <ClmPageHeader
         icon={ICO.hTl}
@@ -160,7 +164,7 @@ export default function ClmTradeLicensesPage() {
                       <td className="clm-td-name">{r.name}</td>
                       <td className="clm-td-desc">
                         {(() => {
-                          const list = (r.authority ?? '').split(',').map(s => s.trim()).filter(Boolean);
+                          const list = (r.authority_names ?? '').split(',').map(s => s.trim()).filter(Boolean);
                           if (list.length === 0) return <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>;
                           const extra = list.length - 1;
                           return (
@@ -263,7 +267,7 @@ export function TlModal(props: { existing: Tl | null; authorities: Authority[]; 
       const r = await api.post<{ status: boolean; data: Authority }>('/clm/authorities', form);
       const created = r.data.data;
       setAuthorities(prev => [...prev, created]);
-      setAuthList(prev => prev.includes(created.name) ? prev : [...prev, created.name]);
+      setAuthList(prev => prev.includes(String(created.id)) ? prev : [...prev, String(created.id)]);
       setErrors(p => ({ ...p, auth: '' }));
       setQuickAddOpen(false);
       toast.success('Added', created.name);
@@ -308,10 +312,10 @@ export function TlModal(props: { existing: Tl | null; authorities: Authority[]; 
                   invalid={!!errors.auth}
                   placeholder="— Select Authorities —"
                   options={[
-                    ...authorities.map(a => ({ value: a.name, label: a.name })),
+                    ...authorities.map(a => ({ value: String(a.id), label: a.name })),
                     // keep any already-selected authority that's no longer in the
                     // master list so it stays toggle-able (e.g. renamed/removed).
-                    ...authList.filter(v => !authorities.find(a => a.name === v)).map(v => ({ value: v, label: v })),
+                    ...authList.filter(v => !authorities.find(a => String(a.id) === v)).map(v => ({ value: v, label: v })),
                   ]}
                   onChange={(next) => { setAuthList(next); setErrors(p => ({ ...p, auth: '' })); }}
                 />
