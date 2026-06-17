@@ -737,7 +737,13 @@ export default function SalesTodo() {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw))       errs.push('Customer Email is not a valid email address.');
       }
 
-      if (!form.date)      errs.push('Meeting Date is required.');
+      if (!form.date) {
+        errs.push('Meeting Date is required.');
+      } else if (!form.editId && displayToIso(form.date) < displayToIso(TODAY_STR)) {
+        // Block past meeting dates on new meetings — mirrors the reminder rule.
+        // Existing meetings are exempt so a historic row can still be edited/saved.
+        errs.push('Meeting date cannot be in the past.');
+      }
       if (!form.startTime) errs.push('Start Time is required.');
       if (!form.endTime)   errs.push('End Time is required.');
 

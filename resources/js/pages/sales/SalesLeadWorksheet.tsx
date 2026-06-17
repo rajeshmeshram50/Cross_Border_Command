@@ -208,10 +208,11 @@ const mapServerToLead = (r: ServerLead): Lead => {
 };
 
 /* WhatsApp status column → { label, css-modifier }. 'connected' reads as
- * Yes, 'not_connected' as No, everything else (incl. null) as Pending. */
+ * Connected, 'not_connected' as Not Connected, everything else (incl. null)
+ * as Pending. */
 const waBadge = (s: string | null): { label: string; mod: string } => {
-  if (s === 'connected')      return { label: 'Yes', mod: 'lwp-wa-yes' };
-  if (s === 'not_connected')  return { label: 'No',  mod: 'lwp-wa-no' };
+  if (s === 'connected')      return { label: 'Connected',     mod: 'lwp-wa-yes' };
+  if (s === 'not_connected')  return { label: 'Not Connected', mod: 'lwp-wa-no' };
   return { label: 'Pending', mod: 'lwp-wa-pending' };
 };
 
@@ -1676,7 +1677,7 @@ const SCOPED_CSS = `
 .lwp-root .lwp-table col.c-date   { width: 88px; }
 .lwp-root .lwp-table col.c-source { width: 86px; }
 .lwp-root .lwp-table col.c-assign { width: 130px; }
-.lwp-root .lwp-table col.c-wa     { width: 100px; }
+.lwp-root .lwp-table col.c-wa     { width: 124px; }
 .lwp-root .lwp-table col.c-opp    { width: 96px; }
 .lwp-root .lwp-table col.c-cust   { width: 140px; }
 .lwp-root .lwp-table col.c-phone  { width: 118px; }

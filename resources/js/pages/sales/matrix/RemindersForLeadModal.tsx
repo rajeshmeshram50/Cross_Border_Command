@@ -115,6 +115,8 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
       nextErrors.subject = 'Subject cannot exceed 255 characters.';
     }
     if (!setDate) nextErrors.setDate = 'Reminder set date is required';
+    // Backstop for the picker's minDate — a reminder can't be set in the past.
+    else if (setDate < todayStr) nextErrors.setDate = 'Reminder set date cannot be in the past.';
     if (Object.keys(nextErrors).length) {
       setErrors(nextErrors);
       return;
