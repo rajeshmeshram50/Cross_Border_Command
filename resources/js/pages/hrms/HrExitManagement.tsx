@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, Col, Row, Modal, ModalBody, Input } from 'reactstrap';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import api from '../../api';
@@ -169,6 +169,29 @@ export default function HrExitManagement() {
   const sliceFrom = (safePage - 1) * pageSize;
   const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
   const goto = (p: number) => setPage(Math.max(1, Math.min(pageCount, p)));
+
+  // ── Dynamic fill height — stretch the list body to the bottom of the
+  //    viewport so the pagination footer pins to the bottom of the card
+  //    (same mechanism as the Onboarding / Recruitment / Employee lists)
+  //    instead of floating right under the last row.
+  const listRootRef   = useRef<HTMLDivElement | null>(null);
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  const [listFillH, setListFillH] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const recompute = () => {
+      const el = listScrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const fh = Math.max(320, window.innerHeight - top - 24);
+      setListFillH(prev => (prev === fh ? prev : fh));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    const ro = new ResizeObserver(recompute);
+    if (listRootRef.current) ro.observe(listRootRef.current);
+    window.addEventListener('resize', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+  }, [filtered.length]);
 
   /* Department filter options — sourced from the master so the
    * dropdown shows every department the org has set up, not just the
@@ -351,63 +374,46 @@ export default function HrExitManagement() {
               ))}
             </Row>
 
-            {/* ── Tabs ── */}
-            <div className="rec-tab-track mb-2">
-              {([
-                { key: 'active' as const,      label: 'Active Employees',  count: counts.active + counts.missing, icon: 'ri-user-line',           variant: 'in-progress' },
-                { key: 'in-progress' as const, label: 'Exit In Progress',  count: counts.inProgress,             icon: 'ri-time-line',            variant: 'in-progress' },
-                { key: 'exited' as const,      label: 'Exited Employees',  count: counts.exited,                 icon: 'ri-checkbox-circle-line', variant: 'completed' },
-              ]).map(t => (
-                <button
-                  key={t.key}
-                  type="button"
-                  onClick={() => setTab(t.key)}
-                  className={`rec-tab ${tab === t.key ? `is-active ${t.variant}` : ''}`}
-                >
-                  <i className={t.icon} />
-                  {t.label}
-                  <span className="badge">{t.count}</span>
-                </button>
-              ))}
-            </div>
-
-            {/* ── Search + Filter + Table — inside ONE card frame ── */}
+            {/* ── Tabs + Search + Table — one card frame. The tabs and the
+                 search share the toolbar row (tabs left, search filling the
+                 rest to the right edge); the Department / Status dropdowns
+                 were removed. The pagination footer pins to the bottom of the
+                 card via the dynamic fill height. ── */}
             <Card className="border-0 shadow-none mb-0 bg-transparent">
               <CardBody className="p-0">
-                <div className="rec-list-frame">
-                  <div className="rec-req-filter-row d-flex align-items-center gap-2 flex-wrap">
-                    <div className="rec-req-search search-box" style={{ flex: 1, minWidth: 220 }}>
+                <div className="rec-list-frame" ref={listRootRef}>
+                  <div className="rec-req-filter-row d-flex align-items-center gap-3 flex-wrap">
+                    {/* Tabs — take the left 50% of the toolbar */}
+                    <div className="rec-tab-track" style={{ marginBottom: 0, flex: '1 1 0', minWidth: 0 }}>
+                      {([
+                        { key: 'active' as const,      label: 'Active Employees',  count: counts.active + counts.missing, icon: 'ri-user-line',           variant: 'in-progress' },
+                        { key: 'in-progress' as const, label: 'Exit In Progress',  count: counts.inProgress,             icon: 'ri-time-line',            variant: 'in-progress' },
+                        { key: 'exited' as const,      label: 'Exited Employees',  count: counts.exited,                 icon: 'ri-checkbox-circle-line', variant: 'completed' },
+                      ]).map(t => (
+                        <button
+                          key={t.key}
+                          type="button"
+                          onClick={() => setTab(t.key)}
+                          className={`rec-tab ${tab === t.key ? `is-active ${t.variant}` : ''}`}
+                          style={{ flex: 1, justifyContent: 'center' }}
+                        >
+                          <i className={t.icon} />
+                          {t.label}
+                          <span className="badge">{t.count}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {/* Search — takes the right 50% of the toolbar */}
+                    <div className="rec-req-search search-box" style={{ flex: '1 1 0', minWidth: 0 }}>
                       <Input type="text" className="form-control" placeholder="Search name, ID, department…" value={search} onChange={e => setSearch(e.target.value)} />
                       <i className="ri-search-line search-icon"></i>
                     </div>
-                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Department</span>
-                    <div style={{ minWidth: 150 }}>
-                      <MasterSelect
-                        value={deptFilter}
-                        onChange={setDeptFilter}
-                        options={[{ value: 'All', label: 'All' }, ...departments.map(d => ({ value: d, label: d }))]}
-                        placeholder="All"
-                      />
-                    </div>
-                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Status</span>
-                    <div style={{ minWidth: 160 }}>
-                      <MasterSelect
-                        value={statusFilter}
-                        onChange={setStatusFilter}
-                        options={[
-                          { value: 'All', label: 'All' },
-                          { value: 'Active', label: 'Active' },
-                          { value: 'Exit In Progress', label: 'Exit In Progress' },
-                          { value: 'Exited', label: 'Exited' },
-                          { value: 'Missing Details', label: 'Missing Details' },
-                        ]}
-                        placeholder="All"
-                      />
-                    </div>
-                  
                   </div>
 
-                  <div className="p-2 rec-list-scroll">
+                  {/* Body fills to the viewport bottom so the pager pins to the
+                      card footer; the table grows to take the slack above it. */}
+                  <div className="d-flex flex-column" ref={listScrollRef} style={{ minHeight: listFillH }}>
+                  <div className="p-2 rec-list-scroll flex-grow-1">
                     <table className="rec-list-table cand-page-table align-middle table-nowrap mb-0">
                       <thead>
                         <tr>
@@ -596,7 +602,8 @@ export default function HrExitManagement() {
                     </table>
                   </div>
 
-                  {/* Pagination footer */}
+                  {/* Pagination footer — pinned to the bottom of the fill
+                      container so it sits at the card footer. */}
                   <WorklistPager
                     total={filtered.length}
                     page={safePage}
@@ -604,6 +611,7 @@ export default function HrExitManagement() {
                     onPage={goto}
                     onPageSize={(n) => { setPageSize(n); setPage(1); }}
                   />
+                  </div>
                 </div>
               </CardBody>
             </Card>
