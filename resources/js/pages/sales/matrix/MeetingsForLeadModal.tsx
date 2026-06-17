@@ -108,8 +108,8 @@ export default function MeetingsForLeadModal({
     const e: Record<string, string> = {};
 
     const cust = customer.trim();
-    if (!cust) e.customer = 'Customer Name is required.';
-    else if (!/[A-Za-z]/.test(cust)) e.customer = 'Customer Name must contain letters.';
+    if (!cust) e.customer = 'Person Name is required.';
+    else if (!/[A-Za-z]/.test(cust)) e.customer = 'Person Name must contain letters.';
     else if (!/^[A-Za-z][A-Za-z0-9 .,'&()\-]{1,99}$/.test(cust)) e.customer = 'Invalid characters or length.';
 
     const contactRaw = contact.trim();
@@ -270,12 +270,12 @@ export default function MeetingsForLeadModal({
 
           <div className="mfl-grid">
             <div className="mfl-fld">
-              <label className="mfl-lbl">CUSTOMER NAME <span className="mfl-req">*</span></label>
-              <input className={`mfl-input${errors.customer ? ' is-invalid' : ''}`} value={customer} onChange={e => { setCustomer(e.target.value); clearErr('customer'); }} placeholder="Customer name" />
+              <label className="mfl-lbl">PERSON NAME <span className="mfl-req">*</span></label>
+              <input className={`mfl-input${errors.customer ? ' is-invalid' : ''}`} value={customer} onChange={e => { setCustomer(e.target.value); clearErr('customer'); }} placeholder="Person name" />
               {errors.customer && <div className="mfl-err">{errors.customer}</div>}
             </div>
             <div className="mfl-fld">
-              <label className="mfl-lbl">CUSTOMER EMAIL</label>
+              <label className="mfl-lbl">PERSON EMAIL</label>
               <input className={`mfl-input${errors.email ? ' is-invalid' : ''}`} type="email" value={email} onChange={e => { setEmail(e.target.value); clearErr('email'); }} placeholder="Email address" />
               {errors.email && <div className="mfl-err">{errors.email}</div>}
             </div>

@@ -128,11 +128,16 @@ export function MasterTimePicker({
       if (popupRef.current?.contains(e.target as Node)) return;
       setOpen(false);
     };
-    document.addEventListener('mousedown', handler);
+    // Capture phase: modal wrappers often stopPropagation on mousedown to
+    // avoid backdrop-close, which (in React 17+) also blocks the native event
+    // from reaching a bubble-phase document listener — leaving this picker
+    // stuck open when another field inside the modal is clicked. Capturing
+    // runs before that stopPropagation can swallow the event.
+    document.addEventListener('mousedown', handler, true);
     document.addEventListener('keydown', key);
     window.addEventListener('scroll', onScroll, true);
     return () => {
-      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('mousedown', handler, true);
       document.removeEventListener('keydown', key);
       window.removeEventListener('scroll', onScroll, true);
     };

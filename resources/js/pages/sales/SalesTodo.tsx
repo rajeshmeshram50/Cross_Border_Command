@@ -723,10 +723,10 @@ export default function SalesTodo() {
       const cust = (form.customer || '').trim();
       // Customer name: must contain at least one letter (rejects "!!!", "123",
       // "@@@" etc.) and stay within a sensible length / safe character set.
-      if (!cust) errs.push('Customer Name is required.');
+      if (!cust) errs.push('Person Name is required.');
       else {
-        if (!/[A-Za-z]/.test(cust))                            errs.push('Customer Name must contain letters.');
-        if (!/^[A-Za-z][A-Za-z0-9 .,'&()\-]{1,99}$/.test(cust)) errs.push('Customer Name has invalid characters or length.');
+        if (!/[A-Za-z]/.test(cust))                            errs.push('Person Name must contain letters.');
+        if (!/^[A-Za-z][A-Za-z0-9 .,'&()\-]{1,99}$/.test(cust)) errs.push('Person Name has invalid characters or length.');
       }
 
       // Customer Email — optional, but if given it's trimmed + format-checked
@@ -1516,10 +1516,10 @@ export default function SalesTodo() {
                   </div>
 
                   <div className="td-form-row">
-                    <Field label="Customer Name" required>
-                      <input className="td-inp" value={form.customer || ''} onChange={e => setForm(p => ({ ...p, customer: e.target.value }))} placeholder="Customer name" />
+                    <Field label="Person Name" required>
+                      <input className="td-inp" value={form.customer || ''} onChange={e => setForm(p => ({ ...p, customer: e.target.value }))} placeholder="Person name" />
                     </Field>
-                    <Field label="Customer Email">
+                    <Field label="Person Email">
                       <input
                         className="td-inp"
                         type="email"
