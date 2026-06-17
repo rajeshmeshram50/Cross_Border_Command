@@ -8,7 +8,7 @@ import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { MasterSelect } from '../../components/ui/MasterSelect';
-import { useScrollLock } from './clmCommon';
+import { ClmSkeletonRows, useScrollLock } from './clmCommon';
 
 /* Central CLM → Segment Master.
  * Faithful 3-card port of the CLM-Master.html prototype:
@@ -67,7 +67,7 @@ export default function ClmSegmentPage() {
 
   const [rows, setRows]       = useState<Segment[]>([]);
   const [counts, setCounts]   = useState<Counts>({ all: 0, highly: 0, less: 0 });
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // start true so the shimmer shows from frame 1 (not the empty-state icon)
   const [tab, setTab]         = useState<'all'|'highly'|'less'>('all');
   const [search, setSearch]   = useState('');
   const [page, setPage]       = useState(1);
@@ -217,7 +217,7 @@ export default function ClmSegmentPage() {
           </div>
 
           <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
-            {slice.length === 0 ? (
+            {slice.length === 0 && !loading ? (
               <div className="clm-empty">
                 <div className="clm-empty-ico">{ICO.bSeg}</div>
                 <div className="clm-empty-title">
@@ -239,7 +239,7 @@ export default function ClmSegmentPage() {
                     <th style={{ width: 90,  textAlign: 'center' }}>ACTIONS</th>
                   </tr></thead>
                   <tbody>
-                    {loading && <tr><td colSpan={6} className="clm-status">Loading segments…</td></tr>}
+                    {loading && <ClmSkeletonRows cols={6} />}
                     {!loading && slice.map((r, i) => (
                       <tr key={r.id}>
                         <td className="clm-td-num">{start + i + 1}</td>

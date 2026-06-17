@@ -7,8 +7,8 @@ import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
-import { MasterSelect } from '../../components/ui/MasterSelect';
-import { SimpleDescModal, useScrollLock } from './clmCommon';
+import { MasterMultiSelect } from '../../components/ui/MasterMultiSelect';
+import { ClmSkeletonRows, SimpleDescModal, useScrollLock } from './clmCommon';
 
 /* Central CLM → Trade Licences Master. 3-card faithful port. */
 
@@ -20,7 +20,7 @@ export default function ClmTradeLicensesPage() {
   const [rows, setRows]         = useState<Tl[]>([]);
   const [count, setCount]       = useState(0);
   const [auths, setAuths]       = useState<Authority[]>([]);
-  const [loading, setLoading]   = useState(false);
+  const [loading, setLoading]   = useState(true); // start true so the shimmer shows from frame 1 (not the empty-state icon)
   const [search, setSearch]     = useState('');
   const [page, setPage]         = useState(1);
   // Dynamic pagination: rows-per-page auto-fits the visible table height.
@@ -33,6 +33,9 @@ export default function ClmTradeLicensesPage() {
   useScrollLock(modalOpen); // lock html+body while the custom Add/Edit modal is open
   const [pendingDelete, setPendingDelete] = useState<Tl | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // All-authorities popover — opened from the +N badge in the ISSUING
+  // AUTHORITY column (same pattern as the DCP authorities popover).
+  const [authPop, setAuthPop] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
 
   const reload = () => {
     setLoading(true);
@@ -132,7 +135,7 @@ export default function ClmTradeLicensesPage() {
         </div>
 
         <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
-          {slice.length === 0 ? (
+          {slice.length === 0 && !loading ? (
             <div className="clm-empty">
               <div className="clm-empty-ico">{ICO.bDoc}</div>
               <div className="clm-empty-title">No trade licences yet</div>
@@ -149,13 +152,33 @@ export default function ClmTradeLicensesPage() {
                   <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
                 </tr></thead>
                 <tbody>
-                  {loading && <tr><td colSpan={5} className="clm-status">Loading…</td></tr>}
+                  {loading && <ClmSkeletonRows cols={5} />}
                   {!loading && slice.map((r, i) => (
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
                       <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
                       <td className="clm-td-name">{r.name}</td>
-                      <td className="clm-td-desc">{r.authority}</td>
+                      <td className="clm-td-desc">
+                        {(() => {
+                          const list = (r.authority ?? '').split(',').map(s => s.trim()).filter(Boolean);
+                          if (list.length === 0) return <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>;
+                          const extra = list.length - 1;
+                          return (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                              <span className="clm-badge clm-badge-teal">{list[0]}</span>
+                              {extra > 0 && (
+                                <button
+                                  type="button"
+                                  title="View all authorities"
+                                  onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setAuthPop(authPop?.id === r.id ? null : { id: r.id, names: list, x: b.left, y: b.bottom + 4 }); }}
+                                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
+                                  +{extra}
+                                </button>
+                              )}
+                            </span>
+                          );
+                        })()}
+                      </td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">
                           <Tooltip label="Edit"><button type="button" aria-label="Edit" className="clm-act clm-act-edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></Tooltip>
@@ -184,6 +207,22 @@ export default function ClmTradeLicensesPage() {
         onClose={() => setPendingDelete(null)}
         onConfirm={() => void onDelete()}
       />
+
+      {/* All-authorities popover (opened from the +N badge in the ISSUING AUTHORITY column) */}
+      {authPop && createPortal(
+        <>
+          <div onClick={() => setAuthPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(authPop.x, window.innerWidth - 230), top: authPop.y, zIndex: 601, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+            <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Authorities ({authPop.names.length})</div>
+            {authPop.names.map((name, i) => (
+              <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
+                <span className="clm-badge clm-badge-teal">{name}</span>
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
     </div>
   );
 }
@@ -193,7 +232,12 @@ export function TlModal(props: { existing: Tl | null; authorities: Authority[]; 
   const toast = useToast();
   const isEdit = !!existing;
   const [name, setName] = useState(existing?.name ?? '');
-  const [auth, setAuth] = useState(existing?.authority ?? '');
+  // Issuing authority is now multi-select. Stored on the backend as a single
+  // comma-joined string (the `authority` column, max 255) — split on load,
+  // join on save, so no backend/schema change is needed.
+  const [authList, setAuthList] = useState<string[]>(
+    existing?.authority ? existing.authority.split(',').map(s => s.trim()).filter(Boolean) : [],
+  );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [authorities, setAuthorities] = useState<Authority[]>(initialAuthorities);
@@ -204,11 +248,13 @@ export function TlModal(props: { existing: Tl | null; authorities: Authority[]; 
     const next: Record<string, string> = {};
     if (!name.trim()) next.name = 'Licence name is required';
     else if (name.trim().length > 255) next.name = 'Name must not be greater than 255 characters';
-    if (!auth.trim()) next.auth = 'Authority is required';
+    if (authList.length === 0) next.auth = 'Select at least one authority';
+    const joined = authList.join(', ');
+    if (joined.length > 255) next.auth = 'Too many authorities selected (max 255 characters combined)';
     setErrors(next);
     if (Object.keys(next).length) return;
     setSaving(true);
-    try { await Promise.resolve(onSave({ name: name.trim(), authority: auth.trim() })); }
+    try { await Promise.resolve(onSave({ name: name.trim(), authority: joined })); }
     finally { setSaving(false); }
   };
 
@@ -217,7 +263,7 @@ export function TlModal(props: { existing: Tl | null; authorities: Authority[]; 
       const r = await api.post<{ status: boolean; data: Authority }>('/clm/authorities', form);
       const created = r.data.data;
       setAuthorities(prev => [...prev, created]);
-      setAuth(created.name);
+      setAuthList(prev => prev.includes(created.name) ? prev : [...prev, created.name]);
       setErrors(p => ({ ...p, auth: '' }));
       setQuickAddOpen(false);
       toast.success('Added', created.name);
@@ -257,16 +303,17 @@ export function TlModal(props: { existing: Tl | null; authorities: Authority[]; 
             <label className="clm-field-label">Issuing Authority <span className="clm-req">*</span></label>
             <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <MasterSelect
-                  key={`tl-auth-${authorities.length}`}
-                  value={auth}
+                <MasterMultiSelect
+                  values={authList}
                   invalid={!!errors.auth}
-                  placeholder="— Select Authority —"
+                  placeholder="— Select Authorities —"
                   options={[
                     ...authorities.map(a => ({ value: a.name, label: a.name })),
-                    ...(auth && !authorities.find(a => a.name === auth) ? [{ value: auth, label: auth }] : []),
+                    // keep any already-selected authority that's no longer in the
+                    // master list so it stays toggle-able (e.g. renamed/removed).
+                    ...authList.filter(v => !authorities.find(a => a.name === v)).map(v => ({ value: v, label: v })),
                   ]}
-                  onChange={(v) => { setAuth(v); setErrors(p => ({ ...p, auth: '' })); }}
+                  onChange={(next) => { setAuthList(next); setErrors(p => ({ ...p, auth: '' })); }}
                 />
               </div>
               <button type="button" className="clm-quick-add-btn" onClick={() => setQuickAddOpen(true)} aria-label="Add new authority" title="Add new authority">

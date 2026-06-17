@@ -8,7 +8,7 @@ import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { MasterMultiSelect } from '../../components/ui/MasterMultiSelect';
-import { SimpleDescModal, useScrollLock } from './clmCommon';
+import { ClmSkeletonRows, SimpleDescModal, useScrollLock } from './clmCommon';
 
 /* Central CLM → KYC Documents Master. 3-card faithful port. */
 
@@ -20,7 +20,7 @@ export default function ClmKycPage() {
   const [rows, setRows]         = useState<Kyc[]>([]);
   const [count, setCount]       = useState(0);
   const [auths, setAuths]       = useState<Authority[]>([]);
-  const [loading, setLoading]   = useState(false);
+  const [loading, setLoading]   = useState(true); // start true so the shimmer shows from frame 1 (not the empty-state icon)
   const [search, setSearch]     = useState('');
   const [page, setPage]         = useState(1);
   // Dynamic pagination: rows-per-page auto-fits the visible table height.
@@ -137,7 +137,7 @@ export default function ClmKycPage() {
         </div>
 
         <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
-          {slice.length === 0 ? (
+          {slice.length === 0 && !loading ? (
             <div className="clm-empty">
               <div className="clm-empty-ico">{ICO.bKyc}</div>
               <div className="clm-empty-title">No KYC documents yet</div>
@@ -154,7 +154,7 @@ export default function ClmKycPage() {
                   <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
                 </tr></thead>
                 <tbody>
-                  {loading && <tr><td colSpan={5} className="clm-status">Loading…</td></tr>}
+                  {loading && <ClmSkeletonRows cols={5} />}
                   {!loading && slice.map((r, i) => (
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>

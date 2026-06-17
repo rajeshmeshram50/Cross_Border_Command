@@ -412,7 +412,7 @@ body.clm-active[data-bs-theme="dark"] footer.footer, body.clm-active[data-bs-the
  * card covers the page even with few rows, and the pagination is pushed to the
  * bottom. Opt-in via the .clm-table-fill class so other pages are unaffected. */
 .clm-table-fill { display: flex; flex-direction: column; }
-.clm-table-fill > .clm-pag { margin-top: auto; }
+.clm-table-fill > .clm-pag, .clm-table-fill > .wl-pager { margin-top: auto; }
 /* The pager lives inside the horizontally-scrolling table wrap. Without this it
  * stretches to the table's full scroll width (e.g. 1100px), so on zoom / narrow
  * viewports the "Showing…" pill and the page arrows are pushed outside the

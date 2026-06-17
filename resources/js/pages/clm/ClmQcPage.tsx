@@ -8,7 +8,7 @@ import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { MasterSelect } from '../../components/ui/MasterSelect';
-import { SimpleDescModal, useScrollLock } from './clmCommon';
+import { ClmSkeletonRows, SimpleDescModal, useScrollLock } from './clmCommon';
 
 /* Central CLM → Quality & Compliance Documents Master. 3-card faithful port. */
 
@@ -23,7 +23,7 @@ export default function ClmQcPage() {
   const toast = useToast();
   const [rows, setRows]         = useState<Qc[]>([]);
   const [auths, setAuths]       = useState<Authority[]>([]);
-  const [loading, setLoading]   = useState(false);
+  const [loading, setLoading]   = useState(true); // start true so the shimmer shows from frame 1 (not the empty-state icon)
   const [search, setSearch]     = useState('');
   const [page, setPage]         = useState(1);
   // Dynamic pagination: rows-per-page auto-fits the visible table height.
@@ -137,7 +137,7 @@ export default function ClmQcPage() {
         </div>
 
         <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
-          {slice.length === 0 ? (
+          {slice.length === 0 && !loading ? (
             <div className="clm-empty">
               <div className="clm-empty-ico">{ICO.bCheck}</div>
               <div className="clm-empty-title">No QC documents yet</div>
@@ -155,7 +155,7 @@ export default function ClmQcPage() {
                   <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
                 </tr></thead>
                 <tbody>
-                  {loading && <tr><td colSpan={6} className="clm-status">Loading…</td></tr>}
+                  {loading && <ClmSkeletonRows cols={6} />}
                   {!loading && slice.map((r, i) => (
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
