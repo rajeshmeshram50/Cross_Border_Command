@@ -2867,11 +2867,6 @@ export function CreatePIModal(props: {
   const toast = useToast();
   useScrollLock();   // freeze background scroll while the modal is open
   const [step, setStep] = useState<1 | 2>(1);
-  /* Once the user advances to Step 2 (Product Details), the core document &
-   * party fields — Document Type, Opportunity, Customer, Consignee — lock so
-   * that going Back to Step 1 can't change them out from under the products
-   * already added. All other Step-1 fields stay editable. */
-  const [coreLocked, setCoreLocked] = useState(false);
   // Existing PI metadata shown in the top-right pills + used for the
   // PUT URL when in edit mode.
   const [existingCode, setExistingCode] = useState<string | null>(null);
@@ -2941,7 +2936,6 @@ export function CreatePIModal(props: {
       toast.error('Missing required fields', `Please fill: ${list}`);
       return;
     }
-    setCoreLocked(true);   // lock the core fields once Step 2 is reached
     setStep(2);
   };
 
@@ -3157,11 +3151,12 @@ export function CreatePIModal(props: {
               form={form} setForm={setForm}
               masters={masters} theme="purple"
               titleLabel="Basic PI Details" partyKind="PI"
-              lockParty={!!initialOpp || isEdit || coreLocked}
-              /* Consignee stays EDITABLE after Step 2 — only Document Type,
-                 Opportunity and Customer lock via coreLocked. */
+              /* All Step-1 fields stay editable when going back from Step 2
+                 (the post-Step-2 core lock was removed). Lead-opened (initialOpp)
+                 and edit-mode locks still apply. */
+              lockParty={!!initialOpp || isEdit}
               lockConsignee={isEdit || !!initialOpp?.consigneeId}
-              lockDocType={isEdit || coreLocked}
+              lockDocType={isEdit}
               errors={step1Errors}
               clearError={(k) => setStep1Errors(prev => {
                 if (!prev.has(k)) return prev;
@@ -3266,11 +3261,14 @@ function BasicFormSkeleton({ theme }: { theme: 'teal' | 'purple' }) {
  *  the fully-mapped LeadRow so the cascade (customer/consignee/currency)
  *  works without a second lookup. */
 function OpportunitySelect({
-  value, customerId, disabled, onPick,
+  value, customerId, disabled, excludeWithPi, onPick,
 }: {
   value: string;
   customerId: number | null;
   disabled?: boolean;
+  /* When true (Create Quotation), opportunities that already have a Proforma
+   * Invoice are hidden — a quotation can't be created against an opp with a PI. */
+  excludeWithPi?: boolean;
   onPick: (oppValue: string, row: LeadRow | null) => void;
 }) {
   const [open, setOpen]       = useState(false);
@@ -3328,6 +3326,8 @@ function OpportunitySelect({
           // Stage 2 are hidden regardless of any later progress (price shared,
           // etc.). The customer_id filter (when set) stacks on top.
           lead_ack_complete: 1,
+          // Create Quotation: hide opps that already have a Proforma Invoice.
+          exclude_with_pi: excludeWithPi ? 1 : undefined,
         },
       });
       const rows   = Array.isArray(res.data?.data) ? res.data.data : [];
@@ -3342,7 +3342,7 @@ function OpportunitySelect({
     } finally {
       setLoading(false);
     }
-  }, [customerId]);
+  }, [customerId, excludeWithPi]);
 
   // (Re)load page 1 on open and whenever the search text or customer
   // changes while open. Debounce typed searches so we don't fire per key.
@@ -3696,6 +3696,9 @@ function BasicForm(props: {
             <OpportunitySelect
               value={form.opportunity}
               customerId={form.customerId}
+              /* Hide opportunities that already have a PI — applies to BOTH the
+                 Quotation and PI pickers (one PI per opp; no quoting after PI). */
+              excludeWithPi
               onPick={(val, row) => onOpportunityChange(val, row)}
             />
           )}

@@ -604,13 +604,17 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
             </button>
           </div>
           <div className="s5-create-group">
+            {/* Once a (non-cancelled) PI exists on this opportunity, a new
+                Quotation can no longer be created against it — the button stays
+                visible but greyed; clicking explains why. Also locked once signed. */}
             <button
               type="button"
               className="s5-create-btn s5-create-q"
-              style={locked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-              title={locked ? 'Locked — the Proforma Invoice has been signed' : undefined}
+              style={(locked || livePisCount > 0) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+              title={locked ? 'Locked — the Proforma Invoice has been signed' : (livePisCount > 0 ? 'A Proforma Invoice already exists for this opportunity' : undefined)}
               onClick={() => {
                 if (locked) { toast.warning('Deal locked', 'The Proforma Invoice is signed — this opportunity is read-only.'); return; }
+                if (livePisCount > 0) { toast.warning('PI already created', 'A Proforma Invoice already exists for this opportunity — you cannot create a new quotation against it.'); return; }
                 onCreate('quotation');
               }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>

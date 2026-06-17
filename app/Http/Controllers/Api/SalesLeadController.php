@@ -146,6 +146,18 @@ class SalesLeadController extends Controller
               });
         }
 
+        // Create-QUOTATION opportunity picker: once a (non-cancelled) Proforma
+        // Invoice exists for an opportunity, a new quotation can no longer be
+        // created against it — so hide such opps from the picker.
+        if ($request->boolean('exclude_with_pi')) {
+            $q->whereNotExists(function ($sub) {
+                $sub->select(\Illuminate\Support\Facades\DB::raw(1))
+                    ->from('proforma_invoices')
+                    ->whereColumn('proforma_invoices.opp_id', 'leads.id')
+                    ->where('proforma_invoices.status', '!=', \App\Models\ProformaInvoice::STATUS_CANCELLED);
+            });
+        }
+
         $perPage = min(max((int) $request->query('per_page', 50), 1), 200);
         $page    = max((int) $request->query('page', 1), 1);
 
