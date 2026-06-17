@@ -39,7 +39,7 @@ type Counts = { all: number; highly: number; less: number };
 
 type Segment   = { id: number; code: string; name: string; regulatory_status: 'highly'|'less'; buyer_consignee: 'allowed'|'not_allowed' };
 type Authority = { id: number; code: string; name: string; description: string };
-type DocItem   = { id: number; code: string; name: string; authority?: string; issued_by?: string; title?: string };
+type DocItem   = { id: number; code: string; name: string; authority?: string; issued_by?: string; title?: string; authority_list?: string[] };
 
 type Bootstrap = {
   segments: Segment[]; authorities: Authority[];
@@ -168,15 +168,19 @@ export default function ClmDcpPage() {
   // authority/type (the same value shown in the configure modal's
   // "Authority / Type" column), then collect the distinct authorities across
   // every selected document on a rule.
-  // The bootstrap resolves each document's authority ids to a comma-joined
-  // names string (a document can carry several authorities), so split it into
-  // the individual authority names per document code.
+  // The bootstrap ships each document's resolved authority names BOTH as a
+  // comma-joined display string (`authority`/`issued_by`) and as a structured
+  // array (`authority_list`). Prefer the array — splitting the joined string on
+  // commas over-counts authorities whose own names contain commas (e.g.
+  // "Aadhaar, Passport, Voter ID, Driving License" would split into 4). Fall
+  // back to the string split only for older payloads that omit the array.
   const docAuthByCat = useMemo(() => {
     const make = (list: DocItem[] = []) => {
       const m = new Map<string, string[]>();
       for (const d of list) {
-        const raw = d.authority || d.issued_by || '';
-        const names = raw.split(',').map(s => s.trim()).filter(Boolean);
+        const names = Array.isArray(d.authority_list)
+          ? d.authority_list.map(s => s.trim()).filter(Boolean)
+          : (d.authority || d.issued_by || '').split(',').map(s => s.trim()).filter(Boolean);
         if (names.length) m.set(d.code, names);
       }
       return m;
