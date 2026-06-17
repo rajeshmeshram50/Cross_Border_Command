@@ -44,6 +44,9 @@ class ProformaInvoiceController extends Controller
                 // column. Mirrors the Master Details pattern.
                 'creator:id,name,user_type,branch_id',
                 'creator.branch:id,is_main',
+                // Shipment order (per opportunity) → its sequential
+                // shipment_code (SHP-NNN) populates the "Shipp ID" column.
+                'shipmentOrder:id,lead_id,shipment_code',
             ])
             ->orderByDesc('id');
 
@@ -71,6 +74,10 @@ class ProformaInvoiceController extends Controller
             // stays Without-Shipment until the deal closes.
             $stageId = (int) ($r->lead?->lead_stage_id ?? 0);
             $r->victory_reached = $stageId >= 6 || $r->lead?->won_at !== null;
+            // Sequential shipment code (SHP-NNN) for the "Shipp ID" column —
+            // sourced from the opportunity's shipment order once created. Falls
+            // back to the legacy bt_id on the frontend when not yet shipped.
+            $r->shipment_code = $r->shipmentOrder?->shipment_code;
             return $r;
         })->all();
 
@@ -729,7 +736,7 @@ class ProformaInvoiceController extends Controller
 
     /**
      * Read-only preview of the next PI code for the Create form's "PI ID"
-     * pill — INV/{FY}/{SEQ}, no advisory lock, never consumes a number.
+     * pill — PI/{FY}/{SEQ}, no advisory lock, never consumes a number.
      */
     public function previewCode(Request $request): JsonResponse
     {
@@ -737,17 +744,22 @@ class ProformaInvoiceController extends Controller
         $code = null;
         if ($user && $user->client_id) {
             $fy = $this->currentFinancialYear();
+            // Scan BOTH the new "PI/" and legacy "INV/" prefixes so the
+            // sequence stays continuous across the rename.
             $codes = ProformaInvoice::where('client_id', $user->client_id)
-                ->where('code', 'like', "INV/{$fy}/%")
+                ->where(function ($qq) use ($fy) {
+                    $qq->where('code', 'like', "PI/{$fy}/%")
+                       ->orWhere('code', 'like', "INV/{$fy}/%");
+                })
                 ->pluck('code')->all();
             $max = 0;
             foreach ($codes as $c) {
-                if (preg_match('#^INV/' . preg_quote($fy, '#') . '/(\d+)$#', $c, $m)) {
+                if (preg_match('#^(?:PI|INV)/' . preg_quote($fy, '#') . '/(\d+)$#', $c, $m)) {
                     $n = (int) $m[1];
                     if ($n > $max) $max = $n;
                 }
             }
-            $code = "INV/{$fy}/" . ($max + 1);
+            $code = "PI/{$fy}/" . ($max + 1);
         }
         return response()->json(['status' => true, 'data' => ['code' => $code]]);
     }
@@ -759,13 +771,18 @@ class ProformaInvoiceController extends Controller
         if (DB::getDriverName() === 'pgsql') {
             DB::statement('SELECT pg_advisory_xact_lock(?)', [crc32("pi-code:{$clientId}:{$fy}")]);
         }
+        // Scan BOTH the new "PI/" and legacy "INV/" prefixes for the max
+        // sequence so numbering continues seamlessly after the rename.
         $codes = ProformaInvoice::where('client_id', $clientId)
-            ->where('code', 'like', "INV/{$fy}/%")
+            ->where(function ($qq) use ($fy) {
+                $qq->where('code', 'like', "PI/{$fy}/%")
+                   ->orWhere('code', 'like', "INV/{$fy}/%");
+            })
             ->pluck('code')->all();
         $max = 0;
         $taken = [];
         foreach ($codes as $c) {
-            if (preg_match('#^INV/' . preg_quote($fy, '#') . '/(\d+)$#', $c, $m)) {
+            if (preg_match('#^(?:PI|INV)/' . preg_quote($fy, '#') . '/(\d+)$#', $c, $m)) {
                 $n = (int) $m[1];
                 if ($n > $max) $max = $n;
             }
@@ -774,7 +791,7 @@ class ProformaInvoiceController extends Controller
         $n = $max;
         do {
             $n++;
-            $code = "INV/{$fy}/{$n}";
+            $code = "PI/{$fy}/{$n}";
         } while (isset($taken[$code]));
         return $code;
     }

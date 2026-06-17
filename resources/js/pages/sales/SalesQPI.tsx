@@ -685,7 +685,10 @@ export default function SalesQPI() {
           id:          r.id,
           piNo:        r.code,
           piDate:      r.created_at ? new Date(r.created_at).toLocaleDateString('en-GB') : '',
-          btId:        r.bt_id ?? null,
+          // "Shipp ID" column — prefer the new sequential shipment code
+          // (SHP-NNN) created against the opportunity; fall back to the
+          // legacy bt_id for older records not yet shipped.
+          btId:        r.shipment_code ?? r.bt_id ?? null,
           btDate:      r.bt_date ? new Date(r.bt_date).toLocaleDateString('en-GB') : null,
           convertFrom: r.convert_from_code ?? r.sourceQuotation?.code ?? null,
           oppId:       r.opp_code ?? '',

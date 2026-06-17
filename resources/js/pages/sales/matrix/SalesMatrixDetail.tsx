@@ -583,11 +583,12 @@ export default function SalesMatrixDetail() {
    * follow-up reloadLead() refreshes the toolbar from authoritative
    * server state instead of optimistic-toggling. */
   const isKeyOpportunity = !!serverHeader.keyOpportunity;
-  /* Deal lock — once the Proforma Invoice is e-signed the opportunity is
-   * read-only: every edit action (toolbar, Create Quotation/PI, the right
-   * Deal Execution panel) is disabled. Only CLM tracking (left panel) and the
-   * Victory-stage "Create Shipment" remain usable. */
-  const isSigned = !!serverHeader.piSignedAt;
+  /* Deal lock — DISABLED per request: the opportunity stays fully editable even
+   * after the Proforma Invoice is e-signed. Previously a signed PI made the
+   * matrix read-only (toolbar / Create Quotation+PI / Deal Execution panel all
+   * disabled with a "deal locked" veil). Force `false` to keep all actions
+   * usable; flip back to `!!serverHeader.piSignedAt` to re-enable the lock. */
+  const isSigned = false;
   /* Shown when a locked action is clicked — explains why and what's still allowed. */
   const onLockedClick = useCallback(() => {
     toast.warning(
