@@ -1970,7 +1970,23 @@ class ClmSignatureController extends Controller
                 ],
             ]);
         } catch (\Throwable $e) {
-            return response()->json(['status' => false, 'message' => 'Failed to send reminder: ' . $e->getMessage()], 500);
+            $msg = $e->getMessage();
+            // Zoho error 4066 "Invalid Request ID" → the signing request no
+            // longer exists in the connected Zoho account (created under a
+            // different account / data-centre, sent in testing mode, or removed
+            // on Zoho's side). Reminding/recalling will always fail, leaving the
+            // document stuck in "Sent". Reset the LOCAL status so the user can
+            // simply send it for signature again with a fresh request.
+            if (str_contains($msg, '4066') || stripos($msg, 'Invalid Request ID') !== false) {
+                $row->status      = 'recalled';
+                $row->recalled_at = now();
+                $row->save();
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'This signing request no longer exists in Zoho Sign (it may have been created under a different Zoho account or removed). It has been reset — please send the document for signature again.',
+                ], 409);
+            }
+            return response()->json(['status' => false, 'message' => 'Failed to send reminder: ' . $msg], 500);
         }
     }
 

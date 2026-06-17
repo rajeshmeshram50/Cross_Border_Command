@@ -856,6 +856,10 @@ export default function SalesQPI() {
   >(null);
   const [sigByRow, setSigByRow] = useState<Record<string, { id: number; status: string }>>({});
   const [sigTick, setSigTick] = useState(0);
+  /* False until the first signature-status poll resolves — while loading, the
+   * Send-for-Signature pill shows a loader and is disabled so a row can't be
+   * sent again before we know it was already sent/signed. */
+  const [sigLoaded, setSigLoaded] = useState(false);
 
   /* Poll signature status for ALL quotations + PIs of this client (no
    * lead filter — this page spans many leads). `sync=1` round-trips Zoho
@@ -880,6 +884,7 @@ export default function SalesQPI() {
         if (pr.status === 'fulfilled') ingest((pr.value as any).data?.data, 'pi');
         setSigByRow(map);
       } catch { /* signature status is best-effort — never blocks the table */ }
+      finally { if (alive) setSigLoaded(true); }
     };
     void load();
     const t = setInterval(load, 20000);
@@ -1230,7 +1235,13 @@ export default function SalesQPI() {
             to PI" button) instead of a bare icon, with three states:
             Send for Sign (active) → Sent (awaiting) → Signed (done). */}
         {kind === 'pi' && (
-          signed ? (
+          !sigLoaded ? (
+            <Tooltip label="Checking signing status…">
+              <button type="button" disabled className="qpi-convert-btn qpi-send-btn qpi-send-btn-loading" aria-label="Checking signing status">
+                <span className="qpi-send-spin" /><span className="qpi-convert-btn-label">Checking…</span>
+              </button>
+            </Tooltip>
+          ) : signed ? (
             <Tooltip label={signedHint}>
               <button type="button" disabled className="qpi-convert-btn qpi-send-btn qpi-send-btn-signed" aria-label="Signed">
                 <IconCheck /><span className="qpi-convert-btn-label">Signed</span>
@@ -5201,6 +5212,19 @@ const SCOPED_CSS = `
   opacity: 1; cursor: not-allowed;
 }
 .qpi-send-btn-signed:hover { transform: none; }
+/* Loading state — shown until the first signing-status poll resolves so a PI
+   can't be re-sent before we know it was already sent/signed. */
+.qpi-send-btn-loading, .qpi-send-btn-loading:disabled {
+  background: linear-gradient(135deg, #94a3b8, #64748b);
+  box-shadow: 0 3px 10px rgba(100,116,139,.25);
+  opacity: 1; cursor: wait;
+}
+.qpi-send-spin {
+  display: inline-block; width: 11px; height: 11px;
+  border: 2px solid rgba(255,255,255,.45); border-top-color: #fff;
+  border-radius: 50%; animation: qpi-send-spin-rot .6s linear infinite;
+}
+@keyframes qpi-send-spin-rot { to { transform: rotate(360deg); } }
 
 /* "Signed PDF" download button — green pill, clickable (unlike the locked
    "converted" state above). Shown on completed e-signature rows. */

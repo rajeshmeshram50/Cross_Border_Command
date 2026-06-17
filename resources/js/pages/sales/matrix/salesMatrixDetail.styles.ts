@@ -511,10 +511,10 @@ export const SALES_MATRIX_DETAIL_CSS = `
 .smd-act-locked { position: relative; cursor: not-allowed; }
 .smd-act-locked::after {
   content: ''; position: absolute; inset: 0; border-radius: inherit;
-  /* Rose veil — clearly signals "locked" without recolouring the button. */
-  background: rgba(244,63,94,.20); pointer-events: none;
+  /* Neutral slate-grey veil — reads clearly as "disabled" (not the old rose). */
+  background: rgba(100,116,139,.34); pointer-events: none;
 }
-[data-bs-theme="dark"] .smd-act-locked::after { background: rgba(244,63,94,.28); }
+[data-bs-theme="dark"] .smd-act-locked::after { background: rgba(148,163,184,.30); }
 .smd-act-icon { display: inline-flex; align-items: center; color: #7c3aed; }
 .smd-act-icon svg { width: 12px; height: 12px; }
 .smd-act-label { line-height: 1; }
@@ -645,6 +645,32 @@ export const SALES_MATRIX_DETAIL_CSS = `
   flex: 1 1 0%;
   box-shadow: 0 2px 16px rgba(124,58,237,.09);
 }
+/* ── Signed-PI lock veil (centre stage column) ──
+   A translucent disabled layer over the whole stage card that intercepts every
+   click and shows the "PI is signed" toaster — applied across all stages 1-6. */
+.smd-stage-card-locked { position: relative; }
+.smd-stage-veil {
+  position: absolute; inset: 0; z-index: 20;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 14px;
+  /* Light disabled tint — just enough to read as inactive without darkening
+     the content. */
+  background: rgba(148, 163, 184, 0.10);
+  cursor: not-allowed;
+  border-radius: inherit;
+}
+.smd-stage-veil-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 13px; border-radius: 999px;
+  background: #64748b; color: #fff;
+  font-size: 11px; font-weight: 700; letter-spacing: .01em;
+  box-shadow: 0 4px 12px rgba(15,23,42,.18);
+}
+/* Keep the stage footer (← Previous / Save & Next →) ABOVE the veil so the user
+   can still navigate even though the rest of the stage is read-only. */
+.smd-stage-card-locked .smd-stg-foot { position: relative; z-index: 25; }
+[data-bs-theme="dark"] .smd-stage-veil { background: rgba(15, 23, 42, 0.22); }
+[data-bs-theme="dark"] .smd-stage-veil-badge { background: #334155; }
 .smd-deal-card {
   flex: 0 0 30%;
   border: 1px solid #ede9fe;
