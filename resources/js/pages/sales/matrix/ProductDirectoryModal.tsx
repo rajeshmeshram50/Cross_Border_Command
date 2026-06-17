@@ -266,6 +266,22 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
       toast.warning('Pick a product', 'Select a product from the dropdown first');
       return;
     }
+    // All marked fields are required — validate Quantity, Target Price and
+    // Currency before mapping (they carry a * but weren't enforced before).
+    const qty = Number(draft.quantity);
+    if (!String(draft.quantity).trim() || !Number.isFinite(qty) || qty <= 0) {
+      toast.warning('Quantity required', 'Enter a quantity greater than 0.');
+      return;
+    }
+    const tp = Number(draft.target_price);
+    if (!String(draft.target_price).trim() || !Number.isFinite(tp) || tp <= 0) {
+      toast.warning('Target price required', 'Enter a target price greater than 0.');
+      return;
+    }
+    if (!draft.currency) {
+      toast.warning('Currency required', 'Select a currency.');
+      return;
+    }
     setSaving(true);
     try {
       if (editingId) {

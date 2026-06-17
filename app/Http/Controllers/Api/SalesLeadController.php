@@ -122,33 +122,28 @@ class SalesLeadController extends Controller
         $this->applyListFilters($q, $request);
 
         // Opportunity picker (Create Quotation / PI form): only surface leads
-        // that have cleared the earlier stages, in order:
-        //   (a) Stage 2 (Lead Acknowledgement) — the lead's latest ack left it
-        //       QUALIFIED (qualified = true, disqualified = false).
-        //   (b) Stage 4 (Price Shared) — the lead has at least one product in
-        //       its directory AND every one of those products has a shared
-        //       price recorded.
-        // A lead missing either gate is excluded from the dropdown.
-        if ($request->boolean('price_shared_complete')) {
-            // (a) Stage 2 — qualified via Lead Acknowledgement.
-            $q->where('leads.qualified', true)->where('leads.disqualified', false);
-            // (b) Stage 4 — price-shared complete.
-            $q->whereExists(function ($sub) {
-                    $sub->select(\Illuminate\Support\Facades\DB::raw(1))
-                        ->from('lead_products')
-                        ->whereColumn('lead_products.lead_id', 'leads.id');
-                })
-                ->whereNotExists(function ($sub) {
-                    // Any directory product without a shared price disqualifies the lead.
-                    $sub->select(\Illuminate\Support\Facades\DB::raw(1))
-                        ->from('lead_products')
-                        ->whereColumn('lead_products.lead_id', 'leads.id')
-                        ->whereNotExists(function ($sp) {
-                            $sp->select(\Illuminate\Support\Facades\DB::raw(1))
-                               ->from('lead_product_shared_prices')
-                               ->whereColumn('lead_product_shared_prices.lead_product_id', 'lead_products.id');
-                        });
-                });
+        // whose Stage 2 (Lead Acknowledgement) is COMPLETE — i.e. the lead's
+        // latest acknowledgement left it QUALIFIED (qualified = true,
+        // disqualified = false). A lead that hasn't cleared Stage 2 is excluded
+        // regardless of any later progress (price shared, etc.). The same gate
+        // applies when the picker is narrowed by a selected customer (the
+        // customer_id facet stacks on top of this condition).
+        // (`price_shared_complete` kept as a back-compat alias for the param.)
+        //
+        // NOTE: `qualified` defaults to TRUE on lead creation (see store()), so
+        // it is NOT a reliable "Stage 2 done" signal on its own. Stage 2 is only
+        // truly complete once an acknowledgement has been LOGGED and its latest
+        // bucket is Qualified — which is exactly: qualified = true AND at least
+        // one lead_acknowledgements row exists. A lead sitting on Stage 2 with no
+        // activity (default-qualified) is therefore excluded.
+        if ($request->boolean('lead_ack_complete') || $request->boolean('price_shared_complete')) {
+            $q->where('leads.qualified', true)
+              ->where('leads.disqualified', false)
+              ->whereExists(function ($sub) {
+                  $sub->select(\Illuminate\Support\Facades\DB::raw(1))
+                      ->from('lead_acknowledgements')
+                      ->whereColumn('lead_acknowledgements.lead_id', 'leads.id');
+              });
         }
 
         $perPage = min(max((int) $request->query('per_page', 50), 1), 200);

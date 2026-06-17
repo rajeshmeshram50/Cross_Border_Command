@@ -49,6 +49,7 @@ type DealDoc = {
   port_of_discharge?: string | null;
   final_destination?: string | null;
   origin_country?:    string | null;
+  shipping?:          number | string | null;   // PI shipping cost → seeds Freight Cost
 };
 
 type Shipment = {
@@ -246,6 +247,8 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
     portOfDischarge:  latestPi?.port_of_discharge ?? null,
     finalDestination: latestPi?.final_destination ?? null,
     originCountry:    latestPi?.origin_country ?? null,
+    // PI's Shipping Cost pre-fills the shipment's Freight Cost (still editable).
+    shippingCost:    latestPi?.shipping ?? null,
   }), [header.oppId, header.oppDate, header.customer, latestPi, lead]);
 
   const onShipmentCreated = () => {

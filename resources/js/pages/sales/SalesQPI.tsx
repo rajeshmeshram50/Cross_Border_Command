@@ -3319,10 +3319,11 @@ function OpportunitySelect({
           page: pageNum, per_page: 50, with_counts: 0,
           search:      q.trim() || undefined,
           customer_id: customerId || undefined,
-          // Only offer opportunities whose Price-Shared stage (Stage 4) is
-          // complete — every product in the opp's directory has a shared
-          // price. Opps still mid price-sharing are hidden here.
-          price_shared_complete: 1,
+          // Only offer opportunities whose Stage 2 (Lead Acknowledgement) is
+          // complete — i.e. the lead is QUALIFIED. Opps that haven't cleared
+          // Stage 2 are hidden regardless of any later progress (price shared,
+          // etc.). The customer_id filter (when set) stacks on top.
+          lead_ack_complete: 1,
         },
       });
       const rows   = Array.isArray(res.data?.data) ? res.data.data : [];
