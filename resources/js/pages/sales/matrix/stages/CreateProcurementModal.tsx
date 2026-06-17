@@ -394,6 +394,7 @@ export default function CreateProcurementModal({
                   onChange={(v) => setAssignTo(String(v))}
                   options={spOptions}
                   placeholder="Assigned User"
+                  invalid={!!errors.assignTo}
                 />
               </div>
               <div className="cps-field">
