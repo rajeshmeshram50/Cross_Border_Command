@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import WorklistPager from "../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../api';
+import { ShimmerClmMaster } from '../../components/ui/Shimmer';
 import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
@@ -100,6 +101,7 @@ export default function ClmDdPage() {
   return (
     <div className="clm-root" ref={rootRef}>
       <style>{CLM_CSS}</style>
+      {loading && <ShimmerClmMaster cols={5} />}
       {/* Add DD Document — same springy hover affordance as the Add Client button:
           lift + slight scale + brightness on hover, press-down on active. */}
       <style>{`

@@ -175,6 +175,73 @@ export function ShimmerTable({ rows = 5, cols = 6 }: { rows?: number; cols?: num
   );
 }
 
+/* ── CLM Master (full page) ─────────────────────────────────────────────
+ * Full-page skeleton for the CLM master pages — mirrors the real layout:
+ *   1. Header banner (icon tile + title/subtitle + Add button)
+ *   2. "What We Are Doing Here" brief box
+ *   3. Toolbar (search + total badge, or two tab pills) + table
+ * Shown while the master loads so the whole page resolves into shape, instead
+ * of just a few skeleton rows. `cols` sizes the table; `twoTab` swaps the
+ * search box for two tab pills (Trade Docs / Agreements / T&C / Clause Lib).
+ * ───────────────────────────────────────────────────────────────────────── */
+export function ShimmerClmMaster({ cols = 5, rows = 7, twoTab = false }: { cols?: number; rows?: number; twoTab?: boolean }) {
+  return (
+    <div className="clm-fullpage-shimmer" style={stack(14)}>
+      {/* Header banner */}
+      <div style={{ ...card, background: 'var(--shim-secondary-bg, #f3f4f6)', padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
+        <div style={{ ...row, gap: 16, minWidth: 240, flex: '1 1 320px' }}>
+          <Shimmer width={52} height={52} radius={14} />
+          <div style={{ flex: 1, ...stack(9) }}>
+            <Shimmer width="55%" height={20} />
+            <Shimmer width="80%" height={12} />
+          </div>
+        </div>
+        <Shimmer width={170} height={42} radius={10} />
+      </div>
+
+      {/* Brief box */}
+      <div style={{ ...card, padding: '16px 20px', ...row, gap: 14 }}>
+        <Shimmer width={42} height={42} radius={12} />
+        <div style={{ flex: 1, ...stack(8) }}>
+          <Shimmer width={180} height={14} />
+          <Shimmer width="45%" height={11} />
+        </div>
+        <Shimmer width={30} height={30} radius={8} />
+      </div>
+
+      {/* Table card */}
+      <div style={card}>
+        {/* Toolbar — search (or two tab pills) + total/add */}
+        <div style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderBottom: '1px solid var(--shim-border, #e5e7eb)', flexWrap: 'wrap' }}>
+          {twoTab ? (
+            <div style={{ display: 'flex', gap: 10 }}>
+              <Shimmer width={150} height={36} radius={10} />
+              <Shimmer width={150} height={36} radius={10} />
+            </div>
+          ) : (
+            <Shimmer width={320} height={40} radius={10} style={{ maxWidth: '60%' }} />
+          )}
+          <Shimmer width={160} height={42} radius={12} />
+        </div>
+        {/* Table header strip */}
+        <div style={{ padding: '12px 18px', display: 'flex', gap: 16, background: 'var(--shim-secondary-bg, #f3f4f6)', borderBottom: '1px solid var(--shim-border, #e5e7eb)' }}>
+          {Array.from({ length: cols }).map((_, i) => (
+            <Shimmer key={i} height={12} width={i === 0 ? 36 : '100%'} style={i === 0 ? { flex: 'none' } : undefined} />
+          ))}
+        </div>
+        {/* Rows */}
+        {Array.from({ length: rows }).map((_, r) => (
+          <div key={r} style={{ padding: '15px 18px', display: 'flex', alignItems: 'center', gap: 16, borderBottom: '1px solid var(--shim-border, #e5e7eb)' }}>
+            {Array.from({ length: cols }).map((_, c) => (
+              <Shimmer key={c} height={14} width={c === 0 ? 30 : '100%'} style={c === 0 ? { flex: 'none' } : undefined} />
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ── List Items ─────────────────────────────────────────────────────── */
 export function ShimmerList({ count = 5 }: { count?: number }) {
   return (

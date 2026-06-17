@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import WorklistPager from "../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../api';
+import { ShimmerClmMaster } from '../../components/ui/Shimmer';
 import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
@@ -161,6 +162,7 @@ export default function ClmSegmentPage() {
   return (
     <div className="clm-root" ref={rootRef}>
       <style>{CLM_CSS}</style>
+      {loading && <ShimmerClmMaster cols={6} />}
       <style>{`
         /* Figma-match: fixed-width, right-aligned search (not flex-grow).
            Expands on focus, shrinks on narrow screens. */
