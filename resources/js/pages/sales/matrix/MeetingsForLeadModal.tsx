@@ -141,6 +141,8 @@ export default function MeetingsForLeadModal({
     }
 
     if (!date)      e.date = 'Meeting Date is required.';
+    // Backstop for the picker's minDate — a meeting can't be scheduled in the past.
+    else if (date < today) e.date = 'Meeting date cannot be in the past.';
     if (!startTime) e.startTime = 'Start Time is required.';
     if (!endTime)   e.endTime = 'End Time is required.';
 
