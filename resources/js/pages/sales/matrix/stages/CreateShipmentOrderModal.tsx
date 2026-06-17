@@ -36,6 +36,7 @@ export type ShipmentInitialContext = {
   portOfDischarge?: string | null;   // → seeds Port of Unloading
   finalDestination?: string | null;
   originCountry?:  string | null;
+  shippingCost?:   number | string | null;   // PI shipping cost → seeds Freight Cost (editable)
 };
 
 type Props = {
@@ -103,7 +104,13 @@ export default function CreateShipmentOrderModal({
   useEffect(() => {
     if (!open) return;
     setLiability(''); setColdChain(''); setZipCode('');
-    setFreightCost(''); setShippingMode('');
+    // Freight Cost seeds from the PI's Shipping Cost (stays editable).
+    setFreightCost(
+      context.shippingCost != null && Number(context.shippingCost) > 0
+        ? String(context.shippingCost)
+        : '',
+    );
+    setShippingMode('');
     setIncoTerm(context.incoTerm ?? '');
     setPOL(context.portOfLoading ?? '');
     setPOU(context.portOfDischarge ?? '');

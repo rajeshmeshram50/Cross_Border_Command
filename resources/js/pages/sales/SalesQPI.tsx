@@ -2519,12 +2519,14 @@ export function CreateQuotationModal(props: {
   const onSaveNext = () => {
     const errs = new Set<string>();
     const labels: Record<string, string> = {
-      customer: 'Customer', consignee: 'Consignee', incoTerm: 'INCO Term', portOfLoading: 'Port of Loading',
+      customer: 'Customer', consignee: 'Consignee', bankName: 'Bank Name',
+      incoTerm: 'INCO Term', portOfLoading: 'Port of Loading',
       portOfDischarge: 'Port of Discharge', finalDestination: 'Final Destination',
       originCountry: 'Origin Country', stateCode: 'State Code',
     };
     if (!form.customerId)            errs.add('customer');
     if (!form.consigneeId)           errs.add('consignee');
+    if (!form.bankName)              errs.add('bankName');
     if (form.docType === 'International') {
       if (!form.incoTerm)            errs.add('incoTerm');
       if (!form.portOfLoading)       errs.add('portOfLoading');
@@ -2916,12 +2918,14 @@ export function CreatePIModal(props: {
   const onSaveNext = () => {
     const errs = new Set<string>();
     const labels: Record<string, string> = {
-      customer: 'Customer', consignee: 'Consignee', incoTerm: 'INCO Term', portOfLoading: 'Port of Loading',
+      customer: 'Customer', consignee: 'Consignee', bankName: 'Bank Name',
+      incoTerm: 'INCO Term', portOfLoading: 'Port of Loading',
       portOfDischarge: 'Port of Discharge', finalDestination: 'Final Destination',
       originCountry: 'Origin Country', stateCode: 'State Code',
     };
     if (!form.customerId)            errs.add('customer');
     if (!form.consigneeId)           errs.add('consignee');
+    if (!form.bankName)              errs.add('bankName');
     if (form.docType === 'International') {
       if (!form.incoTerm)            errs.add('incoTerm');
       if (!form.portOfLoading)       errs.add('portOfLoading');
@@ -3319,10 +3323,11 @@ function OpportunitySelect({
           page: pageNum, per_page: 50, with_counts: 0,
           search:      q.trim() || undefined,
           customer_id: customerId || undefined,
-          // Only offer opportunities whose Price-Shared stage (Stage 4) is
-          // complete — every product in the opp's directory has a shared
-          // price. Opps still mid price-sharing are hidden here.
-          price_shared_complete: 1,
+          // Only offer opportunities whose Stage 2 (Lead Acknowledgement) is
+          // complete — i.e. the lead is QUALIFIED. Opps that haven't cleared
+          // Stage 2 are hidden regardless of any later progress (price shared,
+          // etc.). The customer_id filter (when set) stacks on top.
+          lead_ack_complete: 1,
         },
       });
       const rows   = Array.isArray(res.data?.data) ? res.data.data : [];
@@ -3731,14 +3736,14 @@ function BasicForm(props: {
             />
           )}
         </Field>
-        <Field label="Bank Name" required>
+        <Field label="Bank Name" required error={hasError('bankName')}>
           <MasterSelect
             key={`bank-${masters.banks.length}`}
             value={form.bankName}
             loading={masters.loading}
             placeholder="— Select Bank —"
             options={withCurrent(masters.banks, form.bankName)}
-            onChange={onBankChange}
+            onChange={(v) => { onBankChange(v); if (v) clearError?.('bankName'); }}
           />
         </Field>
 
