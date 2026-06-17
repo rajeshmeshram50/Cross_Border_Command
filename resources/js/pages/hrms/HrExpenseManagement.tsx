@@ -714,6 +714,13 @@ export default function HrExpenseManagement() {
         [data-bs-theme="dark"] .hrexp-card-ic--policy {
           background: rgba(240,101,72,0.20) !important; color: #ffa78f !important;
         }
+        /* "Over" badge on the Policy Limits panel — light pastel set inline,
+           so override it in dark mode to a danger-tinted dark chip with a
+           legible light-red label (same !important inline-beating trick). */
+        [data-bs-theme="dark"] .hrexp-over-badge,
+        [data-layout-mode="dark"] .hrexp-over-badge {
+          background: rgba(239,68,68,0.22) !important; color: #fca5a5 !important;
+        }
       `}</style>
 
         {/* ── Hero header — purple-tinted card mirroring the Employee
@@ -990,7 +997,7 @@ export default function HrExpenseManagement() {
                             </span>
                             {c.over && (
                               <span
-                                className="d-inline-flex align-items-center fw-bold"
+                                className="d-inline-flex align-items-center fw-bold hrexp-over-badge"
                                 style={{
                                   fontSize: 9.5, padding: '1px 7px', borderRadius: 999,
                                   background: '#fdd9d6', color: '#b1401d',

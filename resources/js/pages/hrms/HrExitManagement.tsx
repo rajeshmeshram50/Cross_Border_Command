@@ -1060,8 +1060,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     }
   };
 
-  /* Download the fully-signed PDF once a run is Completed (all signers done). */
+  /* Download the fully-signed PDF once a run is Completed (all signers done).
+     Tracks the in-flight run id so the button can show a spinner + disable
+     itself, preventing the repeated-click → multiple-download problem. */
+  const [downloadingRunId, setDownloadingRunId] = useState<number | null>(null);
   const downloadSignedRun = async (run: { id: number; code?: string | null }) => {
+    if (downloadingRunId !== null) return; // a download is already in flight
+    setDownloadingRunId(run.id);
     try {
       const resp = await api.get(`/hr-document-signatures/${run.id}/download-pdf`, { responseType: 'blob' });
       const url = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
@@ -1075,6 +1080,8 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       toast.success('Downloaded', 'Signed PDF saved.');
     } catch (err: any) {
       toast.error('Could not download', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setDownloadingRunId(null);
     }
   };
 
@@ -1918,28 +1925,32 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                               >
                                 <i className="ri-send-plane-line" />Send
                               </button>
-                              <button
-                                type="button"
-                                className="ep-doc-btn ep-doc-btn--done"
-                                onClick={() => handleGenerate(tpl)}
-                                disabled={!canGenerate}
-                                title={canGenerate ? 'Generate DOCX with this employee\'s data' : 'Only Active templates can be generated'}
-                                style={{ opacity: canGenerate ? 1 : 0.5, cursor: canGenerate ? 'pointer' : 'not-allowed' }}
-                              >
-                                <i className="ri-download-2-line" />Generate
-                              </button>
+                              {/* Generate button removed per product call —
+                                  documents are generated as part of the
+                                  signing workflow (Send), not downloaded raw
+                                  from this stage. */}
                               {/* Download signed PDF — only once the run is
-                                  fully signed (all signers done). */}
-                              {run && run.status === 'Completed' && (
-                                <button
-                                  type="button"
-                                  className="ep-doc-btn ep-doc-btn--done"
-                                  onClick={() => downloadSignedRun(run)}
-                                  title="Download the signed PDF — all signatures complete"
-                                >
-                                  <i className="ri-file-pdf-2-line" />Download
-                                </button>
-                              )}
+                                  fully signed (all signers done). Shows a
+                                  spinner + disables while the download is in
+                                  flight so repeated clicks can't fire multiple
+                                  downloads. */}
+                              {run && run.status === 'Completed' && (() => {
+                                const isDownloading = downloadingRunId === run.id;
+                                return (
+                                  <button
+                                    type="button"
+                                    className="ep-doc-btn ep-doc-btn--done"
+                                    onClick={() => downloadSignedRun(run)}
+                                    disabled={isDownloading}
+                                    title="Download the signed PDF — all signatures complete"
+                                    style={isDownloading ? { opacity: 0.65, cursor: 'wait' } : undefined}
+                                  >
+                                    {isDownloading
+                                      ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Downloading…</>
+                                      : <><i className="ri-file-pdf-2-line" />Download</>}
+                                  </button>
+                                );
+                              })()}
                             </div>
 
                             {/* Signing flow — render whatever the template
