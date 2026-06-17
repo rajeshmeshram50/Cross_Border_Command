@@ -437,12 +437,16 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   };
 
   const onEdit = (kind: DocType, id: number) => {
-    // A signed document is locked — the signed copy must keep matching what
-    // the customer e-signed. Block the edit and tell the user why.
-    if (sigByRow[`${kind}:${id}`]?.status === 'completed') {
+    const st = sigByRow[`${kind}:${id}`]?.status;
+    // A signed document is locked — the signed copy must keep matching what the
+    // customer e-signed. A PI that's been SENT for signature (awaiting) is also
+    // locked so it can't drift from what was sent. Block and explain why.
+    if (st === 'completed' || (kind === 'pi' && st === 'inprogress')) {
       toast.warning(
-        kind === 'pi' ? 'PI already signed' : 'Quotation already signed',
-        `This ${kind === 'pi' ? 'PI' : 'quotation'} has already been signed and can no longer be edited. Duplicate it to make changes.`,
+        kind === 'pi' ? (st === 'inprogress' ? 'PI sent for signature' : 'PI already signed') : 'Quotation already signed',
+        kind === 'pi' && st === 'inprogress'
+          ? 'This PI has been sent for signature and can no longer be edited until signing is resolved.'
+          : `This ${kind === 'pi' ? 'PI' : 'quotation'} has already been signed and can no longer be edited. Duplicate it to make changes.`,
       );
       return;
     }
@@ -820,11 +824,16 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                             </button>
                           </Tooltip>
                           {(() => {
-                            // A signed doc is locked — show the pencil greyed
-                            // out; clicking still explains why (handled in onEdit).
-                            const locked = sigByRow[`${docType}:${r.id}`]?.status === 'completed';
+                            // Editing is locked once the doc is signed, and for a
+                            // PI also once it's been SENT for signature (awaiting).
+                            // Pencil greys out; clicking still explains why (onEdit).
+                            const st = sigByRow[`${docType}:${r.id}`]?.status;
+                            const locked = st === 'completed' || (docType === 'pi' && st === 'inprogress');
+                            const lockLabel = docType === 'pi'
+                              ? (st === 'inprogress' ? 'PI sent for signature — editing locked' : 'PI signed — editing locked')
+                              : 'Quotation signed — editing locked';
                             return (
-                              <Tooltip label={locked ? `${docType === 'pi' ? 'PI' : 'Quotation'} signed — editing locked` : 'Edit'}>
+                              <Tooltip label={locked ? lockLabel : 'Edit'}>
                                 <button
                                   type="button" className="s5-icn s5-icn-edit"
                                   onClick={() => onEdit(docType, r.id)} disabled={anyActing}
@@ -1433,6 +1442,9 @@ const STAGE5_CSS = `
 .s5-qno {
   background: none; border: none; cursor: pointer; padding: 0;
   color: #7c3aed; font-weight: 800; font-family: ui-monospace, monospace; font-size: 11.5px; letter-spacing: .02em;
+  /* Keep the PI / Quotation code on ONE line (e.g. "PI/2026-27/2") instead of
+     wrapping into the narrow column. */
+  white-space: nowrap;
 }
 .s5-qno:hover:not(:disabled) { text-decoration: underline; }
 .s5-qno:disabled { cursor: default; opacity: .8; }

@@ -85,6 +85,15 @@ export default function WhatsAppStatusModal({
       toast.warning('Pick an option', 'Select Yes or No before submitting');
       return;
     }
+    if (choice === 'yes') {
+      // Proof is mandatory when communication happened — accept either a
+      // freshly-picked file or a previously-saved screenshot still in view.
+      const hasProof = !!picked || (!removedExisting && !!currentScreenshot);
+      if (!hasProof) {
+        toast.warning('Proof required', 'Upload supporting proof of the WhatsApp communication');
+        return;
+      }
+    }
     if (choice === 'no' && !reason.trim()) {
       toast.warning('Reason required', 'Specify why you didn’t communicate via WhatsApp');
       return;
@@ -193,7 +202,7 @@ export default function WhatsAppStatusModal({
 
             {choice === 'yes' && (
               <>
-                <div className="was-prompt">Please Upload Supporting Proof For WhatsApp Usage Related To This Lead.</div>
+                <div className="was-prompt">Please Upload Supporting Proof For WhatsApp Usage Related To This Lead.<span className="was-req">&nbsp;*</span></div>
                 <input
                   ref={fileRef}
                   type="file"
@@ -238,7 +247,7 @@ export default function WhatsAppStatusModal({
 
             {choice === 'no' && (
               <>
-                <div className="was-prompt">Please Specify The Reason For Not Communicating With The Customer Via WhatsApp.</div>
+                <div className="was-prompt">Please Specify The Reason For Not Communicating With The Customer Via WhatsApp.<span className="was-req">&nbsp;*</span></div>
                 <textarea
                   className={`was-textarea${reasonError ? ' was-textarea-error' : ''}`}
                   rows={4}
@@ -309,7 +318,7 @@ const WAS_CSS = `
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px;
   padding: 16px 22px;
-  background: linear-gradient(135deg, #22c55e, #16a34a);
+  background: linear-gradient(115deg, rgb(22, 163, 74) 0%, rgb(34, 197, 94) 45%, rgb(74, 222, 128) 80%, rgb(134, 239, 172) 100%);
   color: #fff;
 }
 .was-head::before {
@@ -385,6 +394,7 @@ const WAS_CSS = `
   letter-spacing: -.05px;
 }
 .was-prompt.was-prompt-second { margin-top: 16px; }
+.was-req { color: #dc2626; font-weight: 800; }
 
 /* ── File upload row (Yes branch) ── */
 .was-file-row {
@@ -395,16 +405,16 @@ const WAS_CSS = `
   background: #fff;
 }
 .was-file-pick {
-  background: linear-gradient(135deg, #d1fae5, #a7f3d0);
-  border: none; border-right: 1.5px solid #6ee7b7;
-  padding: 10px 18px;
-  font-size: 13px; font-weight: 700; color: #047857;
+  background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+  border: none; border-right: 1.5px solid #bbf7d0;
+  padding: 10px 16px;
+  font-size: 12.5px; font-weight: 700; color: #15803d;
   cursor: pointer;
   font-family: inherit;
   white-space: nowrap;
   transition: background .15s;
 }
-.was-file-pick:hover { background: linear-gradient(135deg, #a7f3d0, #6ee7b7); }
+.was-file-pick:hover { background: linear-gradient(135deg, #dcfce7, #bbf7d0); }
 .was-file-name {
   flex: 1; min-width: 0;
   padding: 0 12px;
