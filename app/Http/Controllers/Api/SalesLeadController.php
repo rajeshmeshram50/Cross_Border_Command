@@ -459,6 +459,16 @@ class SalesLeadController extends Controller
             ->value('completed_at');
         $lead->setAttribute('pi_signed_at', $piSignedAt ? \Illuminate\Support\Carbon::parse($piSignedAt)->toIso8601String() : null);
 
+        // Date the PI was sent for signature (the signature request's created_at
+        // — its "Sent for signature" step). Used as the duration end-date until
+        // the PI is actually signed. Null = never sent for signature.
+        $piSentAt = \App\Models\ClmSignatureRequest::query()
+            ->where('lead_id', $lead->id)
+            ->where('document_type', \App\Models\ClmSignatureRequest::DOC_PROFORMA_INVOICE)
+            ->orderByDesc('created_at')
+            ->value('created_at');
+        $lead->setAttribute('pi_sent_at', $piSentAt ? \Illuminate\Support\Carbon::parse($piSentAt)->toIso8601String() : null);
+
         return response()->json(['status' => true, 'data' => $lead]);
     }
 

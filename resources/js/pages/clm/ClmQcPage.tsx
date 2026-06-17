@@ -13,7 +13,9 @@ import { ClmSkeletonRows, SimpleDescModal, useScrollLock } from './clmCommon';
 /* Central CLM → Quality & Compliance Documents Master. 3-card faithful port. */
 
 type Qc = {
-  id: number; code: string; name: string; purpose: string; issued_by: string;
+  // `issued_by` holds the authority ID; `issued_by_names` is the resolved
+  // display name returned by the API.
+  id: number; code: string; name: string; purpose: string; issued_by: string; issued_by_names?: string;
   doc_type: 'cert'|'comp'; qa_params: string | null; min_criteria: string | null;
   status: 'active'|'inactive';
 };
@@ -53,7 +55,7 @@ export default function ClmQcPage() {
     const s = search.toLowerCase();
     return rows.filter(r =>
       r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) ||
-      r.purpose.toLowerCase().includes(s) || r.issued_by.toLowerCase().includes(s));
+      r.purpose.toLowerCase().includes(s) || (r.issued_by_names ?? '').toLowerCase().includes(s));
   }, [rows, search]);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
 
@@ -163,7 +165,7 @@ export default function ClmQcPage() {
                       <td className="clm-td-name">{r.name}</td>
                       <td className="clm-td-desc">{r.purpose}</td>
                       <td style={{ textAlign: 'center' }}>
-                        <span className="clm-badge clm-badge-teal"><span className="clm-badge-dot" />{r.issued_by}</span>
+                        <span className="clm-badge clm-badge-teal"><span className="clm-badge-dot" />{r.issued_by_names || '—'}</span>
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">
@@ -238,7 +240,7 @@ export function QcModal(props: { existing: Qc | null; authorities: Authority[]; 
       const r = await api.post<{ status: boolean; data: Authority }>('/clm/authorities', form);
       const created = r.data.data;
       setAuthorities(prev => [...prev, created]);
-      setIssuedBy(created.name);
+      setIssuedBy(String(created.id));
       setErrors(p => ({ ...p, issuedBy: '' }));
       setQuickAddOpen(false);
       toast.success('Added', created.name);
@@ -289,8 +291,8 @@ export function QcModal(props: { existing: Qc | null; authorities: Authority[]; 
                   invalid={!!errors.issuedBy}
                   placeholder="— Select —"
                   options={[
-                    ...authorities.map(a => ({ value: a.name, label: a.name })),
-                    ...(issuedBy && !authorities.find(a => a.name === issuedBy) ? [{ value: issuedBy, label: issuedBy }] : []),
+                    ...authorities.map(a => ({ value: String(a.id), label: a.name })),
+                    ...(issuedBy && !authorities.find(a => String(a.id) === issuedBy) ? [{ value: issuedBy, label: issuedBy }] : []),
                   ]}
                   onChange={(v) => { setIssuedBy(v); setErrors(p => ({ ...p, issuedBy: '' })); }}
                 />

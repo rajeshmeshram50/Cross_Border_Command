@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ClmAuthority;
 use App\Models\ClmQcDocument;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ClmQcController extends Controller
 {
@@ -19,6 +21,10 @@ class ClmQcController extends Controller
         $rows = $user->client_id
             ? ClmQcDocument::where('client_id', $user->client_id)->orderBy('id')->get()
             : collect();
+
+        // `issued_by` stores authority ids; expose the resolved current names.
+        $map = ClmAuthority::idNameMap($user->client_id);
+        $rows->each(fn ($r) => $r->issued_by_names = ClmAuthority::displayNames($r->issued_by, $map));
 
         return response()->json([
             'status' => true,
@@ -57,13 +63,19 @@ class ClmQcController extends Controller
             ], 409);
         }
 
+        // Store issuing authority by id (resolve names → ids).
+        $data['issued_by'] = ClmAuthority::normalizeIds($data['issued_by'] ?? null, $user->client_id);
+        if ($data['issued_by'] === '') {
+            throw ValidationException::withMessages(['issued_by' => 'Select a valid authority.']);
+        }
+
         $row = DB::transaction(function () use ($user, $data) {
             return ClmQcDocument::create([
                 'client_id'    => $user->client_id,
                 'code'         => $this->nextCode($user->client_id),
                 'name'         => trim($data['name']),
                 'purpose'      => trim($data['purpose']),
-                'issued_by'    => trim($data['issued_by']),
+                'issued_by'    => $data['issued_by'],
                 'doc_type'     => $data['doc_type'] ?? ClmQcDocument::TYPE_CERT,
                 'qa_params'    => $data['qa_params']    ?? null,
                 'min_criteria' => $data['min_criteria'] ?? null,
@@ -92,7 +104,13 @@ class ClmQcController extends Controller
             'status'       => ['nullable', Rule::in(ClmQcDocument::STATUSES)],
         ]);
 
-        foreach (['name','purpose','issued_by'] as $k) if (isset($data[$k])) $data[$k] = trim($data[$k]);
+        foreach (['name','purpose'] as $k) if (isset($data[$k])) $data[$k] = trim($data[$k]);
+        if (isset($data['issued_by'])) {
+            $data['issued_by'] = ClmAuthority::normalizeIds($data['issued_by'], $user->client_id);
+            if ($data['issued_by'] === '') {
+                throw ValidationException::withMessages(['issued_by' => 'Select a valid authority.']);
+            }
+        }
 
         if (isset($data['name'])
             && ClmQcDocument::where('client_id', $user->client_id)

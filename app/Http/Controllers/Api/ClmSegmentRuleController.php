@@ -52,6 +52,14 @@ class ClmSegmentRuleController extends Controller
         // is no longer a configurable category, so it isn't shipped here.
         $qc          = $cid ? ClmQcDocument::where('client_id', $cid)->orderBy('id')->get() : collect();
 
+        // The document masters store the authority by id; resolve to current
+        // names so the DCP table + configure modal display live values.
+        $authMap = ClmAuthority::idNameMap($cid);
+        $kyc->each(fn ($r) => $r->authority = ClmAuthority::displayNames($r->authority, $authMap));
+        $dd->each(fn ($r)  => $r->authority = ClmAuthority::displayNames($r->authority, $authMap));
+        $tl->each(fn ($r)  => $r->authority = ClmAuthority::displayNames($r->authority, $authMap));
+        $qc->each(fn ($r)  => $r->issued_by = ClmAuthority::displayNames($r->issued_by, $authMap));
+
         return response()->json([
             'status' => true,
             'data'   => [
@@ -176,10 +184,14 @@ class ClmSegmentRuleController extends Controller
             ->where('segment_id', $segmentId)
             ->first();
 
+        // Document masters store the authority by id — resolve to current names
+        // for the consumer forms.
+        $authMap = ClmAuthority::idNameMap($cid);
+
         // Resolve a category's codes (from doc_selections) to the actual
         // master rows + stamp the M|O requirement so the frontend can render
         // each row as Mandatory / Optional in one pass.
-        $resolveCat = function (string $cat, string $modelClass) use ($rule, $cid) {
+        $resolveCat = function (string $cat, string $modelClass) use ($rule, $cid, $authMap) {
             $sel = $rule?->doc_selections ?? [];
             $entries = $sel[$cat] ?? [];
             if (empty($entries) || !is_array($entries)) return [];
@@ -198,6 +210,10 @@ class ClmSegmentRuleController extends Controller
                     if (array_key_exists($opt, $r->getAttributes())) {
                         $base[$opt] = $r->getAttribute($opt);
                     }
+                }
+                // `authority` is stored as ids — surface the resolved names.
+                if (isset($base['authority'])) {
+                    $base['authority'] = ClmAuthority::displayNames($base['authority'], $authMap);
                 }
                 $base['requirement'] = $entries[$r->code] ?? 'O';
                 return $base;

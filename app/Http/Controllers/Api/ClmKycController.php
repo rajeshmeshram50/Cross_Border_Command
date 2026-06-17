@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ClmAuthority;
 use App\Models\ClmKycDocument;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +21,11 @@ class ClmKycController extends Controller
         $rows = $user->client_id
             ? ClmKycDocument::where('client_id', $user->client_id)->orderBy('id')->get()
             : collect();
+
+        // `authority` stores authority ids; expose the resolved current names so
+        // the list (and any name search) shows live values.
+        $map = ClmAuthority::idNameMap($user->client_id);
+        $rows->each(fn ($r) => $r->authority_names = ClmAuthority::displayNames($r->authority, $map));
 
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
     }
@@ -46,12 +52,18 @@ class ClmKycController extends Controller
             ]);
         }
 
+        // Store authority by id (resolve names → ids); reject if nothing valid.
+        $data['authority'] = ClmAuthority::normalizeIds($data['authority'] ?? null, $user->client_id);
+        if ($data['authority'] === '') {
+            throw ValidationException::withMessages(['authority' => 'Select at least one valid authority.']);
+        }
+
         $row = DB::transaction(function () use ($user, $data) {
             return ClmKycDocument::create([
                 'client_id'  => $user->client_id,
                 'code'       => $this->nextCode($user->client_id),
                 'name'       => trim($data['name']),
-                'authority'  => trim($data['authority']),
+                'authority'  => $data['authority'],
                 'expiry'     => $data['expiry'] ?? 'N/A',
                 'status'     => $data['status'] ?? ClmKycDocument::STATUS_ACTIVE,
                 'created_by' => $user->id,
@@ -75,8 +87,13 @@ class ClmKycController extends Controller
             'status'    => ['nullable', Rule::in(ClmKycDocument::STATUSES)],
         ]);
 
-        if (isset($data['name']))      $data['name']      = trim($data['name']);
-        if (isset($data['authority'])) $data['authority'] = trim($data['authority']);
+        if (isset($data['name'])) $data['name'] = trim($data['name']);
+        if (isset($data['authority'])) {
+            $data['authority'] = ClmAuthority::normalizeIds($data['authority'], $user->client_id);
+            if ($data['authority'] === '') {
+                throw ValidationException::withMessages(['authority' => 'Select at least one valid authority.']);
+            }
+        }
 
         if (isset($data['name'])
             && ClmKycDocument::where('client_id', $user->client_id)
