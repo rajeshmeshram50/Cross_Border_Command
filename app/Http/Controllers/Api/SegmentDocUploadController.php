@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ClmAgreementLibrary;
+use App\Models\ClmAuthority;
 use App\Models\ClmDdDocument;
 use App\Models\ClmKycDocument;
 use App\Models\ClmQcDocument;
@@ -752,6 +753,11 @@ class SegmentDocUploadController extends Controller
             ->where('client_id', $cid)
             ->whereIn('code', $codes)
             ->get();
+        // Document masters store the issuing authority by id (comma-joined for
+        // multi-authority docs) — resolve to current names so the Evidence
+        // Vault shows the authority name, not a raw id. Unknown tokens (e.g. a
+        // Trade Document's free-text counter party) pass through unchanged.
+        $authMap = ClmAuthority::idNameMap($cid);
         $byCode = [];
         foreach ($rows as $r) {
             $attrs = $r->getAttributes();
@@ -762,7 +768,7 @@ class SegmentDocUploadController extends Controller
                 'id'        => $r->id,
                 'code'      => $r->code,
                 'name'      => $r->name ?? ($attrs['title'] ?? $r->code),
-                'authority' => $attrs['authority'] ?? null,
+                'authority' => ClmAuthority::displayNames($attrs['authority'] ?? null, $authMap),
                 'expiry'    => $attrs['expiry'] ?? ($attrs['validity'] ?? null),
                 // Applicable-party CSV (e.g. "Buyer, Consignee"). Only the
                 // Trade Document master carries it; lets the Evidence Vault

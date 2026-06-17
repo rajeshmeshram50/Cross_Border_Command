@@ -5679,12 +5679,14 @@ const SCOPED_CSS = `
   margin-bottom: 18px;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
 }
 .qpi-products-wrap::-webkit-scrollbar { width: 8px; height: 8px; }
+.qpi-products-wrap::-webkit-scrollbar-track { background: transparent; }
 .qpi-products-wrap::-webkit-scrollbar-thumb {
-  background: rgba(124,58,237,.35); border-radius: 999px;
+  background: #d1d5db; border-radius: 999px;
 }
-.qpi-products-wrap::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,.55); }
+.qpi-products-wrap::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
 .qpi-products-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; min-width: 800px; table-layout: fixed; }
 /* Header matches the modal's popup chrome — teal gradient for the
    Quotation modal, purple for PI — using the same gradient as the modal
@@ -5754,7 +5756,13 @@ const SCOPED_CSS = `
   font-family: inherit; font-size: 12px; color: #1e1b4b;
   resize: vertical;
   outline: none;
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
 }
+.qpi-textarea::-webkit-scrollbar { width: 8px; height: 8px; }
+.qpi-textarea::-webkit-scrollbar-track { background: transparent; }
+.qpi-textarea::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 999px; }
+.qpi-textarea::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
 .qpi-textarea:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.12); }
 
 /* Totals summary panel (right column on step 2) — tightened to match
@@ -6190,12 +6198,16 @@ const SCOPED_CSS = `
   background: #1c1538;
   box-shadow: inset 0 1px 0 0 rgba(167,139,250,.25);
 }
+[data-bs-theme="dark"] .qpi-products-wrap { scrollbar-color: rgba(255,255,255,.18) transparent; }
 [data-bs-theme="dark"] .qpi-products-wrap::-webkit-scrollbar-thumb {
-  background: rgba(167,139,250,.35);
+  background: rgba(255,255,255,.18);
 }
 [data-bs-theme="dark"] .qpi-products-wrap::-webkit-scrollbar-thumb:hover {
-  background: rgba(167,139,250,.55);
+  background: rgba(255,255,255,.28);
 }
+[data-bs-theme="dark"] .qpi-textarea { scrollbar-color: rgba(255,255,255,.18) transparent; }
+[data-bs-theme="dark"] .qpi-textarea::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); }
+[data-bs-theme="dark"] .qpi-textarea::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.28); }
 [data-bs-theme="dark"] .qpi-amt { color: #f1f5f9; }
 [data-bs-theme="dark"] .qpi-prod-remove {
   background: rgba(220,38,38,.18); border-color: rgba(239,68,68,.40); color: #fca5a5;
