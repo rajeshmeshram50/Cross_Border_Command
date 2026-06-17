@@ -355,13 +355,16 @@ class SegmentDocUploadController extends Controller
         $verified = collect($allRows)->where('status', 'Verified')->count();
         $pending  = collect($allRows)->where('status', 'Pending')->count();
 
-        // CORE tally = Company DD + Owner KYC + Trade Licences ONLY (the
-        // "KYC / DD / Trade License" card). Trade Documents were dropped from
-        // the customer/consignee form, so they no longer belong in that card's
-        // "X of Y documents" count. total_documents/verified_signed stay
-        // all-inclusive for the Evidence Vault (which still lists Trade Docs).
-        $coreRows     = array_merge($company_dd, $owner_kyc, $trade_licenses);
-        $coreVerified = collect($coreRows)->where('status', 'Verified')->count();
+        // CORE tally = Company DD + Owner KYC + Trade Licences, MANDATORY docs
+        // only (the Sales-Matrix CLM card's "X of Y documents" counter). The
+        // card tracks required-doc completion, so OPTIONAL docs are excluded —
+        // it reads "12 of 12" only when every MANDATORY doc is on file. Trade
+        // Documents were also dropped from the customer/consignee form, so they
+        // aren't in this count either. total_documents/verified_signed stay
+        // all-inclusive for the Evidence Vault (which still lists everything).
+        $coreMandatory = collect(array_merge($company_dd, $owner_kyc, $trade_licenses))
+            ->where('requirement', 'M');
+        $coreVerified  = $coreMandatory->where('status', 'Verified')->count();
 
         // Per-shipment matrix — each of the party's shipments with its buyer +
         // consignee Trade Documents and Agreements (split by signature party).
@@ -375,7 +378,7 @@ class SegmentDocUploadController extends Controller
                 'same_as_customer'       => $sameAsCustomer,
                 'total_documents'        => count($allRows),
                 'verified_signed'        => $verified,
-                'core_total_documents'   => count($coreRows),
+                'core_total_documents'   => $coreMandatory->count(),
                 'core_verified_signed'   => $coreVerified,
                 'pending'                => $pending,
                 'company_dd_count'       => count($company_dd),
