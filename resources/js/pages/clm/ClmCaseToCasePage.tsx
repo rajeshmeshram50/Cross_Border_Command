@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
@@ -69,6 +69,11 @@ export default function ClmCaseToCasePage() {
   const [editing, setEditing] = useState<CtcContract | null>(null);
   const [rows, setRows] = useState<CtcContract[]>([]);
   const [loading, setLoading] = useState(true);
+  // Stretch the contracts card to fill the viewport so its footer (pagination)
+  // sits at the bottom of the card even with few rows — same idea as the CLM
+  // master tables.
+  const [fillH, setFillH] = useState<number | undefined>(undefined);
+  const cardRef = useRef<HTMLDivElement | null>(null);
   const load = () => {
     setLoading(true);
     api.get('/clm/ctc-contracts')
@@ -158,6 +163,22 @@ export default function ClmCaseToCasePage() {
   const start = (safe - 1) * PER_PAGE;
   const slice = list.slice(start, start + PER_PAGE);
 
+  // Recompute the contracts card height so it fills down to the bottom of the
+  // viewport, pushing the pagination footer to the bottom of the card.
+  useEffect(() => {
+    const recompute = () => {
+      const el = cardRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const fh = Math.max(0, window.innerHeight - top - 24);
+      setFillH(prev => (prev === fh ? prev : fh));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    window.addEventListener('resize', recompute);
+    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+  }, [list.length, loading]);
+
   if (formOpen) {
     return <ClmCtcForm editing={editing} onClose={() => { setFormOpen(false); setEditing(null); load(); }} onSaved={() => { setFormOpen(false); setEditing(null); load(); }} />;
   }
@@ -231,7 +252,7 @@ export default function ClmCaseToCasePage() {
       </div>
 
       {/* CARD 3 — CONTRACTS LIST */}
-      <div style={{ background: t.surface, borderRadius: 14, padding: 0, overflow: 'hidden', border: `1px solid ${t.dark ? 'rgba(109,40,217,.3)' : 'rgba(109,40,217,.15)'}`, boxShadow: '0 2px 14px rgba(109,40,217,.08)' }}>
+      <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, padding: 0, overflow: 'hidden', border: `1px solid ${t.dark ? 'rgba(109,40,217,.3)' : 'rgba(109,40,217,.15)'}`, boxShadow: '0 2px 14px rgba(109,40,217,.08)', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', background: t.surface, borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, flexWrap: 'wrap' }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', background: t.tabCapsule, borderRadius: 30, padding: 4 }}>
             {([
@@ -264,7 +285,7 @@ export default function ClmCaseToCasePage() {
         </div>
 
         {/* TABLE */}
-        <div style={{ background: t.tableBg }}>
+        <div style={{ background: t.tableBg, flex: 1, display: 'flex', flexDirection: 'column' }}>
           {slice.length === 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '56px 20px', textAlign: 'center', background: t.dark ? 'rgba(255,255,255,.02)' : '#FAFBFF' }}>
               <div style={{ width: 52, height: 52, borderRadius: 14, background: 'linear-gradient(135deg,#EDE9FE,#DDD6FE)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', boxShadow: '0 4px 12px rgba(109,40,217,.12)' }}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></div>
@@ -272,7 +293,7 @@ export default function ClmCaseToCasePage() {
               <div style={{ fontSize: 11, color: t.textMuted, maxWidth: 300, lineHeight: 1.6 }}>Click <b>+ Create CTC Agreement</b> to add one.</div>
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
+            <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1380 }}>
                 <thead><tr>
                   {['SR NO', 'CTC ID', 'CTC DATE', 'AGREEMENT TITLE', 'OUR ORGANISATION', 'COUNTERPARTIES', 'CREATED BY', 'INTERNAL APPROVAL', 'EFF. DATE', 'EXPIRY DATE', 'CP SIGNED DATE', 'ACTION'].map((h, i) => (
@@ -322,7 +343,7 @@ export default function ClmCaseToCasePage() {
                   })}
                 </tbody>
               </table>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 18px', background: t.pagerBg, borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#DDD6FE'}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 18px', background: t.pagerBg, borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#DDD6FE'}`, marginTop: 'auto' }}>
                 <span style={{ fontSize: 12, color: t.tabInactive, fontWeight: 500 }}>Showing <b style={{ color: t.textStrong, fontWeight: 800 }}>{start + 1}–{Math.min(start + PER_PAGE, list.length)}</b> of <b style={{ color: t.textStrong, fontWeight: 800 }}>{list.length}</b> contract{list.length !== 1 ? 's' : ''}</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                   {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => {
