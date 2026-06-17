@@ -1257,9 +1257,11 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
           <div className="s5-ps-stat"><div className="s5-ps-stat-lbl">Total Quantity</div><div className="s5-ps-stat-val c-cyan">{totalQty.toLocaleString()} units</div></div>
           <div className="s5-ps-stat s5-ps-stat-tint"><div className="s5-ps-stat-lbl">Total Target</div><div className="s5-ps-stat-val c-blue">{money(totalTarget, ccy)}</div></div>
           <div className="s5-ps-stat"><div className="s5-ps-stat-lbl">Total Quoted</div><div className="s5-ps-stat-val c-green">{money(totalQuoted, ccy)}</div></div>
-          <div className={`s5-ps-stat ${over ? 's5-ps-stat-red' : 's5-ps-stat-grn'}`}>
+          <div className={`s5-ps-stat ${over ? 's5-ps-stat-grn' : 's5-ps-stat-red'}`}>
             <div className="s5-ps-stat-lbl">Variance</div>
-            <div className={`s5-ps-stat-val ${over ? 'c-red' : 'c-green'}`}>{over ? '+' : ''}{variance.toLocaleString('en-US', { minimumFractionDigits: 2 })} ({variancePct}%)</div>
+            {/* Quoted ABOVE target (positive variance) = good → green;
+                quoted BELOW target (negative variance) = red. */}
+            <div className={`s5-ps-stat-val ${over ? 'c-green' : 'c-red'}`}>{over ? '+' : ''}{variance.toLocaleString('en-US', { minimumFractionDigits: 2 })} ({variancePct}%)</div>
           </div>
         </div>
 
@@ -1300,7 +1302,7 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
                     <td className="ta-r s5-ps-qty">{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
                     <td className="ta-r"><div className="s5-ps-target">{money(tp, r.currency)}</div></td>
                     <td className="ta-r">
-                      <div className={`s5-ps-quoted ${rOver ? 'c-red' : 'c-green'}`}>{money(qp, r.currency)}</div>
+                      <div className={`s5-ps-quoted ${rOver ? 'c-green' : 'c-red'}`}>{money(qp, r.currency)}</div>
                       {diff !== 0 && (
                         <span className={`s5-ps-diff ${rOver ? 'over' : 'under'}`}>{rOver ? '▲' : '▼'} {sym(r.currency)}{Math.abs(diff).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                       )}
@@ -1585,8 +1587,10 @@ const STAGE5_CSS = `
 .s5-ps-quoted.c-green { color: #059669; }
 .s5-ps-quoted.c-red { color: #dc2626; }
 .s5-ps-diff { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; border-radius: 4px; font-size: 8.5px; font-weight: 800; margin-top: 2px; }
-.s5-ps-diff.over { background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }
-.s5-ps-diff.under { background: #dcfce7; color: #16a34a; border: 1px solid #86efac; }
+/* Quoted ABOVE target (▲ over) = positive variance → green;
+   quoted BELOW target (▼ under) = negative variance → red. */
+.s5-ps-diff.over { background: #dcfce7; color: #16a34a; border: 1px solid #86efac; }
+.s5-ps-diff.under { background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }
 .s5-ps-acts { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
 .s5-ps-act { width: 30px; height: 30px; border-radius: 8px; border: 1.5px solid #bae6fd; background: #f0f9ff; color: #0891b2; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all .15s; }
 .s5-ps-act:hover:not(:disabled) { background: #0891b2; color: #fff; border-color: transparent; transform: translateY(-1px); }
