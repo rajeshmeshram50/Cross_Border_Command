@@ -7,7 +7,6 @@ import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import { MasterMultiSelect } from '../master/masterFormKit';
-import { ShimmerTableRows } from '../../components/ui/Shimmer';
 import { KycModal } from './ClmKycPage';
 import { DdModal } from './ClmDdPage';
 import { QcModal } from './ClmQcPage';
@@ -351,7 +350,7 @@ export default function ClmDcpPage() {
                   <th style={{ width: 90, textAlign: 'center' }}>ACTION</th>
                 </tr></thead>
                 <tbody>
-                  {loading && <ShimmerTableRows rows={6} cols={11} cellClassName="" keyPrefix="dcp-shim" />}
+                  {/* Shimmer disabled by request — empty tbody while loading. */}
                   {!loading && slice.map((r, i) => {
                     const seg = boot?.segments.find(s => s.code === r.segment_code);
                     const isHigh = (seg?.regulatory_status ?? r.regulatory_status) === 'highly';
