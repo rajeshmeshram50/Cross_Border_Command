@@ -55,10 +55,27 @@ class ClmSegmentRuleController extends Controller
         // The document masters store the authority by id; resolve to current
         // names so the DCP table + configure modal display live values.
         $authMap = ClmAuthority::idNameMap($cid);
-        $kyc->each(fn ($r) => $r->authority = ClmAuthority::displayNames($r->authority, $authMap));
-        $dd->each(fn ($r)  => $r->authority = ClmAuthority::displayNames($r->authority, $authMap));
-        $tl->each(fn ($r)  => $r->authority = ClmAuthority::displayNames($r->authority, $authMap));
-        $qc->each(fn ($r)  => $r->issued_by = ClmAuthority::displayNames($r->issued_by, $authMap));
+        // Each row also carries `authority_list` — the SAME names as a
+        // structured array — so the DCP's AUTHORITIES column can count distinct
+        // authorities without splitting the joined string on commas (authority
+        // names may themselves contain commas, which would over-count). Compute
+        // the array from the original stored ids BEFORE overwriting the string.
+        $kyc->each(function ($r) use ($authMap) {
+            $r->authority_list = ClmAuthority::displayNamesList($r->authority, $authMap);
+            $r->authority      = ClmAuthority::displayNames($r->authority, $authMap);
+        });
+        $dd->each(function ($r) use ($authMap) {
+            $r->authority_list = ClmAuthority::displayNamesList($r->authority, $authMap);
+            $r->authority      = ClmAuthority::displayNames($r->authority, $authMap);
+        });
+        $tl->each(function ($r) use ($authMap) {
+            $r->authority_list = ClmAuthority::displayNamesList($r->authority, $authMap);
+            $r->authority      = ClmAuthority::displayNames($r->authority, $authMap);
+        });
+        $qc->each(function ($r) use ($authMap) {
+            $r->authority_list = ClmAuthority::displayNamesList($r->issued_by, $authMap);
+            $r->issued_by      = ClmAuthority::displayNames($r->issued_by, $authMap);
+        });
 
         return response()->json([
             'status' => true,
