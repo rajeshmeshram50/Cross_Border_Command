@@ -1592,14 +1592,19 @@ export default function SalesQPI() {
               />
             )}
             {(() => {
-              // A signed PI is a finalised document — lock editing.
-              const pSigned = r.id ? sigByRow[`pi:${r.id}`]?.status === 'completed' : false;
+              // Editing is locked once the PI has been SENT for signature
+              // (awaiting) or SIGNED — the document must keep matching what was
+              // sent to / executed by the customer.
+              const pStatus = r.id ? sigByRow[`pi:${r.id}`]?.status : undefined;
+              const pSent   = pStatus === 'inprogress';
+              const pSigned = pStatus === 'completed';
+              const pLocked = pSent || pSigned;
               return (
             <ActionBtn
-              title={readOnly ? readOnlyHint : pSigned ? 'PI signed — editing locked' : 'Edit PI'}
+              title={readOnly ? readOnlyHint : pSigned ? 'PI signed — editing locked' : pSent ? 'PI sent for signature — editing locked' : 'Edit PI'}
               icon={<IconEdit />}
               color="#16a34a"
-              disabled={readOnly || pSigned}
+              disabled={readOnly || pLocked}
               onClick={() => {
                 if (!r.id) { toast.error('Cannot edit', 'This PI has no server id yet.'); return; }
                 setEditingPiId(r.id);
@@ -2848,6 +2853,11 @@ export function CreatePIModal(props: {
   const toast = useToast();
   useScrollLock();   // freeze background scroll while the modal is open
   const [step, setStep] = useState<1 | 2>(1);
+  /* Once the user advances to Step 2 (Product Details), the core document &
+   * party fields — Document Type, Opportunity, Customer, Consignee — lock so
+   * that going Back to Step 1 can't change them out from under the products
+   * already added. All other Step-1 fields stay editable. */
+  const [coreLocked, setCoreLocked] = useState(false);
   // Existing PI metadata shown in the top-right pills + used for the
   // PUT URL when in edit mode.
   const [existingCode, setExistingCode] = useState<string | null>(null);
@@ -2915,6 +2925,7 @@ export function CreatePIModal(props: {
       toast.error('Missing required fields', `Please fill: ${list}`);
       return;
     }
+    setCoreLocked(true);   // lock the core fields once Step 2 is reached
     setStep(2);
   };
 
@@ -3130,9 +3141,11 @@ export function CreatePIModal(props: {
               form={form} setForm={setForm}
               masters={masters} theme="purple"
               titleLabel="Basic PI Details" partyKind="PI"
-              lockParty={!!initialOpp || isEdit}
+              lockParty={!!initialOpp || isEdit || coreLocked}
+              /* Consignee stays EDITABLE after Step 2 — only Document Type,
+                 Opportunity and Customer lock via coreLocked. */
               lockConsignee={isEdit || !!initialOpp?.consigneeId}
-              lockDocType={isEdit}
+              lockDocType={isEdit || coreLocked}
               errors={step1Errors}
               clearError={(k) => setStep1Errors(prev => {
                 if (!prev.has(k)) return prev;
@@ -3659,7 +3672,7 @@ function BasicForm(props: {
           />
           )}
         </Field>
-        <Field label="Opportunity" required>
+        <Field label="Opportunity">
           {lockParty ? (
             <input className="qpi-input qpi-input-readonly" value={form.opportunity} readOnly title="Fixed by the lead this was opened from" />
           ) : (
@@ -3933,13 +3946,19 @@ function ProductsStep(props: {
         });
         const sharedRows = Array.isArray(sharedRes.data?.data) ? sharedRes.data.data : [];
         const quotedMap = new Map<number, number>();
+        const quotedIds = new Set<number>();
         sharedRows.forEach((s) => {
           const pid = Number(s.product_id ?? 0);
           const price = Number(s.quoted_price ?? 0);
           // First row per product wins (rows are shared_at DESC = newest first).
           if (pid && price > 0 && !quotedMap.has(pid)) quotedMap.set(pid, price);
+          if (pid) quotedIds.add(pid);
         });
-        setAllowedProductIds(ids);
+        // Product list = the lead's LATEST QUOTED PRICE list (the same products
+        // shown in the "Latest Quoted Price Summary" popup, from the
+        // /shared-prices API). Fall back to the Product Directory mapping only
+        // when the lead has no shared prices yet, so it's never empty.
+        setAllowedProductIds(quotedIds.size > 0 ? quotedIds : ids);
         setLeadPriceMap(priceMap);
         setLatestQuotedMap(quotedMap);
       })
@@ -3995,6 +4014,10 @@ function ProductsStep(props: {
 
     return opts;
   }, [allowedProductIds, productOptions, productsRaw, products]);
+
+  /* No selectable products left to add (every mapped product is already in the
+   * list, or none are mapped) → the whole "add product" draft row is hidden. */
+  const noMoreProducts = !loadingProducts && !loadingLeadProducts && visibleProductOptions.length === 0;
 
   // On product selection, auto-fill hsn + (qty/rate/tax) from masters.
   // Priority for rate: latest QUOTED price (Stage 4) > lead-product
@@ -4118,6 +4141,10 @@ function ProductsStep(props: {
                 </tr>
               );
             })}
+            {/* Add-product draft row — hidden entirely once there are no more
+                products to add (all mapped products already in the list, or
+                none mapped to the opportunity). */}
+            {!noMoreProducts && (
             <tr className="qpi-products-input-row">
               <td>
                 <MasterSelect
@@ -4151,10 +4178,11 @@ function ProductsStep(props: {
               {(() => {
                 const dc = calcRow(draft);
                 const has = draft.qty > 0 && draft.rate > 0;
+                /* Computed columns are read-only — styled as disabled (grey)
+                   boxes and showing 0.00 (not a dash) until qty × rate fill. */
                 const cell = (val: number) => (
-                  <td><input className="qpi-input qpi-input-num" type="text" readOnly tabIndex={-1}
-                    style={{ cursor: 'default', fontWeight: 600 }}
-                    placeholder="—" value={has ? val.toFixed(2) : ''} /></td>
+                  <td><input className="qpi-input qpi-input-num qpi-input-readonly" type="text" readOnly tabIndex={-1}
+                    value={has ? val.toFixed(2) : '0.00'} /></td>
                 );
                 return <>{cell(dc.taxAmt)}{cell(dc.rateWithTax)}{cell(dc.amount)}</>;
               })()}
@@ -4164,6 +4192,7 @@ function ProductsStep(props: {
                 </button>
               </td>
             </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -4191,6 +4220,9 @@ function ProductsStep(props: {
               className="qpi-input qpi-summary-input"
               type="number" min="0"
               placeholder="0"
+              /* Right-aligned so the value lines up under Sub Total / Grand
+               * Total; inline style guarantees it over any base .qpi-input rule. */
+              style={{ textAlign: 'right' }}
               /* Show empty (not a literal "0") when zero, so typing replaces it
                * instead of leaving a leading zero like "05". Empty = 0. */
               value={shipping || ''}
@@ -5593,7 +5625,7 @@ const SCOPED_CSS = `
 .qpi-summary-item {}
 .qpi-summary-item-label { font-size: 9px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #6d28d9; line-height: 1.2; }
 .qpi-order-summary-teal .qpi-summary-item-label { color: #0e7490; }
-.qpi-summary-item-value { font-size: 12px; font-weight: 700; color: #1e1b4b; margin-top: 1px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qpi-summary-item-value { font-size: 12px; font-weight: 600; color: #475569; margin-top: 1px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Product warning */
 .qpi-product-warn {
@@ -5661,11 +5693,13 @@ const SCOPED_CSS = `
   box-shadow: inset 0 1px 0 0 #ede9fe;
 }
 .qpi-amt { font-weight: 800; color: #0f172a; font-variant-numeric: tabular-nums; }
-/* Numeric columns (QTY … Amount = cols 2–7) right-aligned across the header,
-   the data rows AND the draft input boxes, so every value lines up neatly
-   under its header (inputs are already right-aligned via .qpi-input-num). */
-.qpi-products-table thead th:nth-child(n+2):nth-child(-n+7),
-.qpi-products-table tbody td:nth-child(n+2):nth-child(-n+7) { text-align: right; }
+/* Product Name (col 1) stays left-aligned; EVERY other column — header, data
+   rows AND the draft input boxes — is centered. */
+.qpi-products-table thead th:not(:first-child),
+.qpi-products-table tbody td:not(:first-child) { text-align: center; }
+/* Center the numeric inputs' text too so typed values sit under their centered
+   headers (overrides the global right-aligned .qpi-input-num inside this table). */
+.qpi-products-table .qpi-input-num { text-align: center; }
 .qpi-prod-remove {
   width: 30px; height: 30px; border-radius: 8px;
   border: 1.5px solid #fecaca; background: #fef2f2;
@@ -5717,7 +5751,13 @@ const SCOPED_CSS = `
   padding: 4px 0; font-size: 12px; color: #475569; font-weight: 600;
 }
 .qpi-summary-val { font-weight: 800; color: #1e1b4b; font-variant-numeric: tabular-nums; }
-.qpi-summary-input { width: 96px; height: 28px; padding: 0 10px; font-size: 12px; }
+.qpi-summary-input { width: 96px; height: 28px; padding: 0 10px; font-size: 12px; text-align: right; }
+/* Drop the native number-spinner arrows so the right-aligned value / placeholder
+   ("0") sits flush at the right edge instead of being pushed left by the spinner. */
+.qpi-summary-input::-webkit-outer-spin-button,
+.qpi-summary-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.qpi-summary-input { -moz-appearance: textfield; appearance: textfield; }
+.qpi-summary-input::placeholder { text-align: right; }
 .qpi-summary-grand {
   display: flex; align-items: center; justify-content: space-between;
   margin-top: 4px; padding-top: 6px;
