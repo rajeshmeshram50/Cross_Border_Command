@@ -217,7 +217,7 @@ class ClmSegmentRuleController extends Controller
                 ->where('client_id', $cid)
                 ->whereIn('code', $codes)
                 ->get();
-            return $rows->map(function ($r) use ($entries) {
+            return $rows->map(function ($r) use ($entries, $authMap) {
                 // Each model has a slightly different shape — surface the
                 // intersection plus everything from the row's attributes
                 // so the frontend can pick whatever fields it wants.
