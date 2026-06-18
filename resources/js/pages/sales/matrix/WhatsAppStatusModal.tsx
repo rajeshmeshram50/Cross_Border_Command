@@ -250,7 +250,7 @@ export default function WhatsAppStatusModal({
                 <div className="was-prompt">Please Specify The Reason For Not Communicating With The Customer Via WhatsApp.<span className="was-req">&nbsp;*</span></div>
                 <textarea
                   className={`was-textarea${reasonError ? ' was-textarea-error' : ''}`}
-                  rows={4}
+                  rows={3}
                   placeholder={`Reason For Not Communicating (${REASON_MIN}–${REASON_MAX} characters)`}
                   value={reason}
                   maxLength={REASON_MAX}
@@ -348,13 +348,13 @@ const WAS_CSS = `
 
 /* ── Body & inner card ── */
 .was-body {
-  padding: 16px 20px;
+  padding: 12px 16px;
   flex: 1; overflow-y: auto;
 }
 .was-card {
   background: #fff;
   border-radius: 12px;
-  padding: 22px 22px 20px;
+  padding: 16px 20px;
   box-shadow: 0 2px 12px rgba(16, 185, 129, .08);
 }
 
@@ -362,13 +362,13 @@ const WAS_CSS = `
   font-size: 14px; font-weight: 700; color: #064e3b;
   text-align: center;
   letter-spacing: -.1px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 /* ── Radio row ── */
 .was-radios {
-  display: flex; justify-content: center; gap: 38px;
-  margin-bottom: 6px;
+  display: flex; justify-content: center; gap: 48px;
+  margin-bottom: 14px;
 }
 .was-radio {
   display: inline-flex; align-items: center; gap: 8px;
@@ -389,8 +389,8 @@ const WAS_CSS = `
 .was-prompt {
   font-size: 13px; font-weight: 700; color: #064e3b;
   text-align: center;
-  margin: 18px 0 12px;
-  line-height: 1.5;
+  margin: 0 0 10px;
+  line-height: 1.4;
   letter-spacing: -.05px;
 }
 .was-prompt.was-prompt-second { margin-top: 16px; }
@@ -447,16 +447,17 @@ const WAS_CSS = `
 .was-link:hover { background: rgba(16, 185, 129, .08); }
 
 .was-formats {
-  margin-top: 12px;
-  font-size: 11.5px; color: #059669;
+  margin-top: 7px;
+  font-size: 10.5px; color: #059669;
   text-align: center;
   font-weight: 600;
+  letter-spacing: .02em;
 }
 
 /* ── Textarea (No branch) ── */
 .was-textarea {
   width: 100%;
-  min-height: 100px;
+  min-height: 80px;
   border: 1.5px solid #6ee7b7;
   border-radius: 10px;
   padding: 10px 14px;
@@ -485,10 +486,10 @@ const WAS_CSS = `
 
 /* ── Note ── */
 .was-note {
-  margin-top: 18px;
-  font-size: 12px; color: #64748b;
+  margin-top: 14px;
+  font-size: 11.5px; color: #475569;
   text-align: center;
-  line-height: 1.55;
+  line-height: 1.5;
 }
 .was-note strong { color: #059669; font-weight: 700; }
 

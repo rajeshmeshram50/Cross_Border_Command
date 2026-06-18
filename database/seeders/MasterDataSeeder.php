@@ -305,13 +305,16 @@ class MasterDataSeeder extends Seeder
                 // Canonical 6-level org hierarchy (top → bottom). This is the
                 // authoritative set — the seeder prunes any designation NOT in
                 // this list (see the 'designations' cleanup in run()).
+                // `level` mirrors `name` here — these six rows ARE the canonical
+                // designation levels, and the HR document-template matcher keys
+                // on designation.level (not name), so it must be populated.
                 return [
-                    ['name' => 'Director / CEO',            'description' => 'Top of the org hierarchy',                       'status' => 'Active'],
-                    ['name' => 'Head of Department (HOD)',  'description' => 'Department head, reports to Director / CEO',     'status' => 'Active'],
-                    ['name' => 'Team Leader',               'description' => 'Leads a team, reports to the HOD',               'status' => 'Active'],
-                    ['name' => 'Executive',                 'description' => 'Individual contributor, reports to Team Leader', 'status' => 'Active'],
-                    ['name' => 'Employee',                  'description' => 'Standard employee',                             'status' => 'Active'],
-                    ['name' => 'Intern / Trainee',          'description' => 'Trainee / intern',                              'status' => 'Active'],
+                    ['name' => 'Director / CEO',            'level' => 'Director / CEO',            'description' => 'Top of the org hierarchy',                       'status' => 'Active'],
+                    ['name' => 'Head of Department (HOD)',  'level' => 'Head of Department (HOD)',  'description' => 'Department head, reports to Director / CEO',     'status' => 'Active'],
+                    ['name' => 'Team Leader',               'level' => 'Team Leader',               'description' => 'Leads a team, reports to the HOD',               'status' => 'Active'],
+                    ['name' => 'Executive',                 'level' => 'Executive',                 'description' => 'Individual contributor, reports to Team Leader', 'status' => 'Active'],
+                    ['name' => 'Employee',                  'level' => 'Employee',                  'description' => 'Standard employee',                             'status' => 'Active'],
+                    ['name' => 'Intern / Trainee',          'level' => 'Intern / Trainee',          'description' => 'Trainee / intern',                              'status' => 'Active'],
                 ];
 
                 /* ───────────── GEOGRAPHY & LOCATION ───────────── */

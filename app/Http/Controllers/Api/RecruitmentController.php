@@ -128,10 +128,11 @@ class RecruitmentController extends Controller
         $row = $this->resolveRow($request, (int) $id);
 
         $data = $this->validatePayload($request, $row->id);
-        // Block edits that would collide with another row's (job_title +
-        // department) within the same tenant — ignore the row being
-        // updated itself so re-saves don't trip the guard.
-        $this->guardDuplicate($data, $row->client_id, $row->branch_id, $row->id);
+        // Block edits that would collide with another row's full criteria
+        // signature within the same tenant — ignore the row being updated
+        // itself so re-saves don't trip the guard. Pass $row so omitted
+        // fields fall back to its current values.
+        $this->guardDuplicate($data, $row->client_id, $row->branch_id, $row->id, $row);
         // Block "Mark as Completed" until every opening has a selected
         // candidate — otherwise the recruitment's promise to fill N seats
         // is silently broken.
@@ -177,34 +178,54 @@ class RecruitmentController extends Controller
     }
 
     /**
-     * Reject duplicates within the same tenant. The signature key is
-     * (job_title, department_id) — two open recruitments with the exact
-     * same job title for the same department are almost always an
-     * accidental double-submit.
+     * Reject duplicates within the same tenant. A recruitment only counts as
+     * a duplicate when the job title AND every other key criterion match an
+     * existing row: department, experience, employment type, CTC range and
+     * hiring requirements. Differing any one of those makes it a distinct
+     * opening (e.g. a "Software Engineer" role at 2-4 yrs vs 5-8 yrs), so
+     * the same title can legitimately be posted more than once. This still
+     * catches accidental double-submits, where every field is identical.
      *
-     * Skips when either field is missing so partial PATCH updates that
-     * don't change those columns aren't blocked.
+     * Skips when job title or department is missing so partial PATCH updates
+     * that don't touch those columns aren't blocked. For updates, any field
+     * the PATCH omitted falls back to the existing row's value so the
+     * signature reflects the row's FINAL state, not just the changed columns.
      */
-    private function guardDuplicate(array $data, $clientId, $branchId, ?int $excludeId): void
+    private function guardDuplicate(array $data, $clientId, $branchId, ?int $excludeId, ?Recruitment $existing = null): void
     {
-        $title  = trim((string) ($data['job_title'] ?? ''));
-        $deptId = $data['department_id'] ?? null;
+        // Resolve each comparison field from the incoming data, falling back
+        // to the existing row (update case) when the PATCH omitted it.
+        $val = function (string $key) use ($data, $existing) {
+            if (array_key_exists($key, $data)) return $data[$key];
+            return $existing?->{$key};
+        };
+
+        $title  = trim((string) ($val('job_title') ?? ''));
+        $deptId = $val('department_id');
         if ($title === '' || $deptId === null) return;
+
+        // Normalise free-text criteria for a forgiving, case-/whitespace-
+        // insensitive compare. NULL and '' are treated the same via COALESCE.
+        $norm = fn ($v) => mb_strtolower(trim((string) ($v ?? '')));
 
         $q = Recruitment::query()
             ->whereRaw('LOWER(job_title) = ?', [mb_strtolower($title)])
-            ->where('department_id', $deptId);
+            ->where('department_id', $deptId)
+            ->whereRaw("LOWER(COALESCE(employment_type, '')) = ?", [$norm($val('employment_type'))])
+            ->whereRaw("LOWER(COALESCE(experience, '')) = ?",      [$norm($val('experience'))])
+            ->whereRaw("LOWER(COALESCE(ctc_range, '')) = ?",       [$norm($val('ctc_range'))])
+            ->whereRaw("LOWER(COALESCE(requirements, '')) = ?",    [$norm($val('requirements'))]);
 
         $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
         $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
         if ($excludeId !== null) $q->where('id', '!=', $excludeId);
 
-        $existing = $q->first(['id', 'code']);
-        if ($existing) {
+        $dupe = $q->first(['id', 'code']);
+        if ($dupe) {
             throw ValidationException::withMessages([
                 'job_title' => [sprintf(
-                    'A recruitment with this job title already exists for the selected department (%s).',
-                    $existing->code ?: ('#' . $existing->id),
+                    'An identical recruitment already exists (%s) — same job title, department, experience, employment type, CTC range and requirements. Change any of these to post a separate opening.',
+                    $dupe->code ?: ('#' . $dupe->id),
                 )],
             ]);
         }

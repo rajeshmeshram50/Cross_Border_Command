@@ -19,13 +19,9 @@ import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import './HrEmployeeOnboarding.css';
-// Pulls in the .ep-signing* + .ep-signer* CSS that Exit Management uses
-// for its per-template signing-workflow stepper. We reuse those classes
-// verbatim so the Onboarding Evidence Vault renders the same numbered
-// "Reporting Manager → Employee → Client" pipeline below each row.
+
 import '../../../css/recruitment.css';
 
-// ── Onboarding form option lists (used by MasterSelect dropdowns) ─────────────
 const OPT = (...vals: string[]) => vals.map(v => ({ value: v, label: v }));
 const ONB_GENDER       = OPT('Male', 'Female', 'Other');
 const ONB_NATIONALITY  = OPT('Indian', 'Other');
@@ -33,27 +29,21 @@ const ONB_NUMBER_SERIES = OPT('Default Number Series');
 const ONB_EMP_STATUS   = OPT('Active', 'On Probation');
 const ONB_LEGAL_ENTITY = OPT('Cross Border Command Pvt Ltd', 'CBC International LLP');
 const ONB_LOCATION     = OPT('Pune HQ', 'Mumbai', 'Bengaluru');
-// Probation / Notice / other option lists MUST mirror the canonical lists
-// used by HrEmployees.tsx (PROBATION_POLICY_OPTIONS, NOTICE_PERIOD_OPTIONS
-// etc.) — otherwise values saved at Add Employee time (e.g. "3-Month
-// Probation", "15 Days") fall outside the onboarding dropdown's options and
-// MasterSelect renders nothing, making the field look empty.
+
 const ONB_PROBATION    = OPT('Default Probation Policy', '3-Month Probation', '6-Month Probation', 'No Probation');
 const ONB_NOTICE       = OPT('Default Notice Period', '15 Days', '30 Days', '60 Days', '90 Days');
 const ONB_LEAVE_PLAN   = OPT('Leave Policy');
 const ONB_HOLIDAY      = OPT('Holiday Calendar', 'India Holidays 2026', 'Global Holidays 2026');
 const ONB_SHIFT        = OPT('General Shift', 'Morning Shift', 'Evening Shift', 'Night Shift', 'Flexible');
 const ONB_WEEKLY_OFF   = OPT('Week Off Policy', 'Saturday & Sunday', 'Sunday Only', 'Rotational');
-// Mirror HrEmployees.tsx canonical lists so values saved at Add Employee
-// time (e.g. "Manual", "Strict Policy") match an option here.
+
 const ONB_TIME_TRACK   = OPT('Manual', 'Biometric');
 const ONB_PENALIZE     = OPT('Tracking Policy', 'Strict Policy', 'Lenient Policy', 'No Penalty');
 const ONB_OVERTIME     = OPT('Not applicable', 'Hourly Pay', 'Compensation Off', 'Time and a Half');
 const ONB_EXPENSE      = OPT('Standard Expense Policy', 'Manager Approval', 'No Expenses');
 const ONB_YES_NO       = OPT('No', 'Yes');
 const ONB_ACCESS_CARD  = OPT('Not Issued', 'Issued');
-// Compensation option lists — must match HrEmployees.tsx so values saved
-// at Add Employee time can be matched and rendered by MasterSelect here.
+
 const ONB_PAY_GROUP    = OPT('Default pay group', 'Senior Pay Group', 'Intern Pay Group', 'Contractor Pay Group');
 const ONB_PERIOD       = OPT('Per annum', 'Per month', 'Per hour', 'Per day');
 const ONB_SAL_STRUCT   = OPT('Range Based', 'Fixed', 'Component Based');
@@ -62,13 +52,7 @@ const ONB_ACCOUNT_TYPE = OPT('Salary', 'Savings', 'Current');
 const ONB_PF_DEDUCT    = OPT('Employee + Employer', 'Employee only');
 const ONB_BLOOD_GROUP  = OPT('A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-');
 
-// ── Evidence Vault — status → Bootstrap badge color ──────────────────────────
-// The vault's Employee tab is populated entirely from /employees/{id}/documents
-// at runtime (catalogue lookup happens client-side against STAGE2_CATEGORIES
-// further down). The Org tab is sourced from /hr-document-templates/match
-// + signature runs. Both render the status pill with the same
-// `bg-{color}-subtle text-{color}` Bootstrap classes the Clients table uses
-// for its Status column.
+
 type VaultStatus = 'Verified' | 'Uploaded' | 'Pending' | 'Rejected' | 'Signed' | 'Sent' | 'Not Generated';
 
 const VAULT_STATUS_COLOR: Record<VaultStatus, 'success' | 'danger' | 'warning' | 'info' | 'primary' | 'secondary'> = {
@@ -96,21 +80,12 @@ interface OnboardRow {
   name: string;
   initials: string;
   accent: string;
-  /** Public URL of the employee's passport-size photo (document_key='photo').
-   *  Comes from the Employee model's `photo_url` accessor — same source the
-   *  HR Employees table uses, so the avatar stays in sync between the two
-   *  pages. Optional because legacy seed rows and freshly-created employees
-   *  without a photo render the initials gradient avatar instead. */
   photoUrl?: string | null;
   joinDate: string;
   department: string;
   designation: string;
   primaryRole: string;
   ancillaryRole: string;
-  /** Full list of ancillary role names (multi-select on the employee).
-   *  Hydrated from `ancillary_roles_resolved` on the API row. Optional so
-   *  the legacy seed arrays below (kept only as a typing reference) don't
-   *  need to be updated; the table cell falls back to `[ancillaryRole]`. */
   ancillaryRoles?: string[];
   managerName: string;
   managerInitials: string;
@@ -167,21 +142,8 @@ const _shiftYears = (years: number): string => {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
-
-// True when a non-empty value is NOT a valid email — drives the red-border /
-// inline error on the previous-employment HR Email fields (BUG-091).
 const EMAIL_INVALID = (v: string | null | undefined): boolean =>
   !!v && v.trim() !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
-
-/**
- * Validate the employee's office / work email. Returns a human-readable
- * error string when invalid, or an empty string when the email is OK.
- * Checks (in order): required, whitespace, single @, local + domain parts
- * present, TLD ≥ 2 chars, no consecutive dots, sensible length (RFC 5321
- * caps the local part at 64 and the full address at 254). Used by both
- * the Stage-3 Next handler (gate) and the input's `onChange` so the user
- * sees inline feedback as they type.
- */
 const validateOfficialEmail = (raw: string | null | undefined): string => {
   const email = String(raw ?? '').trim();
   if (!email) return 'Official email is required.';
@@ -301,40 +263,6 @@ const apiToOnboardRow = (e: any): OnboardRow => {
   };
 };
 
-// ── Legacy seed (no longer used at runtime) ─────────────────────────────────
-// The page now hydrates its rows from /api/employees on mount. The arrays
-// below are kept as a typing reference / future demo seed only.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _PENDING_LEGACY: OnboardRow[] = [
-  { id: 'OB-001', empId: 'EMP-2399', name: 'Vikram Nair',       initials: 'VN', accent: '#7c5cfc', joinDate: 'Apr 22, 2026', department: 'Engineering', designation: 'Principal Engineer',     primaryRole: 'Backend Architect',   ancillaryRole: 'Tech Strategy',     managerName: 'Atharv Patekar', managerInitials: 'AP', managerAccent: '#0ea5e9', profile: 45, status: 'Document Pending' },
-  { id: 'OB-002', empId: 'EMP-2400', name: 'Priyanka Deshmukh', initials: 'PD', accent: '#0ab39c', joinDate: 'Apr 21, 2026', department: 'Finance',     designation: 'Senior Finance Manager', primaryRole: 'FP&A Lead',           ancillaryRole: 'Risk & Compliance', managerName: 'Nikhil Mehra',   managerInitials: 'NM', managerAccent: '#f7b84b', profile: 38, status: 'In Progress' },
-  { id: 'OB-003', empId: 'EMP-2401', name: 'Riya Sharma',       initials: 'RS', accent: '#f06548', joinDate: 'Apr 14, 2026', department: 'Engineering', designation: 'Senior Developer',       primaryRole: 'Full Stack Engineer', ancillaryRole: 'Tech Lead Backup',  managerName: 'Atharv Patekar', managerInitials: 'AP', managerAccent: '#0ea5e9', profile: 82, status: 'IT Setup' },
-  { id: 'OB-004', empId: 'EMP-2402', name: 'Rohit Kulkarni',    initials: 'RK', accent: '#0c63b0', joinDate: 'Apr 14, 2026', department: 'Engineering', designation: 'ML Engineer',            primaryRole: 'ML Engineer',         ancillaryRole: 'Data Analyst',      managerName: 'Atharv Patekar', managerInitials: 'AP', managerAccent: '#0ea5e9', profile: 55, status: 'Document Pending' },
-  { id: 'OB-005', empId: 'EMP-2403', name: 'Arjun Mehta',       initials: 'AM', accent: '#a06f00', joinDate: 'Apr 21, 2026', department: 'Data Science',designation: 'Data Analyst',           primaryRole: 'Data Analyst',        ancillaryRole: 'MIS Support',       managerName: 'Shatakshi Singh',managerInitials: 'SS', managerAccent: '#5a3fd1', profile: 38, status: 'In Progress' },
-  { id: 'OB-006', empId: 'EMP-2404', name: 'Kavya Nair',        initials: 'KN', accent: '#108548', joinDate: 'Apr 28, 2026', department: 'Product',     designation: 'Business Analyst',       primaryRole: 'Business Analyst',    ancillaryRole: 'QA Support',        managerName: 'Rajesh Meshram', managerInitials: 'RM', managerAccent: '#e83e8c', profile: 45, status: 'Not Started' },
-  { id: 'OB-007', empId: 'EMP-2405', name: 'Pooja Desai',       initials: 'PD', accent: '#0ab39c', joinDate: 'Apr 9, 2026',  department: 'HR',          designation: 'HR Executive',           primaryRole: 'HR Business Partner', ancillaryRole: 'Payroll Coordinator', managerName: 'Priya Mehta',  managerInitials: 'PM', managerAccent: '#7c5cfc', profile: 60, status: 'Orientation' },
-  { id: 'OB-008', empId: 'EMP-2406', name: 'Nikhil Sharma',     initials: 'NS', accent: '#5a3fd1', joinDate: 'Apr 22, 2026', department: 'Sales',       designation: 'Sales Executive',        primaryRole: 'Inside Sales Rep',    ancillaryRole: '',                  managerName: 'Priya Iyer',     managerInitials: 'PI', managerAccent: '#0ab39c', profile: 25, status: 'Not Started' },
-  { id: 'OB-009', empId: 'EMP-2407', name: 'Tanvi Ghosh',       initials: 'TG', accent: '#a02960', joinDate: 'Apr 10, 2026', department: 'Design',      designation: 'UI/UX Designer',         primaryRole: 'Product Designer',    ancillaryRole: 'Brand Design Support', managerName: 'Neha Kulkarni',managerInitials: 'NK', managerAccent: '#f06548', profile: 70, status: 'IT Setup' },
-  { id: 'OB-010', empId: 'EMP-2408', name: 'Karan Verma',       initials: 'KV', accent: '#0c63b0', joinDate: 'Apr 16, 2026', department: 'Operations',  designation: 'Operations Analyst',     primaryRole: 'Supply Chain Analyst',ancillaryRole: 'Supplier Ops',        managerName: 'Vivek Iyer',     managerInitials: 'VI', managerAccent: '#0c63b0', profile: 50, status: 'Document Pending' },
-  { id: 'OB-011', empId: 'EMP-2409', name: 'Sneha Kulkarni',    initials: 'SK', accent: '#7c5cfc', joinDate: 'Apr 18, 2026', department: 'Finance',     designation: 'Finance Analyst',        primaryRole: 'AR/AP Analyst',       ancillaryRole: 'MIS Reporting',     managerName: 'Nikhil Mehra',   managerInitials: 'NM', managerAccent: '#f7b84b', profile: 33, status: 'In Progress' },
-  { id: 'OB-012', empId: 'EMP-2410', name: 'Aditya Joshi',      initials: 'AJ', accent: '#0ea5e9', joinDate: 'Apr 11, 2026', department: 'Marketing',   designation: 'Performance Marketer',   primaryRole: 'Digital Marketing Lead', ancillaryRole: 'Content Support', managerName: 'Ritu Khanna',  managerInitials: 'RK', managerAccent: '#0ea5e9', profile: 48, status: 'Orientation' },
-  { id: 'OB-013', empId: 'EMP-2411', name: 'Manasi Patil',      initials: 'MP', accent: '#f06548', joinDate: 'Apr 25, 2026', department: 'Mobile',      designation: 'Flutter Developer',      primaryRole: 'Mobile App Developer',ancillaryRole: 'QA Tester',         managerName: 'Mayur Thorat',   managerInitials: 'MT', managerAccent: '#0ab39c', profile: 20, status: 'Not Started' },
-];
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _COMPLETED_LEGACY: OnboardRow[] = [
-  { id: 'OB-091', empId: 'EMP-2390', name: 'Divya Iyer',      initials: 'DI', accent: '#7c5cfc', joinDate: 'Mar 1, 2026',  department: 'Engineering', designation: 'DevOps Engineer',      primaryRole: 'DevOps Engineer',       ancillaryRole: 'SRE Support',          managerName: 'Arun Gupta',     managerInitials: 'AG', managerAccent: '#108548', profile: 100, status: 'Completed' },
-  { id: 'OB-092', empId: 'EMP-2391', name: 'Siddharth Jain',  initials: 'SJ', accent: '#0ab39c', joinDate: 'Mar 8, 2026',  department: 'Finance',     designation: 'Senior Finance Analyst', primaryRole: 'FP&A Analyst',          ancillaryRole: 'Budget Coordinator',   managerName: 'Nikhil Mehra',   managerInitials: 'NM', managerAccent: '#f7b84b', profile: 100, status: 'Completed' },
-  { id: 'OB-093', empId: 'EMP-2392', name: 'Ishita Verma',    initials: 'IV', accent: '#0c63b0', joinDate: 'Feb 22, 2026', department: 'HR',          designation: 'HR Specialist',          primaryRole: 'Recruitment Specialist',ancillaryRole: 'Learning & Dev',       managerName: 'Priya Mehta',    managerInitials: 'PM', managerAccent: '#7c5cfc', profile: 100, status: 'Completed' },
-  { id: 'OB-094', empId: 'EMP-2393', name: 'Aryan Kapoor',    initials: 'AK', accent: '#a06f00', joinDate: 'Mar 15, 2026', department: 'Engineering', designation: 'Backend Engineer',       primaryRole: 'Backend Developer',     ancillaryRole: 'API Integration',      managerName: 'Atharv Patekar', managerInitials: 'AP', managerAccent: '#0ea5e9', profile: 100, status: 'Completed' },
-  { id: 'OB-095', empId: 'EMP-2394', name: 'Priya Nair',      initials: 'PN', accent: '#a02960', joinDate: 'Feb 28, 2026', department: 'Sales',       designation: 'Sales Executive',        primaryRole: 'Enterprise Sales Rep',  ancillaryRole: 'CRM Champion',         managerName: 'Priya Iyer',     managerInitials: 'PI', managerAccent: '#0ab39c', profile: 100, status: 'Completed' },
-  { id: 'OB-096', empId: 'EMP-2395', name: 'Omkar Thakur',    initials: 'OT', accent: '#f06548', joinDate: 'Mar 20, 2026', department: 'Operations',  designation: 'Warehouse Supervisor',   primaryRole: 'Warehouse In-charge',   ancillaryRole: 'GRN Coordinator',      managerName: 'Vivek Iyer',     managerInitials: 'VI', managerAccent: '#0c63b0', profile: 100, status: 'Completed' },
-];
-
-// OnboardStatus → Bootstrap badge color. Matches the recruitment area's
-// status pill pattern (Clients-style `bg-{color}-subtle text-{color}`)
-// so the Status column on the onboarding table reads in the same design
-// system as Hiring Requests, Candidates, and the Evidence Vault.
 const ONBOARD_STATUS_COLOR: Record<OnboardStatus, 'success' | 'danger' | 'warning' | 'info' | 'primary' | 'secondary'> = {
   'Document Pending': 'warning',
   'In Progress':      'info',
@@ -697,6 +625,31 @@ export default function HrEmployeeOnboarding() {
   const visible   = filtered.slice(sliceFrom, sliceFrom + PAGE_SIZE);
   const goto = (p: number) => setPage(Math.min(Math.max(1, p), pageCount));
 
+  // ── Dynamic fill height — stretch the list body to the bottom of the
+  //    viewport so the pagination footer pins to the bottom of the card
+  //    (same mechanism the CLM Authority / master pages use) instead of
+  //    floating directly under the last row. Recomputes on resize and
+  //    whenever the row count changes. `rootRef` is observed so header /
+  //    KPI reflows above also retrigger the measurement.
+  const rootRef   = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [fillH, setFillH] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const recompute = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const fh = Math.max(320, window.innerHeight - top - 24);
+      setFillH(prev => (prev === fh ? prev : fh));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    const ro = new ResizeObserver(recompute);
+    if (rootRef.current) ro.observe(rootRef.current);
+    window.addEventListener('resize', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+  }, [filtered.length]);
+
   return (
     <>
       <MasterFormStyles />
@@ -757,90 +710,51 @@ export default function HrEmployeeOnboarding() {
         ))}
       </Row>
 
-      {/* ── Tabs (free, no surrounding container — like the screenshot) ── */}
-      <div className="d-flex mb-3" style={{ gap: 8, flexWrap: 'wrap' }}>
-        {[
-          { key: 'pending'   as const, label: 'Onboarding Pending (New Joiners)', count: counts.pending,   icon: 'ri-time-line' },
-          { key: 'completed' as const, label: 'Onboarding Completed',             count: counts.completed, icon: 'ri-checkbox-circle-line' },
-        ].map(t => {
-          const on = tab === t.key;
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              className="btn d-inline-flex align-items-center gap-2 fw-semibold"
-              style={{
-                borderRadius: 999,
-                padding: '8px 16px',
-                fontSize: 13,
-                background: on ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'var(--vz-card-bg)',
-                color: on ? '#fff' : 'var(--vz-secondary-color)',
-                border: on ? 'none' : '1px solid var(--vz-border-color)',
-                boxShadow: on ? '0 4px 12px rgba(124,92,252,0.25)' : 'none',
-              }}
-            >
-              <i className={t.icon} style={{ fontSize: 14 }} />
-              {t.label}
-              <span
-                className="badge rounded-pill"
-                style={{
-                  fontSize: 11,
-                  background: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
-                  color: on ? '#fff' : 'var(--vz-secondary-color)',
-                }}
+      {/* ── Tabs + Search + Table — one bordered frame (.rec-list-frame).
+           The tabs and the search share the toolbar row (CLM-master style),
+           and the pagination footer pins to the bottom of the card via the
+           dynamic fill height computed above. ── */}
+      <div className="rec-list-frame" ref={rootRef}>
+        <div className="rec-req-filter-row d-flex align-items-center gap-3 flex-wrap">
+          {/* Tabs — take the left 50% of the toolbar. Shared rec-tab style
+              used by the Recruitment / Exit Management lists. */}
+          <div className="rec-tab-track" style={{ marginBottom: 0, flex: '1 1 0', minWidth: 0 }}>
+            {([
+              { key: 'pending'   as const, label: 'Onboarding Pending (New Joiners)', count: counts.pending,   icon: 'ri-time-line',            variant: 'in-progress' },
+              { key: 'completed' as const, label: 'Onboarding Completed',             count: counts.completed, icon: 'ri-checkbox-circle-line', variant: 'completed' },
+            ]).map(t => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className={`rec-tab ${tab === t.key ? `is-active ${t.variant}` : ''}`}
+                style={{ flex: 1, justifyContent: 'center' }}
               >
-                {t.count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+                <i className={t.icon} />
+                {t.label}
+                <span className="badge">{t.count}</span>
+              </button>
+            ))}
+          </div>
 
-      {/* ── Filters + Table — own card, like Employee list ── */}
-      <Card>
-        <CardBody>
-          <Row className="g-2 align-items-center mb-2">
-            <Col md={5} sm={12}>
-              <div className="search-box">
-                <Input
-                  type="text"
-                  className="form-control"
-                  placeholder="Search name, ID, department…"
-                  value={q}
-                  onChange={e => setQ(e.target.value)}
-                />
-                <i className="ri-search-line search-icon"></i>
-              </div>
-            </Col>
-            <Col md={7} sm={12} className="d-flex justify-content-md-end gap-3 flex-wrap align-items-center">
-              <div className="d-flex align-items-center gap-2">
-                <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Department</span>
-                <div style={{ minWidth: 170 }}>
-                  <MasterSelect
-                    value={deptFilter}
-                    onChange={setDeptFilter}
-                    options={DEPT_OPTIONS}
-                    placeholder="All"
-                  />
-                </div>
-              </div>
-              <div className="d-flex align-items-center gap-2">
-                <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Status</span>
-                <div style={{ minWidth: 170 }}>
-                  <MasterSelect
-                    value={statusFilter}
-                    onChange={setStatusFilter}
-                    options={tab === 'pending' ? STATUS_OPTIONS_PENDING : [{ value: 'All', label: 'All' }, { value: 'Completed', label: 'Completed' }]}
-                    placeholder="All"
-                  />
-                </div>
-              </div>
-            
-            </Col>
-          </Row>
+          {/* Search — takes the right 50% of the toolbar. Glassy purple-halo
+              look shared with the Employee + Exit Management lists. */}
+          <div className="search-box rec-req-search" style={{ flex: '1 1 0', minWidth: 0 }}>
+            <Input
+              type="text"
+              className="form-control"
+              placeholder="Search name, ID, department…"
+              value={q}
+              onChange={e => setQ(e.target.value)}
+            />
+            <i className="ri-search-line search-icon"></i>
+          </div>
+        </div>
 
-          <div className="table-responsive table-card rounded p-2 onb-list-table">
+        {/* Body fills to the viewport bottom so the pager pins to the card
+            footer; the table grows to take the slack above it. */}
+        <div className="p-3 d-flex flex-column" ref={scrollRef} style={{ minHeight: fillH }}>
+          <div className="table-responsive onb-list-table flex-grow-1">
                   <table className="table align-middle table-nowrap mb-0">
                     <thead className="table-light">
                       <tr>
@@ -1046,8 +960,8 @@ export default function HrEmployeeOnboarding() {
 
           {/* Pagination — My Workplace / Client-table style */}
           <WorklistPager total={filtered.length} page={safePage} pageSize={PAGE_SIZE} onPage={goto} />
-        </CardBody>
-      </Card>
+        </div>
+      </div>
 
       {/* ── Onboarding Checklist Modal ── */}
       <ChecklistModal isOpen={checklistOpen} onClose={() => setChecklistOpen(false)} />
@@ -1995,11 +1909,10 @@ export function VaultModal({
               <Row className="g-3 align-items-stretch">
                 {[
                   { key: 'total',    label: 'Total Docs',    value: counts.total,    icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
-                  { key: 'verified', label: 'Verified',      value: counts.verified, icon: 'ri-checkbox-circle-fill', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
                   { key: 'uploaded', label: 'Uploaded',      value: counts.uploaded, icon: 'ri-upload-cloud-2-line',  gradient: 'linear-gradient(135deg,#3b82f6,#60a5fa)' },
                   { key: 'signed',   label: 'Signed',        value: counts.signed,   icon: 'ri-quill-pen-line',       gradient: 'linear-gradient(135deg,#5e4dd6,#9b7dff)' },
                   { key: 'pending',  label: 'Pending',       value: counts.pending,  icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)' },
-                  { key: 'notgen',   label: 'Not Generated', value: counts.notGen,   icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)' },
+                  // 'Verified' and 'Not Generated' KPI cards removed per bug 38.
                 ].map(k => (
                   <Col key={k.key} xl md={4} sm={6} xs={12}>
                     <div className="vault-kpi-card">

@@ -19,12 +19,6 @@ import { VaultModal } from '../employee-onboarding/HrEmployeeOnboarding';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import { leavePlansApi } from './leavePlansApi';
-import { Swiper, SwiperSlide } from 'swiper/react';
-import { Navigation, Autoplay } from 'swiper/modules';
-// @ts-ignore
-import 'swiper/css';
-// @ts-ignore
-import 'swiper/css/navigation';
 // Borrow the polished pill-button styles used by the recruitment / hiring
 // request modal so the Add Employee wizard footer matches the same design
 // language (gradient primary CTA + soft outlined secondary).
@@ -352,13 +346,8 @@ const KPI_CARDS = [
   { key: 'total',                 label: 'Total Employees',          icon: 'ri-team-line',            gradient: 'linear-gradient(135deg,#405189,#6691e7)', accent: '#6691e7' },
   { key: 'active',                label: 'Active Employees',         icon: 'ri-user-follow-fill',     gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)', accent: '#0ab39c' },
   { key: 'disabled',              label: 'Disabled Employees',       icon: 'ri-user-unfollow-fill',   gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)', accent: '#878a99' },
-  { key: 'on_leave',              label: 'On Leave Employees',       icon: 'ri-calendar-event-line',  gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)', accent: '#f7b84b' },
   { key: 'onboarding_completed',  label: 'Onboarding Completed',     icon: 'ri-medal-fill',           gradient: 'linear-gradient(135deg,#0c63b0,#299cdb)', accent: '#299cdb' },
   { key: 'new_joiners',           label: 'New Joiners',              icon: 'ri-user-add-fill',        gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)', accent: '#7c5cfc' },
-  { key: 'probation_in_progress', label: 'Probation In Progress',    icon: 'ri-shield-flash-line',    gradient: 'linear-gradient(135deg,#0ea5e9,#38bdf8)', accent: '#0ea5e9' },
-  { key: 'probation_completed',   label: 'Probation Completed',      icon: 'ri-shield-check-fill',    gradient: 'linear-gradient(135deg,#10b981,#34d399)', accent: '#10b981' },
-  { key: 'exit_in_progress',      label: 'Exit In Progress',         icon: 'ri-logout-box-r-line',    gradient: 'linear-gradient(135deg,#f06548,#f4907b)', accent: '#f06548' },
-  { key: 'total_exited',          label: 'Total Exited Employees',   icon: 'ri-logout-circle-line',   gradient: 'linear-gradient(135deg,#dc3545,#f06548)', accent: '#dc3545' },
 ] as const;
 
 type ExpiryDays = 3 | 7 | 15;
@@ -389,25 +378,6 @@ export default function HrEmployees() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter]);
   const [deptFilter, setDeptFilter] = useState<string>('All Depts');
-
-  // KPI marquee strip — wheel-to-horizontal scroll. While the user is
-  // hovering, the auto-scroll animation pauses (CSS) and the strip switches
-  // to overflow-x: auto; this listener converts a vertical mouse-wheel
-  // delta into a horizontal scroll on the strip so the user doesn't have
-  // to hold Shift or grab a scrollbar.
-  //
-  // On mouseleave we snap scrollLeft back to 0. Why: the strip's auto-scroll
-  // is a CSS translateX animation on the inner .hr-emp-kpi-track, while
-  // user scroll changes the OUTER container's scrollLeft. They're additive
-  // — if the user scrolled to scrollLeft=3000 and then leaves, the resumed
-  // animation pushes the track past its end and the user sees a blank gap.
-  // Resetting scrollLeft on leave keeps the animation in a valid range.
-  // Swiper nav refs — wired in onBeforeInit / onSwiper to mirror what
-  // PlanSelection.tsx does (the next-button is rendered AFTER the Swiper
-  // so its ref isn't ready during onBeforeInit; the setTimeout re-bind
-  // guarantees both refs are attached before nav is initialised).
-  const kpiPrevRef = useRef<HTMLButtonElement>(null);
-  const kpiNextRef = useRef<HTMLButtonElement>(null);
 
   // ── Server-backed state ─────────────────────────────────────────────
   // employees:  raw API rows + a UI-shaped projection. We keep the raw
@@ -2257,22 +2227,56 @@ export default function HrEmployees() {
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
   const pageRows = filtered.slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE);
 
+  // ── Dynamic fill height — stretch the list body to the bottom of the
+  //    viewport so the pagination footer pins to the bottom of the card
+  //    (same mechanism as the Onboarding / Recruitment / CLM lists) instead
+  //    of floating right under the last row.
+  const listRootRef   = useRef<HTMLDivElement | null>(null);
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  const [listFillH, setListFillH] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const recompute = () => {
+      const el = listScrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const fh = Math.max(320, window.innerHeight - top - 24);
+      setListFillH(prev => (prev === fh ? prev : fh));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    const ro = new ResizeObserver(recompute);
+    if (listRootRef.current) ro.observe(listRootRef.current);
+    window.addEventListener('resize', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+  }, [filtered.length]);
+
   // ── Export to Excel ────────────────────────────────────────────────────────
-  // Exports EVERY employee currently in the list (the full filtered set —
-  // all pages, respecting the Active/Disabled tab, department filter and
-  // search), not just the visible page. Data is the server-loaded list
+  // Exports ACTIVE employees only (disabled employees are never included),
+  // across all pages and respecting the department filter + search — but NOT
+  // the Active/Disabled tab, so the file is always the active roster even if
+  // the user is viewing the Disabled tab. Data is the server-loaded list
   // (auto-refreshed on focus), so the file reflects the real backend records.
   // Same xlsx approach the Clients / Branches pages use, for consistency.
   const [exporting, setExporting] = useState(false);
   const handleExportEmployees = () => {
     if (exporting) return;
-    if (filtered.length === 0) {
-      toast.info('Nothing to export', 'No employees match the current view.');
+    // Active-only source, independent of the current tab/status dropdown.
+    const s  = q.trim().toLowerCase();
+    const df = deptFilter.trim().toLowerCase();
+    const activeRows = apiRows.filter(e => {
+      if (!e.enabled) return false; // never export disabled employees
+      if (df && df !== 'all depts' && String(e.department || '').trim().toLowerCase() !== df) return false;
+      if (!s) return true;
+      return [e.name, e.id, e.department, e.designation, e.primaryRole, e.email]
+        .some(v => (v || '').toLowerCase().includes(s));
+    });
+    if (activeRows.length === 0) {
+      toast.info('Nothing to export', 'No active employees match the current filters.');
       return;
     }
     setExporting(true);
     try {
-      const sheetRows = filtered.map((e, i) => ({
+      const sheetRows = activeRows.map((e, i) => ({
         'Sr No':          i + 1,
         'Employee':       e.name,
         'Email':          e.email || '',
@@ -2963,165 +2967,82 @@ export default function HrEmployees() {
                 with smooth behavior. Auto-marquee animation continues as
                 before — the buttons just give the user explicit control
                 if they don't want to wait for the strip to cycle around. */}
-            {/* KPI strip — same Swiper-based carousel pattern as the
-                Plans page (PlanSelection.tsx). Autoplay at 2s loop, pause
-                on hover, manual nav arrows that don't fight the autoplay. */}
-            <div className="hr-emp-kpi-outer mb-3">
-              <button
-                ref={kpiPrevRef}
-                type="button"
-                aria-label="Scroll left"
-                className="hr-emp-kpi-nav hr-emp-kpi-nav-prev"
-              >
-                <i className="ri-arrow-left-s-line"></i>
-              </button>
-              <button
-                ref={kpiNextRef}
-                type="button"
-                aria-label="Scroll right"
-                className="hr-emp-kpi-nav hr-emp-kpi-nav-next"
-              >
-                <i className="ri-arrow-right-s-line"></i>
-              </button>
-              <Swiper
-                modules={[Navigation, Autoplay]}
-                onBeforeInit={swiper => {
-                  if (typeof swiper.params.navigation === 'object' && swiper.params.navigation) {
-                    (swiper.params.navigation as any).prevEl = kpiPrevRef.current;
-                    (swiper.params.navigation as any).nextEl = kpiNextRef.current;
-                  }
-                }}
-                onSwiper={swiper => {
-                  // Re-bind nav after refs settle (next button renders after
-                  // the Swiper, so its ref isn't ready in onBeforeInit).
-                  setTimeout(() => {
-                    if (typeof swiper.params.navigation === 'object' && swiper.params.navigation) {
-                      (swiper.params.navigation as any).prevEl = kpiPrevRef.current;
-                      (swiper.params.navigation as any).nextEl = kpiNextRef.current;
-                    }
-                    if (swiper.navigation) {
-                      swiper.navigation.destroy();
-                      swiper.navigation.init();
-                      swiper.navigation.update();
-                    }
-                    if (swiper.autoplay && !swiper.autoplay.running) {
-                      swiper.autoplay.start();
-                    }
-                  }, 0);
-                }}
-                navigation={{ prevEl: kpiPrevRef.current, nextEl: kpiNextRef.current }}
-                loop={KPI_CARDS.length > 1}
-                autoplay={{ delay: 2000, disableOnInteraction: false, pauseOnMouseEnter: true }}
-                speed={500}
-                slidesPerView="auto"
-                spaceBetween={14}
-                grabCursor
-                className="hr-emp-kpi-swiper"
-              >
-                {KPI_CARDS.map(k => (
-                  <SwiperSlide key={k.key} style={{ width: 250 }}>
-                    <div
-                      className="hr-employees-surface hr-emp-kpi-card"
-                      style={{
-                        borderRadius: 14,
-                        border: '1px solid var(--vz-border-color)',
-                        padding: '16px 18px',
-                        position: 'relative',
-                        overflow: 'hidden',
-                        height: '100%',
-                        // Per-card accent — the dark-mode rule below uses
-                        // this variable to mix the tinted shadow + faint
-                        // accent wash on the panel surface.
-                        ['--card-accent' as any]: k.accent,
-                      }}
-                    >
-                      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
-                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
-                        <div className="min-w-0">
-                          <p className="hr-emp-kpi-label" style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
-                            {k.label}
-                          </p>
-                          <h3 className="hr-emp-kpi-value" style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
-                            {loadingEmployees
-                              ? <Shimmer height={26} width={64} />
-                              : <AnimatedNumber value={(counts as any)[k.key]} />}
-                          </h3>
-                        </div>
-                        <div className="hr-emp-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
-                          <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
-                        </div>
+            {/* KPI strip — static grid (no carousel / nav arrows), same as
+                the recruitment page. The four cards spread evenly across the
+                row and wrap on smaller screens. */}
+            <Row className="g-2 mb-0 align-items-stretch">
+              {KPI_CARDS.map(k => (
+                <Col key={k.key} xl md={4} sm={6} xs={12}>
+                  <div
+                    className="hr-employees-surface hr-emp-kpi-card h-100"
+                    style={{
+                      borderRadius: 14,
+                      border: '1px solid var(--vz-border-color)',
+                      padding: '16px 18px',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      // Per-card accent — the dark-mode rule below uses
+                      // this variable to mix the tinted shadow + faint
+                      // accent wash on the panel surface.
+                      ['--card-accent' as any]: k.accent,
+                    }}
+                  >
+                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
+                      <div className="min-w-0">
+                        <p className="hr-emp-kpi-label" style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                          {k.label}
+                        </p>
+                        <h3 className="hr-emp-kpi-value" style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
+                          {loadingEmployees
+                            ? <Shimmer height={26} width={64} />
+                            : <AnimatedNumber value={(counts as any)[k.key]} />}
+                        </h3>
+                      </div>
+                      <div className="hr-emp-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
+                        <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
                       </div>
                     </div>
-                  </SwiperSlide>
-                ))}
-              </Swiper>
-            </div>
-
-            {/* ── Tabs (Active / Disabled) ── */}
-            <Row className="g-2 mb-3">
-              <Col xs={12}>
-                <div
-                  className="d-flex"
-                  style={{
-                    background: 'var(--vz-secondary-bg)',
-                    border: '1px solid var(--vz-border-color)',
-                    borderRadius: 10,
-                    padding: 4,
-                    gap: 4,
-                  }}
-                >
-                  {[
-                    { key: 'active'   as const, label: 'Active Employees',   count: counts.activeTab,   icon: 'ri-user-follow-line' },
-                    { key: 'disabled' as const, label: 'Disabled Employees', count: counts.disabledTab, icon: 'ri-user-unfollow-line' },
-                  ].map(t => {
-                    const on = tab === t.key;
-                    return (
-                      <button
-                        key={t.key}
-                        type="button"
-                        onClick={() => {
-                          setTab(t.key);
-                          // Keep the dropdown in lockstep with the tab —
-                          // they represent the same enabled/disabled axis.
-                          setStatusFilter(t.key === 'active' ? 'Active' : 'Disabled');
-                        }}
-                        className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
-                        style={{
-                          borderRadius: 8,
-                          padding: '8px 14px',
-                          fontSize: 13,
-                          background: on ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'transparent',
-                          color: on ? '#fff' : 'var(--vz-secondary-color)',
-                          border: 'none',
-                          boxShadow: on ? '0 4px 12px rgba(124,92,252,0.25)' : 'none',
-                        }}
-                      >
-                        <i className={t.icon} style={{ fontSize: 14 }} />
-                        {t.label}
-                        <span
-                          className="badge rounded-pill"
-                          style={{
-                            fontSize: 11,
-                            background: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
-                            color: on ? '#fff' : 'var(--vz-secondary-color)',
-                          }}
-                        >
-                          {t.count}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </Col>
+                  </div>
+                </Col>
+              ))}
             </Row>
 
-            {/* ── Search + Filters + Table — one bordered frame (matches the
-                Recruitment list frame, now that the page container is gone) ── */}
-            <div className="hr-emp-list-frame">
+            {/* ── Tabs + Search + Table — one bordered frame. The Active /
+                Disabled tabs and the search share the toolbar row (tabs left,
+                search filling the rest to the right edge); the Department
+                dropdown was removed. The pagination footer pins to the bottom
+                of the card via the dynamic fill height. ── */}
+            <div className="hr-emp-list-frame" ref={listRootRef}>
             <div className="hr-emp-frame-filter p-3">
-            <Row className="g-2 align-items-center mb-0">
-              <Col md={6} sm={12}>
-                <div className="search-box">
+              <div className="d-flex align-items-center gap-3 flex-wrap">
+                {/* Tabs — take the left 50% of the toolbar. Shared rec-tab
+                    style used by the Recruitment / Exit Management lists. */}
+                <div className="rec-tab-track" style={{ marginBottom: 0, flex: '1 1 0', minWidth: 0 }}>
+                  {([
+                    { key: 'active'   as const, label: 'Active Employees',   count: counts.activeTab,   icon: 'ri-user-follow-line',   variant: 'in-progress' },
+                    { key: 'disabled' as const, label: 'Disabled Employees', count: counts.disabledTab, icon: 'ri-user-unfollow-line', variant: 'cancelled' },
+                  ]).map(t => (
+                    <button
+                      key={t.key}
+                      type="button"
+                      onClick={() => {
+                        setTab(t.key);
+                        // Keep the dropdown in lockstep with the tab —
+                        // they represent the same enabled/disabled axis.
+                        setStatusFilter(t.key === 'active' ? 'Active' : 'Disabled');
+                      }}
+                      className={`rec-tab ${tab === t.key ? `is-active ${t.variant}` : ''}`}
+                      style={{ flex: 1, justifyContent: 'center' }}
+                    >
+                      <i className={t.icon} />
+                      {t.label}
+                      <span className="badge">{t.count}</span>
+                    </button>
+                  ))}
+                </div>
+                {/* Search — takes the right 50% of the toolbar. */}
+                <div className="search-box rec-req-search" style={{ flex: '1 1 0', minWidth: 0 }}>
                   <Input
                     type="text"
                     className="form-control"
@@ -3131,31 +3052,13 @@ export default function HrEmployees() {
                   />
                   <i className="ri-search-line search-icon"></i>
                 </div>
-              </Col>
-              <Col md={6} sm={12} className="d-flex justify-content-md-end gap-3 flex-wrap align-items-center">
-                {/* Status filter intentionally removed — the Active /
-                    Disabled tabs above the search row already provide the
-                    same filter, so keeping a dropdown here was redundant.
-                    The `statusFilter` state still exists so the tab clicks
-                    can keep the underlying filter in sync. */}
-                <div className="d-flex align-items-center gap-2">
-                  <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Department</span>
-                  <div style={{ minWidth: 170 }}>
-                    <MasterSelect
-                      value={deptFilter}
-                      onChange={setDeptFilter}
-                      options={departments.map(d => ({ value: d, label: d }))}
-                      placeholder="All Depts"
-                    />
-                  </div>
-                </div>
-              </Col>
-            </Row>
+              </div>
             </div>
 
-            {/* ── Table — flows inside the same frame as the search row ── */}
-            <div className="p-3">
-                <div className="table-responsive">
+            {/* ── Table — fills to the viewport bottom so the pager pins to the
+                card footer; the table grows to take the slack above it. ── */}
+            <div className="p-3 d-flex flex-column" ref={listScrollRef} style={{ minHeight: listFillH }}>
+                <div className="table-responsive flex-grow-1">
                   <table className="table align-middle table-nowrap mb-0">
                     <thead className="table-light">
                       <tr>

@@ -1186,12 +1186,16 @@ const SCOPED_CSS = `
 .smcg-table-wrap .table-responsive::-webkit-scrollbar-thumb:hover { background: #9ca3af; background-clip: padding-box; }
 .smcg-table-wrap .table-responsive { scrollbar-width: thin; scrollbar-color: #d1d5db transparent; }
 [data-bs-theme="dark"] .smcg-table-wrap,
-[data-bs-theme="dark"] .smcg-table-wrap .table-responsive {
-  scrollbar-color: rgba(110,231,183,0.30) transparent;
+[data-bs-theme="dark"] .smcg-table-wrap .table-responsive,
+[data-layout-mode="dark"] .smcg-table-wrap,
+[data-layout-mode="dark"] .smcg-table-wrap .table-responsive {
+  scrollbar-color: rgba(255,255,255,0.18) transparent;
 }
 [data-bs-theme="dark"] .smcg-table-wrap::-webkit-scrollbar-thumb,
-[data-bs-theme="dark"] .smcg-table-wrap .table-responsive::-webkit-scrollbar-thumb {
-  background: rgba(110,231,183,0.30);
+[data-bs-theme="dark"] .smcg-table-wrap .table-responsive::-webkit-scrollbar-thumb,
+[data-layout-mode="dark"] .smcg-table-wrap::-webkit-scrollbar-thumb,
+[data-layout-mode="dark"] .smcg-table-wrap .table-responsive::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.18);
 }
 
 /* Table chrome — neutral border (so bottom doesn't read as a hard

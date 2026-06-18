@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Col, Row, Input, Modal, ModalBody, Spinner } from 'reactstrap';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
@@ -572,6 +572,29 @@ export default function HrRecruitment() {
   // Pagination helpers
   const goto = (p: number) => setPage(Math.min(Math.max(1, p), pageCount));
 
+  // ── Dynamic fill height — stretch the list body to the bottom of the
+  //    viewport so the pagination footer pins to the bottom of the card
+  //    (same mechanism the CLM Authority / master pages use, mirrored on
+  //    the Onboarding list) instead of floating right under the last row.
+  const rootRef   = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [fillH, setFillH] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const recompute = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const fh = Math.max(320, window.innerHeight - top - 24);
+      setFillH(prev => (prev === fh ? prev : fh));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    const ro = new ResizeObserver(recompute);
+    if (rootRef.current) ro.observe(rootRef.current);
+    window.addEventListener('resize', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+  }, [filtered.length]);
+
   return (
     <>
       <MasterFormStyles />
@@ -587,10 +610,6 @@ export default function HrRecruitment() {
                 <div className="min-w-0">
                   <div className="d-flex align-items-center gap-2 flex-wrap">
                     <span className="frm-cstrip-title">Recruitment Management</span>
-                    <span className="rec-header-count">
-                      <span className="dot" />
-                      {recruitments.length} recruitment{recruitments.length === 1 ? '' : 's'}
-                    </span>
                   </div>
                   <div className="frm-cstrip-sub">
                     Create recruitments, track candidates, and manage the end-to-end hiring pipeline
@@ -643,32 +662,37 @@ export default function HrRecruitment() {
               ))}
             </Row>
 
-            {/* ── Tabs (In Progress / Completed / Cancelled) — segmented control ── */}
-            <div className="rec-tab-track mb-3">
-              {([
-                { key: 'In Progress' as const, label: 'In Progress', count: counts.tabs['In Progress'], icon: 'ri-time-line',           variant: 'in-progress' },
-                { key: 'Completed'   as const, label: 'Completed',   count: counts.tabs.Completed,     icon: 'ri-checkbox-circle-line',variant: 'completed'   },
-                { key: 'Cancelled'   as const, label: 'Cancelled',   count: counts.tabs.Cancelled,     icon: 'ri-close-circle-line',   variant: 'cancelled'   },
-              ]).map(t => (
-                <button
-                  key={t.key}
-                  type="button"
-                  onClick={() => setTab(t.key)}
-                  className={`rec-tab ${tab === t.key ? `is-active ${t.variant}` : ''}`}
-                >
-                  <i className={t.icon} />
-                  {t.label}
-                  <span className="badge">{t.count}</span>
-                </button>
-              ))}
-            </div>
-
-            {/* ── Search + Filters + Table — inside ONE card frame ── */}
+            {/* ── Tabs + Search + Table — one card frame. The tabs and the
+                 search share the toolbar row (tabs left, search filling the
+                 rest to the right edge); the Department / Priority / Work Type
+                 dropdowns were removed. The pagination footer pins to the
+                 bottom of the card via the dynamic fill height. ── */}
             <Card className="border-0 shadow-none mb-0 bg-transparent">
               <CardBody className="p-0">
-                <div className="rec-list-frame">
-                  <div className="rec-req-filter-row d-flex align-items-center gap-2 flex-wrap">
-                    <div className="rec-req-search search-box" style={{ flex: 1, minWidth: 220 }}>
+                <div className="rec-list-frame" ref={rootRef}>
+                  <div className="rec-req-filter-row d-flex align-items-center gap-3 flex-wrap">
+                    {/* Tabs — take the left 50% of the toolbar */}
+                    <div className="rec-tab-track" style={{ marginBottom: 0, flex: '1 1 0', minWidth: 0 }}>
+                      {([
+                        { key: 'In Progress' as const, label: 'In Progress', count: counts.tabs['In Progress'], icon: 'ri-time-line',           variant: 'in-progress' },
+                        { key: 'Completed'   as const, label: 'Completed',   count: counts.tabs.Completed,     icon: 'ri-checkbox-circle-line',variant: 'completed'   },
+                        { key: 'Cancelled'   as const, label: 'Cancelled',   count: counts.tabs.Cancelled,     icon: 'ri-close-circle-line',   variant: 'cancelled'   },
+                      ]).map(t => (
+                        <button
+                          key={t.key}
+                          type="button"
+                          onClick={() => setTab(t.key)}
+                          className={`rec-tab ${tab === t.key ? `is-active ${t.variant}` : ''}`}
+                          style={{ flex: 1, justifyContent: 'center' }}
+                        >
+                          <i className={t.icon} />
+                          {t.label}
+                          <span className="badge">{t.count}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {/* Search — takes the right 50% of the toolbar */}
+                    <div className="rec-req-search search-box" style={{ flex: '1 1 0', minWidth: 0 }}>
                       <Input
                         type="text"
                         className="form-control"
@@ -678,21 +702,11 @@ export default function HrRecruitment() {
                       />
                       <i className="ri-search-line search-icon"></i>
                     </div>
-                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Department</span>
-                    <div style={{ minWidth: 150 }}>
-                      <MasterSelect value={deptFilter} onChange={setDeptFilter} options={deptFilterOptions} placeholder="All" />
-                    </div>
-                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Priority</span>
-                    <div style={{ minWidth: 130 }}>
-                      <MasterSelect value={priorityFilter} onChange={setPriorityFilter} options={PRIORITY_FILTER_OPTIONS} placeholder="All" />
-                    </div>
-                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>work Type</span>
-                    <div style={{ minWidth: 140 }}>
-                      <MasterSelect value={jobTypeFilter} onChange={setJobTypeFilter} options={JOB_TYPE_FILTER_OPTIONS} placeholder="All" />
-                    </div>
-                    
                   </div>
-                  <div className="p-2 rec-list-scroll">
+                  {/* Body fills to the viewport bottom so the pager pins to the
+                      card footer; the table grows to take the slack above it. */}
+                  <div className="d-flex flex-column" ref={scrollRef} style={{ minHeight: fillH }}>
+                  <div className="p-2 rec-list-scroll flex-grow-1">
                   <table className="rec-list-table align-middle table-nowrap mb-0">
                     <thead>
                       <tr>
@@ -825,7 +839,8 @@ export default function HrRecruitment() {
                   </table>
                   </div>
 
-                  {/* Pagination footer — sits inside the same elevated frame */}
+                  {/* Pagination footer — pinned to the bottom of the fill
+                      container so it sits at the card footer. */}
                   <WorklistPager
                     total={filtered.length}
                     page={safePage}
@@ -833,6 +848,7 @@ export default function HrRecruitment() {
                     onPage={goto}
                     onPageSize={(n) => { setPageSize(n); setPage(1); }}
                   />
+                  </div>
                 </div>
               </CardBody>
             </Card>
@@ -1166,7 +1182,10 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
       openings:               Number(openings) || 1,
       employment_type:        employType || null,
       work_mode:              workMode || null,
-      urgency,
+      // urgency is NOT NULL on the table; on a Save-as-Draft the user may not
+      // have picked one yet, so fall back to 'Medium' instead of sending an
+      // empty value (Laravel converts '' → null → not-null violation).
+      urgency:                urgency || 'Medium',
       job_description:        jobDesc || null,
       daily_responsibilities: dailyResp || null,
       required_skills:        requiredSkills || null,
@@ -1521,9 +1540,10 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
   const [urgencyFilter, setUrgencyFilter] = useState<string>('All');
   const [q, setQ] = useState('');
 
-  // Pagination — 5 rows per page by default; configurable via dropdown.
+  // Pagination — 10 rows per page by default (matches the recruitment table),
+  // configurable via the WorklistPager rows-per-page control.
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(5);
+  const [pageSize, setPageSize] = useState(10);
 
   // Server-fed list — loaded every time the modal opens (or whenever the
   // parent bumps `refreshKey` after a new request is submitted). We
@@ -1685,7 +1705,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
             count badge reflects the server-fed list, not the filtered
             view, so the user can see at a glance how many sit in each
             bucket regardless of search / status filters. */}
-        <div className="rec-req-tab-strip d-flex align-items-center gap-2 flex-wrap" style={{ padding: '8px 18px 0' }}>
+        <div className="rec-req-tab-strip d-flex align-items-center gap-2 flex-wrap" style={{ padding: '8px 18px 12px' }}>
           {([
             { key: 'pending', label: 'Pending Hiring Requests', icon: 'ri-time-line',  count: pendingCount },
             { key: 'created', label: 'Recruitment Created',     icon: 'ri-user-search-line', count: createdCount },
@@ -1721,11 +1741,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
               </button>
             );
           })}
-        </div>
-
-        {/* Filter row */}
-        <div className="rec-req-filter-row d-flex align-items-center gap-2 flex-wrap">
-          <div className="rec-req-search search-box" style={{ flex: 1, minWidth: 220, maxWidth: 380 }}>
+          <div className="rec-req-search search-box ms-auto" style={{ flex: '0 1 340px', minWidth: 200 }}>
             <Input
               type="text"
               className="form-control"
@@ -1734,36 +1750,6 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
               onChange={e => setQ(e.target.value)}
             />
             <i className="ri-search-line search-icon"></i>
-          </div>
-          <div style={{ width: 130 }}>
-            <MasterSelect
-              value={statusFilter}
-              onChange={setStatusFilter}
-              options={[
-                { value: 'All',          label: 'All Status' },
-                { value: 'Approved',     label: 'Approved' },
-                { value: 'Under Review', label: 'Under Review' },
-                { value: 'Submitted',    label: 'Submitted' },
-                { value: 'Sent Back',    label: 'Sent Back' },
-                { value: 'Draft',        label: 'Draft' },
-                { value: 'Rejected',     label: 'Rejected' },
-              ]}
-              placeholder="All Status"
-            />
-          </div>
-          <div style={{ width: 130 }}>
-            <MasterSelect
-              value={urgencyFilter}
-              onChange={setUrgencyFilter}
-              options={[
-                { value: 'All',      label: 'All Urgency' },
-                { value: 'Low',      label: 'Low' },
-                { value: 'Medium',   label: 'Medium' },
-                { value: 'High',     label: 'High' },
-                { value: 'Critical', label: 'Critical' },
-              ]}
-              placeholder="All Urgency"
-            />
           </div>
         </div>
 
@@ -1811,13 +1797,14 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
                     <td className="ps-4"><span className="rec-id-pill">{r.code || r.id}</span></td>
                     <td>
                       <span className="fw-bold fs-13">{r.position}</span>
-                      <span className="rec-mini-chip" style={{ background: '#eef2f6', color: '#475569' }}>{r.positionType}</span>
+                      <span className="rec-mini-chip" style={{ background: '#eef2f6', color: '#475569', ['--pill-fg' as string]: '#64748b' } as React.CSSProperties}>{r.positionType}</span>
                       <span
                         className="rec-mini-chip"
                         style={{
                           background: WORK_MODE_TONES[r.positionMode]?.bg || '#eef2f6',
                           color: WORK_MODE_TONES[r.positionMode]?.fg || '#475569',
-                        }}
+                          ['--pill-fg' as string]: WORK_MODE_TONES[r.positionMode]?.fg || '#64748b',
+                        } as React.CSSProperties}
                       >
                         {r.positionMode}
                       </span>
@@ -1836,7 +1823,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
                     </td>
                     <td className="text-center"><span className="rec-num">{r.openings}</span></td>
                     <td className="fs-13">{r.requestType}</td>
-                    <td><span className="rec-pill" style={{ background: u.bg, color: u.fg }}>{r.urgency}</span></td>
+                    <td><span className="rec-pill" style={{ background: u.bg, color: u.fg, ['--pill-fg' as string]: u.fg } as React.CSSProperties}>{r.urgency}</span></td>
                     <td>
                       <span className={`badge rounded-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2 fs-13`}>
                         {r.status}
@@ -1896,48 +1883,16 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
           </table>
         </div>
 
-        {/* Pagination — 5 rows per page by default; configurable */}
-        <div className="rec-list-footer">
-          <div className="d-flex align-items-center gap-2">
-            <span className="text-muted" style={{ fontSize: 12 }}>Rows per page:</span>
-            <div style={{ width: 80 }}>
-              <MasterSelect
-                value={String(pageSize)}
-                onChange={(v) => { setPageSize(Number(v) || 5); setPage(1); }}
-                options={['5', '10', '25', '50'].map(v => ({ value: v, label: v }))}
-                placeholder="5"
-              />
-            </div>
-            <span className="text-muted" style={{ fontSize: 12, marginLeft: 16 }}>
-              Showing {filtered.length === 0 ? 0 : (sliceFrom + 1)}–{Math.min(sliceFrom + pageSize, filtered.length)} of {filtered.length}
-            </span>
-          </div>
-          <div className="d-flex align-items-center gap-1">
-            <button className="rec-pagebtn" onClick={() => goto(safePage - 1)} disabled={safePage <= 1}>
-              ‹ Prev
-            </button>
-            {Array.from({ length: pageCount }).map((_, i) => (
-              <button
-                key={i}
-                className={`rec-pagebtn${safePage === i + 1 ? ' is-active' : ''}`}
-                onClick={() => goto(i + 1)}
-              >
-                {i + 1}
-              </button>
-            ))}
-            <button className="rec-pagebtn" onClick={() => goto(safePage + 1)} disabled={safePage >= pageCount}>
-              Next ›
-            </button>
-          </div>
-        </div>
+        {/* Pagination — same WorklistPager the recruitment table uses. */}
+        <WorklistPager
+          total={filtered.length}
+          page={safePage}
+          pageSize={pageSize}
+          onPage={goto}
+          onPageSize={(n) => { setPageSize(n); setPage(1); }}
+        />
 
-        {/* Footer */}
-        <div className="rec-form-footer">
-          <span className="hint">Status changes are applied immediately and visible to all HR users</span>
-          <button type="button" className="rec-btn-ghost" onClick={onClose}>
-            <i className="ri-close-line" />Close
-          </button>
-        </div>
+        
       </ModalBody>
 
       {/* View detail sub-modal — shows full request details when "View" clicked */}
@@ -2536,15 +2491,6 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
     if (!experience)             e.experience      = 'Experience level is required';
     if (!hiringManagerId)        e.hiringManager   = 'Hiring manager is required';
     if (!assignedHrId)           e.assignedHr      = 'Assigned HR is required';
-    /* Hiring Manager and Assigned HR must be different employees —
-     * they have different responsibilities on the recruitment workflow
-     * (HM owns interviews, HR owns coordination/offer), so the same
-     * person can't hold both seats. Without this check, users were
-     * accidentally selecting the same employee in both dropdowns and
-     * downstream notification routing got confused. */
-    if (hiringManagerId && assignedHrId && hiringManagerId === assignedHrId) {
-      e.assignedHr = 'Assigned HR must be a different person from the Hiring Manager';
-    }
     if (!startDate)              e.startDate       = 'Start date is required';
     if (!deadline)               e.deadline        = 'TAT/Deadline is required';
     // ISO yyyy-mm-dd values compare lexicographically — no Date()
