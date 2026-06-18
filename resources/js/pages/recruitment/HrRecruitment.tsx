@@ -1541,9 +1541,10 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
   const [urgencyFilter, setUrgencyFilter] = useState<string>('All');
   const [q, setQ] = useState('');
 
-  // Pagination — 5 rows per page by default; configurable via dropdown.
+  // Pagination — 10 rows per page by default (matches the recruitment table),
+  // configurable via the WorklistPager rows-per-page control.
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(5);
+  const [pageSize, setPageSize] = useState(10);
 
   // Server-fed list — loaded every time the modal opens (or whenever the
   // parent bumps `refreshKey` after a new request is submitted). We
@@ -1705,7 +1706,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
             count badge reflects the server-fed list, not the filtered
             view, so the user can see at a glance how many sit in each
             bucket regardless of search / status filters. */}
-        <div className="rec-req-tab-strip d-flex align-items-center gap-2 flex-wrap" style={{ padding: '8px 18px 0' }}>
+        <div className="rec-req-tab-strip d-flex align-items-center gap-2 flex-wrap" style={{ padding: '8px 18px 12px' }}>
           {([
             { key: 'pending', label: 'Pending Hiring Requests', icon: 'ri-time-line',  count: pendingCount },
             { key: 'created', label: 'Recruitment Created',     icon: 'ri-user-search-line', count: createdCount },
@@ -1741,11 +1742,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
               </button>
             );
           })}
-        </div>
-
-        {/* Filter row */}
-        <div className="rec-req-filter-row d-flex align-items-center gap-2 flex-wrap">
-          <div className="rec-req-search search-box" style={{ flex: 1, minWidth: 220, maxWidth: 380 }}>
+          <div className="rec-req-search search-box ms-auto" style={{ flex: '0 1 340px', minWidth: 200 }}>
             <Input
               type="text"
               className="form-control"
@@ -1754,36 +1751,6 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
               onChange={e => setQ(e.target.value)}
             />
             <i className="ri-search-line search-icon"></i>
-          </div>
-          <div style={{ width: 130 }}>
-            <MasterSelect
-              value={statusFilter}
-              onChange={setStatusFilter}
-              options={[
-                { value: 'All',          label: 'All Status' },
-                { value: 'Approved',     label: 'Approved' },
-                { value: 'Under Review', label: 'Under Review' },
-                { value: 'Submitted',    label: 'Submitted' },
-                { value: 'Sent Back',    label: 'Sent Back' },
-                { value: 'Draft',        label: 'Draft' },
-                { value: 'Rejected',     label: 'Rejected' },
-              ]}
-              placeholder="All Status"
-            />
-          </div>
-          <div style={{ width: 130 }}>
-            <MasterSelect
-              value={urgencyFilter}
-              onChange={setUrgencyFilter}
-              options={[
-                { value: 'All',      label: 'All Urgency' },
-                { value: 'Low',      label: 'Low' },
-                { value: 'Medium',   label: 'Medium' },
-                { value: 'High',     label: 'High' },
-                { value: 'Critical', label: 'Critical' },
-              ]}
-              placeholder="All Urgency"
-            />
           </div>
         </div>
 
@@ -1917,40 +1884,14 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
           </table>
         </div>
 
-        {/* Pagination — 5 rows per page by default; configurable */}
-        <div className="rec-list-footer">
-          <div className="d-flex align-items-center gap-2">
-            <span className="text-muted" style={{ fontSize: 12 }}>Rows per page:</span>
-            <div style={{ width: 80 }}>
-              <MasterSelect
-                value={String(pageSize)}
-                onChange={(v) => { setPageSize(Number(v) || 5); setPage(1); }}
-                options={['5', '10', '25', '50'].map(v => ({ value: v, label: v }))}
-                placeholder="5"
-              />
-            </div>
-            <span className="text-muted" style={{ fontSize: 12, marginLeft: 16 }}>
-              Showing {filtered.length === 0 ? 0 : (sliceFrom + 1)}–{Math.min(sliceFrom + pageSize, filtered.length)} of {filtered.length}
-            </span>
-          </div>
-          <div className="d-flex align-items-center gap-1">
-            <button className="rec-pagebtn" onClick={() => goto(safePage - 1)} disabled={safePage <= 1}>
-              ‹ Prev
-            </button>
-            {Array.from({ length: pageCount }).map((_, i) => (
-              <button
-                key={i}
-                className={`rec-pagebtn${safePage === i + 1 ? ' is-active' : ''}`}
-                onClick={() => goto(i + 1)}
-              >
-                {i + 1}
-              </button>
-            ))}
-            <button className="rec-pagebtn" onClick={() => goto(safePage + 1)} disabled={safePage >= pageCount}>
-              Next ›
-            </button>
-          </div>
-        </div>
+        {/* Pagination — same WorklistPager the recruitment table uses. */}
+        <WorklistPager
+          total={filtered.length}
+          page={safePage}
+          pageSize={pageSize}
+          onPage={goto}
+          onPageSize={(n) => { setPageSize(n); setPage(1); }}
+        />
 
         {/* Footer */}
         <div className="rec-form-footer">
