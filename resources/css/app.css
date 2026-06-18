@@ -131,22 +131,45 @@ body {
   letter-spacing: -0.02em;
 }
 
-/* ═══ Scrollbar ═══ */
+/* ═══ Scrollbar ═══
+   Theme-neutral light grey everywhere (the old #5A51E8 blue/purple clashed
+   with the tenant themes). Thin + grey thumb, transparent track. */
 ::-webkit-scrollbar {
-  width: 3px; /* Increased width */
-  height: 3px; /* Increased height */
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #5A51E8; /* Darker gray for thumb */
-  border-radius: 10px; /* Rounded corners */
+  background: #cbd5e1; /* light grey (slate-300) */
+  border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #716ad2 ; /* Even darker gray on hover */
+  background: #94a3b8; /* slate-400 on hover */
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+/* Dark mode — light translucent thumb so it reads on dark surfaces. */
+[data-bs-theme="dark"] ::-webkit-scrollbar-thumb,
+[data-layout-mode="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+}
+[data-bs-theme="dark"] ::-webkit-scrollbar-thumb:hover,
+[data-layout-mode="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.30);
+}
+[data-bs-theme="dark"] *,
+[data-layout-mode="dark"] * {
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }
 
 /* ═══ Animated Gradient Button ═══ */

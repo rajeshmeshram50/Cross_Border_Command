@@ -70,8 +70,8 @@ export default function ClmCaseToCasePage() {
   const [rows, setRows] = useState<CtcContract[]>([]);
   const [loading, setLoading] = useState(true);
   // Stretch the contracts card to fill the viewport so its footer (pagination)
-  // sits at the bottom of the card even with few rows — same idea as the CLM
-  // master tables.
+  // sits at the bottom of the card even with few rows — same dynamic behaviour
+  // as the CLM master tables.
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const cardRef = useRef<HTMLDivElement | null>(null);
   const load = () => {
@@ -184,7 +184,7 @@ export default function ClmCaseToCasePage() {
   }
 
   return (
-    <div style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 14, fontFamily: "'Rubik', system-ui, sans-serif" }}>
+    <div style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 8, fontFamily: "'Rubik', system-ui, sans-serif" }}>
       <style>{CTC_CSS}</style>
 
       {/* CARD 1 — HEADER STRIP */}
@@ -389,11 +389,13 @@ const ACT_TONES = {
 function ActBtn({ t, tone, title, onClick, children }: { t: OpsTokens; tone: keyof typeof ACT_TONES; title: string; onClick: () => void; children: React.ReactNode }) {
   const s = t.dark ? ACT_TONES[tone].dark : ACT_TONES[tone].light;
   return (
-    <button title={title} onClick={onClick} style={{ width: 26, height: 26, borderRadius: 7, border: `1.5px solid ${s.border}`, background: s.bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: s.color, opacity: .85, flexShrink: 0, transition: 'all .15s' }}
-      onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,.15)'; }}
-      onMouseLeave={e => { e.currentTarget.style.opacity = '.85'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
-      {children}
-    </button>
+    <Tooltip label={title}>
+      <button onClick={onClick} aria-label={title} style={{ width: 26, height: 26, borderRadius: 7, border: `1.5px solid ${s.border}`, background: s.bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: s.color, opacity: .85, flexShrink: 0, transition: 'all .15s' }}
+        onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,.15)'; }}
+        onMouseLeave={e => { e.currentTarget.style.opacity = '.85'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
+        {children}
+      </button>
+    </Tooltip>
   );
 }
 
