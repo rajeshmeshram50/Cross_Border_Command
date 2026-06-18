@@ -1893,13 +1893,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
           onPageSize={(n) => { setPageSize(n); setPage(1); }}
         />
 
-        {/* Footer */}
-        <div className="rec-form-footer">
-          <span className="hint">Status changes are applied immediately and visible to all HR users</span>
-          <button type="button" className="rec-btn-ghost" onClick={onClose}>
-            <i className="ri-close-line" />Close
-          </button>
-        </div>
+        
       </ModalBody>
 
       {/* View detail sub-modal — shows full request details when "View" clicked */}
