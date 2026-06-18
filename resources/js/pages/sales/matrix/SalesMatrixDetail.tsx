@@ -351,6 +351,7 @@ export default function SalesMatrixDetail() {
     whatsappReason?:      string | null;
     whatsappScreenshot?:  string | null;
     piSignedAt?:          string | null;
+    oppDateIso?:          string | null;
   }>({});
 
   /* Resolved leadId — initially the one passed via router state. If that's
@@ -405,6 +406,7 @@ export default function SalesMatrixDetail() {
       task_manager: StageTaskManager | null;
       acknowledgements: StageAcknowledgement[];
       pi_signed_at: string | null;
+      opportunity_date_iso: string | null;
     }}>(`/sales/leads/${resolvedLeadId}`)
       .then(({ data }) => {
         const d = data.data;
@@ -428,6 +430,7 @@ export default function SalesMatrixDetail() {
           // fall back to the raw path for older API responses.
           whatsappScreenshot:  d.whatsapp_screenshot_url ?? d.whatsapp_screenshot,
           piSignedAt:          d.pi_signed_at,
+          oppDateIso:          d.opportunity_date_iso,
         });
       })
       .catch(() => toast.error('Load failed', 'Could not load this lead'))
@@ -595,6 +598,14 @@ export default function SalesMatrixDetail() {
 
   const header: OppHeaderData = {
     ...seedHeader,
+    /* Opportunity date from the SERVER (the authoritative source, same as the
+     * lead worksheet: query_time ?? created_at). The router-state seed only
+     * survives the first hop from the worksheet — navigating between stages
+     * loses location.state, so seedHeader.oppDate fell back to the hardcoded
+     * DEFAULT (10/04/2026). Preferring the loaded server date fixes that. */
+    oppDate:            serverHeader.oppDateIso
+                          ? new Date(serverHeader.oppDateIso).toLocaleDateString('en-GB')
+                          : seedHeader.oppDate,
     leadId:             resolvedLeadId,
     qualified:          serverHeader.qualified,
     disqualified:       serverHeader.disqualified,
