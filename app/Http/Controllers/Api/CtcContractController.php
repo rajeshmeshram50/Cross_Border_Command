@@ -52,6 +52,30 @@ class CtcContractController extends Controller
     }
 
     /**
+     * THIS approver's own decision on the current round, or null if they
+     * haven't acted / aren't an approver. The "Agreements To Approve" page is a
+     * personal inbox: once I approve my slot the row should move to my Approved
+     * tab even while other approvers are still pending (the all-must-approve
+     * gate that advances the whole contract is tracked separately, sender-side).
+     */
+    private function myApproverStatus(CtcContract $c, string $email): ?string
+    {
+        $email = strtolower(trim($email));
+        if ($email === '') return null;
+        $approvers = array_values($c->approvers ?? []);
+        foreach ($approvers as $a) {
+            if (strtolower((string) ($a['email'] ?? '')) === $email) {
+                return $a['status'] ?? 'pending';
+            }
+        }
+        // Legacy rows that only stored the primary approver slot.
+        if (strtolower((string) $c->primary_approver_email) === $email && isset($approvers[0])) {
+            return $approvers[0]['status'] ?? 'pending';
+        }
+        return null;
+    }
+
+    /**
      * Each approval round derived from the version audit, newest first. A
      * round opens on every "Under Review" submission (initial draft +
      * resubmissions) and closes on the approver's Rejected / Approved
@@ -59,7 +83,7 @@ class CtcContractController extends Controller
      * three persistent entries (Rejected → Pending → Approved) instead of a
      * single row whose status keeps flipping.
      */
-    private function approvalRoundsShaped(CtcContract $c, string $approverName): array
+    private function approvalRoundsShaped(CtcContract $c, string $approverName, string $approverEmail = ''): array
     {
         $reasonFromLabel = function (string $label): ?string {
             return preg_match('/—\s*(.+)$/u', $label, $m) ? trim($m[1]) : null;
@@ -83,11 +107,23 @@ class CtcContractController extends Controller
             // 'Sent for Signing' / 'Signed' are post-approval — ignored here.
         }
         if ($cur) {
-            // Open round — reflect a live clarification state if one is pending.
-            if ($c->approval_status === 'clarification') $cur['status'] = 'clarification';
+            // Open round — reflect THIS approver's own decision first (personal
+            // inbox view): once they've approved their slot the row moves to
+            // their Approved tab even while other approvers are still pending.
+            // Otherwise surface a live clarification state, else stay pending.
+            $mine = $this->myApproverStatus($c, $approverEmail);
+            if ($mine === 'approved')                        $cur['status'] = 'approved';
+            elseif ($mine === 'rejected')                    $cur['status'] = 'rejected';
+            elseif ($c->approval_status === 'clarification') $cur['status'] = 'clarification';
             $rounds[] = $cur;
         }
-        if (empty($rounds)) return [$this->shapeApprove($c, $approverName)];  // legacy rows w/o audit
+        if (empty($rounds)) {                                 // legacy rows w/o audit
+            $shaped = $this->shapeApprove($c, $approverName);
+            $mine = $this->myApproverStatus($c, $approverEmail);
+            if ($mine === 'approved')     $shaped['status'] = 'approved';
+            elseif ($mine === 'rejected') $shaped['status'] = 'rejected';
+            return [$shaped];
+        }
 
         return collect(array_reverse($rounds))->map(fn ($r) => [
             'id'             => $c->code,
@@ -288,7 +324,7 @@ class CtcContractController extends Controller
                   ->orWhere('primary_approver_email', $email);
             })
             ->orderByDesc('id')->get()
-            ->flatMap(fn ($c) => $this->approvalRoundsShaped($c, $user->name ?? ''))
+            ->flatMap(fn ($c) => $this->approvalRoundsShaped($c, $user->name ?? '', $user->email ?? ''))
             // One row per CTC — keep only the latest round (rounds come back
             // newest-first, so the first occurrence of each code is the latest).
             ->unique('id')
