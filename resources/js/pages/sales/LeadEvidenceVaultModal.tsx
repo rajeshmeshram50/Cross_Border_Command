@@ -115,6 +115,17 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
+  /* Scroll lock — lock BOTH <html> and <body> so the page behind can't
+   * scroll while the vault is open (body-only isn't enough). */
+  useEffect(() => {
+    if (!open) return;
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
+  }, [open]);
+
   /* When the modal opens, default the active consignee tab to the lead's
    * mapped consignee (the `target`). */
   useEffect(() => {
@@ -251,7 +262,10 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
   return createPortal(
     <>
       <style>{LEV_CSS}</style>
-      <div className="lev-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      {/* Backdrop click does NOT close the vault — closing is only via the
+          × button, the footer's Close Vault, or Escape. Prevents losing the
+          view on an accidental outside click. */}
+      <div className="lev-backdrop">
         <div className="lev-modal" role="dialog" aria-modal="true" aria-label="Evidence Vault">
 
           {/* ── HERO ── */}
@@ -267,23 +281,27 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
                 <div className="lev-hero-text">
                   <div className="lev-hero-eyebrow">EVIDENCE VAULT</div>
                   <h1 className="lev-hero-name">{view.company || view.id}</h1>
-                  <div className="lev-hero-meta">
-                    <span className="lev-hero-id">{view.id}</span>
-                    {sameAsCustomer && (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 11px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: 'rgba(255,255,255,.22)', color: '#fff', border: '1px solid rgba(255,255,255,.4)', whiteSpace: 'nowrap' }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                        Same as Customer
-                      </span>
-                    )}
-                    {view.risk && <span className="lev-hero-risk">{view.risk}</span>}
-                    {view.contact && (<><span className="lev-dot" /><span>{view.contact}</span></>)}
-                    {view.contactCity && (<><span className="lev-dot" /><span>{view.contactCity}</span></>)}
-                  </div>
                 </div>
               </div>
-              <button className="lev-hero-close" type="button" onClick={onClose} title="Close" aria-label="Close">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
+              <div className="lev-hero-right">
+                {/* Identity chips moved to the right, beside the close button,
+                    so the left side is just the title — keeps the hero short. */}
+                <div className="lev-hero-meta">
+                  <span className="lev-hero-id">{view.id}</span>
+                  {sameAsCustomer && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 11px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: 'rgba(255,255,255,.22)', color: '#fff', border: '1px solid rgba(255,255,255,.42)', whiteSpace: 'nowrap' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                      Same as Customer
+                    </span>
+                  )}
+                  {view.risk && <span className="lev-hero-risk">{view.risk}</span>}
+                  {view.contact && (<><span className="lev-dot" /><span>{view.contact}</span></>)}
+                  {view.contactCity && (<><span className="lev-dot" /><span>{view.contactCity}</span></>)}
+                </div>
+                <button className="lev-hero-close" type="button" onClick={onClose} title="Close" aria-label="Close">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -549,49 +567,47 @@ const LEV_CSS = `
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-/* ── Hero ── */
+/* ── Hero — violet gradient + white text, in the Price Shared family but
+   kept saturated on the right (instead of fading to near-white lavender)
+   so the identity chips sitting there read crisply in white. */
 .lev-hero {
-  background:
-    radial-gradient(circle at 15% 50%, rgba(255,255,255,.15) 0%, transparent 55%),
-    linear-gradient(135deg, #4c1d95 0%, #5b21b6 30%, #6d28d9 65%, #7c3aed 100%);
-  padding: 13px 18px; position: relative; overflow: hidden; color: #fff;
-}
-.lev-hero::after {
-  content: ''; position: absolute; top: -60%; right: -5%;
-  width: 320px; height: 320px;
-  background: radial-gradient(circle, rgba(255,255,255,.10) 0%, transparent 70%); pointer-events: none;
+  background: linear-gradient(115deg, #6d28d9 0%, #7c3aed 55%, #8b5cf6 100%);
+  padding: 11px 18px; position: relative; overflow: hidden; color: #fff;
 }
 .lev-hero-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; position: relative; z-index: 1; }
-.lev-hero-left { display: flex; align-items: center; gap: 13px; flex: 1 1 auto; min-width: 0; }
+.lev-hero-left { display: flex; align-items: center; gap: 12px; flex: 1 1 auto; min-width: 0; }
 .lev-hero-avatar {
-  width: 42px; height: 42px; border-radius: 11px; flex-shrink: 0;
+  width: 40px; height: 40px; border-radius: 11px; flex-shrink: 0;
   background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.28);
   display: inline-flex; align-items: center; justify-content: center;
-  box-shadow: 0 6px 14px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.30);
+  box-shadow: 0 4px 12px rgba(124,58,237,.20), inset 0 1px 0 rgba(255,255,255,.30);
 }
-.lev-hero-avatar svg { width: 21px; height: 21px; stroke: #fff; display: block; }
+.lev-hero-avatar svg { width: 20px; height: 20px; stroke: #fff; display: block; }
 .lev-hero-text { flex: 1 1 auto; min-width: 0; }
-.lev-hero-eyebrow { font-size: 9.5px; font-weight: 800; color: rgba(255,255,255,.80); letter-spacing: .16em; text-transform: uppercase; margin-bottom: 2px; }
-.lev-hero-name { font-size: 17px; font-weight: 800; color: #fff; letter-spacing: -.3px; margin: 0 0 4px; line-height: 1.15; text-shadow: 0 1px 3px rgba(0,0,0,.12); }
-.lev-hero-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 11.5px; color: rgba(255,255,255,.85); font-weight: 500; }
+.lev-hero-eyebrow { font-size: 9.5px; font-weight: 800; color: rgba(255,255,255,.85); letter-spacing: .16em; text-transform: uppercase; margin-bottom: 1px; }
+.lev-hero-name { font-size: 16px; font-weight: 800; color: #fff; letter-spacing: -.3px; margin: 0; line-height: 1.15; text-shadow: 0 1px 3px rgba(0,0,0,.12); }
+/* Right cluster — identity chips + close button beside each other, in white
+   so they read on the saturated violet. */
+.lev-hero-right { display: flex; align-items: center; gap: 14px; flex-shrink: 0; position: relative; z-index: 1; }
+.lev-hero-meta { display: flex; align-items: center; justify-content: flex-end; gap: 9px; flex-wrap: wrap; font-size: 11.5px; color: rgba(255,255,255,.90); font-weight: 600; }
 .lev-hero-id {
   font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace; font-weight: 700; letter-spacing: .04em; font-size: 11px;
-  background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.24);
+  background: rgba(255,255,255,.20); border: 1px solid rgba(255,255,255,.38);
   padding: 2px 9px; border-radius: 7px; color: #fff;
 }
 .lev-hero-risk {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 3px 10px; border-radius: 999px;
   font-size: 10.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
-  background: rgba(245,158,11,.20); color: #FCD34D; border: 1px solid rgba(252,211,77,.40);
+  background: rgba(245,158,11,.28); color: #fde68a; border: 1px solid rgba(252,211,77,.55);
 }
-.lev-dot { width: 4px; height: 4px; border-radius: 50%; background: rgba(255,255,255,.45); flex-shrink: 0; }
+.lev-dot { width: 4px; height: 4px; border-radius: 50%; background: rgba(255,255,255,.55); flex-shrink: 0; }
 .lev-hero-close {
   width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; cursor: pointer;
-  background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.24); color: #fff;
+  background: rgba(255,255,255,.20); border: 1px solid rgba(255,255,255,.40); color: #fff;
   display: inline-flex; align-items: center; justify-content: center; transition: all .18s ease; position: relative; z-index: 1;
 }
-.lev-hero-close:hover { background: rgba(255,255,255,.30); transform: rotate(90deg); }
+.lev-hero-close:hover { background: rgba(255,255,255,.32); transform: rotate(90deg); }
 .lev-hero-close svg { width: 16px; height: 16px; }
 
 /* ── Consignee strip ── */
@@ -639,20 +655,32 @@ const LEV_CSS = `
 [data-bs-theme="dark"] .lev-cons-tab:hover:not(.active) { border-color: rgba(167,139,250,.55); background: rgba(124,58,237,.18); }
 [data-bs-theme="dark"] .lev-cons-tab.active { background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%); border-color: #6d28d9; color: #fff; }
 
-/* ── Tabs ── */
-.lev-tabs { background: #fff; display: flex; align-items: center; gap: 0; padding: 0 18px; border-bottom: 1px solid #ECEEF3; flex-wrap: wrap; }
+/* ── Tabs — filled violet "pill" style, matching the Product Sourcing
+   popup (.psm-tab): white outlined pill that fills with a violet gradient
+   when active. */
+.lev-tabs { background: #fff; display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid #f1f5f9; flex-wrap: wrap; }
 .lev-tab {
-  background: transparent; border: none; border-bottom: 3px solid transparent;
-  padding: 16px 22px 14px; font-size: 13.5px; font-weight: 600; color: #64748B;
-  cursor: pointer; font-family: inherit; letter-spacing: -.1px;
-  display: inline-flex; align-items: center; gap: 8px; margin-bottom: -1px; transition: all .18s ease;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 14px; border: 1.5px solid #ddd6fe; border-radius: 9px;
+  background: #fff; color: #6d28d9;
+  font-size: 12px; font-weight: 700; letter-spacing: .01em;
+  cursor: pointer; font-family: inherit; transition: all .15s;
 }
-.lev-tab svg { width: 16px; height: 16px; stroke: currentColor; }
-.lev-tab .lev-tab-count { background: #F1F5F9; color: #64748B; border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.lev-tab:hover:not(.active) { color: #6d28d9; background: #F5F3FF; }
-.lev-tab.active { color: #6d28d9; border-bottom-color: #6d28d9; font-weight: 700; }
-.lev-tab.active svg { color: #6d28d9; }
-.lev-tab.active .lev-tab-count { background: #ede9fe; color: #4c1d95; }
+.lev-tab svg { width: 15px; height: 15px; stroke: currentColor; flex-shrink: 0; }
+.lev-tab .lev-tab-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; padding: 1px 8px; border-radius: 999px;
+  background: #ede9fe; color: #6d28d9;
+  font-size: 10.5px; font-weight: 800; font-variant-numeric: tabular-nums;
+}
+.lev-tab:hover:not(.active) { background: #faf5ff; }
+.lev-tab.active {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  border-color: transparent; color: #fff;
+  box-shadow: 0 4px 12px rgba(124,58,237,.35);
+}
+.lev-tab.active svg { color: #fff; }
+.lev-tab.active .lev-tab-count { background: rgba(255,255,255,.25); color: #fff; }
 
 /* ── Body ── */
 .lev-body { flex: 1; overflow-y: auto; padding: 12px 18px; background: linear-gradient(180deg, #FAFBFF 0%, #F1F5F9 100%); }
@@ -768,13 +796,12 @@ const LEV_CSS = `
 /* ── Dark mode — keep the hero/table chrome, tint the surfaces ── */
 [data-bs-theme="dark"] .lev-modal { background: #0f172a; }
 [data-bs-theme="dark"] .lev-tabs { background: #0f172a; border-bottom-color: rgba(148,163,184,.18); }
-[data-bs-theme="dark"] .lev-tab { color: #94a3b8; }
-[data-bs-theme="dark"] .lev-tab .lev-tab-count { background: rgba(148,163,184,.18); color: #cbd5e1; }
-[data-bs-theme="dark"] .lev-tab.active { color: #a78bfa; border-bottom-color: #a78bfa; }
-[data-bs-theme="dark"] .lev-tab.active .lev-tab-count { background: rgba(167,139,250,.20); color: #ede9fe; }
-/* Hover — translucent violet instead of the light #F5F3FF box, which read as
-   a bright white tab on the dark tab bar. */
-[data-bs-theme="dark"] .lev-tab:hover:not(.active) { color: #c4b5fd; background: rgba(124,58,237,.14); }
+[data-bs-theme="dark"] .lev-tab { color: #c4b5fd; background: #1e293b; border-color: rgba(167,139,250,.30); }
+[data-bs-theme="dark"] .lev-tab .lev-tab-count { background: rgba(167,139,250,.18); color: #ddd6fe; }
+/* Active keeps the violet gradient pill from the base rule. */
+[data-bs-theme="dark"] .lev-tab.active { color: #fff; border-color: transparent; }
+[data-bs-theme="dark"] .lev-tab.active .lev-tab-count { background: rgba(255,255,255,.22); color: #fff; }
+[data-bs-theme="dark"] .lev-tab:hover:not(.active) { background: rgba(124,58,237,.20); }
 [data-bs-theme="dark"] .lev-body { background: #0b1220; }
 [data-bs-theme="dark"] .lev-section-card { background: rgba(124,58,237,.10); border-color: rgba(167,139,250,.30); }
 [data-bs-theme="dark"] .lev-section-title { color: #f1f5f9; }
