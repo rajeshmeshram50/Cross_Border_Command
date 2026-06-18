@@ -485,22 +485,45 @@ export default function SalesMatrixDetail() {
   }, [serverHeader.customerId, custRefreshTick]);
 
   useEffect(() => {
-    const cid = serverHeader.consigneeId;
-    if (!cid) { setConsTally(null); return; }
-    setConsTally({ total: 0, verified: 0, loading: true });
+    const directId = serverHeader.consigneeId;   // consignee mapped to the lead
+    const custId   = serverHeader.customerId;
+    // Neither a mapped consignee nor a customer → nothing to tally.
+    if (!directId && !custId) { setConsTally(null); return; }
     let cancelled = false;
-    api.get<VaultResponse>(`/segment-uploads/consignee/${cid}/vault`)
-      .then(res => {
-        if (cancelled) return;
-        const d = res.data?.data;
-        setConsTally({
-          total:    Number(d?.core_total_documents ?? d?.total_documents ?? 0),
-          verified: Number(d?.core_verified_signed ?? d?.verified_signed ?? 0),
+    setConsTally({ total: 0, verified: 0, loading: true });
+
+    const loadVault = (consigneeDbId: number) =>
+      api.get<VaultResponse>(`/segment-uploads/consignee/${consigneeDbId}/vault`)
+        .then(res => {
+          if (cancelled) return;
+          const d = res.data?.data;
+          setConsTally({
+            total:    Number(d?.core_total_documents ?? d?.total_documents ?? 0),
+            verified: Number(d?.core_verified_signed ?? d?.verified_signed ?? 0),
+          });
         });
-      })
-      .catch(() => { if (!cancelled) setConsTally({ total: 0, verified: 0, error: true }); });
+
+    if (directId) {
+      loadVault(directId)
+        .catch(() => { if (!cancelled) setConsTally({ total: 0, verified: 0, error: true }); });
+    } else {
+      // No consignee mapped to the lead — resolve one from the customer's
+      // consignees (the SAME one the card's click opens). This is what fixes
+      // the stuck "Loading documents…": a Same-as-Customer consignee now
+      // mirrors the customer's tally instead of hanging. No consignees at all
+      // → an empty (0-doc) tally, not a perpetual spinner.
+      api.get('/consignees', { params: { customer_id: custId } })
+        .then(r => {
+          if (cancelled) return undefined;
+          const rows: Array<{ db_id?: number }> = Array.isArray(r.data?.data) ? r.data.data : [];
+          const firstId = rows.find(x => typeof x.db_id === 'number')?.db_id;
+          if (!firstId) { setConsTally({ total: 0, verified: 0 }); return undefined; }
+          return loadVault(firstId);
+        })
+        .catch(() => { if (!cancelled) setConsTally({ total: 0, verified: 0, error: true }); });
+    }
     return () => { cancelled = true; };
-  }, [serverHeader.consigneeId, consRefreshTick]);
+  }, [serverHeader.consigneeId, serverHeader.customerId, consRefreshTick]);
 
   /* Applicable agreements for this lead → drives the Segment Details
    * card counts + powers LeadAgreementSendModal. Refetched whenever
