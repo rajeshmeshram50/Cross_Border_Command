@@ -226,6 +226,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
 
   /* ── Open Create Procurement modal ─────────────────────────────── */
   const onCreateOne = (row: Row) => {
+    if (locked) return;   // signed PI → read-only
     if (!leadId) {
       toast.warning('No lead in context', 'Open this stage from the Lead Worksheet first');
       return;
@@ -235,6 +236,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
   };
 
   const onCreateGroup = () => {
+    if (locked) return;   // signed PI → read-only
     if (selectedIds.size === 0) {
       toast.warning('Pick at least one row', 'Tick the checkboxes for the products to bundle');
       return;
@@ -257,7 +259,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
 
   /* ── Mark Sourced ────────────────────────────────────────────────── */
   const onMarkSourced = async (row: Row) => {
-    if (!leadId) return;
+    if (!leadId || locked) return;   // signed PI → read-only
     setMarkingId(row.id);
     try {
       /* B26: trust the server's echo for `procurement_done` instead of

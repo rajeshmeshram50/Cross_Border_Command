@@ -144,7 +144,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
    * `min:0` handles negative-number rejection so the surface still refuses
    * those — direct API hits get a 422. */
   const onSubmitQuoted = async (row: LeadProductRow) => {
-    if (!leadId) return;
+    if (!leadId || locked) return;   // signed PI → read-only
     if (isIncompleteStatus(row.product_status)) {
       toast.warning('Activate this product first', 'Drafts and inactive products cannot have a shared price.');
       return;
