@@ -1635,6 +1635,18 @@ export default function HrEmployees() {
   }, [eAadharFile, ePanFile, eLaptopAssigned, eLaptopMasterAssetId, eMobileAssigned, eMobileMasterAssetId,
       leavePlanOptions, holidayGroupOptions, eLeavePlan, eHolidayList, eShift, eWeeklyOff, eTimeTracking, ePenalizationPolicy, eExpensePolicy]);
 
+  // Latest realistic salary-effective date: 6 months after the joining date.
+  // Empty when no joining date is set yet. Drives both the Step-4 validation
+  // and the date picker's maxDate so an unrealistic future date (the QA bug:
+  // joining 15 Jun 2026, effective 09 Mar 2029) can't be entered or saved.
+  const salaryEffectiveCap = useMemo(() => {
+    if (!eJoinDate) return '';
+    const d = new Date(eJoinDate);
+    const cap = new Date(d.getFullYear(), d.getMonth() + 6, d.getDate());
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${cap.getFullYear()}-${pad(cap.getMonth() + 1)}-${pad(cap.getDate())}`;
+  }, [eJoinDate]);
+
   // Step 4 — Compensation. Salary is mandatory whenever payroll is enabled
   // for the employee (the default). The "Enable payroll" toggle is the
   // explicit opt-out: when an admin turns it OFF they're declaring this
@@ -1668,9 +1680,15 @@ export default function HrEmployees() {
        * date lives — the picker on this step is what they need to
        * change. */
       e.salary_effective_from = `Salary effective date can't be before the joining date (${eJoinDate})`;
+    } else if (eJoinDate && eSalaryFrom > salaryEffectiveCap) {
+      /* Realistic window: the salary can take effect any time from the
+       * joining date up to 6 months after it. Anything further out is
+       * almost always a typo (e.g. 2029 instead of 2026) — flag it
+       * instead of silently saving an unrealistic future date. */
+      e.salary_effective_from = `Salary effective date must be within 6 months of joining (on or before ${salaryEffectiveCap})`;
     }
     return e;
-  }, [eEnablePayroll, eAnnualSalary, eSalaryFreq, eSalaryFrom, eJoinDate]);
+  }, [eEnablePayroll, eAnnualSalary, eSalaryFreq, eSalaryFrom, eJoinDate, salaryEffectiveCap]);
 
   // First step that contains any of the given error keys. Used to jump-back
   // when a deeper step's submit surfaces a problem in an earlier step.
@@ -5287,6 +5305,7 @@ export default function HrEmployees() {
                         onChange={(v) => { setESalaryFrom(v); clearEErr('salary_effective_from'); }}
                         placeholder="dd-mm-yyyy"
                         minDate={eJoinDate || undefined}
+                        maxDate={salaryEffectiveCap || undefined}
                         invalid={!!eErrors.salary_effective_from}
                       />
                       {eErrors.salary_effective_from && <small className="emp-err">{eErrors.salary_effective_from}</small>}

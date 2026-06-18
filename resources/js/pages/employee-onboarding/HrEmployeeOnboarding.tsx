@@ -4526,7 +4526,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 <p className="onb-init-subgroup">Employment Details</p>
                 <Row className="g-3">
                   <Col md={4} data-field="date_of_joining">
-                    <label className="onb-init-label">Joining Date</label>
+                    <label className="onb-init-label">Joining Date<span className="req">*</span></label>
                     <MasterDatePicker
                       placeholder="dd-mm-yyyy"
                       value={s1.date_of_joining}
@@ -4540,9 +4540,9 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                     />
                     {s1Errors.date_of_joining && <div className="onb-error-msg">{s1Errors.date_of_joining}</div>}
                   </Col>
-                  <Col md={4}><label className="onb-init-label">Department</label><MasterSelect options={departmentOpts} placeholder="Select department" value={s1.department_id} onChange={(v) => setS1(p => ({ ...p, department_id: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Designation</label><MasterSelect options={designationOpts} placeholder="Select designation" value={s1.designation_id} onChange={(v) => setS1(p => ({ ...p, designation_id: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Primary Role</label><MasterSelect options={roleOpts} placeholder="Select role" value={s1.primary_role_id} onChange={(v) => setS1(p => ({ ...p, primary_role_id: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Department<span className="req">*</span></label><MasterSelect options={departmentOpts} placeholder="Select department" value={s1.department_id} onChange={(v) => setS1(p => ({ ...p, department_id: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Designation<span className="req">*</span></label><MasterSelect options={designationOpts} placeholder="Select designation" value={s1.designation_id} onChange={(v) => setS1(p => ({ ...p, designation_id: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Primary Role<span className="req">*</span></label><MasterSelect options={roleOpts} placeholder="Select role" value={s1.primary_role_id} onChange={(v) => setS1(p => ({ ...p, primary_role_id: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Ancillary Role</label><MasterSelect options={roleOpts} placeholder="Select role" value={s1.ancillary_role_id} onChange={(v) => setS1(p => ({ ...p, ancillary_role_id: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Work Type <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly value="Full Time" /></Col>
                 </Row>
@@ -4550,7 +4550,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 <p className="onb-init-subgroup">Organisational Details</p>
                 <Row className="g-3">
                   <Col md={4}>
-                    <label className="onb-init-label">Legal Entity</label>
+                    <label className="onb-init-label">Legal Entity<span className="req">*</span></label>
                     <MasterSelect
                       options={legalEntityOpts}
                       placeholder="Select entity"
@@ -4577,13 +4577,13 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       placeholder={s1.legal_entity_id ? '—' : 'Select a Legal Entity first'}
                     />
                   </Col>
-                  <Col md={4}><label className="onb-init-label">Reporting Manager</label><MasterSelect options={managerOpts} placeholder="Select manager" value={s1.reporting_manager} onChange={(v) => setS1(p => ({ ...p, reporting_manager: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Reporting Manager<span className="req">*</span></label><MasterSelect options={managerOpts} placeholder="Select manager" value={s1.reporting_manager} onChange={(v) => setS1(p => ({ ...p, reporting_manager: v }))} /></Col>
                 </Row>
 
                 <p className="onb-init-subgroup">Employment Terms</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Probation Policy</label><MasterSelect options={ONB_PROBATION} value={s1.probation_policy} placeholder="Select probation policy" onChange={(v) => setS1(p => ({ ...p, probation_policy: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Notice Period</label><MasterSelect options={ONB_NOTICE} value={s1.notice_period} placeholder="Select notice period" onChange={(v) => setS1(p => ({ ...p, notice_period: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Probation Policy<span className="req">*</span></label><MasterSelect options={ONB_PROBATION} value={s1.probation_policy} placeholder="Select probation policy" onChange={(v) => setS1(p => ({ ...p, probation_policy: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Notice Period<span className="req">*</span></label><MasterSelect options={ONB_NOTICE} value={s1.notice_period} placeholder="Select notice period" onChange={(v) => setS1(p => ({ ...p, notice_period: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Work Mode <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly value="On-site" /></Col>
                 </Row>
               </div>
@@ -4602,15 +4602,15 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
               <div className="onb-init-section-body">
                 <p className="onb-init-subgroup">Leave &amp; Attendance</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Leave Plan</label><MasterSelect options={leavePlanOpts.length ? leavePlanOpts : ONB_LEAVE_PLAN} value={s1.leave_plan} placeholder={leavePlanOpts.length ? 'Select a leave plan' : 'No plans found — create one in HR > Leave'} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Holiday List</label><MasterSelect options={ONB_HOLIDAY} value={s1.holiday_list} placeholder="Select holiday list" onChange={(v) => setS1(p => ({ ...p, holiday_list: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Shift</label><MasterSelect options={ONB_SHIFT} value={s1.shift} placeholder="Select shift" onChange={(v) => setS1(p => ({ ...p, shift: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Weekly Off</label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off} placeholder="Select weekly off" onChange={(v) => setS1(p => ({ ...p, weekly_off: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanOpts.length ? leavePlanOpts : ONB_LEAVE_PLAN} value={s1.leave_plan} placeholder={leavePlanOpts.length ? 'Select a leave plan' : 'No plans found — create one in HR > Leave'} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Holiday List<span className="req">*</span></label><MasterSelect options={ONB_HOLIDAY} value={s1.holiday_list} placeholder="Select holiday list" onChange={(v) => setS1(p => ({ ...p, holiday_list: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Shift<span className="req">*</span></label><MasterSelect options={ONB_SHIFT} value={s1.shift} placeholder="Select shift" onChange={(v) => setS1(p => ({ ...p, shift: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Weekly Off<span className="req">*</span></label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off} placeholder="Select weekly off" onChange={(v) => setS1(p => ({ ...p, weekly_off: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Attendance Number</label><input className="onb-init-input" placeholder="Attendance number" value={s1.attendance_number} onChange={e => setS1(p => ({ ...p, attendance_number: e.target.value }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Time Tracking Policy</label><MasterSelect options={ONB_TIME_TRACK} value={s1.time_tracking} placeholder="Select time tracking" onChange={(v) => setS1(p => ({ ...p, time_tracking: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Penalization Policy</label><MasterSelect options={ONB_PENALIZE} value={s1.penalization_policy} placeholder="Select penalization policy" onChange={(v) => setS1(p => ({ ...p, penalization_policy: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Time Tracking Policy<span className="req">*</span></label><MasterSelect options={ONB_TIME_TRACK} value={s1.time_tracking} placeholder="Select time tracking" onChange={(v) => setS1(p => ({ ...p, time_tracking: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Penalization Policy<span className="req">*</span></label><MasterSelect options={ONB_PENALIZE} value={s1.penalization_policy} placeholder="Select penalization policy" onChange={(v) => setS1(p => ({ ...p, penalization_policy: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Overtime</label><MasterSelect options={ONB_OVERTIME} value={s1.overtime} placeholder="Select overtime policy" onChange={(v) => setS1(p => ({ ...p, overtime: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Expense Policy</label><MasterSelect options={ONB_EXPENSE} placeholder="Select policy" value={s1.expense_policy} onChange={(v) => setS1(p => ({ ...p, expense_policy: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Expense Policy<span className="req">*</span></label><MasterSelect options={ONB_EXPENSE} placeholder="Select policy" value={s1.expense_policy} onChange={(v) => setS1(p => ({ ...p, expense_policy: v }))} /></Col>
                 </Row>
 
                 <div
@@ -6108,9 +6108,9 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         {hasExperience === 'no' && (
           <div
             className="onb-doc-bgv-banner"
-            style={{ margin: '12px 14px', alignItems: 'flex-start' }}
+            style={{ margin: '12px 14px' }}
           >
-            <i className="ri-checkbox-circle-line" style={{ fontSize: 14, marginTop: 1 }} />
+            <i className="ri-checkbox-circle-line" style={{ fontSize: 15, flexShrink: 0 }} />
             <span>
               <strong>Marked as fresher.</strong> No previous employer documents
               are required. You can change this anytime by selecting <strong>Yes</strong> above.
@@ -6812,7 +6812,7 @@ function Stage4Payroll({
               <MasterSelect options={ONB_TAX_REGIME} value={s4.tax_regime || 'New Regime (115BAC)'} onChange={(v) => setS4(p => ({ ...p, tax_regime: v }))} />
             </Col>
             <Col md={4}>
-              <label className="onb-init-label">PF Deduction <span className="req">*</span></label>
+              <label className="onb-init-label">PF Deduction</label>
               <MasterSelect options={ONB_PF_DEDUCT} value={s4.pf_deduction} onChange={(v) => setS4(p => ({ ...p, pf_deduction: v }))} />
             </Col>
             <Col md={4}>
