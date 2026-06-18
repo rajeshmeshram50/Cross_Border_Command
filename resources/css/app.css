@@ -135,8 +135,8 @@ body {
    Theme-neutral light grey everywhere (the old #5A51E8 blue/purple clashed
    with the tenant themes). Thin + grey thumb, transparent track. */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 2px;
+  height: 2px;
 }
 
 ::-webkit-scrollbar-track {
