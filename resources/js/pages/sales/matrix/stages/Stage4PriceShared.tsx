@@ -73,7 +73,7 @@ function formatDateTime(s: string | null | undefined): { date: string; time: str
   };
 }
 
-export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, embedded }: StageProps) {
+export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, embedded, locked = false }: StageProps) {
   const toast = useToast();
   const leadId = header.leadId ?? null;
 
@@ -506,11 +506,12 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                                 </span>
                                 <input
                                   type="number" min="0" step="any"
-                                  className={`s4-quote-num ${blocked ? 's4-quote-disabled' : ''}`}
+                                  className={`s4-quote-num ${(blocked || locked) ? 's4-quote-disabled' : ''}`}
                                   value={quotedDraft[r.id] ?? ''}
-                                  disabled={blocked}
+                                  disabled={blocked || locked}
                                   onChange={(e) => setQuotedDraft(prev => ({ ...prev, [r.id]: e.target.value }))}
                                   onClick={() => {
+                                    if (locked) { toast.warning('PI is signed', 'This opportunity is read-only — you can view but not share prices.'); return; }
                                     if (blocked) toast.warning('Status incomplete', 'Activate the product master before sharing a price');
                                   }}
                                   placeholder="0.00"
@@ -521,9 +522,10 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                               <div className="s4-row-actions">
                                 <button
                                   type="button"
-                                  className={`s4-submit-btn ${blocked ? 's4-submit-disabled' : ''}`}
-                                  disabled={isSubmitting}
-                                  onClick={() => void onSubmitQuoted(r)}
+                                  className={`s4-submit-btn ${(blocked || locked) ? 's4-submit-disabled' : ''}`}
+                                  disabled={isSubmitting || locked}
+                                  title={locked ? 'PI is signed — read-only' : undefined}
+                                  onClick={() => { if (locked) { toast.warning('PI is signed', 'This opportunity is read-only — prices cannot be shared.'); return; } void onSubmitQuoted(r); }}
                                 >
                                   {isSubmitting ? 'Submitting…' : 'Submit'}
                                 </button>

@@ -52,7 +52,7 @@ const SOURCING_OPTIONS = [
   { value: 'not_required', label: 'Not Required' },
 ];
 
-export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLead, embedded }: StageProps) {
+export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLead, embedded, locked = false }: StageProps) {
   const toast = useToast();
 
   const [tab, setTab]                       = useState<Tab>('details');
@@ -185,7 +185,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
 
   /* ── Set sourcing status ─────────────────────────────────────────── */
   const onSourcingChange = async (row: Row, status: 'required' | 'not_required') => {
-    if (!leadId) return;
+    if (!leadId || locked) return;   // signed PI → read-only
     setUpdatingId(row.id);
     try {
       const { data } = await api.patch<{ status: boolean; data: Row }>(
@@ -474,6 +474,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                           ) : (
                             <MasterSelect
                               value={r.sourcing_status ?? ''}
+                              disabled={locked}
                               onChange={(v) => {
                                 if (v === 'required' || v === 'not_required') void onSourcingChange(r, v);
                               }}
@@ -592,6 +593,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                                 type="checkbox"
                                 className="s3-cb"
                                 checked={selectedIds.has(r.id)}
+                                disabled={locked}
                                 onChange={() => toggleSelect(r.id)}
                               />
                             )}
@@ -632,7 +634,8 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                                 type="button"
                                 className="s3-mark-btn"
                                 onClick={() => void onMarkSourced(r)}
-                                disabled={markingId === r.id}
+                                disabled={markingId === r.id || locked}
+                                title={locked ? 'PI is signed — read-only' : undefined}
                               >
                                 {markingId === r.id ? 'Marking…' : '✓ Mark as Done'}
                               </button>
@@ -660,7 +663,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                           </td>
                           <td>
                             {!hasProc && (
-                              <button type="button" className="s3-create-btn" onClick={() => onCreateOne(r)}>
+                              <button type="button" className="s3-create-btn" onClick={() => onCreateOne(r)} disabled={locked} title={locked ? 'PI is signed — read-only' : undefined}>
                                 + Create
                               </button>
                             )}
@@ -690,7 +693,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
 
             {/* Create Group Procurement button — only when 2+ products are
                 selected (a "group" of one is just a single procurement). */}
-            {canGroup && selectedIds.size >= 2 && (
+            {canGroup && selectedIds.size >= 2 && !locked && (
               <div className="s3-cta-row">
                 <button type="button" className="s3-group-btn" onClick={onCreateGroup}>
                   + Create Group Procurement
@@ -794,12 +797,12 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                           {/* Send the product back into sourcing — flips
                               sourcing_status to 'required' so it reappears on
                               the Sourcing Required tab. */}
-                          <Tooltip label="Convert to Sourcing Required">
+                          <Tooltip label={locked ? 'PI is signed — read-only' : 'Convert to Sourcing Required'}>
                             <button
                               type="button"
                               className="s3-convert-btn"
                               onClick={() => void onSourcingChange(r, 'required')}
-                              disabled={updatingId === r.id}
+                              disabled={updatingId === r.id || locked}
                               aria-label="Convert to Sourcing Required"
                             >
                               {updatingId === r.id ? (
