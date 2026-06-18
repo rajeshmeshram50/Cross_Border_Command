@@ -606,6 +606,13 @@ export default function SalesMatrixDetail() {
     oppDate:            serverHeader.oppDateIso
                           ? new Date(serverHeader.oppDateIso).toLocaleDateString('en-GB')
                           : seedHeader.oppDate,
+    /* Customer name from the SERVER (mapped customer's company_name) for the
+     * same reason — the seed is lost on stage navigation and fell back to the
+     * hardcoded DEFAULT ('GreenHarvest Global'). Stage 1's Opportunity Details
+     * reads header.customer, so override it centrally (the top banner already
+     * did this inline). */
+    customer:           (serverHeader.customerRow?.company_name as string | undefined)?.trim()
+                          || seedHeader.customer,
     leadId:             resolvedLeadId,
     qualified:          serverHeader.qualified,
     disqualified:       serverHeader.disqualified,
