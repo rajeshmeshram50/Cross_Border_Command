@@ -899,6 +899,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // while the /employees/{id} fetch is in flight. Without this every
   // field rendered "—" for the first 200-500ms which looked broken.
   const [empDetailLoading, setEmpDetailLoading] = useState(true);
+  // The "Employee ID" shown under the name must be the emp_code (EMP-017),
+  // never the raw numeric DB id. The route slug (`employeeId`) and the list's
+  // `employee.id` can be either, so prefer the resolved emp_code and fall back
+  // to any value that isn't purely numeric — otherwise show a dash.
+  const displayEmpCode = (() => {
+    const isCode = (v: unknown) => !!v && !/^\d+$/.test(String(v));
+    return empDetail?.emp_code
+      || (isCode(employee?.id) ? String(employee?.id) : '')
+      || (isCode(employeeId)   ? String(employeeId)   : '')
+      || '—';
+  })();
   useEffect(() => {
     let cancelled = false;
     const empCode = String(employeeId || '').trim();
@@ -2847,7 +2858,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <i className="ri-more-2-fill" />
               </button>
             </div>
-            <p className="mb-1" style={{ color: 'rgba(255,255,255,0.55)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em' }}>{empDetail?.emp_code || employeeId}</p>
+            <p className="mb-1" style={{ color: 'rgba(255,255,255,0.55)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em' }}>{displayEmpCode}</p>
             <p className="mb-2" style={{ color: 'rgba(255,255,255,0.78)', fontSize: 12.5 }}>
               {/* Hero meta line — prefer the freshly-fetched empDetail
                   relations so newly-edited Department / Designation / work

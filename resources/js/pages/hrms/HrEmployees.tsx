@@ -3277,15 +3277,16 @@ export default function HrEmployees() {
                               })()}
                             </td>
                             <td className="pe-3" onClick={(ev) => ev.stopPropagation()}>
+                              {/* Disabled employees are inactive, so the per-row
+                                  operational actions (Edit / Asset / Face /
+                                  Permissions / Documents) are greyed out and
+                                  non-clickable. Only the re-enable toggle and the
+                                  permanent-delete stay usable so the record can
+                                  still be managed. */}
+                              {(() => { const rowDisabled = !e.enabled; return (
                               <div className="d-flex gap-1 justify-content-center align-items-center">
-                                <ActionBtn title="Edit"        icon="ri-pencil-line"      color="info"      onClick={() => openEditEmployee(e)} />
-                                {tab === 'disabled' ? (
-                                  // Disabled employees swap the Documents action for an Onboarding
-                                  // shortcut — clicking it opens the onboarding-link modal pre-filled
-                                  // with this employee's name, email, and department.
-                                  <ActionBtn title="Send Onboarding" icon="ri-user-add-line" color="info" onClick={() => openOnboardingForEmployee(e)} />
-                                ) : null}
-                                <ActionBtn title="Asset" icon="ri-computer-line"    color="primary"   onClick={() => openAssignAssets(e)} />
+                                <ActionBtn title="Edit"        icon="ri-pencil-line"      color="info"      onClick={() => openEditEmployee(e)} disabled={rowDisabled} />
+                                <ActionBtn title="Asset" icon="ri-computer-line"    color="primary"   onClick={() => openAssignAssets(e)} disabled={rowDisabled} />
                                 {/* Face biometric — enrols (or re-enrols) the employee's face
                                     so they can clock in / sign in via face match. A small
                                     green dot in the corner of the button signals "already
@@ -3298,9 +3299,10 @@ export default function HrEmployees() {
                                   color={(e as any).faceRegistered ? 'success' : 'secondary'}
                                   badge={(e as any).faceRegistered ? 'dot' : undefined}
                                   onClick={() => setFaceRegEmployeeId((e as any)._dbId)}
+                                  disabled={rowDisabled}
                                 />
-                                <ActionBtn title="Permissions" icon="ri-lock-2-line"      color="warning"   onClick={() => openPermissions(e)} />
-                                <ActionBtn title="Documents"   icon="ri-file-text-line"   color="success"   onClick={() => openVault(e)} />
+                                <ActionBtn title="Permissions" icon="ri-lock-2-line"      color="warning"   onClick={() => openPermissions(e)} disabled={rowDisabled} />
+                                <ActionBtn title="Documents"   icon="ri-file-text-line"   color="success"   onClick={() => openVault(e)} disabled={rowDisabled} />
                                 {/* Permanent-delete is only offered on the Disabled tab so
                                     an admin can't wipe an active employee in one click. */}
                                 {tab === 'disabled' && (
@@ -3311,6 +3313,7 @@ export default function HrEmployees() {
                                   onRequestToggle={(next, commit) => requestToggle(e, next, commit)}
                                 />
                               </div>
+                              ); })()}
                             </td>
                           </tr>
                         );
@@ -5853,18 +5856,22 @@ function ActionBtn({
           border: '1px solid var(--vz-border-color)',
           color: 'var(--vz-secondary-color)',
           transition: 'all .15s ease',
+          opacity: disabled ? 0.4 : 1,
+          cursor: disabled ? 'not-allowed' : 'pointer',
         }}
         onMouseEnter={e => {
+          if (disabled) return;
           const el = e.currentTarget as HTMLButtonElement;
           el.style.borderColor = `var(--vz-${color})`;
           el.style.color = `var(--vz-${color})`;
         }}
         onMouseLeave={e => {
+          if (disabled) return;
           const el = e.currentTarget as HTMLButtonElement;
           el.style.borderColor = 'var(--vz-border-color)';
           el.style.color = 'var(--vz-secondary-color)';
         }}
-        onClick={onClick}
+        onClick={() => { if (!disabled) onClick(); }}
       >
         <i className={`${icon} fs-14`} />
         {/* Small "already enrolled" indicator — green dot in the top-right

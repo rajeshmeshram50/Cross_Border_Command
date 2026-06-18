@@ -3061,7 +3061,7 @@ function ChecklistModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
                           <span
                             key={bi}
                             className="onb-cp-badge"
-                            style={{ background: tone.bg, color: tone.fg }}
+                            style={{ background: tone.bg, color: tone.fg, ['--pill-fg' as string]: tone.fg } as React.CSSProperties}
                           >
                             {b}
                           </span>
