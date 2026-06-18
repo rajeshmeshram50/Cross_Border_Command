@@ -68,6 +68,7 @@ const slugToPath = (slug: string): string => {
     case "project-navigator": return "/project-navigator";
     case "gts":               return "/gts";
     case "inventory":         return "/inventory";
+    case "developers":        return "/developers/shipment";
     default:            return `/${slug}`;
   }
 };
@@ -462,6 +463,21 @@ const Navdata = () => {
           subItems,
         });
       }
+      continue;
+    }
+
+    // Developers → single flat link to its only leaf (Shipment / Business
+    // Task). The permission lives on the LEAF slug `developers.shipment`, not
+    // the parent `developers`, so gate on that (the generic fallback below
+    // would wrongly check perms['developers']).
+    if (m.id === "developers") {
+      if (!isSuperAdmin && (planExpiredOrMissing || !perms["developers.shipment"]?.can_view)) continue;
+      menuItems.push({
+        id: m.id,
+        label: m.label,
+        icon: resolveIcon(m.icon),
+        link: slugToPath(m.id),
+      });
       continue;
     }
 

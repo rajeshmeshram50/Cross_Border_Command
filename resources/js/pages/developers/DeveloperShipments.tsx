@@ -83,7 +83,7 @@ export default function DeveloperShipments() {
             </svg>
           </div>
           <div>
-            <div className="dsh-cstrip-title">Business Task</div>
+            <div className="dsh-cstrip-title">Shipment Tracker</div>
             <div className="dsh-cstrip-sub">Track every shipment order (SHP) raised against won opportunities — owner, parties, PI and logistics at a glance.</div>
           </div>
         </div>
@@ -96,7 +96,7 @@ export default function DeveloperShipments() {
             <span className="dsh-wdh-bulb">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 17h4V5H2v12h3" /><circle cx="7.5" cy="17.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" /></svg>
             </span>
-            Business Task — What We Are Doing Here:
+            Shipment Tracker — What We Are Doing Here:
           </span>
           <svg className={`dsh-wdh-chev${wdhOpen ? ' open' : ''}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><polyline points="6 9 12 15 18 9" /></svg>
         </button>
@@ -307,21 +307,62 @@ const SCOPED_CSS = `
 .dsh-table-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
 .dsh-table-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-/* Dark mode. */
+/* ── Dark mode — uses the app's own theme variables (--color-surface etc.)
+   so this page matches the rest of the app's neutral dark theme instead of a
+   clashing purple. Violet is kept only for brand accents (header gradient,
+   chips, pills, icons). ── */
 [data-bs-theme="dark"] .dsh-cstrip,
-[data-bs-theme="dark"] .dsh-wdh-card { background: #14102a; border-color: rgba(167,139,250,.25); }
-[data-bs-theme="dark"] .dsh-cstrip-title { color: #ede9fe; }
+[data-bs-theme="dark"] .dsh-wdh-card,
+[data-bs-theme="dark"] .dsh-table-wrap,
+[data-bs-theme="dark"] .dsh-foot {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  box-shadow: 0 2px 16px rgba(0,0,0,.35);
+}
+[data-bs-theme="dark"] .dsh-cstrip-title { color: var(--color-text); }
 [data-bs-theme="dark"] .dsh-cstrip-sub,
 [data-bs-theme="dark"] .dsh-wdh-toggle-row,
 [data-bs-theme="dark"] .dsh-wdh-body { color: #c4b5fd; }
-[data-bs-theme="dark"] .dsh-table-wrap { background: #14102a; border-color: rgba(167,139,250,.2); }
-[data-bs-theme="dark"] .dsh-table tbody td { color: #cbd5e1; border-color: rgba(167,139,250,.12); }
-[data-bs-theme="dark"] .dsh-table tbody tr:nth-child(even) td { background: #1a1538; }
-[data-bs-theme="dark"] .dsh-table tbody tr:hover td { background: #221a45; }
-[data-bs-theme="dark"] .dsh-foot { background: #14102a; border-color: rgba(167,139,250,.2); }
-[data-bs-theme="dark"] .dsh-id-chip { background: rgba(167,139,250,.14); border-color: rgba(167,139,250,.3); color: #c4b5fd; }
-[data-bs-theme="dark"] .dsh-strong { color: #ede9fe; }
-[data-bs-theme="dark"] .dsh-search { background: rgba(20,16,42,.8); border-color: rgba(167,139,250,.3); }
-[data-bs-theme="dark"] .dsh-search input { color: #ede9fe; }
-[data-bs-theme="dark"] .dsh-pager-btn { background: #1a1538; border-color: rgba(167,139,250,.3); color: #c4b5fd; }
+[data-bs-theme="dark"] .dsh-wdh-body strong,
+[data-bs-theme="dark"] .dsh-wdh-chev { color: #ddd6fe; }
+
+/* Toolbar + search */
+[data-bs-theme="dark"] .dsh-toolbar {
+  background: var(--color-surface-2);
+  border-bottom-color: rgba(124,58,237,.5);
+}
+[data-bs-theme="dark"] .dsh-search { background: var(--color-surface); border-color: var(--color-border); color: var(--color-text); }
+[data-bs-theme="dark"] .dsh-search input { color: var(--color-text); }
+[data-bs-theme="dark"] .dsh-search input::placeholder { color: var(--color-muted); }
+
+/* Table rows */
+[data-bs-theme="dark"] .dsh-table tbody td { color: var(--color-text); border-color: var(--color-border); }
+[data-bs-theme="dark"] .dsh-table tbody tr:nth-child(even) td { background: var(--color-surface-2); }
+[data-bs-theme="dark"] .dsh-table tbody tr:hover td { background: rgba(124,58,237,.14); }
+[data-bs-theme="dark"] .dsh-empty { color: var(--color-muted); }
+
+/* Cell content */
+[data-bs-theme="dark"] .dsh-strong { color: var(--color-text); }
+[data-bs-theme="dark"] .dsh-date { color: var(--color-muted); }
+[data-bs-theme="dark"] .dsh-link { color: #7dd3fc; }
+[data-bs-theme="dark"] .dsh-em { color: var(--color-muted); }
+[data-bs-theme="dark"] .dsh-id-chip,
+[data-bs-theme="dark"] .dsh-opp-chip { background: rgba(167,139,250,.16); border-color: rgba(167,139,250,.32); color: #ddd6fe; }
+[data-bs-theme="dark"] .dsh-pi-chip  { background: rgba(56,189,248,.14); border-color: rgba(56,189,248,.3); color: #7dd3fc; }
+
+/* Status pills — translucent so they read on the dark surface */
+[data-bs-theme="dark"] .dsh-pill-seller { background: rgba(167,139,250,.18); color: #c4b5fd; }
+[data-bs-theme="dark"] .dsh-pill-buyer  { background: rgba(34,211,238,.16);  color: #67e8f9; }
+[data-bs-theme="dark"] .dsh-pill-yes    { background: rgba(34,197,94,.18);  color: #86efac; }
+[data-bs-theme="dark"] .dsh-pill-no     { background: rgba(244,63,94,.18);  color: #fda4af; }
+
+/* Footer + pager */
+[data-bs-theme="dark"] .dsh-foot-count { color: #c4b5fd; }
+[data-bs-theme="dark"] .dsh-pager-cur { color: var(--color-text); }
+[data-bs-theme="dark"] .dsh-pager-btn { background: var(--color-surface-2); border-color: var(--color-border); color: #c4b5fd; }
+[data-bs-theme="dark"] .dsh-pager-btn:hover:not(:disabled) { background: rgba(124,58,237,.16); }
+
+/* Scrollbar */
+[data-bs-theme="dark"] .dsh-table-scroll::-webkit-scrollbar-thumb { background: rgba(148,163,184,.45); }
+[data-bs-theme="dark"] .dsh-table-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,.65); }
 `;

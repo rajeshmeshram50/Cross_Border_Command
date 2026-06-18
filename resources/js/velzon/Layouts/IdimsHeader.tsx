@@ -104,6 +104,7 @@ function topPath(id: string): string {
     case 'p2p':                return '/p2p';
     case 'gts':                return '/gts';
     case 'inventory':          return '/inventory';
+    case 'developers':         return '/developers/shipment';
     case 'hr':                 return '/hr';
     case 'master':             return '/master';
     default:                   return `/${id}`;
@@ -285,6 +286,9 @@ export default function IdimsHeader() {
     if (can('p2p')) items.push({ id: 'p2p', label: 'Procure to Pay (P2P)', icon: IC.cart, dd: 'p2p' });
     if (can('gts')) items.push({ id: 'gts', label: 'GTS (E-Docs)', icon: IC.globe });
     if (can('inventory')) items.push({ id: 'inventory', label: 'Inventory Management System', icon: IC.box });
+    // Developers → Shipment (Business Task). Direct-link tab, gated on the
+    // developers.shipment permission. (id 'developers' maps to /developers/shipment.)
+    if (can('developers.shipment')) items.push({ id: 'developers', label: 'Developers', icon: IC.layers });
     if (hasGroupView('master.')) items.push({ id: 'master', label: 'Master', icon: IC.db });
     // Permissions — branch admins manage their team's access (employees do
     // not; they can't grant permissions). Super-admin / client-admin already
@@ -295,6 +299,7 @@ export default function IdimsHeader() {
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
 
   /* ── Overflow measurement ─────────────────────────────────────────────
      A hidden "ghost" row renders every nav item at full width so we can

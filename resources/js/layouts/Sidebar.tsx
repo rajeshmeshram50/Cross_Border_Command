@@ -97,6 +97,8 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
     // Central CLM rollout — same temporary bypass as Sales above. Drop this
     // branch once per-leaf perms are wired and tested.
     if (id.startsWith('clm.') && (user?.user_type === 'branch_user' || user?.user_type === 'employee')) return true;
+    // Developers rollout — same temporary bypass as Sales/CLM.
+    if (id.startsWith('developers.')) return true;
     if (planExpiredOrMissing) return false;
     return !!perms[id]?.can_view;
   };

@@ -51,6 +51,9 @@ export default function TopNav({ current, onNavigate }: Props) {
     // Central CLM rollout — same temporary bypass as Sales above so the new
     // top-level menu actually surfaces. Drop once per-leaf perms are wired.
     if (id.startsWith('clm.') && (user?.user_type === 'branch_user' || user?.user_type === 'employee')) return true;
+    // Developers rollout — same temporary bypass as Sales/CLM so the new
+    // top-level menu surfaces for tenant users. Drop once perms are wired.
+    if (id.startsWith('developers.')) return true;
     if (planExpiredOrMissing) return false;
     return !!perms[id]?.can_view;
   };
@@ -79,6 +82,7 @@ export default function TopNav({ current, onNavigate }: Props) {
     });
     return out;
   }, [user, perms, planExpiredOrMissing]);
+
 
   // Close dropdowns on outside click — uses `mousedown` (fires before React's synthetic
   // click) and skips targets tagged `data-dropdown-toggle` so clicking any toggle button
