@@ -489,6 +489,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // opportunity. Ported from IDIMS's `bt` (Business Task) module.
     Route::get ('/sales/shipment-orders/next-code',
         [\App\Http\Controllers\Api\ShipmentOrderController::class, 'nextCode']);
+    // Business Task list (Developers → Shipment page).
+    Route::get ('/sales/shipment-orders',
+        [\App\Http\Controllers\Api\ShipmentOrderController::class, 'index']);
     Route::post('/sales/shipment-orders',
         [\App\Http\Controllers\Api\ShipmentOrderController::class, 'store']);
     Route::get ('/sales/shipment-orders/{id}',

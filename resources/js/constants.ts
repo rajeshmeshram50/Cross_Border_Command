@@ -31,14 +31,14 @@ export const MASTER_GROUPS: MenuGroup[] = [
     label: 'Identity & Entity',
     icon: 'IdCard',
     children: [
-      { id: 'master.organization_types', icon: 'Building',    label: 'Organization Types' },
-      { id: 'master.legal_entities', icon: 'Landmark',    label: 'Legal Entities' },
-      { id: 'master.company',        icon: 'Building',    label: 'Company Details' },
-      { id: 'master.bank_accounts',  icon: 'Landmark',    label: 'Bank Accounts' },
-      { id: 'master.departments',    icon: 'Building2',   label: 'Departments' },
-      { id: 'master.roles',          icon: 'UserCog',     label: 'Roles' },
-      { id: 'master.designations',   icon: 'BadgeCheck',  label: 'Designations' },
-      { id: 'master.kpis',           icon: 'Activity',    label: 'KPI Master' },
+      { id: 'master.organization_types', icon: 'Building', label: 'Organization Types' },
+      { id: 'master.legal_entities', icon: 'Landmark', label: 'Legal Entities' },
+      { id: 'master.company', icon: 'Building', label: 'Company Details' },
+      { id: 'master.bank_accounts', icon: 'Landmark', label: 'Bank Accounts' },
+      { id: 'master.departments', icon: 'Building2', label: 'Departments' },
+      { id: 'master.roles', icon: 'UserCog', label: 'Roles' },
+      { id: 'master.designations', icon: 'BadgeCheck', label: 'Designations' },
+      { id: 'master.kpis', icon: 'Activity', label: 'KPI Master' },
     ],
   },
   {
@@ -46,12 +46,12 @@ export const MASTER_GROUPS: MenuGroup[] = [
     label: 'Geography & Location',
     icon: 'Globe',
     children: [
-      { id: 'master.countries',          icon: 'Globe2', label: 'Countries' },
-      { id: 'master.states',             icon: 'Map',    label: 'States' },
-      { id: 'master.state_codes',        icon: 'Hash',   label: 'State Codes' },
-      { id: 'master.address_types',      icon: 'Home',   label: 'Address Types' },
-      { id: 'master.port_of_loading',    icon: 'Anchor', label: 'Ports of Loading' },
-      { id: 'master.port_of_discharge',  icon: 'Ship',   label: 'Ports of Discharge' },
+      { id: 'master.countries', icon: 'Globe2', label: 'Countries' },
+      { id: 'master.states', icon: 'Map', label: 'States' },
+      { id: 'master.state_codes', icon: 'Hash', label: 'State Codes' },
+      { id: 'master.address_types', icon: 'Home', label: 'Address Types' },
+      { id: 'master.port_of_loading', icon: 'Anchor', label: 'Ports of Loading' },
+      { id: 'master.port_of_discharge', icon: 'Ship', label: 'Ports of Discharge' },
     ],
   },
   {
@@ -59,14 +59,14 @@ export const MASTER_GROUPS: MenuGroup[] = [
     label: 'Trade & Commercial',
     icon: 'TrendingUp',
     children: [
-      { id: 'master.segments',           icon: 'Target',     label: 'Segments' },
-      { id: 'master.hsn_codes',          icon: 'Binary',     label: 'HSN Codes' },
-      { id: 'master.gst_percentage',     icon: 'Percent',    label: 'GST Percentages' },
-      { id: 'master.currencies',         icon: 'DollarSign', label: 'Currencies' },
-      { id: 'master.uom',                icon: 'Ruler',      label: 'Units of Measurement' },
-      { id: 'master.packaging_material', icon: 'Package',    label: 'Packaging Materials' },
-      { id: 'master.conditions',         icon: 'Leaf',       label: 'Product Conditions' },
-      { id: 'master.incoterms',          icon: 'Handshake',  label: 'Incoterms' },
+      { id: 'master.segments', icon: 'Target', label: 'Segments' },
+      { id: 'master.hsn_codes', icon: 'Binary', label: 'HSN Codes' },
+      { id: 'master.gst_percentage', icon: 'Percent', label: 'GST Percentages' },
+      { id: 'master.currencies', icon: 'DollarSign', label: 'Currencies' },
+      { id: 'master.uom', icon: 'Ruler', label: 'Units of Measurement' },
+      { id: 'master.packaging_material', icon: 'Package', label: 'Packaging Materials' },
+      { id: 'master.conditions', icon: 'Leaf', label: 'Product Conditions' },
+      { id: 'master.incoterms', icon: 'Handshake', label: 'Incoterms' },
     ],
   },
   {
@@ -74,11 +74,11 @@ export const MASTER_GROUPS: MenuGroup[] = [
     label: 'Party & Classification',
     icon: 'Users',
     children: [
-      { id: 'master.customer_types',           icon: 'UserSquare', label: 'Customer Types' },
-      { id: 'master.customer_classifications', icon: 'Award',      label: 'Customer Classifications' },
-      { id: 'master.vendor_types',             icon: 'Store',      label: 'Supplier Types' },
-      { id: 'master.vendor_behaviour',         icon: 'Activity',   label: 'Supplier Behaviour' },
-      { id: 'master.applicable_types',         icon: 'Users2',     label: 'Applicable Parties' },
+      { id: 'master.customer_types', icon: 'UserSquare', label: 'Customer Types' },
+      { id: 'master.customer_classifications', icon: 'Award', label: 'Customer Classifications' },
+      { id: 'master.vendor_types', icon: 'Store', label: 'Supplier Types' },
+      { id: 'master.vendor_behaviour', icon: 'Activity', label: 'Supplier Behaviour' },
+      { id: 'master.applicable_types', icon: 'Users2', label: 'Applicable Parties' },
     ],
   },
   {
@@ -86,11 +86,11 @@ export const MASTER_GROUPS: MenuGroup[] = [
     label: 'Legal & Compliance',
     icon: 'Scale',
     children: [
-      { id: 'master.license_name',          icon: 'FileBadge',     label: 'License Types' },
-      { id: 'master.risk_levels',           icon: 'Zap',           label: 'Risk Levels' },
-      { id: 'master.document_type',         icon: 'FileText',      label: 'Document Types' },
-      { id: 'master.haz_class',             icon: 'AlertTriangle', label: 'Hazard Classifications' },
-      { id: 'master.compliance_behaviours', icon: 'Scale',         label: 'Compliance Behaviours' },
+      { id: 'master.license_name', icon: 'FileBadge', label: 'License Types' },
+      { id: 'master.risk_levels', icon: 'Zap', label: 'Risk Levels' },
+      { id: 'master.document_type', icon: 'FileText', label: 'Document Types' },
+      { id: 'master.haz_class', icon: 'AlertTriangle', label: 'Hazard Classifications' },
+      { id: 'master.compliance_behaviours', icon: 'Scale', label: 'Compliance Behaviours' },
     ],
   },
   {
@@ -98,9 +98,9 @@ export const MASTER_GROUPS: MenuGroup[] = [
     label: 'Operations & Support',
     icon: 'Wrench',
     children: [
-      { id: 'master.assets',           icon: 'Briefcase',     label: 'Assets' },
-      { id: 'master.asset_categories', icon: 'Tags',          label: 'Asset Categories' },
-      { id: 'master.expense_category', icon: 'IndianRupee',   label: 'Expense Categories' },
+      { id: 'master.assets', icon: 'Briefcase', label: 'Assets' },
+      { id: 'master.asset_categories', icon: 'Tags', label: 'Asset Categories' },
+      { id: 'master.expense_category', icon: 'IndianRupee', label: 'Expense Categories' },
     ],
   },
   {
@@ -108,16 +108,16 @@ export const MASTER_GROUPS: MenuGroup[] = [
     label: 'P2P Masters',
     icon: 'Handshake',
     children: [
-      { id: 'master.payment_terms',          icon: 'CalendarDays', label: 'Payment Terms' },
-      { id: 'master.approval_authority',     icon: 'ShieldCheck',  label: 'Approval Authority' },
-      { id: 'master.procurement_category',   icon: 'Boxes',        label: 'Procurement Category' },
-      { id: 'master.sourcing_type',          icon: 'Tag',          label: 'Sourcing Type' },
-      { id: 'master.deviation_reason',       icon: 'AlertOctagon', label: 'Deviation Reason' },
-      { id: 'master.match_exception',        icon: 'GitCompare',   label: 'Match Exception Type' },
-      { id: 'master.advance_payment_rules',  icon: 'CreditCard',   label: 'Advance Payment Rules' },
-      { id: 'master.exchange_rate_log',      icon: 'Repeat',       label: 'Exchange Rate Log' },
-      { id: 'master.goods_service_flag',     icon: 'ToggleRight',  label: 'Goods vs Service Flag' },
-      { id: 'master.vendor_directory',       icon: 'BookUser',     label: 'Supplier Directory' },
+      { id: 'master.payment_terms', icon: 'CalendarDays', label: 'Payment Terms' },
+      { id: 'master.approval_authority', icon: 'ShieldCheck', label: 'Approval Authority' },
+      { id: 'master.procurement_category', icon: 'Boxes', label: 'Procurement Category' },
+      { id: 'master.sourcing_type', icon: 'Tag', label: 'Sourcing Type' },
+      { id: 'master.deviation_reason', icon: 'AlertOctagon', label: 'Deviation Reason' },
+      { id: 'master.match_exception', icon: 'GitCompare', label: 'Match Exception Type' },
+      { id: 'master.advance_payment_rules', icon: 'CreditCard', label: 'Advance Payment Rules' },
+      { id: 'master.exchange_rate_log', icon: 'Repeat', label: 'Exchange Rate Log' },
+      { id: 'master.goods_service_flag', icon: 'ToggleRight', label: 'Goods vs Service Flag' },
+      { id: 'master.vendor_directory', icon: 'BookUser', label: 'Supplier Directory' },
     ],
   },
   {
@@ -125,14 +125,14 @@ export const MASTER_GROUPS: MenuGroup[] = [
     label: 'Warehouse Masters',
     icon: 'Warehouse',
     children: [
-      { id: 'master.warehouse_master',  icon: 'Warehouse',   label: 'Warehouse Master' },
-      { id: 'master.zone_master',       icon: 'Grid3x3',     label: 'Zone Master' },
-      { id: 'master.rack_type_master',  icon: 'Layers',      label: 'Rack Type Master' },
+      { id: 'master.warehouse_master', icon: 'Warehouse', label: 'Warehouse Master' },
+      { id: 'master.zone_master', icon: 'Grid3x3', label: 'Zone Master' },
+      { id: 'master.rack_type_master', icon: 'Layers', label: 'Rack Type Master' },
       { id: 'master.temp_class_master', icon: 'Thermometer', label: 'Temperature Class' },
-      { id: 'master.racks',             icon: 'Rows3',       label: 'Rack & Location' },
-      { id: 'master.shelf_master',      icon: 'Rows4',       label: 'Shelf / Level' },
-      { id: 'master.digital_twin',      icon: 'Monitor',     label: 'Digital Twin' },
-      { id: 'master.freezers',          icon: 'Snowflake',   label: 'Freezer Management' },
+      { id: 'master.racks', icon: 'Rows3', label: 'Rack & Location' },
+      { id: 'master.shelf_master', icon: 'Rows4', label: 'Shelf / Level' },
+      { id: 'master.digital_twin', icon: 'Monitor', label: 'Digital Twin' },
+      { id: 'master.freezers', icon: 'Snowflake', label: 'Freezer Management' },
     ],
   },
 ];
@@ -143,7 +143,7 @@ export const HR_GROUPS: MenuGroup[] = [
     label: 'HRMS Command Center',
     icon: 'LayoutDashboard',
     children: [
-      { id: 'hr.overview',  icon: 'LayoutGrid',     label: 'HRMS Overview' },
+      { id: 'hr.overview', icon: 'LayoutGrid', label: 'HRMS Overview' },
     ],
   },
   {
@@ -151,10 +151,10 @@ export const HR_GROUPS: MenuGroup[] = [
     label: 'HR Core',
     icon: 'Users',
     children: [
-      { id: 'hr.recruitment', icon: 'UserPlus',  label: 'Recruitment' },
-      { id: 'hr.employee',    icon: 'User',      label: 'Employee' },
-      { id: 'hr.onboarding',  icon: 'UserCheck', label: 'Employee Onboarding' },
-      { id: 'hr.exit',        icon: 'LogOut',    label: 'Exit Management' },
+      { id: 'hr.recruitment', icon: 'UserPlus', label: 'Recruitment' },
+      { id: 'hr.employee', icon: 'User', label: 'Employee' },
+      { id: 'hr.onboarding', icon: 'UserCheck', label: 'Employee Onboarding' },
+      { id: 'hr.exit', icon: 'LogOut', label: 'Exit Management' },
     ],
   },
   {
@@ -162,13 +162,13 @@ export const HR_GROUPS: MenuGroup[] = [
     label: 'Time & Pay Inputs',
     icon: 'IndianRupee',
     children: [
-      { id: 'hr.payroll',            icon: 'IndianRupee',   label: 'Payroll' },
+      { id: 'hr.payroll', icon: 'IndianRupee', label: 'Payroll' },
       ...(FEATURE_FLAGS.hrAttendance
         ? [{ id: 'hr.attendance', icon: 'CalendarCheck', label: 'Attendance' } as MenuItem]
         : []),
-      { id: 'hr.leave',              icon: 'CalendarOff',   label: 'Leave' },
-      { id: 'hr.holiday',            icon: 'CalendarDays',  label: 'Holiday' },
-      { id: 'hr.expense',            icon: 'Receipt',       label: 'Expense Management' },
+      { id: 'hr.leave', icon: 'CalendarOff', label: 'Leave' },
+      { id: 'hr.holiday', icon: 'CalendarDays', label: 'Holiday' },
+      { id: 'hr.expense', icon: 'Receipt', label: 'Expense Management' },
     ],
   },
   {
@@ -203,7 +203,7 @@ export const SALES_GROUPS: MenuGroup[] = [
     label: 'Sales Insights & Productivity',
     icon: 'BarChart3',
     children: [
-      { id: 'sales.analytics',            icon: 'BarChart3',      label: 'Sales Analytics' },
+      { id: 'sales.analytics', icon: 'BarChart3', label: 'Sales Analytics' },
       { id: 'sales.productivity_tracker', icon: 'ClipboardCheck', label: 'Productivity Tracker' },
       /* Procure to Pay (P2P) Summary was promoted to its own top-level
        * module (slug `p2p`); it no longer lives under Sales Insights. */
@@ -214,8 +214,8 @@ export const SALES_GROUPS: MenuGroup[] = [
     label: 'Sales Core (Masters)',
     icon: 'Database',
     children: [
-      { id: 'sales.customers',       icon: 'UserSquare', label: 'Customers' },
-      { id: 'sales.consignee',       icon: 'Truck',      label: 'Consignee' },
+      { id: 'sales.customers', icon: 'UserSquare', label: 'Customers' },
+      { id: 'sales.consignee', icon: 'Truck', label: 'Consignee' },
       { id: 'sales.lead_ack_master', icon: 'BadgeCheck', label: 'Lead Acknowledgement Master' },
     ],
   },
@@ -231,7 +231,7 @@ export const SALES_GROUPS: MenuGroup[] = [
      * disk and are reachable by direct URL; only the menu surface is
      * trimmed here. */
     children: [
-      { id: 'sales.workplace',       icon: 'Activity', label: 'My Workplace' },
+      { id: 'sales.workplace', icon: 'Activity', label: 'My Workplace' },
       { id: 'sales.quotation_vs_pi', icon: 'FileText', label: 'Quotation Vs PI History' },
       // NOTE: Sign Document Tracker is intentionally NOT a nav-menu leaf —
       // it's an internal-only tool reached via the top-right header button
@@ -250,9 +250,9 @@ export const CLM_GROUPS: MenuGroup[] = [
     label: 'CLM Command Center',
     icon: 'LayoutDashboard',
     children: [
-      { id: 'clm.analytics',            icon: 'BarChart3',      label: 'CLM Analytics' },
-      { id: 'clm.diagnosis_resolution', icon: 'Stethoscope',    label: 'Diagnosis & Resolution Center' },
-      { id: 'clm.regulatory_defense',   icon: 'ShieldCheck',    label: 'Regulatory Defense File' },
+      { id: 'clm.analytics', icon: 'BarChart3', label: 'CLM Analytics' },
+      { id: 'clm.diagnosis_resolution', icon: 'Stethoscope', label: 'Diagnosis & Resolution Center' },
+      { id: 'clm.regulatory_defense', icon: 'ShieldCheck', label: 'Regulatory Defense File' },
     ],
   },
   {
@@ -260,8 +260,8 @@ export const CLM_GROUPS: MenuGroup[] = [
     label: 'CLM Operations — With Shipment ID',
     icon: 'Truck',
     children: [
-      { id: 'clm.buyer_profile',      icon: 'User',           label: 'Buyer Profile' },
-      { id: 'clm.supplier_profile',   icon: 'Truck',          label: 'Supplier Profile' },
+      { id: 'clm.buyer_profile', icon: 'User', label: 'Buyer Profile' },
+      { id: 'clm.supplier_profile', icon: 'Truck', label: 'Supplier Profile' },
     ],
   },
   {
@@ -269,9 +269,9 @@ export const CLM_GROUPS: MenuGroup[] = [
     label: 'CLM Operations — Without Shipment ID',
     icon: 'FileText',
     children: [
-      { id: 'clm.case_to_case',          icon: 'FileText',     label: 'Case to Case Contracts' },
-      { id: 'clm.agreements_sent',       icon: 'Send',         label: 'Agreements We Sent' },
-      { id: 'clm.agreements_to_approve', icon: 'CheckCircle',  label: 'Agreements To Approve' },
+      { id: 'clm.case_to_case', icon: 'FileText', label: 'Case to Case Contracts' },
+      { id: 'clm.agreements_sent', icon: 'Send', label: 'Agreements We Sent' },
+      { id: 'clm.agreements_to_approve', icon: 'CheckCircle', label: 'Agreements To Approve' },
     ],
   },
   {
@@ -279,12 +279,12 @@ export const CLM_GROUPS: MenuGroup[] = [
     label: 'Compliance & Regulatory',
     icon: 'ShieldCheck',
     children: [
-      { id: 'clm.segment',         icon: 'LayoutGrid',  label: 'Segment' },
-      { id: 'clm.authority',       icon: 'Award',       label: 'Authority' },
-      { id: 'clm.quality_docs',    icon: 'CheckSquare', label: 'Quality & Compliance Docs' },
-      { id: 'clm.kyc',             icon: 'UserCheck',   label: 'KYC' },
-      { id: 'clm.due_diligence',   icon: 'Search',      label: 'Due Diligence (DD)' },
-      { id: 'clm.trade_licenses',  icon: 'FileBadge',   label: 'Trade Licenses' },
+      { id: 'clm.segment', icon: 'LayoutGrid', label: 'Segment' },
+      { id: 'clm.authority', icon: 'Award', label: 'Authority' },
+      { id: 'clm.quality_docs', icon: 'CheckSquare', label: 'Quality & Compliance Docs' },
+      { id: 'clm.kyc', icon: 'UserCheck', label: 'KYC' },
+      { id: 'clm.due_diligence', icon: 'Search', label: 'Due Diligence (DD)' },
+      { id: 'clm.trade_licenses', icon: 'FileBadge', label: 'Trade Licenses' },
     ],
   },
   {
@@ -292,11 +292,11 @@ export const CLM_GROUPS: MenuGroup[] = [
     label: 'Contract & Document Masters',
     icon: 'BookOpen',
     children: [
-      { id: 'clm.document_panel',    icon: 'PenSquare',  label: 'Document Control Panel' },
-      { id: 'clm.trade_documents',   icon: 'Hexagon',    label: 'Trade Documents' },
-      { id: 'clm.agreements',        icon: 'Users',      label: 'Agreements' },
-      { id: 'clm.terms_conditions',  icon: 'List',       label: 'Terms & Conditions' },
-      { id: 'clm.clause_library',    icon: 'BookOpen',   label: 'Clause Library' },
+      { id: 'clm.document_panel', icon: 'PenSquare', label: 'Document Control Panel' },
+      { id: 'clm.trade_documents', icon: 'Hexagon', label: 'Trade Documents' },
+      { id: 'clm.agreements', icon: 'Users', label: 'Agreements' },
+      { id: 'clm.terms_conditions', icon: 'List', label: 'Terms & Conditions' },
+      { id: 'clm.clause_library', icon: 'BookOpen', label: 'Clause Library' },
     ],
   },
 ];
@@ -306,6 +306,19 @@ export const CLM_GROUPS: MenuGroup[] = [
 // visible to everyone (visibility within the group is then narrowed by
 // per-module permission flags inside Sidebar.canView).
 const ALL_TENANT_ROLES: UserRole[] = ['super_admin', 'client_admin', 'client_user', 'branch_user', 'employee'];
+
+/* Developers — operational tooling. Currently just the Shipment (Business
+ * Task) list; grows as more dev/ops pages ship. */
+export const DEVELOPERS_GROUPS: MenuGroup[] = [
+  {
+    id: 'developers.ops',
+    label: 'Operations',
+    icon: 'Truck',
+    children: [
+      { id: 'developers.shipment', icon: 'Truck', label: 'Shipment' },
+    ],
+  },
+];
 
 export const MENU_ITEMS: MenuItem[] = [
   { id: '', section: 'MAIN', label: '', icon: '', roles: ALL_TENANT_ROLES },
@@ -377,6 +390,14 @@ export const MENU_ITEMS: MenuItem[] = [
   { id: 'gts', icon: 'Globe', label: 'GTS (E-Docs)', roles: ALL_TENANT_ROLES },
   // Inventory Management System — top-level module (stub for now).
   { id: 'inventory', icon: 'Boxes', label: 'Inventory Management System', roles: ALL_TENANT_ROLES },
+  // Developers — operational tooling (Shipment / Business Task list).
+  {
+    id: 'developers',
+    icon: 'Code',
+    label: 'Developers',
+    roles: ALL_TENANT_ROLES,
+    groups: DEVELOPERS_GROUPS,
+  },
   {
     id: 'master',
     icon: 'Database',
@@ -394,7 +415,7 @@ export const MENU_ITEMS: MenuItem[] = [
   // Vendor master — companies the branch buys product from. Sits next to
   // Products so the purchasing trio (Products → Vendors → mappings) reads
   // as a single section in the sidebar.
-  { id: 'vendors',  icon: 'Store',   label: 'Suppliers',  roles: ['branch_user', 'employee'] },
+  { id: 'vendors', icon: 'Store', label: 'Suppliers', roles: ['branch_user', 'employee'] },
 
   // Face-driven attendance — only employees punch in. The signed-in admin /
   // branch user has no Employee row to clock in for; surfaced ONLY to the

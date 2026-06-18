@@ -22,7 +22,7 @@ export function MasterSelect({
   name?: string;
   value?: string;
   defaultValue?: string;
-  options: { value: string; label: string }[];
+  options: { value: string; label: string; badge?: { text: string; tone?: 'green' | 'red' | 'gray' } }[];
   placeholder?: string;
   disabled?: boolean;
   invalid?: boolean;
@@ -108,6 +108,22 @@ export function MasterSelect({
     : (search.trim()
         ? options.filter(o => o.label.toLowerCase().includes(search.trim().toLowerCase()))
         : options);
+  // Small status pill rendered beside an option label (e.g. Active / Inactive).
+  const OptBadge = ({ b }: { b: { text: string; tone?: 'green' | 'red' | 'gray' } }) => (
+    <span
+      style={{
+        marginLeft: 8, padding: '1px 8px', borderRadius: 999,
+        fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0,
+        ...(b.tone === 'red'
+          ? { background: '#fee2e2', color: '#dc2626' }
+          : b.tone === 'gray'
+            ? { background: '#f1f5f9', color: '#475569' }
+            : { background: '#dcfce7', color: '#16a34a' }),
+      }}
+    >
+      {b.text}
+    </span>
+  );
   const handlePick = (val: string) => {
     // With allowDeselect, re-clicking the current selection clears it.
     const next = allowDeselect && val === currentValue ? '' : val;
@@ -129,7 +145,7 @@ export function MasterSelect({
           className="master-select-toggle"
         >
           {selected ? (
-            <span className="master-select-value">{selected.label}</span>
+            <span className="master-select-value">{selected.label}{selected.badge && <OptBadge b={selected.badge} />}</span>
           ) : currentValue ? (
             /* Value set but not in the currently-loaded options (e.g. a
                paginated/async list before its page loads) — show the raw
@@ -203,7 +219,12 @@ export function MasterSelect({
                     onClick={() => handlePick(opt.value)}
                     className="master-select-item"
                   >
-                    {opt.label}
+                    {opt.badge ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', width: '100%' }}>
+                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{opt.label}</span>
+                        <OptBadge b={opt.badge} />
+                      </span>
+                    ) : opt.label}
                   </DropdownItem>
                 ))}
                 {loadingMore && (

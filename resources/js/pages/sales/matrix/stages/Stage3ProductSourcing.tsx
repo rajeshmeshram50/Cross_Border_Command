@@ -17,6 +17,17 @@ import VendorMappingsModal from './VendorMappingsModal';
  *  endpoints we've been hardening through the negative + security suites.
  * ───────────────────────────────────────────────────────────────────── */
 
+/* Currency code → symbol (matches the Product Directory / Price modals). Falls
+ * back to the raw code so an unmapped currency still reads sensibly. */
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$', INR: '₹', EUR: '€', GBP: '£', JPY: '¥', CNY: '¥', AUD: 'A$', SGD: 'S$', CAD: 'C$', AED: 'AED ',
+};
+const currencySymbol = (code: string | null | undefined): string => {
+  if (!code) return '';
+  const c = String(code).split(/\s*[-–—]\s*/)[0].trim().toUpperCase();
+  return CURRENCY_SYMBOLS[c] ?? `${c} `;
+};
+
 type Tab = 'details' | 'required' | 'not_required';
 
 type Row = {
@@ -455,7 +466,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                           </span>
                         </td>
                         <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
-                        <td className="s3-price">$ {r.target_price != null ? Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
+                        <td className="s3-price">{r.target_price != null ? `${currencySymbol(r.currency)}${Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>
                         <td><span className="s3-curr s3-curr-violet">{r.currency}</span></td>
                         <td>
                           {updatingId === r.id ? (
@@ -597,7 +608,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                             </span>
                           </td>
                           <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
-                          <td className="s3-price">$ {r.target_price != null ? Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
+                          <td className="s3-price">{r.target_price != null ? `${currencySymbol(r.currency)}${Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>
                           <td><span className="s3-curr s3-curr-amber">{r.currency}</span></td>
                           <td>
                             {hasProc ? (
@@ -759,7 +770,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                           </span>
                         </td>
                         <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
-                        <td className="s3-price">$ {r.target_price != null ? Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
+                        <td className="s3-price">{r.target_price != null ? `${currencySymbol(r.currency)}${Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>
                         <td><span className="s3-curr s3-curr-mint">{r.currency}</span></td>
                         <td>
                           {r.vendor_count > 0 ? (
