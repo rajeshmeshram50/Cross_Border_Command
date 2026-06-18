@@ -315,17 +315,37 @@ export default function TemplateFormPage() {
   };
 
   // ── DOCX actions ───────────────────────────────────────────────────────────
-  const downloadDocx = async () => {
-    if (!editing) {
-      toast.error('Save first', 'Save the template as a draft before downloading as DOCX.');
-      return;
+  // Make sure a server-side row exists so the DOCX has something to attach to.
+  // If the template hasn't been saved yet, auto-create it as a Draft instead of
+  // forcing the user to click "Save as Draft" first.
+  const ensureSavedDraft = async (): Promise<TemplateRow | null> => {
+    if (editing) return editing;
+    // The backend needs at least the Step 1 basics to create a row.
+    if (!validateStep(1)) {
+      setStep(1);
+      toast.error('Add the basics first', 'Fill in the template name, category and role before uploading a DOCX.');
+      return null;
     }
     try {
-      const resp = await api.get(`/hr-document-templates/${editing.id}/download`, { responseType: 'blob' });
+      const { data } = await api.post('/hr-document-templates', buildPayload('Draft'));
+      setEditing(data);
+      navigate(`/hr/doc-templates/${data.id}/edit`, { replace: true });
+      return data as TemplateRow;
+    } catch (err: any) {
+      toast.error('Could not save draft', err?.response?.data?.message || 'Please try again.');
+      return null;
+    }
+  };
+
+  const downloadDocx = async () => {
+    const row = await ensureSavedDraft();
+    if (!row) return;
+    try {
+      const resp = await api.get(`/hr-document-templates/${row.id}/download`, { responseType: 'blob' });
       const url = URL.createObjectURL(new Blob([resp.data]));
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${editing.code || 'template'}.docx`;
+      a.download = `${row.code || 'template'}.docx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -336,14 +356,12 @@ export default function TemplateFormPage() {
   };
 
   const uploadDocx = async (file: File) => {
-    if (!editing) {
-      toast.error('Save first', 'Save the template as a draft before uploading a revised DOCX.');
-      return;
-    }
+    const row = await ensureSavedDraft();
+    if (!row) return;
     const fd = new FormData();
     fd.append('docx', file);
     try {
-      const { data } = await api.post(`/hr-document-templates/${editing.id}/upload-docx`, fd, {
+      const { data } = await api.post(`/hr-document-templates/${row.id}/upload-docx`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       setContentHtml(data.content_html || '');
@@ -579,7 +597,6 @@ function Step1(props: {
       {/* Role / Designation — full-width card, six designation levels */}
       <section className="tpl-section" style={sectionStyle}>
         <div style={sectionLabel}>2. Role / Designation Type <span style={req}>*</span></div>
-        <div className="tpl-help" style={{ fontSize: 12, color: '#6b7280', marginBottom: 10 }}>Sourced from the Designation Master's <code>level</code> field.</div>
         <div className="row g-2">
           {ROLE_TYPES.map(r => {
             const active = props.roleType === r.value;
@@ -706,20 +723,21 @@ function Step2(props: {
       {/* Lifecycle event */}
       <section className="tpl-section" style={sectionStyle}>
         <div style={sectionLabel}>HR Lifecycle Event <span style={req}>*</span></div>
-        <div className="row g-3">
+        <div className="row g-0">
           <div className="col-md-8">
-            <label className="tpl-field-label" style={fieldLabel}>Trigger</label>
-            <MasterSelect
-              value={props.triggerPointId ? String(props.triggerPointId) : ''}
-              onChange={(v) => props.setTriggerPointId(v ? Number(v) : '')}
-              options={triggerOptions}
-              placeholder="— Select trigger —"
-              invalid={!!props.errors.trigger_point_id}
-            />
-            {props.errors.trigger_point_id && <div style={errMsg}>{props.errors.trigger_point_id}</div>}
-            <div className="tpl-help" style={{ fontSize: 11.5, color: '#6b7280', marginTop: 4 }}>
-              Sourced from the Trigger Point Master under HR &gt; Document &amp; Evidence.
+            <div className="d-flex align-items-center gap-3">
+              <label className="tpl-field-label" style={{ ...fieldLabel, marginBottom: 0, whiteSpace: 'nowrap' }}>Trigger</label>
+              <div className="flex-grow-1">
+                <MasterSelect
+                  value={props.triggerPointId ? String(props.triggerPointId) : ''}
+                  onChange={(v) => props.setTriggerPointId(v ? Number(v) : '')}
+                  options={triggerOptions}
+                  placeholder="— Select trigger —"
+                  invalid={!!props.errors.trigger_point_id}
+                />
+              </div>
             </div>
+            {props.errors.trigger_point_id && <div style={errMsg}>{props.errors.trigger_point_id}</div>}
           </div>
         </div>
       </section>
@@ -856,22 +874,22 @@ function Step3(props: {
               <li>Upload revised version below — it replaces the saved DOCX and refreshes the web preview</li>
             </ol>
             <div className="d-flex gap-2 flex-wrap">
-              <button type="button" onClick={props.onDownloadDocx} disabled={!props.editingId}
+              <button type="button" onClick={props.onDownloadDocx}
                 className="tpl-word-dl-btn"
-                style={{ padding: '8px 16px', background: '#1f2937', color: '#fff', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: props.editingId ? 'pointer' : 'not-allowed', opacity: props.editingId ? 1 : 0.5 }}>
+                style={{ padding: '8px 16px', background: '#1f2937', color: '#fff', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                 <i className="ri-download-2-line me-1" /> Download DOCX (with header/footer)
               </button>
               <input ref={props.docxRef} type="file" accept=".doc,.docx" style={{ display: 'none' }}
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) props.onUploadDocx(f); e.currentTarget.value = ''; }} />
-              <button type="button" onClick={() => props.docxRef.current?.click()} disabled={!props.editingId}
+              <button type="button" onClick={() => props.docxRef.current?.click()}
                 className="tpl-word-up-btn"
-                style={{ padding: '8px 16px', background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: props.editingId ? 'pointer' : 'not-allowed', opacity: props.editingId ? 1 : 0.5 }}>
+                style={{ padding: '8px 16px', background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                 <i className="ri-upload-2-line me-1" /> Upload Revised DOCX
               </button>
             </div>
             {!props.editingId && (
               <div className="tpl-word-warn" style={{ marginTop: 10, fontSize: 11.5, color: '#b45309', background: '#fef3c7', border: '1px solid #fde68a', padding: '6px 10px', borderRadius: 8 }}>
-                <i className="ri-information-line me-1" />Save the template as a draft first to enable DOCX export/import.
+                <i className="ri-information-line me-1" />Downloading or uploading a DOCX will auto-save this template as a draft first (template name, category and role are required).
               </div>
             )}
             {props.docxName && (
