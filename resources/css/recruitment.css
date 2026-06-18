@@ -5223,7 +5223,17 @@
   background: #ede9fe;
   flex-shrink: 0;
 }
+[data-bs-theme="dark"] .ep-doc-icon { background: rgba(124,92,252,0.20); }
 .ep-doc-icon i { font-size: 18px; color: #5b3fd1; }
+[data-bs-theme="dark"] .ep-doc-icon i { color: #c4b5fd; }
+/* Document run-status badge (Completed / In Progress / …) — swap the
+   light-pastel inline fill for a translucent same-hue chip in dark mode
+   (opt-in via the inline --pill-fg the badge passes) so it stops reading
+   as a white block on the dark exit-document card. */
+[data-bs-theme="dark"] .ep-doc-status-badge[style*="--pill-fg"] {
+  background: color-mix(in srgb, var(--pill-fg) 22%, transparent) !important;
+  color: color-mix(in srgb, var(--pill-fg) 60%, #ffffff) !important;
+}
 .ep-doc-info { flex: 1; min-width: 160px; }
 .ep-doc-name { font-size: 13px; font-weight: 600; color: var(--vz-body-color); }
 [data-bs-theme="dark"] .ep-doc-name { color: #ffffff; }

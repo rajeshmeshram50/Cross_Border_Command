@@ -195,9 +195,11 @@ class EmployeeController extends Controller
             ->map(fn($e) => [
                 'id'    => $e->id,
                 'kind'  => 'employee',
-                'label' => trim(($e->display_name ?: trim($e->first_name . ' ' . $e->last_name))
-                    . ($e->designation?->name ? ' — ' . $e->designation->name : '')
-                    . ' (Employee)'),
+                // Show the employee's DESIGNATION in brackets (e.g. "Anushka
+                // Bakde (HOD)") rather than the generic "(Employee)" kind.
+                // Falls back to "Employee" only when no designation is set.
+                'label' => trim($e->display_name ?: trim($e->first_name . ' ' . $e->last_name))
+                    . ' (' . ($e->designation?->name ?: 'Employee') . ')',
             ]);
 
         // Tenant login users that could plausibly act as managers — only
@@ -217,14 +219,31 @@ class EmployeeController extends Controller
         $loginUsers = $uq
             ->select(['id', 'name', 'user_type', 'designation'])
             ->orderBy('name')
-            ->get()
-            ->map(fn($u) => [
-                'id'    => $u->id,
-                'kind'  => $u->user_type,
-                'label' => trim($u->name
-                    . ($u->designation ? ' — ' . $u->designation : '')
-                    . ' (' . ucfirst(str_replace('_', ' ', $u->user_type)) . ')'),
-            ]);
+            ->get();
+
+        // Resolve each login user's linked EMPLOYEE designation (employees are
+        // tied to a login account via employees.user_id). When a user account
+        // has an employee record, prefer that employee's designation so the
+        // label reads "Name (HOD)" instead of the generic account type.
+        $empDesigByUser = Employee::query()
+            ->whereIn('user_id', $loginUsers->pluck('id')->all())
+            ->whereNotNull('designation_id')
+            ->with(['designation:id,name'])
+            ->get(['id', 'user_id', 'designation_id'])
+            ->reduce(function ($map, $e) {
+                if ($e->user_id && $e->designation?->name) $map[$e->user_id] = $e->designation->name;
+                return $map;
+            }, []);
+
+        $loginUsers = $loginUsers->map(fn($u) => [
+            'id'    => $u->id,
+            'kind'  => $u->user_type,
+            // Designation in brackets — the linked employee's designation
+            // first, then the user's own designation, finally the readable
+            // user type (e.g. "Client Admin") when none is set.
+            'label' => trim($u->name)
+                . ' (' . (($empDesigByUser[$u->id] ?? $u->designation) ?: ucfirst(str_replace('_', ' ', $u->user_type))) . ')',
+        ]);
 
         return response()->json([
             'employees'   => $employees->values(),
