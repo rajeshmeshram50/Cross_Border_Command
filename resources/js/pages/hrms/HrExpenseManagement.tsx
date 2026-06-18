@@ -8,6 +8,7 @@ import { useToast } from '../../contexts/ToastContext';
 import ExpenseClaimsTable, { type ExpenseClaimRow } from '../../components/ExpenseClaimsTable';
 import AdvanceRequestsTable, { type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
+import WorklistPager from '../../components/ui/WorklistPager';
 import { useChartTheme } from '../../hooks/useChartTheme';
 
 
@@ -69,7 +70,7 @@ function KpiTile({
 }) {
   return (
     <div
-      className="hrexp-surface"
+      className="hrexp-surface hrexp-kpi-card"
       style={{
         borderRadius: 14,
         border: '1px solid var(--vz-border-color)',
@@ -144,6 +145,13 @@ export default function HrExpenseManagement() {
   const [module, setModule] = useState<'expense' | 'advance'>('expense');
   const [filter, setFilter] = useState<StatusFilter>('all');
   const [search, setSearch] = useState('');
+  // Spend-analytics panel (Spend by Category + Policy Limits) is collapsible;
+  // open by default.
+  const [analyticsOpen, setAnalyticsOpen] = useState(true);
+  // Client-side pagination — same WorklistPager (dynamic rows-per-page) the
+  // recruitment table uses, so both lists behave identically.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   // Category + department dropdowns sit inside the filter strip below the
   // status tabs. 'all' = no narrowing. Both reset whenever the user flips
   // the date dropdown so they don't end up filtering against an empty set.
@@ -464,6 +472,17 @@ export default function HrExpenseManagement() {
     return true;
   });
 
+  // ── Pagination — slice the active list (claims or advances) into pages.
+  const activeRows = module === 'advance' ? filteredAdvances : filtered;
+  const pageCount  = Math.max(1, Math.ceil(activeRows.length / pageSize));
+  const safePage   = Math.min(page, pageCount);
+  const sliceFrom  = (safePage - 1) * pageSize;
+  const visibleClaims   = filtered.slice(sliceFrom, sliceFrom + pageSize);
+  const visibleAdvances = filteredAdvances.slice(sliceFrom, sliceFrom + pageSize);
+  // Reset to page 1 whenever the filters / module / search change so the user
+  // never lands on a now-empty page.
+  useEffect(() => { setPage(1); }, [module, filter, categoryFilter, departmentFilter, search, dateFilter]);
+
   // Export menu (Excel / PDF / CSV). The Export button is now a split picker
   // instead of an immediate CSV download — users pick the format from the
   // dropdown. All three share the same column set + filtered row source.
@@ -698,6 +717,12 @@ export default function HrExpenseManagement() {
            wash of the tile's vivid accent (--kpi-*-dark) so every KPI icon
            reads uniformly against the dark surface instead of glowing as a
            bright pastel block. */
+        /* KPI tile hover — subtle lift + stronger shadow + accent border,
+           matching the interactive feel of the other module cards. */
+        .hrexp-kpi-card { transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
+        .hrexp-kpi-card:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(0,0,0,0.12); border-color: rgba(124,92,252,0.45); }
+        [data-bs-theme="dark"] .hrexp-kpi-card:hover { box-shadow: 0 10px 28px rgba(0,0,0,0.5); border-color: rgba(124,92,252,0.55); }
+
         .hrexp-kpi-ic { background: var(--kpi-tint); }
         .hrexp-kpi-ic i { color: var(--kpi-fg); }
         [data-bs-theme="dark"] .hrexp-kpi-ic { background: var(--kpi-tint-dark); }
@@ -836,8 +861,41 @@ export default function HrExpenseManagement() {
           </Col>
         </Row>
 
-        {/* ── Spend by Category + Policy Limits ── */}
-        <Row className="g-3 mb-3 align-items-stretch">
+        {/* ── Spend by Category + Policy Limits — one collapsible container,
+            open by default, with a header toggle to show / hide both. ── */}
+        <div
+          className="hrexp-surface mb-3"
+          style={{
+            borderRadius: 14,
+            border: '1px solid var(--vz-border-color)',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
+            overflow: 'hidden',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setAnalyticsOpen(o => !o)}
+            className="btn w-100 d-flex align-items-center justify-content-between"
+            style={{ padding: '13px 18px', border: 'none', background: 'transparent' }}
+            aria-expanded={analyticsOpen}
+          >
+            <span className="d-inline-flex align-items-center gap-2 fw-bold" style={{ fontSize: 14 }}>
+              <span
+                className="d-inline-flex align-items-center justify-content-center"
+                style={{ width: 28, height: 28, borderRadius: 8, background: '#ece6ff', color: '#7c5cfc', fontSize: 14 }}
+              >
+                <i className="ri-pie-chart-2-line" />
+              </span>
+              Spend Analytics
+            </span>
+            <i
+              className="ri-arrow-down-s-line"
+              style={{ fontSize: 22, color: 'var(--vz-secondary-color)', transition: 'transform .2s ease', transform: analyticsOpen ? 'rotate(180deg)' : 'none' }}
+            />
+          </button>
+          {analyticsOpen && (
+          <div style={{ padding: '0 14px 14px' }}>
+        <Row className="g-3 align-items-stretch">
           <Col xl={8} lg={7}>
             <div
               className="hrexp-surface"
@@ -1028,6 +1086,9 @@ export default function HrExpenseManagement() {
             </div>
           </Col>
         </Row>
+          </div>
+          )}
+        </div>
 
         {/* ── Main card with status tabs + filter row + table ── */}
         <Card className="border-0" style={{ borderRadius: 14 }}>
@@ -1039,6 +1100,7 @@ export default function HrExpenseManagement() {
                 source (so they react to the All Dates dropdown). */}
             <Row className="g-2 align-items-center mb-3">
               <Col xs={12}>
+                <div className="d-flex align-items-center justify-content-between gap-3 flex-wrap">
                 <div
                   className="d-inline-flex"
                   style={{
@@ -1089,6 +1151,19 @@ export default function HrExpenseManagement() {
                     );
                   })}
                 </div>
+                {/* Search shares the module-tabs row, filling the space to the
+                    right of the Expense Claims / Advance Requests toggle. */}
+                <div className="rec-req-search search-box" style={{ flex: '1 1 280px', maxWidth: 440, minWidth: 220 }}>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Search employee, claim no, category, vendor…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                  <i className="ri-search-line search-icon" />
+                </div>
+                </div>
               </Col>
             </Row>
 
@@ -1099,122 +1174,36 @@ export default function HrExpenseManagement() {
                 the advance source when the module pill is on Advance. */}
             <Row className="g-2 align-items-center mb-3">
               <Col xs={12}>
-                <div
-                  className="d-flex flex-wrap"
-                  style={{
-                    background: 'var(--vz-secondary-bg)',
-                    border: '1px solid var(--vz-border-color)',
-                    borderRadius: 10,
-                    padding: 4,
-                    gap: 4,
-                  }}
-                >
+                <div className="rec-tab-track">
                   {(() => {
                     const c = module === 'advance' ? advanceCounts : counts;
                     const allLabel = module === 'advance' ? 'All Advances' : 'All Claims';
                     return [
-                      { key: 'all'      as StatusFilter, label: allLabel,         count: c.all,      icon: 'ri-stack-line'             },
-                      { key: 'pending'  as StatusFilter, label: 'Pending Review', count: c.pending,  icon: 'ri-time-line'              },
-                      { key: 'approved' as StatusFilter, label: 'Approved',       count: c.approved, icon: 'ri-checkbox-circle-line'   },
-                      { key: 'rejected' as StatusFilter, label: 'Rejected',       count: c.rejected, icon: 'ri-close-circle-line'      },
+                      { key: 'all'      as StatusFilter, label: allLabel,         count: c.all,      icon: 'ri-stack-line',           variant: 'in-progress' },
+                      { key: 'pending'  as StatusFilter, label: 'Pending Review', count: c.pending,  icon: 'ri-time-line',            variant: 'in-progress' },
+                      { key: 'approved' as StatusFilter, label: 'Approved',       count: c.approved, icon: 'ri-checkbox-circle-line', variant: 'completed' },
+                      { key: 'rejected' as StatusFilter, label: 'Rejected',       count: c.rejected, icon: 'ri-close-circle-line',    variant: 'cancelled' },
                     ];
-                  })().map(t => {
-                    const on = filter === t.key;
-                    return (
-                      <button
-                        key={t.key}
-                        type="button"
-                        onClick={() => setFilter(t.key)}
-                        className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
-                        style={{
-                          borderRadius: 8,
-                          padding: '8px 14px',
-                          fontSize: 13,
-                          background: on ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'transparent',
-                          color: on ? '#fff' : 'var(--vz-secondary-color)',
-                          border: 'none',
-                          boxShadow: on ? '0 4px 12px rgba(124,92,252,0.25)' : 'none',
-                        }}
-                      >
-                        <i className={t.icon} style={{ fontSize: 14 }} />
-                        {t.label}
-                        <span
-                          className="badge rounded-pill"
-                          style={{
-                            fontSize: 11,
-                            background: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
-                            color: on ? '#fff' : 'var(--vz-secondary-color)',
-                          }}
-                        >
-                          {t.count}
-                        </span>
-                      </button>
-                    );
-                  })}
+                  })().map(t => (
+                    <button
+                      key={t.key}
+                      type="button"
+                      onClick={() => setFilter(t.key)}
+                      className={`rec-tab ${filter === t.key ? `is-active ${t.variant}` : ''}`}
+                    >
+                      <i className={t.icon} />
+                      {t.label}
+                      <span className="badge">{t.count}</span>
+                    </button>
+                  ))}
                 </div>
-              </Col>
-            </Row>
-
-            {/* Filter row — search on the left, Category + Department
-                dropdowns on the right. Mirrors the HrEmployees Status /
-                Department row exactly so both pages read as siblings. */}
-            <Row className="g-2 align-items-center mb-3">
-              <Col md={6} sm={12}>
-                <div className="search-box">
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="Search employee, claim no, category, vendor…"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                  <i className="ri-search-line search-icon" />
-                </div>
-              </Col>
-              <Col md={6} sm={12} className="d-flex justify-content-md-end gap-3 flex-wrap align-items-center">
-                {/* Category + Department dropdowns only apply to expense
-                    claims; advances aren't tied to either, so the filter
-                    chips are hidden when the Advance Requests module is
-                    active to keep the toolbar honest. */}
-                {module === 'expense' && (
-                  <>
-                    <div className="d-flex align-items-center gap-2">
-                      <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Category</span>
-                      <div style={{ minWidth: 170 }}>
-                        <MasterSelect
-                          value={categoryFilter}
-                          onChange={(v) => setCategoryFilter(v || 'all')}
-                          options={[
-                            { value: 'all', label: 'All Categories' },
-                            ...categoryOptions.map(c => ({ value: c, label: c })),
-                          ]}
-                          placeholder="All Categories"
-                        />
-                      </div>
-                    </div>
-                    <div className="d-flex align-items-center gap-2">
-                      <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Department</span>
-                      <div style={{ minWidth: 170 }}>
-                        <MasterSelect
-                          value={departmentFilter}
-                          onChange={(v) => setDepartmentFilter(v || 'all')}
-                          options={[
-                            { value: 'all', label: 'All Depts' },
-                            ...departmentOptions.map(d => ({ value: d, label: d })),
-                          ]}
-                          placeholder="All Depts"
-                        />
-                      </div>
-                    </div>
-                  </>
-                )}
               </Col>
             </Row>
 
             <div>
             {module === 'advance' ? (
               <AdvanceRequestsTable
-                rows={filteredAdvances}
+                rows={visibleAdvances}
                 loading={advanceLoading}
                 mode="hr"
                 canHrApprove={canHrApprove}
@@ -1223,7 +1212,7 @@ export default function HrExpenseManagement() {
               />
             ) : (
               <ExpenseClaimsTable
-                rows={filtered}
+                rows={visibleClaims}
                 loading={loading}
                 mode="hr"
                 canHrApprove={canHrApprove}
@@ -1232,20 +1221,15 @@ export default function HrExpenseManagement() {
               />
             )}
 
-            <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3 pt-2 border-top">
-              <small className="text-muted">
-                {module === 'advance' ? (
-                  <>Showing <strong className="text-body">{filteredAdvances.length}</strong> of <strong className="text-body">{dateFilteredAdvances.length}</strong> advance{dateFilteredAdvances.length === 1 ? '' : 's'}</>
-                ) : (
-                  <>Showing <strong className="text-body">{filtered.length}</strong> of <strong className="text-body">{dateFilteredRows.length}</strong> claim{dateFilteredRows.length === 1 ? '' : 's'}</>
-                )}
-                {dateFilter !== 'all' && <> · <strong className="text-body">{DATE_FILTER_LABELS[dateFilter]}</strong></>}
-              </small>
-              <small className="text-muted d-inline-flex align-items-center gap-1">
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
-                Live data
-              </small>
-            </div>
+            {/* Pagination — same WorklistPager (dynamic rows-per-page) as the
+                recruitment table. */}
+            <WorklistPager
+              total={activeRows.length}
+              page={safePage}
+              pageSize={pageSize}
+              onPage={setPage}
+              onPageSize={(n) => { setPageSize(n); setPage(1); }}
+            />
             </div>
           </CardBody>
         </Card>
