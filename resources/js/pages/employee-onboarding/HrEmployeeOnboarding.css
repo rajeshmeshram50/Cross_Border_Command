@@ -673,7 +673,14 @@
         .onb-init-section-step.comp { background: #fde8c4; color: #a4661c; }
         .onb-init-section-body { padding: 14px 16px; }
 
-        .onb-init-subgroup { font-size: 9.5px; font-weight: 800; letter-spacing: 0.10em; text-transform: uppercase; color: var(--vz-secondary-color); margin: 0 0 10px; }
+        /* Top margin separates each sub-heading from the field row above it,
+           bottom margin gives breathing room before the fields/checkboxes
+           below — previously there was no top margin so headings like
+           "Organisational Details" / "Bonus, Perks & Statutory" looked
+           cramped against the preceding row. The first sub-heading in a
+           section keeps zero top margin so it sits snug under the section head. */
+        .onb-init-subgroup { font-size: 9.5px; font-weight: 800; letter-spacing: 0.10em; text-transform: uppercase; color: var(--vz-secondary-color); margin: 20px 0 12px; }
+        .onb-init-subgroup:first-child { margin-top: 0; }
         .onb-init-subgroup + .onb-init-subgroup { margin-top: 16px; }
 
         .onb-init-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #374151; margin: 0 0 5px; display: flex; align-items: center; gap: 5px; }
