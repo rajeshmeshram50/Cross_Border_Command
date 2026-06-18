@@ -9,7 +9,11 @@ const readInitialTheme = (): Theme => {
   const html = document.documentElement;
   const fromHtml = html.getAttribute('data-bs-theme') || html.getAttribute('data-theme');
   if (fromHtml === 'dark' || fromHtml === 'light') return fromHtml;
-  const stored = localStorage.getItem('cbc_theme');
+  // `cbc-layout-mode` is the CANONICAL key: app.tsx seeds <html> from it before
+  // React mounts, and Velzon's Redux boots from it. `cbc_theme` is our legacy
+  // key, kept as a fallback. Read the canonical one first so a refresh restores
+  // exactly what the user last chose.
+  const stored = localStorage.getItem('cbc-layout-mode') || localStorage.getItem('cbc_theme');
   return stored === 'dark' ? 'dark' : 'light';
 };
 
@@ -21,7 +25,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const html = document.documentElement;
     if (html.getAttribute('data-theme') !== theme) html.setAttribute('data-theme', theme);
     if (html.getAttribute('data-bs-theme') !== theme) html.setAttribute('data-bs-theme', theme);
+    // Persist to BOTH keys so the choice survives a hard refresh: `cbc-layout-mode`
+    // is what app.tsx seeds <html> from (pre-React) and what Velzon's Redux reads
+    // on boot — without this they'd reset to their stale value and flip the theme.
     localStorage.setItem('cbc_theme', theme);
+    localStorage.setItem('cbc-layout-mode', theme);
   }, [theme]);
 
   // Keep our state in sync when anything else flips `data-bs-theme` or `data-theme`

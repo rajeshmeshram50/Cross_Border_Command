@@ -394,7 +394,7 @@ export const MENU_ITEMS: MenuItem[] = [
   {
     id: 'developers',
     icon: 'Code',
-    label: 'Developers',
+    label: 'Dev Tools',
     roles: ALL_TENANT_ROLES,
     groups: DEVELOPERS_GROUPS,
   },

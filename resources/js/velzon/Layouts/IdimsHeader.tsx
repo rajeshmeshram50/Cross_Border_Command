@@ -288,7 +288,7 @@ export default function IdimsHeader() {
     if (can('inventory')) items.push({ id: 'inventory', label: 'Inventory Management System', icon: IC.box });
     // Developers → Shipment (Business Task). Direct-link tab, gated on the
     // developers.shipment permission. (id 'developers' maps to /developers/shipment.)
-    if (can('developers.shipment')) items.push({ id: 'developers', label: 'Developers', icon: IC.layers });
+    if (can('developers.shipment')) items.push({ id: 'developers', label: 'Dev Tools', icon: IC.layers });
     if (hasGroupView('master.')) items.push({ id: 'master', label: 'Master', icon: IC.db });
     // Permissions — branch admins manage their team's access (employees do
     // not; they can't grant permissions). Super-admin / client-admin already
