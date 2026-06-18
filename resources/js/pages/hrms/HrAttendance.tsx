@@ -4,6 +4,7 @@ import { MasterFormStyles, MasterDatePicker } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import { Turtle } from 'lucide-react';
 import api from '../../api';
+import WorklistPager from '../../components/ui/WorklistPager';
 import '../../../css/recruitment.css';
 
 // "Today" anchor — dynamic, locked at module load so a single render pass
@@ -716,7 +717,7 @@ export default function HrAttendance() {
                         box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
                       }
                     `}</style>
-                    <div className="search-box">
+                    <div className="rec-req-search search-box">
                       <Input type="text" className="form-control form-control-sm" placeholder="Search name, EMP-ID, biometric…" value={search} onChange={e => setSearch(e.target.value)} />
                       <i className="ri-search-line search-icon" />
                     </div>
@@ -1115,7 +1116,7 @@ function LogsRequestsCard({
 }) {
   // Pagination + display settings — default 5 rows so the table stays compact
   // and the rest of the records flow to the next page.
-  const [rowsPerPage, setRowsPerPage] = useState<5 | 10>(5);
+  const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(1);
 
   // Logs filtered by the active month range pill / calendar month — this is
@@ -1132,10 +1133,10 @@ function LogsRequestsCard({
   // showing an empty page that you can't navigate away from cleanly.
   useEffect(() => { setPage(1); }, [calMonth, employee.id]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / rowsPerPage));
+  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / pageSize));
   const safePage   = Math.min(page, totalPages);
-  const pageStart  = (safePage - 1) * rowsPerPage;
-  const pageEnd    = Math.min(pageStart + rowsPerPage, filteredLogs.length);
+  const pageStart  = (safePage - 1) * pageSize;
+  const pageEnd    = Math.min(pageStart + pageSize, filteredLogs.length);
   const visibleLogs = filteredLogs.slice(pageStart, pageEnd);
 
   // View toggle (list/calendar) and 24-hour switch — drive future formatting
@@ -1230,7 +1231,7 @@ function LogsRequestsCard({
                 area below the rows (HRMS-BUG-080). */}
             <div
               className="table-responsive table-card border rounded att-logs-table-wrap--fixed"
-              style={{ minHeight: `${46 + Math.min(Math.max(visibleLogs.length, 1), rowsPerPage) * 52}px` }}
+              style={{ minHeight: `${46 + Math.min(Math.max(visibleLogs.length, 1), pageSize) * 52}px` }}
             >
               <table className="table align-middle table-nowrap mb-0 att-logs-table att-logs-table--v2">
                 <thead className="table-light">
@@ -1396,36 +1397,15 @@ function LogsRequestsCard({
               </table>
             </div>
 
-            {/* Footer — Rows-per-page select | Showing X-Y of Z | Prev / pages / Next */}
-            <div className="att-logs-foot att-logs-foot--v3">
-              <div className="att-logs-foot-left">
-                <span className="att-logs-foot-rowsel-label">Rows per page:</span>
-                <select
-                  className="att-logs-foot-rowsel"
-                  value={rowsPerPage}
-                  onChange={(e) => { setRowsPerPage(Number(e.target.value) as 5 | 10); setPage(1); }}
-                >
-                  <option value={5}>5</option>
-                  <option value={10}>10</option>
-                </select>
-              </div>
-              <div className="att-logs-foot-center">
-                Showing <strong>{filteredLogs.length === 0 ? 0 : pageStart + 1}–{pageEnd}</strong> of <strong>{filteredLogs.length}</strong>
-              </div>
-              <div className="att-logs-foot-pages">
-                <button type="button" className="att-page-btn att-page-btn--text" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}>
-                  <i className="ri-arrow-left-s-line" />Prev
-                </button>
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
-                  <button key={n} type="button" className={`att-page-btn ${n === safePage ? 'is-active' : ''}`} onClick={() => setPage(n)}>
-                    {n}
-                  </button>
-                ))}
-                <button type="button" className="att-page-btn att-page-btn--text" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}>
-                  Next<i className="ri-arrow-right-s-line" />
-                </button>
-              </div>
-            </div>
+            {/* Pagination — same WorklistPager (dynamic rows-per-page) as the
+                recruitment / leave / holiday tables. */}
+            <WorklistPager
+              total={filteredLogs.length}
+              page={safePage}
+              pageSize={pageSize}
+              onPage={setPage}
+              onPageSize={(n) => { setPageSize(n); setPage(1); }}
+            />
           </>
         )}
 

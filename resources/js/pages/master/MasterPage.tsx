@@ -2162,7 +2162,8 @@ function MasterPageInner({
                     columns={columns}
                     data={filteredRecords}
                     isGlobalFilter={false}
-                    customPageSize={7}
+                    customPageSize={10}
+                    worklistPagination
                     tableClass="align-middle table-nowrap mb-0"
                     theadClass="table-light"
                     divClass="table-responsive border rounded master-scroll-wrap"
