@@ -578,9 +578,22 @@ class HrDocumentTemplateController extends Controller
         $row1 = $table->addRow();
         $logoCell  = $row1->addCell(2500, ['valign' => 'center']);
         $titleCell = $row1->addCell(7500, ['valign' => 'center']);
-        $absLogo = $logoPath && Storage::disk('public')->exists($logoPath)
-            ? Storage::disk('public')->path($logoPath) : null;
+        // Resolve the logo to a REAL local file. Normalise any stored prefix
+        // (legacy rows occasionally save "/storage/<path>" or "public/<path>")
+        // and verify the actual file with is_file() on the absolute path —
+        // Storage::exists() can disagree with the real path on some
+        // deployments, which silently dropped the logo from the DOCX.
+        $absLogo = null;
+        if ($logoPath) {
+            $rel = ltrim((string) $logoPath, '/');
+            $rel = preg_replace('#^(storage/app/public/|storage/|public/)#', '', $rel);
+            $candidate = Storage::disk('public')->path($rel);
+            if (is_file($candidate)) $absLogo = $candidate;
+        }
         if ($absLogo) {
+            // PhpWord's addImage embeds raster formats (PNG/JPG/GIF/BMP); it
+            // can't read SVG, so an SVG logo throws and we drop to a text
+            // placeholder rather than aborting the whole header.
             try { $logoCell->addImage($absLogo, ['height' => $logoH]); }
             catch (\Throwable $e) { $logoCell->addText('[Logo]', ['italic' => true, 'color' => '808080']); }
         }
