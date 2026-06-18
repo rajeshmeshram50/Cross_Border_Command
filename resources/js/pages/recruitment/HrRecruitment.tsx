@@ -1831,13 +1831,14 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
                     <td className="ps-4"><span className="rec-id-pill">{r.code || r.id}</span></td>
                     <td>
                       <span className="fw-bold fs-13">{r.position}</span>
-                      <span className="rec-mini-chip" style={{ background: '#eef2f6', color: '#475569' }}>{r.positionType}</span>
+                      <span className="rec-mini-chip" style={{ background: '#eef2f6', color: '#475569', ['--pill-fg' as string]: '#64748b' } as React.CSSProperties}>{r.positionType}</span>
                       <span
                         className="rec-mini-chip"
                         style={{
                           background: WORK_MODE_TONES[r.positionMode]?.bg || '#eef2f6',
                           color: WORK_MODE_TONES[r.positionMode]?.fg || '#475569',
-                        }}
+                          ['--pill-fg' as string]: WORK_MODE_TONES[r.positionMode]?.fg || '#64748b',
+                        } as React.CSSProperties}
                       >
                         {r.positionMode}
                       </span>
@@ -1856,7 +1857,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
                     </td>
                     <td className="text-center"><span className="rec-num">{r.openings}</span></td>
                     <td className="fs-13">{r.requestType}</td>
-                    <td><span className="rec-pill" style={{ background: u.bg, color: u.fg }}>{r.urgency}</span></td>
+                    <td><span className="rec-pill" style={{ background: u.bg, color: u.fg, ['--pill-fg' as string]: u.fg } as React.CSSProperties}>{r.urgency}</span></td>
                     <td>
                       <span className={`badge rounded-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2 fs-13`}>
                         {r.status}

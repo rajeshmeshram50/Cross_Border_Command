@@ -453,7 +453,20 @@ class CandidateController extends Controller
     private const CSV_COLUMNS = [
         'Name', 'Email', 'Mobile', 'Experience',
         'Current Salary', 'Expected Salary',
-        'Notice Period', 'Source',
+        'Notice Period', 'Source', 'Status',
+    ];
+
+    /**
+     * Statuses an imported candidate is allowed to land in. Imports only
+     * accept already-progressed candidates — "Final Round Selected" (stored
+     * as the 'Final Interview' enum) and "Selected". Any other status in the
+     * file is rejected per-row. Keys are accepted spreadsheet labels
+     * (case-insensitive), values are the stored enum.
+     */
+    private const IMPORT_STATUS_MAP = [
+        'final round selected' => 'Final Interview',
+        'final interview'      => 'Final Interview',
+        'selected'             => 'Selected',
     ];
 
     /**
@@ -467,7 +480,7 @@ class CandidateController extends Controller
 
         $sampleRow = [
             'Priya Sharma', 'priya.s@example.com', '+91 9812345678', '5',
-            '15', '22', '30 Days', 'LinkedIn',
+            '15', '22', '30 Days', 'LinkedIn', 'Final Round Selected',
         ];
 
         return $this->csvResponse('candidates_sample.csv', [
@@ -562,6 +575,19 @@ class CandidateController extends Controller
                 continue;
             }
 
+            // Status gate — imports only accept already-progressed candidates.
+            // Anything other than "Final Round Selected" or "Selected" (incl.
+            // a blank Status cell) is rejected so Applied/Shortlisted/etc rows
+            // can't be bulk-loaded.
+            $rawStatus = mb_strtolower(trim((string) ($payload['status'] ?? '')));
+            $mappedStatus = self::IMPORT_STATUS_MAP[$rawStatus] ?? null;
+            if ($mappedStatus === null) {
+                $skipped++;
+                $errors[] = ['row' => $rowNum, 'message' => 'Status must be "Final Round Selected" or "Selected" — this row was not imported.'];
+                continue;
+            }
+            $payload['status'] = $mappedStatus;
+
             // Skip duplicates — same email under the same recruitment. Don't
             // count as an error; spreadsheets often contain re-imports of
             // already-applied candidates.
@@ -582,7 +608,8 @@ class CandidateController extends Controller
                 'branch_id'      => $parent->branch_id,
                 'created_by'     => $auth?->id,
                 'recruitment_id' => $parent->id,
-                'status'         => 'Applied',
+                // $payload['status'] is already the validated/mapped enum
+                // ('Final Interview' or 'Selected') from the status gate above.
             ]));
             $created++;
         }
@@ -725,6 +752,7 @@ class CandidateController extends Controller
             'expected_salary_lpa' => $val('Expected Salary'),
             'notice_period'       => $val('Notice Period'),
             'source'              => $val('Source'),
+            'status'              => $val('Status'),
         ];
     }
 
@@ -849,28 +877,53 @@ class CandidateController extends Controller
     }
 
     /**
-     * Reject duplicate applications: the same email under the same
-     * recruitment. Skips when email is missing (anonymous walk-ins still
-     * happen) so the form's optional-email path stays usable.
+     * Reject duplicate applications within the same recruitment: a candidate
+     * is a duplicate if the SAME email OR the SAME mobile number already
+     * exists under that recruitment. Each check is skipped when its field is
+     * missing (anonymous walk-ins / email-less rows still happen), so the
+     * form's optional-contact paths stay usable.
      */
     private function guardDuplicate(array $data, int $recruitmentId, ?int $excludeId): void
     {
+        // ── Email ──
         $email = trim((string) ($data['email'] ?? ''));
-        if ($email === '') return;
+        if ($email !== '') {
+            $q = Candidate::query()
+                ->where('recruitment_id', $recruitmentId)
+                ->whereRaw('LOWER(email) = ?', [mb_strtolower($email)]);
+            if ($excludeId !== null) $q->where('id', '!=', $excludeId);
 
-        $q = Candidate::query()
-            ->where('recruitment_id', $recruitmentId)
-            ->whereRaw('LOWER(email) = ?', [mb_strtolower($email)]);
-        if ($excludeId !== null) $q->where('id', '!=', $excludeId);
+            $existing = $q->first(['id', 'name']);
+            if ($existing) {
+                throw ValidationException::withMessages([
+                    'email' => [sprintf(
+                        'A candidate with this email is already linked to this recruitment (%s).',
+                        $existing->name,
+                    )],
+                ]);
+            }
+        }
 
-        $existing = $q->first(['id', 'name']);
-        if ($existing) {
-            throw ValidationException::withMessages([
-                'email' => [sprintf(
-                    'A candidate with this email is already linked to this recruitment (%s).',
-                    $existing->name,
-                )],
-            ]);
+        // ── Mobile ── compare on digits only so "+91 98765 43210",
+        // "9876543210" and "098765 43210"-style formatting variants still
+        // collide. Scoped to the same recruitment (HRMS bug — same mobile was
+        // allowed twice).
+        $mobileDigits = preg_replace('/\D/', '', (string) ($data['mobile'] ?? ''));
+        if ($mobileDigits !== '') {
+            $q = Candidate::query()
+                ->where('recruitment_id', $recruitmentId)
+                ->whereRaw("regexp_replace(COALESCE(mobile, ''), '\\D', '', 'g') = ?", [$mobileDigits]);
+            if ($excludeId !== null) $q->where('id', '!=', $excludeId);
+
+            $existing = $q->first(['id', 'name']);
+            if ($existing) {
+                throw ValidationException::withMessages([
+                    'mobile' => [sprintf(
+                        'A candidate with this mobile number is already linked to this recruitment (%s).',
+                        $existing->name,
+                    )],
+                ]);
+            }
         }
     }
 

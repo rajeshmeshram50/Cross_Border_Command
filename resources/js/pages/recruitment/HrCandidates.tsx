@@ -498,7 +498,7 @@ export default function HrCandidates() {
                                     is already in that terminal state — no point
                                     re-selecting an already-selected row, or
                                     re-rejecting an already-rejected one. */}
-                                {c.status !== 'Selected' && c.status !== 'Offered' && (
+                                {c.status !== 'Selected' && c.status !== 'Offered' && c.status !== 'Rejected' && (
                                   <Tooltip label="Mark Selected">
                                     <button
                                       type="button"
@@ -977,6 +977,10 @@ function ImportCandidatesModal({
                 onChange={e => handlePick(e.target.files?.[0])}
               />
             </div>
+            <div className="cand-import-help">
+              Only rows with <strong>Status = "Final Round Selected" or "Selected"</strong> are imported;
+              rows with any other status are skipped.
+            </div>
           </div>
         </div>
 
@@ -1007,10 +1011,10 @@ function SampleImportFormatModal({ open, onClose }: { open: boolean; onClose: ()
   // there's a single source of truth for the column names + dummy row.
   const COLUMNS = [
     'Name', 'Email', 'Mobile', 'Experience',
-    'Current Salary', 'Expected Salary', 'Notice Period', 'Source',
+    'Current Salary', 'Expected Salary', 'Notice Period', 'Source', 'Status',
   ];
   const SAMPLE_ROWS: string[][] = [
-    ['Priya Sharma', 'priya.s@example.com', '+91 9812345678', '5',  '15', '22', '30 Days',  'LinkedIn'],
+    ['Priya Sharma', 'priya.s@example.com', '+91 9812345678', '5',  '15', '22', '30 Days',  'LinkedIn', 'Final Round Selected'],
   ];
 
   const handleDownload = async () => {
@@ -1066,9 +1070,9 @@ function SampleImportFormatModal({ open, onClose }: { open: boolean; onClose: ()
             <i className="ri-information-line" />
             <div>
               <strong>Notes:</strong> Experience / Current Salary / Expected Salary are numeric
-              (years / LPA). Status must be one of: Applied, Screening, Interview R1, Interview R2,
-              Final Interview, Selected, Rejected. Source must be one of: LinkedIn, Naukri, Indeed,
-              Referral, Company Website, Walk-in, Job Fair, Other.
+              (years / LPA). <strong>Status must be "Final Round Selected" or "Selected"</strong> —
+              rows with any other status are skipped and not imported. Source must be one of: LinkedIn,
+              Naukri, Indeed, Referral, Company Website, Walk-in, Job Fair, Other.
             </div>
           </div>
         </div>

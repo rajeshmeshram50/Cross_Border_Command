@@ -300,6 +300,15 @@
   color: color-mix(in srgb, var(--pill-fg) 55%, #ffffff) !important;
 }
 
+/* Same opt-in dark treatment for the smaller position tags (.rec-mini-chip),
+   so "Full Time" / "On-site" tags in the Hiring Requests table swap their
+   light-pastel inline fill for a translucent same-hue chip with lifted text
+   instead of glaring against the dark table. */
+[data-bs-theme="dark"] .rec-mini-chip[style*="--pill-fg"] {
+  background: color-mix(in srgb, var(--pill-fg) 20%, transparent) !important;
+  color: color-mix(in srgb, var(--pill-fg) 60%, #ffffff) !important;
+}
+
 .rec-num { font-weight: 700; font-size: 14px; color: var(--vz-heading-color, var(--vz-body-color)); }
 
 /* Pagination buttons — unified with Customers / Employees / Consignees
@@ -1525,6 +1534,30 @@
 [data-bs-theme="dark"] .rec-act-reject.rec-act--icon:hover {
   background: rgba(239,68,68,0.28);
   color: #fecaca;
+}
+
+/* Edit (pencil) icon — amber chip. Previously had NO rule at all, so in
+   dark mode it fell back to the plain .rec-act face and read as a light
+   button. Give it an explicit light + dark treatment matching its siblings. */
+.rec-act-edit.rec-act--icon {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fde68a;
+}
+.rec-act-edit.rec-act--icon:hover {
+  background: #fde68a;
+  color: #78350f;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(146,64,14,0.18);
+}
+[data-bs-theme="dark"] .rec-act-edit.rec-act--icon {
+  background: rgba(245,158,11,0.18);
+  color: #fcd34d;
+  border-color: rgba(245,158,11,0.40);
+}
+[data-bs-theme="dark"] .rec-act-edit.rec-act--icon:hover {
+  background: rgba(245,158,11,0.28);
+  color: #fde68a;
 }
 
 /* ---------------------------------------------------------------------
