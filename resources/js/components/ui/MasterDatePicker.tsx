@@ -44,7 +44,7 @@ export function MasterDatePicker({
     if (minDate)      return new Date(minDate);
     return new Date();
   });
-  const [popupPos, setPopupPos] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
+  const [popupPos, setPopupPos] = useState<{ top?: number; bottom?: number; left: number; width: number; maxHeight: number } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
 
@@ -69,10 +69,6 @@ export function MasterDatePicker({
       const margin = 8;
       const gap = 5;
       const popupW = 240;   // matches the popup's fixed 240px width
-      // Use the popup's REAL height once it has rendered (it varies with the
-      // 5- vs 6-week month + which view is open). The 300 fallback is only
-      // for the very first frame before the popup mounts.
-      const popupH = popupRef.current?.offsetHeight || 300;
       // Clamp horizontally so the calendar never spills off the right edge.
       // Critical inside right-side drawers (e.g. Request Leave) where the
       // field sits near the screen edge and the popup would overflow — this
@@ -81,24 +77,31 @@ export function MasterDatePicker({
       if (left + popupW + margin > window.innerWidth) {
         left = Math.max(margin, window.innerWidth - popupW - margin);
       }
-      // Prefer opening BELOW the field (normal dropdown behaviour). Only flip
-      // above when there's genuinely very little room below AND the space
-      // above is bigger — otherwise the calendar would float far up,
-      // disconnected from the field (e.g. low date fields in tall modals like
-      // Create Recruitment). When staying below, cap the height to the room
-      // available and let the popup scroll internally so it's never clipped.
+      // Open BELOW the field by default. Flip above when there isn't room for
+      // the full calendar below AND there's more room above — so a low field
+      // in a tall modal opens upward instead of cramming a scrolled calendar
+      // into a sliver below it. `desired` is the calendar's real rendered
+      // height (measured on the post-render raf pass; the fallback covers the
+      // first frame). Positioning never uses it — the above-branch anchors by
+      // `bottom` so it stays snug regardless of height.
       const spaceBelow = window.innerHeight - rect.bottom - gap - margin;
       const spaceAbove = rect.top - gap - margin;
-      let top: number;
-      let maxHeight: number;
-      if (spaceBelow >= 160 || spaceBelow >= spaceAbove) {
-        top = rect.bottom + gap;
-        maxHeight = spaceBelow;
+      const desired = popupRef.current?.offsetHeight || 320;
+      // Never let maxHeight collapse the popup to an invisible sliver — clamp
+      // to a sane minimum so the calendar is ALWAYS visible even when the
+      // chosen side is cramped (it may slightly overflow, but it shows).
+      const MIN_H = 220;
+      if (spaceBelow >= desired || spaceBelow >= spaceAbove) {
+        // Open below, anchored to the field's bottom edge.
+        setPopupPos({ top: rect.bottom + gap, left, width: rect.width, maxHeight: Math.max(MIN_H, spaceBelow) });
       } else {
-        maxHeight = spaceAbove;
-        top = Math.max(margin, rect.top - Math.min(popupH, spaceAbove) - gap);
+        // Flip above. Anchor the popup's BOTTOM edge just above the field
+        // (via `bottom`) instead of computing `top` from an estimated height —
+        // an over-estimated height used to push the calendar far up and leave
+        // a big gap between it and the field. Bottom-anchoring keeps it snug
+        // no matter the rendered height.
+        setPopupPos({ bottom: window.innerHeight - rect.top + gap, left, width: rect.width, maxHeight: Math.max(MIN_H, spaceAbove) });
       }
-      setPopupPos({ top, left, width: rect.width, maxHeight });
     };
     update();
     // Re-measure once the popup has actually rendered so the flip decision +
@@ -256,7 +259,15 @@ export function MasterDatePicker({
           className="master-datepicker-popup"
           style={{
             position: 'fixed',
-            top: popupPos.top,
+            // Always set BOTH top and bottom (the unused one to 'auto') — the
+            // stylesheet has a non-!important `top: calc(100% + 5px)` for this
+            // class, which on a position:fixed element resolves to just past
+            // the viewport bottom. If we left `top` unset on the flip-above
+            // branch, that CSS would leak in and push the popup off-screen
+            // (it looked like the calendar "didn't open"). Explicit 'auto'
+            // overrides it.
+            top: popupPos.top !== undefined ? popupPos.top : 'auto',
+            bottom: popupPos.bottom !== undefined ? popupPos.bottom : 'auto',
             left: popupPos.left,
             minWidth: Math.max(240, popupPos.width),
             maxHeight: popupPos.maxHeight,
