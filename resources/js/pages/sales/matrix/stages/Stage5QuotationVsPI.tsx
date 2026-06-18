@@ -1171,6 +1171,11 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
   const variance    = totalQuoted - totalTarget;
   const variancePct = totalTarget > 0 ? ((variance / totalTarget) * 100).toFixed(1) : '0.0';
   const over        = variance > 0;
+  // Three-way price colour: quoted ABOVE target → green, BELOW → red, EQUAL → neutral.
+  const cmpClass        = (q: number, t: number) => (q > t ? 'c-green' : q < t ? 'c-red' : 'c-neutral');
+  const totalQuotedClass = cmpClass(totalQuoted, totalTarget);
+  const varTextClass    = variance > 0 ? 'c-green' : variance < 0 ? 'c-red' : 'c-neutral';
+  const varBgClass      = variance > 0 ? 's5-ps-stat-grn' : variance < 0 ? 's5-ps-stat-red' : 's5-ps-stat-neu';
 
   const today = new Date();
   const asOf = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
@@ -1276,12 +1281,11 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
           <div className="s5-ps-stat s5-ps-stat-tint"><div className="s5-ps-stat-lbl">Total Products</div><div className="s5-ps-stat-val c-cyan">{latest.length} items</div></div>
           <div className="s5-ps-stat"><div className="s5-ps-stat-lbl">Total Quantity</div><div className="s5-ps-stat-val c-cyan">{totalQty.toLocaleString()} units</div></div>
           <div className="s5-ps-stat s5-ps-stat-tint"><div className="s5-ps-stat-lbl">Total Target</div><div className="s5-ps-stat-val c-blue">{money(totalTarget, ccy)}</div></div>
-          <div className="s5-ps-stat"><div className="s5-ps-stat-lbl">Total Quoted</div><div className="s5-ps-stat-val c-green">{money(totalQuoted, ccy)}</div></div>
-          <div className={`s5-ps-stat ${over ? 's5-ps-stat-grn' : 's5-ps-stat-red'}`}>
+          <div className="s5-ps-stat"><div className="s5-ps-stat-lbl">Total Quoted</div><div className={`s5-ps-stat-val ${totalQuotedClass}`}>{money(totalQuoted, ccy)}</div></div>
+          <div className={`s5-ps-stat ${varBgClass}`}>
             <div className="s5-ps-stat-lbl">Variance</div>
-            {/* Quoted ABOVE target (positive variance) = good → green;
-                quoted BELOW target (negative variance) = red. */}
-            <div className={`s5-ps-stat-val ${over ? 'c-green' : 'c-red'}`}>{over ? '+' : ''}{variance.toLocaleString('en-US', { minimumFractionDigits: 2 })} ({variancePct}%)</div>
+            {/* Quoted ABOVE target = green, BELOW = red, EQUAL = neutral. */}
+            <div className={`s5-ps-stat-val ${varTextClass}`}>{over ? '+' : ''}{variance.toLocaleString('en-US', { minimumFractionDigits: 2 })} ({variancePct}%)</div>
           </div>
         </div>
 
@@ -1322,7 +1326,7 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
                     <td className="ta-r s5-ps-qty">{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
                     <td className="ta-r"><div className="s5-ps-target">{money(tp, r.currency)}</div></td>
                     <td className="ta-r">
-                      <div className={`s5-ps-quoted ${rOver ? 'c-green' : 'c-red'}`}>{money(qp, r.currency)}</div>
+                      <div className={`s5-ps-quoted ${cmpClass(qp, tp)}`}>{money(qp, r.currency)}</div>
                       {diff !== 0 && (
                         <span className={`s5-ps-diff ${rOver ? 'over' : 'under'}`}>{rOver ? '▲' : '▼'} {sym(r.currency)}{Math.abs(diff).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                       )}
@@ -1591,12 +1595,14 @@ const STAGE5_CSS = `
 .s5-ps-stat-tint { background: rgba(8,145,178,.07); }
 .s5-ps-stat-red { background: rgba(239,68,68,.06); }
 .s5-ps-stat-grn { background: rgba(5,150,105,.06); }
+.s5-ps-stat-neu { background: rgba(100,116,139,.06); }
 .s5-ps-stat-lbl { font-size: 7.5px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: .1em; margin-bottom: 3px; }
 .s5-ps-stat-val { font-size: 12px; font-weight: 900; font-family: ui-monospace, monospace; letter-spacing: .01em; }
 .s5-ps-stat-val.c-cyan { color: #0891b2; }
 .s5-ps-stat-val.c-blue { color: #0369a1; }
 .s5-ps-stat-val.c-green { color: #059669; }
 .s5-ps-stat-val.c-red { color: #dc2626; }
+.s5-ps-stat-val.c-neutral { color: #475569; }
 
 /* Table */
 .s5-ps-tablewrap { flex: 1; overflow-y: auto; max-height: 300px; }
@@ -1621,6 +1627,7 @@ const STAGE5_CSS = `
 .s5-ps-quoted { font-weight: 900; font-family: ui-monospace, monospace; font-size: 12px; }
 .s5-ps-quoted.c-green { color: #059669; }
 .s5-ps-quoted.c-red { color: #dc2626; }
+.s5-ps-quoted.c-neutral { color: #475569; }
 .s5-ps-diff { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; border-radius: 4px; font-size: 8.5px; font-weight: 800; margin-top: 2px; }
 /* Quoted ABOVE target (▲ over) = positive variance → green;
    quoted BELOW target (▼ under) = negative variance → red. */
@@ -1725,6 +1732,12 @@ const STAGE5_CSS = `
 [data-layout-mode="dark"] .s5-ps-stat-val.c-green { color: #34d399; }
 [data-bs-theme="dark"] .s5-ps-stat-val.c-red,
 [data-layout-mode="dark"] .s5-ps-stat-val.c-red { color: #f87171; }
+[data-bs-theme="dark"] .s5-ps-stat-val.c-neutral,
+[data-layout-mode="dark"] .s5-ps-stat-val.c-neutral { color: #cbd5e1; }
+[data-bs-theme="dark"] .s5-ps-quoted.c-neutral,
+[data-layout-mode="dark"] .s5-ps-quoted.c-neutral { color: #cbd5e1; }
+[data-bs-theme="dark"] .s5-ps-stat-neu,
+[data-layout-mode="dark"] .s5-ps-stat-neu { background: rgba(100,116,139,.14); }
 /* Table body */
 [data-bs-theme="dark"] .s5-ps-table tbody td,
 [data-layout-mode="dark"] .s5-ps-table tbody td { color: #e2e8f0; border-bottom-color: rgba(255,255,255,.06); }
