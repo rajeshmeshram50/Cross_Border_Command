@@ -1246,17 +1246,26 @@ ${CSTRIP_CSS}
   scrollbar-width: thin;
   scrollbar-color: #d1d5db transparent;
 }
+/* Dark mode — neutral translucent thumb so it reads as a subtle grey bar on
+   the dark surface (the old light-purple looked too bright). Cover both the
+   data-bs-theme and data-layout-mode dark attributes the app may set. */
 [data-bs-theme="dark"] .smc-table-wrap,
-[data-bs-theme="dark"] .smc-table-wrap .table-responsive {
-  scrollbar-color: rgba(167,139,250,0.30) transparent;
+[data-bs-theme="dark"] .smc-table-wrap .table-responsive,
+[data-layout-mode="dark"] .smc-table-wrap,
+[data-layout-mode="dark"] .smc-table-wrap .table-responsive {
+  scrollbar-color: rgba(255,255,255,0.18) transparent;
 }
 [data-bs-theme="dark"] .smc-table-wrap::-webkit-scrollbar-thumb,
-[data-bs-theme="dark"] .smc-table-wrap .table-responsive::-webkit-scrollbar-thumb {
-  background: rgba(167,139,250,0.30);
+[data-bs-theme="dark"] .smc-table-wrap .table-responsive::-webkit-scrollbar-thumb,
+[data-layout-mode="dark"] .smc-table-wrap::-webkit-scrollbar-thumb,
+[data-layout-mode="dark"] .smc-table-wrap .table-responsive::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.18);
 }
 [data-bs-theme="dark"] .smc-table-wrap::-webkit-scrollbar-thumb:hover,
-[data-bs-theme="dark"] .smc-table-wrap .table-responsive::-webkit-scrollbar-thumb:hover {
-  background: rgba(167,139,250,0.50);
+[data-bs-theme="dark"] .smc-table-wrap .table-responsive::-webkit-scrollbar-thumb:hover,
+[data-layout-mode="dark"] .smc-table-wrap::-webkit-scrollbar-thumb:hover,
+[data-layout-mode="dark"] .smc-table-wrap .table-responsive::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.30);
 }
 
 /* Card wrapper produced by divClass "table-responsive table-card border rounded".

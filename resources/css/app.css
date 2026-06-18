@@ -158,15 +158,25 @@ body {
   scrollbar-color: #cbd5e1 transparent;
 }
 
-/* Dark mode — light translucent thumb so it reads on dark surfaces. */
+/* Dark mode — light translucent thumb so it reads on dark surfaces.
+   The no-space selectors ([data-bs-theme="dark"]::-webkit-scrollbar-thumb)
+   target the element's OWN scrollbar — needed for the page/document scrollbar,
+   which lives on <html> (the same element that carries data-bs-theme). The
+   descendant (space) selectors cover every inner scroll area. */
+[data-bs-theme="dark"]::-webkit-scrollbar-thumb,
+[data-layout-mode="dark"]::-webkit-scrollbar-thumb,
 [data-bs-theme="dark"] ::-webkit-scrollbar-thumb,
 [data-layout-mode="dark"] ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.18);
 }
+[data-bs-theme="dark"]::-webkit-scrollbar-thumb:hover,
+[data-layout-mode="dark"]::-webkit-scrollbar-thumb:hover,
 [data-bs-theme="dark"] ::-webkit-scrollbar-thumb:hover,
 [data-layout-mode="dark"] ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.30);
 }
+[data-bs-theme="dark"],
+[data-layout-mode="dark"],
 [data-bs-theme="dark"] *,
 [data-layout-mode="dark"] * {
   scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
