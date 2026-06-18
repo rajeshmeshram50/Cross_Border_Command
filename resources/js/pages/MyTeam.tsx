@@ -6,6 +6,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { ShimmerTableRows } from '../components/ui/Shimmer';
 import Tooltip from '../components/ui/Tooltip';
+import WorklistPager from '../components/ui/WorklistPager';
 import SignaturePad from '../components/ui/SignaturePad';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
@@ -376,14 +377,21 @@ function EmployeesPanel({
   rows: TeamEmployee[]; loading: boolean;
   search: string; setSearch: (v: string) => void;
 }) {
+  // Dynamic pagination — same WorklistPager the recruitment table uses.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safePage  = Math.min(page, pageCount);
+  const sliceFrom = (safePage - 1) * pageSize;
+  const visible   = rows.slice(sliceFrom, sliceFrom + pageSize);
+  useEffect(() => { setPage(1); }, [search, rows.length]);
   return (
     <Card style={{ borderRadius: 12 }}>
       <CardBody style={{ padding: 0 }}>
         <div className="myteam-filter-row d-flex flex-wrap gap-2 align-items-center" style={{ padding: 12, borderBottom: '1px solid #e5e7eb' }}>
-          <div style={{ position: 'relative', minWidth: 260 }}>
-            <i className="ri-search-line" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
-            <Input type="text" placeholder="Search by name, code, email…" value={search} onChange={e => setSearch(e.target.value)}
-              style={{ paddingLeft: 30, height: 36 }} />
+          <div className="rec-req-search search-box" style={{ flex: '1 1 260px', minWidth: 260 }}>
+            <Input type="text" className="form-control" placeholder="Search by name, code, email…" value={search} onChange={e => setSearch(e.target.value)} />
+            <i className="ri-search-line search-icon" />
           </div>
           <span className="ms-auto" style={{ fontSize: 11.5, fontWeight: 700, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', padding: '5px 12px', borderRadius: 999 }}>
             {rows.length} {rows.length === 1 ? 'employee' : 'employees'}
@@ -412,9 +420,9 @@ function EmployeesPanel({
                   No employees in your team yet.
                 </td></tr>
               ) : (
-                rows.map((e, i) => (
+                visible.map((e, i) => (
                   <tr key={e.id}>
-                    <td>{i + 1}</td>
+                    <td>{sliceFrom + i + 1}</td>
                     <td>
                       <div className="d-flex align-items-center gap-2">
                         <span className="myteam-avatar" style={{ width: 32, height: 32, borderRadius: '50%', background: '#eef2ff', color: '#4338ca', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12 }}>
@@ -445,6 +453,15 @@ function EmployeesPanel({
             </tbody>
           </table>
         </div>
+        {/* Pagination — same WorklistPager (dynamic rows-per-page) as the
+            recruitment table. */}
+        <WorklistPager
+          total={rows.length}
+          page={safePage}
+          pageSize={pageSize}
+          onPage={setPage}
+          onPageSize={(n) => { setPageSize(n); setPage(1); }}
+        />
       </CardBody>
     </Card>
   );

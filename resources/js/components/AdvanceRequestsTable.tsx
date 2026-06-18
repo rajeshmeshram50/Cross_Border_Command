@@ -644,6 +644,15 @@ function AdvanceConfirmModal({
   const stageLabel = action.stage === 'manager' ? 'Manager' : 'HR / Finance';
   const tone = STATUS_TONE[row.status];
 
+  // Mirrors ExpenseConfirmModal's layout exactly (shared cand-confirm-* classes)
+  // so the Advance and Expense approval popups read as one design.
+  const handleConfirm = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try { await onConfirm(); }
+    finally { setSubmitting(false); }
+  };
+
   return createPortal(
     <div
       className={`expense-confirm-overlay cand-confirm-modal cand-confirm-modal--${isApprove ? 'select' : 'reject'}`}
@@ -651,85 +660,105 @@ function AdvanceConfirmModal({
         position: 'fixed', inset: 0, zIndex: 6800,
         background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 16,
       }}
-      onClick={onClose}
+      onClick={() => { if (!submitting) onClose(); }}
     >
       <div
-        className="cand-confirm-card"
-        style={{
-          background: 'var(--vz-card-bg, #ffffff)',
-          border: '1px solid var(--vz-border-color)',
-          borderRadius: 14,
-          width: '100%', maxWidth: 460,
-          boxShadow: '0 24px 60px rgba(0,0,0,0.30)',
-          overflow: 'hidden',
-        }}
         onClick={e => e.stopPropagation()}
+        className="border-0"
+        style={{
+          background: '#ffffff', color: '#1f2937',
+          borderRadius: 16, overflow: 'hidden',
+          width: '100%', maxWidth: 560,
+          boxShadow: '0 24px 60px rgba(15,23,42,0.30)',
+        }}
       >
-        <div
-          className="cand-confirm-head"
-          style={{
-            padding: '14px 18px',
-            background: isApprove
-              ? 'linear-gradient(135deg,#0ab39c,#02c8a7)'
-              : 'linear-gradient(135deg,#f06548,#ff7a5c)',
-            color: '#fff',
-          }}
-        >
-          <h5 className="mb-0 fw-bold" style={{ fontSize: 14 }}>
-            {isApprove ? `${stageLabel} Approve` : `${stageLabel} Reject`}
-          </h5>
-          <small style={{ fontSize: 11, opacity: 0.92 }}>
-            {row.advance_no || `#${row.id}`} · ₹{Number(row.amount || 0).toLocaleString('en-IN')} · {row.advance_type}
-          </small>
-        </div>
-        <div className="cand-confirm-body" style={{ padding: 16 }}>
-          <div className="mb-2" style={{ fontSize: 12 }}>
-            <span className="text-muted">Requested by</span>{' '}
-            <strong>{row.employee_name || `#${row.employee_id}`}</strong>{' '}
-            <span className="text-muted">· {row.reason || '—'}</span>
+        {/* Header */}
+        <div className="cand-confirm-head">
+          <span className="cand-confirm-head-icon">
+            <i className={isApprove ? 'ri-check-line' : 'ri-close-line'} />
+          </span>
+          <div className="cand-confirm-head-text">
+            <h5 className="mb-0">
+              {isApprove ? `Approve Advance — ${stageLabel}` : `Reject Advance — ${stageLabel}`}
+            </h5>
+            <div className="cand-confirm-head-sub">
+              {isApprove
+                ? (action.stage === 'manager'
+                    ? 'Forwards to HR / Finance for final approval'
+                    : 'Final approval — advance will be marked Approved')
+                : 'Closes the request — employee will see the rejection in their audit log'}
+            </div>
           </div>
-          <label className="form-label" style={{ fontSize: 11, fontWeight: 600 }}>
-            Comment {isApprove ? '(optional)' : '(recommended)'}
-          </label>
-          <textarea
-            className="form-control"
-            rows={3}
-            value={comment}
-            onChange={e => setComment(e.target.value)}
-            placeholder={isApprove
-              ? 'Add a note for the audit log (optional)…'
-              : 'Tell the requester why this advance was rejected…'}
-          />
-          <div className="mt-2 d-inline-flex align-items-center gap-1" style={{ fontSize: 11 }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: tone.dot }} />
-            <span className="text-muted">Current status:</span>
-            <span className="fw-semibold">{tone.label}</span>
+          <button type="button" onClick={onClose} aria-label="Close" className="cand-confirm-close" disabled={submitting}>
+            <i className="ri-close-line" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="cand-confirm-body">
+          {/* Advance summary card */}
+          <div className="cand-confirm-summary">
+            <div
+              className="cand-confirm-avatar"
+              style={{ background: 'linear-gradient(135deg,#7c5cfc,#5a3fd1)' }}
+            >
+              <i className="ri-bank-card-line" style={{ fontSize: 18 }} />
+            </div>
+            <div className="cand-confirm-summary-text">
+              <div className="cand-confirm-name">
+                {row.advance_type || row.advance_no || `Advance #${row.id}`}
+              </div>
+              <div className="cand-confirm-meta">
+                <span className="rec-id-pill">{row.advance_no || `#${row.id}`}</span>
+                <span className="dot">·</span>
+                <span>{row.employee_name || `Employee #${row.employee_id}`}</span>
+                <span className="dot">·</span>
+                <span className="fw-semibold" style={{ color: '#1f2937' }}>
+                  ₹{Number(row.amount || 0).toLocaleString('en-IN')}
+                </span>
+              </div>
+            </div>
+            <div className="cand-confirm-stage">
+              <div className="cand-confirm-stage-label">Status</div>
+              <span className="rec-pill" style={{ background: tone.bg, color: tone.fg }}>
+                {tone.label}
+              </span>
+            </div>
+          </div>
+
+          <div className="cand-confirm-field">
+            <label className="cand-confirm-label">
+              {isApprove ? 'Approval Note' : 'Reason for Rejection'} <span className="opt">(OPTIONAL)</span>
+            </label>
+            <textarea
+              className="cand-confirm-textarea"
+              rows={3}
+              placeholder={isApprove
+                ? 'Add context for the audit trail (e.g. "Approved within policy limit")'
+                : 'Explain why this advance is being rejected'}
+              value={comment}
+              onChange={e => setComment(e.target.value)}
+              autoFocus
+            />
           </div>
         </div>
-        <div className="cand-confirm-footer d-flex justify-content-end gap-2" style={{ padding: '12px 18px', borderTop: '1px solid var(--vz-border-color)' }}>
-          <button type="button" className="btn btn-light btn-sm" onClick={onClose} disabled={submitting}>Cancel</button>
-          <button
-            type="button"
-            className="btn btn-sm fw-semibold adv-confirm-action-btn"
-            style={{
-              background: isApprove
-                ? 'linear-gradient(135deg,#0ab39c,#02c8a7)'
-                : 'linear-gradient(135deg,#f06548,#ff7a5c)',
-              color: '#fff', border: 'none',
-            }}
-            disabled={submitting}
-            onClick={async () => {
-              if (submitting) return;          // ignore repeated clicks
-              setSubmitting(true);
-              try { await onConfirm(); }
-              finally { setSubmitting(false); }  // no-op if the modal already closed
-            }}
-          >
+
+        {/* Footer */}
+        <div className="cand-confirm-footer">
+          <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={submitting}>Cancel</button>
+          <button type="button" className="cand-confirm-submit" onClick={handleConfirm} disabled={submitting}>
             {submitting ? (
-              <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Processing…</>
+              <>
+                <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
+                Processing…
+              </>
             ) : (
-              <><i className={isApprove ? 'ri-check-line me-1' : 'ri-close-line me-1'} />{isApprove ? 'Confirm Approve' : 'Confirm Reject'}</>
+              <>
+                <i className={isApprove ? 'ri-check-line' : 'ri-close-line'} />
+                {isApprove ? 'Confirm Approval' : 'Confirm Rejection'}
+              </>
             )}
           </button>
         </div>

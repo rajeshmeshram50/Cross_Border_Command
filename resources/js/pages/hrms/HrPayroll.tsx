@@ -11,6 +11,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { ShimmerTableRows, Shimmer } from '../../components/ui/Shimmer';
 import WorklistPager from '../../components/ui/WorklistPager';
 import api from '../../api';
+import '../../../css/recruitment.css';
 // Reuses the purple hero-card, hero-pill, KPI surface and table styles that
 // HrEmployeeOnboarding ships (.onb-hero-card / .onb-hero-pill / .onb-surface
 // / .onb-kpi-card / .onb-pill / .onb-id-pill / .onb-role-pill) so the page
@@ -385,9 +386,10 @@ export default function HrPayroll() {
     [rows],
   );
 
-  // Pagination — match the master tables (7 per page).
+  // Pagination — dynamic rows-per-page via WorklistPager (matches the
+  // recruitment / leave / holiday tables).
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 7;
+  const [pageSize, setPageSize] = useState(10);
 
   // Reset page when filters change.
   useEffect(() => { setPage(1); }, [q, deptFilter, statusFilter, cycleKey, tab]);
@@ -781,10 +783,10 @@ export default function HrPayroll() {
       });
   }, [rows, q, deptFilter, statusFilter]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage  = Math.min(page, pageCount);
-  const sliceFrom = (safePage - 1) * PAGE_SIZE;
-  const visible   = filtered.slice(sliceFrom, sliceFrom + PAGE_SIZE);
+  const sliceFrom = (safePage - 1) * pageSize;
+  const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
   const goto = (p: number) => setPage(Math.min(Math.max(1, p), pageCount));
 
   // Cycle strip — horizontal scroller controlled by the prev/next chevrons.
@@ -1255,7 +1257,7 @@ export default function HrPayroll() {
           {tab !== 'salary' && (
           <Row className="g-2 align-items-center mb-3">
             <Col md={5} sm={12}>
-              <div className="search-box">
+              <div className="rec-req-search search-box">
                 <Input
                   type="text"
                   className="form-control"
@@ -1724,7 +1726,7 @@ export default function HrPayroll() {
 
           {/* Pagination — only for the payslip-row tabs (not Salary Setup). */}
           {tab !== 'salary' && (
-            <WorklistPager total={filtered.length} page={safePage} pageSize={PAGE_SIZE} onPage={goto} />
+            <WorklistPager total={filtered.length} page={safePage} pageSize={pageSize} onPage={goto} onPageSize={(n) => { setPageSize(n); setPage(1); }} />
           )}
         </CardBody>
       </Card>

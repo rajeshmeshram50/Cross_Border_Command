@@ -6,6 +6,7 @@ import api from '../../api';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import { ShimmerTableRows } from '../../components/ui/Shimmer';
 import Tooltip from '../../components/ui/Tooltip';
+import WorklistPager from '../../components/ui/WorklistPager';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import CustomFieldModal, { CustomFieldFormPayload } from './doc-templates/CustomFieldModal';
 import '../../../css/recruitment.css';
@@ -125,18 +126,15 @@ export default function HrCustomFields() {
       });
   }, [rows, typeFilter, search]);
 
-  // Client-side pagination — 5 rows per page (matches the Employee list).
-  const ROWS_PER_PAGE = 5;
+  // Client-side pagination — same WorklistPager (dynamic rows-per-page) the
+  // recruitment table uses.
   const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / ROWS_PER_PAGE));
+  const [pageSize, setPageSize] = useState(10);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   useEffect(() => { setPage(1); }, [search, typeFilter, rows]);
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
-  const pageRows = filtered.slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE);
-  // Only ever show TWO page buttons between the arrows — a sliding window that
-  // moves with the current page ([1][2] → next → [2][3] → [3][4] …).
-  const PAG_WINDOW = 2;
-  const pagStart = Math.min(Math.max(1, page), Math.max(1, totalPages - PAG_WINDOW + 1));
-  const visiblePages = Array.from({ length: Math.min(PAG_WINDOW, totalPages) }, (_, i) => pagStart + i);
+  const safePage = Math.min(page, totalPages);
+  const pageRows = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   const handleSave = async (payload: CustomFieldFormPayload) => {
     try {
@@ -175,10 +173,11 @@ export default function HrCustomFields() {
 
   // KPI strip — jewel-tone palette: indigo · cyan · fuchsia · emerald
   const KPI = [
-    { label: 'Total Fields', value: stats.total, icon: 'ri-star-fill',     deep: '#4338ca', gradient: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)' },
-    { label: 'Text Fields',  value: stats.text,  icon: 'ri-text',          deep: '#0e7490', gradient: 'linear-gradient(135deg,#06b6d4 0%,#0ea5e9 100%)' },
-    { label: 'Date Fields',  value: stats.date,  icon: 'ri-calendar-line', deep: '#a21caf', gradient: 'linear-gradient(135deg,#d946ef 0%,#ec4899 100%)' },
-    { label: 'Other Types',  value: stats.other, icon: 'ri-chat-1-line',   deep: '#047857', gradient: 'linear-gradient(135deg,#10b981 0%,#14b8a6 100%)' },
+    { label: 'Total Fields',    value: stats.total,    icon: 'ri-star-fill',     deep: '#4338ca', gradient: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)' },
+    { label: 'Text Fields',     value: stats.text,     icon: 'ri-text',          deep: '#0e7490', gradient: 'linear-gradient(135deg,#06b6d4 0%,#0ea5e9 100%)' },
+    { label: 'Date Fields',     value: stats.date,     icon: 'ri-calendar-line', deep: '#a21caf', gradient: 'linear-gradient(135deg,#d946ef 0%,#ec4899 100%)' },
+    { label: 'Number Fields',   value: stats.number,   icon: 'ri-hashtag',       deep: '#047857', gradient: 'linear-gradient(135deg,#10b981 0%,#14b8a6 100%)' },
+    { label: 'Textarea Fields', value: stats.textarea, icon: 'ri-chat-1-line',   deep: '#9a3412', gradient: 'linear-gradient(135deg,#f59e0b 0%,#f97316 100%)' },
   ];
 
   return (
@@ -372,7 +371,7 @@ export default function HrCustomFields() {
           {/* KPI strip */}
           <div className="row g-2 mb-3">
             {KPI.map(k => (
-              <div key={k.label} className="col-md-3 col-sm-6">
+              <div key={k.label} className="col-xl col-md-4 col-sm-6">
                 <div className="cf-kpi-tile" style={{ borderRadius: 12, border: '1px solid #e5e7eb', background: '#fff', overflow: 'hidden', cursor: 'default' }}>
                   <div style={{ height: 4, background: k.gradient }} />
                   <div className="d-flex align-items-center justify-content-between" style={{ padding: '12px 14px' }}>
@@ -392,10 +391,9 @@ export default function HrCustomFields() {
           {/* Filters + Add button */}
           <Card className="mb-3 cf-filter-card" style={{ borderRadius: 12 }}>
             <CardBody className="d-flex flex-wrap gap-3 align-items-center" style={{ padding: 12 }}>
-              <div style={{ position: 'relative', minWidth: 260 }}>
-                <i className="ri-search-line cf-search-icon" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', zIndex: 1 }} />
-                <Input type="text" className="cf-search-input" placeholder="Search fields…" value={search} onChange={e => setSearch(e.target.value)}
-                  style={{ paddingLeft: 30, height: 36 }} />
+              <div className="rec-req-search search-box" style={{ flex: '1 1 260px', minWidth: 260 }}>
+                <Input type="text" className="form-control" placeholder="Search fields…" value={search} onChange={e => setSearch(e.target.value)} />
+                <i className="ri-search-line search-icon" />
               </div>
               <div className="d-flex align-items-center gap-2">
                 <span style={{ fontSize: 10.5, fontWeight: 800, color: '#9ca3af', letterSpacing: 0.4, textTransform: 'uppercase' }}>Type</span>
@@ -468,7 +466,7 @@ export default function HrCustomFields() {
                         const usedFromHint = used.length === 0 && !!r.used_in_hint;
                         return (
                           <tr key={r.id}>
-                            <td className="cf-row-num" style={{ padding: '10px 12px', color: '#6b7280' }}>{(page - 1) * ROWS_PER_PAGE + i + 1}</td>
+                            <td className="cf-row-num" style={{ padding: '10px 12px', color: '#6b7280' }}>{(safePage - 1) * pageSize + i + 1}</td>
                             <td className="cf-row-name" style={{ fontWeight: 700, color: '#1f2937' }}>
                               <Tooltip label={r.name} disabled={r.name.length <= 30}>
                                 <span style={{ cursor: 'default' }}>{truncate(r.name)}</span>
@@ -518,24 +516,15 @@ export default function HrCustomFields() {
                   </tbody>
                 </table>
               </div>
-              {!loading && filtered.length > 0 && (
-                <div className="cf-pag-footer d-flex flex-wrap align-items-center justify-content-between gap-2" style={{ padding: '12px 16px', borderTop: '1px solid var(--vz-border-color)' }}>
-                  <span style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)' }}>
-                    Showing <strong style={{ color: 'var(--vz-body-color)' }}>{(page - 1) * ROWS_PER_PAGE + 1}</strong>–<strong style={{ color: 'var(--vz-body-color)' }}>{Math.min(page * ROWS_PER_PAGE, filtered.length)}</strong> of <strong style={{ color: 'var(--vz-body-color)' }}>{filtered.length}</strong> fields
-                  </span>
-                  <div className="d-flex align-items-center gap-1">
-                    <button type="button" className="cf-pag-btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} aria-label="Previous page">
-                      <i className="ri-arrow-left-s-line" />
-                    </button>
-                    {visiblePages.map(n => (
-                      <button key={n} type="button" className={`cf-pag-btn ${n === page ? 'is-active' : ''}`} onClick={() => setPage(n)}>{n}</button>
-                    ))}
-                    <button type="button" className="cf-pag-btn" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} aria-label="Next page">
-                      <i className="ri-arrow-right-s-line" />
-                    </button>
-                  </div>
-                </div>
-              )}
+              {/* Pagination — same WorklistPager (dynamic rows-per-page) as the
+                  recruitment table. */}
+              <WorklistPager
+                total={filtered.length}
+                page={safePage}
+                pageSize={pageSize}
+                onPage={setPage}
+                onPageSize={(n) => { setPageSize(n); setPage(1); }}
+              />
             </CardBody>
           </Card>
         </div>

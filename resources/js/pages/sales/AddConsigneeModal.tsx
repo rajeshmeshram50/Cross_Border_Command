@@ -2928,36 +2928,23 @@ const Stage1 = ({
               <input className={`acm-input ${errors.website ? 'acm-input-error' : ''}`} placeholder="https://example.com" value={form.website} onChange={e => set('website', e.target.value)} disabled={lock} />
             </Field>
             <Field label="Consignee Segment" required error={errors.segment} fieldKey="segment">
-              {/* masterFormKit's MasterMultiSelect renders visible violet
-                  chips with × buttons + a checkbox-marked dropdown so
-                  multi-select is obvious. `value` prop is plural despite
-                  the singular name. */}
+              {/* Segment is INHERITED from the parent customer and is NOT
+                  editable here — a consignee must not pick its own segment.
+                  The field is locked (read-only chips) and a hint points the
+                  user to the customer to change it. */}
               <MasterMultiSelect
                 value={Array.isArray(form.segment) ? form.segment : (form.segment ? [form.segment] : [])}
                 options={masters.segments.map(o => ({ value: o.value, label: o.label }))}
-                placeholder="Select Segment"
+                placeholder="Inherited from customer"
                 invalid={!!errors.segment}
-                disabled={lock}
-                onChange={vs => {
-                  /* Block removing a segment if ANY of its standard documents
-                   * have already been uploaded. Segments with no uploaded docs
-                   * drop freely. Adding is always allowed. */
-                  const prev = Array.isArray(form.segment) ? form.segment : (form.segment ? [form.segment] : []);
-                  const removed = prev.filter((s: string) => !vs.includes(s));
-                  if (removed.length) {
-                    const uploaded = new Set(uploadedCodes);
-                    const blocked = removed.filter((s: string) =>
-                      (segCodeMap[s] ?? []).some(c => uploaded.has(c))
-                    );
-                    if (blocked.length) {
-                      onBlockedSegmentRemove?.(blocked);
-                      vs = [...vs, ...blocked.filter((s: string) => !vs.includes(s))];
-                    }
-                  }
-                  set('segment', vs);
-                }}
+                disabled
+                onChange={() => { /* locked — segment is managed on the customer */ }}
                 maxChips={2}
               />
+              <div style={{ marginTop: 5, fontSize: 11, fontWeight: 600, color: '#64748b', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                Comes from the customer — change it there.
+              </div>
             </Field>
             <Field label="Classification &amp; Flags">
               <MasterSelect

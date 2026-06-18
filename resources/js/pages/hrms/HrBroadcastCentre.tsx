@@ -101,6 +101,9 @@ export default function HrBroadcastCentre() {
   // Modal state
   const [createOpen, setCreateOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<AnnRow | null>(null);
+  // Row currently being published — drives the inline spinner so the user gets
+  // instant feedback the moment they click Publish Now.
+  const [publishingId, setPublishingId] = useState<number | null>(null);
 
   const fetchAll = async () => {
     try {
@@ -178,6 +181,8 @@ export default function HrBroadcastCentre() {
   };
 
   const handlePublishNow = async (row: AnnRow) => {
+    if (publishingId) return;            // ignore double-clicks while in flight
+    setPublishingId(row.id);             // instant feedback (spinner + disable)
     try {
       const { data } = await api.put(`/announcements/${row.id}`, {
         status: 'Active',
@@ -188,6 +193,8 @@ export default function HrBroadcastCentre() {
       handleSaved(data);
     } catch (err: any) {
       toast.error('Could not publish', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setPublishingId(null);
     }
   };
 
@@ -248,10 +255,6 @@ export default function HrBroadcastCentre() {
                     <div style={{ minWidth: 130 }}>
                       <MasterSelect value={typeFilter} onChange={setTypeFilter} options={[{ value: 'All', label: 'All Types' }, { value: 'General', label: 'General' }, { value: 'Policy', label: 'Policy' }, { value: 'Urgent', label: 'Urgent' }]} placeholder="All Types" />
                     </div>
-                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Status</span>
-                    <div style={{ minWidth: 140 }}>
-                      <MasterSelect value={statusFilter} onChange={setStatusFilter} options={[{ value: 'All', label: 'All Status' }, ...(['Draft','Scheduled','Active','Expired','Archived'] as AnnStatus[]).map(s => ({ value: s, label: s }))]} placeholder="All Status" />
-                    </div>
                     <button type="button" className="rec-btn-primary ms-auto" onClick={() => { setEditingRow(null); setCreateOpen(true); }}>
                       <i className="ri-add-line" />New Announcement
                     </button>
@@ -267,7 +270,6 @@ export default function HrBroadcastCentre() {
                           <th style={{ width: 100 }}>Type</th>
                           <th style={{ width: 100 }}>Priority</th>
                           <th>Audience</th>
-                          <th style={{ width: 110 }}>Status</th>
                           <th style={{ width: 130 }}>Publish Date</th>
                           <th className="text-center pe-3" style={{ width: 180 }}>Actions</th>
                         </tr>
@@ -276,14 +278,13 @@ export default function HrBroadcastCentre() {
                         {loading ? (
                           <ShimmerTableRows rows={5} cols={9} />
                         ) : visible.length === 0 ? (
-                          <tr><td colSpan={9} className="text-center py-5 text-muted">
+                          <tr><td colSpan={8} className="text-center py-5 text-muted">
                             <i className="ri-send-plane-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
                             {rows.length === 0 ? 'No announcements yet — click New Announcement to add one' : 'No announcements match your filters'}
                           </td></tr>
                         ) : visible.map((r, idx) => {
                           const tt = TYPE_TONES[r.type];
                           const pp = PRIORITY_TONES[r.priority];
-                          const ss = STATUS_TONES[r.status];
                           return (
                             <tr key={r.id}>
                               <td className="ps-3 text-center text-muted fs-13">{sliceFrom + idx + 1}</td>
@@ -305,16 +306,6 @@ export default function HrBroadcastCentre() {
                               <td className="fs-13">
                                 <AudienceCell row={r} />
                               </td>
-                              <td>
-                                {/* Plain pill — same shape as the Type / Priority
-                                    badges in this row (and the rec-pill badges used
-                                    across the app). The leading status dot was
-                                    dropped so the status badge reads consistently
-                                    with the rest. */}
-                                <span className="rec-pill" style={{ background: ss.bg, color: ss.fg, ['--pill-fg' as any]: ss.fg }}>
-                                  {r.status}
-                                </span>
-                              </td>
                               <td className="fs-13"><span className="rec-date">{r.publish_at ? formatDate(r.publish_at) : (r.status === 'Draft' ? '—' : formatDate(r.created_at))}</span></td>
                               <td className="pe-3 text-center">
                                 {/* text-center on the cell centres the action
@@ -327,15 +318,26 @@ export default function HrBroadcastCentre() {
                                       app) replace the slow native `title` attribute, which
                                       had a ~1s browser delay and plain OS styling — so the
                                       icons read as "no tooltip" on a quick hover. */}
-                                  <Tooltip label="View / Edit">
-                                    <button type="button" className="rec-act rec-act-view rec-act--icon" aria-label="View / Edit" onClick={() => { setEditingRow(r); setCreateOpen(true); }}>
-                                      <i className="ri-eye-line" />
+                                  {/* Draft rows are meant to be finished before
+                                      publishing, so show an Edit (pencil) icon;
+                                      published rows show a View (eye) icon. Both
+                                      open the same wizard. */}
+                                  <Tooltip label={r.status === 'Draft' ? 'Edit' : 'View'}>
+                                    <button
+                                      type="button"
+                                      className={`rec-act ${r.status === 'Draft' ? 'rec-act-edit' : 'rec-act-view'} rec-act--icon`}
+                                      aria-label={r.status === 'Draft' ? 'Edit' : 'View'}
+                                      onClick={() => { setEditingRow(r); setCreateOpen(true); }}
+                                    >
+                                      <i className={r.status === 'Draft' ? 'ri-pencil-line' : 'ri-eye-line'} />
                                     </button>
                                   </Tooltip>
                                   {r.status === 'Draft' && (
-                                    <Tooltip label="Publish Now">
-                                      <button type="button" className="rec-act rec-act-approve rec-act--icon" aria-label="Publish Now" onClick={() => handlePublishNow(r)}>
-                                        <i className="ri-send-plane-line" />
+                                    <Tooltip label={publishingId === r.id ? 'Publishing…' : 'Publish Now'}>
+                                      <button type="button" className="rec-act rec-act-approve rec-act--icon" aria-label="Publish Now" disabled={publishingId === r.id} onClick={() => handlePublishNow(r)}>
+                                        {publishingId === r.id
+                                          ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
+                                          : <i className="ri-send-plane-line" />}
                                       </button>
                                     </Tooltip>
                                   )}
@@ -490,7 +492,16 @@ function CreateAnnouncementModal({
         const isActive = (r: any) => !r.status || String(r.status).toLowerCase() === 'active';
         setRoles(roleRows.filter(isActive).map(r => ({ id: r.id, name: r.name })));
         setDesignations(desigRows.filter(isActive).map(r => ({ id: r.id, name: r.name })));
-        setEmployees(empRows.map(e => ({
+        // Only ACTIVE employees may be excluded — disabled (soft-deleted) and
+        // exited (Resigned / Terminated / Inactive) people shouldn't appear in
+        // the Exclude Employee picker. Mirrors the `enabled` rule the HR
+        // Employees list uses.
+        const empSelectable = (e: any) => {
+          if (e.deleted_at) return false;
+          const s = String(e.status || 'Active').toLowerCase();
+          return s !== 'inactive' && s !== 'terminated' && s !== 'resigned';
+        };
+        setEmployees(empRows.filter(empSelectable).map(e => ({
           id: e.id,
           display_name: e.display_name || `${e.first_name || ''} ${e.last_name || ''}`.trim() || `Employee #${e.id}`,
           emp_code: e.emp_code,
@@ -817,6 +828,10 @@ function Step1Basic({
   type, setType, priority, setPriority,
   attachment, setAttachment, fileRef, errors,
 }: any) {
+  // Client-side guard for the 20 MB attachment cap — the input only restricts
+  // file type, so without this an oversize file was silently accepted.
+  const MAX_ATTACHMENT_MB = 20;
+  const [fileError, setFileError] = useState('');
   return (
     <>
       <div className="text-uppercase fw-semibold mb-3" style={{ color: '#0ea5e9' }}>
@@ -879,8 +894,25 @@ function Step1Basic({
             {attachment ? attachment.name : 'Click to upload (PNG, JPG, PDF · max 20MB)'}
           </div>
           {!attachment && <div style={{ fontSize: 11, color: 'var(--vz-secondary-color, #6b7280)' }}>or drag and drop here</div>}
-          <input ref={fileRef} type="file" accept=".png,.jpg,.jpeg,.pdf" style={{ display: 'none' }} onChange={e => setAttachment(e.target.files?.[0] ?? null)} />
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".png,.jpg,.jpeg,.pdf"
+            style={{ display: 'none' }}
+            onChange={e => {
+              const f = e.target.files?.[0] ?? null;
+              if (f && f.size > MAX_ATTACHMENT_MB * 1024 * 1024) {
+                setFileError(`File size exceeds the maximum limit of ${MAX_ATTACHMENT_MB} MB. Please upload a file smaller than ${MAX_ATTACHMENT_MB} MB.`);
+                setAttachment(null);
+                e.currentTarget.value = '';   // allow re-selecting the same file after fixing
+                return;
+              }
+              setFileError('');
+              setAttachment(f);
+            }}
+          />
         </div>
+        {fileError && <div className="rec-error mt-1"><i className="ri-error-warning-line" />{fileError}</div>}
       </div>
     </>
   );
@@ -1118,13 +1150,19 @@ function Step3Notify({ notifyEmail, setNotifyEmail }: { notifyEmail: boolean; se
         </div>
       </label>
 
+      {/* Info note — styled as a proper Note/Info alert (icon + "Note:" label
+          + light-blue highlight) so it reads as guidance, not a disabled field. */}
       <div
         style={{
-          background: 'var(--vz-secondary-bg, #f3f4f6)', border: '1px solid var(--vz-border-color, #e5e7eb)', borderRadius: 10,
-          padding: '10px 14px', color: 'var(--vz-secondary-color, #475569)', fontSize: 12.5,
+          display: 'flex', alignItems: 'flex-start', gap: 8,
+          background: 'rgba(56,189,248,0.10)', border: '1px solid rgba(56,189,248,0.28)', borderRadius: 10,
+          padding: '10px 14px', color: 'var(--vz-body-color, #0c4a6e)', fontSize: 12.5,
         }}
       >
-        Email notification is optional. The announcement will still be visible in the system regardless.
+        <i className="ri-information-line" style={{ fontSize: 16, color: '#0ea5e9', flexShrink: 0, marginTop: 1 }} />
+        <span>
+          <strong>Note:</strong> Email notification is optional. The announcement will still be visible in the system regardless.
+        </span>
       </div>
     </>
   );

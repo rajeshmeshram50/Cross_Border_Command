@@ -1896,7 +1896,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                     <span className="ep-doc-code">{tpl.code}</span>
                                   )}
                                   {run && runTone && (
-                                    <span style={{ marginLeft: 8, padding: '2px 10px', borderRadius: 999, background: runTone.bg, color: runTone.fg, fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                    <span className="ep-doc-status-badge" style={{ marginLeft: 8, padding: '2px 10px', borderRadius: 999, background: runTone.bg, color: runTone.fg, fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4, ['--pill-fg' as string]: runTone.fg } as React.CSSProperties}>
                                       <span style={{ width: 6, height: 6, borderRadius: '50%', background: runTone.dot }} />
                                       {run.status}
                                     </span>
@@ -2970,17 +2970,23 @@ function apiToExitRow(e: any): EmployeeRow {
   const trashed   = !!e.deleted_at;
   const rawStatus = String(e.status ?? 'Active');
   const ex        = e?.exit ?? null;
-  const todayIso  = new Date().toISOString().slice(0, 10);
+  // Notice start date (ISO) — surfaced on the returned row as noticeStartIso.
   const noticeRaw = ex?.notice_date ? String(ex.notice_date).slice(0, 10) : '';
-  // Notice has begun if there's no start date (legacy / immediate) or the
-  // start date is today-or-earlier. A future start date means "not yet".
-  const noticeStarted = !noticeRaw || noticeRaw <= todayIso;
   const caseClosed   = (ex?.exit_case_status === 'Closed') || !!ex?.completed_at;
   // Terminal employees.status values (matches the DB enum — Complete Exit
   // sets one of these). No 'Retired'/'Exited' — those aren't enum values.
   const statusExited = ['Resigned', 'Terminated'].includes(rawStatus);
   const statusNotice = rawStatus === 'Notice Period';
-  const exitInitiated = !!ex && (!!ex.exit_type || !!ex.last_working_day);
+  // An exit is "in progress" the moment it's been initiated/worked: an exit
+  // record exists with an exit type, a last working day, a notice date, or the
+  // wizard has advanced past stage 1. We DON'T gate on the notice-start date
+  // anymore — HR actively processing the stages of a scheduled (future-notice)
+  // exit was wrongly counted as "Active", so the Exit-In-Progress KPI read 0
+  // even with cases open. The Exited checks above still take precedence, so a
+  // finalised exit never regresses to In Progress.
+  const exitInitiated = !!ex && (
+    !!ex.exit_type || !!ex.last_working_day || !!ex.notice_date || Number(ex.current_stage) >= 1
+  );
 
   let status: ExitStatus;
   // "Exited" ONLY when the exit is genuinely finalised — case Closed via the
@@ -2989,7 +2995,7 @@ function apiToExitRow(e: any): EmployeeRow {
   // checklist) isn't done, the employee stays "Exit In Progress" so nobody is
   // marked complete before the work actually is.
   if      (trashed || caseClosed || statusExited)                   status = 'Exited';
-  else if ((exitInitiated && noticeStarted) || statusNotice)        status = 'Exit In Progress';
+  else if (exitInitiated || statusNotice)                           status = 'Exit In Progress';
   else if (!e.email || !e.department_id || !e.designation_id)        status = 'Missing Details';
   else                                                              status = 'Active';
 
