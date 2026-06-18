@@ -697,6 +697,31 @@ export default function HrEmployeeOnboarding() {
   const visible   = filtered.slice(sliceFrom, sliceFrom + PAGE_SIZE);
   const goto = (p: number) => setPage(Math.min(Math.max(1, p), pageCount));
 
+  // ── Dynamic fill height — stretch the list body to the bottom of the
+  //    viewport so the pagination footer pins to the bottom of the card
+  //    (same mechanism the CLM Authority / master pages use) instead of
+  //    floating directly under the last row. Recomputes on resize and
+  //    whenever the row count changes. `rootRef` is observed so header /
+  //    KPI reflows above also retrigger the measurement.
+  const rootRef   = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [fillH, setFillH] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const recompute = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const fh = Math.max(320, window.innerHeight - top - 24);
+      setFillH(prev => (prev === fh ? prev : fh));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    const ro = new ResizeObserver(recompute);
+    if (rootRef.current) ro.observe(rootRef.current);
+    window.addEventListener('resize', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+  }, [filtered.length]);
+
   return (
     <>
       <MasterFormStyles />
@@ -757,90 +782,51 @@ export default function HrEmployeeOnboarding() {
         ))}
       </Row>
 
-      {/* ── Tabs (free, no surrounding container — like the screenshot) ── */}
-      <div className="d-flex mb-3" style={{ gap: 8, flexWrap: 'wrap' }}>
-        {[
-          { key: 'pending'   as const, label: 'Onboarding Pending (New Joiners)', count: counts.pending,   icon: 'ri-time-line' },
-          { key: 'completed' as const, label: 'Onboarding Completed',             count: counts.completed, icon: 'ri-checkbox-circle-line' },
-        ].map(t => {
-          const on = tab === t.key;
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              className="btn d-inline-flex align-items-center gap-2 fw-semibold"
-              style={{
-                borderRadius: 999,
-                padding: '8px 16px',
-                fontSize: 13,
-                background: on ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'var(--vz-card-bg)',
-                color: on ? '#fff' : 'var(--vz-secondary-color)',
-                border: on ? 'none' : '1px solid var(--vz-border-color)',
-                boxShadow: on ? '0 4px 12px rgba(124,92,252,0.25)' : 'none',
-              }}
-            >
-              <i className={t.icon} style={{ fontSize: 14 }} />
-              {t.label}
-              <span
-                className="badge rounded-pill"
-                style={{
-                  fontSize: 11,
-                  background: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
-                  color: on ? '#fff' : 'var(--vz-secondary-color)',
-                }}
+      {/* ── Tabs + Search + Table — one bordered frame (.rec-list-frame).
+           The tabs and the search share the toolbar row (CLM-master style),
+           and the pagination footer pins to the bottom of the card via the
+           dynamic fill height computed above. ── */}
+      <div className="rec-list-frame" ref={rootRef}>
+        <div className="rec-req-filter-row d-flex align-items-center gap-3 flex-wrap">
+          {/* Tabs — take the left 50% of the toolbar. Shared rec-tab style
+              used by the Recruitment / Exit Management lists. */}
+          <div className="rec-tab-track" style={{ marginBottom: 0, flex: '1 1 0', minWidth: 0 }}>
+            {([
+              { key: 'pending'   as const, label: 'Onboarding Pending (New Joiners)', count: counts.pending,   icon: 'ri-time-line',            variant: 'in-progress' },
+              { key: 'completed' as const, label: 'Onboarding Completed',             count: counts.completed, icon: 'ri-checkbox-circle-line', variant: 'completed' },
+            ]).map(t => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className={`rec-tab ${tab === t.key ? `is-active ${t.variant}` : ''}`}
+                style={{ flex: 1, justifyContent: 'center' }}
               >
-                {t.count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+                <i className={t.icon} />
+                {t.label}
+                <span className="badge">{t.count}</span>
+              </button>
+            ))}
+          </div>
 
-      {/* ── Filters + Table — own card, like Employee list ── */}
-      <Card>
-        <CardBody>
-          <Row className="g-2 align-items-center mb-2">
-            <Col md={5} sm={12}>
-              <div className="search-box">
-                <Input
-                  type="text"
-                  className="form-control"
-                  placeholder="Search name, ID, department…"
-                  value={q}
-                  onChange={e => setQ(e.target.value)}
-                />
-                <i className="ri-search-line search-icon"></i>
-              </div>
-            </Col>
-            <Col md={7} sm={12} className="d-flex justify-content-md-end gap-3 flex-wrap align-items-center">
-              <div className="d-flex align-items-center gap-2">
-                <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Department</span>
-                <div style={{ minWidth: 170 }}>
-                  <MasterSelect
-                    value={deptFilter}
-                    onChange={setDeptFilter}
-                    options={DEPT_OPTIONS}
-                    placeholder="All"
-                  />
-                </div>
-              </div>
-              <div className="d-flex align-items-center gap-2">
-                <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Status</span>
-                <div style={{ minWidth: 170 }}>
-                  <MasterSelect
-                    value={statusFilter}
-                    onChange={setStatusFilter}
-                    options={tab === 'pending' ? STATUS_OPTIONS_PENDING : [{ value: 'All', label: 'All' }, { value: 'Completed', label: 'Completed' }]}
-                    placeholder="All"
-                  />
-                </div>
-              </div>
-            
-            </Col>
-          </Row>
+          {/* Search — takes the right 50% of the toolbar. Glassy purple-halo
+              look shared with the Employee + Exit Management lists. */}
+          <div className="search-box rec-req-search" style={{ flex: '1 1 0', minWidth: 0 }}>
+            <Input
+              type="text"
+              className="form-control"
+              placeholder="Search name, ID, department…"
+              value={q}
+              onChange={e => setQ(e.target.value)}
+            />
+            <i className="ri-search-line search-icon"></i>
+          </div>
+        </div>
 
-          <div className="table-responsive table-card rounded p-2 onb-list-table">
+        {/* Body fills to the viewport bottom so the pager pins to the card
+            footer; the table grows to take the slack above it. */}
+        <div className="p-3 d-flex flex-column" ref={scrollRef} style={{ minHeight: fillH }}>
+          <div className="table-responsive onb-list-table flex-grow-1">
                   <table className="table align-middle table-nowrap mb-0">
                     <thead className="table-light">
                       <tr>
@@ -1046,8 +1032,8 @@ export default function HrEmployeeOnboarding() {
 
           {/* Pagination — My Workplace / Client-table style */}
           <WorklistPager total={filtered.length} page={safePage} pageSize={PAGE_SIZE} onPage={goto} />
-        </CardBody>
-      </Card>
+        </div>
+      </div>
 
       {/* ── Onboarding Checklist Modal ── */}
       <ChecklistModal isOpen={checklistOpen} onClose={() => setChecklistOpen(false)} />
@@ -1995,11 +1981,10 @@ export function VaultModal({
               <Row className="g-3 align-items-stretch">
                 {[
                   { key: 'total',    label: 'Total Docs',    value: counts.total,    icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
-                  { key: 'verified', label: 'Verified',      value: counts.verified, icon: 'ri-checkbox-circle-fill', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
                   { key: 'uploaded', label: 'Uploaded',      value: counts.uploaded, icon: 'ri-upload-cloud-2-line',  gradient: 'linear-gradient(135deg,#3b82f6,#60a5fa)' },
                   { key: 'signed',   label: 'Signed',        value: counts.signed,   icon: 'ri-quill-pen-line',       gradient: 'linear-gradient(135deg,#5e4dd6,#9b7dff)' },
                   { key: 'pending',  label: 'Pending',       value: counts.pending,  icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)' },
-                  { key: 'notgen',   label: 'Not Generated', value: counts.notGen,   icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)' },
+                  // 'Verified' and 'Not Generated' KPI cards removed per bug 38.
                 ].map(k => (
                   <Col key={k.key} xl md={4} sm={6} xs={12}>
                     <div className="vault-kpi-card">

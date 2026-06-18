@@ -2257,6 +2257,29 @@ export default function HrEmployees() {
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
   const pageRows = filtered.slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE);
 
+  // ── Dynamic fill height — stretch the list body to the bottom of the
+  //    viewport so the pagination footer pins to the bottom of the card
+  //    (same mechanism as the Onboarding / Recruitment / CLM lists) instead
+  //    of floating right under the last row.
+  const listRootRef   = useRef<HTMLDivElement | null>(null);
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  const [listFillH, setListFillH] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const recompute = () => {
+      const el = listScrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const fh = Math.max(320, window.innerHeight - top - 24);
+      setListFillH(prev => (prev === fh ? prev : fh));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    const ro = new ResizeObserver(recompute);
+    if (listRootRef.current) ro.observe(listRootRef.current);
+    window.addEventListener('resize', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+  }, [filtered.length]);
+
   // ── Export to Excel ────────────────────────────────────────────────────────
   // Exports EVERY employee currently in the list (the full filtered set —
   // all pages, respecting the Active/Disabled tab, department filter and
@@ -2966,7 +2989,7 @@ export default function HrEmployees() {
             {/* KPI strip — same Swiper-based carousel pattern as the
                 Plans page (PlanSelection.tsx). Autoplay at 2s loop, pause
                 on hover, manual nav arrows that don't fight the autoplay. */}
-            <div className="hr-emp-kpi-outer mb-3">
+            <div className="hr-emp-kpi-outer mb-0">
               <button
                 ref={kpiPrevRef}
                 type="button"
@@ -3057,71 +3080,41 @@ export default function HrEmployees() {
               </Swiper>
             </div>
 
-            {/* ── Tabs (Active / Disabled) ── */}
-            <Row className="g-2 mb-3">
-              <Col xs={12}>
-                <div
-                  className="d-flex"
-                  style={{
-                    background: 'var(--vz-secondary-bg)',
-                    border: '1px solid var(--vz-border-color)',
-                    borderRadius: 10,
-                    padding: 4,
-                    gap: 4,
-                  }}
-                >
-                  {[
-                    { key: 'active'   as const, label: 'Active Employees',   count: counts.activeTab,   icon: 'ri-user-follow-line' },
-                    { key: 'disabled' as const, label: 'Disabled Employees', count: counts.disabledTab, icon: 'ri-user-unfollow-line' },
-                  ].map(t => {
-                    const on = tab === t.key;
-                    return (
-                      <button
-                        key={t.key}
-                        type="button"
-                        onClick={() => {
-                          setTab(t.key);
-                          // Keep the dropdown in lockstep with the tab —
-                          // they represent the same enabled/disabled axis.
-                          setStatusFilter(t.key === 'active' ? 'Active' : 'Disabled');
-                        }}
-                        className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
-                        style={{
-                          borderRadius: 8,
-                          padding: '8px 14px',
-                          fontSize: 13,
-                          background: on ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'transparent',
-                          color: on ? '#fff' : 'var(--vz-secondary-color)',
-                          border: 'none',
-                          boxShadow: on ? '0 4px 12px rgba(124,92,252,0.25)' : 'none',
-                        }}
-                      >
-                        <i className={t.icon} style={{ fontSize: 14 }} />
-                        {t.label}
-                        <span
-                          className="badge rounded-pill"
-                          style={{
-                            fontSize: 11,
-                            background: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
-                            color: on ? '#fff' : 'var(--vz-secondary-color)',
-                          }}
-                        >
-                          {t.count}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </Col>
-            </Row>
-
-            {/* ── Search + Filters + Table — one bordered frame (matches the
-                Recruitment list frame, now that the page container is gone) ── */}
-            <div className="hr-emp-list-frame">
+            {/* ── Tabs + Search + Table — one bordered frame. The Active /
+                Disabled tabs and the search share the toolbar row (tabs left,
+                search filling the rest to the right edge); the Department
+                dropdown was removed. The pagination footer pins to the bottom
+                of the card via the dynamic fill height. ── */}
+            <div className="hr-emp-list-frame" ref={listRootRef}>
             <div className="hr-emp-frame-filter p-3">
-            <Row className="g-2 align-items-center mb-0">
-              <Col md={6} sm={12}>
-                <div className="search-box">
+              <div className="d-flex align-items-center gap-3 flex-wrap">
+                {/* Tabs — take the left 50% of the toolbar. Shared rec-tab
+                    style used by the Recruitment / Exit Management lists. */}
+                <div className="rec-tab-track" style={{ marginBottom: 0, flex: '1 1 0', minWidth: 0 }}>
+                  {([
+                    { key: 'active'   as const, label: 'Active Employees',   count: counts.activeTab,   icon: 'ri-user-follow-line',   variant: 'in-progress' },
+                    { key: 'disabled' as const, label: 'Disabled Employees', count: counts.disabledTab, icon: 'ri-user-unfollow-line', variant: 'cancelled' },
+                  ]).map(t => (
+                    <button
+                      key={t.key}
+                      type="button"
+                      onClick={() => {
+                        setTab(t.key);
+                        // Keep the dropdown in lockstep with the tab —
+                        // they represent the same enabled/disabled axis.
+                        setStatusFilter(t.key === 'active' ? 'Active' : 'Disabled');
+                      }}
+                      className={`rec-tab ${tab === t.key ? `is-active ${t.variant}` : ''}`}
+                      style={{ flex: 1, justifyContent: 'center' }}
+                    >
+                      <i className={t.icon} />
+                      {t.label}
+                      <span className="badge">{t.count}</span>
+                    </button>
+                  ))}
+                </div>
+                {/* Search — takes the right 50% of the toolbar. */}
+                <div className="search-box rec-req-search" style={{ flex: '1 1 0', minWidth: 0 }}>
                   <Input
                     type="text"
                     className="form-control"
@@ -3131,31 +3124,13 @@ export default function HrEmployees() {
                   />
                   <i className="ri-search-line search-icon"></i>
                 </div>
-              </Col>
-              <Col md={6} sm={12} className="d-flex justify-content-md-end gap-3 flex-wrap align-items-center">
-                {/* Status filter intentionally removed — the Active /
-                    Disabled tabs above the search row already provide the
-                    same filter, so keeping a dropdown here was redundant.
-                    The `statusFilter` state still exists so the tab clicks
-                    can keep the underlying filter in sync. */}
-                <div className="d-flex align-items-center gap-2">
-                  <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Department</span>
-                  <div style={{ minWidth: 170 }}>
-                    <MasterSelect
-                      value={deptFilter}
-                      onChange={setDeptFilter}
-                      options={departments.map(d => ({ value: d, label: d }))}
-                      placeholder="All Depts"
-                    />
-                  </div>
-                </div>
-              </Col>
-            </Row>
+              </div>
             </div>
 
-            {/* ── Table — flows inside the same frame as the search row ── */}
-            <div className="p-3">
-                <div className="table-responsive">
+            {/* ── Table — fills to the viewport bottom so the pager pins to the
+                card footer; the table grows to take the slack above it. ── */}
+            <div className="p-3 d-flex flex-column" ref={listScrollRef} style={{ minHeight: listFillH }}>
+                <div className="table-responsive flex-grow-1">
                   <table className="table align-middle table-nowrap mb-0">
                     <thead className="table-light">
                       <tr>

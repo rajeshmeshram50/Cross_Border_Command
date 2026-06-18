@@ -137,12 +137,34 @@ class SalesLeadController extends Controller
         // one lead_acknowledgements row exists. A lead sitting on Stage 2 with no
         // activity (default-qualified) is therefore excluded.
         if ($request->boolean('lead_ack_complete') || $request->boolean('price_shared_complete')) {
+            // (a) Stage 2 — Lead Acknowledgement completed: latest bucket is
+            //     Qualified AND an acknowledgement was actually logged (qualified
+            //     defaults to true on creation, so the row check is required).
             $q->where('leads.qualified', true)
               ->where('leads.disqualified', false)
               ->whereExists(function ($sub) {
                   $sub->select(\Illuminate\Support\Facades\DB::raw(1))
                       ->from('lead_acknowledgements')
                       ->whereColumn('lead_acknowledgements.lead_id', 'leads.id');
+              })
+            // (b) Stage 4 — Price Shared completed: the lead has at least one
+            //     product in its directory AND every one of those products has a
+            //     shared price recorded. Any product without a shared price
+            //     (or no products at all) excludes the opportunity.
+              ->whereExists(function ($sub) {
+                  $sub->select(\Illuminate\Support\Facades\DB::raw(1))
+                      ->from('lead_products')
+                      ->whereColumn('lead_products.lead_id', 'leads.id');
+              })
+              ->whereNotExists(function ($sub) {
+                  $sub->select(\Illuminate\Support\Facades\DB::raw(1))
+                      ->from('lead_products')
+                      ->whereColumn('lead_products.lead_id', 'leads.id')
+                      ->whereNotExists(function ($sp) {
+                          $sp->select(\Illuminate\Support\Facades\DB::raw(1))
+                             ->from('lead_product_shared_prices')
+                             ->whereColumn('lead_product_shared_prices.lead_product_id', 'lead_products.id');
+                      });
               });
         }
 

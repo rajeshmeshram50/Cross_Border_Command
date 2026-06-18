@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Col, Row, Input, Modal, ModalBody, Spinner } from 'reactstrap';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
@@ -572,6 +572,29 @@ export default function HrRecruitment() {
   // Pagination helpers
   const goto = (p: number) => setPage(Math.min(Math.max(1, p), pageCount));
 
+  // ── Dynamic fill height — stretch the list body to the bottom of the
+  //    viewport so the pagination footer pins to the bottom of the card
+  //    (same mechanism the CLM Authority / master pages use, mirrored on
+  //    the Onboarding list) instead of floating right under the last row.
+  const rootRef   = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [fillH, setFillH] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const recompute = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const fh = Math.max(320, window.innerHeight - top - 24);
+      setFillH(prev => (prev === fh ? prev : fh));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    const ro = new ResizeObserver(recompute);
+    if (rootRef.current) ro.observe(rootRef.current);
+    window.addEventListener('resize', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+  }, [filtered.length]);
+
   return (
     <>
       <MasterFormStyles />
@@ -643,32 +666,37 @@ export default function HrRecruitment() {
               ))}
             </Row>
 
-            {/* ── Tabs (In Progress / Completed / Cancelled) — segmented control ── */}
-            <div className="rec-tab-track mb-3">
-              {([
-                { key: 'In Progress' as const, label: 'In Progress', count: counts.tabs['In Progress'], icon: 'ri-time-line',           variant: 'in-progress' },
-                { key: 'Completed'   as const, label: 'Completed',   count: counts.tabs.Completed,     icon: 'ri-checkbox-circle-line',variant: 'completed'   },
-                { key: 'Cancelled'   as const, label: 'Cancelled',   count: counts.tabs.Cancelled,     icon: 'ri-close-circle-line',   variant: 'cancelled'   },
-              ]).map(t => (
-                <button
-                  key={t.key}
-                  type="button"
-                  onClick={() => setTab(t.key)}
-                  className={`rec-tab ${tab === t.key ? `is-active ${t.variant}` : ''}`}
-                >
-                  <i className={t.icon} />
-                  {t.label}
-                  <span className="badge">{t.count}</span>
-                </button>
-              ))}
-            </div>
-
-            {/* ── Search + Filters + Table — inside ONE card frame ── */}
+            {/* ── Tabs + Search + Table — one card frame. The tabs and the
+                 search share the toolbar row (tabs left, search filling the
+                 rest to the right edge); the Department / Priority / Work Type
+                 dropdowns were removed. The pagination footer pins to the
+                 bottom of the card via the dynamic fill height. ── */}
             <Card className="border-0 shadow-none mb-0 bg-transparent">
               <CardBody className="p-0">
-                <div className="rec-list-frame">
-                  <div className="rec-req-filter-row d-flex align-items-center gap-2 flex-wrap">
-                    <div className="rec-req-search search-box" style={{ flex: 1, minWidth: 220 }}>
+                <div className="rec-list-frame" ref={rootRef}>
+                  <div className="rec-req-filter-row d-flex align-items-center gap-3 flex-wrap">
+                    {/* Tabs — take the left 50% of the toolbar */}
+                    <div className="rec-tab-track" style={{ marginBottom: 0, flex: '1 1 0', minWidth: 0 }}>
+                      {([
+                        { key: 'In Progress' as const, label: 'In Progress', count: counts.tabs['In Progress'], icon: 'ri-time-line',           variant: 'in-progress' },
+                        { key: 'Completed'   as const, label: 'Completed',   count: counts.tabs.Completed,     icon: 'ri-checkbox-circle-line',variant: 'completed'   },
+                        { key: 'Cancelled'   as const, label: 'Cancelled',   count: counts.tabs.Cancelled,     icon: 'ri-close-circle-line',   variant: 'cancelled'   },
+                      ]).map(t => (
+                        <button
+                          key={t.key}
+                          type="button"
+                          onClick={() => setTab(t.key)}
+                          className={`rec-tab ${tab === t.key ? `is-active ${t.variant}` : ''}`}
+                          style={{ flex: 1, justifyContent: 'center' }}
+                        >
+                          <i className={t.icon} />
+                          {t.label}
+                          <span className="badge">{t.count}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {/* Search — takes the right 50% of the toolbar */}
+                    <div className="rec-req-search search-box" style={{ flex: '1 1 0', minWidth: 0 }}>
                       <Input
                         type="text"
                         className="form-control"
@@ -678,21 +706,11 @@ export default function HrRecruitment() {
                       />
                       <i className="ri-search-line search-icon"></i>
                     </div>
-                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Department</span>
-                    <div style={{ minWidth: 150 }}>
-                      <MasterSelect value={deptFilter} onChange={setDeptFilter} options={deptFilterOptions} placeholder="All" />
-                    </div>
-                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Priority</span>
-                    <div style={{ minWidth: 130 }}>
-                      <MasterSelect value={priorityFilter} onChange={setPriorityFilter} options={PRIORITY_FILTER_OPTIONS} placeholder="All" />
-                    </div>
-                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>work Type</span>
-                    <div style={{ minWidth: 140 }}>
-                      <MasterSelect value={jobTypeFilter} onChange={setJobTypeFilter} options={JOB_TYPE_FILTER_OPTIONS} placeholder="All" />
-                    </div>
-                    
                   </div>
-                  <div className="p-2 rec-list-scroll">
+                  {/* Body fills to the viewport bottom so the pager pins to the
+                      card footer; the table grows to take the slack above it. */}
+                  <div className="d-flex flex-column" ref={scrollRef} style={{ minHeight: fillH }}>
+                  <div className="p-2 rec-list-scroll flex-grow-1">
                   <table className="rec-list-table align-middle table-nowrap mb-0">
                     <thead>
                       <tr>
@@ -825,7 +843,8 @@ export default function HrRecruitment() {
                   </table>
                   </div>
 
-                  {/* Pagination footer — sits inside the same elevated frame */}
+                  {/* Pagination footer — pinned to the bottom of the fill
+                      container so it sits at the card footer. */}
                   <WorklistPager
                     total={filtered.length}
                     page={safePage}
@@ -833,6 +852,7 @@ export default function HrRecruitment() {
                     onPage={goto}
                     onPageSize={(n) => { setPageSize(n); setPage(1); }}
                   />
+                  </div>
                 </div>
               </CardBody>
             </Card>

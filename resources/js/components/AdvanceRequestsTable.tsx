@@ -91,6 +91,14 @@ const BADGE_DARK_CSS = `
 [data-bs-theme="dark"] .adv-status-badge--pending  { background: #3a2a08 !important; color: #fbbf24 !important; }
 [data-bs-theme="dark"] .adv-status-badge--approved { background: #0c2e1d !important; color: #4ade80 !important; }
 [data-bs-theme="dark"] .adv-status-badge--rejected { background: #3a0e1e !important; color: #f9a8d4 !important; }
+
+/* Confirm Approve / Reject button — hover lift + brightness so the action
+   has visible feedback, plus a disabled state used while the request is
+   being processed (prevents repeated clicks → duplicate submissions). */
+.adv-confirm-action-btn { transition: filter .15s ease, transform .15s ease, box-shadow .15s ease; }
+.adv-confirm-action-btn:hover:not(:disabled) { filter: brightness(1.07); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0,0,0,0.20); }
+.adv-confirm-action-btn:active:not(:disabled) { transform: translateY(0); box-shadow: none; }
+.adv-confirm-action-btn:disabled { opacity: 0.7; cursor: not-allowed; }
 `;
 
 function fmtDate(iso: string | null | undefined): string {
@@ -626,6 +634,10 @@ function AdvanceConfirmModal({
   onClose: () => void;
   onConfirm: () => void | Promise<void>;
 }) {
+  // Tracks the in-flight confirm so the button can show a spinner + disable
+  // itself (and the Cancel button) — stops repeated clicks firing the action
+  // more than once. Declared before the early return to respect hook rules.
+  const [submitting, setSubmitting] = useState(false);
   if (!target) return null;
   const { row, action } = target;
   const isApprove = action.verdict === 'approve';
@@ -696,20 +708,29 @@ function AdvanceConfirmModal({
           </div>
         </div>
         <div className="cand-confirm-footer d-flex justify-content-end gap-2" style={{ padding: '12px 18px', borderTop: '1px solid var(--vz-border-color)' }}>
-          <button type="button" className="btn btn-light btn-sm" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-light btn-sm" onClick={onClose} disabled={submitting}>Cancel</button>
           <button
             type="button"
-            className="btn btn-sm fw-semibold"
+            className="btn btn-sm fw-semibold adv-confirm-action-btn"
             style={{
               background: isApprove
                 ? 'linear-gradient(135deg,#0ab39c,#02c8a7)'
                 : 'linear-gradient(135deg,#f06548,#ff7a5c)',
               color: '#fff', border: 'none',
             }}
-            onClick={() => { void onConfirm(); }}
+            disabled={submitting}
+            onClick={async () => {
+              if (submitting) return;          // ignore repeated clicks
+              setSubmitting(true);
+              try { await onConfirm(); }
+              finally { setSubmitting(false); }  // no-op if the modal already closed
+            }}
           >
-            <i className={isApprove ? 'ri-check-line me-1' : 'ri-close-line me-1'} />
-            {isApprove ? 'Confirm Approve' : 'Confirm Reject'}
+            {submitting ? (
+              <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Processing…</>
+            ) : (
+              <><i className={isApprove ? 'ri-check-line me-1' : 'ri-close-line me-1'} />{isApprove ? 'Confirm Approve' : 'Confirm Reject'}</>
+            )}
           </button>
         </div>
       </div>
