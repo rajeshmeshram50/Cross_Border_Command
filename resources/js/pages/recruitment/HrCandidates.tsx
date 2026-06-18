@@ -207,11 +207,9 @@ export default function HrCandidates() {
 
   const KPI_CARDS = [
     { key: 'total',       label: 'Total',        value: totals.total,        icon: 'ri-team-line',            gradient: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
-    { key: 'applied',     label: 'Applied',      value: totals.applied,      icon: 'ri-flashlight-line',      gradient: 'linear-gradient(135deg, #c2410c 0%, #f59e0b 60%, #fbbf24 100%)', deep: '#c2410c' },
     { key: 'inInterview', label: 'In Interview', value: totals.inInterview,  icon: 'ri-file-text-line',       gradient: 'linear-gradient(135deg, #4338ca 0%, #6366f1 60%, #818cf8 100%)', deep: '#4338ca' },
     { key: 'selected',    label: 'Selected',     value: totals.selected,     icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
     { key: 'rejected',    label: 'Rejected',     value: totals.rejected,     icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg, #be123c 0%, #ef4444 60%, #fb7185 100%)', deep: '#be123c' },
-    { key: 'offered',     label: 'Offered',      value: totals.offered,      icon: 'ri-award-line',           gradient: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
   ];
 
   const handleStatusUpdate = async (c: CandidateRow, next: CandidateStatus, reasonOrNote?: string) => {
@@ -374,7 +372,7 @@ export default function HrCandidates() {
             {/* KPI strip */}
             <Row className="g-2 mb-2 align-items-stretch rec-page-kpis">
               {KPI_CARDS.map(k => (
-                <Col key={k.key} xl={2} md={4} sm={6} xs={12}>
+                <Col key={k.key} xl={3} md={6} sm={6} xs={12}>
                   <div className="rec-kpi-card h-100">
                     <span className="rec-kpi-strip" style={{ background: k.gradient }} />
                     <div className="rec-kpi-text">
@@ -389,8 +387,8 @@ export default function HrCandidates() {
               ))}
             </Row>
 
-            {/* Tabs — segmented control */}
-            <div className="mb-2">
+            {/* Tabs + search — one row */}
+            <div className="d-flex align-items-center gap-2 mb-2 flex-wrap">
               <div className="rec-tab-track">
                 {([
                   { key: 'final' as const,    label: 'Final Round Selected', count: totals.finalRound,                icon: 'ri-user-search-line',     variant: 'in-progress' },
@@ -409,30 +407,20 @@ export default function HrCandidates() {
                   </button>
                 ))}
               </div>
+              <div className="rec-req-search search-box ms-auto" style={{ flex: '1 1 240px', maxWidth: 380, minWidth: 200 }}>
+                <Input type="text" className="form-control" placeholder="Search name, email, mobile…" value={search} onChange={e => setSearch(e.target.value)} />
+                <i className="ri-search-line search-icon"></i>
+              </div>
+              <span className="cand-result-chip">
+                <i className="ri-filter-3-line" />
+                {filtered.length} result{filtered.length === 1 ? '' : 's'}
+              </span>
             </div>
 
             {/* Search + Filter + Table — inside ONE card frame */}
             <Card className="border-0 shadow-none mb-0 bg-transparent">
               <CardBody className="p-0">
                 <div className="rec-list-frame">
-                  <div className="rec-req-filter-row d-flex align-items-center gap-2 flex-wrap">
-                    <div className="rec-req-search search-box" style={{ flex: 1, minWidth: 220 }}>
-                      <Input type="text" className="form-control" placeholder="Search name, email, mobile…" value={search} onChange={e => setSearch(e.target.value)} />
-                      <i className="ri-search-line search-icon"></i>
-                    </div>
-                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Source</span>
-                    <div style={{ minWidth: 150 }}>
-                      <MasterSelect value={sourceFilter} onChange={setSourceFilter} options={[{ value: 'All', label: 'All' }, ...SOURCES.map(s => ({ value: s, label: s }))]} placeholder="All" />
-                    </div>
-                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Status</span>
-                    <div style={{ minWidth: 150 }}>
-                      <MasterSelect value={statusFilter} onChange={setStatusFilter} options={[{ value: 'All', label: 'All' }, ...STATUSES.map(s => ({ value: s, label: s }))]} placeholder="All" />
-                    </div>
-                    <span className="cand-result-chip ms-auto">
-                      <i className="ri-filter-3-line" />
-                      {filtered.length} result{filtered.length === 1 ? '' : 's'}
-                    </span>
-                  </div>
                   <div className="p-2 rec-list-scroll">
                   <table className="rec-list-table cand-page-table align-middle table-nowrap mb-0">
                     <thead>
@@ -1269,12 +1257,12 @@ function CandidateFormModal({
   const [distance, setDistance]               = useState('');
   const [currentSalary, setCurrentSalary]     = useState('');
   const [expectedSalary, setExpectedSalary]   = useState('');
-  const [noticePeriod, setNoticePeriod]       = useState('Immediate');
+  const [noticePeriod, setNoticePeriod]       = useState('');
   const [source, setSource]                   = useState('');
   // Referral capture (HRMS-BUG-057) — only used when source === 'Referral'.
   const [referredById, setReferredById]       = useState('');
   const [employeeOpts, setEmployeeOpts]       = useState<{ value: string; label: string }[]>([]);
-  const [status, setStatus]                   = useState<CandidateStatus>('Final Interview');
+  const [status, setStatus]                   = useState<CandidateStatus | ''>('');
   const [cvFile, setCvFile]                   = useState<File | null>(null);
   // Holds the previously-uploaded CV's URL when editing, so the form can
   // show "current CV" instead of looking like nothing was ever attached.
@@ -1322,7 +1310,7 @@ function CandidateFormModal({
       setDistance(editing.distance_km != null ? String(editing.distance_km) : '');
       setCurrentSalary(editing.current_salary_lpa != null ? String(editing.current_salary_lpa) : '');
       setExpectedSalary(editing.expected_salary_lpa != null ? String(editing.expected_salary_lpa) : '');
-      setNoticePeriod(editing.notice_period || 'Immediate');
+      setNoticePeriod(editing.notice_period || '');
       setSource(editing.source || '');
       setReferredById(editing.referred_by_id != null ? String(editing.referred_by_id) : '');
       setStatus(editing.status);
@@ -1330,8 +1318,8 @@ function CandidateFormModal({
     } else {
       setName(''); setEmail(''); setMobile(''); setAddress(''); setQualification('');
       setExperience('0'); setTransport(''); setDistance('');
-      setCurrentSalary(''); setExpectedSalary(''); setNoticePeriod('Immediate');
-      setSource(''); setReferredById(''); setStatus('Final Interview');
+      setCurrentSalary(''); setExpectedSalary(''); setNoticePeriod('');
+      setSource(''); setReferredById(''); setStatus('');
       setExistingCvUrl(null);
     }
     setCvFile(null);

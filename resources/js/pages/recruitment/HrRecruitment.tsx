@@ -2556,15 +2556,6 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
     if (!experience)             e.experience      = 'Experience level is required';
     if (!hiringManagerId)        e.hiringManager   = 'Hiring manager is required';
     if (!assignedHrId)           e.assignedHr      = 'Assigned HR is required';
-    /* Hiring Manager and Assigned HR must be different employees —
-     * they have different responsibilities on the recruitment workflow
-     * (HM owns interviews, HR owns coordination/offer), so the same
-     * person can't hold both seats. Without this check, users were
-     * accidentally selecting the same employee in both dropdowns and
-     * downstream notification routing got confused. */
-    if (hiringManagerId && assignedHrId && hiringManagerId === assignedHrId) {
-      e.assignedHr = 'Assigned HR must be a different person from the Hiring Manager';
-    }
     if (!startDate)              e.startDate       = 'Start date is required';
     if (!deadline)               e.deadline        = 'TAT/Deadline is required';
     // ISO yyyy-mm-dd values compare lexicographically — no Date()
