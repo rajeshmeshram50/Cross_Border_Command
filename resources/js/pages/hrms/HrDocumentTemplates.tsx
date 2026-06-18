@@ -6,6 +6,7 @@ import api from '../../api';
 import { ShimmerTableRows } from '../../components/ui/Shimmer';
 import Tooltip from '../../components/ui/Tooltip';
 import { MasterSelect } from '../../components/ui/MasterSelect';
+import WorklistPager from '../../components/ui/WorklistPager';
 import { TemplateRow, EmployeeCategory, RoleType, DocStatus, ROLE_TYPES } from './doc-templates/TemplateForm';
 import '../../../css/recruitment.css';
 
@@ -84,6 +85,17 @@ export default function HrDocumentTemplates() {
         );
       });
   }, [rows, category, roleType, triggerFilter, statusFilter, search]);
+
+  // Pagination — same WorklistPager (dynamic rows-per-page) the recruitment
+  // table uses, so the lists behave consistently across the app.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage  = Math.min(page, pageCount);
+  const sliceFrom = (safePage - 1) * pageSize;
+  const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
+  // Reset to page 1 whenever the filter set changes.
+  useEffect(() => { setPage(1); }, [category, roleType, triggerFilter, statusFilter, search]);
 
   const handleDelete = async (row: TemplateRow) => {
     if (!confirm(`Delete template ${row.code}? This cannot be undone.`)) return;
@@ -265,10 +277,9 @@ export default function HrDocumentTemplates() {
           {/* Filters + count badge */}
           <Card className="mb-3" style={{ borderRadius: 12 }}>
             <CardBody className="d-flex flex-wrap gap-3 align-items-center" style={{ padding: 12 }}>
-              <div style={{ position: 'relative', minWidth: 260 }}>
-                <i className="ri-search-line" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
-                <Input type="text" placeholder="Search templates…" value={search} onChange={e => setSearch(e.target.value)}
-                  style={{ paddingLeft: 30, height: 36 }} />
+              <div className="rec-req-search search-box" style={{ flex: '1 1 260px', minWidth: 260 }}>
+                <Input type="text" className="form-control" placeholder="Search templates…" value={search} onChange={e => setSearch(e.target.value)} />
+                <i className="ri-search-line search-icon" />
               </div>
               <div className="d-flex align-items-center gap-2">
                 <span className="dtm-filter-label" style={{ fontSize: 10.5, fontWeight: 800, color: '#9ca3af', letterSpacing: 0.4, textTransform: 'uppercase' }}>Trigger</span>
@@ -331,11 +342,11 @@ export default function HrDocumentTemplates() {
                         No templates yet for {category} · {roleType}. Click <strong>+ Add Template</strong> to create one.
                       </td></tr>
                     ) : (
-                      filtered.map((r, i) => {
+                      visible.map((r, i) => {
                         const tone = STATUS_TONES[r.status] || STATUS_TONES.Draft;
                         return (
                           <tr key={r.id}>
-                            <td style={{ padding: '10px 12px' }}>{i + 1}</td>
+                            <td style={{ padding: '10px 12px' }}>{sliceFrom + i + 1}</td>
                             <td>
                               <span className="dtm-code-pill" style={{ display: 'inline-block', padding: '3px 9px', borderRadius: 6, fontFamily: 'monospace', fontSize: 11.5, fontWeight: 700, background: '#fef3c7', color: '#a16207' }}>{r.code}</span>
                             </td>
@@ -375,6 +386,15 @@ export default function HrDocumentTemplates() {
                   </tbody>
                 </table>
               </div>
+              {/* Pagination — same WorklistPager (dynamic rows-per-page) as the
+                  recruitment table. */}
+              <WorklistPager
+                total={filtered.length}
+                page={safePage}
+                pageSize={pageSize}
+                onPage={setPage}
+                onPageSize={(n) => { setPageSize(n); setPage(1); }}
+              />
             </CardBody>
           </Card>
         </div>
