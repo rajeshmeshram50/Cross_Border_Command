@@ -1302,8 +1302,14 @@ export default function SalesMatrixDetail() {
               await api.put(`/sales/leads/${resolvedLeadId}`, { customer_id: dbId });
               toast.success('Customer mapped', `Linked to this opportunity`);
               await reloadLead();
-            } catch {
-              toast.error('Mapping failed', 'Could not link this customer to the lead');
+            } catch (e: any) {
+              // Surface the backend's 422 message (e.g. the Customer ↔ Product
+              // segment-match guard) so the user sees WHY the mapping failed
+              // rather than a generic error.
+              toast.error('Mapping failed', e?.response?.data?.message ?? 'Could not link this customer to the lead');
+              // Don't open the edit form when the bind was rejected — the
+              // customer isn't linked, so fall through with the picker closed.
+              return;
             }
           }
           setCustomerEditing(row);

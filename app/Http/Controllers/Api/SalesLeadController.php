@@ -640,6 +640,25 @@ class SalesLeadController extends Controller
             }
         }
 
+        // Customer ↔ Product segment-match guard at CUSTOMER-MAPPING time.
+        // When products were mapped first and a customer is now being set (or
+        // swapped), every mapped product's segment must match one of the new
+        // customer's segments — block the mismatch with a 422 the worksheet
+        // toasts. (The reverse order — product mapped after customer — is
+        // guarded in storeLeadProduct().)
+        if (array_key_exists('customer_id', $data) && $data['customer_id']) {
+            $leadProductIds = LeadProduct::where('lead_id', $lead->id)
+                ->pluck('product_id')
+                ->all();
+            if ($block = $this->segmentCustomerProductMismatchResponse(
+                (int) $user->client_id,
+                $leadProductIds,
+                (int) $data['customer_id'],
+            )) {
+                return $block;
+            }
+        }
+
         // Snapshot the owner BEFORE saving so we can log an ownership change
         // when this edit (re)assigns the lead via the salesperson_id field.
         $prevSalesId = $lead->salesperson_id ? (int) $lead->salesperson_id : null;
@@ -1459,6 +1478,19 @@ class SalesLeadController extends Controller
             (int) $user->client_id,
             [$data['product_id']],
             $lead->consignee_id,
+        )) {
+            return $block;
+        }
+
+        // Customer ↔ Product segment-match guard. If the lead already has a
+        // customer mapped, the product being added must belong to one of that
+        // customer's segments — block the mismatch with a 422 the worksheet
+        // toasts. (The reverse order — customer mapped after products — is
+        // guarded in update().)
+        if ($block = $this->segmentCustomerProductMismatchResponse(
+            (int) $user->client_id,
+            [$data['product_id']],
+            $lead->customer_id,
         )) {
             return $block;
         }
