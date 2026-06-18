@@ -327,7 +327,6 @@ function ExpenseClaimRowView({
               <button
                 type="button"
                 data-tooltip="Approve"
-                data-tooltip-pos="bottom"
                 aria-label="Approve"
                 onClick={() => { setConfirmAction({ stage: 'manager', verdict: 'approve' }); setComment(''); }}
                 className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
@@ -342,7 +341,6 @@ function ExpenseClaimRowView({
               <button
                 type="button"
                 data-tooltip="Reject"
-                data-tooltip-pos="bottom"
                 aria-label="Reject"
                 onClick={() => { setConfirmAction({ stage: 'manager', verdict: 'reject' }); setComment(''); }}
                 className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
@@ -361,7 +359,6 @@ function ExpenseClaimRowView({
               <button
                 type="button"
                 data-tooltip="Approve"
-                data-tooltip-pos="bottom"
                 aria-label="Approve"
                 onClick={() => { setConfirmAction({ stage: 'hr', verdict: 'approve' }); setComment(''); }}
                 className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
@@ -376,7 +373,6 @@ function ExpenseClaimRowView({
               <button
                 type="button"
                 data-tooltip="Reject"
-                data-tooltip-pos="bottom"
                 aria-label="Reject"
                 onClick={() => { setConfirmAction({ stage: 'hr', verdict: 'reject' }); setComment(''); }}
                 className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"

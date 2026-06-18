@@ -610,10 +610,6 @@ export default function HrRecruitment() {
                 <div className="min-w-0">
                   <div className="d-flex align-items-center gap-2 flex-wrap">
                     <span className="frm-cstrip-title">Recruitment Management</span>
-                    <span className="rec-header-count">
-                      <span className="dot" />
-                      {recruitments.length} recruitment{recruitments.length === 1 ? '' : 's'}
-                    </span>
                   </div>
                   <div className="frm-cstrip-sub">
                     Create recruitments, track candidates, and manage the end-to-end hiring pipeline
@@ -1186,7 +1182,10 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
       openings:               Number(openings) || 1,
       employment_type:        employType || null,
       work_mode:              workMode || null,
-      urgency,
+      // urgency is NOT NULL on the table; on a Save-as-Draft the user may not
+      // have picked one yet, so fall back to 'Medium' instead of sending an
+      // empty value (Laravel converts '' → null → not-null violation).
+      urgency:                urgency || 'Medium',
       job_description:        jobDesc || null,
       daily_responsibilities: dailyResp || null,
       required_skills:        requiredSkills || null,

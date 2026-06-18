@@ -886,6 +886,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [hiringRequests, setHiringRequests] = useState<HiringRequestRow[]>([]);
   const [hiringLoading, setHiringLoading] = useState<boolean>(false);
   const [raiseHiringOpen, setRaiseHiringOpen] = useState<boolean>(false);
+  // When set, the Raise modal opens in EDIT mode to resume a saved Draft.
+  const [hiringEditing, setHiringEditing] = useState<any | null>(null);
   const [listHiringOpen, setListHiringOpen] = useState<boolean>(false);
   const [hiringRefreshKey, setHiringRefreshKey] = useState<number>(0);
 
@@ -5399,7 +5401,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <button
                     type="button"
                     className="btn d-inline-flex align-items-center gap-2 fw-semibold"
-                    onClick={() => setRaiseHiringOpen(true)}
+                    onClick={() => { setHiringEditing(null); setRaiseHiringOpen(true); }}
                     style={{
                       background: 'linear-gradient(135deg,#0ea5e9,#6366f1)', color: '#fff',
                       border: 'none', fontSize: 12, padding: '7px 14px', borderRadius: 999,
@@ -5483,14 +5485,15 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       <th>Urgency</th>
                       <th>Status</th>
                       <th>Submitted</th>
+                      <th className="text-center">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {hiringLoading ? (
-                      <ShimmerTableRows rows={4} cols={6} keyPrefix="hr-req-shim" />
+                      <ShimmerTableRows rows={4} cols={7} keyPrefix="hr-req-shim" />
                     ) : hiringRequests.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="text-center py-4 text-muted" style={{ fontSize: 12.5 }}>
+                        <td colSpan={7} className="text-center py-4 text-muted" style={{ fontSize: 12.5 }}>
                           <i className="ri-inbox-line" style={{ fontSize: 26, display: 'block', marginBottom: 6 }} />
                           You haven't raised any hiring requests yet.
                         </td>
@@ -5535,6 +5538,29 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                           </td>
                           <td style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', fontVariantNumeric: 'tabular-nums' }}>
                             {fmtDate(r.submittedAt || r.created_at)}
+                          </td>
+                          <td className="text-center">
+                            {/* Draft rows can be reopened + edited before
+                                submitting to HR. Once submitted / converted
+                                there's nothing to edit, so show a dash. */}
+                            {r.status === 'Draft' && !r._hasRecruitment ? (
+                              <button
+                                type="button"
+                                className="btn btn-sm d-inline-flex align-items-center justify-content-center"
+                                data-tooltip="Edit Draft"
+                                aria-label="Edit Draft"
+                                onClick={() => { setHiringEditing({ ...r, _raw: r }); setRaiseHiringOpen(true); }}
+                                style={{
+                                  width: 30, height: 30, padding: 0, borderRadius: 8,
+                                  background: 'rgba(99,102,241,0.10)', color: '#4338ca',
+                                  border: '1px solid rgba(99,102,241,0.25)',
+                                }}
+                              >
+                                <i className="ri-pencil-line" />
+                              </button>
+                            ) : (
+                              <span className="text-muted">—</span>
+                            )}
                           </td>
                         </tr>
                       );
@@ -6757,12 +6783,21 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         <>
           <RaiseHiringRequestModal
             isOpen={raiseHiringOpen}
-            onClose={() => setRaiseHiringOpen(false)}
-            onSubmit={(_savedRow, _asDraft) => {
+            editing={hiringEditing}
+            onClose={() => { setRaiseHiringOpen(false); setHiringEditing(null); }}
+            onSubmit={(savedRow, asDraft) => {
               // Bump the refresh key so the inline KPI strip + table
               // re-pull /hiring-requests on the next render.
               setHiringRefreshKey(k => k + 1);
               setRaiseHiringOpen(false);
+              setHiringEditing(null);
+              // Explicit confirmation so a Draft save reads as a draft (and
+              // not as a submission to HR).
+              if (asDraft) {
+                toast.success('Saved as draft', `${savedRow?.code || 'Hiring request'} saved — edit and submit it to HR when ready.`);
+              } else {
+                toast.success('Submitted to HR', `${savedRow?.code || 'Hiring request'} sent to HR for review.`);
+              }
             }}
           />
           <HiringRequestsListModal
