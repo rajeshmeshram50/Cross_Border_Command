@@ -262,6 +262,13 @@ export default function AddNewLeadModal(props: {
 
   if (!open) return null;
 
+  /* When the lead is built from an existing customer (toggle on + a customer
+   * picked), the auto-filled customer/location fields are LOCKED — they
+   * mirror the saved customer record and must be edited on the customer, not
+   * here. The Customer Name dropdown stays interactive so the user can switch
+   * which customer is used. */
+  const lockCustomer = useExisting && !!pickedCustomerId;
+
   return createPortal((
     /* Backdrop click intentionally does NOT call onClose — losing a
      * half-filled lead because the user clicked off-canvas was a
@@ -359,6 +366,7 @@ export default function AddNewLeadModal(props: {
                 inputMode="numeric"
                 maxLength={15}
                 error={!!errors.mobileNumber}
+                disabled={lockCustomer}
               />
             </Field>
             <Field label="Customer Email" required error={errors.customerEmail}>
@@ -368,6 +376,7 @@ export default function AddNewLeadModal(props: {
                 placeholder="Enter email address"
                 iconLeft="ri-mail-line"
                 error={!!errors.customerEmail}
+                disabled={lockCustomer}
               />
             </Field>
             <Field label="Company Name">
@@ -376,6 +385,7 @@ export default function AddNewLeadModal(props: {
                 onChange={(v) => set('companyName', v)}
                 placeholder="Enter company name"
                 iconLeft="ri-briefcase-line"
+                disabled={lockCustomer}
               />
             </Field>
             <div className="anl-col-span-2">
@@ -385,6 +395,7 @@ export default function AddNewLeadModal(props: {
                   onChange={(v) => set('customerAddress', v)}
                   placeholder="Enter complete address"
                   iconLeft="ri-map-pin-line"
+                  disabled={lockCustomer}
                 />
               </Field>
             </div>
@@ -408,6 +419,7 @@ export default function AddNewLeadModal(props: {
                 placeholder="Enter city"
                 iconLeft="ri-building-2-line"
                 error={!!errors.customerCity}
+                disabled={lockCustomer}
               />
             </Field>
             <Field label="Pincode">
@@ -417,6 +429,7 @@ export default function AddNewLeadModal(props: {
                 placeholder="6-digit PIN"
                 inputMode="numeric"
                 maxLength={6}
+                disabled={lockCustomer}
               />
             </Field>
             {/* invalid prop tints the MasterSelect trigger's border red
@@ -437,6 +450,7 @@ export default function AddNewLeadModal(props: {
                   placeholder="Select country"
                   options={countryOpts.map(c => ({ value: c, label: c }))}
                   invalid={!!errors.country}
+                  disabled={lockCustomer}
                 />
               </div>
             </Field>
@@ -448,7 +462,7 @@ export default function AddNewLeadModal(props: {
                   onChange={(v) => set('state', v)}
                   placeholder={values.country ? 'Select state' : 'Select country first'}
                   options={stateOpts.map(s => ({ value: s, label: s }))}
-                  disabled={!values.country}
+                  disabled={lockCustomer || !values.country}
                   invalid={!!errors.state}
                 />
               </div>
@@ -511,6 +525,7 @@ function TextInput(props: {
   inputMode?: 'numeric' | 'text';
   maxLength?: number;
   error?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <div className={`anl-input-wrap ${props.iconLeft ? 'has-icon' : ''} ${props.error ? 'has-error' : ''}`}>
@@ -523,6 +538,7 @@ function TextInput(props: {
         placeholder={props.placeholder}
         inputMode={props.inputMode}
         maxLength={props.maxLength}
+        disabled={props.disabled}
       />
     </div>
   );
