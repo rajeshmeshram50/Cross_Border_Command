@@ -340,6 +340,7 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
 
             {/* Table */}
             <div className="lev-table-card">
+              <div className="lev-table-scroll">
               <table className="lev-doc-table">
                 {/* Columns mirror the Edit Customer form's DD/KYC table:
                     Sr No · Auto Code · Document Name · Issuing Authority · Requirement · Actions. */}
@@ -381,35 +382,37 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
                   ))}
                 </tbody>
               </table>
-            </div>
-
-            {/* Pagination — 5 rows per page */}
-            {docsForTab.length > 0 && (
-              <div className="lev-pager">
-                <div className="lev-pager-info">Showing {firstRow}–{lastRow} of {docsForTab.length}</div>
-                <div className="lev-pager-ctrls">
-                  <button type="button" className="lev-pager-btn" disabled={safePage <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} aria-label="Previous page">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><polyline points="15 18 9 12 15 6"/></svg>
-                  </button>
-                  {Array.from({ length: totalPages }).map((_, idx) => {
-                    const n = idx + 1;
-                    return (
-                      <button key={n} type="button" className={`lev-pager-num ${n === safePage ? 'active' : ''}`} onClick={() => setPage(n)}>
-                        {n}
-                      </button>
-                    );
-                  })}
-                  <button type="button" className="lev-pager-btn" disabled={safePage >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))} aria-label="Next page">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><polyline points="9 18 15 12 9 6"/></svg>
-                  </button>
-                </div>
               </div>
-            )}
+
+              {/* Pagination — 5 rows per page, rendered as the table card's
+                  own footer bar (sits flush under the rows, not floating on
+                  the body background). */}
+              {docsForTab.length > 0 && (
+                <div className="lev-pager">
+                  <div className="lev-pager-info">Showing {firstRow}–{lastRow} of {docsForTab.length}</div>
+                  <div className="lev-pager-ctrls">
+                    <button type="button" className="lev-pager-btn" disabled={safePage <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} aria-label="Previous page">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><polyline points="15 18 9 12 15 6"/></svg>
+                    </button>
+                    {Array.from({ length: totalPages }).map((_, idx) => {
+                      const n = idx + 1;
+                      return (
+                        <button key={n} type="button" className={`lev-pager-num ${n === safePage ? 'active' : ''}`} onClick={() => setPage(n)}>
+                          {n}
+                        </button>
+                      );
+                    })}
+                    <button type="button" className="lev-pager-btn" disabled={safePage >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))} aria-label="Next page">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><polyline points="9 18 15 12 9 6"/></svg>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* ── FOOTER ── */}
           <div className="lev-footer">
-            <div className="lev-footer-info">Last updated: <strong>{vault?.last_updated || '—'}</strong> · Vault managed by <strong>Compliance Team</strong></div>
             <div className="lev-footer-actions">
               <button type="button" className="lev-footer-btn outline" disabled={exporting || !vault} onClick={() => void onExportAll()}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -551,7 +554,7 @@ const LEV_CSS = `
   background:
     radial-gradient(circle at 15% 50%, rgba(255,255,255,.15) 0%, transparent 55%),
     linear-gradient(135deg, #4c1d95 0%, #5b21b6 30%, #6d28d9 65%, #7c3aed 100%);
-  padding: 13px 26px; position: relative; overflow: hidden; color: #fff;
+  padding: 13px 18px; position: relative; overflow: hidden; color: #fff;
 }
 .lev-hero::after {
   content: ''; position: absolute; top: -60%; right: -5%;
@@ -594,7 +597,7 @@ const LEV_CSS = `
 /* ── Consignee strip ── */
 .lev-cons-strip {
   display: flex; align-items: center; gap: 12px;
-  padding: 10px 30px; background: #F5F3FF; border-bottom: 1px solid #E9D5FF;
+  padding: 10px 18px; background: #F5F3FF; border-bottom: 1px solid #E9D5FF;
 }
 .lev-cons-strip-lbl {
   font-size: 9.5px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
@@ -637,7 +640,7 @@ const LEV_CSS = `
 [data-bs-theme="dark"] .lev-cons-tab.active { background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%); border-color: #6d28d9; color: #fff; }
 
 /* ── Tabs ── */
-.lev-tabs { background: #fff; display: flex; align-items: center; gap: 0; padding: 0 30px; border-bottom: 1px solid #ECEEF3; flex-wrap: wrap; }
+.lev-tabs { background: #fff; display: flex; align-items: center; gap: 0; padding: 0 18px; border-bottom: 1px solid #ECEEF3; flex-wrap: wrap; }
 .lev-tab {
   background: transparent; border: none; border-bottom: 3px solid transparent;
   padding: 16px 22px 14px; font-size: 13.5px; font-weight: 600; color: #64748B;
@@ -652,7 +655,7 @@ const LEV_CSS = `
 .lev-tab.active .lev-tab-count { background: #ede9fe; color: #4c1d95; }
 
 /* ── Body ── */
-.lev-body { flex: 1; overflow-y: auto; padding: 22px 30px; background: linear-gradient(180deg, #FAFBFF 0%, #F1F5F9 100%); }
+.lev-body { flex: 1; overflow-y: auto; padding: 12px 18px; background: linear-gradient(180deg, #FAFBFF 0%, #F1F5F9 100%); }
 .lev-section-card {
   background: linear-gradient(135deg, #FAFBFF 0%, #F5F3FF 100%);
   border: 1px solid #E9D5FF; border-radius: 14px; padding: 18px 22px; margin-bottom: 18px;
@@ -683,11 +686,12 @@ const LEV_CSS = `
 .lev-chip.pending  { background: #FEF2F2; color: #B91C1C; border-color: #FECACA; }
 
 /* ── Table ── */
-.lev-table-card { background: #fff; border: 1px solid #ECEEF3; border-radius: 14px; overflow: hidden; overflow-x: auto; box-shadow: 0 1px 3px rgba(15,23,42,.04), 0 8px 18px rgba(15,23,42,.05); }
+.lev-table-card { background: #fff; border: 1px solid #ECEEF3; border-radius: 14px; overflow: hidden; box-shadow: 0 1px 3px rgba(15,23,42,.04), 0 8px 18px rgba(15,23,42,.05); }
+.lev-table-scroll { overflow-x: auto; }
 .lev-doc-table { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 1000px; }
 .lev-doc-table thead tr { background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 100%); }
-.lev-doc-table th { background: transparent; color: #fff; padding: 14px 18px; font-size: 10.5px; font-weight: 800; letter-spacing: .10em; text-transform: uppercase; text-align: left; white-space: nowrap; }
-.lev-doc-table td { padding: 14px 18px; border-bottom: 1px solid #F1F5F9; font-size: 13px; color: #1E293B; vertical-align: middle; white-space: nowrap; }
+.lev-doc-table th { background: transparent; color: #fff; padding: 9px 14px; font-size: 10.5px; font-weight: 800; letter-spacing: .10em; text-transform: uppercase; text-align: left; white-space: nowrap; }
+.lev-doc-table td { padding: 9px 14px; border-bottom: 1px solid #F1F5F9; font-size: 13px; color: #1E293B; vertical-align: middle; white-space: nowrap; }
 .lev-doc-table tbody tr:last-child td { border-bottom: none; }
 .lev-doc-table tbody tr { transition: background .15s ease; }
 .lev-doc-table tbody tr:hover td { background: #FAFBFF; }
@@ -733,8 +737,8 @@ const LEV_CSS = `
 [data-bs-theme="dark"] .lev-act-upload:hover { background: rgba(34,197,94,.26); }
 [data-bs-theme="dark"] .lev-act-cert     { background: rgba(124,58,237,.22); color: #c4b5fd; border-color: rgba(167,139,250,.42); }
 
-/* ── Pagination ── */
-.lev-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+/* ── Pagination — flush footer bar inside the table card ── */
+.lev-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 8px 14px; border-top: 1px solid #ECEEF3; background: #FBFCFE; }
 .lev-pager-info { font-size: 12px; font-weight: 600; color: #64748B; }
 .lev-pager-ctrls { display: inline-flex; align-items: center; gap: 6px; }
 .lev-pager-btn, .lev-pager-num {
@@ -749,7 +753,7 @@ const LEV_CSS = `
 .lev-pager-num.active { background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%); border-color: #6d28d9; color: #fff; box-shadow: 0 3px 8px rgba(124,58,237,.30); }
 
 /* ── Footer ── */
-.lev-footer { background: #fff; border-top: 1px solid #ECEEF3; padding: 14px 30px; display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.lev-footer { background: #fff; border-top: 1px solid #ECEEF3; padding: 10px 18px; display: flex; align-items: center; justify-content: flex-end; gap: 14px; flex-wrap: wrap; }
 .lev-footer-info { font-size: 12.5px; color: #64748B; font-weight: 500; }
 .lev-footer-info strong { color: #1E293B; font-weight: 700; }
 .lev-footer-actions { display: flex; gap: 10px; }
@@ -785,6 +789,7 @@ const LEV_CSS = `
 [data-bs-theme="dark"] .lev-footer-info { color: #94a3b8; }
 [data-bs-theme="dark"] .lev-footer-info strong { color: #e2e8f0; }
 [data-bs-theme="dark"] .lev-footer-btn.outline { background: #1e293b; border-color: rgba(148,163,184,.30); color: #cbd5e1; }
+[data-bs-theme="dark"] .lev-pager { background: rgba(148,163,184,.06); border-top-color: rgba(148,163,184,.18); }
 [data-bs-theme="dark"] .lev-pager-info { color: #94a3b8; }
 [data-bs-theme="dark"] .lev-pager-btn, [data-bs-theme="dark"] .lev-pager-num { background: #1e293b; border-color: rgba(148,163,184,.30); color: #cbd5e1; }
 [data-bs-theme="dark"] .lev-pager-num.active { background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%); border-color: #6d28d9; color: #fff; }

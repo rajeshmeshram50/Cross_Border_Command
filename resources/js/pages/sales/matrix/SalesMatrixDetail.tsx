@@ -1278,7 +1278,11 @@ export default function SalesMatrixDetail() {
         onSaved={() => {
           setCustomerOpts([]); setCustomerRows({});
           setCustomerAddOpen(false); setCustomerEditing(null); setClmInitialStage(undefined);
+          /* Bump BOTH ticks: editing the customer's Stage-3 docs here must
+           * also move a "Same as Customer" consignee's bar (it mirrors the
+           * customer). Consignee-side refetch is harmless when not mirrored. */
           setCustRefreshTick(t => t + 1);
+          setConsRefreshTick(t => t + 1);
           void reloadLead();
         }}
       />
@@ -1507,8 +1511,15 @@ export default function SalesMatrixDetail() {
         consignees={leadVaultConsignees}
         mappedConsigneeId={serverHeader.consigneeId}
         onClose={() => {
-          if (leadVaultTarget?.ownerType === 'consignee') setConsRefreshTick(t => t + 1);
-          else setCustRefreshTick(t => t + 1);
+          /* Refresh BOTH party tallies, not just the one whose vault was
+           * open. A "Same as Customer" consignee mirrors the customer's
+           * docs, so a customer-side upload must also move the consignee
+           * bar — bumping only the customer tick left the consignee bar
+           * stale (it showed the old %, while the customer bar updated).
+           * For a normal consignee this just re-fetches its own unchanged
+           * data, which is harmless. */
+          setCustRefreshTick(t => t + 1);
+          setConsRefreshTick(t => t + 1);
           setLeadVaultTarget(null);
           setLeadVaultConsignees(null);
         }}
