@@ -297,17 +297,27 @@
         .onb-stage-sub { font-size: 11px; color: #6b7280; margin: 1px 0 0; }
         [data-bs-theme="dark"] .onb-stage-sub { color: var(--vz-secondary-color); }
         .onb-stage-count { margin-left: auto; padding: 3px 9px; border-radius: 999px; background: #ece6ff; color: #5a3fd1; font-size: 10px; font-weight: 700; }
+        [data-bs-theme="dark"] .onb-stage-count { background: rgba(124,92,252,0.20); color: #c4b5fd; }
 
         .onb-cp { display: flex; align-items: flex-start; gap: 10px; padding: 8px 14px; border-bottom: 1px solid #f1eff7; }
         [data-bs-theme="dark"] .onb-cp { border-color: var(--vz-border-color); }
         .onb-cp:last-child { border-bottom: none; }
         .onb-cp-check { width: 18px; height: 18px; border-radius: 5px; background: #f3f0ff; color: #7c5cfc; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+        [data-bs-theme="dark"] .onb-cp-check { background: rgba(124,92,252,0.18); color: #c4b5fd; }
         .onb-cp-title { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
         .onb-cp-title .t { font-size: 12px; font-weight: 700; color: #1f2937; }
         [data-bs-theme="dark"] .onb-cp-title .t { color: var(--vz-heading-color, var(--vz-body-color)); }
         .onb-cp-desc { font-size: 10.5px; color: #6b7280; margin-top: 2px; line-height: 1.4; }
         [data-bs-theme="dark"] .onb-cp-desc { color: var(--vz-secondary-color); }
         .onb-cp-badge { font-size: 8.5px; font-weight: 800; letter-spacing: 0.05em; padding: 2px 6px; border-radius: 4px; }
+        /* Dark mode — swap the light-pastel inline fill for a translucent
+           same-hue chip with lifted text (opt-in via the inline --pill-fg
+           custom property the badge passes), so badges stop showing as
+           white/light blocks against the dark checklist body. */
+        [data-bs-theme="dark"] .onb-cp-badge[style*="--pill-fg"] {
+          background: color-mix(in srgb, var(--pill-fg) 22%, transparent) !important;
+          color: color-mix(in srgb, var(--pill-fg) 58%, #ffffff) !important;
+        }
 
         .onb-cl-footer { background: #fff; border-top: 1px solid #eef0f4; padding: 10px 22px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
         [data-bs-theme="dark"] .onb-cl-footer { background: var(--vz-card-bg); border-color: var(--vz-border-color); }

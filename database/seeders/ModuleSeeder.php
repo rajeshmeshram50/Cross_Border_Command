@@ -33,6 +33,7 @@ class ModuleSeeder extends Seeder
             ['name' => 'Procure to Pay (P2P)',         'slug' => 'p2p',               'icon' => 'ShoppingBag', 'sort_order' => 16, 'is_default' => false, 'description' => 'Procure-to-pay summary & operations'],
             ['name' => 'GTS (E-Docs)',                 'slug' => 'gts',               'icon' => 'Globe',       'sort_order' => 17, 'is_default' => false, 'description' => 'Global trade services & electronic trade documents'],
             ['name' => 'Inventory Management System',  'slug' => 'inventory',         'icon' => 'Boxes',       'sort_order' => 18, 'is_default' => false, 'description' => 'Stock, warehouse & movement tracking'],
+            ['name' => 'Developers',                   'slug' => 'developers',        'icon' => 'Code',        'sort_order' => 19, 'is_default' => false, 'description' => 'Operational tooling — Business Task (Shipment) list'],
         ];
 
         foreach ($topLevel as $mod) {
@@ -381,6 +382,58 @@ class ModuleSeeder extends Seeder
                         'sort_order' => $i + 1,
                         'is_active'  => true,
                         'is_default' => false,
+                    ]
+                );
+            }
+        }
+
+        // ── Developers (level 2 category + level 3 leaves) ──
+        // Marked is_default so client_admins receive it on plan (re)activation
+        // (SubscriptionController grants is_default modules); branch users /
+        // employees still need an explicit grant from the Permissions screen.
+        $developers = Module::where('slug', 'developers')->first();
+        $devCat = Module::updateOrCreate(
+            ['slug' => 'developers.ops'],
+            [
+                'name' => 'Operations', 'icon' => 'Truck',
+                'description' => 'Business Task (Shipment) operations',
+                'parent_id' => $developers->id, 'sort_order' => 1,
+                'is_active' => true, 'is_default' => true,
+            ]
+        );
+        $devShip = Module::updateOrCreate(
+            ['slug' => 'developers.shipment'],
+            [
+                'name' => 'Shipment', 'icon' => 'Truck',
+                'description' => 'Business Task list — all shipment orders',
+                'parent_id' => $devCat->id, 'sort_order' => 1,
+                'is_active' => true, 'is_default' => true,
+            ]
+        );
+        // Also mark the top-level Developers parent as default.
+        $developers->update(['is_default' => true]);
+
+        // Back-fill: grant the Developers modules to every existing CLIENT_ADMIN
+        // so they can immediately pass it down to branch users / employees from
+        // the Permissions screen (without waiting for a plan re-activation).
+        $devModuleIds = [$developers->id, $devCat->id, $devShip->id];
+        $clientAdmins = \App\Models\User::where('user_type', 'client_admin')->get();
+        foreach ($clientAdmins as $admin) {
+            foreach ($devModuleIds as $mid) {
+                \App\Models\Permission::updateOrCreate(
+                    ['user_id' => $admin->id, 'module_id' => $mid],
+                    [
+                        'client_id'   => $admin->client_id,
+                        'branch_id'   => $admin->branch_id,
+                        'role'        => 'client_admin',
+                        'can_view'    => true,
+                        'can_add'     => true,
+                        'can_edit'    => true,
+                        'can_delete'  => true,
+                        'can_export'  => true,
+                        'can_import'  => true,
+                        'can_approve' => true,
+                        'granted_by'  => $admin->id,
                     ]
                 );
             }

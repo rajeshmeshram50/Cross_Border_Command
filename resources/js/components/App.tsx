@@ -54,6 +54,7 @@ import LeadDistributionPage from '../pages/sales/AssignedLeadsModal';
 import SalesLeadsDetails from '../pages/sales/SalesLeadsDetails';
 import SalesTodo from '../pages/sales/SalesTodo';
 import SalesQPI from '../pages/sales/SalesQPI';
+import DeveloperShipments from '../pages/developers/DeveloperShipments';
 import SalesSignTracker from '../pages/sales/SalesSignTracker';
 import SalesP2PSummary from '../pages/sales/SalesP2PSummary';
 import SalesMatrixDetail from '../pages/sales/matrix/SalesMatrixDetail';
@@ -166,6 +167,7 @@ const getPagePath = (page: string, data?: any): string => {
     case 'project-navigator': return '/project-navigator';
     case 'gts': return '/gts';
     case 'inventory': return '/inventory';
+    case 'developers': return '/developers/shipment';
     case 'permissions': return '/permissions';
     case 'settings': return '/settings';
     case 'profile': return '/profile';
@@ -228,6 +230,8 @@ const getPagePath = (page: string, data?: any): string => {
       if (page === 'clm.agreements')            return '/clm/agreements';
       if (page === 'clm.terms_conditions')      return '/clm/terms-conditions';
       if (page === 'clm.clause_library')        return '/clm/clause-library';
+      // Developers → Shipment (Business Task list).
+      if (page === 'developers.shipment')       return '/developers/shipment';
       return '/dashboard';
   }
 };
@@ -738,6 +742,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/project-navigator" element={<ModuleStubPage />} />
               <Route path="/gts" element={<ModuleStubPage />} />
               <Route path="/inventory" element={<ModuleStubPage />} />
+              <Route path="/developers/shipment" element={<DeveloperShipments />} />
               <Route path="/products" element={<Products />} />
               <Route path="/products/:id" element={<ProductView />} />
               <Route path="/vendors" element={<Vendors />} />

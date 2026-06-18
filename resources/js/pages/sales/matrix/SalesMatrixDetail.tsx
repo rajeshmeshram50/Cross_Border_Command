@@ -1114,13 +1114,16 @@ export default function SalesMatrixDetail() {
             scrolls internally when a stage's content (e.g. Stage 6's shipment
             summary) is taller than the column, so the centre matches the side
             panels' height instead of stretching the whole row. */}
-        <section className={`smd-stage-card${(isSigned && stage <= 4) ? ' smd-stage-card-locked' : ''}`}>
-          {/* Signed-PI lock — Stages 1-4 are fully read-only (a translucent veil
-              covers the stage and raises the "PI is signed" toaster on click).
-              Stage 5 stays visible but its create/edit actions are disabled via
-              the `locked` prop below; Stage 6 stays fully editable (work happens
-              there after signing). */}
-          {isSigned && stage <= 4 && (
+        <section className={`smd-stage-card${(isSigned && stage <= 2) ? ' smd-stage-card-locked' : ''}`}>
+          {/* Signed-PI lock tiers:
+              · Stages 1-2 → COMPLETELY OFF: a translucent veil covers the whole
+                stage and raises the "PI is signed" toaster on any click.
+              · Stages 3-4 → READ-ONLY: no veil, so the user can switch the
+                stage's inner tabs and view data, but every submit / action
+                control is disabled via the `locked` prop.
+              · Stage 5 → view-only (create/edit disabled via `locked`).
+              · Stage 6 → fully editable (work happens there after signing). */}
+          {isSigned && stage <= 2 && (
             <div
               className="smd-stage-veil"
               onClick={onLockedClick}

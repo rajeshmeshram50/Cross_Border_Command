@@ -17,6 +17,17 @@ import VendorMappingsModal from './VendorMappingsModal';
  *  endpoints we've been hardening through the negative + security suites.
  * ───────────────────────────────────────────────────────────────────── */
 
+/* Currency code → symbol (matches the Product Directory / Price modals). Falls
+ * back to the raw code so an unmapped currency still reads sensibly. */
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$', INR: '₹', EUR: '€', GBP: '£', JPY: '¥', CNY: '¥', AUD: 'A$', SGD: 'S$', CAD: 'C$', AED: 'AED ',
+};
+const currencySymbol = (code: string | null | undefined): string => {
+  if (!code) return '';
+  const c = String(code).split(/\s*[-–—]\s*/)[0].trim().toUpperCase();
+  return CURRENCY_SYMBOLS[c] ?? `${c} `;
+};
+
 type Tab = 'details' | 'required' | 'not_required';
 
 type Row = {
@@ -41,7 +52,7 @@ const SOURCING_OPTIONS = [
   { value: 'not_required', label: 'Not Required' },
 ];
 
-export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLead, embedded }: StageProps) {
+export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLead, embedded, locked = false }: StageProps) {
   const toast = useToast();
 
   const [tab, setTab]                       = useState<Tab>('details');
@@ -174,7 +185,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
 
   /* ── Set sourcing status ─────────────────────────────────────────── */
   const onSourcingChange = async (row: Row, status: 'required' | 'not_required') => {
-    if (!leadId) return;
+    if (!leadId || locked) return;   // signed PI → read-only
     setUpdatingId(row.id);
     try {
       const { data } = await api.patch<{ status: boolean; data: Row }>(
@@ -215,6 +226,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
 
   /* ── Open Create Procurement modal ─────────────────────────────── */
   const onCreateOne = (row: Row) => {
+    if (locked) return;   // signed PI → read-only
     if (!leadId) {
       toast.warning('No lead in context', 'Open this stage from the Lead Worksheet first');
       return;
@@ -224,6 +236,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
   };
 
   const onCreateGroup = () => {
+    if (locked) return;   // signed PI → read-only
     if (selectedIds.size === 0) {
       toast.warning('Pick at least one row', 'Tick the checkboxes for the products to bundle');
       return;
@@ -246,7 +259,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
 
   /* ── Mark Sourced ────────────────────────────────────────────────── */
   const onMarkSourced = async (row: Row) => {
-    if (!leadId) return;
+    if (!leadId || locked) return;   // signed PI → read-only
     setMarkingId(row.id);
     try {
       /* B26: trust the server's echo for `procurement_done` instead of
@@ -455,7 +468,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                           </span>
                         </td>
                         <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
-                        <td className="s3-price">$ {r.target_price != null ? Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
+                        <td className="s3-price">{r.target_price != null ? `${currencySymbol(r.currency)}${Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>
                         <td><span className="s3-curr s3-curr-violet">{r.currency}</span></td>
                         <td>
                           {updatingId === r.id ? (
@@ -463,6 +476,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                           ) : (
                             <MasterSelect
                               value={r.sourcing_status ?? ''}
+                              disabled={locked}
                               onChange={(v) => {
                                 if (v === 'required' || v === 'not_required') void onSourcingChange(r, v);
                               }}
@@ -581,6 +595,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                                 type="checkbox"
                                 className="s3-cb"
                                 checked={selectedIds.has(r.id)}
+                                disabled={locked}
                                 onChange={() => toggleSelect(r.id)}
                               />
                             )}
@@ -597,7 +612,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                             </span>
                           </td>
                           <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
-                          <td className="s3-price">$ {r.target_price != null ? Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
+                          <td className="s3-price">{r.target_price != null ? `${currencySymbol(r.currency)}${Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>
                           <td><span className="s3-curr s3-curr-amber">{r.currency}</span></td>
                           <td>
                             {hasProc ? (
@@ -621,7 +636,8 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                                 type="button"
                                 className="s3-mark-btn"
                                 onClick={() => void onMarkSourced(r)}
-                                disabled={markingId === r.id}
+                                disabled={markingId === r.id || locked}
+                                title={locked ? 'PI is signed — read-only' : undefined}
                               >
                                 {markingId === r.id ? 'Marking…' : '✓ Mark as Done'}
                               </button>
@@ -649,7 +665,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                           </td>
                           <td>
                             {!hasProc && (
-                              <button type="button" className="s3-create-btn" onClick={() => onCreateOne(r)}>
+                              <button type="button" className="s3-create-btn" onClick={() => onCreateOne(r)} disabled={locked} title={locked ? 'PI is signed — read-only' : undefined}>
                                 + Create
                               </button>
                             )}
@@ -679,7 +695,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
 
             {/* Create Group Procurement button — only when 2+ products are
                 selected (a "group" of one is just a single procurement). */}
-            {canGroup && selectedIds.size >= 2 && (
+            {canGroup && selectedIds.size >= 2 && !locked && (
               <div className="s3-cta-row">
                 <button type="button" className="s3-group-btn" onClick={onCreateGroup}>
                   + Create Group Procurement
@@ -759,7 +775,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                           </span>
                         </td>
                         <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
-                        <td className="s3-price">$ {r.target_price != null ? Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
+                        <td className="s3-price">{r.target_price != null ? `${currencySymbol(r.currency)}${Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>
                         <td><span className="s3-curr s3-curr-mint">{r.currency}</span></td>
                         <td>
                           {r.vendor_count > 0 ? (
@@ -783,12 +799,12 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                           {/* Send the product back into sourcing — flips
                               sourcing_status to 'required' so it reappears on
                               the Sourcing Required tab. */}
-                          <Tooltip label="Convert to Sourcing Required">
+                          <Tooltip label={locked ? 'PI is signed — read-only' : 'Convert to Sourcing Required'}>
                             <button
                               type="button"
                               className="s3-convert-btn"
                               onClick={() => void onSourcingChange(r, 'required')}
-                              disabled={updatingId === r.id}
+                              disabled={updatingId === r.id || locked}
                               aria-label="Convert to Sourcing Required"
                             >
                               {updatingId === r.id ? (

@@ -122,6 +122,9 @@ class HiringRequestController extends Controller
                 // Saved-as-draft rows arrive with status=Draft; submitted
                 // rows arrive with status=Submitted from the frontend.
                 'status'     => $data['status'] ?? 'Submitted',
+                // urgency is NOT NULL; a Save-as-Draft may omit it (empty →
+                // null after Laravel's string-to-null cast), so default it.
+                'urgency'    => $data['urgency'] ?? 'Medium',
             ]);
             $row = HiringRequest::create($payload);
             $row->load(self::WITH);
@@ -203,6 +206,12 @@ class HiringRequestController extends Controller
         $row = $this->resolveRow($request, (int) $id);
 
         $data = $this->validatePayload($request, $row->id);
+        // urgency is NOT NULL; never let an edit blank it out (e.g. resuming a
+        // draft where the field is still empty → null after the empty-string
+        // cast). Keep the row's current value when none is supplied.
+        if (array_key_exists('urgency', $data) && empty($data['urgency'])) {
+            $data['urgency'] = $row->urgency ?: 'Medium';
+        }
         // Block edits that would collide with another row's (title +
         // department) within the same tenant, but ignore the row being
         // updated itself.

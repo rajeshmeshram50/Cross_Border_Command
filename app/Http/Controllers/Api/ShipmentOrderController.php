@@ -209,6 +209,53 @@ class ShipmentOrderController extends Controller
         return response()->json(['status' => true, 'data' => $row]);
     }
 
+    /**
+     * Business Task list — every shipment order for the tenant, newest first,
+     * with the relations the table needs (opportunity owner, customer,
+     * consignee, PI). Powers the Developers → Shipment page.
+     */
+    public function index(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        if (!$user->client_id) {
+            return response()->json(['status' => false, 'message' => 'No client tenant on user'], 422);
+        }
+
+        $rows = ShipmentOrder::with([
+            'lead:id,opp_code,query_time,salesperson_id,customer_id,consignee_id',
+            'lead.salesperson:id,name',
+            'lead.customer:id,company_name,customer_code',
+            'lead.consignee:id,company_name,consignee_code',
+            'proformaInvoice:id,code,created_at',
+            'creator:id,name',
+        ])
+            ->where('client_id', $user->client_id)
+            ->orderByDesc('id')
+            ->get()
+            ->map(function ($s) {
+                return [
+                    'id'                 => $s->id,
+                    'shipment_code'      => $s->shipment_code,
+                    'created_at'         => $s->created_at,
+                    'owner_name'         => $s->lead?->salesperson?->name ?? $s->creator?->name ?? null,
+                    'opp_code'           => $s->lead?->opp_code,
+                    'opp_date'           => $s->lead?->query_time,
+                    'customer_name'      => $s->lead?->customer?->company_name,
+                    'consignee_name'     => $s->lead?->consignee?->company_name,
+                    'pi_no'              => $s->proformaInvoice?->code,
+                    'pi_date'            => $s->proformaInvoice?->created_at,
+                    'shipping_liability' => $s->shipping_liability,
+                    'cold_chain'         => (bool) $s->cold_chain,
+                    'inco_term'          => $s->inco_term,
+                    'port_of_loading'    => $s->port_of_loading,
+                    'port_of_unloading'  => $s->port_of_unloading,
+                ];
+            });
+
+        return response()->json(['status' => true, 'data' => $rows]);
+    }
+
     public function update(Request $request, int $id)
     {
         $user = $request->user();

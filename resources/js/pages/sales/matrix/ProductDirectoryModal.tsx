@@ -39,6 +39,7 @@ type ProductOpt = {
   id:           number;
   product_code: string;
   name:         string;
+  status?:      string | null;   // active | inactive | draft — shown in the picker
 };
 
 type CurrencyOpt = {
@@ -613,7 +614,16 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                 <MasterSelect
                   value={draft.product_id != null ? String(draft.product_id) : ''}
                   onChange={(v) => setDraft(p => ({ ...p, product_id: v ? Number(v) : null }))}
-                  options={availableProducts.map(p => ({ value: String(p.id), label: `${p.product_code} · ${p.name}` }))}
+                  /* Each option carries the product's master status as a
+                     colored badge (Active = green, Inactive = red). */
+                  options={availableProducts.map(p => {
+                    const active = String(p.status ?? '').toLowerCase() === 'active';
+                    return {
+                      value: String(p.id),
+                      label: `${p.product_code} · ${p.name}`,
+                      badge: { text: active ? 'Active' : 'Inactive', tone: active ? 'green' as const : 'red' as const },
+                    };
+                  })}
                   placeholder={productsLoading ? 'Loading…' : 'Select product'}
                   /* Locked when editing — a mapping can't be re-pointed to a
                      different product (only its pricing is editable). */
