@@ -825,7 +825,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
   const meta = VIEW_META[view];
 
   return createPortal(
-    <div className="lasm-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="lasm-overlay" role="dialog" aria-modal="true">
       <style>{LASM_CSS}</style>
       <div className="lasm-shell" onMouseDown={(e) => e.stopPropagation()}>
         {/* ── HEADER ── */}
@@ -882,9 +882,9 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                 const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
               });
               const TD_TABS = [
-                ['buyer',     'Buyer Documents'],
+                ['buyer',     'Customer Documents'],
                 ['consignee', 'Consignee Documents'],
-                ['both',      'Buyer + Consignee'],
+                ['both',      'Customer + Consignee'],
               ] as const;
               return (<>
                 {/* Read-only party detail cards — NOT tabs. */}
@@ -1167,7 +1167,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                   agreement's `party` field set on the draft. */}
               {!buyerEqualsConsignee && (
                 <div className="lasm-subtabs lasm-subtabs-inset" role="tablist">
-                  {([['buyer', 'Buyer'], ['consignee', 'Consignee'], ['both', 'Buyer + Consignee']] as const).map(([key, label]) => (
+                  {([['buyer', 'Customer'], ['consignee', 'Consignee'], ['both', 'Customer + Consignee']] as const).map(([key, label]) => (
                     <button
                       key={key}
                       type="button"
@@ -1282,7 +1282,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                 into individual pills so the signer set is clear. */}
                             <div className="lasm-party-cell">
                               {String(a.party ?? '').split(',').map(p => p.trim()).filter(Boolean).map((p, pi) => (
-                                <span key={pi} className="lasm-party-pill lasm-party-agr">{p}</span>
+                                <span key={pi} className="lasm-party-pill lasm-party-agr">{/^buyer$/i.test(p) ? 'Customer' : p}</span>
                               ))}
                               {!String(a.party ?? '').trim() && <span className="lasm-td-dash">—</span>}
                             </div>
