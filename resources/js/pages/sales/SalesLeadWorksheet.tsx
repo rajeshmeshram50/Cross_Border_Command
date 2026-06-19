@@ -1671,7 +1671,11 @@ const SCOPED_CSS = `
 .lwp-root .lwp-table-wrap::-webkit-scrollbar-thumb:hover { background: #67e8f9; background-clip: content-box; }
 [data-bs-theme="dark"] .lwp-root .lwp-table-wrap { scrollbar-color: rgba(34,211,238,.4) transparent; }
 [data-bs-theme="dark"] .lwp-root .lwp-table-wrap::-webkit-scrollbar-thumb { background: rgba(34,211,238,.4); background-clip: content-box; }
-.lwp-root .lwp-table { width: 100%; border-collapse: collapse; font-size: 10.5px; table-layout: fixed; }
+/* min-width = sum of the <col> widths below (1500px). Without it the
+ * fixed layout obeys width:100% and crushes every column proportionally
+ * on narrow screens; with it the table holds its legible column widths
+ * and .lwp-table-wrap { overflow-x:auto } scrolls horizontally instead. */
+.lwp-root .lwp-table { width: 100%; min-width: 1500px; border-collapse: collapse; font-size: 10.5px; table-layout: fixed; }
 .lwp-root .lwp-table col.c-chk    { width: 42px; }
 .lwp-root .lwp-table col.c-type   { width: 110px; }
 .lwp-root .lwp-table col.c-date   { width: 88px; }
@@ -2110,7 +2114,11 @@ const SCOPED_CSS = `
    ════════════════════════════════════════════════════════════════════ */
 [data-bs-theme="dark"] .lwp-root,
 [data-layout-mode="dark"] .lwp-root {
-  background: linear-gradient(160deg, #0b1220 0%, #0f172a 35%, #0b1220 100%);
+  /* Teal-glow over deep navy — gives the same rich depth as the
+   * Segment Master / CLM master pages instead of a flat dark slab. */
+  background:
+    radial-gradient(ellipse at top, rgba(8,145,178,.12), transparent 55%),
+    linear-gradient(160deg, #0b1220 0%, #0f172a 40%, #0b1220 100%);
   color: #e2e8f0;
 }
 [data-bs-theme="dark"] .lwp-root .lwp-banner,
@@ -2136,6 +2144,19 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lwp-root .lwp-banner-entity::before { background: #67e8f9; }
 [data-bs-theme="dark"] .lwp-root .lwp-banner-entity > span { color: #cffafe; }
 [data-bs-theme="dark"] .lwp-root .lwp-banner-divider { background: rgba(148,163,184,0.25); }
+/* The banner kept its light-mode overlays on dark: a white sheen
+ * (rgba(255,255,255,.5)) across the top and a pale-cyan radial glow.
+ * Both washed the dark banner into a muddy grey gradient. Dim the sheen
+ * to a whisper and recolour the glow to a subtle cyan so the banner reads
+ * as a clean dark strip. */
+[data-bs-theme="dark"] .lwp-root .lwp-banner-sheen {
+  background: linear-gradient(180deg, rgba(255,255,255,.05), transparent);
+}
+[data-bs-theme="dark"] .lwp-root .lwp-banner-glow {
+  background-image:
+    radial-gradient(ellipse at 10% 50%, rgba(34,211,238,.10) 0%, transparent 50%),
+    radial-gradient(ellipse at 90% 50%, rgba(14,165,233,.08) 0%, transparent 55%);
+}
 
 /* CTQ action button — was a saturated amber gradient on every theme
  * which screamed at the user against the dark table row. In dark
@@ -2159,8 +2180,10 @@ const SCOPED_CSS = `
  * stripe in dark mode that didn't match the rest of the dark table.
  * Flip to a slate canvas with translucent cyan accents. */
 [data-bs-theme="dark"] .lwp-root .lwp-pagination {
-  background: linear-gradient(90deg, rgba(15, 23, 42, 0.55) 0%, rgba(15, 23, 42, 0.35) 50%, rgba(15, 23, 42, 0.55) 100%);
-  border-top-color: rgba(34, 211, 238, 0.18);
+  background: linear-gradient(90deg, #0f172a 0%, #111c33 50%, #0f172a 100%);
+  border: 1px solid rgba(34, 211, 238, 0.18);
+  border-top: 2px solid rgba(34, 211, 238, 0.28);
+  box-shadow: 0 4px 18px rgba(0,0,0,0.35);
 }
 [data-bs-theme="dark"] .lwp-root .lwp-pag-info,
 [data-bs-theme="dark"] .lwp-root .lwp-rows-sel {
@@ -2222,34 +2245,43 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lwp-root .lwp-search input::placeholder { color: #64748b; }
 
 /* Lead table */
+/* Outer card — kept its light-mode #fff bg + bright #a5f3fc border on dark,
+ * which read as a glaring near-white frame around the table. Tone both to the
+ * dark surface + soft teal border (the CLM-master recipe). */
+[data-bs-theme="dark"] .lwp-root .lwp-table-card {
+  background: #0f172a;
+  border-color: rgba(6,182,212,0.18);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+}
 [data-bs-theme="dark"] .lwp-root .lwp-table-wrap {
   background: #0f172a;
-  border-color: rgba(34,211,238,0.18);
+  border-color: rgba(6,182,212,0.18);
   box-shadow: 0 4px 18px rgba(0,0,0,0.35);
 }
+/* Translucent teal header (matches the Segment Master / CLM master look)
+ * instead of a heavy solid teal bar — reads lighter and more cohesive. */
 [data-bs-theme="dark"] .lwp-root .lwp-table thead th {
-  background: linear-gradient(135deg, #0e7490, #155e75) !important;
-  color: #f0f9ff !important;
-  border-bottom-color: rgba(34,211,238,0.30) !important;
+  background: rgba(8,145,178,.18) !important;
+  color: #cffafe !important;
+  border-bottom-color: rgba(6,182,212,0.30) !important;
 }
 [data-bs-theme="dark"] .lwp-root .lwp-table tbody td {
-  background: #0f172a !important;
+  /* Transparent so the card surface + the row's teal tint show through. */
+  background: transparent !important;
   color: #cbd5e1 !important;
-  /* Repaints the row separator in a near-invisible navy so the
-     previous off-white border doesn't leave a bright line streaking
-     across every row. */
-  border-top-color: rgba(30, 41, 59, 0.65) !important;
+  border-top-color: rgba(6,182,212, 0.10) !important;
   border-bottom: none !important;
 }
 [data-bs-theme="dark"] .lwp-root .lwp-table tbody tr {
-  border-bottom: 1px solid rgba(30, 41, 59, 0.65) !important;
+  border-bottom: 1px solid rgba(6,182,212,0.10) !important;
   background: transparent !important;
 }
 [data-bs-theme="dark"] .lwp-root .lwp-table tbody tr:last-child {
   border-bottom: none !important;
 }
-[data-bs-theme="dark"] .lwp-root .lwp-table tbody tr:nth-child(even) td { background: #111c33 !important; }
-[data-bs-theme="dark"] .lwp-root .lwp-table tbody tr:hover td { background: #16223d !important; }
+/* Subtle teal zebra + brighter teal hover — the CLM-master recipe. */
+[data-bs-theme="dark"] .lwp-root .lwp-table tbody tr:nth-child(even) td { background: rgba(8,145,178,.06) !important; }
+[data-bs-theme="dark"] .lwp-root .lwp-table tbody tr:hover td { background: rgba(8,145,178,.16) !important; }
 [data-bs-theme="dark"] .lwp-root .lwp-table a { color: #67e8f9; }
 
 /* Cell-level text — customer name was hard-coded to slate-900 (near
@@ -2294,7 +2326,35 @@ const SCOPED_CSS = `
   color: #cbd5e1;
 }
 [data-bs-theme="dark"] .lwp-root .lwp-ab:hover { background: rgba(8, 145, 178, 0.25); color: #f0f9ff; }
-[data-bs-theme="dark"] .lwp-root .lwp-ab-assign { color: #67e8f9; border-color: rgba(34,211,238,0.40); }
+/* Per-type colour-coding in dark mode. The flat .lwp-ab fill above made
+ * View / Activity / Assign read as three identical dull grey blobs; restore
+ * the light-mode meaning with toned translucent fills + bright icons (each
+ * lights up to the solid gradient on hover). Placed after the base rule so
+ * the equal-specificity overrides win on source order. */
+[data-bs-theme="dark"] .lwp-root .lwp-ab-view {
+  background: linear-gradient(135deg, rgba(6,182,212,.22), rgba(8,145,178,.22));
+  color: #67e8f9; border: 1px solid rgba(34,211,238,.40); box-shadow: none;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-ab-view:hover {
+  background: linear-gradient(135deg, #06b6d4, #0891b2); color: #fff;
+  box-shadow: 0 3px 10px rgba(6,182,212,.4);
+}
+[data-bs-theme="dark"] .lwp-root .lwp-ab-activity {
+  background: linear-gradient(135deg, rgba(2,132,199,.24), rgba(3,105,161,.24));
+  color: #7dd3fc; border: 1px solid rgba(56,189,248,.40); box-shadow: none;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-ab-activity:hover {
+  background: linear-gradient(135deg, #0284c7, #0369a1); color: #fff;
+  box-shadow: 0 3px 10px rgba(2,132,199,.4);
+}
+[data-bs-theme="dark"] .lwp-root .lwp-ab-assign {
+  background: linear-gradient(135deg, rgba(14,116,144,.30), rgba(21,94,117,.30));
+  color: #67e8f9; border: 1px solid rgba(34,211,238,.40); box-shadow: none;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-ab-assign:hover {
+  background: linear-gradient(135deg, #0891b2, #0e7490); color: #fff;
+  box-shadow: 0 3px 10px rgba(14,116,144,.4);
+}
 
 /* No-access card */
 [data-bs-theme="dark"] .lwp-root .lwp-no-access {
@@ -2389,7 +2449,10 @@ const SCOPED_CSS = `
   .lwp-root .lwp-actions .lwp-bact { flex: 1 0 auto; justify-content: center; }
   .lwp-root .lwp-actions .lwp-banner-divider { display: none; }
   .lwp-root .lwp-pre-table { flex-direction: column; align-items: stretch; gap: 8px; }
-  .lwp-root .lwp-search { width: 100%; }
+  /* Reset the flex basis: in the stacked (column) layout the 420px basis
+   * applies to the VERTICAL axis and balloons the search into a tall empty
+   * box. Pin it back to a normal 50px-tall, full-width bar. */
+  .lwp-root .lwp-search { flex: 0 0 auto; width: 100%; max-width: none; height: 50px; }
   .lwp-root .lwp-pills { width: 100%; justify-content: space-between; overflow-x: auto; }
   .lwp-root .lwp-pill  { padding: 8px 14px; font-size: 12px; }
 }

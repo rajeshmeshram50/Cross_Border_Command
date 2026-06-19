@@ -5889,17 +5889,18 @@ const SCOPED_CSS = `
   color: var(--vz-body-color);
 }
 
-/* Header strip — match the Customer page hero dark variant. */
+/* Clean, calm dark banner — matches the Customer page hero: a mostly-dark,
+ * low-chroma violet surface with a SINGLE subtle border. The old version
+ * stacked a saturated fill + a bright pink/magenta gradient ring + glow blobs
+ * + a white shine line, which read as noisy/over-saturated on dark. */
 [data-bs-theme="dark"] .qpi-header {
-  border: 1px solid transparent;
-  background:
-    linear-gradient(110deg, #1e1b4b 0%, #2e1065 35%, #3b1675 70%, #4c1d95 100%) padding-box,
-    linear-gradient(125deg, #7c3aed 0%, #8b5cf6 22%, #6366f1 48%, #d946ef 76%, #ec4899 100%) border-box;
-  box-shadow:
-    0 1px 0 rgba(255,255,255,0.05) inset,
-    0 6px 22px rgba(0,0,0,0.45),
-    0 2px 8px rgba(124,58,237,0.20);
+  border: 1px solid rgba(139,92,246,0.22);
+  /* Flat, even dark (no lighter right end that reads as a glowy patch). */
+  background: linear-gradient(110deg, #181426 0%, #1e1838 100%);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.40);
 }
+[data-bs-theme="dark"] .qpi-header::before { background-image: none; }
+[data-bs-theme="dark"] .qpi-header::after  { background: none; }
 [data-bs-theme="dark"] .qpi-header-title { color: #f5f3ff; }
 [data-bs-theme="dark"] .qpi-header-sub   { color: #ede9fe; opacity: 0.92; }
 [data-bs-theme="dark"] .qpi-header-icon  {
@@ -5920,8 +5921,8 @@ const SCOPED_CSS = `
 
 /* What We Are Doing Here */
 [data-bs-theme="dark"] .qpi-wdh {
-  background: linear-gradient(110deg, #1c1432 0%, #221839 50%, #2a1d49 100%);
-  border-color: rgba(167,139,250,.30);
+  background: linear-gradient(110deg, #181426 0%, #1e1838 100%);
+  border-color: rgba(167,139,250,.22);
   box-shadow: 0 2px 8px rgba(0,0,0,.45);
 }
 [data-bs-theme="dark"] .qpi-wdh-title  { color: #e9d5ff; }
