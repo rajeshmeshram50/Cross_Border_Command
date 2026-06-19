@@ -941,8 +941,12 @@ const IDIMS_CSS = `
 .idims-dd-backdrop { position: fixed; inset: 0; z-index: 1; background: rgba(15,23,42,.10); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); animation: idimsFade .18s ease; }
 .idims-dark .idims-dd-backdrop { background: rgba(0,0,0,.35); }
 .idims-logo { display: flex; align-items: center; flex-shrink: 0; cursor: pointer; }
-.idims-logo-full { height: 52px; width: auto; display: block; object-fit: contain; filter: drop-shadow(0 2px 5px rgba(120,53,15,.18)); transition: transform .18s ease; }
+.idims-logo-full { height: 52px; width: auto; display: block; object-fit: contain; filter: drop-shadow(0 2px 5px rgba(120,53,15,.18)); transition: transform .18s ease, filter .2s ease; }
 .idims-logo:hover .idims-logo-full { transform: scale(1.03); }
+/* Dark mode — the logo has a transparent background, so flattening it to a
+   white silhouette lets it sit natively on the dark nav with no background box.
+   brightness(0) -> black, then invert(1) -> white. Light mode keeps full colour. */
+.idims-dark .idims-logo-full { filter: brightness(0) invert(1); }
 .idims-divider { width: 1px; height: 56px; background: #E4E7EF; flex-shrink: 0; margin: 0 12px 0 10px; }
 .idims-nav-stack { flex: 1; min-width: 0; align-self: stretch; display: flex; flex-direction: column; }
 .idims-nav-row { display: flex; align-items: center; min-width: 0; }
@@ -1313,12 +1317,17 @@ const IDIMS_CSS = `
    the header becomes one clean row (logo · hamburger · icons · profile).
    Branch switching stays reachable on tablet/desktop; search via the menu. */
 @media (max-width: 640px) {
-  .idims-nav { padding: 9px 12px; gap: 8px; align-items: center; }
+  .idims-nav { padding: 9px 12px; gap: 8px; align-items: center; flex-wrap: nowrap; }
   .idims-search { display: none; }
   .idims-branch-wrap { display: none; }
   .idims-theme-switch { display: none; }
   .idims-fs-btn { display: none; }
-  .idims-row-top { gap: 8px; }
+  /* One tidy single row: [logo] ............ [☰ · icons · profile].
+     nowrap keeps the icons from dropping to a second line; the auto-margin on
+     the hamburger pushes the whole right cluster to the right edge. */
+  .idims-row-top { gap: 8px; flex-wrap: nowrap; }
+  .idims-hamburger { margin-left: auto; flex-shrink: 0; }
+  .idims-nav-right { margin-left: 6px; flex-shrink: 0; }
   .idims-actions { gap: 2px; }
   .idims-action-btn { width: 36px; height: 36px; }
   .idims-action-sep { display: none; }
