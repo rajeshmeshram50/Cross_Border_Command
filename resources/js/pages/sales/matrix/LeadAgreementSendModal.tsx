@@ -380,6 +380,14 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
+  /* Lock background page scroll while the popup is open. */
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [open]);
+
   /* Fetch the applicable payload when the modal opens for a new lead —
    * unless the parent already supplied it. */
   useEffect(() => {
