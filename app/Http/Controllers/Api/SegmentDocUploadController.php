@@ -421,8 +421,24 @@ class SegmentDocUploadController extends Controller
         if ($leads->isEmpty()) return [];
 
         $leadIds = $leads->pluck('id')->all();
-        $shipLeadIds = ShipmentOrder::where('client_id', $cid)->whereIn('lead_id', $leadIds)->pluck('lead_id')->map(fn ($v) => (int) $v)->all();
-        $shipLeadIds = array_flip($shipLeadIds);
+        // Pull the actual shipment rows so the matrix can show the REAL
+        // shipment code (shipment_orders.shipment_code, e.g. "SHP-258")
+        // instead of a value fabricated from the lead id. Two maps:
+        //   $shipLeadIds    — presence set (lead has a shipment order at all)
+        //   $shipCodeByLead — lead_id ⇒ real SHP-NNN code (latest wins)
+        // Legacy rows created before the shipment_code column existed carry a
+        // NULL code; those fall back to the synthetic SHP-<lead_id> below.
+        $shipLeadIds = [];
+        $shipCodeByLead = [];
+        ShipmentOrder::where('client_id', $cid)
+            ->whereIn('lead_id', $leadIds)
+            ->orderBy('id')
+            ->get(['lead_id', 'shipment_code'])
+            ->each(function ($s) use (&$shipLeadIds, &$shipCodeByLead) {
+                $lid = (int) $s->lead_id;
+                $shipLeadIds[$lid] = true;
+                if ($s->shipment_code) $shipCodeByLead[$lid] = $s->shipment_code;
+            });
 
         // Names for the buyer/consignee columns.
         $custIds = $leads->pluck('customer_id')->filter()->unique()->all();
@@ -497,7 +513,7 @@ class SegmentDocUploadController extends Controller
             $sr++;
             $rows[] = [
                 'id'             => $lid,
-                'shipment_id'    => 'SHP-' . str_pad((string) $lid, 3, '0', STR_PAD_LEFT),
+                'shipment_id'    => $shipCodeByLead[$lid] ?? ('SHP-' . str_pad((string) $lid, 3, '0', STR_PAD_LEFT)),
                 'opportunity_id' => $lead->opp_code ?: ('OPP-' . $lid),
                 'customer'       => optional($custById->get($lead->customer_id))->company_name ?: ($type === 'customer' ? $owner->company_name : '—'),
                 'consignee'      => $cons->company_name ?? '—',

@@ -797,13 +797,25 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
           Overview" button on each group card. */}
       {overview && (() => {
         const isStd = overview === 'standard';
+        // Standard Documents are one-time (company-level) → a single flat list.
         const docs: VaultDoc[] = isStd
           ? [...vault.company_dd, ...vault.owner_kyc, ...vault.trade_licenses]
-          : [...vault.trade_documents];
+          : [];
+        // Case-to-Case docs are per-deal, so the overview is grouped by
+        // shipment: each shipment heads its own block listing that
+        // shipment's Trade Documents + Agreements (buyer + consignee).
+        const shipDocsOf = (r: VaultShipmentRow): VaultShipmentDoc[] => [
+          ...(r.trade_docs_buyer ?? []),
+          ...(r.trade_docs_consignee ?? []),
+          ...(r.agreements_buyer ?? []),
+          ...(r.agreements_consignee ?? []),
+        ];
+        const shipments = isStd ? [] : vault.shipment_agreements;
+        const hasShipmentDocs = shipments.some((r) => shipDocsOf(r).length > 0);
         const title = isStd ? 'Standard Documents — Overview' : 'Case to Case Agreements — Overview';
         const sub = isStd
           ? 'All Company Due Diligence, Owner KYC & Trade Licenses documents in one list'
-          : 'All Trade Documents & Agreements for this customer in one list';
+          : 'Trade Documents & Agreements grouped by shipment';
         return (
           <div className="cev-ov-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) setOverview(null); }}>
             <div className="cev-ov-card">
@@ -819,28 +831,67 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                 <table className="cev-ov-table">
                   <thead><tr><th style={{ width: 48 }}>#</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
                   <tbody>
-                    {docs.length === 0 ? (
-                      <tr><td colSpan={4} className="cev-ov-empty">No documents available.</td></tr>
-                    ) : docs.map((d, i) => {
-                      const url = d.attachment_url ? resolveFileUrl(d.attachment_url) : null;
-                      return (
-                        <tr key={`${d.id}-${i}`}>
-                          <td className="cev-ov-num">{i + 1}</td>
-                          <td className="cev-ov-name">{d.name}</td>
-                          <td><StatusPill s={d.status} /></td>
-                          <td>
-                            <button
-                              type="button"
-                              className="cev-ov-dl"
-                              disabled={!url}
-                              onClick={() => { if (url) void downloadFile(url, d.attachment || `${d.name}.pdf`); }}
-                            >
-                              <i className="ri-download-2-line" aria-hidden /> Download
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {isStd ? (
+                      docs.length === 0 ? (
+                        <tr><td colSpan={4} className="cev-ov-empty">No documents available.</td></tr>
+                      ) : docs.map((d, i) => {
+                        const url = d.attachment_url ? resolveFileUrl(d.attachment_url) : null;
+                        return (
+                          <tr key={`${d.id}-${i}`}>
+                            <td className="cev-ov-num">{i + 1}</td>
+                            <td className="cev-ov-name">{d.name}</td>
+                            <td><StatusPill s={d.status} /></td>
+                            <td>
+                              <button
+                                type="button"
+                                className="cev-ov-dl"
+                                disabled={!url}
+                                onClick={() => { if (url) void downloadFile(url, d.attachment || `${d.name}.pdf`); }}
+                              >
+                                <i className="ri-download-2-line" aria-hidden /> Download
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      !hasShipmentDocs ? (
+                        <tr><td colSpan={4} className="cev-ov-empty">No shipment documents available.</td></tr>
+                      ) : shipments.map((r) => {
+                        const sdocs = shipDocsOf(r);
+                        if (sdocs.length === 0) return null;
+                        return (
+                          <Fragment key={r.id}>
+                            <tr className="cev-ov-ship-head">
+                              <td colSpan={4}>
+                                <i className="ri-truck-line" aria-hidden /> {r.shipment_id}
+                                <span className="cev-ov-ship-opp">{r.opportunity_id}</span>
+                              </td>
+                            </tr>
+                            {sdocs.map((d, i) => {
+                              const url = d.signed_url ? resolveFileUrl(d.signed_url) : null;
+                              return (
+                                <tr key={`${r.id}-${i}`}>
+                                  <td className="cev-ov-num">{i + 1}</td>
+                                  <td className="cev-ov-name">{d.name}</td>
+                                  <td><StatusPill s={d.status as VaultStatus} /></td>
+                                  <td>
+                                    <button
+                                      type="button"
+                                      className="cev-ov-dl"
+                                      disabled={!url}
+                                      onClick={() => { if (url) void downloadFile(url, `${d.name}.pdf`); }}
+                                    >
+                                      <i className="ri-download-2-line" aria-hidden /> Download
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </Fragment>
+                        );
+                      })
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1711,6 +1762,20 @@ const CEV_CSS = `
 .cev-ov-num { color: #5e94a1; font-weight: 700; }
 .cev-ov-name { font-weight: 700; color: #0a2630; }
 .cev-ov-empty { text-align: center; color: #5e94a1; padding: 28px 12px !important; font-weight: 600; }
+/* Shipment group header row inside the Case-to-Case overview. */
+.cev-ov-ship-head td {
+  background: #ecfeff !important; border-bottom: 1px solid #a5f3fc !important;
+  padding: 9px 12px !important; font-weight: 800; font-size: 12px;
+  color: #0e7490; letter-spacing: .02em;
+}
+.cev-ov-ship-head td i { margin-right: 6px; }
+.cev-ov-ship-opp {
+  display: inline-block; margin-left: 10px; padding: 2px 9px; border-radius: 999px;
+  background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .03em;
+}
+[data-bs-theme="dark"] .cev-ov-ship-head td { background: rgba(8,145,178,.16) !important; color: #67e8f9; border-bottom-color: rgba(8,145,178,.3) !important; }
+[data-bs-theme="dark"] .cev-ov-ship-opp { background: rgba(194,65,12,.18); color: #fdba74; border-color: rgba(194,65,12,.4); }
 .cev-ov-dl {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 5px 12px; border-radius: 7px;
