@@ -225,10 +225,14 @@ class HrDocumentTemplateController extends Controller
         // download()-ing a missing path throws) and only fall back to a fresh
         // render when there's no usable upload.
         if ($row->docx_path) {
-            $abs = Storage::disk('public')->path($row->docx_path);
-            if (is_file($abs)) {
+            // localFile() resolves to the real local file (local disk) OR a temp
+            // copy streamed down from Azure (server). Either way native
+            // download() gets a path it can open. Clean up the temp after send.
+            $abs = $this->localFile($row->docx_path, $isTemp);
+            if ($abs) {
                 $name = $row->docx_original_name ?: ($row->code ?: 'template') . '.docx';
-                return response()->download($abs, $name);
+                $resp = response()->download($abs, $name);
+                return $isTemp ? $resp->deleteFileAfterSend(true) : $resp;
             }
         }
 
@@ -249,17 +253,26 @@ class HrDocumentTemplateController extends Controller
         $request->validate(['docx' => 'required|file|mimes:doc,docx|max:' . self::DOCX_MAX_KB]);
 
         $row = $this->resolveRow($request, (int) $id);
-        [$path, $orig] = $this->storeDocx($request->file('docx'), $row->client_id, $row->id);
+
+        // Parse from the uploaded file's REAL local temp path (getRealPath) — NOT
+        // from the stored path. On the server the public disk is Azure Blob, so
+        // Storage::path() of the stored file isn't a real local file and every
+        // native reader (PhpWord, ZipArchive) would fail. The PHP upload temp
+        // file is always local, so parse it first, then push it to storage.
+        $uploaded = $request->file('docx');
+        $abs = $uploaded->getRealPath();
 
         // Best-effort DOCX → HTML so the web editor stays usable. If parsing
         // fails (legacy .doc, embedded media, etc) we keep the upload but
         // skip the HTML refresh.
         $html = $row->content_html;
         try {
-            $html = $this->docxToHtml(Storage::disk('public')->path($path)) ?: $row->content_html;
+            $html = $this->docxToHtml($abs) ?: $row->content_html;
         } catch (\Throwable $e) {
             // ignore — file is saved, web editor falls back to previous content
         }
+
+        [$path, $orig] = $this->storeDocx($uploaded, $row->client_id, $row->id);
 
         $update = [
             'docx_path'          => $path,
@@ -273,7 +286,7 @@ class HrDocumentTemplateController extends Controller
         // future renders reflect it — otherwise only the downloaded file would
         // carry the changes. Each piece is applied only when present, so an
         // upload missing a logo/title/footer never wipes the existing value.
-        $abs       = Storage::disk('public')->path($path);
+        // (Parsed from $abs, the local upload temp file resolved above.)
         $headerCfg = is_array($row->header_config) ? $row->header_config : [];
         $footerCfg = is_array($row->footer_config) ? $row->footer_config : [];
         $headerChanged = false;
@@ -620,10 +633,52 @@ class HrDocumentTemplateController extends Controller
         return $files[0];
     }
 
+    /**
+     * Return a guaranteed LOCAL filesystem path for a file on the 'public' disk.
+     *
+     * On local disks this is just ->path(). On the SERVER the public disk is
+     * Azure Blob (FILESYSTEM_DISK=azure) where blobs have NO local path —
+     * ->path() returns a string that native libraries (ZipArchive, PhpWord's
+     * IOFactory, getimagesize, PhpWord addImage) cannot open. So for remote
+     * disks we stream the bytes into a temp file (keeping the original
+     * extension) and hand that back. Returns null when the source is missing.
+     *
+     * The boolean out-param $isTemp tells the caller whether the returned path
+     * is a throwaway copy it should unlink / deleteFileAfterSend.
+     */
+    private function localFile(?string $path, ?bool &$isTemp = null): ?string
+    {
+        $isTemp = false;
+        if (!$path) return null;
+        $disk = Storage::disk('public');
+        if (!$disk->exists($path)) return null;
+
+        // Local adapter — real file already on disk, use it directly.
+        try {
+            $local = $disk->path($path);
+            if (is_string($local) && is_file($local)) return $local;
+        } catch (\Throwable $e) { /* non-local adapter → copy below */ }
+
+        // Remote adapter (Azure/S3) — pull the bytes into a temp local file.
+        try {
+            $bytes = $disk->get($path);
+            if ($bytes === null) return null;
+            $ext = pathinfo($path, PATHINFO_EXTENSION) ?: 'tmp';
+            $tmp = tempnam(sys_get_temp_dir(), 'cbc_') . '.' . $ext;
+            file_put_contents($tmp, $bytes);
+            $isTemp = true;
+            return $tmp;
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
     private function resolveDocxLogo(?string $logoPath): ?string
     {
-        if (!$logoPath || !Storage::disk('public')->exists($logoPath)) return null;
-        $abs = Storage::disk('public')->path($logoPath);
+        // localFile() copies Azure blobs to a temp file so addImage() works on
+        // the server (where ->path() isn't a real local file).
+        $abs = $this->localFile($logoPath);
+        if (!$abs) return null;
         $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
 
         // Formats PhpWord embeds natively — pass straight through.

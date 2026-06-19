@@ -84,10 +84,36 @@ class HrTemplateDocxRenderer
      * silently fails addImage(). Convert WEBP via GD and SVG via Imagick (when
      * available) to a temp PNG. Returns null when missing/unconvertible.
      */
+    /**
+     * Guaranteed LOCAL path for a 'public'-disk file. On the server the public
+     * disk is Azure Blob (no local path), so stream the bytes into a temp file
+     * native libraries can open. On local disks return ->path() directly.
+     */
+    private static function localFile(?string $path): ?string
+    {
+        if (!$path) return null;
+        $disk = Storage::disk('public');
+        if (!$disk->exists($path)) return null;
+        try {
+            $local = $disk->path($path);
+            if (is_string($local) && is_file($local)) return $local;
+        } catch (\Throwable $e) { /* non-local adapter → copy below */ }
+        try {
+            $bytes = $disk->get($path);
+            if ($bytes === null) return null;
+            $ext = pathinfo($path, PATHINFO_EXTENSION) ?: 'tmp';
+            $tmp = tempnam(sys_get_temp_dir(), 'cbc_') . '.' . $ext;
+            file_put_contents($tmp, $bytes);
+            return $tmp;
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
     private static function resolveDocxLogo(?string $logoPath): ?string
     {
-        if (!$logoPath || !Storage::disk('public')->exists($logoPath)) return null;
-        $abs = Storage::disk('public')->path($logoPath);
+        $abs = self::localFile($logoPath);
+        if (!$abs) return null;
         $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
 
         if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'bmp'], true)) return $abs;
