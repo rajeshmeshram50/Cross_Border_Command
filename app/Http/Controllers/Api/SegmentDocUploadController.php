@@ -664,7 +664,8 @@ class SegmentDocUploadController extends Controller
             foreach ($this->matchSegmentLibrary(ClmAgreementLibrary::query(), $cid, $seg, 'agr_status') as $a) {
                 [$forBuyer, $forCons] = $this->partyFlags($a->party);
                 $name = $a->title ?: $a->code;
-                $req  = $a->regulatory === 'highly' ? 'REQ' : 'OPT';
+                // Trade docs + agreements are mandatory documents for the deal.
+                $req  = 'REQ';
                 if ($forBuyer && !isset($seen['agr']['Customer'][$a->id])) {
                     $seen['agr']['Customer'][$a->id] = true;
                     $sig = $sigIndex[ClmSignatureRequest::DOC_AGREEMENT]['Customer'][$a->id] ?? null;
@@ -683,7 +684,8 @@ class SegmentDocUploadController extends Controller
             foreach ($this->matchSegmentLibrary(ClmTradeDocLibrary::query(), $cid, $seg, 'status') as $m) {
                 [$forBuyer, $forCons] = $this->partyFlags($m->party);
                 $name = $m->title ?: ($m->name ?: $m->code);
-                $req  = $m->regulatory === 'highly' ? 'REQ' : 'OPT';
+                // Trade docs + agreements are mandatory documents for the deal.
+                $req  = 'REQ';
                 if ($forBuyer && !isset($seen['td']['Customer'][$m->id])) {
                     $seen['td']['Customer'][$m->id] = true;
                     $sig = $sigIndex[ClmSignatureRequest::DOC_TRADE]['Customer'][$m->id] ?? null;

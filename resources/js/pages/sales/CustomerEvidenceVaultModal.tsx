@@ -1375,17 +1375,22 @@ function ShipmentTable({ rows, kind, filter, setFilter, onSend }: {
 
 /* Expanded shipment row — Buyer / Consignee sub-tabs + the document table.
  * Inline-styled (no scoped classes) so the Consignee vault reuses it as-is. */
-export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, buyerIsConsignee, onSend }: {
+export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, buyerIsConsignee, onSend, forceParty }: {
   buyer: VaultShipmentDoc[]; consignee: VaultShipmentDoc[]; buyerName: string; consigneeName: string; buyerIsConsignee: boolean;
   /** Launches Send-for-Signature (preview + draggable signature box) for one
    *  not-yet-sent ("Draft") doc. Receives the doc + which party it belongs to.
    *  Omitted ⇒ no Send button. */
   onSend?: (doc: VaultShipmentDoc, party: 'buyer' | 'consignee') => void;
+  /** Locks the panel to one party and hides the Buyer/Consignee/Both tabs —
+   *  used by the Consignee vault, which only ever shows consignee documents. */
+  forceParty?: 'buyer' | 'consignee';
 }) {
   const toast = useToast();
-  const [party, setParty] = useState<'buyer' | 'consignee' | 'both'>('buyer');
+  const [party, setParty] = useState<'buyer' | 'consignee' | 'both'>(forceParty ?? 'buyer');
   const [busy, setBusy] = useState<number | null>(null);
-  const docs = party === 'both' ? [...buyer, ...consignee] : party === 'buyer' ? buyer : consignee;
+  const docs = forceParty
+    ? (forceParty === 'consignee' ? consignee : buyer)
+    : party === 'both' ? [...buyer, ...consignee] : party === 'buyer' ? buyer : consignee;
 
   const remind = async (d: VaultShipmentDoc) => {
     setBusy(d.sig_req_id);
@@ -1401,16 +1406,18 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
 
   return (
     <div className="cev-sdp" style={{ padding: '12px 16px 16px' }}>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-        <button type="button" onClick={() => setParty('buyer')} style={partyTabStyle(party === 'buyer')}>👤 Customer Documents <b>{buyer.length}</b></button>
-        {!buyerIsConsignee && (
-          <>
-            <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(party === 'consignee')}>🏢 Consignee Documents <b>{consignee.length}</b></button>
-            <button type="button" onClick={() => setParty('both')} style={partyTabStyle(party === 'both')}>🗂 Both <b>{buyer.length + consignee.length}</b></button>
-          </>
-        )}
-      </div>
-      <div style={{ fontSize: 11, fontWeight: 600, color: '#0e7490', marginBottom: 6 }}>{party === 'both' ? `${buyerName} + ${consigneeName}` : party === 'buyer' ? buyerName : consigneeName}</div>
+      {!forceParty && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+          <button type="button" onClick={() => setParty('buyer')} style={partyTabStyle(party === 'buyer')}>👤 Customer Documents <b>{buyer.length}</b></button>
+          {!buyerIsConsignee && (
+            <>
+              <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(party === 'consignee')}>🏢 Consignee Documents <b>{consignee.length}</b></button>
+              <button type="button" onClick={() => setParty('both')} style={partyTabStyle(party === 'both')}>🗂 Both <b>{buyer.length + consignee.length}</b></button>
+            </>
+          )}
+        </div>
+      )}
+      <div style={{ fontSize: 11, fontWeight: 600, color: '#0e7490', marginBottom: 6 }}>{forceParty === 'consignee' ? consigneeName : party === 'both' ? `${buyerName} + ${consigneeName}` : party === 'buyer' ? buyerName : consigneeName}</div>
       {docs.length === 0 ? (
         <div style={{ padding: '18px', textAlign: 'center', color: '#64748b', fontSize: 12, background: '#fff', border: '1px dashed #a5f3fc', borderRadius: 8 }}>No {party === 'both' ? '' : party === 'buyer' ? 'buyer ' : 'consignee '}documents on this shipment.</div>
       ) : (
@@ -1428,7 +1435,11 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
                 <tr key={d.sig_req_id + '-' + i} style={{ borderBottom: '1px solid #ecfeff' }}>
                   <td style={{ padding: '8px 10px', textAlign: 'center', color: '#94a3b8', fontWeight: 700 }}>{i + 1}</td>
                   <td style={{ padding: '8px 10px', fontWeight: 700, color: '#0f172a' }}>{d.name}</td>
-                  <td style={{ padding: '8px 10px', textAlign: 'center' }}><span style={{ fontSize: 8.5, fontWeight: 800, color: d.required === 'OPT' ? '#64748b' : '#b45309', background: d.required === 'OPT' ? '#f1f5f9' : '#fef3c7', border: `1px solid ${d.required === 'OPT' ? '#e2e8f0' : '#fde68a'}`, padding: '2px 7px', borderRadius: 20 }}>{d.required}</span></td>
+                  <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                    {(d.required === 'OPT' || d.required === 'O')
+                      ? <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
+                      : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>}
+                  </td>
                   <td style={{ padding: '8px 10px', textAlign: 'center', color: '#475569' }}>{d.uploaded_on}</td>
                   <td style={{ padding: '8px 10px', textAlign: 'center' }}><span style={{ fontSize: 9.5, fontWeight: 800, color: stTone(d.status) }}>● {d.status}</span></td>
                   <td style={{ padding: '8px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
