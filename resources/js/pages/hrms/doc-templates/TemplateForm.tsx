@@ -119,6 +119,7 @@ export default function TemplateFormPage() {
   const [contentHtml, setContentHtml] = useState<string>('');
   const [headerConfig, setHeaderConfig] = useState<HeaderConfig>(DEFAULT_HEADER);
   const [footerConfig, setFooterConfig] = useState<FooterConfig>(DEFAULT_FOOTER);
+  const [uploadingDocx, setUploadingDocx] = useState(false);
   const docxRef = useRef<HTMLInputElement | null>(null);
 
   // Lookups
@@ -365,8 +366,17 @@ export default function TemplateFormPage() {
   };
 
   const uploadDocx = async (file: File) => {
-    const row = await ensureSavedDraft();
-    if (!row) return;
+    // Flip the loader on FIRST so it covers the whole operation — the draft
+    // auto-save (PUT) AND the upload/parse (POST) — not just the POST.
+    setUploadingDocx(true);
+    let row;
+    try {
+      row = await ensureSavedDraft();
+    } catch {
+      setUploadingDocx(false);
+      return;
+    }
+    if (!row) { setUploadingDocx(false); return; }
     const fd = new FormData();
     fd.append('docx', file);
     try {
@@ -374,11 +384,18 @@ export default function TemplateFormPage() {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       setContentHtml(data.content_html || '');
+      // If the user edited the logo / title / footer inside Word, the backend
+      // lifts those back into header_config / footer_config — refresh the
+      // preview so the revised header & footer show without a reload.
+      if (data.header_config) setHeaderConfig({ ...DEFAULT_HEADER, ...data.header_config } as HeaderConfig);
+      if (data.footer_config) setFooterConfig({ ...DEFAULT_FOOTER, ...data.footer_config } as FooterConfig);
       setEditorMode('word');
       setEditing(data);
       toast.success('Revised DOCX uploaded', `Imported ${data.docx_original_name}.`);
     } catch (err: any) {
       toast.error('Could not upload', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setUploadingDocx(false);
     }
   };
 
@@ -525,6 +542,7 @@ export default function TemplateFormPage() {
               docxRef={docxRef}
               onDownloadDocx={downloadDocx}
               onUploadDocx={uploadDocx}
+              uploadingDocx={uploadingDocx}
             />
           )}
         </CardBody>
@@ -843,6 +861,7 @@ function Step3(props: {
   docxRef: React.RefObject<HTMLInputElement | null>;
   onDownloadDocx: () => void;
   onUploadDocx: (f: File) => void;
+  uploadingDocx: boolean;
 }) {
   const tabBtn = (active: boolean): React.CSSProperties => ({
     padding: '7px 16px', border: '1px solid ' + (active ? '#6366f1' : '#e5e7eb'),
@@ -875,7 +894,18 @@ function Step3(props: {
       {props.editorMode === 'word' && (
         <>
           {/* MS Word workflow card */}
-          <div className="tpl-word-card" style={{ border: '1px solid #e5e7eb', borderRadius: 12, padding: 18, background: '#fff', marginBottom: 16 }}>
+          <div className="tpl-word-card" style={{ position: 'relative', border: '1px solid #e5e7eb', borderRadius: 12, padding: 18, background: '#fff', marginBottom: 16 }}>
+            {props.uploadingDocx && (
+              <div className="tpl-upload-veil" style={{
+                position: 'absolute', inset: 0, zIndex: 20, borderRadius: 12,
+                background: 'rgba(255,255,255,0.78)', backdropFilter: 'blur(1px)',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10,
+              }}>
+                <span className="spinner-border text-success" role="status" aria-hidden="true" />
+                <div className="tpl-veil-title" style={{ fontSize: 13, fontWeight: 700, color: '#15803d' }}>Uploading &amp; processing DOCX…</div>
+                <div className="tpl-veil-sub" style={{ fontSize: 11.5, color: '#6b7280' }}>Extracting header, footer &amp; logo</div>
+              </div>
+            )}
             <div className="tpl-word-title" style={{ fontSize: 13, fontWeight: 800, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>MS Word Workflow</div>
             <ol className="tpl-word-list" style={{ paddingLeft: 18, fontSize: 13, color: '#374151', lineHeight: 1.7, marginBottom: 16 }}>
               <li>Download → the generated DOCX comes pre-baked with the fixed header (logo + title) and footer</li>
@@ -889,11 +919,14 @@ function Step3(props: {
                 <i className="ri-download-2-line me-1" /> Download DOCX (with header/footer)
               </button>
               <input ref={props.docxRef} type="file" accept=".doc,.docx" style={{ display: 'none' }}
+                disabled={props.uploadingDocx}
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) props.onUploadDocx(f); e.currentTarget.value = ''; }} />
               <button type="button" onClick={() => props.docxRef.current?.click()}
-                className="tpl-word-up-btn"
-                style={{ padding: '8px 16px', background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                <i className="ri-upload-2-line me-1" /> Upload Revised DOCX
+                className="tpl-word-up-btn" disabled={props.uploadingDocx}
+                style={{ padding: '8px 16px', background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: props.uploadingDocx ? 'wait' : 'pointer', opacity: props.uploadingDocx ? 0.7 : 1 }}>
+                {props.uploadingDocx
+                  ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" /> Uploading…</>
+                  : <><i className="ri-upload-2-line me-1" /> Upload Revised DOCX</>}
               </button>
             </div>
             {!props.editingId && (
@@ -912,19 +945,32 @@ function Step3(props: {
               fixed header/footer wrapped around it. Useful so the user can
               verify the uploaded DOCX content came through correctly. */}
           <div className="tpl-preview-label" style={{ fontSize: 11.5, fontWeight: 800, color: '#6366f1', textTransform: 'uppercase', letterSpacing: 0.4, margin: '4px 4px 8px' }}>Preview</div>
-          <HeaderFooterPanel
-            header={props.headerConfig} setHeader={props.setHeaderConfig}
-            footer={props.footerConfig} setFooter={props.setFooterConfig}
-            readOnly
-          >
-            <div className="tpl-readonly-preview tpl-readonly-body"
-              style={{ fontSize: 13.5, lineHeight: 1.6, color: '#374151', minHeight: 260 }}
-              // The HTML originates from PhpWord's docxToHtml (server-controlled) +
-              // the Tiptap editor's getHTML (sanitised by ProseMirror), so dangerous
-              // dangerouslySetInnerHTML is acceptable here.
-              dangerouslySetInnerHTML={{ __html: props.contentHtml || '<p style="color:#9ca3af;font-style:italic;">No content yet — download the DOCX, edit it in Word, then upload it back to preview here.</p>' }}
-            />
-          </HeaderFooterPanel>
+          <div className="tpl-preview-wrap" style={{ position: 'relative' }}>
+            {props.uploadingDocx && (
+              <div className="tpl-upload-veil" style={{
+                position: 'absolute', inset: 0, zIndex: 20, borderRadius: 12,
+                background: 'rgba(255,255,255,0.78)', backdropFilter: 'blur(1px)',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10,
+              }}>
+                <span className="spinner-border text-success" role="status" aria-hidden="true" />
+                <div className="tpl-veil-title" style={{ fontSize: 13, fontWeight: 700, color: '#15803d' }}>Updating preview…</div>
+                <div className="tpl-veil-sub" style={{ fontSize: 11.5, color: '#6b7280' }}>Rendering revised content</div>
+              </div>
+            )}
+            <HeaderFooterPanel
+              header={props.headerConfig} setHeader={props.setHeaderConfig}
+              footer={props.footerConfig} setFooter={props.setFooterConfig}
+              readOnly
+            >
+              <div className="tpl-readonly-preview tpl-readonly-body"
+                style={{ fontSize: 13.5, lineHeight: 1.6, color: '#374151', minHeight: 260 }}
+                // The HTML originates from PhpWord's docxToHtml (server-controlled) +
+                // the Tiptap editor's getHTML (sanitised by ProseMirror), so dangerous
+                // dangerouslySetInnerHTML is acceptable here.
+                dangerouslySetInnerHTML={{ __html: props.contentHtml || '<p style="color:#9ca3af;font-style:italic;">No content yet — download the DOCX, edit it in Word, then upload it back to preview here.</p>' }}
+              />
+            </HeaderFooterPanel>
+          </div>
         </>
       )}
     </>
@@ -1100,6 +1146,17 @@ function TplFormDarkStyles() {
       }
       [data-bs-theme="dark"] .tpl-form-page .tpl-readonly-body {
         color: rgba(255,255,255,0.85) !important;
+      }
+      /* Upload loader veil — dark surface + lighter text so it doesn't flash
+         white over the dark card/preview. */
+      [data-bs-theme="dark"] .tpl-form-page .tpl-upload-veil {
+        background: rgba(17,24,39,0.82) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-upload-veil .tpl-veil-title {
+        color: #6ee7b7 !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-upload-veil .tpl-veil-sub {
+        color: rgba(255,255,255,0.62) !important;
       }
 
       [data-bs-theme="dark"] .tpl-form-page .tpl-form-footer {

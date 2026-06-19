@@ -261,12 +261,47 @@ class HrDocumentTemplateController extends Controller
             // ignore — file is saved, web editor falls back to previous content
         }
 
-        $row->update([
+        $update = [
             'docx_path'          => $path,
             'docx_original_name' => $orig,
             'editor_mode'        => 'word',
             'content_html'       => $html,
-        ]);
+        ];
+
+        // Lift the header/footer the user edited INSIDE Word back into the
+        // template (logo + title/subtitle + footer text) so the preview and
+        // future renders reflect it — otherwise only the downloaded file would
+        // carry the changes. Each piece is applied only when present, so an
+        // upload missing a logo/title/footer never wipes the existing value.
+        $abs       = Storage::disk('public')->path($path);
+        $headerCfg = is_array($row->header_config) ? $row->header_config : [];
+        $footerCfg = is_array($row->footer_config) ? $row->footer_config : [];
+        $headerChanged = false;
+        $footerChanged = false;
+
+        $logo = $this->extractHeaderLogo($abs, $row->client_id);
+        if ($logo) {
+            $headerCfg['logo_path'] = $logo['path'];
+            $headerCfg['logo_url']  = $logo['url'];
+            $headerCfg['show_logo'] = true;
+            $headerChanged = true;
+        }
+
+        $hf = $this->extractHeaderFooterText($abs);
+        if (!empty($hf['header'])) {
+            $headerCfg['title']    = $hf['header']['title'];
+            $headerCfg['subtitle'] = $hf['header']['subtitle'];
+            $headerChanged = true;
+        }
+        if (!empty($hf['footer'])) {
+            $footerCfg['text'] = $hf['footer']['text'];
+            $footerChanged = true;
+        }
+
+        if ($headerChanged) $update['header_config'] = $headerCfg;
+        if ($footerChanged) $update['footer_config'] = $footerCfg;
+
+        $row->update($update);
         $row->load(self::WITH);
         return response()->json($row);
     }
@@ -1052,6 +1087,150 @@ class HrDocumentTemplateController extends Controller
         $filename = Str::random(16) . '.' . $ext;
         $path = $file->storeAs($folder, $filename, 'public');
         return [$path, $file->getClientOriginalName()];
+    }
+
+    /**
+     * Pull the logo image out of an uploaded DOCX's header so a logo the user
+     * swapped INSIDE Word is reflected back into the template (preview + future
+     * renders), not just left as the old panel logo.
+     *
+     * A .docx is a zip: header parts live at word/header*.xml and the images
+     * they reference are wired through word/_rels/header*.xml.rels (Type ending
+     * in /image) → word/media/*. We grab the first image referenced by any
+     * header and copy it into the client's logos folder. Returns ['path','url']
+     * or null when the header carries no usable image (logo removed, never
+     * present, or a vector/metafile a browser can't show).
+     */
+    private function extractHeaderLogo(string $docxAbsPath, $clientId): ?array
+    {
+        if (!class_exists('ZipArchive') || !is_file($docxAbsPath)) return null;
+
+        $zip = new \ZipArchive();
+        if ($zip->open($docxAbsPath) !== true) return null;
+
+        try {
+            $target = null; // e.g. "media/image1.png" (relative to word/)
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $name = $zip->getNameIndex($i);
+                if (!is_string($name) || !preg_match('#^word/_rels/header\d*\.xml\.rels$#i', $name)) continue;
+                $xml = $zip->getFromIndex($i);
+                if ($xml === false) continue;
+                // Match an image relationship regardless of attribute order.
+                if (preg_match('#Type="[^"]*/image"[^>]*?Target="([^"]+)"#i', $xml, $m)
+                 || preg_match('#Target="([^"]+)"[^>]*?Type="[^"]*/image"#i', $xml, $m)) {
+                    $target = $m[1];
+                    break;
+                }
+            }
+            if (!$target) return null;
+
+            // Resolve the relationship Target to an entry inside the zip. Header
+            // rels are relative to word/, so "media/imageN.png" → word/media/...
+            $target = str_replace('\\', '/', $target);
+            $entry  = str_starts_with($target, '/')
+                ? ltrim($target, '/')
+                : 'word/' . ltrim($target, './');
+            $data = $zip->getFromName($entry);
+            if ($data === false) {
+                $entry = 'word/media/' . basename($target);
+                $data  = $zip->getFromName($entry);
+                if ($data === false) return null;
+            }
+
+            // Only keep raster formats the web preview <img> and PhpWord both
+            // understand. EMF/WMF/SVG inside a Word header can't render in a
+            // browser, so skip rather than store a broken preview logo.
+            $ext = strtolower(pathinfo($entry, PATHINFO_EXTENSION) ?: '');
+            if (!in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'bmp'], true)) return null;
+
+            $clientSlug = $clientId ? 'c' . $clientId : 'public';
+            $path = "doc_templates/{$clientSlug}/logos/" . Str::random(16) . '.' . $ext;
+            Storage::disk('public')->put($path, $data);
+
+            return ['path' => $path, 'url' => file_url($path)];
+        } finally {
+            $zip->close();
+        }
+    }
+
+    /**
+     * Read the header TITLE/SUBTITLE and footer TEXT a user typed inside Word
+     * back out of an uploaded DOCX, so edits to those strings reflect into the
+     * template (preview + future renders), same as the logo. Header/footer
+     * parts live at word/header*.xml and word/footer*.xml.
+     *
+     * Returns ['header' => ['title','subtitle'], 'footer' => ['text']] with
+     * only the keys we could read; missing/empty parts are omitted so the
+     * caller never wipes an existing value with a blank.
+     */
+    private function extractHeaderFooterText(string $docxAbsPath): array
+    {
+        $result = [];
+        if (!class_exists('ZipArchive') || !is_file($docxAbsPath)) return $result;
+
+        $zip = new \ZipArchive();
+        if ($zip->open($docxAbsPath) !== true) return $result;
+
+        try {
+            $headerParts = [];
+            $footerParts = [];
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $n = $zip->getNameIndex($i);
+                if (!is_string($n)) continue;
+                if (preg_match('#^word/header\d*\.xml$#i', $n)) $headerParts[] = $n;
+                if (preg_match('#^word/footer\d*\.xml$#i', $n)) $footerParts[] = $n;
+            }
+            sort($headerParts);
+            sort($footerParts);
+
+            // HEADER: first part that carries visible (non page-number) text.
+            // Our generated header puts the title on the first text paragraph
+            // and the subtitle on the second, so map them positionally.
+            foreach ($headerParts as $hp) {
+                $lines = array_values(array_filter(
+                    array_map(fn ($p) => $p['field'] ? null : $p['text'], $this->docxPartParagraphs($zip, $hp))
+                ));
+                if ($lines) {
+                    $result['header'] = ['title' => $lines[0] ?? '', 'subtitle' => $lines[1] ?? ''];
+                    break;
+                }
+            }
+
+            // FOOTER: first non page-number text paragraph is the footer line.
+            foreach ($footerParts as $fp) {
+                foreach ($this->docxPartParagraphs($zip, $fp) as $pa) {
+                    if (!$pa['field']) { $result['footer'] = ['text' => $pa['text']]; break 2; }
+                }
+            }
+        } finally {
+            $zip->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Extract per-paragraph visible text from a header/footer XML part inside an
+     * open DOCX zip. Each item is ['text' => string, 'field' => bool] where
+     * `field` flags a paragraph that holds a PAGE/NUMPAGES field (page numbers),
+     * so callers can skip those when looking for hand-typed header/footer text.
+     */
+    private function docxPartParagraphs(\ZipArchive $zip, string $entry): array
+    {
+        $xml = $zip->getFromName($entry);
+        if ($xml === false) return [];
+
+        $out = [];
+        // Split on paragraph boundaries; each chunk is one <w:p>.
+        foreach (preg_split('#<w:p[ >]#', $xml) as $chunk) {
+            $isField = preg_match('#\b(PAGE|NUMPAGES)\b#', $chunk)
+                    && preg_match('#w:(instrText|fldSimple|fldChar)#', $chunk);
+            if (preg_match_all('#<w:t[^>]*>(.*?)</w:t>#s', $chunk, $m)) {
+                $text = trim(html_entity_decode(implode('', $m[1]), ENT_QUOTES | ENT_XML1, 'UTF-8'));
+                if ($text !== '') $out[] = ['text' => $text, 'field' => (bool) $isField];
+            }
+        }
+        return $out;
     }
 
     /**
