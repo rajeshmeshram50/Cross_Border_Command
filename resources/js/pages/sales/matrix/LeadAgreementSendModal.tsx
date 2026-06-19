@@ -70,7 +70,11 @@ export type AgreementRow = {
  * unioned across the mapped parties. */
 export type SegmentTradeDoc = {
   db_id: number | null;
+  /* `name` is the catalog/type name (often shared across documents); `title`
+   * is this document's own title and is what the popup shows as the primary
+   * label. `title` falls back to name/code server-side when blank. */
   name: string;
+  title: string;
   reference: string;
   doc_code: string;
   requirement: 'M' | 'O';
@@ -975,7 +979,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                             <td>
                               <input
                                 type="checkbox"
-                                aria-label={`Select ${td.name}`}
+                                aria-label={`Select ${td.title || td.name}`}
                                 checked={checked}
                                 disabled={!sendable}
                                 title={tdSent ? `Already ${tdSigStatus}` : (sendable ? 'Add to bulk send' : 'This document has no template to send')}
@@ -984,7 +988,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                             </td>
                             <td>{i + 1}</td>
                             <td>
-                              <div className="lasm-doc-name">{td.name}</div>
+                              <div className="lasm-doc-name">{td.title || td.name}</div>
                               <div className="lasm-doc-sub">{td.reference}</div>
                             </td>
                             <td>
@@ -1038,16 +1042,17 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                     </Tooltip>
                                   );
                                 })()}
-                                {/* Signing activity tracker — once the doc has been sent. */}
+                                {/* View signing timeline — once the doc has been sent
+                                    (the same tracker the PI + agreements use). */}
                                 {tdSig?.id && (
-                                  <Tooltip label="Signing activity tracker">
+                                  <Tooltip label="View signing timeline">
                                     <button
                                       type="button"
                                       className="lasm-btn-icon"
-                                      aria-label="Signing activity tracker"
-                                      onClick={() => setTrackerFor({ sigId: tdSig.id, code: td.reference || td.name })}
+                                      aria-label="View signing timeline"
+                                      onClick={() => setTrackerFor({ sigId: tdSig.id, code: td.reference || td.title || td.name })}
                                     >
-                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                                     </button>
                                   </Tooltip>
                                 )}
@@ -1339,26 +1344,19 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                 </Tooltip>
                                 );
                               })()}
-                              {/* Signing activity tracker — once the agreement has been sent. */}
-                              {sig?.id && (
-                                <Tooltip label="Signing activity tracker">
-                                  <button
-                                    type="button"
-                                    className="lasm-btn-icon"
-                                    aria-label="Signing activity tracker"
-                                    onClick={() => setTrackerFor({ sigId: sig.id, code: a.code || a.title })}
-                                  >
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
-                                  </button>
-                                </Tooltip>
-                              )}
-                              <Tooltip label="Preview agreement PDF">
+                              {/* View — opens the Signing Timeline once the agreement
+                                  has been sent (the same tracker the PI uses); before
+                                  that it previews the draft agreement PDF. */}
+                              <Tooltip label={sig?.id ? 'View signing timeline' : 'Preview agreement PDF'}>
                                 <button
                                   type="button"
                                   className="lasm-btn-eye"
                                   disabled={isPrev}
-                                  onClick={() => void handlePreview(a.id)}
-                                  aria-label="Preview"
+                                  onClick={() => {
+                                    if (sig?.id) setTrackerFor({ sigId: sig.id, code: a.code || a.title });
+                                    else void handlePreview(a.id);
+                                  }}
+                                  aria-label={sig?.id ? 'View signing timeline' : 'Preview'}
                                 >
                                   {isPrev ? (
                                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>

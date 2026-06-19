@@ -387,11 +387,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                         })()}
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        {/* Show only the first applicable party as a badge; if the
-                            agreement maps to more (r.party is a CSV like
-                            "Buyer, Consignee"), surface the rest behind a +N badge
-                            that opens a popover. Fall back to "All parties" when
-                            nothing is mapped. */}
+                        
                         {(() => {
                           const partyList = r.party ? r.party.split(',').map(s => s.trim()).filter(Boolean) : [];
                           if (partyList.length === 0) return <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>All parties</span>;

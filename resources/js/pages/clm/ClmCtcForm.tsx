@@ -1663,7 +1663,7 @@ function CpReadCard({ t, idx, cp }: { t: OpsTokens; idx: number; cp: CP }) {
       <div style={{ background: `linear-gradient(118deg,${cp.badge === 'BUYER' ? '#0e7490,#0891b2,#06b6d4' : cp.badge === 'SUPPLIER' ? '#047857,#059669,#10b981' : '#4C1D95,#6D28D9,#7C3AED'})`, padding: '10px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
           <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,.7)' }}>Counter Party {idx}</span>
-          {cp.badge && <span style={{ fontSize: 8, fontWeight: 800, padding: '2px 8px', borderRadius: 20, background: 'rgba(255,255,255,.2)', border: '1px solid rgba(255,255,255,.35)', color: '#fff', textTransform: 'uppercase' }}>{cp.badge}</span>}
+          {cp.badge && <span style={{ fontSize: 8, fontWeight: 800, padding: '2px 8px', borderRadius: 20, background: 'rgba(255,255,255,.2)', border: '1px solid rgba(255,255,255,.35)', color: '#fff', textTransform: 'uppercase' }}>{cp.badge === 'BUYER' ? 'CUSTOMER' : cp.badge}</span>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,.2)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>{cp.initials}</span></div>
@@ -1878,7 +1878,7 @@ function CpCard({ t, slot, cp, onRemove, readOnly }: { t: OpsTokens; slot: numbe
     <div style={{ flexShrink: 0, borderRadius: 10, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.surface, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: t.dark ? 'rgba(124,58,237,.18)' : 'linear-gradient(110deg,#EDE9FE,#DDD6FE)' }}>
         <span style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: t.dark ? '#c4b5fd' : '#6D28D9' }}>Counter Party {slot}</span>
-        {cp.badge && <span style={{ fontSize: 7, fontWeight: 800, padding: '2px 7px', borderRadius: 20, background: `linear-gradient(135deg,${badgeGrad})`, color: '#fff', textTransform: 'uppercase', letterSpacing: '.06em' }}>{cp.badge}</span>}
+        {cp.badge && <span style={{ fontSize: 7, fontWeight: 800, padding: '2px 7px', borderRadius: 20, background: `linear-gradient(135deg,${badgeGrad})`, color: '#fff', textTransform: 'uppercase', letterSpacing: '.06em' }}>{cp.badge === 'BUYER' ? 'CUSTOMER' : cp.badge}</span>}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px 6px' }}>
         <div style={{ width: 32, height: 32, borderRadius: 9, background: `linear-gradient(135deg,${cp.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 3px 8px rgba(79,70,229,.3)' }}><span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{cp.initials}</span></div>
@@ -2178,7 +2178,7 @@ function CpPicker({ t, slot, usedTypes = [], onClose, onPick }: { t: OpsTokens; 
                   <button key={tb} disabled={isUsed} onClick={() => { if (isUsed) return; setTab(tb); setSearch(''); }}
                     title={isUsed ? 'Already added — only one allowed' : undefined}
                     style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: 'none', cursor: isUsed ? 'not-allowed' : 'pointer', opacity: isUsed ? .4 : 1, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, textTransform: 'capitalize', background: tab === tb && !isUsed ? 'linear-gradient(135deg,#7C3AED,#6D28D9)' : 'transparent', color: tab === tb && !isUsed ? '#fff' : t.textMuted, boxShadow: tab === tb && !isUsed ? '0 2px 6px rgba(109,40,217,.3)' : 'none' }}>
-                    {tb}{isUsed ? ' ✓' : ''}
+                    {tb === 'buyer' ? 'Customer' : tb}{isUsed ? ' ✓' : ''}
                   </button>
                 );
               })}
@@ -2204,7 +2204,7 @@ function CpPicker({ t, slot, usedTypes = [], onClose, onPick }: { t: OpsTokens; 
                   </div>
                 </div>
               ))}
-              {!list.length && <div style={{ textAlign: 'center', padding: '28px 0', fontSize: 12, color: t.textMuted }}>{loading ? 'Loading…' : `No ${tab}s found`}</div>}
+              {!list.length && <div style={{ textAlign: 'center', padding: '28px 0', fontSize: 12, color: t.textMuted }}>{loading ? 'Loading…' : `No ${tab === 'buyer' ? 'customer' : tab}s found`}</div>}
             </div>
           </div>
         ) : (

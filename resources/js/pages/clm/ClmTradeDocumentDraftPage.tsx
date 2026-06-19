@@ -476,7 +476,7 @@ export default function ClmTradeDocumentDraftPage() {
                 Applicable Party <span className="tdw-req">*</span>
               </div>
               <div className="tdw-party-row">
-                <div className="tdw-party-label">BUYER & CONSIGNEE</div>
+                <div className="tdw-party-label">CUSTOMER & CONSIGNEE</div>
                 <div className="tdw-party-options">
                   {PARTY_BUYER_CONSIGNEE.map(p => (
                     <label key={p.value} className={`tdw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}>

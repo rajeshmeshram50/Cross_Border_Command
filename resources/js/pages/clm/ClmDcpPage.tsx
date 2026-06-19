@@ -350,7 +350,7 @@ export default function ClmDcpPage() {
                   <th style={{ width: 110, textAlign: 'center' }}>SEGMENT ID</th>
                   <th>SEGMENT NAME</th>
                   <th style={{ width: 130, textAlign: 'center' }}>REGULATORY STATUS</th>
-                  <th style={{ width: 140, textAlign: 'center' }}>BUYER ≠ CONSIGNEE</th>
+                  <th style={{ width: 140, textAlign: 'center' }}>CUSTOMER ≠ CONSIGNEE</th>
                   <th style={{ width: 180, textAlign: 'center' }}>AUTHORITIES</th>
                   <th style={{ width: 60, textAlign: 'center' }}>KYC</th>
                   <th style={{ width: 90, textAlign: 'center' }}>DUE DILIGENCE</th>

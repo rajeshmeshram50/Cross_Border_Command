@@ -679,7 +679,11 @@ class ClmAgreementController extends Controller
 
             $out[] = [
                 'db_id'            => $m->id,
+                // `name` is the catalog/type name (shared across docs); `title`
+                // is this document's own title. The popup shows the title as the
+                // primary label, falling back to name/code when blank.
                 'name'             => $m->name ?? ($m->title ?? $docCode),
+                'title'            => $m->title ?? ($m->name ?? $docCode),
                 'reference'        => $m->code ?? $docCode,
                 'doc_code'         => (string) $docCode,
                 // Highly-regulated trade docs read as required (REQ); less-reg

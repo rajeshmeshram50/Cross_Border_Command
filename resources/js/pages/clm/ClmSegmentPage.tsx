@@ -237,7 +237,7 @@ export default function ClmSegmentPage() {
                     <th style={{ width: 110, textAlign: 'center' }}>SEGMENT ID</th>
                     <th>SEGMENT NAME</th>
                     <th style={{ width: 170, textAlign: 'center' }}>REGULATORY STATUS</th>
-                    <th style={{ width: 150, textAlign: 'center' }}>BUYER ≠ CONSIGNEE</th>
+                    <th style={{ width: 150, textAlign: 'center' }}>CUSTOMER ≠ CONSIGNEE</th>
                     <th style={{ width: 90,  textAlign: 'center' }}>ACTIONS</th>
                   </tr></thead>
                   <tbody>
