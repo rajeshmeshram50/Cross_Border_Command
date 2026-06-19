@@ -540,6 +540,9 @@ export default function ClmBuyerProfilePage() {
   // Single-bucket documents popup — opened when a KYC / DD / TL / TD /
   // Agreements progress cell is clicked. Shows just that category as a card.
   const [docsPopup, setDocsPopup] = useState<{ ownerType: 'customer' | 'consignee'; ownerId: number; company: string; category: DocCategory } | null>(null);
+  // Segment "+N" popover — lists all segments for a row when the count badge
+  // is clicked (mirrors the DCP authorities badge popover).
+  const [segOpen, setSegOpen] = useState<{ key: string; names: string[]; x: number; y: number; flipUp: boolean } | null>(null);
   // "Consignees for this buyer" popup — opened from the CONSIGNEES count cell.
   const [consListBuyer, setConsListBuyer] = useState<BuyerRow | null>(null);
 
@@ -583,6 +586,29 @@ export default function ClmBuyerProfilePage() {
   const openConsDocs = (r: ConsRow, category: DocCategory) => {
     if (!r.db_id) return;
     setDocsPopup({ ownerType: 'consignee', ownerId: r.db_id, company: r.name, category });
+  };
+
+  // Toggle the segment "+N" popover for a row, positioned under (or above, when
+  // there's no room) the count badge. Mirrors the DCP authorities popover.
+  const toggleSegPop = (e: React.MouseEvent, key: string, names: string[]) => {
+    e.stopPropagation();
+    if (segOpen?.key === key) { setSegOpen(null); return; }
+    const b = e.currentTarget.getBoundingClientRect();
+    const estH = Math.min(280, 34 + names.length * 30);
+    const spaceBelow = window.innerHeight - b.bottom;
+    const flipUp = spaceBelow < estH + 12 && b.top > spaceBelow;
+    setSegOpen({ key, names, x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp });
+  };
+  // Render a segment cell as: first chip + a clickable "+N" badge.
+  const renderSegCell = (key: string, names: string[], sc: string, sb: string) => {
+    const segs = names.map((s) => s.trim()).filter(Boolean);
+    if (segs.length === 0) return <span style={{ fontSize: '10px', color: '#94a3b8' }}>—</span>;
+    return <>
+      <span style={{ fontSize: '8.5px', fontWeight: 600, color: sc, background: sb, border: '1px solid rgba(6,182,212,.15)', padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap' }}>{segs[0]}</span>
+      {segs.length > 1 && (
+        <button type="button" title="View all segments" onClick={(e) => toggleSegPop(e, key, segs)} style={{ fontSize: '8.5px', fontWeight: 800, color: '#fff', background: 'linear-gradient(135deg, #06b6d4, #0891b2)', padding: '2px 8px', borderRadius: '20px', whiteSpace: 'nowrap', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{segs.length - 1}</button>
+      )}
+    </>;
   };
 
   // ── Live data from GET /clm/buyer-profile ──
@@ -1156,7 +1182,7 @@ export default function ClmBuyerProfilePage() {
                             <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
                             <td style={{ padding: '9px 11px', textAlign: 'center', verticalAlign: 'middle', minWidth: '140px' }}>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', justifyContent: 'center', alignItems: 'center', width: '100%' }}>
-                                {r.seg.map((s) => <span key={s} style={{ fontSize: '8.5px', fontWeight: 600, color: r.sc, background: r.sb, border: '1px solid rgba(6,182,212,.15)', padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap' }}>{s.trim()}</span>)}
+                                {renderSegCell(`buyer-${r.id}`, r.seg, r.sc, r.sb)}
                               </div>
                             </td>
                             <td style={{ padding: '9px 11px', fontSize: '11px', color: '#475569', textAlign: 'center' }}>{r.country}</td>
@@ -1248,7 +1274,7 @@ export default function ClmBuyerProfilePage() {
                             <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
                             <td style={{ padding: '9px 11px', textAlign: 'center', verticalAlign: 'middle', minWidth: '140px' }}>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', justifyContent: 'center', alignItems: 'center', width: '100%' }}>
-                                {r.seg.split(',').map((s) => <span key={s} style={{ fontSize: '8.5px', fontWeight: 600, color: r.sc, background: r.sb, border: '1px solid rgba(6,182,212,.15)', padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap' }}>{s.trim()}</span>)}
+                                {renderSegCell(`cons-${r.id}`, r.seg.split(','), r.sc, r.sb)}
                               </div>
                             </td>
                             <td style={{ padding: '9px 11px', fontSize: '11px', color: '#475569', textAlign: 'center' }}>{r.country}</td>
@@ -1299,6 +1325,22 @@ export default function ClmBuyerProfilePage() {
           rows={bpConsData.filter((c) => c.cid === consListBuyer.id && !c.same_as_customer)}
           onClose={() => setConsListBuyer(null)}
         />
+      )}
+
+      {/* Segment "+N" popover — lists all segments for the clicked count badge. */}
+      {segOpen && createPortal(
+        <>
+          <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 200000 }} />
+          <div style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 240), top: segOpen.flipUp ? undefined : segOpen.y, bottom: segOpen.flipUp ? (window.innerHeight - segOpen.y) : undefined, zIndex: 200001, width: 220, maxHeight: 280, overflowY: 'auto', background: '#fff', borderRadius: 12, padding: 8, boxShadow: '0 18px 50px rgba(15,23,42,.30)', border: '1px solid rgba(6,182,212,.18)', fontFamily: "'DM Sans','Inter',system-ui,sans-serif" }}>
+            <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#0891b2', padding: '4px 8px 7px' }}>Segments ({segOpen.names.length})</div>
+            {segOpen.names.map((name, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '5px 8px', borderRadius: 8, background: i % 2 ? 'rgba(6,182,212,.05)' : 'transparent' }}>
+                <span style={{ fontSize: 10, fontWeight: 600, color: '#0c4a6e', wordBreak: 'break-word' }}>{name}</span>
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body
       )}
     </div>
   );
@@ -1365,7 +1407,7 @@ function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows:
                   <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
                   <td style={{ padding: '9px 11px', textAlign: 'center', minWidth: '140px' }}>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', justifyContent: 'center', alignItems: 'center' }}>
-                      {r.seg.split(',').filter(Boolean).map((s) => <span key={s} style={{ fontSize: '8.5px', fontWeight: 600, color: r.sc, background: r.sb, border: '1px solid rgba(6,182,212,.15)', padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap' }}>{s.trim()}</span>)}
+                      {renderSegCell(`txn-${r.id}`, r.seg.split(','), r.sc, r.sb)}
                     </div>
                   </td>
                   <td style={{ padding: '9px 11px', fontSize: '11px', color: '#475569', textAlign: 'center' }}>{r.country}</td>
