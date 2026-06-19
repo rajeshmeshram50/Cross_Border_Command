@@ -203,7 +203,7 @@ function useFillHeight(
  * Scoped CSS (extracted from the prototype)
  * ────────────────────────────────────────────────────────────────────────── */
 const BP_CSS = `
-.seg-page { background: #F4F6FB; min-height: calc(100vh - 56px); padding: 0; display:flex; flex-direction:column; gap:8px; }
+.seg-page { background: #F4F6FB; min-height: calc(100vh - 56px); padding: 0; display:flex; flex-direction:column; gap:8px; font-family: 'DM Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
 .seg-page-card {
   background: #fff;
   border: 1px solid rgba(6,182,212,.2);
@@ -243,7 +243,7 @@ const BP_CSS = `
 @media(max-width:1100px){.bref-box__body{grid-template-columns:repeat(4,1fr)}}
 @media(max-width:700px){.bref-box__body{grid-template-columns:repeat(2,1fr)}}
 .bpa-seg{display:flex;align-items:center;background:rgba(255,255,255,.6);border:1.5px solid rgba(6,182,212,.25);border-radius:11px;padding:4px;gap:3px;box-shadow:0 2px 8px rgba(6,182,212,.12),inset 0 1px 0 rgba(255,255,255,.9);}
-.bpa-tab{position:relative;height:40px;padding:0 18px;border-radius:9px;border:none;font-family:inherit;font-size:11.5px;font-weight:700;cursor:pointer;transition:all .2s cubic-bezier(.22,1,.36,1);letter-spacing:.01em;overflow:hidden;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;}
+.bpa-tab{position:relative;height:46px;padding:0 18px;border-radius:9px;border:none;font-family:inherit;font-size:11.5px;font-weight:700;cursor:pointer;transition:all .2s cubic-bezier(.22,1,.36,1);letter-spacing:.01em;overflow:hidden;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;}
 .bpa-tab::before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.2),transparent);border-radius:inherit;pointer-events:none;}
 .bpa-tab svg{flex-shrink:0;}
 .bpa-tab-active{background:linear-gradient(135deg,#06b6d4 0%,#0891b2 55%,#0e7490 100%);color:#fff;box-shadow:0 3px 12px rgba(6,182,212,.4),0 1px 4px rgba(8,145,178,.3);}
@@ -479,7 +479,8 @@ function ListPager({ page, total, perPage, noun, onPage }: { page: number; total
         <button style={{ ...navBtn, ...prevDis }} onClick={() => page > 1 && onPage(page - 1)}>
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
         </button>
-        {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => {
+        {/* Compact: current page + next page only (not every page number). */}
+        {[page, page + 1].filter((p) => p >= 1 && p <= totalPages).map((p) => {
           const isActive = p === page;
           return (
             <button key={p} onClick={() => onPage(p)} style={{
@@ -508,8 +509,16 @@ function TxnPager({ page, total, perPage, noun, onPage }: { page: number; total:
       <span style={{ fontSize: '11.5px', color: '#0e7490', fontWeight: 500 }}>
         Showing <b style={{ color: '#0c4a6e' }}>{start + 1}–{Math.min(start + perPage, total)}</b> of <b style={{ color: '#0c4a6e' }}>{total}</b> {noun}{total !== 1 ? 's' : ''}
       </span>
-      <div style={{ display: 'flex', gap: '4px' }}>
-        {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => {
+      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+        {/* Compact: < current next > (not every page number). */}
+        <button onClick={() => page > 1 && onPage(page - 1)} style={{
+          width: '28px', height: '28px', borderRadius: '7px', border: '1.5px solid rgba(6,182,212,.22)',
+          background: '#fff', color: '#0891b2', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center',
+          justifyContent: 'center', opacity: page === 1 ? .4 : 1, cursor: page === 1 ? 'default' : 'pointer',
+        }}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
+        </button>
+        {[page, page + 1].filter((p) => p >= 1 && p <= totalPages).map((p) => {
           const a = p === page;
           return (
             <button key={p} onClick={() => onPage(p)} style={{
@@ -521,6 +530,13 @@ function TxnPager({ page, total, perPage, noun, onPage }: { page: number; total:
             }}>{p}</button>
           );
         })}
+        <button onClick={() => page < totalPages && onPage(page + 1)} style={{
+          width: '28px', height: '28px', borderRadius: '7px', border: '1.5px solid rgba(6,182,212,.22)',
+          background: '#fff', color: '#0891b2', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center',
+          justifyContent: 'center', opacity: page === totalPages ? .4 : 1, cursor: page === totalPages ? 'default' : 'pointer',
+        }}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>
+        </button>
       </div>
     </div>
   );
@@ -593,6 +609,12 @@ export default function ClmBuyerProfilePage() {
   // there even with only a row or two.
   const buyerCardFill = useFillHeight(buyerCardRef, { deps: [bpaTab, partyAnalyticsOpen] });
   const consCardFill = useFillHeight(consCardRef, { deps: [bpaTab, partyAnalyticsOpen] });
+  // Transaction-wise tables (ws/wos · eq/neq): one card holds the active table,
+  // so a single dynamic page size + fill-height drives whichever is visible.
+  const txnCardRef = useRef<HTMLDivElement>(null);
+  const txnTableRef = useRef<HTMLDivElement>(null);
+  const txnPerPage = useDynamicPerPage(txnTableRef, { deps: [clmTab, txnAnalyticsOpen, shipTab, wsSub, wosSub, neqParty] });
+  const txnCardFill = useFillHeight(txnCardRef, { deps: [clmTab, txnAnalyticsOpen, shipTab, wsSub, wosSub, neqParty] });
   // Buyer / Consignee list search boxes (name · id · segment · country).
   const [buyerSearch, setBuyerSearch] = useState('');
   const [consSearch, setConsSearch] = useState('');
@@ -767,10 +789,14 @@ export default function ClmBuyerProfilePage() {
   const consPageSafe = Math.min(consPage, Math.max(1, Math.ceil(consListTotal / consPerPage)));
   const buyerSlice = buyerFiltered.slice((buyerPageSafe - 1) * bpPerPage, (buyerPageSafe - 1) * bpPerPage + bpPerPage);
   const consSlice = consFiltered.slice((consPageSafe - 1) * consPerPage, (consPageSafe - 1) * consPerPage + consPerPage);
-  const wsEqSlice = wsEqData.slice((wsEqPage - 1) * WS_PER_PAGE, (wsEqPage - 1) * WS_PER_PAGE + WS_PER_PAGE);
-  const wsNeqSlice = wsNeqData.slice((wsNeqPage - 1) * WS_PER_PAGE, (wsNeqPage - 1) * WS_PER_PAGE + WS_PER_PAGE);
-  const wosEqSlice = wosEqData.slice((wosEqPage - 1) * WOS_PER_PAGE, (wosEqPage - 1) * WOS_PER_PAGE + WOS_PER_PAGE);
-  const wosNeqSlice = wosNeqData.slice((wosNeqPage - 1) * WOS_PER_PAGE, (wosNeqPage - 1) * WOS_PER_PAGE + WOS_PER_PAGE);
+  const wsEqPageSafe = Math.min(wsEqPage, Math.max(1, Math.ceil(wsEqData.length / txnPerPage)));
+  const wsNeqPageSafe = Math.min(wsNeqPage, Math.max(1, Math.ceil(wsNeqData.length / txnPerPage)));
+  const wosEqPageSafe = Math.min(wosEqPage, Math.max(1, Math.ceil(wosEqData.length / txnPerPage)));
+  const wosNeqPageSafe = Math.min(wosNeqPage, Math.max(1, Math.ceil(wosNeqData.length / txnPerPage)));
+  const wsEqSlice = wsEqData.slice((wsEqPageSafe - 1) * txnPerPage, (wsEqPageSafe - 1) * txnPerPage + txnPerPage);
+  const wsNeqSlice = wsNeqData.slice((wsNeqPageSafe - 1) * txnPerPage, (wsNeqPageSafe - 1) * txnPerPage + txnPerPage);
+  const wosEqSlice = wosEqData.slice((wosEqPageSafe - 1) * txnPerPage, (wosEqPageSafe - 1) * txnPerPage + txnPerPage);
+  const wosNeqSlice = wosNeqData.slice((wosNeqPageSafe - 1) * txnPerPage, (wosNeqPageSafe - 1) * txnPerPage + txnPerPage);
 
   const rowBg = (i: number) => (i % 2 === 0 ? '#fff' : 'rgba(240,253,255,.45)');
 
@@ -919,8 +945,8 @@ export default function ClmBuyerProfilePage() {
           </div>
 
           {/* ── SHIPMENT TABS ── */}
-          <div className="seg-page-card" style={{ padding: 0, overflow: 'hidden', marginTop: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px 10px 20px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 30%,#d8f8fc 60%,#caf5fa 80%,#baf2f9 100%)', borderBottom: '1px solid #A5F3FC', minHeight: '52px' }}>
+          <div ref={txnCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', marginTop: '8px', display: 'flex', flexDirection: 'column', minHeight: txnCardFill }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px 10px 20px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 30%,#d8f8fc 60%,#caf5fa 80%,#baf2f9 100%)', borderBottom: '1px solid #A5F3FC', minHeight: '52px', flexShrink: 0 }}>
               <div className="bpa-seg">
                 <button className={`bpa-tab ${shipTab === 'with' ? 'bpa-tab-active' : 'bpa-tab-inactive'}`} onClick={() => setShipTab('with')}>
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>
@@ -940,14 +966,14 @@ export default function ClmBuyerProfilePage() {
 
             {/* With Shipment ID panel */}
             {shipTab === 'with' && (
-              <div style={{ display: 'block', background: 'linear-gradient(180deg,#f0fdff,#f8feff)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', padding: '8px 16px 0 16px', gap: 0, borderBottom: '1.5px solid rgba(6,182,212,.15)', background: 'linear-gradient(110deg,#f0fdff,#e8fbfd)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'linear-gradient(180deg,#f0fdff,#f8feff)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', padding: '8px 16px 0 16px', gap: 0, borderBottom: '1.5px solid rgba(6,182,212,.15)', background: 'linear-gradient(110deg,#f0fdff,#e8fbfd)', flexShrink: 0 }}>
                   <SubTab active={wsSub === 'eq'} kind="eq" onClick={() => setWsSub('eq')} />
                   <SubTab active={wsSub === 'neq'} kind="neq" onClick={() => setWsSub('neq')} />
                 </div>
 
                 {wsSub === 'eq' && (
-                  <div style={{ overflowX: 'auto' }}>
+                  <div ref={txnTableRef} style={{ overflow: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
                       <thead>
                         <tr style={txnTableHeaderRow}>
@@ -974,14 +1000,14 @@ export default function ClmBuyerProfilePage() {
                         })}
                       </tbody>
                     </table>
-                    <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)' }}>
-                      <TxnPager page={wsEqPage} total={wsEqData.length} perPage={WS_PER_PAGE} noun="shipment" onPage={setWsEqPage} />
+                    <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)', marginTop: 'auto', flexShrink: 0 }}>
+                      <TxnPager page={wsEqPageSafe} total={wsEqData.length} perPage={txnPerPage} noun="shipment" onPage={setWsEqPage} />
                     </div>
                   </div>
                 )}
 
                 {wsSub === 'neq' && (
-                  <div style={{ overflowX: 'auto' }}>
+                  <div ref={txnTableRef} style={{ overflow: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                     <div style={{ display: 'flex', gap: 6, padding: '10px 16px 2px' }}>
                       <button onClick={() => setNeqParty('buyer')} style={neqTabStyle(neqParty === 'buyer')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>Buyer Transactions</button>
                       <button onClick={() => setNeqParty('consignee')} style={neqTabStyle(neqParty === 'consignee')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>Consignee Transactions</button>
@@ -1015,8 +1041,8 @@ export default function ClmBuyerProfilePage() {
                         })}
                       </tbody>
                     </table>
-                    <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)' }}>
-                      <TxnPager page={wsNeqPage} total={wsNeqData.length} perPage={WS_PER_PAGE} noun="shipment" onPage={setWsNeqPage} />
+                    <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)', marginTop: 'auto', flexShrink: 0 }}>
+                      <TxnPager page={wsNeqPageSafe} total={wsNeqData.length} perPage={txnPerPage} noun="shipment" onPage={setWsNeqPage} />
                     </div>
                   </div>
                 )}
@@ -1025,14 +1051,14 @@ export default function ClmBuyerProfilePage() {
 
             {/* Without Shipment ID panel */}
             {shipTab === 'without' && (
-              <div style={{ display: 'block', background: 'linear-gradient(180deg,#f0fdff,#f8feff)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', padding: '8px 16px 0 16px', gap: 0, borderBottom: '1.5px solid rgba(6,182,212,.15)', background: 'linear-gradient(110deg,#f0fdff,#e8fbfd)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'linear-gradient(180deg,#f0fdff,#f8feff)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', padding: '8px 16px 0 16px', gap: 0, borderBottom: '1.5px solid rgba(6,182,212,.15)', background: 'linear-gradient(110deg,#f0fdff,#e8fbfd)', flexShrink: 0 }}>
                   <SubTab active={wosSub === 'eq'} kind="eq" onClick={() => setWosSub('eq')} />
                   <SubTab active={wosSub === 'neq'} kind="neq" onClick={() => setWosSub('neq')} />
                 </div>
 
                 {wosSub === 'eq' && (
-                  <div style={{ overflowX: 'auto' }}>
+                  <div ref={txnTableRef} style={{ overflow: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
                       <thead>
                         <tr style={txnTableHeaderRow}>
@@ -1062,14 +1088,14 @@ export default function ClmBuyerProfilePage() {
                         })}
                       </tbody>
                     </table>
-                    <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)' }}>
-                      <TxnPager page={wosEqPage} total={wosEqData.length} perPage={WOS_PER_PAGE} noun="transaction" onPage={setWosEqPage} />
+                    <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)', marginTop: 'auto', flexShrink: 0 }}>
+                      <TxnPager page={wosEqPageSafe} total={wosEqData.length} perPage={txnPerPage} noun="transaction" onPage={setWosEqPage} />
                     </div>
                   </div>
                 )}
 
                 {wosSub === 'neq' && (
-                  <div style={{ overflowX: 'auto' }}>
+                  <div ref={txnTableRef} style={{ overflow: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                     <div style={{ display: 'flex', gap: 6, padding: '10px 16px 2px' }}>
                       <button onClick={() => setNeqParty('buyer')} style={neqTabStyle(neqParty === 'buyer')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>Buyer Transactions</button>
                       <button onClick={() => setNeqParty('consignee')} style={neqTabStyle(neqParty === 'consignee')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>Consignee Transactions</button>
@@ -1106,8 +1132,8 @@ export default function ClmBuyerProfilePage() {
                         })}
                       </tbody>
                     </table>
-                    <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)' }}>
-                      <TxnPager page={wosNeqPage} total={wosNeqData.length} perPage={WOS_PER_PAGE} noun="transaction" onPage={setWosNeqPage} />
+                    <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)', marginTop: 'auto', flexShrink: 0 }}>
+                      <TxnPager page={wosNeqPageSafe} total={wosNeqData.length} perPage={txnPerPage} noun="transaction" onPage={setWosNeqPage} />
                     </div>
                   </div>
                 )}
@@ -1123,7 +1149,8 @@ export default function ClmBuyerProfilePage() {
           {/* ANALYTICAL CARDS */}
           <div className="seg-page-card" style={{ padding: 0, overflow: 'hidden' }}>
             <div style={{ position: 'relative' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 8px 16px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 30%,#d8f8fc 60%,#caf5fa 80%,#baf2f9 100%)', borderBottom: '1px solid #A5F3FC', minHeight: '48px' }}>
+              <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', background: 'linear-gradient(180deg,#67e8f9,#0891b2,#0e7490)', zIndex: 10, borderRadius: '14px 0 0 14px' }} />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 8px 20px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 30%,#d8f8fc 60%,#caf5fa 80%,#baf2f9 100%)', borderBottom: '1px solid #A5F3FC', minHeight: '48px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.32)' }}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /><line x1="0" y1="20" x2="24" y2="20" /></svg>
@@ -1215,12 +1242,12 @@ export default function ClmBuyerProfilePage() {
                     <span style={{ fontSize: '8px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.1)', border: '1px solid rgba(6,182,212,.22)', padding: '3px 10px', borderRadius: '20px', letterSpacing: '.02em' }}>{buyerListTotal} records</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', height: '36px', padding: '0 12px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', height: '38px', padding: '0 12px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)' }}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-                      <input type="text" placeholder="Search by name, segment, country, ID..." value={buyerSearch} onChange={(e) => { setBuyerSearch(e.target.value); setBuyerPage(1); }} style={{ border: 'none', outline: 'none', fontSize: '11px', fontFamily: 'inherit', color: '#0c4a6e', width: '280px', background: 'transparent' }} />
+                      <input type="text" placeholder="Search by name, segment, country, ID..." value={buyerSearch} onChange={(e) => { setBuyerSearch(e.target.value); setBuyerPage(1); }} style={{ border: 'none', outline: 'none', fontSize: '11.5px', fontFamily: 'inherit', color: '#0c4a6e', width: '280px', background: 'transparent' }} />
                     </div>
                     {/* International / Domestic buyer scope */}
-                    <div style={{ display: 'flex', gap: '3px', padding: '3px', height: '36px', borderRadius: '9px', background: 'rgba(6,182,212,.08)', border: '1.5px solid #A5F3FC' }}>
+                    <div style={{ display: 'flex', gap: '3px', padding: '3px', height: '38px', borderRadius: '9px', background: 'rgba(6,182,212,.08)', border: '1.5px solid #A5F3FC' }}>
                       {([['international', 'International Buyers'], ['domestic', 'Domestic Buyers']] as const).map(([key, label]) => {
                         const on = buyerScope === key;
                         return (
@@ -1306,12 +1333,12 @@ export default function ClmBuyerProfilePage() {
                     <span style={{ fontSize: '8px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.1)', border: '1px solid rgba(6,182,212,.22)', padding: '3px 10px', borderRadius: '20px', letterSpacing: '.02em' }}>{consListTotal} records</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', height: '36px', padding: '0 12px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', height: '38px', padding: '0 12px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)' }}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-                      <input type="text" placeholder="Search by name, segment, country, ID..." value={consSearch} onChange={(e) => { setConsSearch(e.target.value); setConsPage(1); }} style={{ border: 'none', outline: 'none', fontSize: '11px', fontFamily: 'inherit', color: '#0c4a6e', width: '280px', background: 'transparent' }} />
+                      <input type="text" placeholder="Search by name, segment, country, ID..." value={consSearch} onChange={(e) => { setConsSearch(e.target.value); setConsPage(1); }} style={{ border: 'none', outline: 'none', fontSize: '11.5px', fontFamily: 'inherit', color: '#0c4a6e', width: '280px', background: 'transparent' }} />
                     </div>
                     {/* International / Domestic consignee scope */}
-                    <div style={{ display: 'flex', gap: '3px', padding: '3px', height: '36px', borderRadius: '9px', background: 'rgba(6,182,212,.08)', border: '1.5px solid #A5F3FC' }}>
+                    <div style={{ display: 'flex', gap: '3px', padding: '3px', height: '38px', borderRadius: '9px', background: 'rgba(6,182,212,.08)', border: '1.5px solid #A5F3FC' }}>
                       {([['international', 'International Consignees'], ['domestic', 'Domestic Consignees']] as const).map(([key, label]) => {
                         const on = consScope === key;
                         return (
