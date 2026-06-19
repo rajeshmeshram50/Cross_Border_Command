@@ -8,7 +8,7 @@
         /* Reserve a bottom band on every page for the fixed footer so it
        never overlaps content. */
         @page {
-            margin-bottom: 34px;
+            margin-bottom: 48px;
         }
 
         .pdf-footer {
@@ -18,7 +18,7 @@
             left: 0;
             right: 0;
             width: 100%;
-            height: 30px;
+            height: 40px;
             /* Thin top border in the tenant's primary brand colour (same as
                the table headers / section rules); falls back to the reference
                green only when the branch has no brand colour set. */
@@ -1275,9 +1275,10 @@ if (isset($pdf)) {
     $x     = ($pdf->get_width() - $width) / 2 + 2;
     // Sits just under the footer strip. Larger subtraction = higher up (closer
     // to the footer line), which tightens the gap below the barcode/company row.
-    // Restored to the taller footer band (height 30, @page margin-bottom 34) so
-    // the page-number line clears the company strip and the footer has more room.
-    $y     = $pdf->get_height() - 22;
+    // Taller footer band (height 40, @page margin-bottom 48) — the page-number
+    // line sits higher (−30) so it has clearance above the bottom edge and is
+    // no longer clipped to a thin sliver.
+    $y     = $pdf->get_height() - 30;
     $pdf->page_text($x, $y, $text, $font, $size, [0.30, 0.30, 0.30]);
 }
 </script>

@@ -1,10 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import * as pdfjsLib from 'pdfjs-dist';
+// Vite-friendly worker URL — same setup the CTC sign-position modal uses.
+import PdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { type AtaContract, inits, pad2, PER_PAGE } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
 import { ShimmerTable } from '../../components/ui/Shimmer';
 import Tooltip from '../../components/ui/Tooltip';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = PdfjsWorker as unknown as string;
 
 /** To-approve rows from GET /clm/ctc-contracts/to-approve (AtaContract + db id). */
 type AtaRow = AtaContract & { dbId: number };
@@ -50,7 +55,9 @@ export default function ClmAgreementsToApprovePage() {
   const [tab, setTab]   = useState<AtaTab>('pending');
   const [page, setPage] = useState(1);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [actionChoice, setActionChoice] = useState<'clarify' | 'reject' | null>(null);
   const [convoId, setConvoId]   = useState<string | null>(null);
+  const [reviewId, setReviewId] = useState<string | null>(null);
   const [ata, setAta]   = useState<AtaRow[]>([]);
   const [loading, setLoading] = useState(true);
   const load = () => {
@@ -73,34 +80,16 @@ export default function ClmAgreementsToApprovePage() {
   const list = useMemo(() => tab === 'all' ? ata : ata.filter(c => c.status === tab), [ata, tab]);
   const actionContract = ata.find(c => c.id === actionId) || null;
   const convoContract = ata.find(c => c.id === convoId) || null;
+  const reviewContract = ata.find(c => c.id === reviewId) || null;
 
   const doApprove = async (id: string) => {
     const row = ata.find(c => c.id === id); if (!row?.dbId) return;
     try { await api.post(`/clm/ctc-contracts/${row.dbId}/approve`); toast.success('Agreement approved', 'Approved successfully'); load(); }
     catch { toast.error('Could not approve', 'Please try again.'); }
   };
-  // Open the exact draft that was submitted for approval as a PDF in a new
-  // tab. Reuses the CTC preview renderer (page-shell + body) the signing
-  // flow uses, so the approver reads the same document the counterparty will.
-  // The blank tab is opened synchronously inside the click handler so the
-  // browser doesn't treat the post-fetch navigation as a blocked popup.
-  const doView = async (id: string) => {
-    const row = ata.find(c => c.id === id); if (!row?.dbId) return;
-    const tab = window.open('', '_blank');
-    if (tab) { try { tab.document.write('Loading agreement…'); } catch { /* cross-origin guard */ } }
-    try {
-      const res = await api.post('/clm/signature-requests/ctc-preview', { contract_id: row.dbId }, { responseType: 'blob' });
-      const url = URL.createObjectURL(res.data as Blob);
-      if (tab) tab.location.href = url; else window.open(url, '_blank');
-      // Give the tab time to load the blob before releasing the object URL.
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch {
-      if (tab) tab.close();
-      toast.error('Could not open', 'Failed to render the agreement PDF.');
-    }
-  };
   const doAction = async (id: string, mode: 'clarification' | 'rejected', comment: string) => {
-    const row = ata.find(c => c.id === id); setActionId(null); if (!row?.dbId) return;
+    // Action submitted → close both the action popup AND the review PDF behind it.
+    const row = ata.find(c => c.id === id); setActionId(null); setActionChoice(null); setReviewId(null); if (!row?.dbId) return;
     try {
       if (mode === 'rejected') { await api.post(`/clm/ctc-contracts/${row.dbId}/reject`, { reason: comment }); toast.error('Agreement rejected', 'Sent back to initiator'); }
       else { await api.post(`/clm/ctc-contracts/${row.dbId}/clarify`, { query: comment }); toast.info('Clarification raised', 'Sent to initiator'); }
@@ -180,11 +169,23 @@ export default function ClmAgreementsToApprovePage() {
         {loading
           ? <ShimmerTable rows={6} cols={9} />
           : tab === 'clarification'
-          ? <ClarificationTable rows={list} page={page} setPage={setPage} onApprove={doApprove} onAction={setActionId} onView={doView} onConvo={setConvoId} t={t} />
-          : <StandardTable rows={list} tab={tab} page={page} setPage={setPage} onApprove={doApprove} onAction={setActionId} onView={doView} onConvo={setConvoId} t={t} />}
+          ? <ClarificationTable rows={list} page={page} setPage={setPage} onReview={setReviewId} onConvo={setConvoId} t={t} />
+          : <StandardTable rows={list} tab={tab} page={page} setPage={setPage} onReview={setReviewId} onConvo={setConvoId} t={t} />}
       </div>
 
-      {actionContract && <TakeActionModal contract={actionContract} onClose={() => setActionId(null)} onSubmit={doAction} t={t} />}
+      {reviewContract && (
+        <ReviewApproveModal
+          contract={reviewContract}
+          onClose={() => setReviewId(null)}
+          onApprove={(id) => { setReviewId(null); doApprove(id); }}
+          /* Keep the review modal mounted behind — the clarify/reject popup
+             stacks ON TOP of the PDF, so cancelling returns to the document. */
+          onClarify={(id) => { setActionChoice('clarify'); setActionId(id); }}
+          onReject={(id) => { setActionChoice('reject'); setActionId(id); }}
+          t={t}
+        />
+      )}
+      {actionContract && <TakeActionModal contract={actionContract} initialChoice={actionChoice} onClose={() => { setActionId(null); setActionChoice(null); }} onSubmit={doAction} t={t} />}
       {convoContract && <ConversationModal contract={convoContract} onClose={() => setConvoId(null)} t={t} />}
     </div>
   );
@@ -229,32 +230,18 @@ function Pager({ total, page, setPage, t }: { total: number; page: number; setPa
   );
 }
 
-function ApproveBtn({ active, onClick }: { active: boolean; onClick: () => void }) {
+/* Opens the Review & Approve modal (read the PDF, then approve / reject /
+   clarify). Named for what it does — it doesn't approve directly. */
+function ReviewBtn({ active, onClick }: { active: boolean; onClick: () => void }) {
   return (
-    <button disabled={!active} onClick={onClick} title="Approve" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 8, border: active ? 'none' : '1.5px solid #E2E8F0', background: active ? 'linear-gradient(135deg,#10b981,#059669)' : '#F8FAFC', color: active ? '#fff' : '#CBD5E1', fontFamily: 'inherit', fontSize: 9.5, fontWeight: active ? 700 : 600, cursor: active ? 'pointer' : 'not-allowed', boxShadow: active ? '0 2px 7px rgba(16,185,129,.35)' : 'none', whiteSpace: 'nowrap', opacity: active ? 1 : .6 }}>
-      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : '#CBD5E1'} strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg> Approve
+    <button disabled={!active} onClick={onClick} title="Review & Approve" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, border: active ? 'none' : '1.5px solid #E2E8F0', background: active ? 'linear-gradient(135deg,#0891b2,#0e7490)' : '#F8FAFC', color: active ? '#fff' : '#CBD5E1', fontFamily: 'inherit', fontSize: 9.5, fontWeight: active ? 700 : 600, cursor: active ? 'pointer' : 'not-allowed', boxShadow: active ? '0 2px 7px rgba(8,145,178,.35)' : 'none', whiteSpace: 'nowrap', opacity: active ? 1 : .6 }}>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : '#CBD5E1'} strokeWidth="2" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg> Review &amp; Approve
     </button>
   );
 }
 
-function TakeActionBtn({ active, onClick }: { active: boolean; onClick: () => void }) {
-  return (
-    <button disabled={!active} onClick={onClick} title="Take Action" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 8, border: active ? 'none' : '1.5px solid #E2E8F0', background: active ? 'linear-gradient(135deg,#0891b2,#0e7490)' : '#F8FAFC', color: active ? '#fff' : '#94A3B8', fontFamily: 'inherit', fontSize: 9.5, fontWeight: active ? 700 : 600, cursor: active ? 'pointer' : 'not-allowed', boxShadow: active ? '0 2px 7px rgba(8,145,178,.35)' : 'none', whiteSpace: 'nowrap', opacity: active ? 1 : .7 }}>
-      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : '#94A3B8'} strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg> Take Action
-    </button>
-  );
-}
-
-function ViewBtn({ onClick, t }: { onClick: () => void; t: OpsTokens }) {
-  const base = t.dark ? 'rgba(6,182,212,.12)' : '#F0FDFF';
-  const hov  = t.dark ? 'rgba(6,182,212,.22)' : '#CFFAFE';
-  return (
-    <button onClick={onClick} title="View Agreement" style={{ width: 30, height: 30, borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.3)' : '#A5F3FC'}`, background: base, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#0891b2', transition: 'all .13s', flexShrink: 0 }}
-      onMouseEnter={e => (e.currentTarget.style.background = hov)} onMouseLeave={e => (e.currentTarget.style.background = base)}>
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
-    </button>
-  );
-}
+/* View + Take Action buttons removed — the Review & Approve modal now handles
+   viewing the PDF and all three actions (clarify / reject / approve). */
 
 /* Chat-bubble button → opens the clarification conversation thread for a row.
  * Cyan tones to match the Agreements-to-Approve page theme. */
@@ -269,7 +256,7 @@ function ConvoBtn({ onClick, t }: { onClick: () => void; t: OpsTokens }) {
   );
 }
 
-function StandardTable({ rows, tab, page, setPage, onApprove, onAction, onView, onConvo, t }: { rows: AtaContract[]; tab: AtaTab; page: number; setPage: (n: number) => void; onApprove: (id: string) => void; onAction: (id: string) => void; onView: (id: string) => void; onConvo: (id: string) => void; t: OpsTokens }) {
+function StandardTable({ rows, tab, page, setPage, onReview, onConvo, t }: { rows: AtaContract[]; tab: AtaTab; page: number; setPage: (n: number) => void; onReview: (id: string) => void; onConvo: (id: string) => void; t: OpsTokens }) {
   const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const safe = Math.min(page, totalPages);
   const start = (safe - 1) * PER_PAGE;
@@ -300,7 +287,7 @@ function StandardTable({ rows, tab, page, setPage, onApprove, onAction, onView, 
             <th style={{ ...THL, width: 120 }}>CREATED BY</th>
             <th style={{ ...THL, width: 120 }}>APPROVER</th>
             <th style={{ ...TH, width: 120 }}>STATUS</th>
-            <th style={isRej ? { ...THL } : { ...TH }}>{isRej ? 'REJECTION REASON' : '—'}</th>
+            {isRej && <th style={THL}>REJECTION REASON</th>}
             <th style={{ ...TH, width: 100 }}>EXPIRY DATE</th>
             <th style={{ ...TH, width: 185 }}>ACTION</th>
           </tr></thead>
@@ -322,17 +309,13 @@ function StandardTable({ rows, tab, page, setPage, onApprove, onAction, onView, 
                   <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A5F3FC,#67E8F9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #CFFAFE' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0e7490' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                   <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(c.approver)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.approver}</span></div></td>
                   <td style={TD_C}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 20, background: sb.bg, border: `1.5px solid ${sb.border}`, whiteSpace: 'nowrap' }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: s.dot, flexShrink: 0 }} /><span style={{ fontSize: 10.5, fontWeight: 700, color: sb.text }}>{s.label}</span></span></td>
-                  {isRej
-                    ? <td style={{ ...TD_L, maxWidth: 180 }}><Tooltip label={c.rejReason ?? ''}><div style={{ fontSize: 10.5, color: '#DC2626', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 175 }}>{c.rejReason}</div></Tooltip></td>
-                    : <td style={TD_C}><span style={{ color: '#C4B5FD', fontSize: 11 }}>—</span></td>}
+                  {isRej && <td style={{ ...TD_L, maxWidth: 180 }}><Tooltip label={c.rejReason ?? ''}><div style={{ fontSize: 10.5, color: '#DC2626', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 175 }}>{c.rejReason}</div></Tooltip></td>}
                   <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.expDate}</span></td>
                   <td style={TD_C}>
                     {actionable ? (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
                         {c.clarifications.length > 0 && <ConvoBtn onClick={() => onConvo(c.id)} t={t} />}
-                        <ViewBtn onClick={() => onView(c.id)} t={t} />
-                        <ApproveBtn active onClick={() => onApprove(c.id)} />
-                        <TakeActionBtn active onClick={() => onAction(c.id)} />
+                        <ReviewBtn active onClick={() => onReview(c.id)} />
                       </div>
                     ) : (
                       <span style={{ fontSize: 9.5, fontWeight: 600, color: c.status === 'approved' ? '#059669' : '#DC2626' }}>{c.status === 'approved' ? '✓ Approved' : '✕ Rejected'}</span>
@@ -349,7 +332,7 @@ function StandardTable({ rows, tab, page, setPage, onApprove, onAction, onView, 
   );
 }
 
-function ClarificationTable({ rows, page, setPage, onApprove, onAction, onView, onConvo, t }: { rows: AtaContract[]; page: number; setPage: (n: number) => void; onApprove: (id: string) => void; onAction: (id: string) => void; onView: (id: string) => void; onConvo: (id: string) => void; t: OpsTokens }) {
+function ClarificationTable({ rows, page, setPage, onReview, onConvo, t }: { rows: AtaContract[]; page: number; setPage: (n: number) => void; onReview: (id: string) => void; onConvo: (id: string) => void; t: OpsTokens }) {
   const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const safe = Math.min(page, totalPages);
   const start = (safe - 1) * PER_PAGE;
@@ -398,9 +381,7 @@ function ClarificationTable({ rows, page, setPage, onApprove, onAction, onView, 
                   <td style={TD_C}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, flexWrap: 'nowrap' }}>
                       <ConvoBtn onClick={() => onConvo(c.id)} t={t} />
-                      <ViewBtn onClick={() => onView(c.id)} t={t} />
-                      <ApproveBtn active={hasResp} onClick={() => onApprove(c.id)} />
-                      <TakeActionBtn active={hasResp} onClick={() => onAction(c.id)} />
+                      <ReviewBtn active={hasResp} onClick={() => onReview(c.id)} />
                     </div>
                   </td>
                 </tr>
@@ -415,8 +396,8 @@ function ClarificationTable({ rows, page, setPage, onApprove, onAction, onView, 
 }
 
 /* ── Take Action modal (Raise Clarification / Reject) ── */
-function TakeActionModal({ contract, onClose, onSubmit, t }: { contract: AtaContract; onClose: () => void; onSubmit: (id: string, mode: 'clarification' | 'rejected', comment: string) => void; t: OpsTokens }) {
-  const [choice, setChoice] = useState<'clarify' | 'reject' | null>(null);
+function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, t }: { contract: AtaContract; onClose: () => void; onSubmit: (id: string, mode: 'clarification' | 'rejected', comment: string) => void; initialChoice?: 'clarify' | 'reject' | null; t: OpsTokens }) {
+  const [choice, setChoice] = useState<'clarify' | 'reject' | null>(initialChoice);
   const [comment, setComment] = useState('');
   const [err, setErr] = useState(false);
 
@@ -436,7 +417,7 @@ function TakeActionModal({ contract, onClose, onSubmit, t }: { contract: AtaCont
             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
               <div style={{ width: 46, height: 46, borderRadius: 14, background: 'rgba(255,255,255,.2)', border: '1.5px solid rgba(255,255,255,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0,0,0,.15)' }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg></div>
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}><span style={{ fontSize: 9, fontWeight: 800, color: 'rgba(255,255,255,.65)', letterSpacing: '.16em', textTransform: 'uppercase' }}>{contract.id}</span><span style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(255,255,255,.4)' }} /><span style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,.65)', letterSpacing: '.1em', textTransform: 'uppercase' }}>Review Action</span></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}><span style={{ fontSize: 9, fontWeight: 800, color: 'rgba(255,255,255,.65)', letterSpacing: '.16em', textTransform: 'uppercase' }}>{contract.id}</span><span style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(255,255,255,.4)' }} /><span style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,.65)', letterSpacing: '.1em', textTransform: 'uppercase' }}>{initialChoice === 'clarify' ? 'Raise Clarification' : initialChoice === 'reject' ? 'Reject Agreement' : 'Review Action'}</span></div>
                 <div style={{ fontSize: 18, fontWeight: 900, color: '#fff', letterSpacing: '-.4px', lineHeight: 1.15, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contract.title}</div>
               </div>
             </div>
@@ -453,15 +434,21 @@ function TakeActionModal({ contract, onClose, onSubmit, t }: { contract: AtaCont
 
         {/* Body */}
         <div style={{ padding: '20px 24px 22px', background: t.surface, overflowY: 'auto' }}>
-          <div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: t.textMuted, marginBottom: 12 }}>Choose Action</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
-            <ChoiceCard sel={choice === 'clarify'} onClick={() => { setChoice('clarify'); setErr(false); }} grad="#7C3AED,#5B21B6" selBg={t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'} selBd={t.dark ? 'rgba(124,58,237,.5)' : '#C4B5FD'} baseBg={t.dark ? 'rgba(124,58,237,.08)' : '#FAF5FF'} baseBd={t.dark ? 'rgba(124,58,237,.22)' : '#E8E4F9'} title="Raise Clarification" titleColor={t.dark ? '#ddd6fe' : '#3B0764'} sub="Request more info or details from the agreement initiator." subColor={t.dark ? '#c4b5fd' : '#7C3AED'}
-              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>} />
-            <ChoiceCard sel={choice === 'reject'} onClick={() => { setChoice('reject'); setErr(false); }} grad="#EF4444,#DC2626" selBg={t.dark ? 'rgba(239,68,68,.18)' : '#FEE2E2'} selBd={t.dark ? 'rgba(239,68,68,.5)' : '#FCA5A5'} baseBg={t.dark ? 'rgba(239,68,68,.07)' : '#FEF2F2'} baseBd={t.dark ? 'rgba(239,68,68,.2)' : '#FEE2E2'} title="Reject Agreement" titleColor={t.dark ? '#fca5a5' : '#7F1D1D'} sub="Decline this agreement and notify the initiator with your reason." subColor={t.dark ? '#f87171' : '#DC2626'}
-              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>} />
-          </div>
-          <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textMuted, marginBottom: 7 }}>Comment / Reason <span style={{ color: '#EF4444' }}>*</span></div>
-          <textarea value={comment} onChange={e => { setComment(e.target.value); setErr(false); }} placeholder="Enter your clarification query or rejection reason…"
+          {/* When a specific action was chosen from the Review modal, this popup
+              is single-purpose — the Choose-Action cards are hidden entirely. */}
+          {!initialChoice && (
+            <>
+              <div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: t.textMuted, marginBottom: 12 }}>Choose Action</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+                <ChoiceCard sel={choice === 'clarify'} onClick={() => { setChoice('clarify'); setErr(false); }} grad="#7C3AED,#5B21B6" selBg={t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'} selBd={t.dark ? 'rgba(124,58,237,.5)' : '#C4B5FD'} baseBg={t.dark ? 'rgba(124,58,237,.08)' : '#FAF5FF'} baseBd={t.dark ? 'rgba(124,58,237,.22)' : '#E8E4F9'} title="Raise Clarification" titleColor={t.dark ? '#ddd6fe' : '#3B0764'} sub="Request more info or details from the agreement initiator." subColor={t.dark ? '#c4b5fd' : '#7C3AED'}
+                  icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>} />
+                <ChoiceCard sel={choice === 'reject'} onClick={() => { setChoice('reject'); setErr(false); }} grad="#EF4444,#DC2626" selBg={t.dark ? 'rgba(239,68,68,.18)' : '#FEE2E2'} selBd={t.dark ? 'rgba(239,68,68,.5)' : '#FCA5A5'} baseBg={t.dark ? 'rgba(239,68,68,.07)' : '#FEF2F2'} baseBd={t.dark ? 'rgba(239,68,68,.2)' : '#FEE2E2'} title="Reject Agreement" titleColor={t.dark ? '#fca5a5' : '#7F1D1D'} sub="Decline this agreement and notify the initiator with your reason." subColor={t.dark ? '#f87171' : '#DC2626'}
+                  icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>} />
+              </div>
+            </>
+          )}
+          <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textMuted, marginBottom: 7 }}>{choice === 'reject' ? 'Rejection Reason' : choice === 'clarify' ? 'Clarification Query' : 'Comment / Reason'} <span style={{ color: '#EF4444' }}>*</span></div>
+          <textarea value={comment} onChange={e => { setComment(e.target.value); setErr(false); }} placeholder={choice === 'reject' ? 'Enter the reason for rejecting this agreement…' : choice === 'clarify' ? 'Enter your clarification query for the initiator…' : 'Enter your clarification query or rejection reason…'}
             style={{ width: '100%', height: 85, padding: '11px 13px', border: `1.5px solid ${err && !comment.trim() ? '#EF4444' : t.searchBorder}`, borderRadius: 11, fontFamily: 'inherit', fontSize: 12, color: t.text, resize: 'none', outline: 'none', lineHeight: 1.55, background: t.searchBg, boxSizing: 'border-box' }} />
           {err && !choice && <div style={{ fontSize: 9, color: '#EF4444', marginTop: 6, fontWeight: 600 }}>Please choose an action.</div>}
           <button onClick={submit} style={{ width: '100%', marginTop: 12, padding: 13, borderRadius: 12, border: 'none', background: choice === 'reject' ? 'linear-gradient(135deg,#EF4444,#DC2626)' : 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', color: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '0 4px 16px rgba(6,182,212,.4)', letterSpacing: '-.1px' }}>
@@ -550,6 +537,216 @@ function ConversationModal({ contract, onClose, t }: { contract: AtaContract; on
   );
 }
 
+/* ── Review & Approve modal — a page-by-page agreement reader. One page is
+ *    shown at a time with prev/next navigation; the three action buttons stay
+ *    locked until every page has been viewed (maxSeen reaches the last page). ── */
+function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject, t }: {
+  contract: AtaRow; onClose: () => void; onApprove: (id: string) => void; onClarify: (id: string) => void; onReject: (id: string) => void; t: OpsTokens;
+}) {
+  const toast = useToast();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [numPages, setNumPages] = useState(0);
+  const [activePage, setActivePage] = useState(1);
+  const [maxSeen, setMaxSeen] = useState(1);
+  const docRef = useRef<{ numPages: number; getPage: (n: number) => Promise<any> } | null>(null);
+  const blobRef = useRef<Blob | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+
+  const reachedEnd = numPages > 0 && maxSeen >= numPages;
+
+  // Download the agreement PDF (the same blob we're previewing).
+  const downloadPdf = () => {
+    if (!blobRef.current) return;
+    const url = URL.createObjectURL(blobRef.current);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${contract.id || 'agreement'}.pdf`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  };
+
+  // Action buttons stay tappable even when locked — tapping before the full
+  // agreement is read shows a toaster instead of doing nothing.
+  const guard = (fn: (id: string) => void) => {
+    if (!reachedEnd) { toast.warning('Read the full agreement', 'Please read all pages before taking an action.'); return; }
+    fn(contract.id);
+  };
+  const progressPct = numPages > 0 ? Math.round((maxSeen / numPages) * 100) : 0;
+
+  // Load the PDF document once.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.post('/clm/signature-requests/ctc-preview', { contract_id: contract.dbId }, { responseType: 'blob' });
+        if (cancelled) return;
+        blobRef.current = res.data as Blob;
+        const buf = await (res.data as Blob).arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+        if (cancelled) return;
+        docRef.current = pdf as unknown as { numPages: number; getPage: (n: number) => Promise<any> };
+        setNumPages(pdf.numPages);
+        setActivePage(1);
+        setMaxSeen(1);
+        setLoading(false);
+      } catch { if (!cancelled) { setError(true); setLoading(false); } }
+    })();
+    return () => { cancelled = true; };
+  }, [contract.dbId]);
+
+  // Paint the active page onto the canvas, fit to the stage width.
+  useEffect(() => {
+    if (loading) return;
+    const doc = docRef.current; const canvas = canvasRef.current; const stage = stageRef.current;
+    if (!doc || !canvas || !stage) return;
+    let cancelled = false;
+    (async () => {
+      const page = await doc.getPage(activePage);
+      if (cancelled) return;
+      const base = page.getViewport({ scale: 1 });
+      const avail = Math.max(280, stage.clientWidth - 56);
+      const scale = Math.min(1.7, avail / base.width);
+      const vp = page.getViewport({ scale });
+      canvas.width = Math.floor(vp.width);
+      canvas.height = Math.floor(vp.height);
+      canvas.style.width = '100%';
+      canvas.style.height = 'auto';
+      const ctx = canvas.getContext('2d');
+      if (ctx) await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    })();
+    return () => { cancelled = true; };
+  }, [activePage, loading]);
+
+  const go = (n: number) => {
+    const next = Math.min(numPages, Math.max(1, n));
+    setActivePage(next);
+    setMaxSeen(m => Math.max(m, next));
+  };
+
+  // Keyboard navigation.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight') go(activePage + 1);
+      else if (e.key === 'ArrowLeft') go(activePage - 1);
+      else if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activePage, numPages]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const navBtn = (dir: 'prev' | 'next'): React.CSSProperties => {
+    const disabled = dir === 'prev' ? activePage <= 1 : activePage >= numPages;
+    const pulse = dir === 'next' && !reachedEnd && !disabled;
+    return {
+      width: 44, height: 44, borderRadius: '50%', border: 'none', flexShrink: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.3 : 1,
+      color: '#fff', background: 'linear-gradient(135deg,#0891b2,#0e7490)',
+      boxShadow: pulse ? '0 0 0 0 rgba(8,145,178,.5)' : '0 4px 14px rgba(8,145,178,.4)',
+      animation: pulse ? 'ataPulse 1.6s infinite' : 'none',
+    };
+  };
+
+  const actBtn = (c1: string, c2: string): React.CSSProperties => ({
+    padding: '10px 16px', borderRadius: 10, border: 'none', fontFamily: 'inherit', fontSize: 12, fontWeight: 800,
+    color: '#fff', cursor: 'pointer', opacity: reachedEnd ? 1 : 0.45,
+    background: `linear-gradient(135deg,${c1},${c2})`, whiteSpace: 'nowrap',
+    boxShadow: reachedEnd ? `0 4px 14px ${c1}55` : 'none', transition: 'all .18s',
+  });
+
+  return (
+    <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(8,3,28,.85)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: "'Rubik', system-ui, sans-serif" }}>
+      <style>{REVIEW_CSS}</style>
+      <div style={{ width: '100%', maxWidth: 860, height: '94vh', background: t.surface, borderRadius: 20, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 50px 110px rgba(8,3,28,.55)', border: '1px solid rgba(255,255,255,.08)', animation: 'ataSlideUp .26s cubic-bezier(.22,1,.36,1) both' }}>
+        {/* Header */}
+        <div style={{ background: 'linear-gradient(135deg,#0c4a6e 0%,#0e7490 40%,#0891b2 75%,#06b6d4 100%)', padding: '16px 22px 0', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
+          <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '55%', background: 'linear-gradient(180deg,rgba(255,255,255,.16),transparent)', pointerEvents: 'none' }} />
+          <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 13, minWidth: 0 }}>
+              <div style={{ width: 44, height: 44, borderRadius: 13, background: 'rgba(255,255,255,.2)', border: '1.5px solid rgba(255,255,255,.32)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="13" y2="17" /></svg>
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 8.5, fontWeight: 700, color: 'rgba(255,255,255,.65)', letterSpacing: '.14em', textTransform: 'uppercase', marginBottom: 2 }}>{contract.id} · Review &amp; Approve</div>
+                <div style={{ fontSize: 16, fontWeight: 900, color: '#fff', letterSpacing: '-.3px', maxWidth: 520, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contract.title}</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              <button onClick={downloadPdf} title="Download PDF" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 12px', borderRadius: 9, background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.3)', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                Download
+              </button>
+              <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 9, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)', color: '#fff', fontSize: 16, cursor: 'pointer' }}>✕</button>
+            </div>
+          </div>
+          {/* Reading-progress bar */}
+          <div style={{ position: 'relative', zIndex: 1, marginTop: 14, height: 4, borderRadius: 4, background: 'rgba(255,255,255,.22)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${progressPct}%`, background: reachedEnd ? 'linear-gradient(90deg,#34d399,#10b981)' : 'linear-gradient(90deg,#a5f3fc,#fff)', borderRadius: 4, transition: 'width .3s ease' }} />
+          </div>
+          <div style={{ position: 'relative', zIndex: 1, padding: '5px 0 8px', fontSize: 8.5, fontWeight: 700, letterSpacing: '.06em', color: 'rgba(255,255,255,.8)', textTransform: 'uppercase' }}>
+            {reachedEnd ? '✓ Fully reviewed' : `Reviewed ${maxSeen} of ${numPages || '…'} pages`}
+          </div>
+        </div>
+
+        {/* Page stage — the wrapper holds the FIXED arrows (they never scroll
+            away); the inner div is the only thing that scrolls a long page. */}
+        <div style={{ flex: 1, minHeight: 0, position: 'relative', background: t.dark ? 'radial-gradient(circle at 50% 0%, #14233a, #0b1220)' : 'radial-gradient(circle at 50% 0%, #eef4f8, #d8e2ea)' }}>
+          <div ref={stageRef} style={{ position: 'absolute', inset: 0, overflowY: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '20px 64px' }}>
+            {loading && <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: t.dark ? '#cbd5e1' : '#475569' }}><span className="spinner-border text-info" role="status" aria-hidden="true" /><span style={{ fontSize: 12, fontWeight: 600 }}>Loading agreement…</span></div>}
+            {error && <div style={{ alignSelf: 'center', textAlign: 'center', color: '#dc2626', fontWeight: 600, fontSize: 12.5 }}>Could not load the agreement PDF.</div>}
+            {!loading && !error && (
+              <div className="ata-paper" style={{ width: '100%', maxWidth: 620, borderRadius: 6, overflow: 'hidden', boxShadow: '0 12px 40px rgba(8,3,28,.35)', background: '#fff' }}>
+                <canvas ref={canvasRef} style={{ width: '100%', height: 'auto', display: 'block', background: '#fff' }} />
+              </div>
+            )}
+          </div>
+          {/* Fixed prev / next — pinned to the viewer centre regardless of scroll. */}
+          {!loading && !error && numPages > 1 && (
+            <>
+              <button onClick={() => go(activePage - 1)} disabled={activePage <= 1} style={{ ...navBtn('prev'), position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', zIndex: 5 }} title="Previous page">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+              </button>
+              <button onClick={() => go(activePage + 1)} disabled={activePage >= numPages} style={{ ...navBtn('next'), position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', zIndex: 5 }} title="Next page">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Footer: page indicator (left) + gated actions (right) */}
+        <div style={{ flexShrink: 0, borderTop: `1px solid ${t.dark ? t.border : '#e2e8f0'}`, background: t.surface, padding: '12px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 12px', borderRadius: 30, background: t.dark ? 'rgba(6,182,212,.14)' : '#ecfeff', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.3)' : '#a5f3fc'}`, fontSize: 11.5, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0e7490' }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+              Page {activePage} / {numPages || '…'}
+            </span>
+            {!reachedEnd && <span style={{ fontSize: 10, fontWeight: 600, color: t.dark ? '#fcd34d' : '#b45309' }}>Read all pages to unlock actions</span>}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button onClick={() => guard(onClarify)} style={actBtn('#8B5CF6', '#6D28D9')}>Raise Clarification</button>
+            <button onClick={() => guard(onReject)} style={actBtn('#ef4444', '#dc2626')}>Reject</button>
+            <button onClick={() => guard(onApprove)} style={actBtn('#0891b2', '#0e7490')}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>Approve</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const ATA_CSS = `
 @keyframes ataSlideUp { from { opacity:0; transform:translateY(18px) scale(.97); } to { opacity:1; transform:none; } }
+`;
+
+const REVIEW_CSS = `
+@keyframes ataSlideUp { from { opacity:0; transform:translateY(18px) scale(.97); } to { opacity:1; transform:none; } }
+@keyframes ataPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(8,145,178,.5); }
+  70%  { box-shadow: 0 0 0 12px rgba(8,145,178,0); }
+  100% { box-shadow: 0 0 0 0 rgba(8,145,178,0); }
+}
+.ata-paper { animation: ataPaperIn .25s ease both; }
+@keyframes ataPaperIn { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform:none; } }
 `;

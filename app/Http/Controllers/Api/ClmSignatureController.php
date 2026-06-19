@@ -1152,6 +1152,10 @@ class ClmSignatureController extends Controller
         $sig = $this->ctcOrgSignatureDataUri($c);
         $sigHtml = $sig ? '<img src="' . $sig . '" alt="Authorised Signatory" style="max-height:80px;max-width:210px;object-fit:contain;" />' : '';
         $processedHtml = preg_replace('/\{\{\s*signature\s*\}\}/i', $sigHtml, $sourceHtml);
+        // Fill party ({{customer.*}}/{{consignee.*}}/{{supplier.*}}) + org tokens
+        // with real data and blank anything left over, so the preview / signed
+        // PDF shows actual values, never raw {{...}} placeholders.
+        $processedHtml = $this->resolveCtcContent($processedHtml, $c);
 
         $client = Client::find($c->client_id);
         $headerConfig = is_array($headerOverride) ? $headerOverride : (is_array($c->header_config) ? $c->header_config : []);
@@ -1175,6 +1179,63 @@ class ClmSignatureController extends Controller
             'footerConfig'     => $footerConfig,
             'headerLogoBase64' => $headerLogoBase64,
         ])->setPaper('a4')->setOption('isPhpEnabled', true);
+    }
+
+    /**
+     * Resolve a CTC's party + organisation placeholders to real data and blank
+     * any leftover token. {{signature}} must already be substituted by the
+     * caller (renderCtcPdf) before this runs.
+     */
+    private function resolveCtcContent(string $html, CtcContract $c): string
+    {
+        // Organisation tokens from the Company Details master.
+        $orgName = trim((string) ($c->org_name ?? ''));
+        $company = $orgName
+            ? \App\Models\Masters\Company::where('client_id', $c->client_id)->where('company_name', $orgName)->first()
+            : null;
+        $orgTokens = [
+            'company_name' => $c->org_name ?: ($company->company_name ?? ''),
+            'company_no'   => $company->cin ?? '',
+            'email'        => $company->email ?? '',
+            'contact_no'   => $company->mobile ?? '',
+            'address'      => $company->address ?? '',
+        ];
+        foreach ($orgTokens as $tok => $val) {
+            $html = preg_replace('/\{\{\s*' . $tok . '\s*\}\}/i', e((string) $val), $html);
+        }
+
+        // Party tokens — one pass per counterparty against its live model.
+        foreach ((is_array($c->counterparties) ? $c->counterparties : []) as $cp) {
+            $type = strtolower((string) ($cp['source_type'] ?? ''));
+            $id   = $cp['source_id'] ?? null;
+            if ($id === null || $id === '' || $type === '') continue;
+            [$model, $modelName] = $this->ctcLivePartyModel($type, $id, (int) $c->client_id);
+            if ($model) $html = self::replacePartyNamespaceTokens($html, $model, $modelName);
+        }
+
+        // Blank any placeholder still left (unmapped party, missing data, typo).
+        return preg_replace('/\{\{[^{}]*\}\}/', '', $html);
+    }
+
+    /** Live model + CLM model-name for a CTC counterparty reference. */
+    private function ctcLivePartyModel(string $type, $id, int $clientId): array
+    {
+        if ($type === 'buyer' || $type === 'customer') {
+            $q = \App\Models\Customer::where('client_id', $clientId)->with('primaryAddress');
+            $row = is_numeric($id) ? $q->find($id) : $q->where('customer_code', $id)->first();
+            return $row ? [$row, 'Customer'] : [null, ''];
+        }
+        if ($type === 'consignee') {
+            $q = \App\Models\Consignee::where('client_id', $clientId)->with('primaryAddress');
+            $row = is_numeric($id) ? $q->find($id) : $q->where('consignee_code', $id)->first();
+            return $row ? [$row, 'Consignee'] : [null, ''];
+        }
+        if ($type === 'supplier' || $type === 'vendor') {
+            $q = \App\Models\Vendor::where('client_id', $clientId)->with('primaryAddress');
+            $row = is_numeric($id) ? $q->find($id) : $q->where('vendor_code', $id)->first();
+            return $row ? [$row, 'Vendor'] : [null, ''];
+        }
+        return [null, ''];
     }
 
     /** Append an audit/version entry to a CTC contract (mirrors CtcContractController). */
