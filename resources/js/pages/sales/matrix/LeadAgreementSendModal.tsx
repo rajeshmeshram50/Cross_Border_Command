@@ -70,7 +70,11 @@ export type AgreementRow = {
  * unioned across the mapped parties. */
 export type SegmentTradeDoc = {
   db_id: number | null;
+  /* `name` is the catalog/type name (often shared across documents); `title`
+   * is this document's own title and is what the popup shows as the primary
+   * label. `title` falls back to name/code server-side when blank. */
   name: string;
+  title: string;
   reference: string;
   doc_code: string;
   requirement: 'M' | 'O';
@@ -975,7 +979,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                             <td>
                               <input
                                 type="checkbox"
-                                aria-label={`Select ${td.name}`}
+                                aria-label={`Select ${td.title || td.name}`}
                                 checked={checked}
                                 disabled={!sendable}
                                 title={tdSent ? `Already ${tdSigStatus}` : (sendable ? 'Add to bulk send' : 'This document has no template to send')}
@@ -984,7 +988,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                             </td>
                             <td>{i + 1}</td>
                             <td>
-                              <div className="lasm-doc-name">{td.name}</div>
+                              <div className="lasm-doc-name">{td.title || td.name}</div>
                               <div className="lasm-doc-sub">{td.reference}</div>
                             </td>
                             <td>
@@ -1038,19 +1042,20 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                     </Tooltip>
                                   );
                                 })()}
-                                {/* Signing activity tracker — once the doc has been sent. */}
-                                {tdSig?.id && (
-                                  <Tooltip label="Signing activity tracker">
-                                    <button
-                                      type="button"
-                                      className="lasm-btn-icon"
-                                      aria-label="Signing activity tracker"
-                                      onClick={() => setTrackerFor({ sigId: tdSig.id, code: td.reference || td.name })}
-                                    >
-                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
-                                    </button>
-                                  </Tooltip>
-                                )}
+                                {/* Signing timeline — always shown; disabled until the
+                                    doc is sent for signature, enabled once it is. Same
+                                    clock icon + icon-button style as the PI's tracker. */}
+                                <Tooltip label={tdSig?.id ? 'View signing timeline' : 'Not sent for signature yet'}>
+                                  <button
+                                    type="button"
+                                    className="lasm-btn-icon"
+                                    aria-label="Signing timeline"
+                                    disabled={!tdSig?.id}
+                                    onClick={() => { if (tdSig?.id) setTrackerFor({ sigId: tdSig.id, code: td.reference || td.title || td.name }); }}
+                                  >
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+                                  </button>
+                                </Tooltip>
                                 {/* Signed PDF + Certificate — once the doc is signed. */}
                                 {tdSig?.signed_url && (
                                   <Tooltip label="View / download signed PDF">
@@ -1339,19 +1344,22 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                 </Tooltip>
                                 );
                               })()}
-                              {/* Signing activity tracker — once the agreement has been sent. */}
-                              {sig?.id && (
-                                <Tooltip label="Signing activity tracker">
-                                  <button
-                                    type="button"
-                                    className="lasm-btn-icon"
-                                    aria-label="Signing activity tracker"
-                                    onClick={() => setTrackerFor({ sigId: sig.id, code: a.code || a.title })}
-                                  >
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
-                                  </button>
-                                </Tooltip>
-                              )}
+                              {/* Signing timeline — always shown; disabled until the
+                                  agreement is sent for signature, enabled once it is.
+                                  Same clock icon + icon-button style as the PI's
+                                  signing tracker. */}
+                              <Tooltip label={sig?.id ? 'View signing timeline' : 'Not sent for signature yet'}>
+                                <button
+                                  type="button"
+                                  className="lasm-btn-icon"
+                                  aria-label="Signing timeline"
+                                  disabled={!sig?.id}
+                                  onClick={() => { if (sig?.id) setTrackerFor({ sigId: sig.id, code: a.code || a.title }); }}
+                                >
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+                                </button>
+                              </Tooltip>
+                              {/* Preview the agreement PDF (always available). */}
                               <Tooltip label="Preview agreement PDF">
                                 <button
                                   type="button"
@@ -1706,7 +1714,8 @@ const LASM_CSS = `
 .lasm-btn-eye:hover:not(:disabled) { background: #e0e7ff; color: #4338ca; }
 .lasm-btn-eye:disabled { opacity: .55; cursor: not-allowed; }
 .lasm-btn-icon { background: #f5f3ff; color: #6d28d9; border: 1px solid #c4b5fd; }
-.lasm-btn-icon:hover { background: #ede9fe; }
+.lasm-btn-icon:hover:not(:disabled) { background: #ede9fe; }
+.lasm-btn-icon:disabled { opacity: .45; cursor: not-allowed; }
 .lasm-btn-cert { background: #ede9fe; color: #6d28d9; border: 1px solid #c4b5fd; }
 .lasm-btn-cert:hover { background: #ddd6fe; }
 .lasm-btn-remind { display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px; border-radius: 7px;
@@ -1838,7 +1847,7 @@ const LASM_CSS = `
 [data-bs-theme="dark"] .lasm-btn-icon {
   background: rgba(124,58,237,.12); color: #c4b5fd; border-color: rgba(103,232,249,.35);
 }
-[data-bs-theme="dark"] .lasm-btn-icon:hover { background: rgba(124,58,237,.24); }
+[data-bs-theme="dark"] .lasm-btn-icon:hover:not(:disabled) { background: rgba(124,58,237,.24); }
 [data-bs-theme="dark"] .lasm-btn-cert {
   background: rgba(124,58,237,.18); color: #ede9fe; border-color: rgba(103,232,249,.40);
 }
