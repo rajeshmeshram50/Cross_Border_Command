@@ -981,7 +981,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
         <ClmInsertPlaceholderModal
           open={pickerOpen}
           onClose={() => setPickerOpen(false)}
-          onInsert={(token) => { insertAtCaret(token); setPickerOpen(false); }}
+          onInsert={(token) => { if (/^\s*</.test(token)) insertHtmlAtCaret(token); else insertAtCaret(token); setPickerOpen(false); }}
         />
 
         <ClmInsertTableModal
