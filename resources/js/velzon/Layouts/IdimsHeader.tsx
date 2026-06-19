@@ -216,13 +216,16 @@ export default function IdimsHeader() {
   // dark ink is turned light so it reads on the dark nav, no box). If that file
   // doesn't exist for a tenant, onError flips to the original on a soft pill.
   const darkRaw = rawLogo && /\.(png|jpe?g|webp)$/i.test(rawLogo)
-    ? rawLogo.replace(/\.(png|jpe?g|webp)$/i, '-dark.$1')
+    ? rawLogo.replace(/\.(png|jpe?g|webp)$/i, '-dark.png')
     : null;
   const darkLogoSrc = darkRaw ? resolveFileUrl(darkRaw) : null;
   const [logoDarkMissing, setLogoDarkMissing] = useState(false);
   useEffect(() => { setLogoDarkMissing(false); }, [rawLogo]);
   const showDarkLogo = theme === 'dark' && !!darkLogoSrc && !logoDarkMissing;
-  const logoNeedsPill = theme === 'dark' && !showDarkLogo;
+  // The bundled fallback logo (no tenant upload) is already transparent with
+  // light colours that read fine on the dark nav, so it needs no pill. Only an
+  // uploaded logo that lacks a -dark variant falls back to the soft pill.
+  const logoNeedsPill = theme === 'dark' && !showDarkLogo && !!rawLogo;
 
   /* ── Profile photo ── */
   const rawPhoto = user?.user_profile_photo || user?.employee_profile_photo

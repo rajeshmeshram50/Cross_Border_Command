@@ -237,6 +237,7 @@ class ClientController extends Controller
             $brandingUpdates = [];
             if ($request->hasFile('logo')) {
                 $brandingUpdates['logo'] = $request->file('logo')->store('clients/logos', 'public');
+                \App\Services\LogoDarkVariantGenerator::generate($brandingUpdates['logo']);
             }
             if ($request->hasFile('favicon')) {
                 $brandingUpdates['favicon'] = $request->file('favicon')->store('clients/favicons', 'public');
@@ -535,9 +536,12 @@ class ClientController extends Controller
             // "/storage/..." URL — strip the prefix before deleting.
             if ($request->hasFile('logo')) {
                 if ($client->logo) {
+                    \App\Services\LogoDarkVariantGenerator::delete($this->relativePath($client->logo));
                     Storage::disk('public')->delete($this->relativePath($client->logo));
                 }
-                $client->update(['logo' => $request->file('logo')->store('clients/logos', 'public')]);
+                $logoPath = $request->file('logo')->store('clients/logos', 'public');
+                $client->update(['logo' => $logoPath]);
+                \App\Services\LogoDarkVariantGenerator::generate($logoPath);
             }
             if ($request->hasFile('favicon')) {
                 if ($client->favicon) {
