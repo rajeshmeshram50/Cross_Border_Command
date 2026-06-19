@@ -242,7 +242,7 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
   const filtered = useMemo(() => {
     if (!search.trim()) return rows;
     const s = search.toLowerCase();
-    return rows.filter(r => r.title.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.doc_type.toLowerCase().includes(s) || r.name.toLowerCase().includes(s));
+    return rows.filter(r => r.title.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.doc_type.toLowerCase().includes(s) || r.name.toLowerCase().includes(s) || (r.segment ?? '').toLowerCase().includes(s));
   }, [rows, search]);
   const [rpp, setRpp]     = useState(PER_PAGE);
   const [fillH, setFillH] = useState<number | undefined>(undefined);

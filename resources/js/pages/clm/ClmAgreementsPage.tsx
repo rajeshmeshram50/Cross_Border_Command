@@ -224,7 +224,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
   const filtered = useMemo(() => {
     if (!search.trim()) return rows;
     const s = search.toLowerCase();
-    return rows.filter(r => r.title.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.agreement_type.toLowerCase().includes(s));
+    return rows.filter(r => r.title.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.agreement_type.toLowerCase().includes(s) || (r.segment ?? '').toLowerCase().includes(s));
   }, [rows, search]);
   const [rpp, setRpp]     = useState(PER_PAGE);
   const [fillH, setFillH] = useState<number | undefined>(undefined);
