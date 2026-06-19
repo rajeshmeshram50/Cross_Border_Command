@@ -423,7 +423,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
         'Trade Docs':         s.trade_docs?.ratio || '',
         'Agreement':          s.agreement?.ratio || '',
         'Risk':               s.risk || '',
-        'Buyer = Consignee':  s.buyer_is_consignee ? 'Yes' : 'No',
+        'Customer = Consignee':  s.buyer_is_consignee ? 'Yes' : 'No',
       });
 
       const summary = [
@@ -1152,8 +1152,8 @@ function ShipmentTable({ rows, kind, filter, setFilter, onSend }: {
       {/* Trade Documents uses compact pills; Agreements uses the full-width
           segmented bar with ✓ / ✕ markers — matches the figma per tab. */}
       <div className={`cnev-ship-filter ${isAgreement ? '' : 'cnev-ship-filter-2'}`}>
-        <button type="button" className={`cnev-ship-fbtn ${filter === 'buyer-eq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-eq-consignee'); setOpenId(null); }}>{isAgreement && <span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✓</span>}Buyer = Consignee</button>
-        <button type="button" className={`cnev-ship-fbtn ${filter === 'buyer-neq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-neq-consignee'); setOpenId(null); }}>{isAgreement && <span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✕</span>}Buyer &ne; Consignee</button>
+        <button type="button" className={`cnev-ship-fbtn ${filter === 'buyer-eq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-eq-consignee'); setOpenId(null); }}>{isAgreement && <span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✓</span>}Customer = Consignee</button>
+        <button type="button" className={`cnev-ship-fbtn ${filter === 'buyer-neq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-neq-consignee'); setOpenId(null); }}>{isAgreement && <span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✕</span>}Customer &ne; Consignee</button>
       </div>
       <div className="cnev-table-wrap">
         <div className="cnev-table-scroll">
@@ -1164,7 +1164,7 @@ function ShipmentTable({ rows, kind, filter, setFilter, onSend }: {
               <th style={{ width: 46 }}>SR</th>
               <th>Shipment ID</th>
               <th>Opportunity ID</th>
-              <th>Customer (Buyer)</th>
+              <th>Customer</th>
               <th>Consignee</th>
               <th>Due Dil.</th>
               <th>KYC</th>
@@ -1204,7 +1204,7 @@ function ShipmentTable({ rows, kind, filter, setFilter, onSend }: {
                     {isAgreement && <td><Ratio r={r.agreement} /></td>}
                   </tr>
                   {open && (
-                    <tr>
+                    <tr className="cnev-ship-expand">
                       <td colSpan={COLS} style={{ padding: 0, background: '#f0fdff' }}>
                         <ShipmentDocPanel
                           buyer={kind === 'trade' ? (r.trade_docs_buyer ?? []) : (r.agreements_buyer ?? [])}
@@ -1533,7 +1533,9 @@ const CNEV_CSS = `
   transition: all .15s ease;
 }
 .cnev-ov-close:hover { background: rgba(255,255,255,.25); }
-.cnev-ov-body { overflow: auto; padding: 14px 18px 18px; }
+/* Fixed height for ~5 rows so the popup size stays constant regardless of how
+   many documents the selected shipment/page has (paginated at 5/page). */
+.cnev-ov-body { overflow: auto; padding: 14px 18px 18px; min-height: 312px; }
 .cnev-ov-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px 16px; flex-wrap: wrap; }
 .cnev-ov-pager-info { font-size: 11px; font-weight: 600; color: #0891b2; }
 .cnev-ov-pager-btns { display: flex; align-items: center; gap: 5px; }
@@ -1673,14 +1675,17 @@ const CNEV_CSS = `
 .cnev-body::-webkit-scrollbar { width: 8px; }
 .cnev-body::-webkit-scrollbar-thumb { background: #67e8f9; border-radius: 99px; }
 .cnev-body::-webkit-scrollbar-thumb:hover { background: #06b6d4; }
-/* Shipment tabs: separated cards with breathing room around the Buyer=/≠
-   Consignee toggle (section becomes a self-contained rounded card again). */
-.cnev-body-ship { gap: 10px; }
-.cnev-body-ship .cnev-section { border-radius: 12px; }
-.cnev-body-ship .cnev-table-wrap { border-top: 1px solid #e4e7f5; border-radius: 12px; }
-/* Non-sticky header so the wrapper's rounded top corners actually clip the dark
-   header band (a sticky header escapes the overflow:hidden clip at the top). */
-.cnev-body-ship .cnev-table thead tr { position: static; }
+/* Shipment tabs: ONE combined card like Standard Docs — section header fused to
+   a Customer=/≠Consignee toggle band, fused to the table (no gaps). */
+.cnev-body-ship { gap: 0; }
+.cnev-body-ship .cnev-ship-filter,
+.cnev-body-ship .cnev-ship-filter-2 {
+  align-self: stretch; width: auto; margin: 0; box-sizing: border-box;
+  padding: 12px 14px; background: #fbfdff; border-radius: 0;
+  border-left: 1px solid #e4e7f5; border-right: 1px solid #e4e7f5; border-bottom: 1px solid #e4e7f5;
+}
+[data-bs-theme="dark"] .cnev-body-ship .cnev-ship-filter,
+[data-bs-theme="dark"] .cnev-body-ship .cnev-ship-filter-2 { background: #0a2630 !important; border-color: rgba(8,145,178,.28) !important; }
 
 .cnev-section {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -2010,6 +2015,21 @@ const CNEV_CSS = `
 [data-bs-theme="dark"] .cnev-pill[data-status="Signed"]   { background: rgba(59,130,246,.18) !important; color: #93c5fd !important; }
 [data-bs-theme="dark"] .cnev-pill[data-status="Expiring"] { background: rgba(245,158,11,.18) !important; color: #fcd34d !important; }
 [data-bs-theme="dark"] .cnev-pill[data-status="Pending"]  { background: rgba(239,68,68,.18) !important; color: #fca5a5 !important; }
+[data-bs-theme="dark"] .cnev-pill[data-status="Draft"]    { background: rgba(245,158,11,.18) !important; color: #fcd34d !important; }
+[data-bs-theme="dark"] .cnev-pill[data-status="Declined"],
+[data-bs-theme="dark"] .cnev-pill[data-status="Expired"]  { background: rgba(239,68,68,.18) !important; color: #fca5a5 !important; }
+[data-bs-theme="dark"] .cnev-pill[data-status="Recalled"] { background: rgba(148,163,184,.18) !important; color: #cbd5e1 !important; }
+/* Expanded shipment detail panel (shared ShipmentDocPanel, class .cev-sdp) —
+   duplicated here so it's styled when the consignee vault is the open modal. */
+[data-bs-theme="dark"] .cnev-ship-expand > td { background: #08222b !important; }
+[data-bs-theme="dark"] .cev-sdp [style*="background: rgb(255, 255, 255)"],
+[data-bs-theme="dark"] .cev-sdp [style*="background:rgb(255, 255, 255)"] { background: #0a2630 !important; border-color: rgba(8,145,178,.28) !important; }
+[data-bs-theme="dark"] .cev-sdp [style*="rgb(15, 23, 42)"] { color: #e2e8f0 !important; }
+[data-bs-theme="dark"] .cev-sdp [style*="rgb(71, 85, 105)"] { color: #cbd5e1 !important; }
+[data-bs-theme="dark"] .cev-sdp [style*="rgb(100, 116, 139)"] { color: #94a3b8 !important; }
+[data-bs-theme="dark"] .cev-sdp tbody tr { border-bottom-color: rgba(8,145,178,.12) !important; }
+[data-bs-theme="dark"] .cev-sdp [style*="rgb(241, 245, 249)"] { background: rgba(148,163,184,.18) !important; border-color: rgba(148,163,184,.32) !important; }
+[data-bs-theme="dark"] .cev-sdp [style*="rgb(254, 243, 199)"] { background: rgba(245,158,11,.18) !important; border-color: rgba(245,158,11,.4) !important; }
 [data-bs-theme="dark"] .cnev-filter-verified { background: rgba(8,145,178,.18); color: #67e8f9; border-color: rgba(8,145,178,.30); }
 [data-bs-theme="dark"] .cnev-filter-expiring { background: rgba(245,158,11,.18); color: #fcd34d; border-color: rgba(217,119,6,.30); }
 [data-bs-theme="dark"] .cnev-filter-pending  { background: rgba(239,68,68,.18);  color: #fca5a5; border-color: rgba(239,68,68,.30); }

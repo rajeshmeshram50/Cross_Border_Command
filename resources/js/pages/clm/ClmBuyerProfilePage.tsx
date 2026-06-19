@@ -307,6 +307,27 @@ const BP_CSS = `
 [data-bs-theme="dark"] .seg-page [style*="rgb(14, 116, 144)"] { color: #cfe8f3 !important; }
 /* muted grey (#94a3b8 — "0/x" badge numbers, "No PI", denominators) → lighter */
 [data-bs-theme="dark"] .seg-page [style*="rgb(148, 163, 184)"] { color: #94c9dd !important; }
+/* slate grey (#64748b — SubTab inactive, DIFF tag) → lighter */
+[data-bs-theme="dark"] .seg-page [style*="rgb(100, 116, 139)"] { color: #94c9dd !important; }
+/* light-cyan toggle fill (#e0f7fa — Customer/Consignee Transactions inactive pill) → dark */
+[data-bs-theme="dark"] .seg-page [style*="rgb(224, 247, 250)"] { background: rgba(8,145,178,.16) !important; }
+/* REG. STATUS badges — Low (green #ecfdf5) / High (amber #fef3c7) → translucent on dark.
+   Both (indigo #eef2ff) is already handled by the indigo-chip sweep above. */
+[data-bs-theme="dark"] .seg-page [style*="rgb(236, 253, 245)"] { background: rgba(16,185,129,.18) !important; border-color: rgba(16,185,129,.4) !important; }
+[data-bs-theme="dark"] .seg-page [style*="rgb(254, 243, 199)"] { background: rgba(245,158,11,.18) !important; border-color: rgba(245,158,11,.4) !important; }
+[data-bs-theme="dark"] .seg-page [style*="rgb(5, 150, 105)"] { color: #6ee7b7 !important; }
+[data-bs-theme="dark"] .seg-page [style*="rgb(217, 119, 6)"] { color: #fcd34d !important; }
+/* Segment chips — light tint backgrounds (green/amber/red) → translucent on dark
+   (#f0fdff purple/#f5f3ff are already handled above). */
+[data-bs-theme="dark"] .seg-page [style*="rgb(240, 253, 244)"] { background: rgba(16,185,129,.16) !important; }
+[data-bs-theme="dark"] .seg-page [style*="rgb(255, 251, 235)"] { background: rgba(245,158,11,.16) !important; }
+[data-bs-theme="dark"] .seg-page [style*="rgb(254, 242, 242)"] { background: rgba(239,68,68,.16) !important; }
+/* …and their dark text → light */
+[data-bs-theme="dark"] .seg-page [style*="rgb(6, 95, 70)"]  { color: #6ee7b7 !important; }
+[data-bs-theme="dark"] .seg-page [style*="rgb(146, 64, 14)"] { color: #fcd34d !important; }
+[data-bs-theme="dark"] .seg-page [style*="rgb(127, 29, 29)"] { color: #fca5a5 !important; }
+/* ⌘K search-hint kbd (#f1f5f9) → dark */
+[data-bs-theme="dark"] .seg-page [style*="rgb(241, 245, 249)"] { background: rgba(148,163,184,.18) !important; border-color: rgba(148,163,184,.3) !important; }
 /* data tables — header strip + rows */
 [data-bs-theme="dark"] .seg-page-card table { background: transparent !important; }
 [data-bs-theme="dark"] .seg-page-card thead tr { background: #16263a !important; }
