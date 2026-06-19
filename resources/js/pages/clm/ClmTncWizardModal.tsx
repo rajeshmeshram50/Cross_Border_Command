@@ -501,7 +501,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
                   </label>
                 </div>
                 <div className="tnw-party-row">
-                  <div className="tnw-party-label">BUYER &amp; CONSIGNEE</div>
+                  <div className="tnw-party-label">CUSTOMER &amp; CONSIGNEE</div>
                   <div className="tnw-party-options">
                     {PARTY_BUYER_CONSIGNEE.map(p => (
                       <label key={p.value} className={`tnw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}>

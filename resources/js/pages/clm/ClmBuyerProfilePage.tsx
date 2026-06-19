@@ -283,6 +283,18 @@ const BP_CSS = `
 [data-bs-theme="dark"] .seg-page [style*="rgb(232, 250, 251)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(236, 254, 255)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(232, 251, 253)"] { background: #16263a !important; }
+/* Light cyan banner gradients (110deg multi-stop) → dark teal gradient.
+ * The per-stop rgb matchers above only flatten the banners to a solid; a
+ * matching dark gradient reads better and mirrors the light-mode look. Placed
+ * AFTER the flat sweep so its full-shorthand wins the specificity tie, and
+ * scoped to .seg-page so the portaled consignees modal (its own dark header
+ * gradient) is left untouched. Light mode is unaffected (dark-only selector). */
+[data-bs-theme="dark"] .seg-page [style*="linear-gradient(110deg"] { background: linear-gradient(110deg,#103a48,#0c2e3a) !important; }
+/* Neutralise the white sheen overlays that otherwise wash the top of these
+ * cards into an ugly light-to-dark gradient on dark. */
+[data-bs-theme="dark"] .seg-page [style*="rgba(255, 255, 255, 0.5)"] { background: linear-gradient(180deg,rgba(255,255,255,.05),transparent) !important; }
+[data-bs-theme="dark"] .bref-box__header::after { background: linear-gradient(180deg,rgba(255,255,255,.05),transparent) !important; }
+[data-bs-theme="dark"] .bpa-tab::before { background: linear-gradient(180deg,rgba(255,255,255,.04),transparent) !important; }
 /* light indigo/violet ID & PI chips (#eef0ff/#f5f6ff/#eef2ff/#f5f3ff) → dark */
 [data-bs-theme="dark"] .seg-page [style*="rgb(238, 240, 255)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(245, 246, 255)"],

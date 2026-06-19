@@ -877,22 +877,22 @@ const CSTRIP_CSS = `
   .smc-cstrip-add { width: 100%; align-self: stretch; }
 }
 
+/* Clean, calm dark banner. The light-mode design layers a saturated gradient
+ * fill + a bright gradient border-ring + radial glow blobs + a white shine
+ * line — all of which read as noisy / over-saturated on dark (and violet looks
+ * "louder" than the green sibling at the same values). Senior-dev call: strip
+ * it back to a mostly-dark, low-chroma violet surface with a SINGLE subtle
+ * border. No ring, no glow, no shine. */
 [data-bs-theme="dark"] .smc-cstrip {
-  /* Keep the gradient ring; swap the padding-box fill for a deep violet. */
-  border: 1px solid transparent;
-  background:
-    linear-gradient(110deg, #1e1b4b 0%, #2e1065 35%, #3b1675 70%, #4c1d95 100%) padding-box,
-    linear-gradient(125deg, #7c3aed 0%, #8b5cf6 22%, #6366f1 48%, #d946ef 76%, #ec4899 100%) border-box;
-  box-shadow:
-    0 1px 0 rgba(255,255,255,0.05) inset,
-    0 6px 22px rgba(0,0,0,0.45),
-    0 2px 8px rgba(124,58,237,0.20);
+  border: 1px solid rgba(139,92,246,0.22);
+  /* Flat, even dark — the previous gradient ended lighter (#221c3e), and on a
+   * banner whose right side is empty that lighter end read as a glowy patch.
+   * Near-flat so the strip looks uniformly dark regardless of content. */
+  background: linear-gradient(110deg, #181426 0%, #1e1838 100%);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.40);
 }
-[data-bs-theme="dark"] .smc-cstrip::before {
-  background-image:
-    radial-gradient(ellipse at 12% 50%, rgba(167,139,250,0.18) 0%, transparent 55%),
-    radial-gradient(ellipse at 88% 50%, rgba(124,58,237,0.15) 0%, transparent 55%);
-}
+[data-bs-theme="dark"] .smc-cstrip::before { background-image: none; }
+[data-bs-theme="dark"] .smc-cstrip::after  { background: none; }
 [data-bs-theme="dark"] .smc-cstrip-title { color: #f5f3ff; }
 [data-bs-theme="dark"] .smc-cstrip-sub   { color: #ede9fe; opacity: 0.92; }
 [data-bs-theme="dark"] .smc-cstrip-icon  {
@@ -903,10 +903,10 @@ const CSTRIP_CSS = `
 [data-bs-theme="dark"] .smc-cstrip-add {
   background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 45%, #6d28d9 100%);
   color: #fff;
+  /* Tighter glow so the button doesn't halo a lavender patch onto the strip. */
   box-shadow:
-    0 5px 16px rgba(124, 58, 237, .45),
-    0 2px 5px rgba(91, 33, 182, .30),
-    0 1px 0 rgba(255, 255, 255, .20) inset;
+    0 3px 10px rgba(124, 58, 237, .30),
+    0 1px 0 rgba(255, 255, 255, .15) inset;
 }
 [data-bs-theme="dark"] .smc-cstrip-add:hover {
   background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 50%, #7c3aed 100%);
@@ -1874,7 +1874,12 @@ ${CSTRIP_CSS}
    (buttons, headers, chips) but recolour every surface, border, and body text
    so the page actually reads as dark. */
 [data-bs-theme="dark"] .smc-root {
-  background: transparent;
+  /* Violet-glow over the dark canvas — gives the page depth / a premium
+   * "HD" feel instead of a flat dark slab. Keeps the customer module's
+   * violet identity. */
+  background:
+    radial-gradient(ellipse 120% 60% at 15% 0%, rgba(124,58,237,.16), transparent 60%),
+    radial-gradient(ellipse 100% 60% at 100% 100%, rgba(91,33,182,.12), transparent 65%);
   color: var(--vz-body-color);
 }
 
@@ -1882,12 +1887,13 @@ ${CSTRIP_CSS}
    is actually visible (the previous mix was so dark it looked solid
    black). Title + chevron stay readable, brand color is preserved. */
 [data-bs-theme="dark"] .smc-wdh-card {
-  background: linear-gradient(110deg, #1f1340 0%, #2d1a5a 30%, #3d2280 60%, #4b2aa6 85%, #5b21b6 100%);
-  border-color: rgba(167,139,250,0.40);
+  /* Deepened + muted — was ending bright (#4b2aa6/#5b21b6) which read as a
+   * loud violet band. Now a calm deep-violet wash. */
+  background: linear-gradient(110deg, #181426 0%, #1e1838 100%);
+  border-color: rgba(167,139,250,0.22);
   box-shadow:
-    0 2px 0 rgba(255,255,255,0.05) inset,
-    0 4px 16px rgba(0,0,0,0.35),
-    0 1px 3px rgba(167,139,250,0.12);
+    0 2px 0 rgba(255,255,255,0.04) inset,
+    0 4px 16px rgba(0,0,0,0.35);
 }
 [data-bs-theme="dark"] .smc-wdh-toggle-row { background: transparent; }
 [data-bs-theme="dark"] .smc-wdh-toggle-row:hover { background: rgba(255,255,255,0.06); }
@@ -1931,8 +1937,9 @@ ${CSTRIP_CSS}
 
 [data-bs-theme="dark"] .smc-table-card {
   background: var(--vz-card-bg);
-  border-color: rgba(167,139,250,0.25);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.30), 0 1px 3px rgba(167,139,250,0.10);
+  border-color: rgba(167,139,250,0.28);
+  /* Layered violet glow so the card reads as a crisp floating panel. */
+  box-shadow: 0 10px 34px rgba(0,0,0,0.45), 0 0 0 1px rgba(167,139,250,0.12), 0 6px 28px rgba(124,58,237,0.18);
 }
 [data-bs-theme="dark"] .smc-tabs-bar {
   background: linear-gradient(135deg, rgba(167,139,250,0.08), rgba(124,58,237,0.04));
@@ -2008,19 +2015,22 @@ ${CSTRIP_CSS}
 
 /* Action button surfaces — dim the light pastel fills so the icons read on dark.
    Hover gradients stay vibrant so the affordance is still obvious. */
+/* Cleaner, darker action tiles — the previous .22-.30 fills read as the
+ * brightest blobs in each row. Drop to a subtle dark tint with a colour-coded
+ * border + bright icon; the full vivid gradient still lights up on hover. */
 [data-bs-theme="dark"] .smc-act-edit  {
-  border-color: rgba(96,165,250,.40);
-  background: linear-gradient(135deg, rgba(30,64,175,.22), rgba(29,78,216,.30));
+  border-color: rgba(96,165,250,.35);
+  background: rgba(59,130,246,.10);
   color: #93c5fd;
 }
 [data-bs-theme="dark"] .smc-act-map   {
-  border-color: rgba(52,211,153,.40);
-  background: linear-gradient(135deg, rgba(5,150,105,.22), rgba(4,120,87,.30));
+  border-color: rgba(52,211,153,.35);
+  background: rgba(16,185,129,.10);
   color: #6ee7b7;
 }
 [data-bs-theme="dark"] .smc-act-vault {
-  border-color: rgba(167,139,250,.40);
-  background: linear-gradient(135deg, rgba(124,58,237,.22), rgba(91,33,182,.30));
+  border-color: rgba(167,139,250,.35);
+  background: rgba(124,58,237,.12);
   color: #c4b5fd;
 }
 

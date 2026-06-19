@@ -861,24 +861,16 @@ const SCOPED_CSS = `
 }
 .smcg-cstrip-add:active { transform: translateY(0); }
 .smcg-cstrip-add i { font-size: 16px; }
+/* Clean, calm dark banner — same senior-dev treatment as the Customers strip:
+ * a mostly-dark, low-chroma green surface with a SINGLE subtle border. No
+ * gradient ring, no glow blobs, no shine line. */
 [data-bs-theme="dark"] .smcg-cstrip {
-  /* Keep the emerald gradient ring; deep, SUBDUED teal fill (the previous
-     fill ran up to a bright #14a78a which read too loud for a dark theme —
-     now it stays a deep teal, cohesive with the cards + table). */
-  border: 1px solid transparent;
-  background:
-    linear-gradient(110deg, #06231c 0%, #0a3528 40%, #0d4636 75%, #0f5847 100%) padding-box,
-    linear-gradient(125deg, #059669 0%, #10b981 22%, #14b8a6 48%, #2dd4bf 76%, #5eead4 100%) border-box;
-  box-shadow:
-    0 1px 0 rgba(255,255,255,0.05) inset,
-    0 6px 22px rgba(0,0,0,0.45),
-    0 2px 8px rgba(13,148,136,0.20);
+  border: 1px solid rgba(52,211,153,0.22);
+  background: linear-gradient(110deg, #0d1a16 0%, #102a22 55%, #12342a 100%);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.40);
 }
-[data-bs-theme="dark"] .smcg-cstrip::before {
-  background-image:
-    radial-gradient(ellipse at 12% 50%, rgba(94,234,212,0.18) 0%, transparent 55%),
-    radial-gradient(ellipse at 88% 50%, rgba(16,185,129,0.15) 0%, transparent 55%);
-}
+[data-bs-theme="dark"] .smcg-cstrip::before { background-image: none; }
+[data-bs-theme="dark"] .smcg-cstrip::after  { background: none; }
 [data-bs-theme="dark"] .smcg-cstrip-title { color: #f0fdfa; }
 [data-bs-theme="dark"] .smcg-cstrip-sub   { color: #ccfbf1; opacity: 0.92; }
 [data-bs-theme="dark"] .smcg-cstrip-icon  {
@@ -1646,7 +1638,12 @@ const SCOPED_CSS = `
 
 /* ─── Dark mode overrides ─── */
 [data-bs-theme="dark"] .smcg-root {
-  background: transparent;
+  /* Emerald-glow over the dark canvas — gives the page depth / a premium
+   * "HD" feel instead of a flat dark slab. Keeps the consignee module's
+   * green identity. */
+  background:
+    radial-gradient(ellipse 120% 60% at 15% 0%, rgba(16,185,129,.15), transparent 60%),
+    radial-gradient(ellipse 100% 60% at 100% 100%, rgba(5,150,105,.11), transparent 65%);
   color: var(--vz-body-color);
 }
 
@@ -1654,13 +1651,13 @@ const SCOPED_CSS = `
    teal accents so the gradient is visible (was too close to pure
    black before, killed the gradient feel). */
 [data-bs-theme="dark"] .smcg-wdh-card {
-  /* Same deep, subdued teal as the hero strip so the two read as one block. */
-  background: linear-gradient(110deg, #06231c 0%, #0a3528 35%, #0d4636 70%, #0f5847 100%);
-  border-color: rgba(94,234,212,0.30);
+  /* Same deep, subdued teal as the hero strip (deepened end) so the two read
+   * as one calm block instead of a loud green band. */
+  background: linear-gradient(110deg, #0d1a16 0%, #102a22 55%, #12342a 100%);
+  border-color: rgba(52,211,153,0.22);
   box-shadow:
-    0 2px 0 rgba(255,255,255,0.05) inset,
-    0 4px 16px rgba(0,0,0,0.35),
-    0 1px 3px rgba(45,212,191,0.10);
+    0 2px 0 rgba(255,255,255,0.04) inset,
+    0 4px 16px rgba(0,0,0,0.35);
 }
 [data-bs-theme="dark"] .smcg-wdh-toggle-row { background: transparent; }
 [data-bs-theme="dark"] .smcg-wdh-toggle-row:hover { background: rgba(255,255,255,0.06); }
@@ -1734,8 +1731,9 @@ const SCOPED_CSS = `
 
 [data-bs-theme="dark"] .smcg-table-card {
   background: var(--vz-card-bg);
-  border-color: rgba(16,185,129,0.25);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.30), 0 1px 3px rgba(16,185,129,0.10);
+  border-color: rgba(16,185,129,0.28);
+  /* Layered emerald glow so the card reads as a crisp floating panel. */
+  box-shadow: 0 10px 34px rgba(0,0,0,0.45), 0 0 0 1px rgba(16,185,129,0.12), 0 6px 28px rgba(5,150,105,0.18);
 }
 
 /* Table chrome in dark mode — translucent emerald wash on the

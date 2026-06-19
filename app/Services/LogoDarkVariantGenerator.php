@@ -74,10 +74,15 @@ class LogoDarkVariantGenerator
                         if ($lum >= 210) { $transparent++; continue; }
                         $r = $g = $b = 255;
                         $a = $lum <= 110 ? 0 : (int) round(($lum - 110) / (210 - 110) * 110);
-                    } elseif ($lum < 95) {
-                        $r = $g = $b = 255;                          // dark coloured ink -> white
                     }
-                    // else colour mid/bright tone -> keep (brand colours survive)
+                    // COLOURED pixels (chroma >= 40) are KEPT EXACTLY — the logo
+                    // must look the SAME in dark mode as in light mode (user:
+                    // "colour should not change, jo light mode me hai vahi dark me
+                    // ho"). We only strip the white background (above) and turn
+                    // grayscale/near-black ink into a white mask (chroma < 40
+                    // branch) — pure black/grey text has no hue to preserve and
+                    // would be invisible on the dark nav. No lightening / no
+                    // hue-shift: a dark purple stays exactly that purple.
                     $col = imagecolorallocatealpha($out, $r, $g, $b, $a);
                     imagesetpixel($out, $x, $y, $col);
                     imagecolordeallocate($out, $col);

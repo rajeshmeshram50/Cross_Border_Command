@@ -1586,8 +1586,10 @@ function sectionSub(tab: TabKey): string {
 /* Cyan/teal palette — mirrors the CLM "Buyer Evidence Vault" prototype
    (deep cyan→teal header gradient, cyan active tabs, cyan accents). The
    green/amber/red status colors (Verified / Pending / Mandatory) are kept
-   semantic. */
-const CEV_CSS = `
+   semantic.
+   Exported so sibling vaults (Supplier) can reuse the EXACT same palette +
+   dark-mode rules and never drift from the Customer design. */
+export const CEV_CSS = `
 .cev-overlay {
   position: fixed; inset: 0;
   background: rgba(8,51,68,0.45);

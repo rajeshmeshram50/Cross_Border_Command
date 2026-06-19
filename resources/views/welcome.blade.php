@@ -7,6 +7,18 @@
     <link rel="icon" type="image/png" href="/images/igc-logo.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    {{-- Apply the saved theme to <html> + paint a matching background BEFORE
+         any CSS/JS loads, so a dark-mode user never sees a white flash while
+         the bundle + splash loader boot. Mirrors the seed in app.tsx. --}}
+    <script>
+        try {
+            var m = localStorage.getItem('cbc-layout-mode');
+            if (m === 'dark') {
+                document.documentElement.setAttribute('data-bs-theme', 'dark');
+                document.documentElement.style.backgroundColor = '#0b1220';
+            }
+        } catch (e) {}
+    </script>
     @viteReactRefresh
     @vite(['resources/css/app.css', 'resources/js/app.tsx'])
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
