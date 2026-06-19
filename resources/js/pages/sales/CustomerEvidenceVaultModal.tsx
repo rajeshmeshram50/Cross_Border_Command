@@ -8,7 +8,9 @@ import { useToast } from '../../contexts/ToastContext';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { signatureRequestsToVaultDocs, mergeTradeDocuments, type SigReqRow } from '../../utils/vaultSignatureRows';
 import { downloadFile } from '../../utils/downloadFile';
-import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
+import SalesCustomerSendForSignatureModal, {
+  type AgreementContext, type AgreementSigner, type AgreementSendRow, type SendForSignatureCustomer,
+} from './SalesCustomerSendForSignatureModal';
 import { SigningTrackerModal } from './SigningTrackerModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -80,6 +82,13 @@ export interface VaultDoc {
 /** One document inside a shipment's Buyer/Consignee sub-table. */
 export interface VaultShipmentDoc {
   sig_req_id: number;
+  /** Library id — clm_agreement_library.id or clm_trade_doc_library.id.
+   *  Set on applicable (not-yet-sent) rows so the Send button can launch
+   *  Send-for-Signature for the exact document. */
+  db_id?: number | null;
+  /** 'agreement' | 'trade_doc' — which library db_id points at; drives the
+   *  Send-for-Signature mode. */
+  doc_type?: string | null;
   name: string;
   required: string;                // REQ | OPT
   status: 'Signed' | 'Pending' | 'Declined' | 'Recalled' | 'Expired' | 'Draft';
@@ -289,6 +298,9 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
    * wizard opens with these clm_trade_doc_library ids pre-checked. Driven
    * by the Trade Documents tab's per-row Send button. */
   const [sendDocIds, setSendDocIds] = useState<number[] | null>(null);
+  /* Shipment Send-for-Signature — launches the preview + signature-box wizard
+   * for one not-yet-sent shipment document. */
+  const [shipSend, setShipSend] = useState<{ leadId: number; doc: VaultShipmentDoc; party: 'buyer' | 'consignee' } | null>(null);
 
   /* Close on Escape — destructive shortcut is fine for a read-only
    * panel since there's no in-flight edit to lose. */
@@ -751,7 +763,8 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
               (expandable Buyer / Consignee sub-tables); the standard-doc tabs
               stay as flat document tables. */}
           {(tab === 'shipment-agreements' || tab === 'trade-documents')
-            ? <ShipmentTable rows={vault.shipment_agreements} kind={tab === 'trade-documents' ? 'trade' : 'agreement'} filter={shipmentFilter} setFilter={setShipmentFilter} />
+            ? <ShipmentTable rows={vault.shipment_agreements} kind={tab === 'trade-documents' ? 'trade' : 'agreement'} filter={shipmentFilter} setFilter={setShipmentFilter}
+                             onSend={(leadId, doc, party) => setShipSend({ leadId, doc, party })} />
             : <DocsTable rows={docsForTab} tab={tab} ownerType="customer" ownerId={customer?.db_id ?? null} onReload={reloadVault}
                          onSendTradeDoc={(d) => { if (d.db_id) setSendDocIds([d.db_id]); }}
                          onRemindTradeDoc={handleRemind} />}
@@ -795,6 +808,15 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
         preselectedDocIds={sendDocIds ?? undefined}
         onClose={() => setSendDocIds(null)}
         onSent={() => { setSendDocIds(null); void reloadSignatures(); }}
+      />
+
+      {/* Shipment Send-for-Signature — opens the preview + draggable signature
+          box directly for the clicked doc. On send it reloads the vault so the
+          row flips Draft → Pending. */}
+      <ShipmentDocSendForSignature
+        target={shipSend}
+        onClose={() => setShipSend(null)}
+        onSent={() => { setShipSend(null); void reloadVault(); void reloadSignatures(); }}
       />
 
       {/* Document Overview popup — all documents for the chosen group in one
@@ -1253,11 +1275,13 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
 /* ─── Shipment-ID-wise matrix — one row per shipment, expandable into the
  *      shipment's Buyer / Consignee documents for the active kind (Trade
  *      Documents or Agreements). */
-function ShipmentTable({ rows, kind, filter, setFilter }: {
+function ShipmentTable({ rows, kind, filter, setFilter, onSend }: {
   rows: VaultShipmentRow[];
   kind: 'trade' | 'agreement';
   filter: 'buyer-eq-consignee' | 'buyer-neq-consignee';
   setFilter: (f: 'buyer-eq-consignee' | 'buyer-neq-consignee') => void;
+  /** Launches Send-for-Signature for one shipment doc (lead + doc + party). */
+  onSend?: (leadId: number, doc: VaultShipmentDoc, party: 'buyer' | 'consignee') => void;
 }) {
   const [openId, setOpenId] = useState<number | null>(null);
   const buyerNeq = filter === 'buyer-neq-consignee';
@@ -1333,6 +1357,7 @@ function ShipmentTable({ rows, kind, filter, setFilter }: {
                           buyerName={r.customer}
                           consigneeName={r.consignee || '—'}
                           buyerIsConsignee={r.buyer_is_consignee}
+                          onSend={onSend ? (doc, party) => onSend(r.id, doc, party) : undefined}
                         />
                       </td>
                     </tr>
@@ -1350,8 +1375,12 @@ function ShipmentTable({ rows, kind, filter, setFilter }: {
 
 /* Expanded shipment row — Buyer / Consignee sub-tabs + the document table.
  * Inline-styled (no scoped classes) so the Consignee vault reuses it as-is. */
-export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, buyerIsConsignee }: {
+export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, buyerIsConsignee, onSend }: {
   buyer: VaultShipmentDoc[]; consignee: VaultShipmentDoc[]; buyerName: string; consigneeName: string; buyerIsConsignee: boolean;
+  /** Launches Send-for-Signature (preview + draggable signature box) for one
+   *  not-yet-sent ("Draft") doc. Receives the doc + which party it belongs to.
+   *  Omitted ⇒ no Send button. */
+  onSend?: (doc: VaultShipmentDoc, party: 'buyer' | 'consignee') => void;
 }) {
   const toast = useToast();
   const [party, setParty] = useState<'buyer' | 'consignee' | 'both'>('buyer');
@@ -1389,7 +1418,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
             <thead>
               <tr style={{ background: 'linear-gradient(90deg,#0e7490,#0891b2)', color: '#fff' }}>
-                {['#', 'Document Name', 'Required', 'Uploaded On', 'Valid Upto', 'Status', 'Actions'].map((h) => (
+                {['#', 'Document Name', 'Required', 'Signed On', 'Status', 'Actions'].map((h) => (
                   <th key={h} style={{ padding: '8px 10px', textAlign: h === 'Document Name' ? 'left' : 'center', fontSize: 9, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -1401,11 +1430,11 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
                   <td style={{ padding: '8px 10px', fontWeight: 700, color: '#0f172a' }}>{d.name}</td>
                   <td style={{ padding: '8px 10px', textAlign: 'center' }}><span style={{ fontSize: 8.5, fontWeight: 800, color: d.required === 'OPT' ? '#64748b' : '#b45309', background: d.required === 'OPT' ? '#f1f5f9' : '#fef3c7', border: `1px solid ${d.required === 'OPT' ? '#e2e8f0' : '#fde68a'}`, padding: '2px 7px', borderRadius: 20 }}>{d.required}</span></td>
                   <td style={{ padding: '8px 10px', textAlign: 'center', color: '#475569' }}>{d.uploaded_on}</td>
-                  <td style={{ padding: '8px 10px', textAlign: 'center', color: '#475569' }}>{d.valid_upto}</td>
                   <td style={{ padding: '8px 10px', textAlign: 'center' }}><span style={{ fontSize: 9.5, fontWeight: 800, color: stTone(d.status) }}>● {d.status}</span></td>
                   <td style={{ padding: '8px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                     {d.signed_url && <button type="button" onClick={() => window.open(resolveFileUrl(d.signed_url!), '_blank', 'noopener')} style={docActStyle('#0891b2')}>View</button>}
-                    {d.status !== 'Signed' && d.sig_req_id > 0 && <button type="button" disabled={busy === d.sig_req_id} onClick={() => remind(d)} style={docActStyle('#06b6d4')}>{busy === d.sig_req_id ? '…' : 'Remind'}</button>}
+                    {d.status === 'Draft' && onSend && d.db_id && <button type="button" onClick={() => onSend(d, buyer.includes(d) ? 'buyer' : 'consignee')} style={docActStyle('#7c3aed')}>Send</button>}
+                    {d.status !== 'Signed' && d.sig_req_id > 0 && <button type="button" disabled={busy === d.sig_req_id} onClick={() => remind(d)} style={docActStyle('#06b6d4')}>{busy === d.sig_req_id ? '…' : 'Send Reminder'}</button>}
                   </td>
                 </tr>
               ))}
@@ -1414,6 +1443,97 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
         </div>
       )}
     </div>
+  );
+}
+
+/* Shipment Send-for-Signature launcher — opens the SAME wizard the workplace
+ * uses (preview pane + draggable signature box), pre-loaded with one shipment
+ * doc, WITHOUT the intermediate list popup. On `target` set it fetches the
+ * lead's applicable docs (for agreement content + signer emails) and drives
+ * SalesCustomerSendForSignatureModal in the right mode. Shared by both the
+ * Customer and Consignee vaults. */
+export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
+  target: { leadId: number; doc: VaultShipmentDoc; party: 'buyer' | 'consignee' } | null;
+  onClose: () => void;
+  onSent: () => void;
+}) {
+  const toast = useToast();
+  const [agr, setAgr] = useState<AgreementContext | null>(null);
+  const [td,  setTd]  = useState<{ ids: number[]; leadId: number; modelName: 'Customer' | 'Consignee'; customer: SendForSignatureCustomer | null } | null>(null);
+
+  useEffect(() => {
+    if (!target?.doc.db_id) { setAgr(null); setTd(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res  = await api.get(`/clm/leads/${target.leadId}/agreement-applicable`);
+        if (cancelled) return;
+        const data = res.data?.data;
+        const cust = data?.lead?.customer;
+        const cons = data?.lead?.consignee;
+
+        if (target.doc.doc_type === 'agreement') {
+          // Locate the applicable agreement (carries content + header/footer).
+          let a: any = null;
+          for (const seg of (data?.segments ?? [])) {
+            const f = (seg.agreements ?? []).find((x: any) => x.id === target.doc.db_id);
+            if (f) { a = f; break; }
+          }
+          if (!a) { toast.error('Cannot send', 'This agreement is no longer applicable to the shipment.'); onClose(); return; }
+          // Signers come from the agreement's party CSV intersected with the
+          // lead's mapped customer / consignee — same rule as the workplace.
+          const tokens = String(a.party ?? '').toLowerCase().split(',').map((s: string) => s.trim()).filter(Boolean);
+          const signers: AgreementSigner[] = [];
+          if (tokens.includes('buyer'))     signers.push({ role: 'buyer',     name: cust?.name ?? '⚠ Customer not mapped',  email: cust?.email ?? null });
+          if (tokens.includes('consignee')) signers.push({ role: 'consignee', name: cons?.name ?? '⚠ Consignee not mapped', email: cons?.email ?? null });
+          setAgr({
+            leadId: target.leadId,
+            agreements: [{
+              id: a.id, code: a.code, title: a.title, agreement_type: a.agreement_type,
+              party: a.party, content: a.content ?? null,
+              header_config: a.header_config ?? null, footer_config: a.footer_config ?? null,
+            } as AgreementSendRow],
+            signers,
+          });
+        } else {
+          // Trade document — the wizard resolves content itself from the
+          // preselected library id; scope the send to this lead + party.
+          const p = target.party === 'consignee' ? cons : cust;
+          setTd({
+            ids: [target.doc.db_id!],
+            leadId: target.leadId,
+            modelName: target.party === 'consignee' ? 'Consignee' : 'Customer',
+            customer: p ? { id: String(p.code ?? p.id), db_id: p.id, company: p.name, email: p.email } : null,
+          });
+        }
+      } catch {
+        if (!cancelled) { toast.error('Cannot send', 'Could not load the document. Please try again.'); onClose(); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [target]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <>
+      <SalesCustomerSendForSignatureModal
+        open={!!agr}
+        customer={null}
+        mode="agreement"
+        agreementContext={agr}
+        onClose={() => { setAgr(null); onClose(); }}
+        onSent={() => { setAgr(null); onSent(); }}
+      />
+      <SalesCustomerSendForSignatureModal
+        open={!!td}
+        mode="trade-doc"
+        modelName={td?.modelName ?? 'Customer'}
+        customer={td?.customer ?? null}
+        leadId={td?.leadId ?? null}
+        preselectedDocIds={td?.ids}
+        onClose={() => { setTd(null); onClose(); }}
+        onSent={() => { setTd(null); onSent(); }}
+      />
+    </>
   );
 }
 
