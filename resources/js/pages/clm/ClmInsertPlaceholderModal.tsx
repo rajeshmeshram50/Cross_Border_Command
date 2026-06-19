@@ -16,42 +16,36 @@ import { useToast } from '../../contexts/ToastContext';
 type Tab = 'customer' | 'consignee' | 'supplier' | 'product';
 type Field = { label: string; token: string; isSignature?: boolean };
 
+/* Every field the backend's replacePartyNamespaceTokens() resolves for a party
+ * (Customer / Consignee / Supplier share the same namespace value map). Listed
+ * once and expanded per party so all three tabs expose the FULL set — no party
+ * is missing fields the others have. `name`/`code` get a party-specific label. */
+const PARTY_FIELDS: { label: string; key: string }[] = [
+  { label: 'Name',           key: 'name' },
+  { label: 'Code',           key: 'code' },
+  { label: 'Company',        key: 'company' },
+  { label: 'Contact Person', key: 'contact_person' },
+  { label: 'Phone',          key: 'phone' },
+  { label: 'Email',          key: 'email' },
+  { label: 'GST',            key: 'gst' },
+  { label: 'PAN',            key: 'pan' },
+  { label: 'IEC',            key: 'iec' },
+  { label: 'Bank Account',   key: 'bank_account' },
+  { label: 'Country',        key: 'country' },
+  { label: 'State',          key: 'state' },
+  { label: 'City',           key: 'city' },
+  { label: 'Address',        key: 'address' },
+];
+const partyFields = (group: 'customer' | 'consignee' | 'supplier', nameLabel: string): Field[] =>
+  PARTY_FIELDS.map(f => ({
+    label: f.key === 'name' ? `${nameLabel} Name` : f.key === 'code' ? `${nameLabel} Code` : f.label,
+    token: `{{${group}.${f.key}}}`,
+  }));
+
 const FIELDS: Record<Tab, Field[]> = {
-  customer: [
-    { label: 'Customer Name',   token: '{{customer.name}}' },
-    { label: 'Customer Code',   token: '{{customer.code}}' },
-    { label: 'Company',         token: '{{customer.company}}' },
-    { label: 'Contact Person',  token: '{{customer.contact_person}}' },
-    { label: 'Phone',           token: '{{customer.phone}}' },
-    { label: 'Email',           token: '{{customer.email}}' },
-    { label: 'GST',             token: '{{customer.gst}}' },
-    { label: 'Country',         token: '{{customer.country}}' },
-    { label: 'Address',         token: '{{customer.address}}' },
-    { label: 'PAN',             token: '{{customer.pan}}' },
-    { label: 'IEC',             token: '{{customer.iec}}' },
-  ],
-  consignee: [
-    { label: 'Consignee Name',  token: '{{consignee.name}}' },
-    { label: 'Consignee Code',  token: '{{consignee.code}}' },
-    { label: 'Contact Person',  token: '{{consignee.contact_person}}' },
-    { label: 'Phone',           token: '{{consignee.phone}}' },
-    { label: 'Email',           token: '{{consignee.email}}' },
-    { label: 'Country',         token: '{{consignee.country}}' },
-    { label: 'Address',         token: '{{consignee.address}}' },
-  ],
-  supplier: [
-    { label: 'Supplier Name',   token: '{{supplier.name}}' },
-    { label: 'Supplier Code',   token: '{{supplier.code}}' },
-    { label: 'Company',         token: '{{supplier.company}}' },
-    { label: 'Contact Person',  token: '{{supplier.contact_person}}' },
-    { label: 'Phone',           token: '{{supplier.phone}}' },
-    { label: 'Email',           token: '{{supplier.email}}' },
-    { label: 'GST',             token: '{{supplier.gst}}' },
-    { label: 'Country',         token: '{{supplier.country}}' },
-    { label: 'Address',         token: '{{supplier.address}}' },
-    { label: 'PAN',             token: '{{supplier.pan}}' },
-    { label: 'Bank Account',    token: '{{supplier.bank_account}}' },
-  ],
+  customer:  partyFields('customer', 'Customer'),
+  consignee: partyFields('consignee', 'Consignee'),
+  supplier:  partyFields('supplier', 'Supplier'),
   // Product placeholders mirror the Proforma Invoice product table columns
   // (code · name · segment · quantity). The renderer expands {{product.*}}
   // tokens into a row per mapped product at generation time.

@@ -50,6 +50,7 @@ export default function ClmAgreementsToApprovePage() {
   const [tab, setTab]   = useState<AtaTab>('pending');
   const [page, setPage] = useState(1);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [convoId, setConvoId]   = useState<string | null>(null);
   const [ata, setAta]   = useState<AtaRow[]>([]);
   const [loading, setLoading] = useState(true);
   const load = () => {
@@ -71,6 +72,7 @@ export default function ClmAgreementsToApprovePage() {
 
   const list = useMemo(() => tab === 'all' ? ata : ata.filter(c => c.status === tab), [ata, tab]);
   const actionContract = ata.find(c => c.id === actionId) || null;
+  const convoContract = ata.find(c => c.id === convoId) || null;
 
   const doApprove = async (id: string) => {
     const row = ata.find(c => c.id === id); if (!row?.dbId) return;
@@ -178,11 +180,12 @@ export default function ClmAgreementsToApprovePage() {
         {loading
           ? <ShimmerTable rows={6} cols={9} />
           : tab === 'clarification'
-          ? <ClarificationTable rows={list} page={page} setPage={setPage} onApprove={doApprove} onAction={setActionId} onView={doView} t={t} />
-          : <StandardTable rows={list} tab={tab} page={page} setPage={setPage} onApprove={doApprove} onAction={setActionId} onView={doView} t={t} />}
+          ? <ClarificationTable rows={list} page={page} setPage={setPage} onApprove={doApprove} onAction={setActionId} onView={doView} onConvo={setConvoId} t={t} />
+          : <StandardTable rows={list} tab={tab} page={page} setPage={setPage} onApprove={doApprove} onAction={setActionId} onView={doView} onConvo={setConvoId} t={t} />}
       </div>
 
       {actionContract && <TakeActionModal contract={actionContract} onClose={() => setActionId(null)} onSubmit={doAction} t={t} />}
+      {convoContract && <ConversationModal contract={convoContract} onClose={() => setConvoId(null)} t={t} />}
     </div>
   );
 }
@@ -253,7 +256,19 @@ function ViewBtn({ onClick, t }: { onClick: () => void; t: OpsTokens }) {
   );
 }
 
-function StandardTable({ rows, tab, page, setPage, onApprove, onAction, onView, t }: { rows: AtaContract[]; tab: AtaTab; page: number; setPage: (n: number) => void; onApprove: (id: string) => void; onAction: (id: string) => void; onView: (id: string) => void; t: OpsTokens }) {
+/* Chat-bubble button → opens the clarification conversation thread for a row. */
+function ConvoBtn({ onClick, t }: { onClick: () => void; t: OpsTokens }) {
+  const base = t.dark ? 'rgba(124,58,237,.14)' : '#F5F3FF';
+  const hov  = t.dark ? 'rgba(124,58,237,.24)' : '#EDE9FE';
+  return (
+    <button onClick={onClick} title="View Clarification Conversation" style={{ width: 30, height: 30, borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#C4B5FD'}`, background: base, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all .13s', flexShrink: 0 }}
+      onMouseEnter={e => (e.currentTarget.style.background = hov)} onMouseLeave={e => (e.currentTarget.style.background = base)}>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+    </button>
+  );
+}
+
+function StandardTable({ rows, tab, page, setPage, onApprove, onAction, onView, onConvo, t }: { rows: AtaContract[]; tab: AtaTab; page: number; setPage: (n: number) => void; onApprove: (id: string) => void; onAction: (id: string) => void; onView: (id: string) => void; onConvo: (id: string) => void; t: OpsTokens }) {
   const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const safe = Math.min(page, totalPages);
   const start = (safe - 1) * PER_PAGE;
@@ -313,6 +328,7 @@ function StandardTable({ rows, tab, page, setPage, onApprove, onAction, onView, 
                   <td style={TD_C}>
                     {actionable ? (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                        {c.clarifications.length > 0 && <ConvoBtn onClick={() => onConvo(c.id)} t={t} />}
                         <ViewBtn onClick={() => onView(c.id)} t={t} />
                         <ApproveBtn active onClick={() => onApprove(c.id)} />
                         <TakeActionBtn active onClick={() => onAction(c.id)} />
@@ -332,7 +348,7 @@ function StandardTable({ rows, tab, page, setPage, onApprove, onAction, onView, 
   );
 }
 
-function ClarificationTable({ rows, page, setPage, onApprove, onAction, onView, t }: { rows: AtaContract[]; page: number; setPage: (n: number) => void; onApprove: (id: string) => void; onAction: (id: string) => void; onView: (id: string) => void; t: OpsTokens }) {
+function ClarificationTable({ rows, page, setPage, onApprove, onAction, onView, onConvo, t }: { rows: AtaContract[]; page: number; setPage: (n: number) => void; onApprove: (id: string) => void; onAction: (id: string) => void; onView: (id: string) => void; onConvo: (id: string) => void; t: OpsTokens }) {
   const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const safe = Math.min(page, totalPages);
   const start = (safe - 1) * PER_PAGE;
@@ -380,6 +396,7 @@ function ClarificationTable({ rows, page, setPage, onApprove, onAction, onView, 
                   <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.expDate}</span></td>
                   <td style={TD_C}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, flexWrap: 'nowrap' }}>
+                      <ConvoBtn onClick={() => onConvo(c.id)} t={t} />
                       <ViewBtn onClick={() => onView(c.id)} t={t} />
                       <ApproveBtn active={hasResp} onClick={() => onApprove(c.id)} />
                       <TakeActionBtn active={hasResp} onClick={() => onAction(c.id)} />
@@ -432,21 +449,6 @@ function TakeActionModal({ contract, onClose, onSubmit, t }: { contract: AtaCont
           </div>
         </div>
 
-        {/* Clarification history */}
-        {contract.clarifications.length > 0 && (
-          <div style={{ padding: '12px 24px', background: t.dark ? '#1c1733' : '#FAF5FF', borderBottom: `1px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#EDE9FE'}` }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg><span style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: t.dark ? '#c4b5fd' : '#7C3AED' }}>Clarification History</span></div>
-            {contract.clarifications.map((cl, i) => (
-              <div key={i} style={{ borderRadius: 9, background: t.surface, border: `1px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, padding: '9px 12px', marginBottom: 5 }}>
-                <div style={{ fontSize: 9.5, color: t.dark ? '#c4b5fd' : '#5B21B6', fontWeight: 700, marginBottom: 3 }}>Query {i + 1}</div>
-                <div style={{ fontSize: 10.5, color: t.textSub, lineHeight: 1.5 }}>{cl.query}</div>
-                {cl.response
-                  ? <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6, padding: '5px 8px', borderRadius: 6, background: t.dark ? 'rgba(16,185,129,.14)' : '#ECFDF5', border: `1px solid ${t.dark ? 'rgba(16,185,129,.38)' : '#A7F3D0'}` }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#6ee7b7' : '#059669'} strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg><span style={{ fontSize: 9.5, color: t.dark ? '#6ee7b7' : '#059669', fontWeight: 600 }}>{cl.response}</span></div>
-                  : <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6, padding: '5px 8px', borderRadius: 6, background: t.dark ? 'rgba(245,158,11,.14)' : '#FFFBEB', border: `1px solid ${t.dark ? 'rgba(245,158,11,.38)' : '#FDE68A'}` }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#fcd34d' : '#D97706'} strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg><span style={{ fontSize: 9.5, color: t.dark ? '#fcd34d' : '#D97706', fontWeight: 600 }}>Awaiting sender response</span></div>}
-              </div>
-            ))}
-          </div>
-        )}
 
         {/* Body */}
         <div style={{ padding: '20px 24px 22px', background: t.surface, overflowY: 'auto' }}>
@@ -488,6 +490,61 @@ function ChoiceCard({ sel, onClick, grad, selBg, selBd, baseBg, baseBd, title, t
       <div style={{ width: 36, height: 36, borderRadius: 10, background: `linear-gradient(135deg,${grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10, boxShadow: `0 3px 8px ${grad.split(',')[0]}4d` }}>{icon}</div>
       <div style={{ fontSize: 12, fontWeight: 800, color: titleColor, marginBottom: 3 }}>{title}</div>
       <div style={{ fontSize: 9.5, color: subColor, fontWeight: 500, lineHeight: 1.4 }}>{sub}</div>
+    </div>
+  );
+}
+
+/* ── Clarification Conversation modal (opened from the Action-column chat icon) ── */
+function ConversationModal({ contract, onClose, t }: { contract: AtaContract; onClose: () => void; t: OpsTokens }) {
+  return (
+    <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(12,5,38,.75)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: "'Rubik', system-ui, sans-serif" }}>
+      <div style={{ width: '100%', maxWidth: 500, borderRadius: 20, overflow: 'hidden', boxShadow: '0 40px 80px rgba(12,5,38,.4)', animation: 'ataSlideUp .22s cubic-bezier(.22,1,.36,1) both', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+        {/* Header */}
+        <div style={{ background: 'linear-gradient(118deg,#5B21B6,#7C3AED,#8B5CF6)', padding: '16px 20px', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.14),transparent)', pointerEvents: 'none' }} />
+          <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: 8.5, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 2 }}>{contract.id} · Clarification Conversation</div>
+              <div style={{ fontSize: 15, fontWeight: 900, color: '#fff', letterSpacing: '-.3px', maxWidth: 330, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contract.title}</div>
+            </div>
+            <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)', color: '#fff', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+          </div>
+        </div>
+        {/* Thread — your query (right) + the sender's revert (left) */}
+        <div style={{ padding: '14px 20px', background: t.dark ? '#1c1733' : '#FAF5FF', overflowY: 'auto' }}>
+          {contract.clarifications.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '34px 10px', fontSize: 11.5, fontWeight: 600, color: t.textMuted }}>No clarification conversation yet.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {contract.clarifications.map((cl, i) => (
+                <div key={i}>
+                  {/* Your query (right) */}
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'flex-start' }}>
+                    <div style={{ maxWidth: '82%', minWidth: 0 }}>
+                      <div style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted, marginBottom: 3, textAlign: 'right' }}>You · Approver · {cl.date}</div>
+                      <div style={{ background: t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.42)' : '#C4B5FD'}`, borderRadius: '12px 4px 12px 12px', padding: '9px 12px', fontSize: 11.5, color: t.dark ? '#ddd6fe' : '#5B21B6', lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.query}</div>
+                    </div>
+                    <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(contract.approver)}</span></div>
+                  </div>
+                  {/* Sender's revert (left) or awaiting note */}
+                  {cl.response
+                    ? <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 7 }}>
+                        <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(contract.createdBy)}</span></div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted, marginBottom: 3 }}>{contract.createdBy} · Initiator</div>
+                          <div style={{ background: t.dark ? 'rgba(8,145,178,.16)' : '#E0F7FA', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.42)' : '#A5F3FC'}`, borderRadius: '4px 12px 12px 12px', padding: '9px 12px', fontSize: 11.5, color: t.dark ? '#a5f3fc' : '#0e7490', lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.response}</div>
+                        </div>
+                      </div>
+                    : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 6, marginRight: 34, fontSize: 9, fontWeight: 600, color: '#F59E0B' }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> Awaiting {contract.createdBy}&apos;s response</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div style={{ padding: '12px 20px', background: t.surface, display: 'flex', justifyContent: 'flex-end', flexShrink: 0 }}>
+          <button onClick={onClose} style={{ padding: '9px 22px', borderRadius: 10, border: `1.5px solid ${t.dark ? t.border : '#E2E8F0'}`, background: t.dark ? 'rgba(255,255,255,.05)' : '#F8F9FA', color: t.dark ? '#cbd5e1' : '#64748B', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Close</button>
+        </div>
+      </div>
     </div>
   );
 }
