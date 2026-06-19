@@ -256,14 +256,15 @@ function ViewBtn({ onClick, t }: { onClick: () => void; t: OpsTokens }) {
   );
 }
 
-/* Chat-bubble button → opens the clarification conversation thread for a row. */
+/* Chat-bubble button → opens the clarification conversation thread for a row.
+ * Cyan tones to match the Agreements-to-Approve page theme. */
 function ConvoBtn({ onClick, t }: { onClick: () => void; t: OpsTokens }) {
-  const base = t.dark ? 'rgba(124,58,237,.14)' : '#F5F3FF';
-  const hov  = t.dark ? 'rgba(124,58,237,.24)' : '#EDE9FE';
+  const base = t.dark ? 'rgba(6,182,212,.12)' : '#F0FDFF';
+  const hov  = t.dark ? 'rgba(6,182,212,.22)' : '#CFFAFE';
   return (
-    <button onClick={onClick} title="View Clarification Conversation" style={{ width: 30, height: 30, borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#C4B5FD'}`, background: base, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all .13s', flexShrink: 0 }}
+    <button onClick={onClick} title="View Clarification Conversation" style={{ width: 30, height: 30, borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.3)' : '#A5F3FC'}`, background: base, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all .13s', flexShrink: 0 }}
       onMouseEnter={e => (e.currentTarget.style.background = hov)} onMouseLeave={e => (e.currentTarget.style.background = base)}>
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
     </button>
   );
 }
@@ -500,39 +501,39 @@ function ConversationModal({ contract, onClose, t }: { contract: AtaContract; on
     <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(12,5,38,.75)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: "'Rubik', system-ui, sans-serif" }}>
       <div style={{ width: '100%', maxWidth: 500, borderRadius: 20, overflow: 'hidden', boxShadow: '0 40px 80px rgba(12,5,38,.4)', animation: 'ataSlideUp .22s cubic-bezier(.22,1,.36,1) both', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
         {/* Header */}
-        <div style={{ background: 'linear-gradient(118deg,#5B21B6,#7C3AED,#8B5CF6)', padding: '16px 20px', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.14),transparent)', pointerEvents: 'none' }} />
+        <div style={{ background: 'linear-gradient(135deg,#0e7490 0%,#0891b2 45%,#06b6d4 80%,#22d3ee 100%)', padding: '16px 20px', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.16),transparent)', pointerEvents: 'none' }} />
           <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ fontSize: 8.5, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 2 }}>{contract.id} · Clarification Conversation</div>
+              <div style={{ fontSize: 8.5, fontWeight: 700, color: 'rgba(255,255,255,.65)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 2 }}>{contract.id} · Clarification Conversation</div>
               <div style={{ fontSize: 15, fontWeight: 900, color: '#fff', letterSpacing: '-.3px', maxWidth: 330, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contract.title}</div>
             </div>
             <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)', color: '#fff', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
           </div>
         </div>
         {/* Thread — your query (right) + the sender's revert (left) */}
-        <div style={{ padding: '14px 20px', background: t.dark ? '#1c1733' : '#FAF5FF', overflowY: 'auto' }}>
+        <div style={{ padding: '14px 20px', background: t.dark ? '#102234' : '#F0FDFF', overflowY: 'auto' }}>
           {contract.clarifications.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '34px 10px', fontSize: 11.5, fontWeight: 600, color: t.textMuted }}>No clarification conversation yet.</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {contract.clarifications.map((cl, i) => (
                 <div key={i}>
-                  {/* Your query (right) */}
+                  {/* Your query (right) — filled cyan bubble */}
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'flex-start' }}>
                     <div style={{ maxWidth: '82%', minWidth: 0 }}>
                       <div style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted, marginBottom: 3, textAlign: 'right' }}>You · Approver · {cl.date}</div>
-                      <div style={{ background: t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.42)' : '#C4B5FD'}`, borderRadius: '12px 4px 12px 12px', padding: '9px 12px', fontSize: 11.5, color: t.dark ? '#ddd6fe' : '#5B21B6', lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.query}</div>
+                      <div style={{ background: t.dark ? 'rgba(8,145,178,.18)' : '#E0F7FA', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.42)' : '#A5F3FC'}`, borderRadius: '12px 4px 12px 12px', padding: '9px 12px', fontSize: 11.5, color: t.dark ? '#a5f3fc' : '#0e7490', lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.query}</div>
                     </div>
-                    <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(contract.approver)}</span></div>
+                    <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(contract.approver)}</span></div>
                   </div>
-                  {/* Sender's revert (left) or awaiting note */}
+                  {/* Sender's revert (left) — white/surface bubble */}
                   {cl.response
                     ? <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 7 }}>
-                        <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(contract.createdBy)}</span></div>
+                        <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#22d3ee,#06b6d4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0c4a6e' }}>{inits(contract.createdBy)}</span></div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted, marginBottom: 3 }}>{contract.createdBy} · Initiator</div>
-                          <div style={{ background: t.dark ? 'rgba(8,145,178,.16)' : '#E0F7FA', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.42)' : '#A5F3FC'}`, borderRadius: '4px 12px 12px 12px', padding: '9px 12px', fontSize: 11.5, color: t.dark ? '#a5f3fc' : '#0e7490', lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.response}</div>
+                          <div style={{ background: t.surface, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.25)' : '#CFFAFE'}`, borderRadius: '4px 12px 12px 12px', padding: '9px 12px', fontSize: 11.5, color: t.textSub, lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.response}</div>
                         </div>
                       </div>
                     : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 6, marginRight: 34, fontSize: 9, fontWeight: 600, color: '#F59E0B' }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> Awaiting {contract.createdBy}&apos;s response</div>}

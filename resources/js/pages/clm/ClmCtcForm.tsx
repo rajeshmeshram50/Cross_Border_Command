@@ -554,7 +554,15 @@ function Stage1(p: {
   // Inline field errors (Step 2 required *). Flags set on a failed validate;
   // each field's red state auto-clears once it has a value (see the `error`
   // props on the Fields below), so we never have to manually reset them.
-  const [errors, setErrors] = useState<{ title?: boolean; type?: boolean; effDate?: boolean; endDate?: boolean }>({});
+  const [errors, setErrors] = useState<{ title?: boolean; type?: boolean; effDate?: boolean; endDate?: boolean; term?: boolean }>({});
+  // Agreement length in days (end − start) and whether the termination notice
+  // exceeds it — a 30-day notice on a 1-day agreement makes no sense, so it's
+  // blocked. Computed here so both validate() and the inline Field error use it.
+  const agreementDays = (p.effDate && p.endDate)
+    ? Math.round((new Date(p.endDate).getTime() - new Date(p.effDate).getTime()) / 86400000)
+    : null;
+  const termDays = parseInt(termNotice || '', 10);
+  const termInvalid = agreementDays !== null && agreementDays >= 0 && Number.isFinite(termDays) && termDays > agreementDays;
   const validateStep1 = (): boolean => {
     if (!p.cps.length) { toast.error('Counterparty required', 'Add at least one counterparty before continuing.'); setMidStep(1); return false; }
     if (!p.org)        { toast.error('Organisation required', 'Select your organisation details before continuing.'); setMidStep(1); return false; }
@@ -562,13 +570,14 @@ function Stage1(p: {
   };
   const validateStep2 = (): boolean => {
     // Mark every empty required field so all of them highlight inline at once…
-    const e = { title: !p.agTitle.trim(), type: !p.agType, effDate: !p.effDate, endDate: !p.endDate };
+    const e = { title: !p.agTitle.trim(), type: !p.agType, effDate: !p.effDate, endDate: !p.endDate, term: termInvalid };
     setErrors(e);
     // …while the toaster still calls out the first one (unchanged behaviour).
     if (e.title)   { toast.error('Agreement name required', 'Enter the agreement title.'); setMidStep(2); return false; }
     if (e.type)    { toast.error('Agreement type required', 'Select the agreement type.'); setMidStep(2); return false; }
     if (e.effDate) { toast.error('Effective date required', 'Select the effective date.'); setMidStep(2); return false; }
     if (e.endDate) { toast.error('End date required', 'Select the end date.'); setMidStep(2); return false; }
+    if (e.term)    { toast.error('Invalid termination notice', `Termination period (${termDays} days) can't exceed the agreement length (${agreementDays} day${agreementDays === 1 ? '' : 's'}).`); setMidStep(2); return false; }
     return true;
   };
   const validateAll = (): boolean => validateStep1() && validateStep2();
@@ -779,9 +788,9 @@ function Stage1(p: {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, alignItems: 'end' }}>
                       <Field t={t} label="Effective Date *" green error={errors.effDate && !p.effDate ? 'Effective date is required' : undefined}><MasterDatePicker value={p.effDate} onChange={p.setEffDate} placeholder="Select date" /></Field>
                       <Field t={t} label="End Date *" green error={errors.endDate && !p.endDate ? 'End date is required' : undefined}><MasterDatePicker value={p.endDate} onChange={p.setEndDate} minDate={p.effDate || undefined} placeholder="Select date" /></Field>
-                      <Field t={t} label="Termination Notice" green>
+                      <Field t={t} label="Termination Notice" green error={(errors.term && termInvalid) ? `Cannot exceed agreement length (${agreementDays} day${agreementDays === 1 ? '' : 's'})` : undefined}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <input type="number" min="1" value={termNotice} onChange={e => setTermNotice(e.target.value)} style={{ ...ipt, borderColor: t.dark ? 'rgba(16,185,129,.35)' : '#A7F3D0', width: 60, textAlign: 'center', padding: '0 6px' }} />
+                          <input type="number" min="1" max={agreementDays ?? undefined} value={termNotice} onChange={e => setTermNotice(e.target.value)} style={{ ...ipt, borderColor: termInvalid ? '#ef4444' : (t.dark ? 'rgba(16,185,129,.35)' : '#A7F3D0'), width: 60, textAlign: 'center', padding: '0 6px' }} />
                           <span style={{ fontSize: 10, color: t.textSub, fontWeight: 600 }}>days</span>
                         </div>
                       </Field>
@@ -861,7 +870,7 @@ function Stage1(p: {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg><span style={{ fontSize: 8, color: t.dark ? '#a78bfa' : '#A78BFA', fontWeight: 500, fontStyle: 'italic' }}>Placeholders auto-fill on agreement generation</span></div>
                   <span style={{ fontSize: 8, fontWeight: 700, color: t.dark ? '#a78bfa' : '#C4B5FD', letterSpacing: '.05em' }}>{'{{PLACEHOLDER}}'}</span>
                 </div>
-                {phOpen && <ClmInsertPlaceholderModal open={phOpen} hideProductTab counterparties={p.cps.map(c => ({ name: c.name, code: String(c.sourceId ?? ''), role: (c.sourceType || c.badge || '').toLowerCase() }))} onClose={() => setPhOpen(false)} onInsert={tok => { if (/^\s*</.test(tok)) insertHtml(tok); else insertText(tok); }} />}
+                {phOpen && <ClmInsertPlaceholderModal open={phOpen} hideProductTab counterparties={p.cps.map(c => ({ name: c.name, code: String(c.sourceId ?? ''), role: (c.sourceType || c.badge || '').toLowerCase(), type: c.sourceType, id: c.sourceId }))} onClose={() => setPhOpen(false)} onInsert={tok => { if (/^\s*</.test(tok)) insertHtml(tok); else insertText(tok); }} />}
                 {clauseOpen && <ClmClauseInsertPanel onClose={() => setClauseOpen(false)} onInsert={html => insertHtml(html)} />}
               </div>
             )}

@@ -293,7 +293,13 @@ class CtcContractController extends Controller
     {
         $html = (string) ($row->content ?? '');
         if ($html === '') return '';
-        return $this->resolvePartyTokens($this->resolveOrgTokens($html, $row), $row);
+        $html = $this->resolvePartyTokens($this->resolveOrgTokens($html, $row), $row);
+        // Blank out any placeholder still left over — a party that isn't mapped
+        // ({{supplier.*}} with no supplier), product tokens (CTC has none), or a
+        // typo'd token — so the preview shows nothing instead of raw {{...}}.
+        // {{signature}} is preserved: the SPA swaps it for the sign-here marker.
+        $html = preg_replace('/\{\{\s*(?!signature\s*\}\})[^{}]*\}\}/i', '', $html);
+        return $html;
     }
 
     /** Case to Case Contracts list row. */
@@ -503,6 +509,47 @@ class CtcContractController extends Controller
         // {{consignee.gst}} placeholders. Raw `content` is kept for editing.
         $row->content_preview = $this->previewContent($row);
         return response()->json(['status' => true, 'data' => $row]);
+    }
+
+    /**
+     * GET /clm/ctc-contracts/placeholder-values?type=&id=
+     *
+     * Resolved field → value map for one counterparty, so the Insert
+     * Placeholder modal can show ONLY the fields that actually have data
+     * (hide empty GST/PAN/contact/etc. instead of inserting blank tokens).
+     */
+    public function placeholderValues(Request $request)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        [$model, $modelName] = $this->livePartyModel((string) $request->query('type', ''), $request->query('id'), (int) $user->client_id);
+        if (!$model) return response()->json(['status' => true, 'data' => []]);
+
+        $addr   = $model->primaryAddress;
+        $vendor = $modelName === 'Vendor';
+        $scalar = static fn ($v) => $v === null ? '' : (is_object($v) ? (string) ($v->name ?? '') : (string) $v);
+        $country = $scalar($addr?->country);
+        $state   = $scalar($addr?->state);
+        $pin     = $scalar($vendor ? ($addr?->pincode ?? null) : ($addr?->pin ?? null));
+        $codeAttr = $modelName === 'Customer' ? 'customer_code' : ($modelName === 'Consignee' ? 'consignee_code' : 'vendor_code');
+
+        $values = [
+            'name'           => (string) ($model->company_name ?? ''),
+            'code'           => (string) ($model->{$codeAttr} ?? ''),
+            'company'        => (string) (($model->legal_name ?: $model->company_name) ?? ''),
+            'contact_person' => (string) ($vendor ? ($addr?->contact_name ?? '') : ($addr?->cp_name ?? '')),
+            'phone'          => (string) ($vendor ? ($addr?->contact_no ?? '') : ($addr?->cp_contact ?? '')),
+            'email'          => (string) ($model->primary_email ?? ''),
+            // No backing column yet → always empty (so they get hidden).
+            'gst'            => '',
+            'pan'            => '',
+            'iec'            => '',
+            'bank_account'   => '',
+            'country'        => $country,
+            'state'          => $state,
+            'city'           => $scalar($addr?->city ?? null),
+            'address'        => trim(implode(', ', array_filter([$addr?->address_line, $addr?->city, $state, $country, $pin]))),
+        ];
+        return response()->json(['status' => true, 'data' => $values]);
     }
 
     /** Public URL of the fully-signed PDF (from the linked signature request), or null. */
@@ -1070,6 +1117,10 @@ class CtcContractController extends Controller
         // → real counterparty data, so the rendered PDF/DOCX never leaks raw
         // tokens like {{consignee.gst}}.
         $processedHtml = $this->resolvePartyTokens($processedHtml, $row);
+        // Blank any placeholder still left (unmapped party, missing data, typo)
+        // so the final document shows nothing rather than raw {{...}}.
+        // ({{signature}} was already substituted above.)
+        $processedHtml = preg_replace('/\{\{[^{}]*\}\}/', '', $processedHtml);
 
         $headerConfig = is_array($row->header_config) ? $row->header_config : [];
         $footerConfig = is_array($row->footer_config) ? $row->footer_config : [];

@@ -442,6 +442,21 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   };
 
   const onEdit = (kind: DocType, id: number) => {
+    // A quotation that's been converted to a PI (or cancelled) is locked — the
+    // PI is now the live document; editing the quotation would desync them.
+    if (kind === 'quotation') {
+      const q = quotations.find(x => x.id === id);
+      if (q && isTerminalQuote(q.status)) {
+        const cancelled = String(q.status).toLowerCase().includes('cancel');
+        toast.warning(
+          cancelled ? 'Quotation cancelled' : 'Quotation converted to PI',
+          cancelled
+            ? 'This quotation is cancelled and can no longer be edited.'
+            : 'This quotation has been converted to a Proforma Invoice and can no longer be edited. Edit the PI instead.',
+        );
+        return;
+      }
+    }
     const st = sigByRow[`${kind}:${id}`]?.status;
     // A signed document is locked — the signed copy must keep matching what the
     // customer e-signed. A PI that's been SENT for signature (awaiting) is also
@@ -848,8 +863,13 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                             // PI also once it's been SENT for signature (awaiting).
                             // Pencil greys out; clicking still explains why (onEdit).
                             const st = sigByRow[`${docType}:${r.id}`]?.status;
-                            const locked = st === 'completed' || (docType === 'pi' && st === 'inprogress');
-                            const lockLabel = docType === 'pi'
+                            // Quotation converted to a PI (terminal) is locked too —
+                            // the PI is the live doc now.
+                            const convertedLock = docType === 'quotation' && terminal;
+                            const locked = st === 'completed' || (docType === 'pi' && st === 'inprogress') || convertedLock;
+                            const lockLabel = convertedLock
+                              ? (String(r.status).toLowerCase().includes('cancel') ? 'Quotation cancelled — editing locked' : 'Quotation converted to PI — editing locked')
+                              : docType === 'pi'
                               ? (st === 'inprogress' ? 'PI sent for signature — editing locked' : 'PI signed — editing locked')
                               : 'Quotation signed — editing locked';
                             return (
