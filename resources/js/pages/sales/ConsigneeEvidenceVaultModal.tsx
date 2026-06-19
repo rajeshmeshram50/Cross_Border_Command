@@ -8,6 +8,7 @@ import Tooltip from '../../components/ui/Tooltip';
 import { useToast } from '../../contexts/ToastContext';
 import { signatureRequestsToVaultDocs, mergeTradeDocuments, type SigReqRow } from '../../utils/vaultSignatureRows';
 import { downloadFile } from '../../utils/downloadFile';
+import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
 import { SigningTrackerModal } from './SigningTrackerModal';
 
@@ -220,6 +221,8 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   // "Document Overview" popup — set to a group key to open the all-docs list.
   const [overview, setOverview] = useState<GroupKey | null>(null);
   const [overviewPage, setOverviewPage] = useState(1);
+  // Active shipment tab inside the Case-to-Case Document Overview popup.
+  const [ovShip, setOvShip] = useState<number | null>(null);
   const [shipmentFilter, setShipmentFilter] = useState<'buyer-eq-consignee' | 'buyer-neq-consignee'>('buyer-eq-consignee');
 
   /* Switch the active group and jump to its first sub-tab. */
@@ -616,7 +619,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                 <button
                   type="button"
                   className="cnev-group-overview"
-                  onClick={() => { setOverview(g.key); setOverviewPage(1); }}
+                  onClick={() => { setOverview(g.key); setOverviewPage(1); setOvShip(null); }}
                   title="View all documents in one list"
                 >
                   <i className="ri-list-check-2" aria-hidden /> Document Overview
@@ -729,13 +732,22 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           flat list (name + status + download). */}
       {overview && (() => {
         const isStd = overview === 'standard';
-        const docs: VaultDoc[] = isStd
+        // Case-to-Case: only the consignee's documents, segregated by shipment
+        // (one tab per shipment) — mirrors the Customer vault overview.
+        const shipDocsOf = (r: VaultShipmentRow): VaultShipmentDoc[] => [
+          ...(r.trade_docs_consignee ?? []),
+          ...(r.agreements_consignee ?? []),
+        ];
+        const shipments     = isStd ? [] : vault.shipment_agreements;
+        const shipsWithDocs = isStd ? [] : shipments.filter((r) => shipDocsOf(r).length > 0);
+        const activeShip    = isStd ? null : (shipsWithDocs.find((r) => r.id === ovShip) ?? shipsWithDocs[0] ?? null);
+        const docs: (VaultDoc | VaultShipmentDoc)[] = isStd
           ? [...vault.company_dd, ...vault.owner_kyc, ...vault.trade_licenses]
-          : [...vault.trade_documents];
+          : (activeShip ? shipDocsOf(activeShip) : []);
         const title = isStd ? 'Standard Documents — Overview' : 'Case to Case Agreements — Overview';
         const sub = isStd
           ? 'All Company Due Diligence, Owner KYC & Trade Licenses documents in one list'
-          : 'All Trade Documents & Agreements for this consignee in one list';
+          : 'Consignee Trade Documents & Agreements — pick a shipment';
         const OV_PER_PAGE = 5;
         const ovTotalPages = Math.max(1, Math.ceil(docs.length / OV_PER_PAGE));
         const ovPageSafe = Math.min(overviewPage, ovTotalPages);
@@ -750,26 +762,44 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                 </div>
                 <button type="button" className="cnev-ov-close" onClick={() => setOverview(null)} aria-label="Close"><i className="ri-close-line" /></button>
               </div>
+              {/* Case-to-Case: horizontal, scrollable shipment tabs. */}
+              {!isStd && shipsWithDocs.length > 0 && (
+                <div className="cnev-ov-shiptabs">
+                  {shipsWithDocs.map((r) => (
+                    <button
+                      type="button"
+                      key={r.id}
+                      className={`cnev-ov-shiptab ${activeShip?.id === r.id ? 'is-active' : ''}`}
+                      onClick={() => { setOvShip(r.id); setOverviewPage(1); }}
+                    >
+                      <i className="ri-truck-line" aria-hidden /> {r.shipment_id}
+                      <span className="cnev-ov-shiptab-opp">{r.opportunity_id}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="cnev-ov-body">
                 <table className="cnev-ov-table">
                   <thead><tr><th style={{ width: 48 }}>#</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
                   <tbody>
                     {docs.length === 0 ? (
-                      <tr><td colSpan={4} className="cnev-ov-empty">No documents available.</td></tr>
+                      <tr><td colSpan={4} className="cnev-ov-empty">{isStd ? 'No documents available.' : (shipsWithDocs.length === 0 ? 'No shipment documents available.' : 'No documents for this shipment.')}</td></tr>
                     ) : docs.slice((ovPageSafe - 1) * OV_PER_PAGE, (ovPageSafe - 1) * OV_PER_PAGE + OV_PER_PAGE).map((d, i) => {
                       const absIdx = (ovPageSafe - 1) * OV_PER_PAGE + i;
-                      const url = d.attachment_url || null;
+                      const raw = isStd ? (d as VaultDoc).attachment_url : (d as VaultShipmentDoc).signed_url;
+                      const url = raw ? resolveFileUrl(raw) : null;
+                      const fname = isStd ? ((d as VaultDoc).attachment || `${d.name}.pdf`) : `${d.name}.pdf`;
                       return (
-                        <tr key={`${d.id}-${absIdx}`}>
+                        <tr key={`${activeShip?.id ?? 'std'}-${absIdx}`}>
                           <td className="cnev-ov-num">{absIdx + 1}</td>
                           <td className="cnev-ov-name">{d.name}</td>
-                          <td><StatusPill s={d.status} /></td>
+                          <td><StatusPill s={d.status as VaultStatus} /></td>
                           <td>
                             <button
                               type="button"
                               className="cnev-ov-dl"
                               disabled={!url}
-                              onClick={() => { if (url) void downloadFile(url, d.attachment || `${d.name}.pdf`); }}
+                              onClick={() => { if (url) void downloadFile(url, fname); }}
                             >
                               <i className="ri-download-2-line" aria-hidden /> Download
                             </button>
@@ -1143,18 +1173,13 @@ function ShipmentTable({ rows, kind, filter, setFilter, onSend }: {
   onSend?: (leadId: number, doc: VaultShipmentDoc, party: 'buyer' | 'consignee') => void;
 }) {
   const [openId, setOpenId] = useState<number | null>(null);
-  const buyerNeq = filter === 'buyer-neq-consignee';
-  const filtered = rows.filter(r => buyerNeq ? !r.buyer_is_consignee : r.buyer_is_consignee);
+  // Consignee vault shows ALL shipments and only the consignee's documents —
+  // no Buyer = / ≠ Consignee split (that's a customer-vault concept).
+  const filtered = rows;
   const isAgreement = kind === 'agreement';
   const COLS = isAgreement ? 11 : 10;
   return (
     <>
-      {/* Trade Documents uses compact pills; Agreements uses the full-width
-          segmented bar with ✓ / ✕ markers — matches the figma per tab. */}
-      <div className={`cnev-ship-filter ${isAgreement ? '' : 'cnev-ship-filter-2'}`}>
-        <button type="button" className={`cnev-ship-fbtn ${filter === 'buyer-eq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-eq-consignee'); setOpenId(null); }}>{isAgreement && <span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✓</span>}Buyer = Consignee</button>
-        <button type="button" className={`cnev-ship-fbtn ${filter === 'buyer-neq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-neq-consignee'); setOpenId(null); }}>{isAgreement && <span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✕</span>}Buyer &ne; Consignee</button>
-      </div>
       <div className="cnev-table-wrap">
         <div className="cnev-table-scroll">
         <table className="cnev-table">
@@ -1175,7 +1200,7 @@ function ShipmentTable({ rows, kind, filter, setFilter, onSend }: {
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={COLS} className="cnev-empty">No shipments match the filter.</td></tr>
+              <tr><td colSpan={COLS} className="cnev-empty">No shipments for this consignee.</td></tr>
             ) : filtered.map((r, i) => {
               const open = openId === r.id;
               return (
@@ -1213,6 +1238,7 @@ function ShipmentTable({ rows, kind, filter, setFilter, onSend }: {
                           consigneeName={r.consignee || '—'}
                           buyerIsConsignee={r.buyer_is_consignee}
                           onSend={onSend ? (doc, party) => onSend(r.id, doc, party) : undefined}
+                          forceParty="consignee"
                         />
                       </td>
                     </tr>
@@ -1533,6 +1559,13 @@ const CNEV_CSS = `
   transition: all .15s ease;
 }
 .cnev-ov-close:hover { background: rgba(255,255,255,.25); }
+.cnev-ov-shiptabs { display: flex; gap: 8px; overflow-x: auto; padding: 12px 18px 0; scrollbar-width: thin; scrollbar-color: rgba(8,145,178,.3) transparent; }
+.cnev-ov-shiptabs::-webkit-scrollbar { height: 6px; }
+.cnev-ov-shiptabs::-webkit-scrollbar-thumb { background: rgba(8,145,178,.3); border-radius: 99px; }
+.cnev-ov-shiptab { display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0; padding: 8px 14px; border-radius: 10px; cursor: pointer; border: 1.5px solid rgba(6,182,212,.22); background: #fff; color: #0e7490; font-family: inherit; font-size: 12px; font-weight: 700; white-space: nowrap; transition: all .15s; }
+.cnev-ov-shiptab:hover { background: #ecfeff; }
+.cnev-ov-shiptab.is-active { background: linear-gradient(135deg,#0e7490,#06b6d4); color: #fff; border-color: transparent; box-shadow: 0 3px 10px rgba(8,145,178,.3); }
+.cnev-ov-shiptab-opp { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 20px; background: rgba(8,145,178,.1); color: #0891b2; }
 .cnev-ov-body { overflow: auto; padding: 14px 18px 18px; }
 .cnev-ov-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px 16px; flex-wrap: wrap; }
 .cnev-ov-pager-info { font-size: 11px; font-weight: 600; color: #0891b2; }
