@@ -564,7 +564,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
       : s === 'Expiring' ? { bg: '#fef3c7', fg: '#92400e', mark: '⚠' }
       :                    { bg: '#fef2f2', fg: '#dc2626', mark: '⌛' };
     return (
-      <span className="cev-pill" style={{ background: tone.bg, color: tone.fg }}>
+      <span className="cev-pill" data-status={s} style={{ background: tone.bg, color: tone.fg }}>
         {tone.mark} {s}
       </span>
     );
@@ -997,9 +997,9 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
               <td>{d.authority || '—'}</td>
               <td>
                 {d.requirement === 'M' ? (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>
+                  <span className="cev-req cev-req-m" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>
                 ) : (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
+                  <span className="cev-req cev-req-o" style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
                 )}
               </td>
               <td>
@@ -2261,8 +2261,9 @@ const CEV_CSS = `
     inset 0 -1px 0 rgba(8,145,178,0.40),
     0 4px 10px -8px rgba(0,0,0,0.40);
 }
-[data-bs-theme="dark"] .cev-table tbody td { color: #e2e8f0; border-bottom-color: rgba(8,145,178,.10); }
-[data-bs-theme="dark"] .cev-table tbody tr:hover td { background: rgba(8,145,178,.06); }
+[data-bs-theme="dark"] .cev-table tbody td { color: #e2e8f0; border-bottom-color: rgba(8,145,178,.10); background: transparent; }
+[data-bs-theme="dark"] .cev-table tbody tr:nth-child(even) td { background: rgba(8,145,178,.05); }
+[data-bs-theme="dark"] .cev-table tbody tr:hover td { background: rgba(8,145,178,.12); }
 [data-bs-theme="dark"] .cev-doc-name { color: #cffafe; }
 [data-bs-theme="dark"] .cev-mono { color: #e2e8f0; }
 [data-bs-theme="dark"] .cev-date { background: rgba(8,145,178,.16); color: #67e8f9; }
@@ -2280,6 +2281,20 @@ const CEV_CSS = `
 [data-bs-theme="dark"] .cev-btn-light:hover { background: rgba(8,145,178,.18); }
 [data-bs-theme="dark"] .cev-ship-fbtn { background: #0a2a33; color: #94a3b8; border-color: rgba(8,145,178,.28); }
 [data-bs-theme="dark"] .cev-ship-fbtn:hover { color: #67e8f9; background: rgba(8,145,178,.10); }
+[data-bs-theme="dark"] .cev-ship-filter-2 { background: rgba(8,145,178,.12); }
+[data-bs-theme="dark"] .cev-ship-filter-2 .cev-ship-fbtn:not(.is-active) { background: transparent; border-color: transparent; }
+[data-bs-theme="dark"] .cev-ship-fbtn.is-active { background: linear-gradient(135deg,#0891b2,#22d3ee); color: #06283a; border-color: transparent; box-shadow: 0 4px 14px rgba(34,211,238,.4); }
+/* All badges — translucent colour fills on dark (match the segment chips). */
+[data-bs-theme="dark"] .cev-req-m { background: rgba(16,185,129,.18) !important; color: #6ee7b7 !important; border-color: rgba(16,185,129,.4) !important; }
+[data-bs-theme="dark"] .cev-req-o { background: rgba(148,163,184,.16) !important; color: #cbd5e1 !important; border-color: rgba(148,163,184,.32) !important; }
+[data-bs-theme="dark"] .cev-sec-pill-ok   { background: rgba(16,185,129,.18) !important; color: #6ee7b7 !important; border-color: rgba(16,185,129,.4) !important; }
+[data-bs-theme="dark"] .cev-sec-pill-warn { background: rgba(245,158,11,.18) !important; color: #fcd34d !important; border-color: rgba(245,158,11,.4) !important; }
+[data-bs-theme="dark"] .cev-sec-pill-bad  { background: rgba(239,68,68,.18) !important; color: #fca5a5 !important; border-color: rgba(239,68,68,.4) !important; }
+[data-bs-theme="dark"] .cev-sec-pill-docs { background: rgba(59,130,246,.18) !important; color: #93c5fd !important; border-color: rgba(59,130,246,.4) !important; }
+[data-bs-theme="dark"] .cev-pill[data-status="Verified"] { background: rgba(16,185,129,.18) !important; color: #6ee7b7 !important; }
+[data-bs-theme="dark"] .cev-pill[data-status="Signed"]   { background: rgba(59,130,246,.18) !important; color: #93c5fd !important; }
+[data-bs-theme="dark"] .cev-pill[data-status="Expiring"] { background: rgba(245,158,11,.18) !important; color: #fcd34d !important; }
+[data-bs-theme="dark"] .cev-pill[data-status="Pending"]  { background: rgba(239,68,68,.18) !important; color: #fca5a5 !important; }
 [data-bs-theme="dark"] .cev-filter-verified { background: rgba(16,185,129,.18); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
 [data-bs-theme="dark"] .cev-filter-expiring { background: rgba(245,158,11,.18); color: #fcd34d; border-color: rgba(217,119,6,.30); }
 [data-bs-theme="dark"] .cev-filter-pending  { background: rgba(239,68,68,.18);  color: #fca5a5; border-color: rgba(239,68,68,.30); }

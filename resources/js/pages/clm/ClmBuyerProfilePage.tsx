@@ -321,6 +321,23 @@ const BP_CSS = `
 [data-bs-theme="dark"] .bp-prog.is-complete { background: rgba(16,185,129,.18) !important; border-color: rgba(16,185,129,.38) !important; color: #6ee7b7 !important; }
 [data-bs-theme="dark"] .bp-prog.is-partial  { background: rgba(245,158,11,.18) !important; border-color: rgba(245,158,11,.38) !important; color: #fcd34d !important; }
 [data-bs-theme="dark"] .bp-prog.is-none     { background: rgba(148,163,184,.16) !important; border-color: rgba(148,163,184,.30) !important; color: #cbd5e1 !important; }
+/* ── Portaled popups (rendered to document.body, OUTSIDE .seg-page) ──
+ * The .seg-page dark matchers can't reach these, so they get their own sweep.
+ * The injected <style> is global, so these apply wherever the portal lands. */
+/* Consignees popup */
+[data-bs-theme="dark"] .bcm-overlay > div { background: #1e293b !important; }
+[data-bs-theme="dark"] .bcm-overlay [style*="background: rgb(255, 255, 255)"],
+[data-bs-theme="dark"] .bcm-overlay [style*="background:rgb(255, 255, 255)"] { background: #0f172a !important; }
+[data-bs-theme="dark"] .bcm-overlay [style*="rgb(240, 253, 255)"] { background: #16263a !important; }
+[data-bs-theme="dark"] .bcm-overlay table thead tr { background: #16263a !important; }
+[data-bs-theme="dark"] .bcm-overlay tbody tr { background: transparent !important; border-bottom-color: rgba(6,182,212,.10) !important; }
+[data-bs-theme="dark"] .bcm-overlay tbody td { color: #cbd5e1 !important; }
+[data-bs-theme="dark"] .bcm-overlay [style*="rgb(12, 74, 110)"],
+[data-bs-theme="dark"] .bcm-overlay [style*="rgb(71, 85, 105)"],
+[data-bs-theme="dark"] .bcm-overlay [style*="rgb(100, 116, 139)"] { color: #cfe8f3 !important; }
+/* Segment tooltip */
+[data-bs-theme="dark"] .seg-pop { background: #1e293b !important; border-color: rgba(6,182,212,.3) !important; box-shadow: 0 18px 50px rgba(0,0,0,.5) !important; }
+[data-bs-theme="dark"] .seg-pop span { color: #cfe8f3 !important; }
 `;
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -1430,7 +1447,7 @@ export default function ClmBuyerProfilePage() {
       {segOpen && createPortal(
         <>
           <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 200000 }} />
-          <div style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 240), top: segOpen.flipUp ? undefined : segOpen.y, bottom: segOpen.flipUp ? (window.innerHeight - segOpen.y) : undefined, zIndex: 200001, width: 220, maxHeight: 280, overflowY: 'auto', background: '#fff', borderRadius: 12, padding: 8, boxShadow: '0 18px 50px rgba(15,23,42,.30)', border: '1px solid rgba(6,182,212,.18)', fontFamily: "'DM Sans','Inter',system-ui,sans-serif" }}>
+          <div className="seg-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 240), top: segOpen.flipUp ? undefined : segOpen.y, bottom: segOpen.flipUp ? (window.innerHeight - segOpen.y) : undefined, zIndex: 200001, width: 220, maxHeight: 280, overflowY: 'auto', background: '#fff', borderRadius: 12, padding: 8, boxShadow: '0 18px 50px rgba(15,23,42,.30)', border: '1px solid rgba(6,182,212,.18)', fontFamily: "'DM Sans','Inter',system-ui,sans-serif" }}>
             <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#0891b2', padding: '4px 8px 7px' }}>Segments ({segOpen.names.length})</div>
             {segOpen.names.map((name, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '5px 8px', borderRadius: 8, background: i % 2 ? 'rgba(6,182,212,.05)' : 'transparent' }}>
@@ -1467,7 +1484,7 @@ function SegCell({ names, sc, sb }: { names: string[]; sc: string; sb: string })
     {open && createPortal(
       <>
         <div onMouseDown={() => setOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 200000 }} />
-        <div style={{ position: 'fixed', left: Math.min(open.x, window.innerWidth - 240), top: open.flipUp ? undefined : open.y, bottom: open.flipUp ? (window.innerHeight - open.y) : undefined, zIndex: 200001, width: 220, maxHeight: 280, overflowY: 'auto', background: '#fff', borderRadius: 12, padding: 8, boxShadow: '0 18px 50px rgba(15,23,42,.30)', border: '1px solid rgba(6,182,212,.18)', fontFamily: "'DM Sans','Inter',system-ui,sans-serif" }}>
+        <div className="seg-pop" style={{ position: 'fixed', left: Math.min(open.x, window.innerWidth - 240), top: open.flipUp ? undefined : open.y, bottom: open.flipUp ? (window.innerHeight - open.y) : undefined, zIndex: 200001, width: 220, maxHeight: 280, overflowY: 'auto', background: '#fff', borderRadius: 12, padding: 8, boxShadow: '0 18px 50px rgba(15,23,42,.30)', border: '1px solid rgba(6,182,212,.18)', fontFamily: "'DM Sans','Inter',system-ui,sans-serif" }}>
           <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#0891b2', padding: '4px 8px 7px' }}>Segments ({segs.length})</div>
           {segs.map((name, i) => (
             <div key={i} style={{ fontSize: 10.5, fontWeight: 600, color: '#0c4a6e', padding: '5px 8px', borderRadius: 7, background: i % 2 === 0 ? 'rgba(6,182,212,.05)' : 'transparent' }}>{name}</div>
