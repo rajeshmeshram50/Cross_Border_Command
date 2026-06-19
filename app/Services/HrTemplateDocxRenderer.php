@@ -78,12 +78,60 @@ class HrTemplateDocxRenderer
         return response()->download($tmp, $filename)->deleteFileAfterSend(true);
     }
 
+    /**
+     * Resolve a header logo into a path PhpWord can embed. PhpWord only accepts
+     * JPG/PNG/GIF/BMP, so an uploaded SVG/WEBP logo (fine in the web preview)
+     * silently fails addImage(). Convert WEBP via GD and SVG via Imagick (when
+     * available) to a temp PNG. Returns null when missing/unconvertible.
+     */
+    private static function resolveDocxLogo(?string $logoPath): ?string
+    {
+        if (!$logoPath || !Storage::disk('public')->exists($logoPath)) return null;
+        $abs = Storage::disk('public')->path($logoPath);
+        $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
+
+        if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'bmp'], true)) return $abs;
+
+        if ($ext === 'webp' && function_exists('imagecreatefromwebp')) {
+            try {
+                $img = @imagecreatefromwebp($abs);
+                if ($img) {
+                    imagepalettetotruecolor($img);
+                    imagealphablending($img, false);
+                    imagesavealpha($img, true);
+                    $tmp = tempnam(sys_get_temp_dir(), 'logo_') . '.png';
+                    imagepng($img, $tmp);
+                    imagedestroy($img);
+                    return $tmp;
+                }
+            } catch (\Throwable $e) { /* fall through */ }
+        }
+
+        if ($ext === 'svg' && class_exists('Imagick')) {
+            try {
+                $im = new \Imagick();
+                $im->setBackgroundColor(new \ImagickPixel('transparent'));
+                $im->readImage($abs);
+                $im->setImageFormat('png');
+                $tmp = tempnam(sys_get_temp_dir(), 'logo_') . '.png';
+                $im->writeImage($tmp);
+                $im->clear();
+                return $tmp;
+            } catch (\Throwable $e) { /* fall through */ }
+        }
+
+        return null;
+    }
+
     private static function writeHeader($section, array $cfg): void
     {
         $logoPath = $cfg['logo_path'] ?? null;
         $title    = (string) ($cfg['title']    ?? '');
         $subtitle = (string) ($cfg['subtitle'] ?? '');
         $hAlign   = (string) ($cfg['align']    ?? 'right');
+        // Honour the SPA's configured logo height (clamped 24-200) instead of a
+        // fixed size, so the rendered Word logo matches the on-screen preview.
+        $logoH    = (int) max(24, min(200, $cfg['logo_height'] ?? 60));
 
         $header = $section->addHeader();
         $table = $header->addTable([
@@ -95,10 +143,9 @@ class HrTemplateDocxRenderer
         $logoCell  = $row1->addCell(2500, ['valign' => 'center']);
         $titleCell = $row1->addCell(7500, ['valign' => 'center']);
 
-        $absLogo = $logoPath && Storage::disk('public')->exists($logoPath)
-            ? Storage::disk('public')->path($logoPath) : null;
+        $absLogo = self::resolveDocxLogo($logoPath);
         if ($absLogo) {
-            try { $logoCell->addImage($absLogo, ['height' => 60, 'width' => 120]); }
+            try { $logoCell->addImage($absLogo, ['height' => $logoH]); }
             catch (\Throwable $e) { $logoCell->addText('[Logo]', ['italic' => true, 'color' => '808080']); }
         }
         $align = $hAlign === 'left' ? 'left' : ($hAlign === 'center' ? 'center' : 'right');

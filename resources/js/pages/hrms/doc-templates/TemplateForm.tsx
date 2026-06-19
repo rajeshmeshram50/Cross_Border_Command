@@ -319,14 +319,23 @@ export default function TemplateFormPage() {
   // If the template hasn't been saved yet, auto-create it as a Draft instead of
   // forcing the user to click "Save as Draft" first.
   const ensureSavedDraft = async (): Promise<TemplateRow | null> => {
-    if (editing) return editing;
-    // The backend needs at least the Step 1 basics to create a row.
+    // The backend needs at least the Step 1 basics to create/update a row.
     if (!validateStep(1)) {
       setStep(1);
       toast.error('Add the basics first', 'Fill in the template name, category and role before uploading a DOCX.');
       return null;
     }
     try {
+      // Persist the CURRENT form state (incl. a just-uploaded header logo) so
+      // the download/upload reflects what's on screen — previously this returned
+      // the cached `editing` row, so a logo added after the last save never made
+      // it into the rendered Word file. Pass no status to avoid downgrading an
+      // Active template back to Draft on an existing row.
+      if (editing) {
+        const { data } = await api.put(`/hr-document-templates/${editing.id}`, buildPayload(null));
+        setEditing(data);
+        return data as TemplateRow;
+      }
       const { data } = await api.post('/hr-document-templates', buildPayload('Draft'));
       setEditing(data);
       navigate(`/hr/doc-templates/${data.id}/edit`, { replace: true });

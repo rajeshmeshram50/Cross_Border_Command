@@ -64,8 +64,8 @@ class HrDocumentTemplateController extends Controller
         if ($search = $request->query('search')) {
             $q->where(function ($w) use ($search) {
                 $w->where('name', 'ilike', "%{$search}%")
-                  ->orWhere('code', 'ilike', "%{$search}%")
-                  ->orWhere('description', 'ilike', "%{$search}%");
+                    ->orWhere('code', 'ilike', "%{$search}%")
+                    ->orWhere('description', 'ilike', "%{$search}%");
             });
         }
         if ($cat = $request->query('employee_category')) $q->where('employee_category', $cat);
@@ -107,7 +107,7 @@ class HrDocumentTemplateController extends Controller
         if ($role = $request->query('role_type'))         $q->where('role_type', $role);
 
         $rows = (clone $q)->selectRaw('status, COUNT(*) as c')->groupBy('status')->pluck('c', 'status');
-        $get = fn (string $s) => (int) ($rows[$s] ?? 0);
+        $get = fn(string $s) => (int) ($rows[$s] ?? 0);
 
         // Per-category counts for the IT/Non-IT/Legal top tabs.
         $byCat = HrDocumentTemplate::query();
@@ -171,8 +171,10 @@ class HrDocumentTemplateController extends Controller
 
         // Re-allocate the code only if the category or role changed; the
         // template's old code is otherwise stable across edits.
-        if (isset($data['employee_category']) && isset($data['role_type'])
-            && ($data['employee_category'] !== $row->employee_category || $data['role_type'] !== $row->role_type)) {
+        if (
+            isset($data['employee_category']) && isset($data['role_type'])
+            && ($data['employee_category'] !== $row->employee_category || $data['role_type'] !== $row->role_type)
+        ) {
             $data['code'] = $this->allocateCode($row->client_id, $row->branch_id, $data['employee_category'], $data['role_type']);
         }
 
@@ -212,15 +214,16 @@ class HrDocumentTemplateController extends Controller
         $this->authorize($request, 'can_view');
         $row = $this->resolveRow($request, (int) $id);
 
-        // If the user uploaded a revised DOCX previously, prefer that —
-        // it's the source of truth for header/footer/body once a Word
-        // round-trip has happened. Verify the REAL file on disk with is_file()
-        // on the absolute path response()->download() will use — not just
-        // Storage::exists(): a DB row can carry a docx_path whose file isn't
-        // present in this environment (e.g. uploaded on another server, or the
-        // public disk points elsewhere), and download()-ing a missing path
-        // throws a FileNotFoundException. When the file is gone we fall back to
-        // regenerating the DOCX from the stored HTML so the download still works.
+        // Prefer the user's uploaded .docx so a re-download returns their EXACT
+        // Word file — every table, font, image and layout they edited is kept
+        // byte-for-byte. The file they edited was itself produced by our
+        // renderer (header logo + footer already baked in), so the logo
+        // round-trips INSIDE the uploaded file; re-rendering here would discard
+        // all their hand formatting just to re-stamp a logo that's already
+        // present. Verify the real file is on disk with is_file() (a DB row can
+        // reference a docx_path whose file is absent in this environment;
+        // download()-ing a missing path throws) and only fall back to a fresh
+        // render when there's no usable upload.
         if ($row->docx_path) {
             $abs = Storage::disk('public')->path($row->docx_path);
             if (is_file($abs)) {
@@ -229,6 +232,9 @@ class HrDocumentTemplateController extends Controller
             }
         }
 
+        // No uploaded file yet → render fresh from content_html with the header
+        // logo (from header_config OR the latest logo uploaded for this client)
+        // and footer embedded, so the first download already carries the logo.
         return $this->renderDocx($row, ($row->code ?: 'template') . '.docx');
     }
 
@@ -282,8 +288,12 @@ class HrDocumentTemplateController extends Controller
         $itHints = ['it', 'information technology', 'tech', 'engineering', 'software', 'devops', 'qa', 'mobile', 'data', 'product'];
         $legalHints = ['legal', 'compliance', 'governance'];
 
-        foreach ($legalHints as $h) { if (str_contains($name, $h)) return 'Legal'; }
-        foreach ($itHints as $h)    { if (str_contains($name, $h)) return 'IT'; }
+        foreach ($legalHints as $h) {
+            if (str_contains($name, $h)) return 'Legal';
+        }
+        foreach ($itHints as $h) {
+            if (str_contains($name, $h)) return 'IT';
+        }
         return 'Non-IT';
     }
 
@@ -384,7 +394,8 @@ class HrDocumentTemplateController extends Controller
 
         $row = $this->resolveRow($request, (int) $id);
         $emp = Employee::with([
-            'department:id,name', 'designation:id,name,level',
+            'department:id,name',
+            'designation:id,name,level',
             'primaryRole:id,name',
             'reportingManager:id,display_name,first_name,last_name',
             'workCountry:id,name',
@@ -418,7 +429,8 @@ class HrDocumentTemplateController extends Controller
 
         $row = $this->resolveRow($request, (int) $id);
         $emp = Employee::with([
-            'department:id,name', 'designation:id,name,level',
+            'department:id,name',
+            'designation:id,name,level',
             'primaryRole:id,name',
             'reportingManager:id,display_name,first_name,last_name',
         ])->findOrFail((int) $request->query('employee_id'));
@@ -436,7 +448,9 @@ class HrDocumentTemplateController extends Controller
         // an empty value (e.g. an employee whose Mobile field is blank) is
         // resolved-as-empty, not missing — flagging those as missing turns
         // the SPA's warning chip into a permanent false-positive.
-        $unresolved = array_values(array_filter($tokensInTemplate, fn ($t) =>
+        $unresolved = array_values(array_filter(
+            $tokensInTemplate,
+            fn($t) =>
             !array_key_exists($t, $context)
         ));
 
@@ -543,6 +557,78 @@ class HrDocumentTemplateController extends Controller
      * email-attachment path so we can attach + unlink after sending.
      * Stage 2 — renderDocx — wraps stage 1 + streams as a download.
      */
+    /**
+     * Resolve a header logo into a path PhpWord can actually embed.
+     *
+     * PhpWord's image element only accepts JPG/PNG/GIF/BMP. An uploaded SVG or
+     * WEBP logo renders fine in the web editor's <img> preview but silently
+     * fails addImage() — which is why the logo "disappears" in the downloaded
+     * Word file. We convert WEBP (via GD) and SVG (via Imagick when present) to
+     * a temporary PNG so the logo lands in the .docx. Returns null only when the
+     * file is missing or genuinely can't be rasterised.
+     */
+    /**
+     * Fallback logo lookup — the header logo is uploaded via uploadHeaderLogo()
+     * which stores the file under doc_templates/c{clientId}/logos/, but the path
+     * isn't always written back into the template's header_config. When that
+     * happens we fetch the MOST RECENTLY uploaded logo for this client straight
+     * from that folder so the download still carries a logo.
+     */
+    private function latestClientLogo($clientId): ?string
+    {
+        $folder = 'doc_templates/c' . ($clientId ?: 'public') . '/logos';
+        if (!Storage::disk('public')->exists($folder)) return null;
+        $files = Storage::disk('public')->files($folder);
+        if (empty($files)) return null;
+        usort($files, fn($a, $b) =>
+        Storage::disk('public')->lastModified($b) <=> Storage::disk('public')->lastModified($a));
+        return $files[0];
+    }
+
+    private function resolveDocxLogo(?string $logoPath): ?string
+    {
+        if (!$logoPath || !Storage::disk('public')->exists($logoPath)) return null;
+        $abs = Storage::disk('public')->path($logoPath);
+        $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
+
+        // Formats PhpWord embeds natively — pass straight through.
+        if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'bmp'], true)) return $abs;
+
+        // WEBP → PNG via GD (bundled with PHP on XAMPP). Preserve transparency.
+        if ($ext === 'webp' && function_exists('imagecreatefromwebp')) {
+            try {
+                $img = @imagecreatefromwebp($abs);
+                if ($img) {
+                    imagepalettetotruecolor($img);
+                    imagealphablending($img, false);
+                    imagesavealpha($img, true);
+                    $tmp = tempnam(sys_get_temp_dir(), 'logo_') . '.png';
+                    imagepng($img, $tmp);
+                    imagedestroy($img);
+                    return $tmp;
+                }
+            } catch (\Throwable $e) { /* fall through to null */
+            }
+        }
+
+        // SVG → rasterise via Imagick when the extension is available.
+        if ($ext === 'svg' && class_exists('Imagick')) {
+            try {
+                $im = new \Imagick();
+                $im->setBackgroundColor(new \ImagickPixel('transparent'));
+                $im->readImage($abs);
+                $im->setImageFormat('png');
+                $tmp = tempnam(sys_get_temp_dir(), 'logo_') . '.png';
+                $im->writeImage($tmp);
+                $im->clear();
+                return $tmp;
+            } catch (\Throwable $e) { /* fall through to null */
+            }
+        }
+
+        return null;
+    }
+
     public function buildDocxFile($row): string
     {
         $phpWord = new PhpWord();
@@ -559,7 +645,10 @@ class HrDocumentTemplateController extends Controller
         ]);
 
         $headerCfg = is_array($row->header_config) ? $row->header_config : [];
-        $logoPath  = $headerCfg['logo_path'] ?? null;
+        // Prefer the path saved in header_config; if it's missing (the frontend
+        // didn't persist it), fall back to the latest logo uploaded for this
+        // client via uploadHeaderLogo() so the logo still lands in the DOCX.
+        $logoPath  = $headerCfg['logo_path'] ?: $this->latestClientLogo($row->client_id);
         $title     = (string) ($headerCfg['title'] ?? '');
         $subtitle  = (string) ($headerCfg['subtitle'] ?? '');
         $hAlign    = (string) ($headerCfg['align']    ?? 'right');
@@ -571,18 +660,37 @@ class HrDocumentTemplateController extends Controller
 
         $header = $section->addHeader();
         $table = $header->addTable([
-            'borderSize' => 0, 'cellMargin' => 0,
+            'borderSize' => 0,
+            'cellMargin' => 0,
             'unit'  => \PhpOffice\PhpWord\SimpleType\TblWidth::PERCENT,
             'width' => 100 * 50,
         ]);
         $row1 = $table->addRow();
-        $logoCell  = $row1->addCell(2500, ['valign' => 'center']);
-        $titleCell = $row1->addCell(7500, ['valign' => 'center']);
-        $absLogo = $logoPath && Storage::disk('public')->exists($logoPath)
-            ? Storage::disk('public')->path($logoPath) : null;
+        $logoCell  = $row1->addCell(3200, ['valign' => 'center']);
+        $titleCell = $row1->addCell(6800, ['valign' => 'center']);
+        $absLogo = $this->resolveDocxLogo($logoPath);
         if ($absLogo) {
-            try { $logoCell->addImage($absLogo, ['height' => $logoH]); }
-            catch (\Throwable $e) { $logoCell->addText('[Logo]', ['italic' => true, 'color' => '808080']); }
+            try {
+                // Scale to fit the logo cell: cap by height (logo_height) AND by
+                // a max width so a wide logo isn't clipped by the cell. Aspect
+                // ratio is preserved by deriving the missing dimension from the
+                // source image's real pixel size.
+                $maxW = 200; // px — fits comfortably inside the ~32% logo cell
+                $dim  = @getimagesize($absLogo);
+                $iw   = $dim[0] ?? 0;
+                $ih   = $dim[1] ?? 0;
+                $h    = $logoH;
+                $w    = ($ih > 0) ? (int) round($iw * $h / $ih) : 0;
+                if ($w > $maxW && $iw > 0) {            // too wide → cap width, recompute height
+                    $w = $maxW;
+                    $h = (int) round($ih * $w / $iw);
+                }
+                $opts = ['height' => $h];
+                if ($w > 0) $opts['width'] = $w;
+                $logoCell->addImage($absLogo, $opts);
+            } catch (\Throwable $e) {
+                $logoCell->addText('[Logo]', ['italic' => true, 'color' => '808080']);
+            }
         }
         $align = $hAlign === 'left' ? 'left' : ($hAlign === 'center' ? 'center' : 'right');
         // Split on CR/LF so multi-line titles entered in the SPA preview
@@ -608,7 +716,8 @@ class HrDocumentTemplateController extends Controller
         $pnFormat   = (string) ($footerCfg['page_number_format'] ?? 'Page N of M');
         $footer = $section->addFooter();
         $fTable = $footer->addTable([
-            'borderSize' => 0, 'cellMargin' => 0,
+            'borderSize' => 0,
+            'cellMargin' => 0,
             'unit'  => \PhpOffice\PhpWord\SimpleType\TblWidth::PERCENT,
             'width' => 100 * 50,
         ]);
@@ -625,11 +734,24 @@ class HrDocumentTemplateController extends Controller
             $run = $cells[$pnAlign]->addTextRun(['alignment' => $pnAlign]);
             $style = ['size' => 9, 'color' => '6B7280'];
             switch ($pnFormat) {
-                case 'N':            $run->addField('PAGE', [], [], '', false); break;
-                case 'Page N':       $run->addText('Page ', $style); $run->addField('PAGE', [], [], '', false); break;
-                case 'N / M':        $run->addField('PAGE', [], [], '', false); $run->addText(' / ', $style); $run->addField('NUMPAGES', [], [], '', false); break;
+                case 'N':
+                    $run->addField('PAGE', [], [], '', false);
+                    break;
+                case 'Page N':
+                    $run->addText('Page ', $style);
+                    $run->addField('PAGE', [], [], '', false);
+                    break;
+                case 'N / M':
+                    $run->addField('PAGE', [], [], '', false);
+                    $run->addText(' / ', $style);
+                    $run->addField('NUMPAGES', [], [], '', false);
+                    break;
                 case 'Page N of M':
-                default:             $run->addText('Page ', $style); $run->addField('PAGE', [], [], '', false); $run->addText(' of ', $style); $run->addField('NUMPAGES', [], [], '', false);
+                default:
+                    $run->addText('Page ', $style);
+                    $run->addField('PAGE', [], [], '', false);
+                    $run->addText(' of ', $style);
+                    $run->addField('NUMPAGES', [], [], '', false);
             }
         }
 
@@ -642,8 +764,11 @@ class HrDocumentTemplateController extends Controller
         $html = preg_replace('/<hr\s*>/i',  '<hr/>',  $html);
         $html = preg_replace('/<img([^>]*[^\/])>/i', '<img$1/>', $html);
         $wrapped = '<html><body>' . $html . '</body></html>';
-        try { Html::addHtml($section, $wrapped, false, false); }
-        catch (\Throwable $e) { $section->addText(strip_tags($html)); }
+        try {
+            Html::addHtml($section, $wrapped, false, false);
+        } catch (\Throwable $e) {
+            $section->addText(strip_tags($html));
+        }
 
         $writer = IOFactory::createWriter($phpWord, 'Word2007');
         $tmp = tempnam(sys_get_temp_dir(), 'tpl_') . '.docx';
@@ -730,12 +855,12 @@ class HrDocumentTemplateController extends Controller
             $mainBranchId = Branch::where('client_id', $clientId)->where('is_main', true)->value('id');
             $q->where(function ($w) use ($clientId, $branchId, $mainBranchId) {
                 $w->whereNull('client_id')
-                  ->orWhere(function ($ww) use ($clientId, $branchId, $mainBranchId) {
-                      $ww->where('client_id', $clientId)->where(function ($wb) use ($branchId, $mainBranchId) {
-                          $wb->whereNull('branch_id')->orWhere('branch_id', $branchId);
-                          if ($mainBranchId) $wb->orWhere('branch_id', $mainBranchId);
-                      });
-                  });
+                    ->orWhere(function ($ww) use ($clientId, $branchId, $mainBranchId) {
+                        $ww->where('client_id', $clientId)->where(function ($wb) use ($branchId, $mainBranchId) {
+                            $wb->whereNull('branch_id')->orWhere('branch_id', $branchId);
+                            if ($mainBranchId) $wb->orWhere('branch_id', $mainBranchId);
+                        });
+                    });
             });
             return;
         }
@@ -765,7 +890,7 @@ class HrDocumentTemplateController extends Controller
         if (!$user || $user->user_type === 'super_admin' || !$row->created_by) return;
         if ($row->created_by === $user->id) return;
 
-        $rank = fn (?string $t) => match ($t) {
+        $rank = fn(?string $t) => match ($t) {
             'super_admin'  => 4,
             'client_admin' => 3,
             'client_user'  => 3,
@@ -785,7 +910,7 @@ class HrDocumentTemplateController extends Controller
         $isDraft  = strtolower((string) $request->input('status')) === 'draft';
         // On Draft saves and on edits, only category/role/name are strictly
         // required so the wizard can persist partial progress.
-        $req = fn () => $isUpdate || $isDraft ? 'nullable' : 'required';
+        $req = fn() => $isUpdate || $isDraft ? 'nullable' : 'required';
 
         return $request->validate([
             'name'              => [$req(), 'string', 'max:191'],
