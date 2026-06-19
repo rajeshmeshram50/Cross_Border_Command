@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
+import * as XLSX from 'xlsx';
 import api from '../../api';
 import { encodeOppId, encodeStage } from '../../utils/oppCrypto';
 import { useToast } from '../../contexts/ToastContext';
@@ -306,6 +308,19 @@ export default function SalesLeadWorksheet() {
   // pick comes back as ?sp=<id> on the URL and is applied below in useEffect.
   const [filterOpen, setFilterOpen] = useState(false);
 
+  // Export Leads dropdown — the banner "Export Leads" button opens a menu
+  // offering the four buckets (All / Qualified / Disqualified / Key
+  // Opportunity). Each option pages through the whole bucket server-side
+  // (per_page caps at 200) and writes an .xlsx mirroring the table columns.
+  // `exporting` holds the bucket currently being built so the menu can show
+  // an in-progress state and block a second concurrent export.
+  const [exportOpen, setExportOpen]   = useState(false);
+  const [exporting,  setExporting]    = useState<TabKey | null>(null);
+  // The menu is portalled to <body> (the banner clips overflow) so it's
+  // positioned from the button's viewport rect rather than CSS-anchored.
+  const exportBtnRef = useRef<HTMLButtonElement>(null);
+  const [exportPos, setExportPos] = useState<{ top: number; right: number } | null>(null);
+
   // Salesperson chip-label resolver — when "View Leads" applies a
   // salesperson_id filter we want the chip strip to read "Salesperson:
   // John Doe", not "Salesperson: 42". Stash the picked person's name
@@ -496,6 +511,80 @@ export default function SalesLeadWorksheet() {
   };
 
   const clearSelection = () => setSelected(new Set());
+
+  // Open/close the Export menu, measuring the button so the portalled menu
+  // lands just under it and right-aligned to its edge.
+  const toggleExportMenu = () => {
+    setExportOpen(o => {
+      if (o) return false;
+      const r = exportBtnRef.current?.getBoundingClientRect();
+      if (r) setExportPos({ top: r.bottom + 8, right: Math.max(8, window.innerWidth - r.right) });
+      return true;
+    });
+  };
+
+  /* ── Export Leads ───────────────────────────────────────────────────────
+     Pull every lead in the chosen bucket (the server caps per_page at 200, so
+     page through until last_page) and write an .xlsx whose columns mirror the
+     My Workplace table. Exports the FULL bucket — the current search box and
+     filter chips are intentionally NOT applied, so "Export Qualified" always
+     means every qualified lead, matching the menu labels. */
+  const fetchAllLeads = async (bucket: TabKey): Promise<Lead[]> => {
+    const all: Lead[] = [];
+    let pg = 1;
+    let last = 1;
+    do {
+      const { data } = await api.get<{
+        data: ServerLead[];
+        pagination: { last_page: number };
+      }>('/sales/leads', {
+        params: { status: bucket, page: pg, per_page: 200, with_counts: 0 },
+      });
+      all.push(...(data.data ?? []).map(mapServerToLead));
+      last = data.pagination?.last_page ?? 1;
+      pg += 1;
+    } while (pg <= last);
+    return all;
+  };
+
+  const exportLeads = async (bucket: TabKey) => {
+    if (exporting) return;
+    setExportOpen(false);
+    setExporting(bucket);
+    try {
+      const data = await fetchAllLeads(bucket);
+      if (data.length === 0) {
+        toast.warning('Nothing to export', `No ${TAB_LABELS[bucket]} to export.`);
+        return;
+      }
+      // One object per row — keys become the header cells, in table order.
+      const sheet = data.map(l => ({
+        'Lead Type':       l.type,
+        'Lead Date':       l.date,
+        'Lead Source':     l.source,
+        'Assigned To':     l.assigned,
+        'WhatsApp Status': waBadge(l.whatsappStatus).label,
+        'Opportunity ID':  l.oppId,
+        'Customer Name':   l.customer,
+        'Customer Number': l.phone,
+        'Customer Email':  l.email,
+        'Product Name':    l.product,
+        'Company':         l.company,
+        'Country':         l.country,
+      }));
+      const ws = XLSX.utils.json_to_sheet(sheet);
+      const wb = XLSX.utils.book_new();
+      // Sheet names are capped at 31 chars by the xlsx format.
+      XLSX.utils.book_append_sheet(wb, ws, TAB_LABELS[bucket].slice(0, 31));
+      const stamp = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `Leads_${bucket}_${stamp}.xlsx`);
+      toast.success('Exported', `${data.length} ${TAB_LABELS[bucket]} exported.`);
+    } catch (e: any) {
+      toast.error('Export failed', e?.response?.data?.message ?? 'Could not export leads.');
+    } finally {
+      setExporting(null);
+    }
+  };
 
   const onAddLead       = () => setAddLeadOpen(true);
   const onSaveNewLead   = async (lead: LeadFormValues, pickedCustomerDbId?: number | null) => {
@@ -760,6 +849,44 @@ export default function SalesLeadWorksheet() {
               </span>
             )}
           </button>
+
+          {/* Export Leads — dropdown offering the four buckets. Each option
+              pages the whole bucket from the server and downloads an .xlsx
+              mirroring the table columns. */}
+          <div className="lwp-export-wrap">
+            <button
+              ref={exportBtnRef}
+              className={`lwp-bact lwp-bact-export ${exportOpen ? 'is-open' : ''}`}
+              title="Export Leads"
+              onClick={toggleExportMenu}
+              disabled={!!exporting}
+            >
+              <IconDownload />
+              {exporting ? 'Exporting…' : 'Export Leads'}
+              <IconChevron />
+            </button>
+            {exportOpen && exportPos && createPortal(
+              <>
+                <div className="lwp-export-backdrop" onClick={() => setExportOpen(false)} />
+                <div className="lwp-export-menu" role="menu" style={{ top: exportPos.top, right: exportPos.right }}>
+                  {(Object.keys(TAB_LABELS) as TabKey[]).map(t => (
+                    <button
+                      key={t}
+                      type="button"
+                      role="menuitem"
+                      className="lwp-export-item"
+                      onClick={() => exportLeads(t)}
+                      disabled={!!exporting}
+                    >
+                      <span>Export {TAB_LABELS[t]}</span>
+                      <span className="lwp-export-count">{counts[t] ?? 0}</span>
+                    </button>
+                  ))}
+                </div>
+              </>,
+              document.body,
+            )}
+          </div>
         </div>
       </div>
 
@@ -1274,6 +1401,17 @@ const IconSync = () => (
     <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
   </svg>
 );
+const IconDownload = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+  </svg>
+);
+const IconChevron = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="6 9 12 15 18 9" />
+  </svg>
+);
 const IconEye = () => (
   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
@@ -1510,6 +1648,54 @@ const SCOPED_CSS = `
   display: inline-flex; align-items: center; justify-content: center;
   margin-left: 4px;
 }
+
+/* ─── Export Leads dropdown ─── */
+.lwp-root .lwp-export-wrap { position: relative; display: inline-flex; }
+.lwp-root .lwp-bact-export {
+  background: linear-gradient(135deg, #155e75 0%, #0e7490 55%, #0891b2 100%);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(21,94,117,.4), 0 2px 6px rgba(14,116,144,.22), 0 1px 0 rgba(255,255,255,.15) inset;
+  text-shadow: 0 1px 2px rgba(0,0,0,.15);
+}
+.lwp-root .lwp-bact-export:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(21,94,117,.5), 0 3px 8px rgba(14,116,144,.28), 0 1px 0 rgba(255,255,255,.15) inset;
+}
+.lwp-root .lwp-bact-export:disabled { cursor: progress; opacity: .8; transform: none; }
+.lwp-root .lwp-bact-export.is-open { transform: translateY(-1px); }
+/* Invisible full-screen catch layer — a click anywhere closes the menu.
+   Menu + backdrop are portalled to <body> (outside .lwp-root) so these
+   selectors are intentionally un-prefixed and positioned fixed. */
+.lwp-export-backdrop { position: fixed; inset: 0; z-index: 4000; }
+.lwp-export-menu {
+  position: fixed; z-index: 4001;
+  min-width: 230px; padding: 6px;
+  background: #fff; border: 1px solid #cffafe; border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(8,47,73,.22), 0 4px 12px rgba(14,116,144,.14);
+  animation: lwpExportIn .16s ease both;
+  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+}
+@keyframes lwpExportIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+.lwp-export-item {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 12px; border: none; background: transparent; border-radius: 8px;
+  font-family: inherit; font-size: 12.5px; font-weight: 600; color: #0f172a;
+  cursor: pointer; text-align: left; transition: background .15s, color .15s;
+}
+.lwp-export-item:hover:not(:disabled) { background: #ecfeff; color: #0e7490; }
+.lwp-export-item:disabled { cursor: progress; opacity: .6; }
+.lwp-export-count {
+  min-width: 22px; height: 18px; padding: 0 6px;
+  background: #f1f5f9; color: #475569;
+  border-radius: 999px; font-size: 10.5px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.lwp-export-item:hover:not(:disabled) .lwp-export-count { background: #cffafe; color: #0e7490; }
+[data-bs-theme="dark"] .lwp-export-menu { background: #0f2233; border-color: rgba(8,145,178,.35); }
+[data-bs-theme="dark"] .lwp-export-item { color: #e2e8f0; }
+[data-bs-theme="dark"] .lwp-export-item:hover:not(:disabled) { background: rgba(8,145,178,.18); color: #67e8f9; }
+[data-bs-theme="dark"] .lwp-export-count { background: rgba(148,163,184,.2); color: #cbd5e1; }
 
 /* ─── Active filter chips ─── */
 .lwp-root .lwp-chip-strip {

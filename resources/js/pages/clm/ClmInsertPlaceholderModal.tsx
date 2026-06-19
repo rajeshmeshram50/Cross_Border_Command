@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../contexts/ToastContext';
+import api from '../../api';
 
 /* ───────────────────────────────────────────────────────────────────────
  * Central CLM → Trade Documents Master → Draft Editor → Insert Placeholder
@@ -16,42 +17,36 @@ import { useToast } from '../../contexts/ToastContext';
 type Tab = 'customer' | 'consignee' | 'supplier' | 'product';
 type Field = { label: string; token: string; isSignature?: boolean };
 
+/* Every field the backend's replacePartyNamespaceTokens() resolves for a party
+ * (Customer / Consignee / Supplier share the same namespace value map). Listed
+ * once and expanded per party so all three tabs expose the FULL set — no party
+ * is missing fields the others have. `name`/`code` get a party-specific label. */
+const PARTY_FIELDS: { label: string; key: string }[] = [
+  { label: 'Name',           key: 'name' },
+  { label: 'Code',           key: 'code' },
+  { label: 'Company',        key: 'company' },
+  { label: 'Contact Person', key: 'contact_person' },
+  { label: 'Phone',          key: 'phone' },
+  { label: 'Email',          key: 'email' },
+  { label: 'GST',            key: 'gst' },
+  { label: 'PAN',            key: 'pan' },
+  { label: 'IEC',            key: 'iec' },
+  { label: 'Bank Account',   key: 'bank_account' },
+  { label: 'Country',        key: 'country' },
+  { label: 'State',          key: 'state' },
+  { label: 'City',           key: 'city' },
+  { label: 'Address',        key: 'address' },
+];
+const partyFields = (group: 'customer' | 'consignee' | 'supplier', nameLabel: string): Field[] =>
+  PARTY_FIELDS.map(f => ({
+    label: f.key === 'name' ? `${nameLabel} Name` : f.key === 'code' ? `${nameLabel} Code` : f.label,
+    token: `{{${group}.${f.key}}}`,
+  }));
+
 const FIELDS: Record<Tab, Field[]> = {
-  customer: [
-    { label: 'Customer Name',   token: '{{customer.name}}' },
-    { label: 'Customer Code',   token: '{{customer.code}}' },
-    { label: 'Company',         token: '{{customer.company}}' },
-    { label: 'Contact Person',  token: '{{customer.contact_person}}' },
-    { label: 'Phone',           token: '{{customer.phone}}' },
-    { label: 'Email',           token: '{{customer.email}}' },
-    { label: 'GST',             token: '{{customer.gst}}' },
-    { label: 'Country',         token: '{{customer.country}}' },
-    { label: 'Address',         token: '{{customer.address}}' },
-    { label: 'PAN',             token: '{{customer.pan}}' },
-    { label: 'IEC',             token: '{{customer.iec}}' },
-  ],
-  consignee: [
-    { label: 'Consignee Name',  token: '{{consignee.name}}' },
-    { label: 'Consignee Code',  token: '{{consignee.code}}' },
-    { label: 'Contact Person',  token: '{{consignee.contact_person}}' },
-    { label: 'Phone',           token: '{{consignee.phone}}' },
-    { label: 'Email',           token: '{{consignee.email}}' },
-    { label: 'Country',         token: '{{consignee.country}}' },
-    { label: 'Address',         token: '{{consignee.address}}' },
-  ],
-  supplier: [
-    { label: 'Supplier Name',   token: '{{supplier.name}}' },
-    { label: 'Supplier Code',   token: '{{supplier.code}}' },
-    { label: 'Company',         token: '{{supplier.company}}' },
-    { label: 'Contact Person',  token: '{{supplier.contact_person}}' },
-    { label: 'Phone',           token: '{{supplier.phone}}' },
-    { label: 'Email',           token: '{{supplier.email}}' },
-    { label: 'GST',             token: '{{supplier.gst}}' },
-    { label: 'Country',         token: '{{supplier.country}}' },
-    { label: 'Address',         token: '{{supplier.address}}' },
-    { label: 'PAN',             token: '{{supplier.pan}}' },
-    { label: 'Bank Account',    token: '{{supplier.bank_account}}' },
-  ],
+  customer:  partyFields('customer', 'Customer'),
+  consignee: partyFields('consignee', 'Consignee'),
+  supplier:  partyFields('supplier', 'Supplier'),
   // Product placeholders mirror the Proforma Invoice product table columns
   // (code · name · segment · quantity). The renderer expands {{product.*}}
   // tokens into a row per mapped product at generation time.
@@ -115,7 +110,7 @@ interface Props {
      set. Each CP becomes its own tab; its placeholder tokens use the token
      group of the role it was referred as (buyer→customer, consignee→consignee,
      supplier→supplier), so a buyer referred as a supplier inserts {{supplier.*}}. */
-  counterparties?: { name: string; code: string; role: string }[];
+  counterparties?: { name: string; code: string; role: string; type?: string; id?: string | number }[];
 }
 
 /* Map a counterparty role to the placeholder token group it should use. */
@@ -146,6 +141,9 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
     if (next.has(k)) next.delete(k); else next.add(k);
     return next;
   });
+  // Resolved field→value map per counterparty (cached by type:id), so we can
+  // show ONLY the fields that actually have data. `undefined` = not fetched yet.
+  const [valuesCache, setValuesCache] = useState<Record<string, Record<string, string>>>({});
 
   useEffect(() => {
     if (!open) return;
@@ -157,6 +155,19 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
   // Clear the ticked set every time the picker re-opens so a fresh session
   // never inherits a stale selection.
   useEffect(() => { if (!open) { setSelected(new Set()); setCpIdx(0); } }, [open]);
+
+  // Fetch the active counterparty's resolved field values so we can hide the
+  // fields that have no data. Cached per type:id; runs only in CP mode.
+  useEffect(() => {
+    if (!open || !cpMode) return;
+    const cp = cpTabs[Math.min(cpIdx, cpTabs.length - 1)]?.cp;
+    if (!cp || !cp.type || cp.id == null || cp.id === '') return;
+    const key = `${cp.type}:${cp.id}`;
+    if (valuesCache[key]) return;
+    api.get('/clm/ctc-contracts/placeholder-values', { params: { type: cp.type, id: cp.id } })
+      .then(r => setValuesCache(prev => ({ ...prev, [key]: (r.data?.data ?? {}) as Record<string, string> })))
+      .catch(() => setValuesCache(prev => ({ ...prev, [key]: {} })));
+  }, [open, cpMode, cpIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Low-level clipboard write — uses navigator.clipboard when available and
    * falls back to a hidden textarea on browsers without it (older Safari,
@@ -216,16 +227,16 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
   // counterparty (by the role it was referred as); otherwise from the tab.
   const activeCp  = cpMode ? (cpTabs[Math.min(cpIdx, cpTabs.length - 1)] ?? null) : null;
   const activeKey: Tab = cpMode ? (activeCp?.group ?? 'customer') : tab;
-  const fields    = FIELDS[activeKey];
+  // In CP mode, show ONLY fields that actually have data for this counterparty.
+  // Until the values load (or outside CP mode) show the full set.
+  const activeCpKey = activeCp && activeCp.cp.type && activeCp.cp.id != null && activeCp.cp.id !== ''
+    ? `${activeCp.cp.type}:${activeCp.cp.id}` : null;
+  const activeValues = activeCpKey ? valuesCache[activeCpKey] : undefined;
+  const fieldKeyOf = (token: string) => token.replace(/^\{\{\s*\w+\./, '').replace(/\s*\}\}$/, '');
+  const fields = (cpMode && activeValues)
+    ? FIELDS[activeKey].filter(f => { const v = activeValues[fieldKeyOf(f.token)]; return v != null && String(v).trim() !== ''; })
+    : FIELDS[activeKey];
   const tabHeader = groupMeta(activeKey);
-  // The live value a CP placeholder resolves to — only name & code are known
-  // here, surfaced under the token so the user sees which party it points at.
-  const cpValueFor = (token: string): string | null => {
-    if (!activeCp) return null;
-    if (/\.(name|company)\}\}$/.test(token)) return activeCp.cp.name || null;
-    if (/\.code\}\}$/.test(token)) return activeCp.cp.code || null;
-    return null;
-  };
   const allInTabSelected = fields.length > 0 && fields.every(f => selected.has(f.token));
   const toggleSelectAllInTab = () => {
     setSelected(prev => {
@@ -348,7 +359,6 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
               )}
               {fields.map(f => {
                 const isChecked = selected.has(f.token);
-                const cpVal = cpValueFor(f.token);
                 return (
                 <div key={f.token} className={`ipm-card ${f.isSignature ? 'is-sig' : ''} ${isChecked ? 'is-checked' : ''}`} role="button" tabIndex={0}
                      onClick={() => onInsert(f.token)}
@@ -370,7 +380,6 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                     </button>
                   </span>
-                  {cpVal && <span className="ipm-card-cpval" title={cpVal}>{cpVal}</span>}
                 </div>
                 );
               })}

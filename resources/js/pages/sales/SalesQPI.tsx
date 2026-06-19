@@ -1434,16 +1434,18 @@ export default function SalesQPI() {
               // Once a quotation is e-signed (signature status 'completed') it
               // is a finalised document — editing must be locked.
               const qSigned = r.id ? sigByRow[`quotation:${r.id}`]?.status === 'completed' : false;
+              // A quotation converted to a PI is locked — the PI is the live doc.
+              const qConverted = r.status === 'converted_to_pi';
               return (
             <ActionBtn
-              title={readOnly ? readOnlyHint : qSigned ? 'Quotation signed — editing locked' : 'Edit Quotation'}
+              title={readOnly ? readOnlyHint : qConverted ? 'Converted to PI — editing locked' : qSigned ? 'Quotation signed — editing locked' : 'Edit Quotation'}
               icon={<IconEdit />}
               color="#16a34a"
-              disabled={readOnly || qSigned}
+              disabled={readOnly || qSigned || qConverted}
               onClick={() => {
                 if (!r.id) { toast.error('Cannot edit', 'This quotation has no server id yet.'); return; }
-                if (r.status === 'converted_to_pi') {
-                  toast.error('Locked', 'Converted quotations cannot be edited. Duplicate it first.');
+                if (qConverted) {
+                  toast.error('Locked', 'This quotation has been converted to a PI and cannot be edited. Edit the PI instead.');
                   return;
                 }
                 setEditingQuotationId(r.id);

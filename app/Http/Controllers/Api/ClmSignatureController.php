@@ -2417,7 +2417,7 @@ class ClmSignatureController extends Controller
      * render path can call it once per applicable party — Customer + Consignee
      * tokens both get resolved on a Buyer+Consignee agreement.
      */
-    private function replacePartyNamespaceTokens(string $html, Model $party, string $modelName): string
+    public static function replacePartyNamespaceTokens(string $html, Model $party, string $modelName): string
     {
         // Each Eloquent class maps to one OR MORE user-facing token
         // namespaces because two pickers feed this resolver:

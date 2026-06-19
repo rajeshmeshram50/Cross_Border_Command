@@ -410,7 +410,24 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
       </div>
 
       {picker && (
-        <CpPicker t={t} slot={cps.length + 1} onClose={() => setPicker(false)} onPick={(cp) => { setCps([...cps, cp]); setPicker(false); }} />
+        <CpPicker
+          t={t}
+          slot={cps.length + 1}
+          usedTypes={cps.map(c => (c.sourceType || c.badge || '').toLowerCase())}
+          onClose={() => setPicker(false)}
+          onPick={(cp) => {
+            // One of each only: at most a single Customer (buyer), Consignee and
+            // Supplier per agreement — fewer is fine, more is blocked.
+            const type = (cp.sourceType || cp.badge || '').toLowerCase();
+            const labelOf: Record<string, string> = { buyer: 'customer', consignee: 'consignee', supplier: 'supplier' };
+            if (cps.some(c => (c.sourceType || c.badge || '').toLowerCase() === type)) {
+              toast.error('Already added', `Only one ${labelOf[type] ?? type} is allowed. Remove the existing one to change it.`);
+              return;
+            }
+            setCps([...cps, cp]);
+            setPicker(false);
+          }}
+        />
       )}
 
       {signPos && workingId && (
@@ -534,16 +551,33 @@ function Stage1(p: {
   // Stage-1 validation — counterparty + organisation (Step 1), then title,
   // type and dates (Step 2) are all required before the draft can be submitted.
   const toast = useToast();
+  // Inline field errors (Step 2 required *). Flags set on a failed validate;
+  // each field's red state auto-clears once it has a value (see the `error`
+  // props on the Fields below), so we never have to manually reset them.
+  const [errors, setErrors] = useState<{ title?: boolean; type?: boolean; effDate?: boolean; endDate?: boolean; term?: boolean }>({});
+  // Agreement length in days (end − start) and whether the termination notice
+  // exceeds it — a 30-day notice on a 1-day agreement makes no sense, so it's
+  // blocked. Computed here so both validate() and the inline Field error use it.
+  const agreementDays = (p.effDate && p.endDate)
+    ? Math.round((new Date(p.endDate).getTime() - new Date(p.effDate).getTime()) / 86400000)
+    : null;
+  const termDays = parseInt(termNotice || '', 10);
+  const termInvalid = agreementDays !== null && agreementDays >= 0 && Number.isFinite(termDays) && termDays > agreementDays;
   const validateStep1 = (): boolean => {
     if (!p.cps.length) { toast.error('Counterparty required', 'Add at least one counterparty before continuing.'); setMidStep(1); return false; }
     if (!p.org)        { toast.error('Organisation required', 'Select your organisation details before continuing.'); setMidStep(1); return false; }
     return true;
   };
   const validateStep2 = (): boolean => {
-    if (!p.agTitle.trim()) { toast.error('Agreement name required', 'Enter the agreement title.'); setMidStep(2); return false; }
-    if (!p.agType)         { toast.error('Agreement type required', 'Select the agreement type.'); setMidStep(2); return false; }
-    if (!p.effDate)        { toast.error('Effective date required', 'Select the effective date.'); setMidStep(2); return false; }
-    if (!p.endDate)        { toast.error('End date required', 'Select the end date.'); setMidStep(2); return false; }
+    // Mark every empty required field so all of them highlight inline at once…
+    const e = { title: !p.agTitle.trim(), type: !p.agType, effDate: !p.effDate, endDate: !p.endDate, term: termInvalid };
+    setErrors(e);
+    // …while the toaster still calls out the first one (unchanged behaviour).
+    if (e.title)   { toast.error('Agreement name required', 'Enter the agreement title.'); setMidStep(2); return false; }
+    if (e.type)    { toast.error('Agreement type required', 'Select the agreement type.'); setMidStep(2); return false; }
+    if (e.effDate) { toast.error('Effective date required', 'Select the effective date.'); setMidStep(2); return false; }
+    if (e.endDate) { toast.error('End date required', 'Select the end date.'); setMidStep(2); return false; }
+    if (e.term)    { toast.error('Invalid termination notice', `Termination period (${termDays} days) can't exceed the agreement length (${agreementDays} day${agreementDays === 1 ? '' : 's'}).`); setMidStep(2); return false; }
     return true;
   };
   const validateAll = (): boolean => validateStep1() && validateStep2();
@@ -583,10 +617,25 @@ function Stage1(p: {
                     const idx = safe * 2 + vi;
                     return <CpCard key={idx} t={t} slot={idx + 1} cp={cp} onRemove={() => p.onRemoveCp(idx)} />;
                   })}
-                  <button onClick={p.onAddCp} style={{ border: `1.5px dashed ${t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD'}`, borderRadius: 10, width: '100%', padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
-                    <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'linear-gradient(135deg,#7C3AED,#A78BFA)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg></div>
-                    <span style={{ fontSize: 9, fontWeight: 700, color: t.dark ? '#c4b5fd' : '#7C3AED' }}>{total === 0 ? 'Add Counter Party' : 'Add more Counter Party'}</span>
-                  </button>
+                  {/* Max one of each (Customer / Consignee / Supplier) ⇒ at most 3.
+                      Hide the add button once all three slots are filled. */}
+                  {(() => {
+                    const usedTypes = new Set(p.cps.map(c => (c.sourceType || c.badge || '').toLowerCase()));
+                    const allFilled = ['buyer', 'consignee', 'supplier'].every(tp => usedTypes.has(tp));
+                    if (allFilled) {
+                      return (
+                        <div style={{ fontSize: 8.5, fontWeight: 600, color: t.textMuted, textAlign: 'center', padding: '8px 10px', border: `1.5px dashed ${t.dark ? 'rgba(124,58,237,.25)' : '#E2D9FB'}`, borderRadius: 10 }}>
+                          All parties added — one Customer, one Consignee and one Supplier.
+                        </div>
+                      );
+                    }
+                    return (
+                      <button onClick={p.onAddCp} style={{ border: `1.5px dashed ${t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD'}`, borderRadius: 10, width: '100%', padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'linear-gradient(135deg,#7C3AED,#A78BFA)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg></div>
+                        <span style={{ fontSize: 9, fontWeight: 700, color: t.dark ? '#c4b5fd' : '#7C3AED' }}>{total === 0 ? 'Add Counter Party' : 'Add more Counter Party'}</span>
+                      </button>
+                    );
+                  })()}
                 </>
               );
             })()}
@@ -722,8 +771,8 @@ function Stage1(p: {
                     <div><div style={{ fontSize: 11.5, fontWeight: 800, color: t.dark ? '#ddd6fe' : '#3B0764' }}>Agreement Basics</div><div style={{ fontSize: 8, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500 }}>Title &amp; type of this contract</div></div>
                   </div>
                   <div style={{ padding: '10px 14px', display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 9, alignItems: 'end' }}>
-                    <Field t={t} label="Agreement Title *"><input value={p.agTitle} onChange={e => p.setAgTitle(e.target.value)} placeholder="e.g. Supply Agreement — GreenHarvest × AgroSource" style={ipt} /></Field>
-                    <Field t={t} label="Agreement Type *">
+                    <Field t={t} label="Agreement Title *" error={errors.title && !p.agTitle.trim() ? 'Agreement title is required' : undefined}><input value={p.agTitle} onChange={e => p.setAgTitle(e.target.value)} placeholder="e.g. Supply Agreement — GreenHarvest × AgroSource" style={ipt} /></Field>
+                    <Field t={t} label="Agreement Type *" error={errors.type && !p.agType ? 'Agreement type is required' : undefined}>
                       <MasterSelect value={p.agType} onChange={p.setAgType} options={p.agTypes} loading={p.agTypesLoading} placeholder={p.agTypesLoading ? 'Loading…' : (p.agTypes.length ? 'Select type…' : 'No agreement types in master')} />
                     </Field>
                   </div>
@@ -737,11 +786,11 @@ function Stage1(p: {
                   </div>
                   <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, alignItems: 'end' }}>
-                      <Field t={t} label="Effective Date *" green><MasterDatePicker value={p.effDate} onChange={p.setEffDate} placeholder="Select date" /></Field>
-                      <Field t={t} label="End Date *" green><MasterDatePicker value={p.endDate} onChange={p.setEndDate} minDate={p.effDate || undefined} placeholder="Select date" /></Field>
-                      <Field t={t} label="Termination Notice" green>
+                      <Field t={t} label="Effective Date *" green error={errors.effDate && !p.effDate ? 'Effective date is required' : undefined}><MasterDatePicker value={p.effDate} onChange={p.setEffDate} placeholder="Select date" /></Field>
+                      <Field t={t} label="End Date *" green error={errors.endDate && !p.endDate ? 'End date is required' : undefined}><MasterDatePicker value={p.endDate} onChange={p.setEndDate} minDate={p.effDate || undefined} placeholder="Select date" /></Field>
+                      <Field t={t} label="Termination Notice" green error={(errors.term && termInvalid) ? `Cannot exceed agreement length (${agreementDays} day${agreementDays === 1 ? '' : 's'})` : undefined}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <input type="number" min="1" value={termNotice} onChange={e => setTermNotice(e.target.value)} style={{ ...ipt, borderColor: t.dark ? 'rgba(16,185,129,.35)' : '#A7F3D0', width: 60, textAlign: 'center', padding: '0 6px' }} />
+                          <input type="number" min="1" max={agreementDays ?? undefined} value={termNotice} onChange={e => setTermNotice(e.target.value)} style={{ ...ipt, borderColor: termInvalid ? '#ef4444' : (t.dark ? 'rgba(16,185,129,.35)' : '#A7F3D0'), width: 60, textAlign: 'center', padding: '0 6px' }} />
                           <span style={{ fontSize: 10, color: t.textSub, fontWeight: 600 }}>days</span>
                         </div>
                       </Field>
@@ -821,7 +870,7 @@ function Stage1(p: {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg><span style={{ fontSize: 8, color: t.dark ? '#a78bfa' : '#A78BFA', fontWeight: 500, fontStyle: 'italic' }}>Placeholders auto-fill on agreement generation</span></div>
                   <span style={{ fontSize: 8, fontWeight: 700, color: t.dark ? '#a78bfa' : '#C4B5FD', letterSpacing: '.05em' }}>{'{{PLACEHOLDER}}'}</span>
                 </div>
-                {phOpen && <ClmInsertPlaceholderModal open={phOpen} hideProductTab counterparties={p.cps.map(c => ({ name: c.name, code: String(c.sourceId ?? ''), role: (c.sourceType || c.badge || '').toLowerCase() }))} onClose={() => setPhOpen(false)} onInsert={tok => { if (/^\s*</.test(tok)) insertHtml(tok); else insertText(tok); }} />}
+                {phOpen && <ClmInsertPlaceholderModal open={phOpen} hideProductTab counterparties={p.cps.map(c => ({ name: c.name, code: String(c.sourceId ?? ''), role: (c.sourceType || c.badge || '').toLowerCase(), type: c.sourceType, id: c.sourceId }))} onClose={() => setPhOpen(false)} onInsert={tok => { if (/^\s*</.test(tok)) insertHtml(tok); else insertText(tok); }} />}
                 {clauseOpen && <ClmClauseInsertPanel onClose={() => setClauseOpen(false)} onInsert={html => insertHtml(html)} />}
               </div>
             )}
@@ -957,7 +1006,13 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
   const sigToken = isSignedOff && orgSig
     ? `<img src="${orgSig}" alt="Authorised Signatory" style="max-height:78px;max-width:200px;object-fit:contain;display:inline-block;vertical-align:middle;" />`
     : '<span style="color:#94a3b8;font-style:italic;">{{signature}}</span>';
-  const previewDraft = (draft || '').replace(/\{\{\s*signature\s*\}\}/gi, sigToken);
+  // Prefer the server-resolved preview (party {{customer.*}}/{{consignee.*}}/
+  // {{supplier.*}} + org tokens filled with real data) so Stage 2+ shows actual
+  // values, not raw placeholders. Falls back to the raw draft when absent.
+  const resolvedPreview = typeof record?.content_preview === 'string' && record.content_preview
+    ? (record.content_preview as string)
+    : draft;
+  const previewDraft = (resolvedPreview || '').replace(/\{\{\s*signature\s*\}\}/gi, sigToken);
   const MID = {
     2: { head: '#3B0764,#5B21B6,#7C3AED,#8B5CF6', sup: 'Panel 02 · Agreement Preview', title: 'Agreement Preview' },
     3: { head: '#0e7490,#0891b2,#06b6d4', sup: 'Panel 02 · Negotiation & Signing', title: 'Counterparty Negotiation & Signing' },
@@ -1864,8 +1919,22 @@ function OrgDetail({ t, label, text }: { t: OpsTokens; label?: string; text: str
   return <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /></svg>{label && <span style={{ fontSize: 8, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</span>}<span style={{ fontSize: 9, color: t.textSub, fontWeight: 600 }}>{text}</span></div>;
 }
 
-function Field({ t, label, green, children }: { t: OpsTokens; label: string; green?: boolean; children: React.ReactNode }) {
-  return <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><label style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: green ? (t.dark ? '#34d399' : '#059669') : (t.dark ? '#a78bfa' : '#7C3AED') }}>{label}</label>{children}</div>;
+function Field({ t, label, green, error, children }: { t: OpsTokens; label: string; green?: boolean; error?: string; children: React.ReactNode }) {
+  const labelColor = error ? '#ef4444' : (green ? (t.dark ? '#34d399' : '#059669') : (t.dark ? '#a78bfa' : '#7C3AED'));
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <label style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: labelColor }}>{label}</label>
+      {/* Red ring hugs whatever control sits inside (input / select / date) so a
+          single wrapper validates every field type uniformly. */}
+      <div style={{ borderRadius: 9, boxShadow: error ? '0 0 0 1.5px #ef4444' : 'none' }}>{children}</div>
+      {error && (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 8.5, fontWeight: 700, color: '#ef4444' }}>
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+          {error}
+        </span>
+      )}
+    </div>
+  );
 }
 
 /* ── Counterparty picker modal ── */
@@ -2059,8 +2128,12 @@ const toEntry = (name: unknown, country: unknown, phone: unknown, email: unknown
   id: String(id ?? i), name: String(name || '—'), initials: orgInitials(String(name || '')), country: String(country || '—'), phone: String(phone || '—'), email: String(email || '—'), grad: ORG_GRADS[i % ORG_GRADS.length],
 });
 
-function CpPicker({ t, slot, onClose, onPick }: { t: OpsTokens; slot: number; onClose: () => void; onPick: (cp: CP) => void }) {
-  const [tab, setTab] = useState<'buyer' | 'consignee' | 'supplier'>('buyer');
+function CpPicker({ t, slot, usedTypes = [], onClose, onPick }: { t: OpsTokens; slot: number; usedTypes?: string[]; onClose: () => void; onPick: (cp: CP) => void }) {
+  // Types already added to this agreement — their tabs are disabled so only one
+  // Customer (buyer) / Consignee / Supplier can ever be selected.
+  const used = new Set(usedTypes.map(s => s.toLowerCase()));
+  const firstAvail = (['buyer', 'consignee', 'supplier'] as const).find(tb => !used.has(tb)) ?? 'buyer';
+  const [tab, setTab] = useState<'buyer' | 'consignee' | 'supplier'>(firstAvail);
   const [search, setSearch] = useState('');
   const [pending, setPending] = useState<PickEntry | null>(null);
   const [referred, setReferred] = useState('');
@@ -2091,7 +2164,7 @@ function CpPicker({ t, slot, onClose, onPick }: { t: OpsTokens; slot: number; on
   return (
     <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,5,40,.42)', backdropFilter: 'blur(6px)' }} />
-      <div style={{ position: 'relative', zIndex: 1, width: pending ? 300 : 300, background: t.surface, borderRadius: 16, boxShadow: '0 10px 48px rgba(109,40,217,.32)', overflow: 'hidden', fontFamily: "'Rubik', system-ui, sans-serif" }}>
+      <div style={{ position: 'relative', zIndex: 1, width: pending ? 440 : 460, maxWidth: 'calc(100vw - 32px)', background: t.surface, borderRadius: 16, boxShadow: '0 10px 48px rgba(109,40,217,.32)', overflow: 'hidden', fontFamily: "'Rubik', system-ui, sans-serif" }}>
         <div style={{ background: 'linear-gradient(118deg,#4C1D95,#6D28D9,#8B5CF6)', padding: '12px 14px 11px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{pending ? `Confirm CP ${slot}` : `Add Counter Party ${slot}`}</div>
           <button onClick={onClose} style={{ width: 24, height: 24, borderRadius: 7, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
@@ -2099,32 +2172,39 @@ function CpPicker({ t, slot, onClose, onPick }: { t: OpsTokens; slot: number; on
         {!pending ? (
           <div style={{ padding: '10px 12px 12px' }}>
             <div style={{ display: 'flex', gap: 3, background: t.dark ? 'rgba(255,255,255,.05)' : '#F3F0FD', borderRadius: 9, padding: 3, marginBottom: 9 }}>
-              {(['buyer', 'consignee', 'supplier'] as const).map(tb => (
-                <button key={tb} onClick={() => { setTab(tb); setSearch(''); }} style={{ flex: 1, padding: '6px 0', borderRadius: 7, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 700, textTransform: 'capitalize', background: tab === tb ? 'linear-gradient(135deg,#7C3AED,#6D28D9)' : 'transparent', color: tab === tb ? '#fff' : t.textMuted, boxShadow: tab === tb ? '0 2px 6px rgba(109,40,217,.3)' : 'none' }}>{tb === 'buyer' ? 'customer' : tb}</button>
-              ))}
+              {(['buyer', 'consignee', 'supplier'] as const).map(tb => {
+                const isUsed = used.has(tb);
+                return (
+                  <button key={tb} disabled={isUsed} onClick={() => { if (isUsed) return; setTab(tb); setSearch(''); }}
+                    title={isUsed ? 'Already added — only one allowed' : undefined}
+                    style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: 'none', cursor: isUsed ? 'not-allowed' : 'pointer', opacity: isUsed ? .4 : 1, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, textTransform: 'capitalize', background: tab === tb && !isUsed ? 'linear-gradient(135deg,#7C3AED,#6D28D9)' : 'transparent', color: tab === tb && !isUsed ? '#fff' : t.textMuted, boxShadow: tab === tb && !isUsed ? '0 2px 6px rgba(109,40,217,.3)' : 'none' }}>
+                    {tb}{isUsed ? ' ✓' : ''}
+                  </button>
+                );
+              })}
             </div>
             <div style={{ position: 'relative', marginBottom: 8 }}>
               <svg style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.4" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…" style={{ width: '100%', padding: '8px 10px 8px 30px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 9, fontSize: 11, fontFamily: 'inherit', color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', outline: 'none', boxSizing: 'border-box' }} />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…" style={{ width: '100%', padding: '10px 12px 10px 32px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 9, fontSize: 12.5, fontFamily: 'inherit', color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', outline: 'none', boxSizing: 'border-box' }} />
             </div>
-            <div style={{ overflowY: 'auto', maxHeight: 220, display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <div style={{ overflowY: 'auto', maxHeight: 'min(60vh, 440px)', display: 'flex', flexDirection: 'column', gap: 1 }}>
               {list.map(p => (
-                <div key={p.id} onClick={() => { setPending(p); setReferred(p.name); }} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 8px', borderRadius: 9, cursor: 'pointer' }}
+                <div key={p.id} onClick={() => { setPending(p); setReferred(p.name); }} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '10px 11px', borderRadius: 10, cursor: 'pointer' }}
                   onMouseEnter={e => (e.currentTarget.style.background = t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                  <div style={{ width: 28, height: 28, borderRadius: 8, background: `linear-gradient(135deg,${p.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8, fontWeight: 800, color: '#fff' }}>{p.initials}</span></div>
+                  <div style={{ width: 38, height: 38, borderRadius: 10, background: `linear-gradient(135deg,${p.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>{p.initials}</span></div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
-                      <span style={{ flexShrink: 0, fontFamily: "'Geist Mono', monospace", fontSize: 7, fontWeight: 800, color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '1px 5px', borderRadius: 5, letterSpacing: '.02em' }}>{p.id}</span>
-                      <span style={{ fontSize: 9, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                      <span style={{ flexShrink: 0, fontFamily: "'Geist Mono', monospace", fontSize: 9.5, fontWeight: 800, color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '2px 7px', borderRadius: 6, letterSpacing: '.02em' }}>{p.id}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
-                      <span style={{ flexShrink: 0, fontSize: 6.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.04em', color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '1px 5px', borderRadius: 20 }}>{tabBadge.label}</span>
-                      <span style={{ fontSize: 7, color: t.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.country}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 4 }}>
+                      <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.04em', color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '2px 8px', borderRadius: 20 }}>{tabBadge.label}</span>
+                      <span style={{ fontSize: 10.5, color: t.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.country}</span>
                     </div>
                   </div>
                 </div>
               ))}
-              {!list.length && <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 8.5, color: t.textMuted }}>{loading ? 'Loading…' : `No ${tab}s found`}</div>}
+              {!list.length && <div style={{ textAlign: 'center', padding: '28px 0', fontSize: 12, color: t.textMuted }}>{loading ? 'Loading…' : `No ${tab}s found`}</div>}
             </div>
           </div>
         ) : (

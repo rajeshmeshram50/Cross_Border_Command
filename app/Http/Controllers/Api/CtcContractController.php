@@ -216,6 +216,92 @@ class CtcContractController extends Controller
         return null;
     }
 
+    /**
+     * Load the live Eloquent model + its CLM model-name for a counterparty
+     * reference, so its {{customer.*}} / {{consignee.*}} / {{supplier.*}}
+     * placeholders can be resolved against real data. Returns [model, name]
+     * or [null, ''] when the reference can't be resolved.
+     */
+    private function livePartyModel(string $type, $id, int $clientId): array
+    {
+        $type = strtolower($type);
+        if ($type === 'buyer' || $type === 'customer') {
+            $q = \App\Models\Customer::where('client_id', $clientId)->with('primaryAddress');
+            $row = is_numeric($id) ? $q->find($id) : $q->where('customer_code', $id)->first();
+            return $row ? [$row, 'Customer'] : [null, ''];
+        }
+        if ($type === 'consignee') {
+            $q = \App\Models\Consignee::where('client_id', $clientId)->with('primaryAddress');
+            $row = is_numeric($id) ? $q->find($id) : $q->where('consignee_code', $id)->first();
+            return $row ? [$row, 'Consignee'] : [null, ''];
+        }
+        if ($type === 'supplier' || $type === 'vendor') {
+            $q = \App\Models\Vendor::where('client_id', $clientId)->with('primaryAddress');
+            $row = is_numeric($id) ? $q->find($id) : $q->where('vendor_code', $id)->first();
+            return $row ? [$row, 'Vendor'] : [null, ''];
+        }
+        return [null, ''];
+    }
+
+    /**
+     * Replace the {{customer.*}} / {{consignee.*}} / {{supplier.*}} party
+     * placeholders in agreement HTML with each counterparty's real data,
+     * reusing the same resolver the trade-doc / signature render uses.
+     */
+    private function resolvePartyTokens(string $html, CtcContract $row): string
+    {
+        foreach ((is_array($row->counterparties) ? $row->counterparties : []) as $cp) {
+            $type = (string) ($cp['source_type'] ?? '');
+            $id   = $cp['source_id'] ?? null;
+            if ($id === null || $id === '' || $type === '') continue;
+            [$model, $modelName] = $this->livePartyModel($type, $id, (int) $row->client_id);
+            if ($model) $html = ClmSignatureController::replacePartyNamespaceTokens($html, $model, $modelName);
+        }
+        return $html;
+    }
+
+    /**
+     * Fill the organisation-detail placeholders ({{company_name}} {{company_no}}
+     * {{email}} {{contact_no}} {{address}}) from the Company Details master row
+     * backing this agreement's "Our Organisation" selection.
+     */
+    private function resolveOrgTokens(string $html, CtcContract $row): string
+    {
+        $orgName = trim((string) ($row->org_name ?? ''));
+        $company = $orgName
+            ? \App\Models\Masters\Company::where('client_id', $row->client_id)->where('company_name', $orgName)->first()
+            : null;
+        $orgTokens = [
+            'company_name' => $row->org_name ?: ($company->company_name ?? ''),
+            'company_no'   => $company->cin ?? '',
+            'email'        => $company->email ?? '',
+            'contact_no'   => $company->mobile ?? '',
+            'address'      => $company->address ?? '',
+        ];
+        foreach ($orgTokens as $tok => $val) {
+            $html = preg_replace('/\{\{\s*' . $tok . '\s*\}\}/i', e((string) $val), $html);
+        }
+        return $html;
+    }
+
+    /**
+     * Agreement HTML with party + organisation placeholders resolved to real
+     * data, for the Stage-2 "Agreement Preview" pane. The {{signature}} token
+     * is intentionally left untouched — the SPA swaps it for a sign-here marker.
+     */
+    private function previewContent(CtcContract $row): string
+    {
+        $html = (string) ($row->content ?? '');
+        if ($html === '') return '';
+        $html = $this->resolvePartyTokens($this->resolveOrgTokens($html, $row), $row);
+        // Blank out any placeholder still left over — a party that isn't mapped
+        // ({{supplier.*}} with no supplier), product tokens (CTC has none), or a
+        // typo'd token — so the preview shows nothing instead of raw {{...}}.
+        // {{signature}} is preserved: the SPA swaps it for the sign-here marker.
+        $html = preg_replace('/\{\{\s*(?!signature\s*\}\})[^{}]*\}\}/i', '', $html);
+        return $html;
+    }
+
     /** Case to Case Contracts list row. */
     private function shapeList(CtcContract $c): array
     {
@@ -418,7 +504,52 @@ class CtcContractController extends Controller
         // Re-hydrate counterparties from their live source masters so any edit
         // made in Customer / Consignee / Vendor since this was saved shows here.
         $row->counterparties = $this->resolveCounterparties($row);
+        // Stage-2 preview content: same body with {{party.*}} + {{org}} tokens
+        // resolved to real data so the preview shows actual values, not raw
+        // {{consignee.gst}} placeholders. Raw `content` is kept for editing.
+        $row->content_preview = $this->previewContent($row);
         return response()->json(['status' => true, 'data' => $row]);
+    }
+
+    /**
+     * GET /clm/ctc-contracts/placeholder-values?type=&id=
+     *
+     * Resolved field → value map for one counterparty, so the Insert
+     * Placeholder modal can show ONLY the fields that actually have data
+     * (hide empty GST/PAN/contact/etc. instead of inserting blank tokens).
+     */
+    public function placeholderValues(Request $request)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        [$model, $modelName] = $this->livePartyModel((string) $request->query('type', ''), $request->query('id'), (int) $user->client_id);
+        if (!$model) return response()->json(['status' => true, 'data' => []]);
+
+        $addr   = $model->primaryAddress;
+        $vendor = $modelName === 'Vendor';
+        $scalar = static fn ($v) => $v === null ? '' : (is_object($v) ? (string) ($v->name ?? '') : (string) $v);
+        $country = $scalar($addr?->country);
+        $state   = $scalar($addr?->state);
+        $pin     = $scalar($vendor ? ($addr?->pincode ?? null) : ($addr?->pin ?? null));
+        $codeAttr = $modelName === 'Customer' ? 'customer_code' : ($modelName === 'Consignee' ? 'consignee_code' : 'vendor_code');
+
+        $values = [
+            'name'           => (string) ($model->company_name ?? ''),
+            'code'           => (string) ($model->{$codeAttr} ?? ''),
+            'company'        => (string) (($model->legal_name ?: $model->company_name) ?? ''),
+            'contact_person' => (string) ($vendor ? ($addr?->contact_name ?? '') : ($addr?->cp_name ?? '')),
+            'phone'          => (string) ($vendor ? ($addr?->contact_no ?? '') : ($addr?->cp_contact ?? '')),
+            'email'          => (string) ($model->primary_email ?? ''),
+            // No backing column yet → always empty (so they get hidden).
+            'gst'            => '',
+            'pan'            => '',
+            'iec'            => '',
+            'bank_account'   => '',
+            'country'        => $country,
+            'state'          => $state,
+            'city'           => $scalar($addr?->city ?? null),
+            'address'        => trim(implode(', ', array_filter([$addr?->address_line, $addr?->city, $state, $country, $pin]))),
+        ];
+        return response()->json(['status' => true, 'data' => $values]);
     }
 
     /** Public URL of the fully-signed PDF (from the linked signature request), or null. */
@@ -981,6 +1112,15 @@ class CtcContractController extends Controller
         foreach ($orgTokens as $tok => $val) {
             $processedHtml = preg_replace('/\{\{\s*' . $tok . '\s*\}\}/i', e((string) $val), $processedHtml);
         }
+
+        // Party placeholders ({{customer.*}} / {{consignee.*}} / {{supplier.*}})
+        // → real counterparty data, so the rendered PDF/DOCX never leaks raw
+        // tokens like {{consignee.gst}}.
+        $processedHtml = $this->resolvePartyTokens($processedHtml, $row);
+        // Blank any placeholder still left (unmapped party, missing data, typo)
+        // so the final document shows nothing rather than raw {{...}}.
+        // ({{signature}} was already substituted above.)
+        $processedHtml = preg_replace('/\{\{[^{}]*\}\}/', '', $processedHtml);
 
         $headerConfig = is_array($row->header_config) ? $row->header_config : [];
         $footerConfig = is_array($row->footer_config) ? $row->footer_config : [];
