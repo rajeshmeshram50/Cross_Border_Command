@@ -258,6 +258,10 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
   const [group, setGroup] = useState<GroupKey>('standard');
   // "Document Overview" popup — set to a group key to open the all-docs list.
   const [overview, setOverview] = useState<GroupKey | null>(null);
+  // Document-overview pagination (5 rows per page) + selected shipment tab
+  // (case-to-case overview shows one shipment's docs at a time).
+  const [overviewPage, setOverviewPage] = useState(1);
+  const [ovShip, setOvShip] = useState<number | null>(null);
   const [shipmentFilter, setShipmentFilter] = useState<'buyer-eq-consignee' | 'buyer-neq-consignee'>('buyer-eq-consignee');
 
   /* Switch the active group and jump to its first sub-tab. */
@@ -689,7 +693,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                 <button
                   type="button"
                   className="cev-group-overview"
-                  onClick={() => setOverview(g.key)}
+                  onClick={() => { setOverview(g.key); setOverviewPage(1); setOvShip(null); }}
                   title="View all documents in one list"
                 >
                   <i className="ri-list-check-2" aria-hidden /> Document Overview
@@ -718,7 +722,10 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
         </div>
 
         {/* ─── BODY ─── */}
-        <div className="cev-body">
+        {/* Shipment tabs add a Buyer=/≠Consignee toggle between the section and
+            the table, so they use the "separated cards" layout (spacing around
+            the toggle); flat doc tabs keep the section fused to the table. */}
+        <div className={`cev-body ${(tab === 'shipment-agreements' || tab === 'trade-documents') ? 'cev-body-ship' : ''}`}>
           {/* Section banner — explains what the active tab holds. */}
           <div className="cev-section">
             <div className="cev-section-left">
@@ -753,9 +760,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
 
         {/* ─── FOOTER ─── */}
         <div className="cev-footer">
-          <div className="cev-footer-meta">
-            Last updated: <b>{vault.last_updated}</b> · Vault managed by Compliance Team
-          </div>
+          <div className="cev-footer-meta" />
           <div className="cev-footer-actions">
             <Tooltip label="Download every tab (Company DD, Owner KYC, Trade Licenses, Trade Documents, Shipments) as a single .xlsx workbook">
               <button
@@ -797,13 +802,6 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
           Overview" button on each group card. */}
       {overview && (() => {
         const isStd = overview === 'standard';
-        // Standard Documents are one-time (company-level) → a single flat list.
-        const docs: VaultDoc[] = isStd
-          ? [...vault.company_dd, ...vault.owner_kyc, ...vault.trade_licenses]
-          : [];
-        // Case-to-Case docs are per-deal, so the overview is grouped by
-        // shipment: each shipment heads its own block listing that
-        // shipment's Trade Documents + Agreements (buyer + consignee).
         const shipDocsOf = (r: VaultShipmentRow): VaultShipmentDoc[] => [
           ...(r.trade_docs_buyer ?? []),
           ...(r.trade_docs_consignee ?? []),
@@ -811,11 +809,23 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
           ...(r.agreements_consignee ?? []),
         ];
         const shipments = isStd ? [] : vault.shipment_agreements;
-        const hasShipmentDocs = shipments.some((r) => shipDocsOf(r).length > 0);
+        // Case-to-Case: shipments are shown as horizontal tabs; the active
+        // shipment's Trade Documents + Agreements are listed below (paginated
+        // like the Standard list).
+        const shipsWithDocs = isStd ? [] : shipments.filter((r) => shipDocsOf(r).length > 0);
+        const activeShip = isStd ? null : (shipsWithDocs.find((r) => r.id === ovShip) ?? shipsWithDocs[0] ?? null);
+        const docs: (VaultDoc | VaultShipmentDoc)[] = isStd
+          ? [...vault.company_dd, ...vault.owner_kyc, ...vault.trade_licenses]
+          : (activeShip ? shipDocsOf(activeShip) : []);
         const title = isStd ? 'Standard Documents — Overview' : 'Case to Case Agreements — Overview';
         const sub = isStd
           ? 'All Company Due Diligence, Owner KYC & Trade Licenses documents in one list'
-          : 'Trade Documents & Agreements grouped by shipment';
+          : 'Trade Documents & Agreements — pick a shipment';
+        // 5 rows per page with a compact prev/next pager.
+        const OV_PER_PAGE = 5;
+        const ovTotalPages = Math.max(1, Math.ceil(docs.length / OV_PER_PAGE));
+        const ovPageSafe = Math.min(overviewPage, ovTotalPages);
+        const pageDocs = docs.slice((ovPageSafe - 1) * OV_PER_PAGE, (ovPageSafe - 1) * OV_PER_PAGE + OV_PER_PAGE);
         return (
           <div className="cev-ov-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) setOverview(null); }}>
             <div className="cev-ov-card">
@@ -827,74 +837,74 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                 </div>
                 <button type="button" className="cev-ov-close" onClick={() => setOverview(null)} aria-label="Close"><i className="ri-close-line" /></button>
               </div>
+              {/* Case-to-Case: horizontal, scrollable shipment tabs. Click one
+                  to load that shipment's documents in the table below. */}
+              {!isStd && shipsWithDocs.length > 0 && (
+                <div className="cev-ov-shiptabs">
+                  {shipsWithDocs.map((r) => (
+                    <button
+                      type="button"
+                      key={r.id}
+                      className={`cev-ov-shiptab ${activeShip?.id === r.id ? 'is-active' : ''}`}
+                      onClick={() => { setOvShip(r.id); setOverviewPage(1); }}
+                    >
+                      <i className="ri-truck-line" aria-hidden /> {r.shipment_id}
+                      <span className="cev-ov-shiptab-opp">{r.opportunity_id}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="cev-ov-body">
                 <table className="cev-ov-table">
                   <thead><tr><th style={{ width: 48 }}>#</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
                   <tbody>
-                    {isStd ? (
-                      docs.length === 0 ? (
-                        <tr><td colSpan={4} className="cev-ov-empty">No documents available.</td></tr>
-                      ) : docs.map((d, i) => {
-                        const url = d.attachment_url ? resolveFileUrl(d.attachment_url) : null;
-                        return (
-                          <tr key={`${d.id}-${i}`}>
-                            <td className="cev-ov-num">{i + 1}</td>
-                            <td className="cev-ov-name">{d.name}</td>
-                            <td><StatusPill s={d.status} /></td>
-                            <td>
-                              <button
-                                type="button"
-                                className="cev-ov-dl"
-                                disabled={!url}
-                                onClick={() => { if (url) void downloadFile(url, d.attachment || `${d.name}.pdf`); }}
-                              >
-                                <i className="ri-download-2-line" aria-hidden /> Download
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    ) : (
-                      !hasShipmentDocs ? (
-                        <tr><td colSpan={4} className="cev-ov-empty">No shipment documents available.</td></tr>
-                      ) : shipments.map((r) => {
-                        const sdocs = shipDocsOf(r);
-                        if (sdocs.length === 0) return null;
-                        return (
-                          <Fragment key={r.id}>
-                            <tr className="cev-ov-ship-head">
-                              <td colSpan={4}>
-                                <i className="ri-truck-line" aria-hidden /> {r.shipment_id}
-                                <span className="cev-ov-ship-opp">{r.opportunity_id}</span>
-                              </td>
-                            </tr>
-                            {sdocs.map((d, i) => {
-                              const url = d.signed_url ? resolveFileUrl(d.signed_url) : null;
-                              return (
-                                <tr key={`${r.id}-${i}`}>
-                                  <td className="cev-ov-num">{i + 1}</td>
-                                  <td className="cev-ov-name">{d.name}</td>
-                                  <td><StatusPill s={d.status as VaultStatus} /></td>
-                                  <td>
-                                    <button
-                                      type="button"
-                                      className="cev-ov-dl"
-                                      disabled={!url}
-                                      onClick={() => { if (url) void downloadFile(url, `${d.name}.pdf`); }}
-                                    >
-                                      <i className="ri-download-2-line" aria-hidden /> Download
-                                    </button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </Fragment>
-                        );
-                      })
-                    )}
+                    {docs.length === 0 ? (
+                      <tr><td colSpan={4} className="cev-ov-empty">{isStd ? 'No documents available.' : (shipsWithDocs.length === 0 ? 'No shipment documents available.' : 'No documents for this shipment.')}</td></tr>
+                    ) : pageDocs.map((d, i) => {
+                      const absIdx = (ovPageSafe - 1) * OV_PER_PAGE + i;
+                      const raw = isStd ? (d as VaultDoc).attachment_url : (d as VaultShipmentDoc).signed_url;
+                      const url = raw ? resolveFileUrl(raw) : null;
+                      const fname = isStd ? ((d as VaultDoc).attachment || `${d.name}.pdf`) : `${d.name}.pdf`;
+                      return (
+                        <tr key={`${activeShip?.id ?? 'std'}-${absIdx}`}>
+                          <td className="cev-ov-num">{absIdx + 1}</td>
+                          <td className="cev-ov-name">{d.name}</td>
+                          <td><StatusPill s={d.status as VaultStatus} /></td>
+                          <td>
+                            <button
+                              type="button"
+                              className="cev-ov-dl"
+                              disabled={!url}
+                              onClick={() => { if (url) void downloadFile(url, fname); }}
+                            >
+                              <i className="ri-download-2-line" aria-hidden /> Download
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
+              {/* Pager — 5 per page (Standard list or the active shipment). */}
+              {docs.length > OV_PER_PAGE && (
+                <div className="cev-ov-pager">
+                  <span className="cev-ov-pager-info">
+                    Showing <strong>{(ovPageSafe - 1) * OV_PER_PAGE + 1}–{Math.min(ovPageSafe * OV_PER_PAGE, docs.length)}</strong> of <strong>{docs.length}</strong>
+                  </span>
+                  <div className="cev-ov-pager-btns">
+                    <button type="button" className="cev-ov-pager-nav" disabled={ovPageSafe === 1} onClick={() => setOverviewPage((p) => Math.max(1, p - 1))} aria-label="Previous">
+                      <i className="ri-arrow-left-s-line" aria-hidden />
+                    </button>
+                    {[ovPageSafe, ovPageSafe + 1].filter((p) => p >= 1 && p <= ovTotalPages).map((p) => (
+                      <button type="button" key={p} className={`cev-ov-pager-num ${p === ovPageSafe ? 'is-active' : ''}`} onClick={() => setOverviewPage(p)}>{p}</button>
+                    ))}
+                    <button type="button" className="cev-ov-pager-nav" disabled={ovPageSafe === ovTotalPages} onClick={() => setOverviewPage((p) => Math.min(ovTotalPages, p + 1))} aria-label="Next">
+                      <i className="ri-arrow-right-s-line" aria-hidden />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -1258,9 +1268,11 @@ function ShipmentTable({ rows, kind, filter, setFilter }: {
   const COLS = isAgreement ? 11 : 10;
   return (
     <>
-      <div className="cev-ship-filter cev-ship-filter-2">
-        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-eq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-eq-consignee'); setOpenId(null); }}>Buyer = Consignee</button>
-        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-neq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-neq-consignee'); setOpenId(null); }}>Buyer &ne; Consignee</button>
+      {/* Trade Documents uses compact pills; Agreements uses the full-width
+          segmented bar with ✓ / ✕ markers — matches the figma per tab. */}
+      <div className={`cev-ship-filter ${isAgreement ? '' : 'cev-ship-filter-2'}`}>
+        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-eq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-eq-consignee'); setOpenId(null); }}>{isAgreement && <span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✓</span>}Buyer = Consignee</button>
+        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-neq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-neq-consignee'); setOpenId(null); }}>{isAgreement && <span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✕</span>}Buyer &ne; Consignee</button>
       </div>
       <div className="cev-table-wrap">
         <div className="cev-table-scroll">
@@ -1453,6 +1465,8 @@ const CEV_CSS = `
   z-index: 11200;
   display: flex; align-items: stretch; justify-content: flex-end;
   font-family: 'DM Sans','Inter',system-ui,-apple-system,sans-serif;
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   animation: cevFade .18s ease both;
 }
 @keyframes cevFade { from { opacity: 0; } to { opacity: 1; } }
@@ -1489,8 +1503,8 @@ const CEV_CSS = `
   pointer-events: none;
   overflow: hidden;
   background:
-    radial-gradient(circle at 100% 0%, rgba(165,243,252,0.32), transparent 45%),
-    radial-gradient(circle at 0% 100%, rgba(34,211,238,0.30), transparent 55%);
+    radial-gradient(circle at 100% 0%, rgba(165,243,252,0.10), transparent 45%),
+    radial-gradient(circle at 0% 100%, rgba(34,211,238,0.10), transparent 55%);
 }
 .cev-header-bg::before,
 .cev-header-bg::after {
@@ -1580,7 +1594,7 @@ const CEV_CSS = `
 /* Full-width static row — all stat columns fit; NO horizontal scroll. */
 .cev-kpi-strip {
   display: flex; gap: 0; align-items: stretch;
-  padding: 12px 16px;
+  padding: 0;
   overflow: visible;
 }
 .cev-kpi-fade {
@@ -1632,7 +1646,7 @@ const CEV_CSS = `
   position: relative;
   flex: 1 1 0;                /* equal-width columns — fill the row, no scroll */
   min-width: 0;
-  padding: 4px 16px;
+  padding: 12px 8px 10px;
   border-right: 1px solid rgba(8,145,178,0.16);   /* thin column divider */
   text-align: center;        /* centre label, value & status sub-line */
 }
@@ -1645,10 +1659,10 @@ const CEV_CSS = `
 }
 .cev-kpi-text { min-width: 0; }
 .cev-kpi-label {
-  font-size: 8px; font-weight: 700; letter-spacing: .1em;
+  font-size: 6.5px; font-weight: 700; letter-spacing: .1em;
   color: #94a3b8;
   text-transform: uppercase;
-  margin-bottom: 6px;
+  margin-bottom: 2px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .cev-kpi-value {
@@ -1681,15 +1695,15 @@ const CEV_CSS = `
 .cev-groups-wrap {
   flex-shrink: 0;
   background: linear-gradient(180deg, #f0fdff 0%, #ecfeff 100%);
-  padding: 14px 18px 0;
+  padding: 13px 18px;
 }
-.cev-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.cev-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .cev-group {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 13px 18px;
+  padding: 11px 16px;
   background: #ffffff;
   border: 1.5px solid #cffafe;
-  border-radius: 14px;
+  border-radius: 13px;
   text-align: left;
   transition: all .2s ease;
 }
@@ -1749,6 +1763,32 @@ const CEV_CSS = `
 }
 .cev-ov-close:hover { background: rgba(255,255,255,.25); }
 .cev-ov-body { overflow: auto; padding: 14px 18px 18px; }
+/* Overview pager (Standard docs, 5 per page) */
+.cev-ov-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px 16px; flex-wrap: wrap; }
+.cev-ov-pager-info { font-size: 11px; font-weight: 600; color: #0891b2; }
+.cev-ov-pager-btns { display: flex; align-items: center; gap: 5px; }
+.cev-ov-pager-nav, .cev-ov-pager-num {
+  min-width: 28px; height: 28px; border-radius: 7px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: inherit; font-size: 11px; font-weight: 700;
+  border: 1.5px solid rgba(6,182,212,.22); background: #fff; color: #0891b2; transition: all .15s;
+}
+.cev-ov-pager-nav:disabled { opacity: .4; cursor: default; }
+.cev-ov-pager-nav:not(:disabled):hover, .cev-ov-pager-num:hover { background: #ecfeff; }
+.cev-ov-pager-num.is-active { background: linear-gradient(135deg, #06b6d4, #0891b2); color: #fff; border-color: transparent; font-weight: 800; }
+[data-bs-theme="dark"] .cev-ov-pager-nav, [data-bs-theme="dark"] .cev-ov-pager-num { background: rgba(8,145,178,.14); color: #67e8f9; border-color: rgba(8,145,178,.34); }
+[data-bs-theme="dark"] .cev-ov-pager-num.is-active { background: linear-gradient(135deg,#06b6d4,#22d3ee); color: #fff; border-color: transparent; }
+/* Case-to-case shipment tabs (horizontal, scrollable) */
+.cev-ov-shiptabs { display: flex; gap: 8px; overflow-x: auto; padding: 12px 18px 0; scrollbar-width: thin; scrollbar-color: rgba(8,145,178,.3) transparent; }
+.cev-ov-shiptabs::-webkit-scrollbar { height: 6px; }
+.cev-ov-shiptabs::-webkit-scrollbar-thumb { background: rgba(8,145,178,.3); border-radius: 99px; }
+.cev-ov-shiptab { display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0; padding: 8px 14px; border-radius: 10px; cursor: pointer; border: 1.5px solid rgba(6,182,212,.22); background: #fff; color: #0e7490; font-family: inherit; font-size: 12px; font-weight: 700; white-space: nowrap; transition: all .15s; }
+.cev-ov-shiptab:hover { background: #ecfeff; }
+.cev-ov-shiptab.is-active { background: linear-gradient(135deg,#0e7490,#06b6d4); color: #fff; border-color: transparent; box-shadow: 0 3px 10px rgba(8,145,178,.3); }
+.cev-ov-shiptab-opp { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 20px; background: rgba(8,145,178,.1); color: #0891b2; }
+.cev-ov-shiptab.is-active .cev-ov-shiptab-opp { background: rgba(255,255,255,.22); color: #fff; }
+[data-bs-theme="dark"] .cev-ov-shiptab { background: rgba(8,145,178,.12); color: #67e8f9; border-color: rgba(8,145,178,.34); }
+[data-bs-theme="dark"] .cev-ov-shiptab.is-active { background: linear-gradient(135deg,#06b6d4,#22d3ee); color: #fff; border-color: transparent; }
 .cev-ov-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
 .cev-ov-table thead th {
   position: sticky; top: 0; z-index: 5; background: #083344; color: #fff;
@@ -1794,17 +1834,17 @@ const CEV_CSS = `
   box-shadow: 0 6px 18px rgba(14,116,144,.35);
 }
 .cev-group-icon {
-  width: 42px; height: 42px; flex-shrink: 0;
+  width: 34px; height: 34px; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 12px;
+  border-radius: 10px;
   background: #ecfeff; color: #0891b2; border: 1px solid #a5f3fc;
-  font-size: 20px;
+  font-size: 16px;
 }
 .cev-group.is-active .cev-group-icon { background: rgba(255,255,255,.18); color: #fff; border-color: rgba(255,255,255,.25); }
 .cev-group-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.cev-group-title { font-size: 15px; font-weight: 800; color: #0a2630; letter-spacing: -.01em; }
+.cev-group-title { font-size: 13px; font-weight: 800; color: #0a2630; letter-spacing: -.01em; }
 .cev-group.is-active .cev-group-title { color: #ffffff; }
-.cev-group-sub { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; color: #5e94a1; }
+.cev-group-sub { font-size: 8.5px; font-weight: 600; letter-spacing: .06em; color: #5e94a1; }
 .cev-group.is-active .cev-group-sub { color: rgba(255,255,255,.8); }
 
 .cev-tabs-wrap {
@@ -1879,9 +1919,9 @@ const CEV_CSS = `
 /* ─── BODY ─── */
 .cev-body {
   flex: 1; min-height: 0; overflow-y: auto;
-  padding: 18px 24px 22px;
+  padding: 14px 16px 18px;
   background: #f7f8fc;
-  display: flex; flex-direction: column; gap: 14px;
+  display: flex; flex-direction: column; gap: 0;
   /* Match the visible scrollbar pattern used by [[AddVendorModal]]'s
      .avm-body so the rail is obvious when a tab's table grows past
      the body. Solid violet replaces the prior near-invisible rgba(.30). */
@@ -1890,25 +1930,34 @@ const CEV_CSS = `
 .cev-body::-webkit-scrollbar { width: 8px; }
 .cev-body::-webkit-scrollbar-thumb { background: #67e8f9; border-radius: 99px; }
 .cev-body::-webkit-scrollbar-thumb:hover { background: #06b6d4; }
+/* Shipment tabs: separated cards with breathing room around the Buyer=/≠
+   Consignee toggle (section becomes a self-contained rounded card again). */
+.cev-body-ship { gap: 10px; }
+.cev-body-ship .cev-section { border-radius: 12px; }
+.cev-body-ship .cev-table-wrap { border-top: 1px solid #e4e7f5; border-radius: 12px; }
+/* Non-sticky header so the wrapper's rounded top corners actually clip the dark
+   header band (a sticky header escapes the overflow:hidden clip at the top). */
+.cev-body-ship .cev-table thead tr { position: static; }
 
 .cev-section {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 14px 18px;
-  background: linear-gradient(110deg, #ecfeff, #cffafe 70%, #a5f3fc);
-  border: 1px solid rgba(8,145,178,.18);
-  border-radius: 14px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 13px 16px;
+  background: linear-gradient(110deg, #fafbff 0%, #f3f5ff 100%);
+  border: 1px solid #e4e7f5;
+  border-radius: 10px 10px 0 0;
 }
 .cev-section-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .cev-section-icon {
-  width: 38px; height: 38px; border-radius: 10px;
-  background: linear-gradient(135deg, #06b6d4, #0891b2);
-  color: #fff;
+  width: 34px; height: 34px; border-radius: 10px;
+  background: linear-gradient(135deg, #ecfeff, #a5f3fc);
+  color: #0891b2;
+  border: 1px solid rgba(6,182,212,.22);
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: 18px;
-  box-shadow: 0 4px 12px rgba(8,145,178,.30);
+  font-size: 16px;
+  box-shadow: 0 2px 6px rgba(6,182,212,.12);
 }
-.cev-section-title { font-size: 15px; font-weight: 800; color: #0c4a6e; }
-.cev-section-sub   { font-size: 12px; color: #0891b2; margin-top: 1px; }
+.cev-section-title { font-size: 12.5px; font-weight: 800; color: #083344; }
+.cev-section-sub   { font-size: 9.5px; color: #94a3b8; margin-top: 1px; }
 .cev-section-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .cev-section-count { font-size: 26px; font-weight: 800; color: #0c4a6e; line-height: 1; }
 .cev-section-count-label { font-size: 9.5px; font-weight: 700; letter-spacing: .12em; color: #0891b2; margin-top: 2px; }
@@ -1953,8 +2002,9 @@ const CEV_CSS = `
 
 .cev-table-wrap {
   background: #fff;
-  border: 1px solid rgba(8,145,178,.18);
-  border-radius: 14px;
+  border: 1px solid #e4e7f5;
+  border-top: none;
+  border-radius: 0 0 10px 10px;
   overflow: hidden;          /* keep the rounded edge crisp over the
                                  sticky header band — w/o this the band
                                  paints over the corner radius */
