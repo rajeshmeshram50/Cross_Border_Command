@@ -1,4 +1,4 @@
-import { useState, useEffect, CSSProperties } from 'react';
+import { useState, useEffect, useRef, CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import CustomerEvidenceVaultModal, { type CustomerVaultTarget, type TabKey as VaultTab } from '../sales/CustomerEvidenceVaultModal';
@@ -140,6 +140,64 @@ const wosNeqData: WosNeqRow[] = [
 const BP_PER_PAGE = 10;
 const WS_PER_PAGE = 10;
 const WOS_PER_PAGE = 10;
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * useDynamicPerPage — rows-per-page that fits the viewport.
+ * Measures the table wrapper's distance from the top of the screen and divides
+ * the remaining height by a row's height, so the table fills the screen and the
+ * pager footer ends up pinned to the bottom (instead of floating up with a
+ * fixed 10-row page). Recomputes on resize and whenever `deps` change (tab
+ * switch, analytics strip collapse, etc.).
+ * ────────────────────────────────────────────────────────────────────────── */
+function useDynamicPerPage(
+  ref: React.RefObject<HTMLElement>,
+  { rowHeight = 46, min = 5, footer = 56, gap = 18, deps = [] as unknown[] } = {},
+): number {
+  const [perPage, setPerPage] = useState(BP_PER_PAGE);
+  useEffect(() => {
+    const calc = () => {
+      const el = ref.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const avail = window.innerHeight - top - footer - gap;
+      const rows = Math.floor(avail / rowHeight);
+      setPerPage(Number.isFinite(rows) ? Math.max(min, rows) : BP_PER_PAGE);
+    };
+    calc();
+    const t = window.setTimeout(calc, 80); // re-measure after layout settles
+    window.addEventListener('resize', calc);
+    return () => { window.clearTimeout(t); window.removeEventListener('resize', calc); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return perPage;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * useFillHeight — min-height that makes an element reach the bottom of the
+ * viewport. Applied to the list CARD so it stretches to the bottom of the
+ * screen; the table area inside it grows (flex:1) and the pager footer ends up
+ * pinned to the bottom even when there are only a few rows.
+ * ────────────────────────────────────────────────────────────────────────── */
+function useFillHeight(
+  ref: React.RefObject<HTMLElement>,
+  { gap = 14, min = 240, deps = [] as unknown[] } = {},
+): number | undefined {
+  const [h, setH] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const calc = () => {
+      const el = ref.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      setH(Math.max(min, Math.round(window.innerHeight - top - gap)));
+    };
+    calc();
+    const t = window.setTimeout(calc, 80);
+    window.addEventListener('resize', calc);
+    return () => { window.clearTimeout(t); window.removeEventListener('resize', calc); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return h;
+}
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Scoped CSS (extracted from the prototype)
@@ -413,7 +471,7 @@ function ListPager({ page, total, perPage, noun, onPage }: { page: number; total
   const nextDis: CSSProperties = page === totalPages ? { opacity: .4, cursor: 'default' } : { cursor: 'pointer' };
   const navBtn: CSSProperties = { width: '28px', height: '28px', borderRadius: '7px', border: '1.5px solid rgba(6,182,212,.22)', background: '#fff', color: '#0891b2', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transition: 'all .15s' };
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: 'linear-gradient(110deg,#f0fdff,#e8fafb)', borderTop: '1.5px solid #A5F3FC' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: 'linear-gradient(110deg,#f0fdff,#e8fafb)', borderTop: '1.5px solid #A5F3FC', flexShrink: 0 }}>
       <span style={{ fontSize: '10px', fontWeight: 600, color: '#0891b2' }}>
         Showing <strong>{fromR}–{toR}</strong> of <strong>{total}</strong> {noun}
       </span>
@@ -523,6 +581,18 @@ export default function ClmBuyerProfilePage() {
   // pagination state
   const [buyerPage, setBuyerPage] = useState(1);
   const [consPage, setConsPage] = useState(1);
+  // Dynamic rows-per-page: the Buyer / Consignee list tables size their page to
+  // the viewport so the pager footer stays pinned to the bottom of the screen.
+  const buyerTableRef = useRef<HTMLDivElement>(null);
+  const consTableRef = useRef<HTMLDivElement>(null);
+  const buyerCardRef = useRef<HTMLDivElement>(null);
+  const consCardRef = useRef<HTMLDivElement>(null);
+  const bpPerPage = useDynamicPerPage(buyerTableRef, { deps: [bpaTab, partyAnalyticsOpen] });
+  const consPerPage = useDynamicPerPage(consTableRef, { deps: [bpaTab, partyAnalyticsOpen] });
+  // Stretch each list card to the bottom of the screen so its pager footer pins
+  // there even with only a row or two.
+  const buyerCardFill = useFillHeight(buyerCardRef, { deps: [bpaTab, partyAnalyticsOpen] });
+  const consCardFill = useFillHeight(consCardRef, { deps: [bpaTab, partyAnalyticsOpen] });
   // Buyer / Consignee list search boxes (name · id · segment · country).
   const [buyerSearch, setBuyerSearch] = useState('');
   const [consSearch, setConsSearch] = useState('');
@@ -691,8 +761,12 @@ export default function ClmBuyerProfilePage() {
   const buyerListTotal = buyerFiltered.length;
   const consListTotal = consFiltered.length;
 
-  const buyerSlice = buyerFiltered.slice((buyerPage - 1) * BP_PER_PAGE, (buyerPage - 1) * BP_PER_PAGE + BP_PER_PAGE);
-  const consSlice = consFiltered.slice((consPage - 1) * BP_PER_PAGE, (consPage - 1) * BP_PER_PAGE + BP_PER_PAGE);
+  // Clamp the active page so a smaller dynamic page size can't leave us stranded
+  // past the last page (e.g. after a resize shrinks the row count).
+  const buyerPageSafe = Math.min(buyerPage, Math.max(1, Math.ceil(buyerListTotal / bpPerPage)));
+  const consPageSafe = Math.min(consPage, Math.max(1, Math.ceil(consListTotal / consPerPage)));
+  const buyerSlice = buyerFiltered.slice((buyerPageSafe - 1) * bpPerPage, (buyerPageSafe - 1) * bpPerPage + bpPerPage);
+  const consSlice = consFiltered.slice((consPageSafe - 1) * consPerPage, (consPageSafe - 1) * consPerPage + consPerPage);
   const wsEqSlice = wsEqData.slice((wsEqPage - 1) * WS_PER_PAGE, (wsEqPage - 1) * WS_PER_PAGE + WS_PER_PAGE);
   const wsNeqSlice = wsNeqData.slice((wsNeqPage - 1) * WS_PER_PAGE, (wsNeqPage - 1) * WS_PER_PAGE + WS_PER_PAGE);
   const wosEqSlice = wosEqData.slice((wosEqPage - 1) * WOS_PER_PAGE, (wosEqPage - 1) * WOS_PER_PAGE + WOS_PER_PAGE);
@@ -1128,8 +1202,8 @@ export default function ClmBuyerProfilePage() {
           {/* ── BUYER LIST TABLE ── */}
           {bpaTab === 'buyer' && (
             <div style={{ marginTop: '10px' }}>
-              <div className="seg-page-card" style={{ padding: 0, overflow: 'hidden' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px' }}>
+              <div ref={buyerCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: buyerCardFill }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px', flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.3)' }}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
@@ -1161,7 +1235,7 @@ export default function ClmBuyerProfilePage() {
                     </div>
                   </div>
                 </div>
-                <div style={{ overflowX: 'auto' }}>
+                <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }} ref={buyerTableRef}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
                     <thead>
                       <tr style={txnTableHeaderRow}>
@@ -1211,7 +1285,7 @@ export default function ClmBuyerProfilePage() {
                     </tbody>
                   </table>
                 </div>
-                <ListPager page={buyerPage} total={buyerListTotal} perPage={BP_PER_PAGE} noun="customers" onPage={setBuyerPage} />
+                <ListPager page={buyerPageSafe} total={buyerListTotal} perPage={bpPerPage} noun="customers" onPage={setBuyerPage} />
               </div>
             </div>
           )}
@@ -1219,8 +1293,8 @@ export default function ClmBuyerProfilePage() {
           {/* ── CONSIGNEE LIST TABLE ── */}
           {bpaTab === 'consignee' && (
             <div style={{ marginTop: '10px' }}>
-              <div className="seg-page-card" style={{ padding: 0, overflow: 'hidden' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px' }}>
+              <div ref={consCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: consCardFill }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px', flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.3)' }}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>
@@ -1252,7 +1326,7 @@ export default function ClmBuyerProfilePage() {
                     </div>
                   </div>
                 </div>
-                <div style={{ overflowX: 'auto' }}>
+                <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }} ref={consTableRef}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
                     <thead>
                       <tr style={txnTableHeaderRow}>
@@ -1295,7 +1369,7 @@ export default function ClmBuyerProfilePage() {
                     </tbody>
                   </table>
                 </div>
-                <ListPager page={consPage} total={consListTotal} perPage={BP_PER_PAGE} noun="consignees" onPage={setConsPage} />
+                <ListPager page={consPageSafe} total={consListTotal} perPage={consPerPage} noun="consignees" onPage={setConsPage} />
               </div>
             </div>
           )}
