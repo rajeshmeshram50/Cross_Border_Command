@@ -121,9 +121,9 @@ export default function MeetingsListModal({
 
   return createPortal((
     <>
-      <div className="mlm-backdrop" onClick={onClose}>
+      <div className="mlm-backdrop">
         <style>{MLM_CSS}</style>
-        <div className="mlm-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="mlm-modal">
           <div className="mlm-head">
             <div className="mlm-head-left">
               <div className="mlm-head-icon">

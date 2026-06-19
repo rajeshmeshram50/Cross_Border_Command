@@ -1138,6 +1138,13 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  /* Lock background page scroll while the popup is open. */
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
   useEffect(() => {
     if (!leadId) { setLoading(false); return; }
     let cancelled = false;
@@ -1256,7 +1263,7 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
   };
 
   return createPortal(
-    <div className="s5-ps-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="s5-ps-backdrop">
       <div className="s5-ps-modal" role="dialog" aria-modal="true">
         {/* Header */}
         <div className="s5-ps-head">

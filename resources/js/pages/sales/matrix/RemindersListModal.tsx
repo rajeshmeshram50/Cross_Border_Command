@@ -102,9 +102,9 @@ export default function RemindersListModal({ open, oppId, oppDate, onClose }: Pr
 
   return createPortal((
     <>
-      <div className="rlm-backdrop" onClick={onClose}>
+      <div className="rlm-backdrop">
         <style>{RLM_CSS}</style>
-        <div className="rlm-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="rlm-modal">
           <div className="rlm-head">
             <div className="rlm-head-left">
               <div className="rlm-head-icon">
