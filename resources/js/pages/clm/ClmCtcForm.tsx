@@ -2083,7 +2083,7 @@ function CpPicker({ t, slot, onClose, onPick }: { t: OpsTokens; slot: number; on
 
   const list = dir[tab].filter(p => (p.name + p.id + p.email).toLowerCase().includes(search.toLowerCase()));
   const tabBadge = tab === 'buyer'
-    ? { label: 'Buyer', bg: t.dark ? 'rgba(8,145,178,.18)' : '#E0F7FA', bd: t.dark ? 'rgba(6,182,212,.4)' : '#A5F3FC', fg: t.dark ? '#67e8f9' : '#0891b2' }
+    ? { label: 'Customer', bg: t.dark ? 'rgba(8,145,178,.18)' : '#E0F7FA', bd: t.dark ? 'rgba(6,182,212,.4)' : '#A5F3FC', fg: t.dark ? '#67e8f9' : '#0891b2' }
     : tab === 'supplier'
       ? { label: 'Supplier', bg: t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5', bd: t.dark ? 'rgba(16,185,129,.4)' : '#A7F3D0', fg: t.dark ? '#6ee7b7' : '#059669' }
       : { label: 'Consignee', bg: t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE', bd: t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD', fg: t.dark ? '#c4b5fd' : '#7C3AED' };
@@ -2100,7 +2100,7 @@ function CpPicker({ t, slot, onClose, onPick }: { t: OpsTokens; slot: number; on
           <div style={{ padding: '10px 12px 12px' }}>
             <div style={{ display: 'flex', gap: 3, background: t.dark ? 'rgba(255,255,255,.05)' : '#F3F0FD', borderRadius: 9, padding: 3, marginBottom: 9 }}>
               {(['buyer', 'consignee', 'supplier'] as const).map(tb => (
-                <button key={tb} onClick={() => { setTab(tb); setSearch(''); }} style={{ flex: 1, padding: '6px 0', borderRadius: 7, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 700, textTransform: 'capitalize', background: tab === tb ? 'linear-gradient(135deg,#7C3AED,#6D28D9)' : 'transparent', color: tab === tb ? '#fff' : t.textMuted, boxShadow: tab === tb ? '0 2px 6px rgba(109,40,217,.3)' : 'none' }}>{tb}</button>
+                <button key={tb} onClick={() => { setTab(tb); setSearch(''); }} style={{ flex: 1, padding: '6px 0', borderRadius: 7, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 700, textTransform: 'capitalize', background: tab === tb ? 'linear-gradient(135deg,#7C3AED,#6D28D9)' : 'transparent', color: tab === tb ? '#fff' : t.textMuted, boxShadow: tab === tb ? '0 2px 6px rgba(109,40,217,.3)' : 'none' }}>{tb === 'buyer' ? 'customer' : tb}</button>
               ))}
             </div>
             <div style={{ position: 'relative', marginBottom: 8 }}>

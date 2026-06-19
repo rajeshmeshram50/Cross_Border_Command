@@ -57,7 +57,7 @@ export type AgrLib = {
  * Agreement and Trade Document forms read as a single visual family.
  * Selected values concatenate into the agreement_library.party CSV. */
 const PARTY_BUYER_CONSIGNEE = [
-  { value: 'Buyer',     label: 'Buyer',     icon: '👤' },
+  { value: 'Buyer',     label: 'Customer',  icon: '👤' },
   { value: 'Consignee', label: 'Consignee', icon: '🚚' },
 ];
 const PARTY_SUPPLIER = [
@@ -724,7 +724,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                 </div>
 
                 <div className="agw-party-row">
-                  <div className="agw-party-label agw-party-label-buyer">BUYER &amp; CONSIGNEE</div>
+                  <div className="agw-party-label agw-party-label-buyer">CUSTOMER &amp; CONSIGNEE</div>
                   <div className="agw-party-options">
                     {PARTY_BUYER_CONSIGNEE.map(p => (
                       <label key={p.value} className={`agw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}>
@@ -1119,9 +1119,9 @@ type PhField = { label: string; token: string };
 type PhGroup = { id: string; label: string; iconEmoji: string; iconColor: string; fields: PhField[] };
 
 const PLACEHOLDER_GROUPS: PhGroup[] = [
-  { id: 'buyer', label: 'Buyer', iconEmoji: '👤', iconColor: '#0891b2', fields: [
-    { label: 'Buyer Name',     token: '{{buyer.buyer_name}}' },
-    { label: 'Buyer Code',     token: '{{buyer.buyer_code}}' },
+  { id: 'buyer', label: 'Customer', iconEmoji: '👤', iconColor: '#0891b2', fields: [
+    { label: 'Customer Name',  token: '{{buyer.buyer_name}}' },
+    { label: 'Customer Code',  token: '{{buyer.buyer_code}}' },
     { label: 'Company',        token: '{{buyer.company}}' },
     { label: 'Contact Person', token: '{{buyer.contact_person}}' },
     { label: 'Phone',          token: '{{buyer.phone}}' },

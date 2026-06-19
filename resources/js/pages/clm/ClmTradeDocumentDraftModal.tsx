@@ -55,7 +55,7 @@ export type TdLib = {
 const DOC_TYPES = ['Declaration', 'Undertaking', 'Authorization', 'Bond', 'Certificate', 'Letter'] as const;
 
 const PARTY_BUYER_CONSIGNEE = [
-  { value: 'Buyer',     label: 'Buyer',     icon: '👤' },
+  { value: 'Buyer',     label: 'Customer',  icon: '👤' },
   { value: 'Consignee', label: 'Consignee', icon: '🚚' },
 ];
 const PARTY_SUPPLIER = [

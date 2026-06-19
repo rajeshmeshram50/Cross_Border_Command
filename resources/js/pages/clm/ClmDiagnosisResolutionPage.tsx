@@ -62,7 +62,7 @@ function mapCompliance(rows: any[]): ComplianceRow[] {
 }
 
 const ZONES: { id: SubTab; label: string; icon: JSX.Element }[] = [
-  { id: 'buyer',    label: 'Buyer Side Overview',             icon: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /></> },
+  { id: 'buyer',    label: 'Customer Side Overview',          icon: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /></> },
   { id: 'supplier', label: 'Supplier Side Overview',          icon: <><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></> },
   { id: 'ctc',      label: 'Case to Case Contracts Overview', icon: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></> },
 ];
@@ -208,7 +208,7 @@ export default function ClmDiagnosisResolutionPage() {
           <div className="dr-an-ico">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-3 3" /></svg>
           </div>
-          <span className="dr-an-tag">{tab === 'supplier' ? 'Supplier' : tab === 'ctc' ? 'Contracts' : 'Buyer'}</span>
+          <span className="dr-an-tag">{tab === 'supplier' ? 'Supplier' : tab === 'ctc' ? 'Contracts' : 'Customer'}</span>
           <span className="dr-an-divider" />
           <span className="dr-an-title">Analytics Overview</span>
           <span className="dr-an-count">{tab === 'ctc' ? '5 metrics' : '7 metrics'}</span>
@@ -225,8 +225,8 @@ export default function ClmDiagnosisResolutionPage() {
           </div>
         ) : (
           <div className="dr-kpi-grid">
-            {kpiCard(`Total ${tab === 'supplier' ? 'Suppliers' : 'Buyers'}`, kpis.total, 'TOTAL', '#0891b2', cardFilter === 'all', () => { setCardFilter('all'); setPage(1); })}
-            {kpiCard(`Fully Compliant ${tab === 'supplier' ? 'Suppliers' : 'Buyers'}`, kpis.compliant, 'COMPLETED', '#16a34a', cardFilter === 'compliant', () => { setCardFilter('compliant'); setPage(1); })}
+            {kpiCard(`Total ${tab === 'supplier' ? 'Suppliers' : 'Customers'}`, kpis.total, 'TOTAL', '#0891b2', cardFilter === 'all', () => { setCardFilter('all'); setPage(1); })}
+            {kpiCard(`Fully Compliant ${tab === 'supplier' ? 'Suppliers' : 'Customers'}`, kpis.compliant, 'COMPLETED', '#16a34a', cardFilter === 'compliant', () => { setCardFilter('compliant'); setPage(1); })}
             {kpiCard('KYC Pending', kpis.kyc, 'PENDING', '#dc2626', false, () => { setCardFilter('pending'); setPage(1); })}
             {kpiCard('Due Diligence Pending', kpis.dd, 'PENDING', '#dc2626', false, () => { setCardFilter('pending'); setPage(1); })}
             {kpiCard('Trade Licenses Pending', kpis.tl, 'PENDING', '#dc2626', false, () => { setCardFilter('pending'); setPage(1); })}
@@ -241,7 +241,7 @@ export default function ClmDiagnosisResolutionPage() {
         <div className="dr-list-head">
           <div className="dr-search">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0e7490" strokeWidth="2.2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
-            <input value={search} placeholder={`Search ${tab === 'ctc' ? 'contracts' : tab === 'supplier' ? 'suppliers' : 'buyers'}...`} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+            <input value={search} placeholder={`Search ${tab === 'ctc' ? 'contracts' : tab === 'supplier' ? 'suppliers' : 'customers'}...`} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
           </div>
           <span className="dr-rec-badge">{rowsForPage.length} records</span>
         </div>
@@ -260,7 +260,7 @@ export default function ClmDiagnosisResolutionPage() {
                       <td><span className="dr-pill teal">{r.ctc}</span></td>
                       <td className="l strong">{r.title}</td>
                       <td className="l"><span className="dr-party"><span className="dr-ava" style={{ background: 'linear-gradient(135deg,#6366f1,#818cf8)' }}>{initials(r.counterparty)}</span>{r.counterparty}</span></td>
-                      <td><span className="dr-role" style={{ color: rc.color, background: rc.bg, border: `1px solid ${rc.border}` }}>{r.role}</span></td>
+                      <td><span className="dr-role" style={{ color: rc.color, background: rc.bg, border: `1px solid ${rc.border}` }}>{r.role === 'Buyer' ? 'Customer' : r.role}</span></td>
                       <td><span className="dr-status" style={{ color: sc.color, background: sc.bg, border: `1px solid ${sc.border}` }}><i style={{ background: sc.color }} />{sc.label}</span></td>
                       <td><button className="dr-act-btn" onClick={() => setEscalate({ name: r.title, ref: r.id })}>Escalate</button></td>
                     </tr>

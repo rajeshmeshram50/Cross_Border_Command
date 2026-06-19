@@ -41,7 +41,7 @@ export type SegOpt = { name: string; regulatory_status: 'highly' | 'less'; code?
 type Reg = 'highly' | 'less';
 
 const PARTY_BUYER_CONSIGNEE = [
-  { value: 'Buyer',     label: 'Buyer',     icon: '👤' },
+  { value: 'Buyer',     label: 'Customer',  icon: '👤' },
   { value: 'Consignee', label: 'Consignee', icon: '🚚' },
 ];
 const PARTY_SUPPLIER = [
@@ -1186,13 +1186,13 @@ const SIGNATURE_PRESETS = [
       '<div style="font-size:10.5px;color:#475569;line-height:1.45;margin-top:6px"><div style="font-weight:700;color:#0c4a6e">Authorised Signatory</div><div style="border-top:1px solid #94a3b8;margin:14px 0 4px"></div><div>Name · Designation · Date</div></div>',
   },
   {
-    title: 'Buyer & Supplier',
+    title: 'Customer & Supplier',
     sub: 'Side-by-side dual signature block',
     html:
       '<p>&nbsp;</p>' +
       '<table style="width:100%;border-collapse:collapse;margin-top:8px"><tbody><tr>' +
       '<td style="width:50%;vertical-align:top;padding-right:24px">' +
-        '<p style="margin:0"><strong>For Buyer</strong></p>' + SIG_LINE +
+        '<p style="margin:0"><strong>For Customer</strong></p>' + SIG_LINE +
         '<p style="margin:0;font-size:12.5px">Name: {{BuyerSignatoryName}}</p>' +
         '<p style="margin:0;font-size:12.5px">Designation: {{BuyerSignatoryDesignation}}</p>' +
         '<p style="margin:0;font-size:12.5px">Date: {{BuyerSignatoryDate}}</p>' +
@@ -1206,7 +1206,7 @@ const SIGNATURE_PRESETS = [
       '</tr></tbody></table>',
     preview:
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:10.5px;color:#475569;line-height:1.4;margin-top:6px">' +
-        '<div><div style="font-weight:700;color:#0c4a6e">For Buyer</div><div style="border-top:1px solid #94a3b8;margin:12px 0 3px"></div><div>Name · Date</div></div>' +
+        '<div><div style="font-weight:700;color:#0c4a6e">For Customer</div><div style="border-top:1px solid #94a3b8;margin:12px 0 3px"></div><div>Name · Date</div></div>' +
         '<div><div style="font-weight:700;color:#0c4a6e">For Supplier</div><div style="border-top:1px solid #94a3b8;margin:12px 0 3px"></div><div>Name · Date</div></div>' +
       '</div>',
   },

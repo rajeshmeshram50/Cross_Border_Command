@@ -72,7 +72,7 @@ export default function ClmAgreementsPage() {
         steps={[
           { n: '01', title: 'Agreement Type',         desc: 'Create sales, purchase, service and other agreement types.', icon: ICO.grid },
           { n: '02', title: 'Draft Agreement',        desc: 'Create agreement templates mapped to segments.',             icon: ICO.edit },
-          { n: '03', title: 'Set Applicable Parties', desc: 'Define buyer, consignee, and supplier applicability.',        icon: ICO.users },
+          { n: '03', title: 'Set Applicable Parties', desc: 'Define customer, consignee, and supplier applicability.',        icon: ICO.users },
           { n: '04', title: 'Write Agreement Content',desc: 'Author legal terms, clauses and agreement body.',             icon: ICO.list },
           { n: '05', title: 'Use in CLM Generation',  desc: 'Auto-use in CLM contract generation workflows.',              icon: ICO.check },
         ]}

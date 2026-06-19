@@ -16,7 +16,7 @@ const CLM_TITLES: Record<string, { title: string; group: string }> = {
   'diagnosis-resolution':  { title: 'Diagnosis & Resolution Center',     group: 'CLM Command Center' },
   'regulatory-defense':    { title: 'Regulatory Defense File',          group: 'CLM Command Center' },
   // Operations — With Shipment ID
-  'buyer-profile':       { title: 'Buyer Profile',           group: 'CLM Operations · With Shipment ID' },
+  'buyer-profile':       { title: 'Customer Profile',        group: 'CLM Operations · With Shipment ID' },
   'supplier-profile':    { title: 'Supplier Profile',        group: 'CLM Operations · With Shipment ID' },
   // Operations — Without Shipment ID
   'case-to-case':        { title: 'Case to Case Contracts',  group: 'CLM Operations · Without Shipment ID' },

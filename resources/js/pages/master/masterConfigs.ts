@@ -885,7 +885,7 @@ const C: Record<string, MasterConfig> = {
     // on top.
     key: 'customer_types', slug: 'customer_types', title: 'Customer Consignee Type', titleSingular: 'Customer Consignee Type',
     icon: 'ri-user-3-line', iconColor: 'danger', iconBg: 'danger',
-    desc: 'Buyer / consignee classification — drives pricing & GST rules',
+    desc: 'Customer / consignee classification — drives pricing & GST rules',
     cat: 'Party & Classification',
     fields: [
       { n: 'name', l: 'Customer Consignee Type', t: 'text', r: true, p: 'e.g. Retailer, Wholesaler' },
@@ -1007,10 +1007,10 @@ const C: Record<string, MasterConfig> = {
   applicable_types: {
     key: 'applicable_types', slug: 'applicable_types', title: 'Applicable Parties', titleSingular: 'Applicable Party',
     icon: 'ri-team-fill', iconColor: 'success', iconBg: 'success',
-    desc: 'Who appears on documents — Buyer, Consignee, Notify Party',
+    desc: 'Who appears on documents — Customer, Consignee, Notify Party',
     cat: 'Party & Classification',
     fields: [
-      { n: 'name', l: 'Party Name', t: 'text', r: true, p: 'e.g. Buyer, Consignee' },
+      { n: 'name', l: 'Party Name', t: 'text', r: true, p: 'e.g. Customer, Consignee' },
       { n: 'party_type', l: 'Party Type', t: 'select', opts: ['Customer', 'Supplier', 'Third Party', 'Carrier', 'Other'] },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
@@ -1018,13 +1018,13 @@ const C: Record<string, MasterConfig> = {
     colL: ['Party Name', 'Party Type', 'Status'],
     uFields: ['name'],
     data: [
-      { id: 1, name: 'Buyer', party_type: 'Customer', status: 'Active' },
+      { id: 1, name: 'Customer', party_type: 'Customer', status: 'Active' },
       { id: 2, name: 'Consignee', party_type: 'Customer', status: 'Active' },
       { id: 3, name: 'Notify Party', party_type: 'Third Party', status: 'Active' },
       { id: 4, name: 'Supplier', party_type: 'Supplier', status: 'Active' },
     ],
     wtd: [
-      { icon: 'ri-team-fill', title: 'Define Party Role', desc: 'e.g. Buyer, Consignee, Notify Party' },
+      { icon: 'ri-team-fill', title: 'Define Party Role', desc: 'e.g. Customer, Consignee, Notify Party' },
       { icon: 'ri-price-tag-3-line', title: 'Set Party Type', desc: 'Customer / Supplier / Third Party' },
       { icon: 'ri-file-list-3-line', title: 'Printed On Documents', desc: 'Party role on export invoices & docs' },
       { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Available for document creation' },

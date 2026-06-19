@@ -200,7 +200,7 @@ export type PartyOverview = {
   pend: { kyc: number; dd: number; tl: number; td: number; agr: number };
 };
 export const BUYER_OVERVIEW: PartyOverview = {
-  noun: 'Buyers', total: 20, compliant: 4,
+  noun: 'Customers', total: 20, compliant: 4,
   geo: { intl: 10, dom: 10 },
   pend: { kyc: 5, dd: 8, tl: 10, td: 15, agr: 16 },
 };

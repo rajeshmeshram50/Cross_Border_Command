@@ -44,7 +44,7 @@ const ROLE_CFG: Record<C2cRow['role'], { color: string; bg: string; border: stri
   Supplier: { color: '#0891b2', bg: '#ecfeff', border: '#a5f3fc' },
   Partner:  { color: '#9333ea', bg: '#faf5ff', border: '#e9d5ff' },
 };
-const referredAs = (r: C2cRow['role']) => (r === 'Buyer' ? 'Supplier' : r === 'Supplier' ? 'Buyer' : 'Partner');
+const referredAs = (r: C2cRow['role']) => (r === 'Buyer' ? 'Supplier' : r === 'Supplier' ? 'Customer' : 'Partner');
 
 const pct = ([d, t]: Frac) => (t === 0 ? 0 : Math.round((d / t) * 100));
 const fracColor = (f: Frac) => (pct(f) === 100 ? '#059669' : pct(f) > 0 ? '#d97706' : '#dc2626');
@@ -304,7 +304,7 @@ export default function ClmRegulatoryDefenseFilePage() {
   const switchTab = (t: RdfTab) => { setTab(t); setPage(1); setSearch(''); };
 
   const sectionTitle = tab === 'with' ? 'With Shipment ID — Regulatory Defense Files' : tab === 'without' ? 'Without Shipment ID — Regulatory Defense Files' : 'Case to Case — Regulatory Defense Files';
-  const sectionSub = tab === 'with' ? 'Shipment-linked RDF records mapped across buyer, consignee & supplier.' : tab === 'without' ? 'Procurement-wise RDF records mapped to suppliers & compliance progress.' : 'Per-deal agreement RDF records mapped to counterparties.';
+  const sectionSub = tab === 'with' ? 'Shipment-linked RDF records mapped across customer, consignee & supplier.' : tab === 'without' ? 'Procurement-wise RDF records mapped to suppliers & compliance progress.' : 'Per-deal agreement RDF records mapped to counterparties.';
 
   return (
     <div className="rdf-root">
@@ -430,7 +430,7 @@ export default function ClmRegulatoryDefenseFilePage() {
                         <span className="rdf-party">
                           <span className="rdf-ava" style={{ background: 'linear-gradient(135deg,#6366f1,#818cf8)' }}>{initials(r.counterparty)}</span>
                           {r.counterparty}
-                          <span className="rdf-role" style={{ color: rc.color, background: rc.bg, border: `1px solid ${rc.border}` }}>{r.role}</span>
+                          <span className="rdf-role" style={{ color: rc.color, background: rc.bg, border: `1px solid ${rc.border}` }}>{r.role === 'Buyer' ? 'Customer' : r.role}</span>
                         </span>
                       </td>
                       <td><span className="rdf-referred">{referredAs(r.role)}</span></td>

@@ -1578,7 +1578,7 @@ function sectionSub(tab: TabKey): string {
     case 'owner-kyc':        return 'Director identity, address proof & personal compliance documents';
     case 'trade-licenses':   return 'Export, import & product-specific trade authorization licenses';
     case 'trade-documents':  return 'Sales contracts, purchase orders & signed trade agreements';
-    case 'shipment-agreements': return 'Per-shipment compliance matrix grouped by buyer-consignee link';
+    case 'shipment-agreements': return 'Per-shipment compliance matrix grouped by customer-consignee link';
   }
 }
 

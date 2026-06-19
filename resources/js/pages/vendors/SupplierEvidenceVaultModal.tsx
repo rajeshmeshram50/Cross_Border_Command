@@ -856,8 +856,8 @@ function ShipmentTable({ rows, filter, setFilter }: {
     <>
       <div className="svev-ship-filter">
         <button type="button" className={`svev-ship-fbtn ${filter === 'all' ? 'is-active' : ''}`} onClick={() => setFilter('all')}>All Shipments</button>
-        <button type="button" className={`svev-ship-fbtn ${filter === 'buyer-eq-supplier' ? 'is-active' : ''}`} onClick={() => setFilter('buyer-eq-supplier')}>✓ Buyer = Supplier</button>
-        <button type="button" className={`svev-ship-fbtn ${filter === 'buyer-neq-supplier' ? 'is-active' : ''}`} onClick={() => setFilter('buyer-neq-supplier')}>✕ Buyer ≠ Supplier</button>
+        <button type="button" className={`svev-ship-fbtn ${filter === 'buyer-eq-supplier' ? 'is-active' : ''}`} onClick={() => setFilter('buyer-eq-supplier')}>✓ Customer = Supplier</button>
+        <button type="button" className={`svev-ship-fbtn ${filter === 'buyer-neq-supplier' ? 'is-active' : ''}`} onClick={() => setFilter('buyer-neq-supplier')}>✕ Customer ≠ Supplier</button>
       </div>
       <div className="svev-table-wrap">
         <div className="svev-table-scroll">
@@ -981,7 +981,7 @@ function sectionSub(tab: TabKey): string {
     case 'owner-kyc':        return 'Director identity, address proof & personal compliance documents';
     case 'trade-licenses':   return 'Export, import & product-specific trade authorization licenses';
     case 'trade-documents':  return 'Sales contracts, purchase orders & signed trade agreements';
-    case 'shipment-agreements': return 'Per-shipment compliance matrix grouped by buyer-supplier link';
+    case 'shipment-agreements': return 'Per-shipment compliance matrix grouped by customer-supplier link';
   }
 }
 
