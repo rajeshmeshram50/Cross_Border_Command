@@ -173,10 +173,8 @@ function useDynamicPerPage(
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
- * useFillHeight — min-height that makes an element reach the bottom of the
- * viewport. Applied to the list CARD so it stretches to the bottom of the
- * screen; the table area inside it grows (flex:1) and the pager footer ends up
- * pinned to the bottom even when there are only a few rows.
+ * useFillHeight — min-height that stretches a card to the bottom of the
+ * viewport so its pager footer pins there. Recomputes on resize / deps.
  * ────────────────────────────────────────────────────────────────────────── */
 function useFillHeight(
   ref: React.RefObject<HTMLElement>,
@@ -323,6 +321,23 @@ const BP_CSS = `
 [data-bs-theme="dark"] .bp-prog.is-complete { background: rgba(16,185,129,.18) !important; border-color: rgba(16,185,129,.38) !important; color: #6ee7b7 !important; }
 [data-bs-theme="dark"] .bp-prog.is-partial  { background: rgba(245,158,11,.18) !important; border-color: rgba(245,158,11,.38) !important; color: #fcd34d !important; }
 [data-bs-theme="dark"] .bp-prog.is-none     { background: rgba(148,163,184,.16) !important; border-color: rgba(148,163,184,.30) !important; color: #cbd5e1 !important; }
+/* ── Portaled popups (rendered to document.body, OUTSIDE .seg-page) ──
+ * The .seg-page dark matchers can't reach these, so they get their own sweep.
+ * The injected <style> is global, so these apply wherever the portal lands. */
+/* Consignees popup */
+[data-bs-theme="dark"] .bcm-overlay > div { background: #1e293b !important; }
+[data-bs-theme="dark"] .bcm-overlay [style*="background: rgb(255, 255, 255)"],
+[data-bs-theme="dark"] .bcm-overlay [style*="background:rgb(255, 255, 255)"] { background: #0f172a !important; }
+[data-bs-theme="dark"] .bcm-overlay [style*="rgb(240, 253, 255)"] { background: #16263a !important; }
+[data-bs-theme="dark"] .bcm-overlay table thead tr { background: #16263a !important; }
+[data-bs-theme="dark"] .bcm-overlay tbody tr { background: transparent !important; border-bottom-color: rgba(6,182,212,.10) !important; }
+[data-bs-theme="dark"] .bcm-overlay tbody td { color: #cbd5e1 !important; }
+[data-bs-theme="dark"] .bcm-overlay [style*="rgb(12, 74, 110)"],
+[data-bs-theme="dark"] .bcm-overlay [style*="rgb(71, 85, 105)"],
+[data-bs-theme="dark"] .bcm-overlay [style*="rgb(100, 116, 139)"] { color: #cfe8f3 !important; }
+/* Segment tooltip */
+[data-bs-theme="dark"] .seg-pop { background: #1e293b !important; border-color: rgba(6,182,212,.3) !important; box-shadow: 0 18px 50px rgba(0,0,0,.5) !important; }
+[data-bs-theme="dark"] .seg-pop span { color: #cfe8f3 !important; }
 `;
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -605,12 +620,12 @@ export default function ClmBuyerProfilePage() {
   const consCardRef = useRef<HTMLDivElement>(null);
   const bpPerPage = useDynamicPerPage(buyerTableRef, { deps: [bpaTab, partyAnalyticsOpen] });
   const consPerPage = useDynamicPerPage(consTableRef, { deps: [bpaTab, partyAnalyticsOpen] });
-  // Stretch each list card to the bottom of the screen so its pager footer pins
-  // there even with only a row or two.
+  // Stretch each list card to the bottom of the viewport so its pager footer
+  // pins to the bottom of the screen.
   const buyerCardFill = useFillHeight(buyerCardRef, { deps: [bpaTab, partyAnalyticsOpen] });
   const consCardFill = useFillHeight(consCardRef, { deps: [bpaTab, partyAnalyticsOpen] });
   // Transaction-wise tables (ws/wos · eq/neq): one card holds the active table,
-  // so a single dynamic page size + fill-height drives whichever is visible.
+  // so a single dynamic page size drives whichever is visible.
   const txnCardRef = useRef<HTMLDivElement>(null);
   const txnTableRef = useRef<HTMLDivElement>(null);
   const txnPerPage = useDynamicPerPage(txnTableRef, { deps: [clmTab, txnAnalyticsOpen, shipTab, wsSub, wosSub, neqParty] });
@@ -818,8 +833,8 @@ export default function ClmBuyerProfilePage() {
               <span style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '10px', height: '10px', borderRadius: '50%', background: 'linear-gradient(135deg,#4ade80,#22c55e)', border: '2px solid #cef8ff', boxShadow: '0 0 5px rgba(34,197,94,.45)' }} />
             </div>
             <div>
-              <div style={{ fontSize: '16px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.4px', lineHeight: 1.15 }}>Buyer Profile</div>
-              <div style={{ fontSize: '11px', fontWeight: 500, color: '#0e7490', opacity: .9, marginTop: '3px' }}>Track buyer onboarding, compliance verification, agreements, and overall CLM readiness.</div>
+              <div style={{ fontSize: '16px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.4px', lineHeight: 1.15 }}>Customer Profile</div>
+              <div style={{ fontSize: '11px', fontWeight: 500, color: '#0e7490', opacity: .9, marginTop: '3px' }}>Track customer onboarding, compliance verification, agreements, and overall CLM readiness.</div>
             </div>
           </div>
           <div style={{ zIndex: 1, flexShrink: 0 }}>
@@ -846,11 +861,11 @@ export default function ClmBuyerProfilePage() {
             </div>
             <div className="bref-box__header-mid">
               <div className="bref-box__header-row">
-                <div className="bref-box__header-label">Buyer Profile</div>
+                <div className="bref-box__header-label">Customer Profile</div>
                 <div className="bref-box__header-sep" />
                 <div className="bref-box__header-title">What We Are Doing Here</div>
               </div>
-              <div className="bref-box__header-sub">Manage buyer lifecycle, KYC verification, trade documents, agreements, compliance approvals, and trade readiness across all customers.</div>
+              <div className="bref-box__header-sub">Manage customer lifecycle, KYC verification, trade documents, agreements, compliance approvals, and trade readiness across all customers.</div>
             </div>
             <div className="bref-box__header-right">
               <div className="bref-box__toggle">
@@ -860,11 +875,11 @@ export default function ClmBuyerProfilePage() {
           </div>
           <div className="bref-box__body">
             {[
-              { num: 'Step 01', title: 'Buyer Onboarding', desc: 'Create and manage buyer profiles.', ico: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg> },
+              { num: 'Step 01', title: 'Customer Onboarding', desc: 'Create and manage customer profiles.', ico: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg> },
               { num: 'Step 02', title: 'KYC & Due Diligence', desc: 'Verify legal and compliance documents.', ico: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg> },
               { num: 'Step 03', title: 'Trade Documentation', desc: 'Track trade licenses and operational documents.', ico: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg> },
               { num: 'Step 04', title: 'Agreement & Compliance', desc: 'Monitor signed agreements and compliance approvals.', ico: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg> },
-              { num: 'Step 05', title: 'Trade Readiness', desc: 'Approve buyers for shipment and sales operations.', ico: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> },
+              { num: 'Step 05', title: 'Trade Readiness', desc: 'Approve customers for shipment and sales operations.', ico: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> },
             ].map((s) => (
               <div className="bref-item" key={s.num}>
                 <div className="bref-item__top">
@@ -945,7 +960,7 @@ export default function ClmBuyerProfilePage() {
           </div>
 
           {/* ── SHIPMENT TABS ── */}
-          <div ref={txnCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', marginTop: '8px', display: 'flex', flexDirection: 'column', minHeight: txnCardFill }}>
+          <div ref={txnCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: txnCardFill }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px 10px 20px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 30%,#d8f8fc 60%,#caf5fa 80%,#baf2f9 100%)', borderBottom: '1px solid #A5F3FC', minHeight: '52px', flexShrink: 0 }}>
               <div className="bpa-seg">
                 <button className={`bpa-tab ${shipTab === 'with' ? 'bpa-tab-active' : 'bpa-tab-inactive'}`} onClick={() => setShipTab('with')}>
@@ -959,7 +974,7 @@ export default function ClmBuyerProfilePage() {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '36px', padding: '0 14px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)', transition: 'border-color .15s,box-shadow .15s', flex: 1, maxWidth: '680px' }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round" style={{ flexShrink: 0, opacity: .7 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-                <input type="text" placeholder="Search by Shipment ID, Buyer, Segment or Status..." style={{ border: 'none', outline: 'none', fontSize: '11.5px', fontFamily: 'inherit', color: '#0c4a6e', flex: 1, background: 'transparent', minWidth: 0 }} />
+                <input type="text" placeholder="Search by Shipment ID, Customer, Segment or Status..." style={{ border: 'none', outline: 'none', fontSize: '11.5px', fontFamily: 'inherit', color: '#0c4a6e', flex: 1, background: 'transparent', minWidth: 0 }} />
                 <span style={{ fontSize: '9px', fontWeight: 600, color: '#94a3b8', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '5px', padding: '2px 6px', whiteSpace: 'nowrap', flexShrink: 0 }}>⌘ K</span>
               </div>
             </div>
@@ -1009,7 +1024,7 @@ export default function ClmBuyerProfilePage() {
                 {wsSub === 'neq' && (
                   <div ref={txnTableRef} style={{ overflow: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                     <div style={{ display: 'flex', gap: 6, padding: '10px 16px 2px' }}>
-                      <button onClick={() => setNeqParty('buyer')} style={neqTabStyle(neqParty === 'buyer')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>Buyer Transactions</button>
+                      <button onClick={() => setNeqParty('buyer')} style={neqTabStyle(neqParty === 'buyer')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>Customer Transactions</button>
                       <button onClick={() => setNeqParty('consignee')} style={neqTabStyle(neqParty === 'consignee')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>Consignee Transactions</button>
                     </div>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
@@ -1097,7 +1112,7 @@ export default function ClmBuyerProfilePage() {
                 {wosSub === 'neq' && (
                   <div ref={txnTableRef} style={{ overflow: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                     <div style={{ display: 'flex', gap: 6, padding: '10px 16px 2px' }}>
-                      <button onClick={() => setNeqParty('buyer')} style={neqTabStyle(neqParty === 'buyer')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>Buyer Transactions</button>
+                      <button onClick={() => setNeqParty('buyer')} style={neqTabStyle(neqParty === 'buyer')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>Customer Transactions</button>
                       <button onClick={() => setNeqParty('consignee')} style={neqTabStyle(neqParty === 'consignee')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>Consignee Transactions</button>
                     </div>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
@@ -1157,7 +1172,7 @@ export default function ClmBuyerProfilePage() {
                   </div>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-                      <span style={{ fontSize: '9px', fontWeight: 800, color: '#0891b2' }}>Buyer & Consignee</span>
+                      <span style={{ fontSize: '9px', fontWeight: 800, color: '#0891b2' }}>Customer & Consignee</span>
                       <span style={{ width: '1px', height: '12px', background: '#A5E8F5', display: 'inline-block' }} />
                       <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.2px' }}>Analytics Overview</span>
                       <span style={{ fontSize: '7.5px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.1)', border: '1px solid rgba(6,182,212,.25)', padding: '1px 6px', borderRadius: '20px' }}>7 metrics</span>
@@ -1167,7 +1182,7 @@ export default function ClmBuyerProfilePage() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <div className="bpa-seg">
-                    <button className={`bpa-tab ${bpaTab === 'buyer' ? 'bpa-tab-active' : 'bpa-tab-inactive'}`} onClick={() => { setBpaTab('buyer'); setCardFilter('all'); }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>Buyer</button>
+                    <button className={`bpa-tab ${bpaTab === 'buyer' ? 'bpa-tab-active' : 'bpa-tab-inactive'}`} onClick={() => { setBpaTab('buyer'); setCardFilter('all'); }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>Customer</button>
                     <button className={`bpa-tab ${bpaTab === 'consignee' ? 'bpa-tab-active' : 'bpa-tab-inactive'}`} onClick={() => { setBpaTab('consignee'); setCardFilter('all'); }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>Consignee</button>
                   </div>
                   <div onClick={() => setPartyAnalyticsOpen((o) => !o)} style={{ width: '26px', height: '26px', borderRadius: '7px', background: 'rgba(255,255,255,.75)', border: '1.5px solid rgba(8,145,178,.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#0891b2', transition: 'all .15s' }}>
@@ -1179,8 +1194,8 @@ export default function ClmBuyerProfilePage() {
                 {bpaTab === 'buyer' && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: '6px' }}>
                     {[
-                      { num: pad(buyerTotal), label: `Total ${buyerScope === 'domestic' ? 'Domestic' : 'International'} Buyers`, tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> },
-                      { num: pad(buyerCompliant), label: 'Compliant Buyers', tag: 'OK', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg> },
+                      { num: pad(buyerTotal), label: `Total ${buyerScope === 'domestic' ? 'Domestic' : 'International'} Customers`, tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> },
+                      { num: pad(buyerCompliant), label: 'Compliant Customers', tag: 'OK', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg> },
                       { num: pad(buyerKyc), label: 'KYC Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg> },
                       { num: pad(buyerDd), label: 'Due Diligence Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg> },
                       { num: pad(buyerTl), label: 'Trade Licenses Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /><line x1="12" y1="12" x2="12" y2="16" /><line x1="10" y1="14" x2="14" y2="14" /></svg> },
@@ -1228,7 +1243,7 @@ export default function ClmBuyerProfilePage() {
 
           {/* ── BUYER LIST TABLE ── */}
           {bpaTab === 'buyer' && (
-            <div style={{ marginTop: '10px' }}>
+            <div>
               <div ref={buyerCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: buyerCardFill }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px', flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1236,7 +1251,7 @@ export default function ClmBuyerProfilePage() {
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
                     </div>
                     <div>
-                      <div style={{ fontSize: '13px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.2px' }}>Buyer List</div>
+                      <div style={{ fontSize: '13px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.2px' }}>Customer List</div>
                       <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{buyerListTotal} customers registered across all segments</div>
                     </div>
                     <span style={{ fontSize: '8px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.1)', border: '1px solid rgba(6,182,212,.22)', padding: '3px 10px', borderRadius: '20px', letterSpacing: '.02em' }}>{buyerListTotal} records</span>
@@ -1248,7 +1263,7 @@ export default function ClmBuyerProfilePage() {
                     </div>
                     {/* International / Domestic buyer scope */}
                     <div style={{ display: 'flex', gap: '3px', padding: '3px', height: '38px', borderRadius: '9px', background: 'rgba(6,182,212,.08)', border: '1.5px solid #A5F3FC' }}>
-                      {([['international', 'International Buyers'], ['domestic', 'Domestic Buyers']] as const).map(([key, label]) => {
+                      {([['international', 'International Customers'], ['domestic', 'Domestic Customers']] as const).map(([key, label]) => {
                         const on = buyerScope === key;
                         return (
                           <button key={key} onClick={() => { setBuyerScope(key); setBuyerPage(1); }} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0 13px', border: 'none', borderRadius: '7px', fontFamily: 'inherit', fontSize: '11px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all .15s', color: on ? '#fff' : '#0e7490', background: on ? 'linear-gradient(135deg,#06b6d4,#0891b2)' : 'transparent', boxShadow: on ? '0 2px 8px rgba(8,145,178,.35)' : 'none' }}>
@@ -1319,7 +1334,7 @@ export default function ClmBuyerProfilePage() {
 
           {/* ── CONSIGNEE LIST TABLE ── */}
           {bpaTab === 'consignee' && (
-            <div style={{ marginTop: '10px' }}>
+            <div>
               <div ref={consCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: consCardFill }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px', flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1328,7 +1343,7 @@ export default function ClmBuyerProfilePage() {
                     </div>
                     <div>
                       <div style={{ fontSize: '13px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.2px' }}>Consignee List</div>
-                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{consListTotal} consignees registered across all buyers</div>
+                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{consListTotal} consignees registered across all customers</div>
                     </div>
                     <span style={{ fontSize: '8px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.1)', border: '1px solid rgba(6,182,212,.22)', padding: '3px 10px', borderRadius: '20px', letterSpacing: '.02em' }}>{consListTotal} records</span>
                   </div>
@@ -1432,7 +1447,7 @@ export default function ClmBuyerProfilePage() {
       {segOpen && createPortal(
         <>
           <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 200000 }} />
-          <div style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 240), top: segOpen.flipUp ? undefined : segOpen.y, bottom: segOpen.flipUp ? (window.innerHeight - segOpen.y) : undefined, zIndex: 200001, width: 220, maxHeight: 280, overflowY: 'auto', background: '#fff', borderRadius: 12, padding: 8, boxShadow: '0 18px 50px rgba(15,23,42,.30)', border: '1px solid rgba(6,182,212,.18)', fontFamily: "'DM Sans','Inter',system-ui,sans-serif" }}>
+          <div className="seg-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 240), top: segOpen.flipUp ? undefined : segOpen.y, bottom: segOpen.flipUp ? (window.innerHeight - segOpen.y) : undefined, zIndex: 200001, width: 220, maxHeight: 280, overflowY: 'auto', background: '#fff', borderRadius: 12, padding: 8, boxShadow: '0 18px 50px rgba(15,23,42,.30)', border: '1px solid rgba(6,182,212,.18)', fontFamily: "'DM Sans','Inter',system-ui,sans-serif" }}>
             <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#0891b2', padding: '4px 8px 7px' }}>Segments ({segOpen.names.length})</div>
             {segOpen.names.map((name, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '5px 8px', borderRadius: 8, background: i % 2 ? 'rgba(6,182,212,.05)' : 'transparent' }}>
@@ -1469,7 +1484,7 @@ function SegCell({ names, sc, sb }: { names: string[]; sc: string; sb: string })
     {open && createPortal(
       <>
         <div onMouseDown={() => setOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 200000 }} />
-        <div style={{ position: 'fixed', left: Math.min(open.x, window.innerWidth - 240), top: open.flipUp ? undefined : open.y, bottom: open.flipUp ? (window.innerHeight - open.y) : undefined, zIndex: 200001, width: 220, maxHeight: 280, overflowY: 'auto', background: '#fff', borderRadius: 12, padding: 8, boxShadow: '0 18px 50px rgba(15,23,42,.30)', border: '1px solid rgba(6,182,212,.18)', fontFamily: "'DM Sans','Inter',system-ui,sans-serif" }}>
+        <div className="seg-pop" style={{ position: 'fixed', left: Math.min(open.x, window.innerWidth - 240), top: open.flipUp ? undefined : open.y, bottom: open.flipUp ? (window.innerHeight - open.y) : undefined, zIndex: 200001, width: 220, maxHeight: 280, overflowY: 'auto', background: '#fff', borderRadius: 12, padding: 8, boxShadow: '0 18px 50px rgba(15,23,42,.30)', border: '1px solid rgba(6,182,212,.18)', fontFamily: "'DM Sans','Inter',system-ui,sans-serif" }}>
           <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#0891b2', padding: '4px 8px 7px' }}>Segments ({segs.length})</div>
           {segs.map((name, i) => (
             <div key={i} style={{ fontSize: 10.5, fontWeight: 600, color: '#0c4a6e', padding: '5px 8px', borderRadius: 7, background: i % 2 === 0 ? 'rgba(6,182,212,.05)' : 'transparent' }}>{name}</div>
@@ -1507,7 +1522,7 @@ function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows:
             </div>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.01em' }}>Consignees</div>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,.86)', marginTop: 2 }}>Consignee identity, shipment delivery ownership & compliance readiness for this buyer.</div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,.86)', marginTop: 2 }}>Consignee identity, shipment delivery ownership & compliance readiness for this customer.</div>
             </div>
           </div>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -1578,7 +1593,7 @@ function SubTab({ active, kind, onClick }: { active: boolean; kind: 'eq' | 'neq'
       {isEq
         ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
         : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="17" y1="11" x2="23" y2="11" /><line x1="17" y1="15" x2="23" y2="15" /></svg>}
-      {isEq ? 'Buyer = Consignee' : 'Buyer ≠ Consignee'}
+      {isEq ? 'Customer = Consignee' : 'Customer ≠ Consignee'}
       {isEq
         ? <span style={{ fontSize: '7.5px', fontWeight: 800, padding: '1px 6px', borderRadius: '20px', background: 'rgba(6,182,212,.12)', border: '1px solid rgba(6,182,212,.25)', color: '#0891b2', letterSpacing: '.04em' }}>SAME</span>
         : <span style={{ fontSize: '7.5px', fontWeight: 800, padding: '1px 6px', borderRadius: '20px', background: 'rgba(148,163,184,.1)', border: '1px solid rgba(148,163,184,.2)', color: '#64748b', letterSpacing: '.04em' }}>DIFF</span>}

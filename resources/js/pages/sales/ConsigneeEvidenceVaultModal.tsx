@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
-import { ShipmentDocPanel, type VaultShipmentDoc } from './CustomerEvidenceVaultModal';
+import { ShipmentDocPanel, ShipmentDocSendForSignature, type VaultShipmentDoc } from './CustomerEvidenceVaultModal';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import api from '../../api';
@@ -219,6 +219,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   const [group, setGroup] = useState<GroupKey>('standard');
   // "Document Overview" popup — set to a group key to open the all-docs list.
   const [overview, setOverview] = useState<GroupKey | null>(null);
+  const [overviewPage, setOverviewPage] = useState(1);
   const [shipmentFilter, setShipmentFilter] = useState<'buyer-eq-consignee' | 'buyer-neq-consignee'>('buyer-eq-consignee');
 
   /* Switch the active group and jump to its first sub-tab. */
@@ -244,6 +245,9 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
    * wizard opens with these clm_trade_doc_library ids pre-checked. Driven
    * by the Trade Documents tab's per-row Send button. */
   const [sendDocIds, setSendDocIds] = useState<number[] | null>(null);
+  /* Shipment Send-for-Signature — launches the preview + signature-box wizard
+   * for one not-yet-sent shipment document. */
+  const [shipSend, setShipSend] = useState<{ leadId: number; doc: VaultShipmentDoc; party: 'buyer' | 'consignee' } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -492,7 +496,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
       : s === 'Expiring' ? { bg: '#fef3c7', fg: '#92400e', mark: '⚠' }
       :                    { bg: '#fef2f2', fg: '#dc2626', mark: '⌛' };
     return (
-      <span className="cnev-pill" style={{ background: tone.bg, color: tone.fg }}>
+      <span className="cnev-pill" data-status={s} style={{ background: tone.bg, color: tone.fg }}>
         {tone.mark} {s}
       </span>
     );
@@ -612,7 +616,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                 <button
                   type="button"
                   className="cnev-group-overview"
-                  onClick={() => setOverview(g.key)}
+                  onClick={() => { setOverview(g.key); setOverviewPage(1); }}
                   title="View all documents in one list"
                 >
                   <i className="ri-list-check-2" aria-hidden /> Document Overview
@@ -641,7 +645,9 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
         </div>
 
         {/* ─── BODY ─── */}
-        <div className="cnev-body">
+        {/* Shipment tabs add a Buyer=/≠Consignee toggle between the section and
+            the table → separated-cards layout; flat tabs keep section fused. */}
+        <div className={`cnev-body ${(tab === 'shipment-agreements' || tab === 'trade-documents') ? 'cnev-body-ship' : ''}`}>
           <div className="cnev-section">
             <div className="cnev-section-left">
               <div className="cnev-section-icon"><i className={tabMeta.icon} /></div>
@@ -663,7 +669,8 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           </div>
 
           {(tab === 'shipment-agreements' || tab === 'trade-documents')
-            ? <ShipmentTable rows={vault.shipment_agreements} kind={tab === 'trade-documents' ? 'trade' : 'agreement'} filter={shipmentFilter} setFilter={setShipmentFilter} />
+            ? <ShipmentTable rows={vault.shipment_agreements} kind={tab === 'trade-documents' ? 'trade' : 'agreement'} filter={shipmentFilter} setFilter={setShipmentFilter}
+                             onSend={(leadId, doc, party) => setShipSend({ leadId, doc, party })} />
             : <DocsTable rows={docsForTab} tab={tab} ownerType="consignee" ownerId={consignee?.db_id ?? null} onReload={reloadVault}
                          onSendTradeDoc={(d) => { if (d.db_id) setSendDocIds([d.db_id]); }}
                          onRemindTradeDoc={handleRemind} />}
@@ -672,9 +679,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
 
         {/* ─── FOOTER ─── */}
         <div className="cnev-footer">
-          <div className="cnev-footer-meta">
-            Last updated: <b>{vault.last_updated}</b> · Vault managed by Compliance Team
-          </div>
+          <div className="cnev-footer-meta" />
           <div className="cnev-footer-actions">
             <Tooltip label="Download every tab (Company DD, Owner KYC, Trade Licenses, Trade Documents, Shipments) as a single .xlsx workbook">
               <button
@@ -711,6 +716,15 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
         onSent={() => { setSendDocIds(null); void reloadSignatures(); }}
       />
 
+      {/* Shipment Send-for-Signature — opens the preview + draggable signature
+          box directly for the clicked doc. On send it reloads the vault so the
+          row flips Draft → Pending. */}
+      <ShipmentDocSendForSignature
+        target={shipSend}
+        onClose={() => setShipSend(null)}
+        onSent={() => { setShipSend(null); void reloadVault(); void reloadSignatures(); }}
+      />
+
       {/* Document Overview popup — all documents for the chosen group in one
           flat list (name + status + download). */}
       {overview && (() => {
@@ -722,6 +736,9 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
         const sub = isStd
           ? 'All Company Due Diligence, Owner KYC & Trade Licenses documents in one list'
           : 'All Trade Documents & Agreements for this consignee in one list';
+        const OV_PER_PAGE = 5;
+        const ovTotalPages = Math.max(1, Math.ceil(docs.length / OV_PER_PAGE));
+        const ovPageSafe = Math.min(overviewPage, ovTotalPages);
         return (
           <div className="cnev-ov-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) setOverview(null); }}>
             <div className="cnev-ov-card">
@@ -739,11 +756,12 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                   <tbody>
                     {docs.length === 0 ? (
                       <tr><td colSpan={4} className="cnev-ov-empty">No documents available.</td></tr>
-                    ) : docs.map((d, i) => {
+                    ) : docs.slice((ovPageSafe - 1) * OV_PER_PAGE, (ovPageSafe - 1) * OV_PER_PAGE + OV_PER_PAGE).map((d, i) => {
+                      const absIdx = (ovPageSafe - 1) * OV_PER_PAGE + i;
                       const url = d.attachment_url || null;
                       return (
-                        <tr key={`${d.id}-${i}`}>
-                          <td className="cnev-ov-num">{i + 1}</td>
+                        <tr key={`${d.id}-${absIdx}`}>
+                          <td className="cnev-ov-num">{absIdx + 1}</td>
                           <td className="cnev-ov-name">{d.name}</td>
                           <td><StatusPill s={d.status} /></td>
                           <td>
@@ -762,6 +780,24 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                   </tbody>
                 </table>
               </div>
+              {docs.length > OV_PER_PAGE && (
+                <div className="cnev-ov-pager">
+                  <span className="cnev-ov-pager-info">
+                    Showing <strong>{(ovPageSafe - 1) * OV_PER_PAGE + 1}–{Math.min(ovPageSafe * OV_PER_PAGE, docs.length)}</strong> of <strong>{docs.length}</strong>
+                  </span>
+                  <div className="cnev-ov-pager-btns">
+                    <button type="button" className="cnev-ov-pager-nav" disabled={ovPageSafe === 1} onClick={() => setOverviewPage((p) => Math.max(1, p - 1))} aria-label="Previous">
+                      <i className="ri-arrow-left-s-line" aria-hidden />
+                    </button>
+                    {[ovPageSafe, ovPageSafe + 1].filter((p) => p >= 1 && p <= ovTotalPages).map((p) => (
+                      <button type="button" key={p} className={`cnev-ov-pager-num ${p === ovPageSafe ? 'is-active' : ''}`} onClick={() => setOverviewPage(p)}>{p}</button>
+                    ))}
+                    <button type="button" className="cnev-ov-pager-nav" disabled={ovPageSafe === ovTotalPages} onClick={() => setOverviewPage((p) => Math.min(ovTotalPages, p + 1))} aria-label="Next">
+                      <i className="ri-arrow-right-s-line" aria-hidden />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -1098,11 +1134,13 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   );
 }
 
-function ShipmentTable({ rows, kind, filter, setFilter }: {
+function ShipmentTable({ rows, kind, filter, setFilter, onSend }: {
   rows: VaultShipmentRow[];
   kind: 'trade' | 'agreement';
   filter: 'buyer-eq-consignee' | 'buyer-neq-consignee';
   setFilter: (f: 'buyer-eq-consignee' | 'buyer-neq-consignee') => void;
+  /** Launches Send-for-Signature for one shipment doc (lead + doc + party). */
+  onSend?: (leadId: number, doc: VaultShipmentDoc, party: 'buyer' | 'consignee') => void;
 }) {
   const [openId, setOpenId] = useState<number | null>(null);
   const buyerNeq = filter === 'buyer-neq-consignee';
@@ -1111,9 +1149,11 @@ function ShipmentTable({ rows, kind, filter, setFilter }: {
   const COLS = isAgreement ? 11 : 10;
   return (
     <>
-      <div className="cnev-ship-filter cnev-ship-filter-2">
-        <button type="button" className={`cnev-ship-fbtn ${filter === 'buyer-eq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-eq-consignee'); setOpenId(null); }}>Buyer = Consignee</button>
-        <button type="button" className={`cnev-ship-fbtn ${filter === 'buyer-neq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-neq-consignee'); setOpenId(null); }}>Buyer &ne; Consignee</button>
+      {/* Trade Documents uses compact pills; Agreements uses the full-width
+          segmented bar with ✓ / ✕ markers — matches the figma per tab. */}
+      <div className={`cnev-ship-filter ${isAgreement ? '' : 'cnev-ship-filter-2'}`}>
+        <button type="button" className={`cnev-ship-fbtn ${filter === 'buyer-eq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-eq-consignee'); setOpenId(null); }}>{isAgreement && <span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✓</span>}Buyer = Consignee</button>
+        <button type="button" className={`cnev-ship-fbtn ${filter === 'buyer-neq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-neq-consignee'); setOpenId(null); }}>{isAgreement && <span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✕</span>}Buyer &ne; Consignee</button>
       </div>
       <div className="cnev-table-wrap">
         <div className="cnev-table-scroll">
@@ -1172,6 +1212,7 @@ function ShipmentTable({ rows, kind, filter, setFilter }: {
                           buyerName={r.customer}
                           consigneeName={r.consignee || '—'}
                           buyerIsConsignee={r.buyer_is_consignee}
+                          onSend={onSend ? (doc, party) => onSend(r.id, doc, party) : undefined}
                         />
                       </td>
                     </tr>
@@ -1223,6 +1264,8 @@ const CNEV_CSS = `
   z-index: 11200;
   display: flex; align-items: stretch; justify-content: flex-end;
   font-family: 'DM Sans','Inter',system-ui,-apple-system,sans-serif;
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   animation: cnevFade .18s ease both;
 }
 @keyframes cnevFade { from { opacity: 0; } to { opacity: 1; } }
@@ -1253,8 +1296,8 @@ const CNEV_CSS = `
   pointer-events: none;
   overflow: hidden;
   background:
-    radial-gradient(circle at 100% 0%, rgba(165,243,252,0.32), transparent 45%),
-    radial-gradient(circle at 0% 100%, rgba(103,232,249,0.30), transparent 55%);
+    radial-gradient(circle at 100% 0%, rgba(165,243,252,0.10), transparent 45%),
+    radial-gradient(circle at 0% 100%, rgba(103,232,249,0.10), transparent 55%);
 }
 .cnev-header-bg::before,
 .cnev-header-bg::after {
@@ -1340,7 +1383,7 @@ const CNEV_CSS = `
 /* Full-width static row — all stat columns fit; NO horizontal scroll. */
 .cnev-kpi-strip {
   display: flex; gap: 0; align-items: stretch;
-  padding: 12px 16px;
+  padding: 0;
   overflow: visible;
 }
 .cnev-kpi-fade {
@@ -1386,7 +1429,7 @@ const CNEV_CSS = `
   position: relative;
   flex: 1 1 0;                /* equal-width columns — fill the row, no scroll */
   min-width: 0;
-  padding: 4px 16px;
+  padding: 12px 8px 10px;
   border-right: 1px solid rgba(8,145,178,0.16);   /* thin column divider */
   text-align: center;        /* centre label, value & status sub-line */
 }
@@ -1395,10 +1438,10 @@ const CNEV_CSS = `
 .cnev-kpi-body { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .cnev-kpi-text { min-width: 0; }
 .cnev-kpi-label {
-  font-size: 8px; font-weight: 700; letter-spacing: .1em;
+  font-size: 6.5px; font-weight: 700; letter-spacing: .1em;
   color: #94a3b8;
   text-transform: uppercase;
-  margin-bottom: 6px;
+  margin-bottom: 2px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .cnev-kpi-value {
@@ -1426,15 +1469,15 @@ const CNEV_CSS = `
 .cnev-groups-wrap {
   flex-shrink: 0;
   background: linear-gradient(180deg, #f0fdff 0%, #ecfeff 100%);
-  padding: 14px 18px 0;
+  padding: 13px 18px;
 }
-.cnev-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.cnev-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .cnev-group {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 13px 18px;
+  padding: 11px 16px;
   background: #ffffff;
   border: 1.5px solid #cffafe;
-  border-radius: 14px;
+  border-radius: 13px;
   text-align: left;
   transition: all .2s ease;
 }
@@ -1491,6 +1534,20 @@ const CNEV_CSS = `
 }
 .cnev-ov-close:hover { background: rgba(255,255,255,.25); }
 .cnev-ov-body { overflow: auto; padding: 14px 18px 18px; }
+.cnev-ov-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px 16px; flex-wrap: wrap; }
+.cnev-ov-pager-info { font-size: 11px; font-weight: 600; color: #0891b2; }
+.cnev-ov-pager-btns { display: flex; align-items: center; gap: 5px; }
+.cnev-ov-pager-nav, .cnev-ov-pager-num {
+  min-width: 28px; height: 28px; border-radius: 7px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: inherit; font-size: 11px; font-weight: 700;
+  border: 1.5px solid rgba(6,182,212,.22); background: #fff; color: #0891b2; transition: all .15s;
+}
+.cnev-ov-pager-nav:disabled { opacity: .4; cursor: default; }
+.cnev-ov-pager-nav:not(:disabled):hover, .cnev-ov-pager-num:hover { background: #ecfeff; }
+.cnev-ov-pager-num.is-active { background: linear-gradient(135deg, #06b6d4, #0891b2); color: #fff; border-color: transparent; font-weight: 800; }
+[data-bs-theme="dark"] .cnev-ov-pager-nav, [data-bs-theme="dark"] .cnev-ov-pager-num { background: rgba(8,145,178,.14); color: #67e8f9; border-color: rgba(8,145,178,.34); }
+[data-bs-theme="dark"] .cnev-ov-pager-num.is-active { background: linear-gradient(135deg,#06b6d4,#22d3ee); color: #fff; border-color: transparent; }
 .cnev-ov-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
 .cnev-ov-table thead th {
   position: sticky; top: 0; z-index: 5; background: #083344; color: #fff;
@@ -1522,17 +1579,17 @@ const CNEV_CSS = `
   box-shadow: 0 6px 18px rgba(8,145,178,.35);
 }
 .cnev-group-icon {
-  width: 42px; height: 42px; flex-shrink: 0;
+  width: 34px; height: 34px; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 12px;
+  border-radius: 10px;
   background: #cffafe; color: #0e7490; border: 1px solid #a5f3fc;
-  font-size: 20px;
+  font-size: 16px;
 }
 .cnev-group.is-active .cnev-group-icon { background: rgba(255,255,255,.18); color: #fff; border-color: rgba(255,255,255,.25); }
 .cnev-group-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.cnev-group-title { font-size: 15px; font-weight: 800; color: #0c4a6e; letter-spacing: -.01em; }
+.cnev-group-title { font-size: 13px; font-weight: 800; color: #0c4a6e; letter-spacing: -.01em; }
 .cnev-group.is-active .cnev-group-title { color: #ffffff; }
-.cnev-group-sub { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; color: #6b9e85; }
+.cnev-group-sub { font-size: 8.5px; font-weight: 600; letter-spacing: .06em; color: #6b9e85; }
 .cnev-group.is-active .cnev-group-sub { color: rgba(255,255,255,.8); }
 
 .cnev-tabs-wrap {
@@ -1605,9 +1662,9 @@ const CNEV_CSS = `
 /* ─── BODY ─── */
 .cnev-body {
   flex: 1; min-height: 0; overflow-y: auto;
-  padding: 18px 24px 22px;
+  padding: 14px 16px 18px;
   background: #f7f8fc;
-  display: flex; flex-direction: column; gap: 14px;
+  display: flex; flex-direction: column; gap: 0;
   /* Match the visible scrollbar pattern used by [[AddVendorModal]]'s
      .avm-body so the rail is obvious when a tab's table grows past
      the body. Solid emerald replaces the prior near-invisible rgba(.30). */
@@ -1616,25 +1673,34 @@ const CNEV_CSS = `
 .cnev-body::-webkit-scrollbar { width: 8px; }
 .cnev-body::-webkit-scrollbar-thumb { background: #67e8f9; border-radius: 99px; }
 .cnev-body::-webkit-scrollbar-thumb:hover { background: #06b6d4; }
+/* Shipment tabs: separated cards with breathing room around the Buyer=/≠
+   Consignee toggle (section becomes a self-contained rounded card again). */
+.cnev-body-ship { gap: 10px; }
+.cnev-body-ship .cnev-section { border-radius: 12px; }
+.cnev-body-ship .cnev-table-wrap { border-top: 1px solid #e4e7f5; border-radius: 12px; }
+/* Non-sticky header so the wrapper's rounded top corners actually clip the dark
+   header band (a sticky header escapes the overflow:hidden clip at the top). */
+.cnev-body-ship .cnev-table thead tr { position: static; }
 
 .cnev-section {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 14px 18px;
-  background: linear-gradient(110deg, #ecfeff, #cffafe 70%, #a5f3fc);
-  border: 1px solid rgba(8,145,178,.18);
-  border-radius: 14px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: linear-gradient(110deg, #fafbff 0%, #f3f5ff 100%);
+  border: 1px solid #e4e7f5;
+  border-radius: 10px 10px 0 0;
+  padding: 13px 16px;
 }
 .cnev-section-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .cnev-section-icon {
-  width: 38px; height: 38px; border-radius: 10px;
-  background: linear-gradient(135deg, #06b6d4, #0e7490);
-  color: #fff;
+  width: 34px; height: 34px; border-radius: 10px;
+  background: linear-gradient(135deg, #ecfeff, #a5f3fc);
+  color: #0e7490;
+  border: 1px solid rgba(6,182,212,.22);
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: 18px;
-  box-shadow: 0 4px 12px rgba(8,145,178,.30);
+  font-size: 16px;
+  box-shadow: 0 2px 6px rgba(6,182,212,.12);
 }
-.cnev-section-title { font-size: 15px; font-weight: 800; color: #0c4a6e; }
-.cnev-section-sub   { font-size: 12px; color: #0e7490; margin-top: 1px; }
+.cnev-section-title { font-size: 12.5px; font-weight: 800; color: #083344; }
+.cnev-section-sub   { font-size: 9.5px; color: #94a3b8; margin-top: 1px; }
 .cnev-section-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .cnev-section-count { font-size: 26px; font-weight: 800; color: #0c4a6e; line-height: 1; }
 .cnev-section-count-label { font-size: 9.5px; font-weight: 700; letter-spacing: .12em; color: #0e7490; margin-top: 2px; }
@@ -1662,8 +1728,9 @@ const CNEV_CSS = `
 
 .cnev-table-wrap {
   background: #fff;
-  border: 1px solid rgba(8,145,178,.18);
-  border-radius: 14px;
+  border: 1px solid #e4e7f5;
+  border-top: none;
+  border-radius: 0 0 10px 10px;
   overflow: hidden;
   scrollbar-width: thin;
   position: relative;
@@ -1911,8 +1978,9 @@ const CNEV_CSS = `
     inset 0 -1px 0 rgba(8,145,178,0.40),
     0 4px 10px -8px rgba(0,0,0,0.40);
 }
-[data-bs-theme="dark"] .cnev-table tbody td { color: #e2e8f0; border-bottom-color: rgba(8,145,178,.10); }
-[data-bs-theme="dark"] .cnev-table tbody tr:hover td { background: rgba(8,145,178,.06); }
+[data-bs-theme="dark"] .cnev-table tbody td { color: #e2e8f0; border-bottom-color: rgba(8,145,178,.10); background: transparent; }
+[data-bs-theme="dark"] .cnev-table tbody tr:nth-child(even) td { background: rgba(8,145,178,.05); }
+[data-bs-theme="dark"] .cnev-table tbody tr:hover td { background: rgba(8,145,178,.12); }
 [data-bs-theme="dark"] .cnev-doc-name { color: #cffafe; }
 [data-bs-theme="dark"] .cnev-mono { color: #e2e8f0; }
 [data-bs-theme="dark"] .cnev-date { background: rgba(8,145,178,.16); color: #67e8f9; }
@@ -1930,6 +1998,18 @@ const CNEV_CSS = `
 [data-bs-theme="dark"] .cnev-btn-light:hover { background: rgba(8,145,178,.18); }
 [data-bs-theme="dark"] .cnev-ship-fbtn { background: #0a2a33; color: #94a3b8; border-color: rgba(8,145,178,.28); }
 [data-bs-theme="dark"] .cnev-ship-fbtn:hover { color: #67e8f9; background: rgba(8,145,178,.10); }
+[data-bs-theme="dark"] .cnev-ship-filter-2 { background: rgba(8,145,178,.12); }
+[data-bs-theme="dark"] .cnev-ship-filter-2 .cnev-ship-fbtn:not(.is-active) { background: transparent; border-color: transparent; }
+[data-bs-theme="dark"] .cnev-ship-fbtn.is-active { background: linear-gradient(135deg,#0891b2,#22d3ee); color: #06283a; border-color: transparent; box-shadow: 0 4px 14px rgba(34,211,238,.4); }
+/* All badges — translucent colour fills on dark. */
+[data-bs-theme="dark"] .cnev-sec-pill-ok   { background: rgba(16,185,129,.18) !important; color: #6ee7b7 !important; border-color: rgba(16,185,129,.4) !important; }
+[data-bs-theme="dark"] .cnev-sec-pill-warn { background: rgba(245,158,11,.18) !important; color: #fcd34d !important; border-color: rgba(245,158,11,.4) !important; }
+[data-bs-theme="dark"] .cnev-sec-pill-bad  { background: rgba(239,68,68,.18) !important; color: #fca5a5 !important; border-color: rgba(239,68,68,.4) !important; }
+[data-bs-theme="dark"] .cnev-sec-pill-docs { background: rgba(59,130,246,.18) !important; color: #93c5fd !important; border-color: rgba(59,130,246,.4) !important; }
+[data-bs-theme="dark"] .cnev-pill[data-status="Verified"] { background: rgba(16,185,129,.18) !important; color: #6ee7b7 !important; }
+[data-bs-theme="dark"] .cnev-pill[data-status="Signed"]   { background: rgba(59,130,246,.18) !important; color: #93c5fd !important; }
+[data-bs-theme="dark"] .cnev-pill[data-status="Expiring"] { background: rgba(245,158,11,.18) !important; color: #fcd34d !important; }
+[data-bs-theme="dark"] .cnev-pill[data-status="Pending"]  { background: rgba(239,68,68,.18) !important; color: #fca5a5 !important; }
 [data-bs-theme="dark"] .cnev-filter-verified { background: rgba(8,145,178,.18); color: #67e8f9; border-color: rgba(8,145,178,.30); }
 [data-bs-theme="dark"] .cnev-filter-expiring { background: rgba(245,158,11,.18); color: #fcd34d; border-color: rgba(217,119,6,.30); }
 [data-bs-theme="dark"] .cnev-filter-pending  { background: rgba(239,68,68,.18);  color: #fca5a5; border-color: rgba(239,68,68,.30); }

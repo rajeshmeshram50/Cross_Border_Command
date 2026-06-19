@@ -18,6 +18,7 @@ use App\Models\Customer;
 use App\Models\Lead;
 use App\Models\Product;
 use App\Models\ProformaInvoice;
+use App\Models\Quotation;
 use App\Models\SegmentDocUpload;
 use App\Models\ShipmentOrder;
 use App\Models\Vendor;
@@ -476,10 +477,15 @@ class SegmentDocUploadController extends Controller
             if (!isset($shipLeadIds[$lid])) continue;   // shipment-linked only
             $reqs = $sigByLead->get($lid) ?? collect();
 
-            $tradeBuyer = $this->sigDocs($reqs, ClmSignatureRequest::DOC_TRADE, 'Customer');
-            $tradeCons  = $this->sigDocs($reqs, ClmSignatureRequest::DOC_TRADE, 'Consignee');
-            $agrBuyer   = $this->sigDocs($reqs, ClmSignatureRequest::DOC_AGREEMENT, 'Customer');
-            $agrCons    = $this->sigDocs($reqs, ClmSignatureRequest::DOC_AGREEMENT, 'Consignee');
+            // List EVERY applicable trade-doc / agreement (per the lead's
+            // segment rules), with live signature status overlaid — so the
+            // vault shows not-yet-sent docs (Draft), in-flight sends (Pending)
+            // and signed docs (Signed) together, not just what was sent.
+            $applicable = $this->applicableShipmentDocs($lead, $cid, $reqs);
+            $tradeBuyer = $applicable['trade_docs_buyer'];
+            $tradeCons  = $applicable['trade_docs_consignee'];
+            $agrBuyer   = $applicable['agreements_buyer'];
+            $agrCons    = $applicable['agreements_consignee'];
 
             // Prepend this shipment's Proforma Invoice(s) as the first Trade
             // Documents on the Buyer side. They count toward the Trade-Docs
@@ -497,7 +503,8 @@ class SegmentDocUploadController extends Controller
                     'name'        => 'Proforma Invoice (' . ($pi->code ?: ('PI-' . $pi->id)) . ')',
                     'required'    => 'REQ',
                     'status'      => $piSigned ? 'Signed' : 'Pending',
-                    'uploaded_on' => $piDate ? \Illuminate\Support\Carbon::parse($piDate)->format('d/m/Y') : '—',
+                    // "Signed On" — only once the PI is finalised; a draft PI shows —.
+                    'uploaded_on' => $piSigned && $piDate ? \Illuminate\Support\Carbon::parse($piDate)->format('d/m/Y') : '—',
                     'valid_upto'  => '—',
                     'signed_url'  => null,
                 ]);
@@ -578,6 +585,232 @@ class SegmentDocUploadController extends Controller
             }
         }
         return $out;
+    }
+
+    /**
+     * Every APPLICABLE trade-doc + agreement for a shipment lead, split by
+     * party (buyer/consignee), with live signature status overlaid.
+     *
+     * Unlike sigDocs() — which only surfaces what was SENT — this lists the
+     * full set the segment rules make applicable, so the Evidence Vault shows
+     * not-yet-sent docs ("Draft"), in-flight sends ("Pending") and signed docs
+     * ("Signed") side by side. Mirrors the canonical applicable-doc resolver in
+     * ClmAgreementController::applicableForLead (used by the Sales Matrix Trade
+     * Documents / Agreements popups) — keep the two in step.
+     *
+     * Already-sent docs that are no longer in the applicable set (e.g. the
+     * segment list changed after a send) are appended as "orphans" so a signed
+     * document never vanishes from the archive.
+     *
+     * @param  \Illuminate\Support\Collection  $reqs  signature requests for this lead
+     * @return array{trade_docs_buyer:array,trade_docs_consignee:array,agreements_buyer:array,agreements_consignee:array}
+     */
+    private function applicableShipmentDocs(Lead $lead, int $cid, $reqs): array
+    {
+        $empty = ['trade_docs_buyer' => [], 'trade_docs_consignee' => [], 'agreements_buyer' => [], 'agreements_consignee' => []];
+
+        // Segment list = products on the latest non-cancelled PI (or, if none,
+        // the latest quotation) — same source applicableForLead() uses.
+        $source = ProformaInvoice::where('client_id', $cid)
+            ->where('opp_id', $lead->id)
+            ->where('status', '!=', ProformaInvoice::STATUS_CANCELLED)
+            ->orderByDesc('id')
+            ->first()
+            ?: Quotation::where('client_id', $cid)
+                ->where('opp_id', $lead->id)
+                ->where('status', '!=', 'cancelled')
+                ->orderByDesc('id')
+                ->first();
+        if (!$source) return $empty;
+
+        $productIds = $source->items()->whereNotNull('product_id')->pluck('product_id')->filter()->unique();
+        if ($productIds->isEmpty()) return $empty;
+
+        $segmentIds = Product::where('client_id', $cid)
+            ->whereIn('id', $productIds)
+            ->whereNotNull('segment_id')
+            ->pluck('segment_id')
+            ->unique();
+        if ($segmentIds->isEmpty()) return $empty;
+
+        $segments = ClmSegment::where('client_id', $cid)->whereIn('id', $segmentIds)->get();
+        if ($segments->isEmpty()) return $empty;
+
+        // Index signature requests by [docType][party] => [libId => request],
+        // newest first. The library id lives in trade_doc_ids (multi-doc sends)
+        // or the legacy trade_doc_id scalar. Party maps model_name → bucket.
+        $sigIndex = [
+            ClmSignatureRequest::DOC_TRADE     => ['Customer' => [], 'Consignee' => []],
+            ClmSignatureRequest::DOC_AGREEMENT => ['Customer' => [], 'Consignee' => []],
+        ];
+        foreach ($reqs->sortByDesc('id') as $r) {
+            $party = $r->model_name === 'Consignee' ? 'Consignee' : 'Customer';
+            if (!isset($sigIndex[$r->document_type][$party])) continue;
+            $ids = is_array($r->trade_doc_ids) && $r->trade_doc_ids ? $r->trade_doc_ids : [$r->trade_doc_id];
+            foreach ((array) $ids as $id) {
+                $id = (int) $id;
+                if ($id && !isset($sigIndex[$r->document_type][$party][$id])) {
+                    $sigIndex[$r->document_type][$party][$id] = $r;   // latest wins
+                }
+            }
+        }
+
+        $tdBuyer = []; $tdCons = []; $agrBuyer = []; $agrCons = [];
+        $seen = ['td' => ['Customer' => [], 'Consignee' => []], 'agr' => ['Customer' => [], 'Consignee' => []]];
+        $attached = [];   // sig-request ids consumed by an applicable row
+
+        foreach ($segments as $seg) {
+            // Agreements applicable to this segment.
+            foreach ($this->matchSegmentLibrary(ClmAgreementLibrary::query(), $cid, $seg, 'agr_status') as $a) {
+                [$forBuyer, $forCons] = $this->partyFlags($a->party);
+                $name = $a->title ?: $a->code;
+                $req  = $a->regulatory === 'highly' ? 'REQ' : 'OPT';
+                if ($forBuyer && !isset($seen['agr']['Customer'][$a->id])) {
+                    $seen['agr']['Customer'][$a->id] = true;
+                    $sig = $sigIndex[ClmSignatureRequest::DOC_AGREEMENT]['Customer'][$a->id] ?? null;
+                    if ($sig) $attached[$sig->id] = true;
+                    $agrBuyer[] = $this->shipmentDocRow($name, $req, $sig, $a->id, ClmSignatureRequest::DOC_AGREEMENT);
+                }
+                if ($forCons && !isset($seen['agr']['Consignee'][$a->id])) {
+                    $seen['agr']['Consignee'][$a->id] = true;
+                    $sig = $sigIndex[ClmSignatureRequest::DOC_AGREEMENT]['Consignee'][$a->id] ?? null;
+                    if ($sig) $attached[$sig->id] = true;
+                    $agrCons[] = $this->shipmentDocRow($name, $req, $sig, $a->id, ClmSignatureRequest::DOC_AGREEMENT);
+                }
+            }
+
+            // Trade documents applicable to this segment.
+            foreach ($this->matchSegmentLibrary(ClmTradeDocLibrary::query(), $cid, $seg, 'status') as $m) {
+                [$forBuyer, $forCons] = $this->partyFlags($m->party);
+                $name = $m->title ?: ($m->name ?: $m->code);
+                $req  = $m->regulatory === 'highly' ? 'REQ' : 'OPT';
+                if ($forBuyer && !isset($seen['td']['Customer'][$m->id])) {
+                    $seen['td']['Customer'][$m->id] = true;
+                    $sig = $sigIndex[ClmSignatureRequest::DOC_TRADE]['Customer'][$m->id] ?? null;
+                    if ($sig) $attached[$sig->id] = true;
+                    $tdBuyer[] = $this->shipmentDocRow($name, $req, $sig, $m->id, ClmSignatureRequest::DOC_TRADE);
+                }
+                if ($forCons && !isset($seen['td']['Consignee'][$m->id])) {
+                    $seen['td']['Consignee'][$m->id] = true;
+                    $sig = $sigIndex[ClmSignatureRequest::DOC_TRADE]['Consignee'][$m->id] ?? null;
+                    if ($sig) $attached[$sig->id] = true;
+                    $tdCons[] = $this->shipmentDocRow($name, $req, $sig, $m->id, ClmSignatureRequest::DOC_TRADE);
+                }
+            }
+        }
+
+        // Append already-sent docs not covered above (orphaned sends) so a
+        // signed/sent document never disappears from the archive.
+        $orphan = fn (string $docType, string $party) => collect($this->sigDocs($reqs, $docType, $party))
+            ->reject(fn ($row) => isset($attached[$row['sig_req_id']]))
+            ->values()->all();
+
+        return [
+            'trade_docs_buyer'      => array_merge($tdBuyer,  $orphan(ClmSignatureRequest::DOC_TRADE, 'Customer')),
+            'trade_docs_consignee'  => array_merge($tdCons,   $orphan(ClmSignatureRequest::DOC_TRADE, 'Consignee')),
+            'agreements_buyer'      => array_merge($agrBuyer, $orphan(ClmSignatureRequest::DOC_AGREEMENT, 'Customer')),
+            'agreements_consignee'  => array_merge($agrCons,  $orphan(ClmSignatureRequest::DOC_AGREEMENT, 'Consignee')),
+        ];
+    }
+
+    /**
+     * Match a CLM library (agreements / trade docs) to one segment the same way
+     * applicableForLead does: regulatory tier + segment CSV (LIKE-anchored on
+     * comma boundaries) + active status. $statusCol is the library's active
+     * flag ('agr_status' ⇒ 'Active', 'status' ⇒ 'active').
+     */
+    private function matchSegmentLibrary($query, int $cid, $seg, string $statusCol)
+    {
+        $name = $seg->name;
+        $code = $seg->code;
+        $statusVal = $statusCol === 'agr_status' ? 'Active' : 'active';
+        return $query->where('client_id', $cid)
+            ->where('regulatory', $seg->regulatory_status)
+            ->where(function ($q) use ($name, $code) {
+                foreach ([$name, $code] as $needle) {
+                    $q->orWhere('segment', $needle)
+                      ->orWhere('segment', 'LIKE', $needle . ',%')
+                      ->orWhere('segment', 'LIKE', $needle . ', %')
+                      ->orWhere('segment', 'LIKE', '%,' . $needle)
+                      ->orWhere('segment', 'LIKE', '%, ' . $needle)
+                      ->orWhere('segment', 'LIKE', '%,' . $needle . ',%')
+                      ->orWhere('segment', 'LIKE', '%, ' . $needle . ',%');
+                }
+            })
+            ->where($statusCol, $statusVal)
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * Parse a doc's applicable-party CSV ("Buyer,Consignee") into buyer/
+     * consignee flags. A doc naming neither falls back to BOTH so it's
+     * never hidden — same rule as segmentTradeDocs().
+     *
+     * @return array{0:bool,1:bool} [forBuyer, forConsignee]
+     */
+    private function partyFlags(?string $party): array
+    {
+        $tokens = array_filter(array_map(
+            fn ($t) => strtolower(trim($t)),
+            explode(',', (string) $party)
+        ));
+        $forBuyer     = in_array('buyer', $tokens, true);
+        $forConsignee = in_array('consignee', $tokens, true);
+        if (!$forBuyer && !$forConsignee) { $forBuyer = true; $forConsignee = true; }
+        return [$forBuyer, $forConsignee];
+    }
+
+    /**
+     * One Evidence-Vault shipment-doc row for an applicable library doc. With
+     * no signature request the doc is "Draft" (not yet sent); otherwise the
+     * Zoho status maps to Signed / Pending / Declined / Recalled / Expired.
+     */
+    private function shipmentDocRow(string $name, string $required, ?ClmSignatureRequest $req, ?int $libId = null, ?string $docType = null): array
+    {
+        if (!$req) {
+            return [
+                'sig_req_id'  => 0,
+                'db_id'       => $libId,
+                'doc_type'    => $docType,
+                'name'        => $name,
+                'required'    => $required,
+                'status'      => 'Draft',
+                'uploaded_on' => '—',
+                'valid_upto'  => '—',
+                'signed_url'  => null,
+            ];
+        }
+
+        $status = match ($req->status) {
+            'completed'  => 'Signed',
+            'inprogress' => 'Pending',
+            'declined'   => 'Declined',
+            'recalled'   => 'Recalled',
+            'expired'    => 'Expired',
+            default      => 'Draft',
+        };
+        // "Signed On" shows the completion date — only meaningful once signed.
+        $signedOn = $status === 'Signed' && $req->completed_at
+            ? \Illuminate\Support\Carbon::parse($req->completed_at)->format('d/m/Y')
+            : '—';
+        $paths  = is_array($req->signed_document_paths) ? $req->signed_document_paths : [];
+        $signedUrl = $paths[0]['file_url'] ?? $paths[0]['url'] ?? null;
+        if (!$signedUrl && $req->signed_document_path) {
+            $signedUrl = Storage::disk('public')->url($req->signed_document_path);
+        }
+
+        return [
+            'sig_req_id'  => (int) $req->id,
+            'db_id'       => $libId,
+            'doc_type'    => $docType,
+            'name'        => $name,
+            'required'    => $required,
+            'status'      => $status,
+            'uploaded_on' => $signedOn,
+            'valid_upto'  => $req->expiry_date ? $req->expiry_date->format('d/m/Y') : '—',
+            'signed_url'  => $signedUrl,
+        ];
     }
 
     /**

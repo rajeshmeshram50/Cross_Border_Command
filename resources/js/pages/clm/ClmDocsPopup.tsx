@@ -156,25 +156,28 @@ export default function ClmDocsPopup({ open, onClose, category, ownerType, owner
         onMouseDown={(e) => e.stopPropagation()}
         style={{ width: 'min(640px, 96vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: c.card, borderRadius: 18, overflow: 'hidden', boxShadow: '0 24px 60px rgba(8,47,73,.4)' }}
       >
-        {/* ── Header ── */}
-        <div style={{ position: 'relative', padding: '20px 22px', background: 'linear-gradient(120deg,#0e7490 0%,#0891b2 55%,#06b6d4 100%)', color: '#fff', flexShrink: 0 }}>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            style={{ position: 'absolute', top: 16, right: 16, width: 34, height: 34, borderRadius: 9, background: 'rgba(255,255,255,.16)', border: '1px solid rgba(255,255,255,.28)', color: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-          </button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5, fontWeight: 800, letterSpacing: '.12em', color: 'rgba(255,255,255,.85)' }}>
-            <span style={{ width: 18, height: 2, background: 'rgba(255,255,255,.7)', borderRadius: 2 }} />
-            {meta.label}
+        {/* ── Header (compact: eyebrow + name on the left; verified badge sits
+            beside the close button on the right) ── */}
+        <div style={{ padding: '12px 16px', background: 'linear-gradient(120deg,#0e7490 0%,#0891b2 55%,#06b6d4 100%)', color: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 9.5, fontWeight: 800, letterSpacing: '.12em', color: 'rgba(255,255,255,.85)' }}>
+              <span style={{ width: 16, height: 2, background: 'rgba(255,255,255,.7)', borderRadius: 2 }} />
+              {meta.label}
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-.01em', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company}</div>
           </div>
-          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-.01em', marginTop: 8 }}>{company}</div>
-          <div style={{ marginTop: 12 }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 20, background: 'rgba(16,185,129,.22)', border: '1px solid rgba(110,231,183,.5)', color: '#d1fae5', fontSize: 12, fontWeight: 700 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 11px', borderRadius: 20, background: 'rgba(16,185,129,.22)', border: '1px solid rgba(110,231,183,.5)', color: '#d1fae5', fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
               ✓ {verified} Verified / Signed
             </span>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              style={{ width: 32, height: 32, borderRadius: 9, background: 'rgba(255,255,255,.16)', border: '1px solid rgba(255,255,255,.28)', color: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
           </div>
         </div>
 
