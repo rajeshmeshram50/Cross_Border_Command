@@ -191,7 +191,7 @@ export default function ClmCaseToCasePage() {
       <div style={{ background: t.dark ? '#1c1438' : 'linear-gradient(110deg,#F5F3FF 0%,#EDE9FE 22%,#DDD6FE 50%,#C4B5FD 78%,#A78BFA 100%)', borderRadius: 14, border: `1px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.2)'}`, boxShadow: '0 2px 12px rgba(109,40,217,.1)', overflow: 'hidden' }}>
         <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', minHeight: 64 }}>
           <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, background: 'linear-gradient(180deg,#A78BFA,#7C3AED,#5B21B6)' }} />
-          <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.55),transparent)', pointerEvents: 'none' }} />
+          <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: t.dark ? 'linear-gradient(180deg,rgba(255,255,255,.04),transparent)' : 'linear-gradient(180deg,rgba(255,255,255,.55),transparent)', pointerEvents: 'none' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, zIndex: 1, paddingLeft: 10 }}>
             <div style={{ position: 'relative', flexShrink: 0 }}>
               <div style={{ width: 42, height: 42, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', boxShadow: '0 0 0 3px rgba(124,58,237,.22),0 4px 12px rgba(91,33,182,.42)' }}>
@@ -217,7 +217,7 @@ export default function ClmCaseToCasePage() {
         <div style={{ position: 'relative', overflow: 'hidden' }}>
           <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'linear-gradient(180deg,#C4B5FD,#7C3AED,#5B21B6)', zIndex: 10 }} />
           <div onClick={() => setInfoOpen(!infoOpen)} style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 12, padding: '7px 12px 7px 16px', background: t.dark ? '#241a44' : 'linear-gradient(110deg,#F5F3FF 0%,#EDE9FE 35%,#DDD6FE 70%,#C4B5FD 100%)', borderBottom: infoOpen ? `1px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}` : '1px solid transparent', cursor: 'pointer', userSelect: 'none', minHeight: 48 }}>
-            <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', pointerEvents: 'none', background: 'linear-gradient(180deg,rgba(255,255,255,.65),transparent)' }} />
+            <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', pointerEvents: 'none', background: t.dark ? 'linear-gradient(180deg,rgba(255,255,255,.04),transparent)' : 'linear-gradient(180deg,rgba(255,255,255,.65),transparent)' }} />
             <div style={{ width: 36, height: 36, borderRadius: 11, flexShrink: 0, background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', position: 'relative', zIndex: 1, boxShadow: '0 0 0 3px rgba(124,58,237,.2),0 4px 12px rgba(91,33,182,.36)' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
             </div>

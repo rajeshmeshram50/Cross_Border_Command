@@ -962,7 +962,7 @@ const IDIMS_CSS = `
    into the nav with no box (see darkLogoSrc). Fallback for tenants without a
    dark variant: a soft translucent white pill so the original logo stays legible
    and keeps its colours. Light mode is untouched. */
-.idims-logo-pill { background: rgba(255,255,255,.92); padding: 6px 14px; box-shadow: 0 3px 10px rgba(0,0,0,.32), inset 0 0 0 1px rgba(255,255,255,.4); }
+.idims-logo-pill { background: #fff; padding: 4px 10px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.28), inset 0 0 0 1px rgba(255,255,255,.55); }
 .idims-dark .idims-logo-full { filter: none; }
 .idims-divider { width: 1px; height: 56px; background: #E4E7EF; flex-shrink: 0; margin: 0 12px 0 10px; }
 .idims-nav-stack { flex: 1; min-width: 0; align-self: stretch; display: flex; flex-direction: column; }

@@ -3,6 +3,16 @@ import { useState, useEffect } from 'react';
 export default function SplashLoader({ onComplete }: { onComplete?: () => void }) {
   const [phase, setPhase] = useState<'spinner' | 'logo' | 'done'>('spinner');
 
+  // Match the active theme — the seed in app.tsx sets data-bs-theme on <html>
+  // synchronously before React mounts, so this read is reliable. Without it the
+  // splash flashed a white screen even while the app was in dark mode.
+  const isDark = typeof document !== 'undefined'
+    && document.documentElement.getAttribute('data-bs-theme') === 'dark';
+  const splashBg = isDark
+    ? 'linear-gradient(135deg, #0b1220 0%, #0f172a 50%, #0b1220 100%)'
+    : 'linear-gradient(135deg, #fafbfc 0%, #f0f2f5 50%, #e8ecf1 100%)';
+  const trackStroke = isDark ? '#1e293b' : '#e2e8f0';
+
   useEffect(() => {
     const t1 = setTimeout(() => setPhase('logo'), 1200);
     const t2 = setTimeout(() => {
@@ -14,7 +24,7 @@ export default function SplashLoader({ onComplete }: { onComplete?: () => void }
 
   return (
     <div className={`fixed inset-0 z-[9999] flex items-center justify-center transition-opacity duration-500 ${phase === 'done' ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
-      style={{ background: 'linear-gradient(135deg, #fafbfc 0%, #f0f2f5 50%, #e8ecf1 100%)' }}>
+      style={{ background: splashBg }}>
 
       <div className="absolute inset-0 opacity-[0.03]"
         style={{ backgroundImage: `radial-gradient(circle at 1px 1px, #94a3b8 1px, transparent 0)`, backgroundSize: '32px 32px' }} />
@@ -22,7 +32,7 @@ export default function SplashLoader({ onComplete }: { onComplete?: () => void }
       {/* Spinner */}
       <div className={`absolute transition-all duration-600 ease-out ${phase === 'spinner' ? 'opacity-100 scale-100' : 'opacity-0 scale-50'}`}>
         <svg width="80" height="80" viewBox="0 0 80 80" style={{ animation: 'splash-rotate 1.2s linear infinite' }}>
-          <circle cx="40" cy="40" r="32" fill="none" stroke="#e2e8f0" strokeWidth="3.5" />
+          <circle cx="40" cy="40" r="32" fill="none" stroke={trackStroke} strokeWidth="3.5" />
           <circle cx="40" cy="40" r="32" fill="none" stroke="url(#sg)" strokeWidth="3.5" strokeLinecap="round" strokeDasharray="60 141" />
           <defs>
             <linearGradient id="sg" x1="0%" y1="0%" x2="100%" y2="100%">
