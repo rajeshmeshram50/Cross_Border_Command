@@ -503,7 +503,8 @@ class SegmentDocUploadController extends Controller
                     'name'        => 'Proforma Invoice (' . ($pi->code ?: ('PI-' . $pi->id)) . ')',
                     'required'    => 'REQ',
                     'status'      => $piSigned ? 'Signed' : 'Pending',
-                    'uploaded_on' => $piDate ? \Illuminate\Support\Carbon::parse($piDate)->format('d/m/Y') : '—',
+                    // "Signed On" — only once the PI is finalised; a draft PI shows —.
+                    'uploaded_on' => $piSigned && $piDate ? \Illuminate\Support\Carbon::parse($piDate)->format('d/m/Y') : '—',
                     'valid_upto'  => '—',
                     'signed_url'  => null,
                 ]);
@@ -668,13 +669,13 @@ class SegmentDocUploadController extends Controller
                     $seen['agr']['Customer'][$a->id] = true;
                     $sig = $sigIndex[ClmSignatureRequest::DOC_AGREEMENT]['Customer'][$a->id] ?? null;
                     if ($sig) $attached[$sig->id] = true;
-                    $agrBuyer[] = $this->shipmentDocRow($name, $req, $sig);
+                    $agrBuyer[] = $this->shipmentDocRow($name, $req, $sig, $a->id, ClmSignatureRequest::DOC_AGREEMENT);
                 }
                 if ($forCons && !isset($seen['agr']['Consignee'][$a->id])) {
                     $seen['agr']['Consignee'][$a->id] = true;
                     $sig = $sigIndex[ClmSignatureRequest::DOC_AGREEMENT]['Consignee'][$a->id] ?? null;
                     if ($sig) $attached[$sig->id] = true;
-                    $agrCons[] = $this->shipmentDocRow($name, $req, $sig);
+                    $agrCons[] = $this->shipmentDocRow($name, $req, $sig, $a->id, ClmSignatureRequest::DOC_AGREEMENT);
                 }
             }
 
@@ -687,13 +688,13 @@ class SegmentDocUploadController extends Controller
                     $seen['td']['Customer'][$m->id] = true;
                     $sig = $sigIndex[ClmSignatureRequest::DOC_TRADE]['Customer'][$m->id] ?? null;
                     if ($sig) $attached[$sig->id] = true;
-                    $tdBuyer[] = $this->shipmentDocRow($name, $req, $sig);
+                    $tdBuyer[] = $this->shipmentDocRow($name, $req, $sig, $m->id, ClmSignatureRequest::DOC_TRADE);
                 }
                 if ($forCons && !isset($seen['td']['Consignee'][$m->id])) {
                     $seen['td']['Consignee'][$m->id] = true;
                     $sig = $sigIndex[ClmSignatureRequest::DOC_TRADE]['Consignee'][$m->id] ?? null;
                     if ($sig) $attached[$sig->id] = true;
-                    $tdCons[] = $this->shipmentDocRow($name, $req, $sig);
+                    $tdCons[] = $this->shipmentDocRow($name, $req, $sig, $m->id, ClmSignatureRequest::DOC_TRADE);
                 }
             }
         }
@@ -765,11 +766,13 @@ class SegmentDocUploadController extends Controller
      * no signature request the doc is "Draft" (not yet sent); otherwise the
      * Zoho status maps to Signed / Pending / Declined / Recalled / Expired.
      */
-    private function shipmentDocRow(string $name, string $required, ?ClmSignatureRequest $req): array
+    private function shipmentDocRow(string $name, string $required, ?ClmSignatureRequest $req, ?int $libId = null, ?string $docType = null): array
     {
         if (!$req) {
             return [
                 'sig_req_id'  => 0,
+                'db_id'       => $libId,
+                'doc_type'    => $docType,
                 'name'        => $name,
                 'required'    => $required,
                 'status'      => 'Draft',
@@ -787,7 +790,10 @@ class SegmentDocUploadController extends Controller
             'expired'    => 'Expired',
             default      => 'Draft',
         };
-        $sentAt = $req->metadata['sent_at'] ?? $req->created_at;
+        // "Signed On" shows the completion date — only meaningful once signed.
+        $signedOn = $status === 'Signed' && $req->completed_at
+            ? \Illuminate\Support\Carbon::parse($req->completed_at)->format('d/m/Y')
+            : '—';
         $paths  = is_array($req->signed_document_paths) ? $req->signed_document_paths : [];
         $signedUrl = $paths[0]['file_url'] ?? $paths[0]['url'] ?? null;
         if (!$signedUrl && $req->signed_document_path) {
@@ -796,10 +802,12 @@ class SegmentDocUploadController extends Controller
 
         return [
             'sig_req_id'  => (int) $req->id,
+            'db_id'       => $libId,
+            'doc_type'    => $docType,
             'name'        => $name,
             'required'    => $required,
             'status'      => $status,
-            'uploaded_on' => $sentAt ? \Illuminate\Support\Carbon::parse($sentAt)->format('d/m/Y') : '—',
+            'uploaded_on' => $signedOn,
             'valid_upto'  => $req->expiry_date ? $req->expiry_date->format('d/m/Y') : '—',
             'signed_url'  => $signedUrl,
         ];

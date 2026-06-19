@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
-import { ShipmentDocPanel, type VaultShipmentDoc } from './CustomerEvidenceVaultModal';
+import { ShipmentDocPanel, ShipmentDocSendForSignature, type VaultShipmentDoc } from './CustomerEvidenceVaultModal';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import api from '../../api';
@@ -245,6 +245,9 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
    * wizard opens with these clm_trade_doc_library ids pre-checked. Driven
    * by the Trade Documents tab's per-row Send button. */
   const [sendDocIds, setSendDocIds] = useState<number[] | null>(null);
+  /* Shipment Send-for-Signature — launches the preview + signature-box wizard
+   * for one not-yet-sent shipment document. */
+  const [shipSend, setShipSend] = useState<{ leadId: number; doc: VaultShipmentDoc; party: 'buyer' | 'consignee' } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -666,7 +669,8 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           </div>
 
           {(tab === 'shipment-agreements' || tab === 'trade-documents')
-            ? <ShipmentTable rows={vault.shipment_agreements} kind={tab === 'trade-documents' ? 'trade' : 'agreement'} filter={shipmentFilter} setFilter={setShipmentFilter} />
+            ? <ShipmentTable rows={vault.shipment_agreements} kind={tab === 'trade-documents' ? 'trade' : 'agreement'} filter={shipmentFilter} setFilter={setShipmentFilter}
+                             onSend={(leadId, doc, party) => setShipSend({ leadId, doc, party })} />
             : <DocsTable rows={docsForTab} tab={tab} ownerType="consignee" ownerId={consignee?.db_id ?? null} onReload={reloadVault}
                          onSendTradeDoc={(d) => { if (d.db_id) setSendDocIds([d.db_id]); }}
                          onRemindTradeDoc={handleRemind} />}
@@ -710,6 +714,15 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
         preselectedDocIds={sendDocIds ?? undefined}
         onClose={() => setSendDocIds(null)}
         onSent={() => { setSendDocIds(null); void reloadSignatures(); }}
+      />
+
+      {/* Shipment Send-for-Signature — opens the preview + draggable signature
+          box directly for the clicked doc. On send it reloads the vault so the
+          row flips Draft → Pending. */}
+      <ShipmentDocSendForSignature
+        target={shipSend}
+        onClose={() => setShipSend(null)}
+        onSent={() => { setShipSend(null); void reloadVault(); void reloadSignatures(); }}
       />
 
       {/* Document Overview popup — all documents for the chosen group in one
@@ -1121,11 +1134,13 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   );
 }
 
-function ShipmentTable({ rows, kind, filter, setFilter }: {
+function ShipmentTable({ rows, kind, filter, setFilter, onSend }: {
   rows: VaultShipmentRow[];
   kind: 'trade' | 'agreement';
   filter: 'buyer-eq-consignee' | 'buyer-neq-consignee';
   setFilter: (f: 'buyer-eq-consignee' | 'buyer-neq-consignee') => void;
+  /** Launches Send-for-Signature for one shipment doc (lead + doc + party). */
+  onSend?: (leadId: number, doc: VaultShipmentDoc, party: 'buyer' | 'consignee') => void;
 }) {
   const [openId, setOpenId] = useState<number | null>(null);
   const buyerNeq = filter === 'buyer-neq-consignee';
@@ -1197,6 +1212,7 @@ function ShipmentTable({ rows, kind, filter, setFilter }: {
                           buyerName={r.customer}
                           consigneeName={r.consignee || '—'}
                           buyerIsConsignee={r.buyer_is_consignee}
+                          onSend={onSend ? (doc, party) => onSend(r.id, doc, party) : undefined}
                         />
                       </td>
                     </tr>
