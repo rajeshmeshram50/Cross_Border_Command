@@ -1346,6 +1346,40 @@ export default function ClmBuyerProfilePage() {
   );
 }
 
+/* Self-contained segment cell (first chip + clickable "+N" popover) for use
+ * inside standalone modals that can't reach the page component's renderSegCell. */
+function SegCell({ names, sc, sb }: { names: string[]; sc: string; sb: string }) {
+  const [open, setOpen] = useState<{ x: number; y: number; flipUp: boolean } | null>(null);
+  const segs = names.map((s) => s.trim()).filter(Boolean);
+  if (segs.length === 0) return <span style={{ fontSize: '10px', color: '#94a3b8' }}>—</span>;
+  const toggle = (e: React.MouseEvent) => {
+    if (open) { setOpen(null); return; }
+    const b = e.currentTarget.getBoundingClientRect();
+    const estH = Math.min(280, 34 + segs.length * 30);
+    const spaceBelow = window.innerHeight - b.bottom;
+    const flipUp = spaceBelow < estH + 12 && b.top > spaceBelow;
+    setOpen({ x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp });
+  };
+  return <>
+    <span style={{ fontSize: '8.5px', fontWeight: 600, color: sc, background: sb, border: '1px solid rgba(6,182,212,.15)', padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap' }}>{segs[0]}</span>
+    {segs.length > 1 && (
+      <button type="button" title="View all segments" onClick={toggle} style={{ fontSize: '8.5px', fontWeight: 800, color: '#fff', background: 'linear-gradient(135deg, #06b6d4, #0891b2)', padding: '2px 8px', borderRadius: '20px', whiteSpace: 'nowrap', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{segs.length - 1}</button>
+    )}
+    {open && createPortal(
+      <>
+        <div onMouseDown={() => setOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 200000 }} />
+        <div style={{ position: 'fixed', left: Math.min(open.x, window.innerWidth - 240), top: open.flipUp ? undefined : open.y, bottom: open.flipUp ? (window.innerHeight - open.y) : undefined, zIndex: 200001, width: 220, maxHeight: 280, overflowY: 'auto', background: '#fff', borderRadius: 12, padding: 8, boxShadow: '0 18px 50px rgba(15,23,42,.30)', border: '1px solid rgba(6,182,212,.18)', fontFamily: "'DM Sans','Inter',system-ui,sans-serif" }}>
+          <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#0891b2', padding: '4px 8px 7px' }}>Segments ({segs.length})</div>
+          {segs.map((name, i) => (
+            <div key={i} style={{ fontSize: 10.5, fontWeight: 600, color: '#0c4a6e', padding: '5px 8px', borderRadius: 7, background: i % 2 === 0 ? 'rgba(6,182,212,.05)' : 'transparent' }}>{name}</div>
+          ))}
+        </div>
+      </>,
+      document.body,
+    )}
+  </>;
+}
+
 /* ──────────────────────────────────────────────────────────────────────────
  * Consignees-for-buyer popup — opened by clicking the CONSIGNEES count in the
  * buyer list. Shows the consignees mapped to that buyer (filtered from the
@@ -1407,7 +1441,7 @@ function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows:
                   <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
                   <td style={{ padding: '9px 11px', textAlign: 'center', minWidth: '140px' }}>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', justifyContent: 'center', alignItems: 'center' }}>
-                      {renderSegCell(`txn-${r.id}`, r.seg.split(','), r.sc, r.sb)}
+                      <SegCell names={r.seg.split(',')} sc={r.sc} sb={r.sb} />
                     </div>
                   </td>
                   <td style={{ padding: '9px 11px', fontSize: '11px', color: '#475569', textAlign: 'center' }}>{r.country}</td>
