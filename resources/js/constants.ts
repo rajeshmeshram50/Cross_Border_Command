@@ -260,7 +260,7 @@ export const CLM_GROUPS: MenuGroup[] = [
     label: 'CLM Operations — With Shipment ID',
     icon: 'Truck',
     children: [
-      { id: 'clm.buyer_profile', icon: 'User', label: 'Buyer Profile' },
+      { id: 'clm.buyer_profile', icon: 'User', label: 'Customer Profile' },
       { id: 'clm.supplier_profile', icon: 'Truck', label: 'Supplier Profile' },
     ],
   },

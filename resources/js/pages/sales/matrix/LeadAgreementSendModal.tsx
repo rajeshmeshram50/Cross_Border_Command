@@ -330,7 +330,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
         ? activeSegRawAgreements
         : activeSegRawAgreements.filter(a => partyBucket(a.party) === agrPartyTab));
   // Human label of the active party sub-tab, for empty-state messages.
-  const partyLabel = agrPartyTab === 'buyer' ? 'Buyer' : agrPartyTab === 'consignee' ? 'Consignee' : 'Buyer + Consignee';
+  const partyLabel = agrPartyTab === 'buyer' ? 'Customer' : agrPartyTab === 'consignee' ? 'Consignee' : 'Customer + Consignee';
 
   // Header-checkbox state for the active tab — checked when every
   // matching-party row is already in the selection, indeterminate
@@ -580,7 +580,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
   /* "Buyer + Consignee" documents are signed by BOTH parties — surface that
    * in the send affordances instead of the single primary party's name. */
   const tdIsBothParty = !buyerEqualsConsignee && tdTab === 'both';
-  const tdSignerLabel = tdIsBothParty ? 'Buyer + Consignee' : (tdSignParty?.name ?? tdSignRole);
+  const tdSignerLabel = tdIsBothParty ? 'Customer + Consignee' : (tdSignParty?.name ?? tdSignRole);
   const tdSignCustomer = tdSignParty ? {
     id:      tdSignParty.code ?? `${tdSignRole === 'customer' ? 'c' : 'g'}-${tdSignParty.id}`,
     db_id:   tdSignParty.id,

@@ -1081,7 +1081,7 @@ export default function SalesCustomerSendForSignatureModal({
                     // Multi-signer header — surface "Buyer + Consignee"
                     // so the sender knows at a glance who's getting the
                     // doc.
-                    const labels = ctxSigners.map(s => s.role === 'buyer' ? 'Buyer' : s.role === 'consignee' ? 'Consignee' : 'Supplier');
+                    const labels = ctxSigners.map(s => s.role === 'buyer' ? 'Customer' : s.role === 'consignee' ? 'Consignee' : 'Supplier');
                     return <div className="ssf-head-sub">{labels.join(' + ')} · {ctxSigners.length} signer{ctxSigners.length > 1 ? 's' : ''}</div>;
                   })()
                 : (customer?.email && <div className="ssf-head-sub">{customer.email}</div>)}
@@ -1118,12 +1118,12 @@ export default function SalesCustomerSendForSignatureModal({
                 <div className="ssf-block-head">
                   <div>
                     <div className="ssf-block-title">Pick Trade Documents</div>
-                    <div className="ssf-block-sub">Select 1–10 drafts to send. Only Buyer-applicable drafts are shown.</div>
+                    <div className="ssf-block-sub">Select 1–10 drafts to send. Only Customer-applicable drafts are shown.</div>
                   </div>
                   <div className="ssf-counter">{selectedIds.length}/10 selected</div>
                 </div>
                 {docsLoading && <div className="ssf-loading">Loading documents…</div>}
-                {!docsLoading && docs.length === 0 && <div className="ssf-empty">No buyer-applicable trade documents found. Create one from Central CLM → Trade Documents.</div>}
+                {!docsLoading && docs.length === 0 && <div className="ssf-empty">No customer-applicable trade documents found. Create one from Central CLM → Trade Documents.</div>}
                 {!docsLoading && docs.length > 0 && (
                   <div className="ssf-doc-grid">
                     {docs.map(d => {
@@ -1272,7 +1272,7 @@ export default function SalesCustomerSendForSignatureModal({
                             title={s.email ? `Position ${s.name}'s signature` : `${s.name} — not mapped on this lead`}
                           >
                             <span className={`ssf-signer-dot ssf-signer-dot-${s.role}`} />
-                            {s.role === 'buyer' ? 'Buyer' : s.role === 'consignee' ? 'Consignee' : 'Supplier'}
+                            {s.role === 'buyer' ? 'Customer' : s.role === 'consignee' ? 'Consignee' : 'Supplier'}
                             <span className="ssf-signer-tab-name">· {s.name}</span>
                           </button>
                         ))}
@@ -1349,7 +1349,7 @@ export default function SalesCustomerSendForSignatureModal({
                               }}
                               title={isActive ? 'Drag to move' : `Click to switch to ${s.name}`}
                             >
-                              <div className="ssf-sig-label"><span className={dotCls} /> {s.role === 'buyer' ? 'Buyer' : s.role === 'consignee' ? 'Consignee' : 'Supplier'}</div>
+                              <div className="ssf-sig-label"><span className={dotCls} /> {s.role === 'buyer' ? 'Customer' : s.role === 'consignee' ? 'Consignee' : 'Supplier'}</div>
                               <div className="ssf-sig-page">page {ds.page + 1}</div>
                               {isActive && (
                                 <div
@@ -1520,7 +1520,7 @@ export default function SalesCustomerSendForSignatureModal({
                         <div key={s.role} style={{ marginBottom: i < roleSigners.length - 1 ? 6 : 0 }}>
                           <div className="ssf-recipient-name">
                             <span className={`ssf-signer-dot ssf-signer-dot-${s.role}`} style={{ marginRight: 6 }} />
-                            {s.role === 'buyer' ? 'Buyer · ' : s.role === 'consignee' ? 'Consignee · ' : 'Supplier · '}
+                            {s.role === 'buyer' ? 'Customer · ' : s.role === 'consignee' ? 'Consignee · ' : 'Supplier · '}
                             {s.name}
                           </div>
                           <div className="ssf-recipient-email">{s.email || '—'}</div>

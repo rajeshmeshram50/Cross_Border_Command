@@ -503,7 +503,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
         'Trade Docs':        s.trade_docs?.ratio || '',
         'Agreement':         s.agreement?.ratio || '',
         'Risk':              s.risk || '',
-        'Buyer = Consignee': s.buyer_is_consignee ? 'Yes' : 'No',
+        'Customer = Consignee': s.buyer_is_consignee ? 'Yes' : 'No',
       });
 
       const summary = [
@@ -639,7 +639,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                 </span>
               </div>
               <div className="cev-header-text">
-                <div className="cev-header-eyebrow">— PARTY WISE CLM: BUYER EVIDENCE VAULT</div>
+                <div className="cev-header-eyebrow">— PARTY WISE CLM: CUSTOMER EVIDENCE VAULT</div>
                 <div className="cev-header-title">{customer.company}</div>
                 <div className="cev-header-chips">
                   {customer.contact && (
@@ -1295,8 +1295,8 @@ function ShipmentTable({ rows, kind, filter, setFilter, onSend }: {
       {/* Trade Documents uses compact pills; Agreements uses the full-width
           segmented bar with ✓ / ✕ markers — matches the figma per tab. */}
       <div className={`cev-ship-filter ${isAgreement ? '' : 'cev-ship-filter-2'}`}>
-        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-eq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-eq-consignee'); setOpenId(null); }}>{isAgreement && <span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✓</span>}Buyer = Consignee</button>
-        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-neq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-neq-consignee'); setOpenId(null); }}>{isAgreement && <span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✕</span>}Buyer &ne; Consignee</button>
+        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-eq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-eq-consignee'); setOpenId(null); }}>{isAgreement && <span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✓</span>}Customer = Consignee</button>
+        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-neq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-neq-consignee'); setOpenId(null); }}>{isAgreement && <span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✕</span>}Customer &ne; Consignee</button>
       </div>
       <div className="cev-table-wrap">
         <div className="cev-table-scroll">
@@ -1307,7 +1307,7 @@ function ShipmentTable({ rows, kind, filter, setFilter, onSend }: {
               <th style={{ width: 46 }}>SR</th>
               <th>Shipment ID</th>
               <th>Opportunity ID</th>
-              <th>Customer (Buyer)</th>
+              <th>Customer</th>
               <th>Consignee</th>
               <th>Due Dil.</th>
               <th>KYC</th>
@@ -1375,17 +1375,22 @@ function ShipmentTable({ rows, kind, filter, setFilter, onSend }: {
 
 /* Expanded shipment row — Buyer / Consignee sub-tabs + the document table.
  * Inline-styled (no scoped classes) so the Consignee vault reuses it as-is. */
-export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, buyerIsConsignee, onSend }: {
+export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, buyerIsConsignee, onSend, forceParty }: {
   buyer: VaultShipmentDoc[]; consignee: VaultShipmentDoc[]; buyerName: string; consigneeName: string; buyerIsConsignee: boolean;
   /** Launches Send-for-Signature (preview + draggable signature box) for one
    *  not-yet-sent ("Draft") doc. Receives the doc + which party it belongs to.
    *  Omitted ⇒ no Send button. */
   onSend?: (doc: VaultShipmentDoc, party: 'buyer' | 'consignee') => void;
+  /** Locks the panel to one party and hides the Buyer/Consignee/Both tabs —
+   *  used by the Consignee vault, which only ever shows consignee documents. */
+  forceParty?: 'buyer' | 'consignee';
 }) {
   const toast = useToast();
-  const [party, setParty] = useState<'buyer' | 'consignee' | 'both'>('buyer');
+  const [party, setParty] = useState<'buyer' | 'consignee' | 'both'>(forceParty ?? 'buyer');
   const [busy, setBusy] = useState<number | null>(null);
-  const docs = party === 'both' ? [...buyer, ...consignee] : party === 'buyer' ? buyer : consignee;
+  const docs = forceParty
+    ? (forceParty === 'consignee' ? consignee : buyer)
+    : party === 'both' ? [...buyer, ...consignee] : party === 'buyer' ? buyer : consignee;
 
   const remind = async (d: VaultShipmentDoc) => {
     setBusy(d.sig_req_id);
@@ -1400,17 +1405,19 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
   const stTone = (s: string) => s === 'Signed' ? '#059669' : (s === 'Declined' || s === 'Expired') ? '#dc2626' : '#d97706';
 
   return (
-    <div style={{ padding: '12px 16px 16px' }}>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-        <button type="button" onClick={() => setParty('buyer')} style={partyTabStyle(party === 'buyer')}>👤 Buyer Documents <b>{buyer.length}</b></button>
-        {!buyerIsConsignee && (
-          <>
-            <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(party === 'consignee')}>🏢 Consignee Documents <b>{consignee.length}</b></button>
-            <button type="button" onClick={() => setParty('both')} style={partyTabStyle(party === 'both')}>🗂 Both <b>{buyer.length + consignee.length}</b></button>
-          </>
-        )}
-      </div>
-      <div style={{ fontSize: 11, fontWeight: 600, color: '#0e7490', marginBottom: 6 }}>{party === 'both' ? `${buyerName} + ${consigneeName}` : party === 'buyer' ? buyerName : consigneeName}</div>
+    <div className="cev-sdp" style={{ padding: '12px 16px 16px' }}>
+      {!forceParty && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+          <button type="button" onClick={() => setParty('buyer')} style={partyTabStyle(party === 'buyer')}>👤 Customer Documents <b>{buyer.length}</b></button>
+          {!buyerIsConsignee && (
+            <>
+              <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(party === 'consignee')}>🏢 Consignee Documents <b>{consignee.length}</b></button>
+              <button type="button" onClick={() => setParty('both')} style={partyTabStyle(party === 'both')}>🗂 Both <b>{buyer.length + consignee.length}</b></button>
+            </>
+          )}
+        </div>
+      )}
+      <div style={{ fontSize: 11, fontWeight: 600, color: '#0e7490', marginBottom: 6 }}>{forceParty === 'consignee' ? consigneeName : party === 'both' ? `${buyerName} + ${consigneeName}` : party === 'buyer' ? buyerName : consigneeName}</div>
       {docs.length === 0 ? (
         <div style={{ padding: '18px', textAlign: 'center', color: '#64748b', fontSize: 12, background: '#fff', border: '1px dashed #a5f3fc', borderRadius: 8 }}>No {party === 'both' ? '' : party === 'buyer' ? 'buyer ' : 'consignee '}documents on this shipment.</div>
       ) : (
@@ -1428,7 +1435,11 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
                 <tr key={d.sig_req_id + '-' + i} style={{ borderBottom: '1px solid #ecfeff' }}>
                   <td style={{ padding: '8px 10px', textAlign: 'center', color: '#94a3b8', fontWeight: 700 }}>{i + 1}</td>
                   <td style={{ padding: '8px 10px', fontWeight: 700, color: '#0f172a' }}>{d.name}</td>
-                  <td style={{ padding: '8px 10px', textAlign: 'center' }}><span style={{ fontSize: 8.5, fontWeight: 800, color: d.required === 'OPT' ? '#64748b' : '#b45309', background: d.required === 'OPT' ? '#f1f5f9' : '#fef3c7', border: `1px solid ${d.required === 'OPT' ? '#e2e8f0' : '#fde68a'}`, padding: '2px 7px', borderRadius: 20 }}>{d.required}</span></td>
+                  <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                    {(d.required === 'OPT' || d.required === 'O')
+                      ? <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
+                      : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>}
+                  </td>
                   <td style={{ padding: '8px 10px', textAlign: 'center', color: '#475569' }}>{d.uploaded_on}</td>
                   <td style={{ padding: '8px 10px', textAlign: 'center' }}><span style={{ fontSize: 9.5, fontWeight: 800, color: stTone(d.status) }}>● {d.status}</span></td>
                   <td style={{ padding: '8px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
@@ -1567,7 +1578,7 @@ function sectionSub(tab: TabKey): string {
     case 'owner-kyc':        return 'Director identity, address proof & personal compliance documents';
     case 'trade-licenses':   return 'Export, import & product-specific trade authorization licenses';
     case 'trade-documents':  return 'Sales contracts, purchase orders & signed trade agreements';
-    case 'shipment-agreements': return 'Per-shipment compliance matrix grouped by buyer-consignee link';
+    case 'shipment-agreements': return 'Per-shipment compliance matrix grouped by customer-consignee link';
   }
 }
 
@@ -1882,7 +1893,9 @@ const CEV_CSS = `
   transition: all .15s ease;
 }
 .cev-ov-close:hover { background: rgba(255,255,255,.25); }
-.cev-ov-body { overflow: auto; padding: 14px 18px 18px; }
+/* Fixed height for ~5 rows so the popup size stays constant regardless of how
+   many documents the selected shipment/page has (paginated at 5/page). */
+.cev-ov-body { overflow: auto; padding: 14px 18px 18px; min-height: 312px; }
 /* Overview pager (Standard docs, 5 per page) */
 .cev-ov-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px 16px; flex-wrap: wrap; }
 .cev-ov-pager-info { font-size: 11px; font-weight: 600; color: #0891b2; }
@@ -2050,14 +2063,17 @@ const CEV_CSS = `
 .cev-body::-webkit-scrollbar { width: 8px; }
 .cev-body::-webkit-scrollbar-thumb { background: #67e8f9; border-radius: 99px; }
 .cev-body::-webkit-scrollbar-thumb:hover { background: #06b6d4; }
-/* Shipment tabs: separated cards with breathing room around the Buyer=/≠
-   Consignee toggle (section becomes a self-contained rounded card again). */
-.cev-body-ship { gap: 10px; }
-.cev-body-ship .cev-section { border-radius: 12px; }
-.cev-body-ship .cev-table-wrap { border-top: 1px solid #e4e7f5; border-radius: 12px; }
-/* Non-sticky header so the wrapper's rounded top corners actually clip the dark
-   header band (a sticky header escapes the overflow:hidden clip at the top). */
-.cev-body-ship .cev-table thead tr { position: static; }
+/* Shipment tabs: ONE combined card like Standard Docs — section header fused to
+   a Customer=/≠Consignee toggle band, fused to the table (no gaps). */
+.cev-body-ship { gap: 0; }
+.cev-body-ship .cev-ship-filter,
+.cev-body-ship .cev-ship-filter-2 {
+  align-self: stretch; width: auto; margin: 0; box-sizing: border-box;
+  padding: 12px 14px; background: #fbfdff; border-radius: 0;
+  border-left: 1px solid #e4e7f5; border-right: 1px solid #e4e7f5; border-bottom: 1px solid #e4e7f5;
+}
+[data-bs-theme="dark"] .cev-body-ship .cev-ship-filter,
+[data-bs-theme="dark"] .cev-body-ship .cev-ship-filter-2 { background: #0a2630 !important; border-color: rgba(8,145,178,.28) !important; }
 
 .cev-section {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -2415,6 +2431,20 @@ const CEV_CSS = `
 [data-bs-theme="dark"] .cev-pill[data-status="Signed"]   { background: rgba(59,130,246,.18) !important; color: #93c5fd !important; }
 [data-bs-theme="dark"] .cev-pill[data-status="Expiring"] { background: rgba(245,158,11,.18) !important; color: #fcd34d !important; }
 [data-bs-theme="dark"] .cev-pill[data-status="Pending"]  { background: rgba(239,68,68,.18) !important; color: #fca5a5 !important; }
+[data-bs-theme="dark"] .cev-pill[data-status="Draft"]    { background: rgba(245,158,11,.18) !important; color: #fcd34d !important; }
+[data-bs-theme="dark"] .cev-pill[data-status="Declined"],
+[data-bs-theme="dark"] .cev-pill[data-status="Expired"]  { background: rgba(239,68,68,.18) !important; color: #fca5a5 !important; }
+[data-bs-theme="dark"] .cev-pill[data-status="Recalled"] { background: rgba(148,163,184,.18) !important; color: #cbd5e1 !important; }
+/* Expanded shipment detail panel (ShipmentDocPanel) — all inline light styles. */
+[data-bs-theme="dark"] .cev-ship-expand > td { background: #08222b !important; }
+[data-bs-theme="dark"] .cev-sdp [style*="background: rgb(255, 255, 255)"],
+[data-bs-theme="dark"] .cev-sdp [style*="background:rgb(255, 255, 255)"] { background: #0a2630 !important; border-color: rgba(8,145,178,.28) !important; }
+[data-bs-theme="dark"] .cev-sdp [style*="rgb(15, 23, 42)"] { color: #e2e8f0 !important; }
+[data-bs-theme="dark"] .cev-sdp [style*="rgb(71, 85, 105)"] { color: #cbd5e1 !important; }
+[data-bs-theme="dark"] .cev-sdp [style*="rgb(100, 116, 139)"] { color: #94a3b8 !important; }
+[data-bs-theme="dark"] .cev-sdp tbody tr { border-bottom-color: rgba(8,145,178,.12) !important; }
+[data-bs-theme="dark"] .cev-sdp [style*="rgb(241, 245, 249)"] { background: rgba(148,163,184,.18) !important; border-color: rgba(148,163,184,.32) !important; }
+[data-bs-theme="dark"] .cev-sdp [style*="rgb(254, 243, 199)"] { background: rgba(245,158,11,.18) !important; border-color: rgba(245,158,11,.4) !important; }
 [data-bs-theme="dark"] .cev-filter-verified { background: rgba(16,185,129,.18); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
 [data-bs-theme="dark"] .cev-filter-expiring { background: rgba(245,158,11,.18); color: #fcd34d; border-color: rgba(217,119,6,.30); }
 [data-bs-theme="dark"] .cev-filter-pending  { background: rgba(239,68,68,.18);  color: #fca5a5; border-color: rgba(239,68,68,.30); }

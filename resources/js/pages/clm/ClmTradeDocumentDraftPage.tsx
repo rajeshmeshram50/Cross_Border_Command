@@ -43,7 +43,7 @@ const DOC_TYPES = ['Declaration', 'Undertaking', 'Authorization', 'Bond', 'Certi
  * Icons are kept as inline emojis to match the figma mock so we don't
  * introduce a new icon dependency for a pure design pass. */
 const PARTY_BUYER_CONSIGNEE = [
-  { value: 'Buyer',     label: 'Buyer',     icon: '👤' },
+  { value: 'Buyer',     label: 'Customer',  icon: '👤' },
   { value: 'Consignee', label: 'Consignee', icon: '🚚' },
 ];
 const PARTY_SUPPLIER = [

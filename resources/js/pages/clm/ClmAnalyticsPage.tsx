@@ -375,7 +375,7 @@ export default function ClmAnalyticsPage() {
     { value: pad2(kWithShip),    label: 'With Shipment ID Transactions',    accent: '#0891b2', tint: '#e8f4fd', icon: ICON.kpiWs,     ring: Math.round(kWithShip / maxTxn * 100) },
     { value: pad2(kWithoutShip), label: 'Without Shipment ID Transactions', accent: '#0e7490', tint: '#e6f6f7', icon: ICON.kpiWos,    ring: Math.round(kWithoutShip / maxTxn * 100) },
     { value: pad2(kCtc),         label: 'Case to Case Contracts',           accent: '#16a34a', tint: '#e8f7ed', icon: ICON.kpiC2c,    ring: Math.min(100, kCtc * 5) },
-    { value: pad2(kBuyers),      label: 'Buyers',                           accent: '#0d9488', tint: '#e6f6f4', icon: ICON.kpiBuyers, ring: Math.min(100, kBuyers * 4) },
+    { value: pad2(kBuyers),      label: 'Customers',                        accent: '#0d9488', tint: '#e6f6f4', icon: ICON.kpiBuyers, ring: Math.min(100, kBuyers * 4) },
     { value: pad2(kCons),        label: 'Consignees',                       accent: '#be185d', tint: '#fdeef5', icon: ICON.kpiCons,   ring: Math.min(100, kCons * 2) },
     { value: pad2(kSuppliers),   label: 'Suppliers',                        accent: '#d97706', tint: '#fdf4e7', icon: ICON.kpiSup,    ring: Math.min(100, kSuppliers * 2) },
   ];
@@ -582,7 +582,7 @@ export default function ClmAnalyticsPage() {
   const allVendors = live.supplier
     ? [...live.supplier.ws_mat, ...live.supplier.ws_logi, ...live.supplier.wos_svc, ...live.supplier.wos_mat, ...live.supplier.wos_logi]
     : [];
-  const buyerOverview = live.buyer ? partyOverviewFrom(live.buyer.buyers, 'Buyers', true) : BUYER_OVERVIEW;
+  const buyerOverview = live.buyer ? partyOverviewFrom(live.buyer.buyers, 'Customers', true) : BUYER_OVERVIEW;
   const consigneeOverview = live.buyer ? partyOverviewFrom(live.buyer.consignees, 'Consignees', true) : CONSIGNEE_OVERVIEW;
   const supplierOverview = live.supplier ? partyOverviewFrom(allVendors, 'Suppliers', false) : SUPPLIER_OVERVIEW;
 
@@ -600,7 +600,7 @@ export default function ClmAnalyticsPage() {
       { l: 'Fully Compliant Shipments', v: compliant, k: 'ok' },
       { l: 'In Progress Shipments', v: inprog, k: 'prog' },
       { l: 'Blocked Shipments', v: blocked, k: 'bad' },
-      { l: 'Buyer Side Pending', v: buyerPend, k: 'pend' },
+      { l: 'Customer Side Pending', v: buyerPend, k: 'pend' },
       { l: 'Supplier Side Pending', v: supPend, k: 'pend' },
     ];
   }, [realWsRaw]);
@@ -639,12 +639,12 @@ export default function ClmAnalyticsPage() {
 
   const codeLabel = wsScope === 'supplier' ? 'Supplier Code' : wsScope === 'consignee' ? 'Consignee Code' : 'Customer Code';
   const nameLabel = wsScope === 'supplier' ? 'Supplier Name' : wsScope === 'consignee' ? 'Consignee Name' : 'Customer Name';
-  const titleLabel = wsScope === 'supplier' ? 'Suppliers' : wsScope === 'consignee' ? 'Consignees' : 'Buyers';
+  const titleLabel = wsScope === 'supplier' ? 'Suppliers' : wsScope === 'consignee' ? 'Consignees' : 'Customers';
 
   // shared styles
   const cardStyle: React.CSSProperties = { background: t.surface, border: `1px solid ${t.border}`, borderRadius: 14, boxShadow: '0 4px 16px rgba(8,145,178,.07)', overflow: 'hidden', marginBottom: 12 };
   const scopeTabs: { key: WsScope; label: string; icon: string }[] = [
-    { key: 'buyer', label: 'Buyer', icon: ICON.kyc },
+    { key: 'buyer', label: 'Customer', icon: ICON.kyc },
     { key: 'consignee', label: 'Consignee', icon: ICON.ship },
     { key: 'supplier', label: 'Supplier', icon: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>' },
   ];
@@ -1064,7 +1064,7 @@ export default function ClmAnalyticsPage() {
 
       {/* ── Party Overview panels (Buyer / Consignee / Supplier) ─────────── */}
       <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'stretch' }}>
-        <PartyOverviewPanel title="Buyer Overview"     accent="#0d9488" accent2="#14b8a6" tint="#e6f6f4" icon={ICON.kyc}     data={buyerOverview}     tk={t} />
+        <PartyOverviewPanel title="Customer Overview"  accent="#0d9488" accent2="#14b8a6" tint="#e6f6f4" icon={ICON.kyc}     data={buyerOverview}     tk={t} />
         <PartyOverviewPanel title="Consignee Overview" accent="#be185d" accent2="#ec4899" tint="#fdeef5" icon={ICON.ship}    data={consigneeOverview} tk={t} />
         <PartyOverviewPanel title="Supplier Overview"  accent="#d97706" accent2="#f59e0b" tint="#fdf4e7" icon={ICON.kpiCons} data={supplierOverview}  tk={t} />
       </div>

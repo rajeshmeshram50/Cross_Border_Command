@@ -49,7 +49,7 @@ type Props = {
 
 const LIABILITY_OPTIONS = [
   { value: 'Seller',  label: 'Seller'  },
-  { value: 'Buyer',   label: 'Buyer'   },
+  { value: 'Buyer',   label: 'Customer'   },
 ];
 
 const COLD_CHAIN_OPTIONS = [

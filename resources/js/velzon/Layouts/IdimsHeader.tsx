@@ -54,7 +54,7 @@ const LEAF_DESC: Record<string, string> = {
   'clm.analytics': 'Track contract KPIs & legal performance.',
   'clm.diagnosis_resolution': 'Diagnose contract risks & drive resolution actions.',
   'clm.regulatory_defense': 'Read-only regulatory defense file repository.',
-  'clm.buyer_profile': 'Manage buyer onboarding & agreements.',
+  'clm.buyer_profile': 'Manage Customer onboarding & agreements.',
   'clm.supplier_profile': 'Manage supplier contracts & compliance.',
   'clm.case_to_case': 'Manage one-time operational contracts.',
   'clm.agreements_sent': 'Track agreements sent for approval.',

@@ -191,7 +191,7 @@ export default function ClmSegmentPage() {
         steps={[
           { n: '01', title: 'Create Segment',                       desc: 'Create business or trade segments to classify operations and contracts.', icon: ICO.grid },
           { n: '02', title: 'Set Regulatory Status',                desc: 'Define the regulatory classification applicable to this segment.',       icon: ICO.shield },
-          { n: '03', title: 'Configure Buyer & Consignee Rule',     desc: 'Define whether Buyer ≠ Consignee is allowed for this segment.',          icon: ICO.users },
+          { n: '03', title: 'Configure Customer & Consignee Rule',  desc: 'Define whether Customer ≠ Consignee is allowed for this segment.',       icon: ICO.users },
           { n: '04', title: 'Enable Operational Usage',             desc: 'Activate segment for use across contracts and operational workflows.',   icon: ICO.check },
         ]}
       />
@@ -357,7 +357,7 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
     }
     if (!reg) next.reg = 'Regulatory status is required';
     else if (regLocked && reg !== existing?.regulatory_status) next.reg = 'Regulatory status cannot be changed after the segment is created.';
-    if (!bc)  next.bc  = 'Buyer / Consignee rule is required';
+    if (!bc)  next.bc  = 'Customer / Consignee rule is required';
     setErrors(next);
     if (Object.keys(next).length) return;
     setSaving(true);
@@ -386,7 +386,7 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
             )}</div>
             <div>
               <div className="clm-modal-head-title">{isEdit ? 'Edit Segment' : 'Add New Segment'}</div>
-              <div className="clm-modal-head-sub">{isEdit ? 'Update the segment details below.' : 'Define a business or trade segment with regulatory classification and buyer-consignee rules.'}</div>
+              <div className="clm-modal-head-sub">{isEdit ? 'Update the segment details below.' : 'Define a business or trade segment with regulatory classification and customer-consignee rules.'}</div>
             </div>
           </div>
           <button className="clm-modal-close" onClick={onClose}>×</button>
@@ -453,7 +453,7 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
           </div>
 
           <div className="clm-field">
-            <label className="clm-field-label">Buyer ≠ Consignee <span className="clm-req">*</span></label>
+            <label className="clm-field-label">Customer ≠ Consignee <span className="clm-req">*</span></label>
             <MasterSelect
               value={bc}
               invalid={!!errors.bc}
