@@ -212,6 +212,20 @@ export default function IdimsHeader() {
   /* ── Logo ── */
   const rawLogo = user?.branch_logo || user?.client_logo || null;
   const logoSrc = rawLogo ? resolveFileUrl(rawLogo) : logoFallback;
+  // Dark-mode logo: same file with a "-dark" suffix (a recoloured variant whose
+  // dark ink is turned light so it reads on the dark nav, no box). If that file
+  // doesn't exist for a tenant, onError flips to the original on a soft pill.
+  const darkRaw = rawLogo && /\.(png|jpe?g|webp)$/i.test(rawLogo)
+    ? rawLogo.replace(/\.(png|jpe?g|webp)$/i, '-dark.png')
+    : null;
+  const darkLogoSrc = darkRaw ? resolveFileUrl(darkRaw) : null;
+  const [logoDarkMissing, setLogoDarkMissing] = useState(false);
+  useEffect(() => { setLogoDarkMissing(false); }, [rawLogo]);
+  const showDarkLogo = theme === 'dark' && !!darkLogoSrc && !logoDarkMissing;
+  // The bundled fallback logo (no tenant upload) is already transparent with
+  // light colours that read fine on the dark nav, so it needs no pill. Only an
+  // uploaded logo that lacks a -dark variant falls back to the soft pill.
+  const logoNeedsPill = theme === 'dark' && !showDarkLogo && !!rawLogo;
 
   /* ── Profile photo ── */
   const rawPhoto = user?.user_profile_photo || user?.employee_profile_photo
@@ -543,8 +557,9 @@ export default function IdimsHeader() {
           the nav bar + dropdown stack above it). Click to close. */}
       {openDD && <div className="idims-dd-backdrop" onClick={() => setOpenDD(null)} />}
       <nav className="idims-nav">
-        <div className="idims-logo" onClick={() => go('/dashboard')}>
-          <img className="idims-logo-full" src={logoSrc} alt="logo" />
+        <div className={`idims-logo ${logoNeedsPill ? 'idims-logo-pill' : ''}`} onClick={() => go('/dashboard')}>
+          <img className="idims-logo-full" src={showDarkLogo ? darkLogoSrc! : logoSrc} alt="logo"
+            onError={() => { if (showDarkLogo) setLogoDarkMissing(true); }} />
         </div>
         <div className="idims-divider" />
         <div className="idims-nav-stack">
@@ -940,13 +955,15 @@ const IDIMS_CSS = `
    nav (z-index:2) and the dropdown — so only the page gets blurred. */
 .idims-dd-backdrop { position: fixed; inset: 0; z-index: 1; background: rgba(15,23,42,.10); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); animation: idimsFade .18s ease; }
 .idims-dark .idims-dd-backdrop { background: rgba(0,0,0,.35); }
-.idims-logo { display: flex; align-items: center; flex-shrink: 0; cursor: pointer; }
-.idims-logo-full { height: 52px; width: auto; display: block; object-fit: contain; filter: drop-shadow(0 2px 5px rgba(120,53,15,.18)); transition: transform .18s ease, filter .2s ease; }
+.idims-logo { display: flex; align-items: center; flex-shrink: 0; cursor: pointer; border-radius: 12px; transition: background .2s ease, box-shadow .2s ease, padding .2s ease; }
+.idims-logo-full { height: 52px; width: auto; display: block; object-fit: contain; filter: drop-shadow(0 2px 5px rgba(120,53,15,.18)); transition: transform .18s ease; }
 .idims-logo:hover .idims-logo-full { transform: scale(1.03); }
-/* Dark mode — the logo has a transparent background, so flattening it to a
-   white silhouette lets it sit natively on the dark nav with no background box.
-   brightness(0) -> black, then invert(1) -> white. Light mode keeps full colour. */
-.idims-dark .idims-logo-full { filter: brightness(0) invert(1); }
+/* Dark mode — preferred path: a recoloured "-dark" logo variant blends straight
+   into the nav with no box (see darkLogoSrc). Fallback for tenants without a
+   dark variant: a soft translucent white pill so the original logo stays legible
+   and keeps its colours. Light mode is untouched. */
+.idims-logo-pill { background: rgba(255,255,255,.92); padding: 6px 14px; box-shadow: 0 3px 10px rgba(0,0,0,.32), inset 0 0 0 1px rgba(255,255,255,.4); }
+.idims-dark .idims-logo-full { filter: none; }
 .idims-divider { width: 1px; height: 56px; background: #E4E7EF; flex-shrink: 0; margin: 0 12px 0 10px; }
 .idims-nav-stack { flex: 1; min-width: 0; align-self: stretch; display: flex; flex-direction: column; }
 .idims-nav-row { display: flex; align-items: center; min-width: 0; }
@@ -1298,6 +1315,7 @@ const IDIMS_CSS = `
   .idims-divider { display: none; }
   .idims-logo { order: 0; }
   .idims-logo-full { height: 38px; }
+  .idims-logo-pill { padding: 5px 11px; }
   .idims-nav-stack { gap: 8px; }
   .idims-row-top { border-bottom: none; padding: 0; gap: 8px 10px; flex-wrap: wrap; align-items: center; }
   .idims-row-bottom { display: none; }
@@ -1335,6 +1353,7 @@ const IDIMS_CSS = `
 }
 @media (max-width: 380px) {
   .idims-logo-full { height: 32px; }
+  .idims-logo-pill { padding: 4px 9px; }
   .idims-action-btn { width: 33px; height: 33px; }
   .idims-action-btn svg { width: 17px; height: 17px; }
 }

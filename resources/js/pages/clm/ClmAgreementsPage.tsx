@@ -216,6 +216,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
   const [pendingDelete, setPendingDelete] = useState<AgrLib | null>(null);
   // All-segments popover — opened from the +N badge in the SEGMENT column.
   const [segOpen, setSegOpen] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
+  const [partyOpen, setPartyOpen] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
   // Blocked-action popup state — set when the user clicks Edit/Delete on an
   // agreement that has already been signed.
   const [locked, setLocked] = useState<{ mode: 'edit' | 'delete'; row: AgrLib } | null>(null);
@@ -333,12 +334,11 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                 <th style={{ minWidth: 130 }}>AGREEMENT TYPE</th>
                 <th style={{ width: 130, textAlign: 'center' }}>REGULATORY</th>
                 <th style={{ width: 120, textAlign: 'center' }}>SEGMENT</th>
-                <th>APPLICABLE PARTY</th>
-                <th style={{ width: 85, textAlign: 'center' }}>SIGNING</th>
+                <th style={{ width: 150, textAlign: 'center' }}>APPLICABLE PARTY</th>
                 <th style={{ width: 128, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {loading && <ClmSkeletonRows cols={9} />}
+                {loading && <ClmSkeletonRows cols={8} />}
                 {!loading && slice.map((r, i) => {
                   const isHigh = r.regulatory === 'highly';
                   return (
@@ -386,15 +386,33 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                           );
                         })()}
                       </td>
-                      <td className="clm-td-desc">
-                        <Tooltip label={r.party.split(',').map(s => s.trim()).filter(Boolean).join(' · ')} maxWidth={320}>
-                          <span>{r.party}</span>
-                        </Tooltip>
-                      </td>
                       <td style={{ textAlign: 'center' }}>
-                        <Tooltip label={r.signing ? 'Signing workflow required' : 'No signing workflow'}>
-                          <span className={`clm-badge ${r.signing ? 'clm-badge-green' : 'clm-badge-slate'}`}>{r.signing ? 'Yes' : 'No'}</span>
-                        </Tooltip>
+                        {/* Show only the first applicable party as a badge; if the
+                            agreement maps to more (r.party is a CSV like
+                            "Buyer, Consignee"), surface the rest behind a +N badge
+                            that opens a popover. Fall back to "All parties" when
+                            nothing is mapped. */}
+                        {(() => {
+                          const partyList = r.party ? r.party.split(',').map(s => s.trim()).filter(Boolean) : [];
+                          if (partyList.length === 0) return <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>All parties</span>;
+                          const extra = partyList.length - 1;
+                          return (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+                              <Tooltip label={`Applicable party · ${partyList[0]}`}>
+                                <span className="clm-badge clm-badge-teal">{partyList[0]}</span>
+                              </Tooltip>
+                              {extra > 0 && (
+                                <button
+                                  type="button"
+                                  title="View all parties"
+                                  onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setPartyOpen(partyOpen?.id === r.id ? null : { id: r.id, names: partyList, x: b.left, y: b.bottom + 4 }); }}
+                                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
+                                  +{extra}
+                                </button>
+                              )}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">
@@ -430,6 +448,22 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
           <div className="clm-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 230), top: segOpen.y, zIndex: 601, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
             <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Segments ({segOpen.names.length})</div>
             {segOpen.names.map((name, i) => (
+              <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
+                <span className="clm-badge clm-badge-teal">{name}</span>
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
+
+      {/* All-parties popover (opened from the +N badge in the APPLICABLE PARTY column) */}
+      {partyOpen && createPortal(
+        <>
+          <div onClick={() => setPartyOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(partyOpen.x, window.innerWidth - 230), top: partyOpen.y, zIndex: 601, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+            <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Applicable Parties ({partyOpen.names.length})</div>
+            {partyOpen.names.map((name, i) => (
               <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
                 <span className="clm-badge clm-badge-teal">{name}</span>
               </div>

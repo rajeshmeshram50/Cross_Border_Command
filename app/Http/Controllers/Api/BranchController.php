@@ -253,9 +253,9 @@ class BranchController extends Controller
             // Store relative path so it resolves correctly across local and
             // Azure disks. URL is generated at read time via file_url().
             if ($request->hasFile('logo')) {
-                $branch->update([
-                    'logo' => $request->file('logo')->store('branches/logos', 'public'),
-                ]);
+                $logoPath = $request->file('logo')->store('branches/logos', 'public');
+                $branch->update(['logo' => $logoPath]);
+                \App\Services\LogoDarkVariantGenerator::generate($logoPath);
             }
             if ($request->hasFile('profile_photo')) {
                 $branch->update([
@@ -534,9 +534,12 @@ class BranchController extends Controller
 
             if ($request->hasFile('logo')) {
                 if ($branch->logo) {
+                    \App\Services\LogoDarkVariantGenerator::delete($this->relativePath($branch->logo));
                     Storage::disk('public')->delete($this->relativePath($branch->logo));
                 }
-                $branch->update(['logo' => $request->file('logo')->store('branches/logos', 'public')]);
+                $logoPath = $request->file('logo')->store('branches/logos', 'public');
+                $branch->update(['logo' => $logoPath]);
+                \App\Services\LogoDarkVariantGenerator::generate($logoPath);
             }
             if ($request->hasFile('profile_photo')) {
                 if ($branch->profile_photo) {
