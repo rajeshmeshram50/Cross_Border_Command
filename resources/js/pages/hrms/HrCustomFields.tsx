@@ -336,13 +336,6 @@ export default function HrCustomFields() {
             color: #fdba74 !important;
             border-color: rgba(249, 115, 22, 0.45) !important;
           }
-
-          /* Master Data badge in dark mode */
-          [data-bs-theme="dark"] .cf-page .cf-title span,
-          [data-layout-mode="dark"] .cf-page .cf-title span {
-            background: rgba(139, 92, 246, 0.18) !important;
-            color: #c4b5fd !important;
-          }
         `}</style>
         <div className="rec-page cf-page">
           {/* Header strip — same shape as the Clients / Branches headers. */}
@@ -353,9 +346,6 @@ export default function HrCustomFields() {
               <div className="min-w-0">
                 <div className="d-flex align-items-center gap-2 flex-wrap">
                   <span className="frm-cstrip-title">Custom Fields</span>
-                  <span style={{ fontSize: 11.5, color: '#6d28d9', background: '#ede9fe', padding: '3px 10px', borderRadius: 999, fontWeight: 700 }}>
-                    Master Data
-                  </span>
                 </div>
                 <div className="frm-cstrip-sub">
                   Define custom variables used in document templates — filled manually at document generation time

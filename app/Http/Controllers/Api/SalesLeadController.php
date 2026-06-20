@@ -272,7 +272,58 @@ class SalesLeadController extends Controller
             if ($assigned) $q->whereNotNull('salesperson_id');
             else           $q->whereNull('salesperson_id');
         }
-        $applyFacet('lead_stage_id',      'lead_stage_id');
+        // Stage facet — most stages map straight to lead_stage_id, but the two
+        // PI-onwards stages are SIGNAL-based per product rules (and their wire
+        // values 6/8 don't line up with the saved lead_stage_id anyway):
+        //   • Quotation vs PI (6) → opportunities whose PI has been SENT
+        //     (a PI signature request exists, or a non-cancelled PI was
+        //      emailed to the customer).
+        //   • Victory (8) → opportunities that have a CREATED shipment id
+        //     (a shipment_orders row — SHP-NNN — exists for the opportunity).
+        $stageParam = $request->query('lead_stage_id');
+        $stageVals  = is_array($stageParam)
+            ? array_values(array_filter($stageParam, fn ($x) => $x !== null && $x !== ''))
+            : (($stageParam !== null && $stageParam !== '') ? [(string) $stageParam] : []);
+        if (count($stageVals)) {
+            $stageVals    = array_map('strval', $stageVals);
+            $plain        = array_values(array_diff($stageVals, ['6', '8']));
+            $wantPiSent   = in_array('6', $stageVals, true);
+            $wantShipment = in_array('8', $stageVals, true);
+            $q->where(function ($outer) use ($plain, $wantPiSent, $wantShipment) {
+                if (count($plain)) {
+                    $outer->orWhereIn('lead_stage_id', $plain);
+                }
+                if ($wantPiSent) {
+                    $outer->orWhere(function ($w) {
+                        // PI sent (signature request OR emailed PI) …
+                        $w->where(function ($p) {
+                            $p->whereExists(function ($s) {
+                                $s->selectRaw('1')->from('clm_signature_requests')
+                                  ->whereColumn('clm_signature_requests.lead_id', 'leads.id')
+                                  ->where('clm_signature_requests.document_type', \App\Models\ClmSignatureRequest::DOC_PROFORMA_INVOICE);
+                            })->orWhereExists(function ($s) {
+                                $s->selectRaw('1')->from('proforma_invoices')
+                                  ->whereColumn('proforma_invoices.opp_id', 'leads.id')
+                                  ->where('proforma_invoices.status', '!=', \App\Models\ProformaInvoice::STATUS_CANCELLED)
+                                  ->whereNotNull('proforma_invoices.emailed_at');
+                            });
+                        })
+                        // … but NOT yet shipped — a created shipment moves the
+                        // opportunity on to the Victory stage, so exclude it here.
+                        ->whereNotExists(function ($s) {
+                            $s->selectRaw('1')->from('shipment_orders')
+                              ->whereColumn('shipment_orders.lead_id', 'leads.id');
+                        });
+                    });
+                }
+                if ($wantShipment) {
+                    $outer->orWhereExists(function ($s) {
+                        $s->selectRaw('1')->from('shipment_orders')
+                          ->whereColumn('shipment_orders.lead_id', 'leads.id');
+                    });
+                }
+            });
+        }
         $applyFacet('sender_country_iso', 'sender_country_iso');
         $applyFacet('customer_id',        'customer_id');
 

@@ -248,6 +248,33 @@
   color: #ffffff;
   box-shadow: inset 0 1px 1px rgba(0,0,0,0.10);
 }
+
+/* Counter badge on the Hiring Requests modal tab strip (Pending /
+   Recruitment Created / Rejected). Light theme = white chip with violet
+   text; the inactive chip must follow the dark theme so it doesn't show a
+   bright white background against the dark tab. */
+.rec-tab-count {
+  margin-left: 2px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #fff;
+  color: #4338ca;
+}
+.rec-tab-count--active {
+  background: rgba(255,255,255,0.25);
+  color: #fff;
+}
+[data-bs-theme="dark"] .rec-tab-count {
+  background: color-mix(in srgb, #ffffff 12%, transparent);
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .rec-tab-count--active {
+  background: rgba(255,255,255,0.22);
+  color: #fff;
+}
+
 /* ID pill — purple-tinted glass token, readable on both themes. */
 .rec-id-pill {
   display: inline-flex; align-items: center;
@@ -1077,6 +1104,51 @@
   border-color: color-mix(in srgb, var(--pill-fg) 50%, transparent) !important;
   color: color-mix(in srgb, var(--pill-fg) 58%, #ffffff) !important;
   box-shadow: none !important;
+}
+
+/* Selected priority pills (High / Medium / Low) in the Create Recruitment
+   form. The light-theme rules above use bright pastel gradients; in dark
+   mode swap them for translucent same-hue chips with lifted text so the
+   active choice reads as part of the dark theme instead of a glaring
+   pastel block (matches the [--pill-fg] treatment used elsewhere). */
+[data-bs-theme="dark"] .rec-priority-pill.is-active.priority-high {
+  background: color-mix(in srgb, #ef4444 22%, transparent);
+  border-color: color-mix(in srgb, #ef4444 55%, transparent);
+  color: color-mix(in srgb, #ef4444 45%, #ffffff);
+  box-shadow: 0 0 0 3px color-mix(in srgb, #ef4444 14%, transparent);
+}
+[data-bs-theme="dark"] .rec-priority-pill.is-active.priority-medium {
+  background: color-mix(in srgb, #f5d000 20%, transparent);
+  border-color: color-mix(in srgb, #f5d000 55%, transparent);
+  color: color-mix(in srgb, #f5d000 60%, #ffffff);
+  box-shadow: 0 0 0 3px color-mix(in srgb, #f5d000 14%, transparent);
+}
+[data-bs-theme="dark"] .rec-priority-pill.is-active.priority-low {
+  background: color-mix(in srgb, #3b82f6 22%, transparent);
+  border-color: color-mix(in srgb, #3b82f6 55%, transparent);
+  color: color-mix(in srgb, #60a5fa 60%, #ffffff);
+  box-shadow: 0 0 0 3px color-mix(in srgb, #3b82f6 14%, transparent);
+}
+
+/* "Prefilled from hiring request …" source banner in the Create
+   Recruitment form. Light theme = indigo-tinted note; dark theme swaps to
+   a translucent indigo chip with lifted text so it stays on-theme. */
+.rec-prefill-note {
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  color: #3730a3;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+[data-bs-theme="dark"] .rec-prefill-note {
+  background: color-mix(in srgb, #818cf8 16%, transparent);
+  border-color: color-mix(in srgb, #818cf8 38%, transparent);
+  color: #c7d2fe;
 }
 
 /* ---------------------------------------------------------------------
@@ -3749,6 +3821,32 @@
   color: #d1fae5;
 }
 
+/* Upload variant — shown when a candidate has no CV yet. Indigo dashed
+   call-to-action instead of the green "attached" tone. Themed so the chip
+   doesn't render as a bright white pill in dark mode. */
+.cand-cv-chip--upload {
+  background: #eef2ff;
+  color: #4338ca;
+  border: 1px dashed #c7d2fe;
+}
+.cand-cv-chip--upload:hover {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+.cand-cv-chip--upload.is-uploading { background: #e0e7ff; }
+[data-bs-theme="dark"] .cand-cv-chip--upload {
+  background: color-mix(in srgb, #818cf8 16%, transparent);
+  color: #c7d2fe;
+  border: 1px dashed color-mix(in srgb, #818cf8 45%, transparent);
+}
+[data-bs-theme="dark"] .cand-cv-chip--upload:hover {
+  background: color-mix(in srgb, #818cf8 26%, transparent);
+  color: #e0e7ff;
+}
+[data-bs-theme="dark"] .cand-cv-chip--upload.is-uploading {
+  background: color-mix(in srgb, #818cf8 26%, transparent);
+}
+
 /* ════════════════════════════════════════════════════════════════════════
    Exit Management — responsive KPI grid
    5 cards across at xl, then 3 → 2 → 1 as the viewport narrows.
@@ -4108,6 +4206,16 @@
   background: #ffffff;
   color: #b91c1c;
 }
+/* Dark mode — the solid-white selected chip reads as a bright "light theme"
+   sticker. Swap to a dark translucent pill with light text so the selected
+   state follows the dark theme while staying legible on the red header. */
+[data-bs-theme="dark"] .ecl-dt.is-active,
+[data-bs-theme="dark"] .ecl-type-btn.is-active {
+  background: rgba(10,8,20,0.55);
+  color: #ffffff;
+  border-color: rgba(255,255,255,0.55);
+}
+[data-bs-theme="dark"] .ecl-dt.is-active i { color: #fca5a5; }
 .ecl-filter-badge {
   display: inline-flex; align-items: center;
   font-size: 10px;
@@ -4309,6 +4417,29 @@
 .ecl-step-owner--it  { background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
 .ecl-step-owner--fin { background: #d1fae5; color: #047857; border: 1px solid #a7f3d0; }
 .ecl-step-owner--mgr { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+
+/* ── Dark-mode pass for the Exit Checklist body badges. The role tags, owner
+   pills and the ALL/designation tags all use hard light pastels that glare on
+   the dark checklist body — swap to translucent same-hue chips with bright
+   readable text so they read as part of the dark theme. ── */
+[data-bs-theme="dark"] .ecl-dtag {
+  background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.72);
+}
+[data-bs-theme="dark"] .ecl-dtag--hod,
+[data-bs-theme="dark"] .ecl-dtag--hodit { background: rgba(124,92,252,0.22); color: #c4b5fd; }
+[data-bs-theme="dark"] .ecl-dtag--tl,
+[data-bs-theme="dark"] .ecl-dtag--intern { background: rgba(245,158,11,0.22); color: #fcd34d; }
+[data-bs-theme="dark"] .ecl-dtag--it     { background: rgba(56,189,248,0.22); color: #7dd3fc; }
+[data-bs-theme="dark"] .ecl-dtag--nonit  { background: rgba(239,68,68,0.22); color: #fca5a5; }
+
+[data-bs-theme="dark"] .ecl-role-tag--hr,
+[data-bs-theme="dark"] .ecl-step-owner--hr  { background: rgba(124,92,252,0.20); color: #c4b5fd; border-color: rgba(124,92,252,0.40); }
+[data-bs-theme="dark"] .ecl-role-tag--it,
+[data-bs-theme="dark"] .ecl-step-owner--it  { background: rgba(56,189,248,0.20); color: #7dd3fc; border-color: rgba(56,189,248,0.40); }
+[data-bs-theme="dark"] .ecl-role-tag--fin,
+[data-bs-theme="dark"] .ecl-step-owner--fin { background: rgba(16,185,129,0.20); color: #6ee7b7; border-color: rgba(16,185,129,0.40); }
+[data-bs-theme="dark"] .ecl-role-tag--mgr,
+[data-bs-theme="dark"] .ecl-step-owner--mgr { background: rgba(245,158,11,0.20); color: #fcd34d; border-color: rgba(245,158,11,0.40); }
 
 /* Footer */
 .ecl-footer {
@@ -5862,6 +5993,24 @@
 .ev-doc-status--optional      { background: #f3f4f6; color: var(--vz-secondary-color); border: 1px solid #e5e7eb; }
 .ev-doc-status--generated     { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
 .ev-doc-status--completed     { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+
+/* ── Dark-mode pass for the Evidence Vault document rows. The status badges
+   and the document / group icon tiles use hard light pastels that glare on
+   the dark vault body — swap to translucent same-hue chips with bright text,
+   and neutralise the icon tiles to a violet accent so the glyph stays read-
+   able regardless of its inline light-pastel colour. ── */
+[data-bs-theme="dark"] .ev-doc-status--verified,
+[data-bs-theme="dark"] .ev-doc-status--generated,
+[data-bs-theme="dark"] .ev-doc-status--completed { background: rgba(16,185,129,0.20); color: #6ee7b7; border-color: rgba(16,185,129,0.40); }
+[data-bs-theme="dark"] .ev-doc-status--uploaded,
+[data-bs-theme="dark"] .ev-doc-status--sent      { background: rgba(56,189,248,0.20); color: #7dd3fc; border-color: rgba(56,189,248,0.40); }
+[data-bs-theme="dark"] .ev-doc-status--signed     { background: rgba(124,92,252,0.22); color: #c4b5fd; border-color: rgba(124,92,252,0.40); }
+[data-bs-theme="dark"] .ev-doc-status--pending    { background: rgba(245,158,11,0.22); color: #fcd34d; border-color: rgba(245,158,11,0.40); }
+[data-bs-theme="dark"] .ev-doc-status--not-generated,
+[data-bs-theme="dark"] .ev-doc-status--optional   { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.70); border-color: rgba(255,255,255,0.15); }
+
+[data-bs-theme="dark"] .ev-doc-icon,
+[data-bs-theme="dark"] .ev-group-icon { background: rgba(124,92,252,0.18) !important; color: #c4b5fd !important; }
 
 /* Action buttons */
 .ev-doc-btn {

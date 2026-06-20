@@ -346,7 +346,7 @@ function ClarificationTable({ rows, page, setPage, onReview, onConvo, t }: { row
     <div style={{ background: t.tableBg, overflow: 'hidden' }}>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
-          <thead><tr style={{ background: 'linear-gradient(90deg,#5B21B6 0%,#7C3AED 40%,#8B5CF6 70%,#A78BFA 100%)' }}>
+          <thead><tr style={{ background: 'linear-gradient(90deg,#0e7490 0%,#0891b2 35%,#06b6d4 70%,#22d3ee 100%)' }}>
             <th style={{ ...TH, width: 52 }}>SR. NO</th>
             <th style={{ ...TH, width: 110 }}>CTC ID</th>
             <th style={{ ...TH, width: 110 }}>CTC DATE</th>
@@ -362,17 +362,17 @@ function ClarificationTable({ rows, page, setPage, onReview, onConvo, t }: { row
               const n = start + i + 1;
               const latest = c.clarifications.length ? c.clarifications[c.clarifications.length - 1] : null;
               const hasResp = !!(latest && latest.response);
-              const bg = n % 2 === 0 ? (t.dark ? 'rgba(124,58,237,.05)' : 'rgba(245,243,255,.35)') : t.tableBg;
+              const bg = n % 2 === 0 ? (t.dark ? 'rgba(6,182,212,.05)' : 'rgba(236,254,255,.5)') : t.tableBg;
               return (
                 <tr key={c.id} style={{ background: bg, transition: 'all .12s' }}
-                  onMouseEnter={e => { e.currentTarget.style.background = t.dark ? 'rgba(124,58,237,.14)' : 'rgba(124,58,237,.04)'; e.currentTarget.style.boxShadow = 'inset 3px 0 0 #7C3AED'; }}
+                  onMouseEnter={e => { e.currentTarget.style.background = t.dark ? 'rgba(6,182,212,.14)' : 'rgba(6,182,212,.06)'; e.currentTarget.style.boxShadow = 'inset 3px 0 0 #0891b2'; }}
                   onMouseLeave={e => { e.currentTarget.style.background = bg; e.currentTarget.style.boxShadow = 'none'; }}>
-                  <td style={TD_C}><div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(109,40,217,.35)' }}><span style={{ fontSize: 10, fontWeight: 900, color: '#fff' }}>{pad2(n)}</span></div></td>
-                  <td style={TD_C}><span style={{ fontFamily: "'Geist Mono', monospace", fontSize: 11, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#4C1D95', background: 'rgba(109,40,217,.1)', padding: '4px 9px', borderRadius: 7, border: '1px solid rgba(124,58,237,.28)' }}>{c.id}</span></td>
+                  <td style={TD_C}><div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(8,145,178,.35)' }}><span style={{ fontSize: 10, fontWeight: 900, color: '#fff' }}>{pad2(n)}</span></div></td>
+                  <td style={TD_C}><span style={{ fontFamily: "'Geist Mono', monospace", fontSize: 11, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0e7490', background: 'rgba(6,182,212,.1)', padding: '4px 9px', borderRadius: 7, border: '1px solid rgba(6,182,212,.28)' }}>{c.id}</span></td>
                   <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub }}>{c.date}</span></td>
                   <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
-                  <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 24, height: 24, borderRadius: '50%', background: 'linear-gradient(135deg,#A78BFA,#7C3AED)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8, fontWeight: 900, color: '#fff' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
-                  <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 24, height: 24, borderRadius: '50%', background: 'linear-gradient(135deg,#6D28D9,#4C1D95)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8, fontWeight: 900, color: '#fff' }}>{inits(c.approver)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.approver}</span></div></td>
+                  <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 24, height: 24, borderRadius: '50%', background: 'linear-gradient(135deg,#22d3ee,#06b6d4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8, fontWeight: 900, color: '#fff' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
+                  <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 24, height: 24, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8, fontWeight: 900, color: '#fff' }}>{inits(c.approver)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.approver}</span></div></td>
                   <td style={{ ...TD_L, maxWidth: 220 }}>
                     <Tooltip label={latest?.query ?? ''}><div style={{ fontSize: 11, color: t.textSub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}>{latest?.query ?? '—'}</div></Tooltip>
                     {hasResp && <div style={{ fontSize: 9.5, color: '#059669', fontWeight: 600, marginTop: 2 }}>✓ Response provided</div>}
@@ -410,8 +410,8 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, t 
   return (
     <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(8,3,28,.82)', backdropFilter: 'blur(14px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: "'Rubik', system-ui, sans-serif" }}>
       <div style={{ width: '100%', maxWidth: 520, borderRadius: 24, overflow: 'hidden', boxShadow: '0 50px 100px rgba(8,3,28,.5),0 20px 40px rgba(6,182,212,.12)', border: '1px solid rgba(255,255,255,.1)', animation: 'ataSlideUp .24s cubic-bezier(.22,1,.36,1) both', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
-        {/* Header */}
-        <div style={{ background: 'linear-gradient(135deg,#0e7490 0%,#0891b2 45%,#06b6d4 80%,#22d3ee 100%)', padding: '22px 24px 20px', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
+        {/* Header — red for reject, cyan for clarify / default. */}
+        <div style={{ background: choice === 'reject' ? 'linear-gradient(135deg,#7f1d1d 0%,#b91c1c 42%,#dc2626 78%,#ef4444 100%)' : 'linear-gradient(135deg,#0e7490 0%,#0891b2 45%,#06b6d4 80%,#22d3ee 100%)', padding: '22px 24px 20px', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '55%', background: 'linear-gradient(180deg,rgba(255,255,255,.18),transparent)', pointerEvents: 'none' }} />
           <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>

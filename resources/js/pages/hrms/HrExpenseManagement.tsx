@@ -1090,15 +1090,16 @@ export default function HrExpenseManagement() {
           )}
         </div>
 
-        {/* ── Main card with status tabs + filter row + table ── */}
-        <Card className="border-0" style={{ borderRadius: 14 }}>
-          <CardBody>
+        {/* ── Primary navigation card — Expense Claims / Advance Requests
+            module switcher + search. Kept in its OWN card, visually separate
+            from the status-filter tabs below, so the primary navigation reads
+            as a distinct section from the secondary status filtering. */}
+        <Card className="border-0 mb-3" style={{ borderRadius: 14 }}>
+          <CardBody className="py-3">
             {/* Module switcher — flips the status tabs + table between
-                Expense Claims and Advance Requests. Sits inside the same
-                pill bar style as the status tabs below so the two rows
-                read as a stacked toggle. Counts come from the date-windowed
-                source (so they react to the All Dates dropdown). */}
-            <Row className="g-2 align-items-center mb-3">
+                Expense Claims and Advance Requests. Counts come from the
+                date-windowed source (so they react to the All Dates dropdown). */}
+            <Row className="g-2 align-items-center">
               <Col xs={12}>
                 <div className="d-flex align-items-center justify-content-between gap-3 flex-wrap">
                 <div
@@ -1166,7 +1167,13 @@ export default function HrExpenseManagement() {
                 </div>
               </Col>
             </Row>
+          </CardBody>
+        </Card>
 
+        {/* ── Main card — secondary status tabs + table. Separate container
+            from the primary module switcher above for clear visual hierarchy. ── */}
+        <Card className="border-0" style={{ borderRadius: 14 }}>
+          <CardBody>
             {/* Status tabs — pill-style, mirrors the Active/Disabled tabs on
                 the HrEmployees page. Active tab gets the violet gradient with
                 white text + count chip; inactive tabs sit transparent with

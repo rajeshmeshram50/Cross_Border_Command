@@ -108,6 +108,12 @@ type PI = {
   // opportunity hasn't won yet stay in Without-Shipment until the
   // deal closes upstream.
   victoryReached?: boolean;
+  // True only when an actual shipment order (SHP-NNN) has been created and
+  // submitted against the opportunity. This — NOT victoryReached or the
+  // auto-assigned legacy bt_id — drives the With/Without Shipment split: a PI
+  // stays in "Without Shipment" until the shipment id is created & the
+  // shipment form is submitted.
+  hasShipment?: boolean;
 };
 
 // Default page size — 10 to match the Customer page. The dynamic page-size
@@ -686,6 +692,11 @@ export default function SalesQPI() {
             r.victory_reached
             ?? ((Number(r.lead?.lead_stage_id ?? 0) >= 6) || !!r.lead?.won_at)
           ),
+          // Real shipment order created & submitted (SHP-NNN) — drives the
+          // With/Without Shipment split. The legacy bt_id fallback is NOT
+          // counted here, so an auto-assigned BT-code alone keeps the PI in
+          // the Without-Shipment bucket until the shipment form is submitted.
+          hasShipment: Boolean(r.shipment_code),
           // Stash pi_type on the row so the sub-tab filter can split it.
           // Cast to any so we don't have to widen the public PI type.
           ...(r.pi_type ? { _piType: r.pi_type } : {}),
@@ -697,18 +708,18 @@ export default function SalesQPI() {
   };
   useEffect(() => { reloadPis(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Split the single PI list into With/Without buckets by the
-  // opportunity's stage progress. A PI lands in "With Shipment" only
-  // when its source opportunity has reached Stage 6 (Victory Stage) —
-  // i.e. all six stages of the Sales Matrix are complete. Anything
-  // still working through Stage 1–5 stays in "Without Shipment" until
-  // the deal closes upstream.
+  // Split the single PI list into With/Without buckets by whether an actual
+  // shipment order (SHP-NNN) has been created & submitted against the
+  // opportunity. A PI lands in "With Shipment" ONLY once that shipment id
+  // exists — until the shipment is created and its form submitted, the PI
+  // stays in "Without Shipment" (a victory-stage deal or an auto-assigned
+  // legacy BT-code alone is not enough).
   const piWithShipment = useMemo(
-    () => pis.filter(r => r.victoryReached === true),
+    () => pis.filter(r => r.hasShipment === true),
     [pis],
   );
   const piWithoutShipment = useMemo(
-    () => pis.filter(r => r.victoryReached !== true),
+    () => pis.filter(r => r.hasShipment !== true),
     [pis],
   );
 

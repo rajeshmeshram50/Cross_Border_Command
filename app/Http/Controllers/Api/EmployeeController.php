@@ -45,7 +45,10 @@ class EmployeeController extends Controller
         // current and permanent country/state names without extra calls.
         'permCountry:id,name',
         'permState:id,name,country_id',
-        'reportingManager:id,first_name,middle_name,last_name,display_name,emp_code',
+        'reportingManager:id,first_name,middle_name,last_name,display_name,emp_code,designation_id',
+        // Manager's designation so the picker can label them by role
+        // (e.g. "Anushka Bakde (HOD)") instead of the generic "(Employee)".
+        'reportingManager.designation:id,name',
         // Fallback manager — populated when the picker selected a login User
         // (Client/Branch admin) instead of an Employee row. Only one of
         // reportingManager / reportingManagerUser is non-null per employee.
@@ -188,7 +191,9 @@ class EmployeeController extends Controller
             ->where('onboarding_stage_completed', '>=', 6);
         $this->applyScope($eq, $user, $request->integer('branch_id') ?: null);
         $employees = $eq
-            ->select(['id', 'emp_code', 'display_name', 'first_name', 'last_name'])
+            // designation_id MUST be selected or the belongsTo('designation')
+            // eager-load returns null and every label falls back to "(Employee)".
+            ->select(['id', 'emp_code', 'display_name', 'first_name', 'last_name', 'designation_id'])
             ->with(['designation:id,name'])
             ->orderBy('display_name')
             ->get()

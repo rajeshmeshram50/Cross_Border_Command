@@ -484,16 +484,21 @@ export default function HrCandidates() {
                             </td>
                             <td className="pe-3">
                               <div className="rec-row-actions justify-content-center">
-                                <Tooltip label="Edit Candidate">
-                                  <button
-                                    type="button"
-                                    className="rec-act rec-act-view rec-act--icon"
-                                    aria-label="Edit Candidate"
-                                    onClick={() => { setEditing(c); setModalOpen(true); }}
-                                  >
-                                    <i className="ri-pencil-line" />
-                                  </button>
-                                </Tooltip>
+                                {/* Edit hidden for rejected candidates — a
+                                    rejected record is read-only and shouldn't
+                                    be modifiable further. */}
+                                {c.status !== 'Rejected' && (
+                                  <Tooltip label="Edit Candidate">
+                                    <button
+                                      type="button"
+                                      className="rec-act rec-act-view rec-act--icon"
+                                      aria-label="Edit Candidate"
+                                      onClick={() => { setEditing(c); setModalOpen(true); }}
+                                    >
+                                      <i className="ri-pencil-line" />
+                                    </button>
+                                  </Tooltip>
+                                )}
                                 {/* Approve / Reject buttons hide once the candidate
                                     is already in that terminal state — no point
                                     re-selecting an already-selected row, or
@@ -1202,15 +1207,10 @@ function CvCell({
 
   return (
     <label
-      className="cand-cv-chip"
-      // Override the green "downloaded" tone so the upload state reads as a
-      // clear call-to-action, not a "CV already attached" affordance.
-      style={{
-        cursor: uploading ? 'progress' : 'pointer',
-        background: uploading ? '#e0e7ff' : '#eef2ff',
-        color: '#4338ca',
-        border: '1px dashed #c7d2fe',
-      }}
+      // --upload swaps the green "downloaded" tone for an indigo dashed
+      // call-to-action; themed in CSS so it follows dark mode too.
+      className={`cand-cv-chip cand-cv-chip--upload${uploading ? ' is-uploading' : ''}`}
+      style={{ cursor: uploading ? 'progress' : 'pointer' }}
       title="Upload CV"
     >
       {uploading

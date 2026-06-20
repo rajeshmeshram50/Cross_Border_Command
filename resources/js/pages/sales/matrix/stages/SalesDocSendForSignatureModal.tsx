@@ -163,6 +163,15 @@ export default function SalesDocSendForSignatureModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, sending, onClose]);
 
+  /* ── Lock background page scroll while open so the page behind the modal
+   * doesn't show its own scrollbar / scroll under the overlay. */
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [open]);
+
   /* ── Fetch + load the sales PDF into pdf.js (one document, rendered a
    * single page at a time onto a canvas — no <iframe>, so no second
    * browser PDF scrollbar). */
@@ -342,7 +351,7 @@ export default function SalesDocSendForSignatureModal({
   const roleName = (_r: SignerRole) => customerName || 'Customer';
 
   return createPortal(
-    <div className="ssf-overlay" onMouseDown={e => { if (e.target === e.currentTarget && !sending) onClose(); }} role="dialog" aria-modal="true">
+    <div className="ssf-overlay" role="dialog" aria-modal="true">
       <style>{SSF_CSS}{SDS_CSS}</style>
       <div className="ssf-shell" onMouseDown={e => e.stopPropagation()}>
         {/* While sending, a full overlay blocks ALL interaction (drag the
