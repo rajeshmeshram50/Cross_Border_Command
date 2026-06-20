@@ -153,9 +153,7 @@ export default function HrBroadcastCentre() {
   const KPI_CARDS = [
     { label: 'Total',     value: stats.total,     icon: 'ri-send-plane-fill',     gradient: 'linear-gradient(135deg,#299cdb 0%,#4dabf7 100%)', deep: '#1e6dd6' },
     { label: 'Active',    value: stats.active,    icon: 'ri-checkbox-circle-fill',gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', deep: '#089d7a' },
-    { label: 'Scheduled', value: stats.scheduled, icon: 'ri-calendar-event-fill', gradient: 'linear-gradient(135deg,#f7b84b 0%,#fbc763 100%)', deep: '#a4661c' },
     { label: 'Draft',     value: stats.draft,     icon: 'ri-draft-line',          gradient: 'linear-gradient(135deg,#878a99 0%,#a3a6b4 100%)', deep: '#5b6478' },
-    { label: 'Expired',   value: stats.expired,   icon: 'ri-forbid-2-line',       gradient: 'linear-gradient(135deg,#f06548 0%,#f47c5d 100%)', deep: '#b1401d' },
   ];
 
   const handleSaved = (saved: AnnRow) => {
@@ -182,6 +180,17 @@ export default function HrBroadcastCentre() {
 
   const handlePublishNow = async (row: AnnRow) => {
     if (publishingId) return;            // ignore double-clicks while in flight
+    // Drafts can be saved with blank fields, but publishing requires the
+    // mandatory content — block here and point the user back to the editor.
+    const missing: string[] = [];
+    if (!row.title?.trim())       missing.push('Announcement Title');
+    if (!row.description?.trim()) missing.push('Description');
+    if (missing.length) {
+      toast.error('Cannot publish', `Please fill the required field${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}.`);
+      setEditingRow(row);               // open the editor so they can complete it
+      setCreateOpen(true);
+      return;
+    }
     setPublishingId(row.id);             // instant feedback (spinner + disable)
     try {
       const { data } = await api.put(`/announcements/${row.id}`, {
