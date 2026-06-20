@@ -484,16 +484,21 @@ export default function HrCandidates() {
                             </td>
                             <td className="pe-3">
                               <div className="rec-row-actions justify-content-center">
-                                <Tooltip label="Edit Candidate">
-                                  <button
-                                    type="button"
-                                    className="rec-act rec-act-view rec-act--icon"
-                                    aria-label="Edit Candidate"
-                                    onClick={() => { setEditing(c); setModalOpen(true); }}
-                                  >
-                                    <i className="ri-pencil-line" />
-                                  </button>
-                                </Tooltip>
+                                {/* Edit hidden for rejected candidates — a
+                                    rejected record is read-only and shouldn't
+                                    be modifiable further. */}
+                                {c.status !== 'Rejected' && (
+                                  <Tooltip label="Edit Candidate">
+                                    <button
+                                      type="button"
+                                      className="rec-act rec-act-view rec-act--icon"
+                                      aria-label="Edit Candidate"
+                                      onClick={() => { setEditing(c); setModalOpen(true); }}
+                                    >
+                                      <i className="ri-pencil-line" />
+                                    </button>
+                                  </Tooltip>
+                                )}
                                 {/* Approve / Reject buttons hide once the candidate
                                     is already in that terminal state — no point
                                     re-selecting an already-selected row, or

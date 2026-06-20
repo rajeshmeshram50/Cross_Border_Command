@@ -120,6 +120,7 @@ export default function TemplateFormPage() {
   const [headerConfig, setHeaderConfig] = useState<HeaderConfig>(DEFAULT_HEADER);
   const [footerConfig, setFooterConfig] = useState<FooterConfig>(DEFAULT_FOOTER);
   const [uploadingDocx, setUploadingDocx] = useState(false);
+  const [downloadingDocx, setDownloadingDocx] = useState(false);
   const docxRef = useRef<HTMLInputElement | null>(null);
 
   // Lookups
@@ -348,8 +349,19 @@ export default function TemplateFormPage() {
   };
 
   const downloadDocx = async () => {
-    const row = await ensureSavedDraft();
-    if (!row) return;
+    if (downloadingDocx) return;            // ignore repeat clicks while in flight
+    // Flip the loader on FIRST so it covers the whole operation — the draft
+    // auto-save (PUT) AND the blob download — and keeps the button disabled
+    // so the user can't fire multiple download requests.
+    setDownloadingDocx(true);
+    let row;
+    try {
+      row = await ensureSavedDraft();
+    } catch {
+      setDownloadingDocx(false);
+      return;
+    }
+    if (!row) { setDownloadingDocx(false); return; }
     try {
       const resp = await api.get(`/hr-document-templates/${row.id}/download`, { responseType: 'blob' });
       const url = URL.createObjectURL(new Blob([resp.data]));
@@ -362,6 +374,8 @@ export default function TemplateFormPage() {
       URL.revokeObjectURL(url);
     } catch (err: any) {
       toast.error('Could not download', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setDownloadingDocx(false);
     }
   };
 
@@ -543,6 +557,7 @@ export default function TemplateFormPage() {
               onDownloadDocx={downloadDocx}
               onUploadDocx={uploadDocx}
               uploadingDocx={uploadingDocx}
+              downloadingDocx={downloadingDocx}
             />
           )}
         </CardBody>
@@ -862,6 +877,7 @@ function Step3(props: {
   onDownloadDocx: () => void;
   onUploadDocx: (f: File) => void;
   uploadingDocx: boolean;
+  downloadingDocx: boolean;
 }) {
   const tabBtn = (active: boolean): React.CSSProperties => ({
     padding: '7px 16px', border: '1px solid ' + (active ? '#6366f1' : '#e5e7eb'),
@@ -914,9 +930,11 @@ function Step3(props: {
             </ol>
             <div className="d-flex gap-2 flex-wrap">
               <button type="button" onClick={props.onDownloadDocx}
-                className="tpl-word-dl-btn"
-                style={{ padding: '8px 16px', background: '#1f2937', color: '#fff', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                <i className="ri-download-2-line me-1" /> Download DOCX (with header/footer)
+                className="tpl-word-dl-btn" disabled={props.downloadingDocx || props.uploadingDocx}
+                style={{ padding: '8px 16px', background: '#1f2937', color: '#fff', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: (props.downloadingDocx || props.uploadingDocx) ? 'wait' : 'pointer', opacity: (props.downloadingDocx || props.uploadingDocx) ? 0.7 : 1 }}>
+                {props.downloadingDocx
+                  ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" /> Generating DOCX…</>
+                  : <><i className="ri-download-2-line me-1" /> Download DOCX (with header/footer)</>}
               </button>
               <input ref={props.docxRef} type="file" accept=".doc,.docx" style={{ display: 'none' }}
                 disabled={props.uploadingDocx}

@@ -293,11 +293,11 @@ function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; pr
 
 // Five KPI cards on top — colored top strip + subtle icon tile
 const KPI_CARDS = [
-  { key: 'total',     label: 'Total Employees',           icon: 'ri-team-line',          tint: '#ece6ff', fg: '#7c5cfc', strip: '#7c5cfc' },
-  { key: 'progress',  label: 'Onboarding In Progress',    icon: 'ri-time-line',          tint: '#dceefe', fg: '#0c63b0', strip: '#3b82f6' },
-  { key: 'completed', label: 'Onboarding Completed',      icon: 'ri-checkbox-circle-line', tint: '#d6f4e3', fg: '#108548', strip: '#10b981' },
-  { key: 'notStart',  label: 'Onboarding Not Initiated',  icon: 'ri-pause-circle-line',  tint: '#fdf3d6', fg: '#a06f00', strip: '#f59e0b' },
-  { key: 'missing',   label: 'Missing Profile Details',   icon: 'ri-error-warning-line', tint: '#fdd9d6', fg: '#b1401d', strip: '#f06548' },
+  { key: 'total',     label: 'Total Employees',           icon: 'ri-team-line',          tint: '#ece6ff', fg: '#7c5cfc', strip: '#7c5cfc', grad: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
+  { key: 'progress',  label: 'Onboarding In Progress',    icon: 'ri-time-line',          tint: '#dceefe', fg: '#0c63b0', strip: '#3b82f6', grad: 'linear-gradient(135deg,#3b82f6,#60a5fa)' },
+  { key: 'completed', label: 'Onboarding Completed',      icon: 'ri-checkbox-circle-line', tint: '#d6f4e3', fg: '#108548', strip: '#10b981', grad: 'linear-gradient(135deg,#10b981,#34d399)' },
+  { key: 'notStart',  label: 'Onboarding Not Initiated',  icon: 'ri-pause-circle-line',  tint: '#fdf3d6', fg: '#a06f00', strip: '#f59e0b', grad: 'linear-gradient(135deg,#f59e0b,#fbbf24)' },
+  { key: 'missing',   label: 'Missing Profile Details',   icon: 'ri-error-warning-line', tint: '#fdd9d6', fg: '#b1401d', strip: '#f06548', grad: 'linear-gradient(135deg,#f06548,#f8a08a)' },
 ] as const;
 
 // ── Checklist data (matches the modal in the second image) ───────────────────
@@ -701,8 +701,8 @@ export default function HrEmployeeOnboarding() {
                       : <AnimatedNumber value={(counts as any)[k.key] ?? 0} />}
                   </h3>
                 </div>
-                <div className="onb-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <i className={k.icon} style={{ fontSize: 20, color: k.fg }} />
+                <div className="onb-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.grad, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
                 </div>
               </div>
             </div>
@@ -1826,6 +1826,17 @@ export function VaultModal({
           [data-bs-theme="dark"] .vault-kebab-menu button:hover {
             background: rgba(255,255,255,0.06) !important;
           }
+          /* The 3-dot trigger button has the same portal issue — its inline
+             --vz-card-bg fell back to white. Pin a dark surface + readable
+             icon so it matches the rest of the dark vault. */
+          [data-bs-theme="dark"] .vault-kebab-btn {
+            background: var(--vz-secondary-bg) !important;
+            border-color: var(--vz-border-color) !important;
+            color: rgba(255,255,255,0.75) !important;
+          }
+          [data-bs-theme="dark"] .vault-kebab-btn:hover {
+            background: rgba(255,255,255,0.08) !important;
+          }
         `}</style>
         {/* Header — indigo gradient with status ring (fixed, non-scrolling) */}
         <div
@@ -2119,7 +2130,7 @@ export function VaultModal({
                           <div className="vault-doc-meta">
                             <div className="vault-doc-name">
                               {tpl.name || '(unnamed template)'}{' '}
-                              <span style={{ fontSize: 10.5, fontFamily: 'monospace', color: '#a16207', background: '#fef3c7', padding: '1px 6px', borderRadius: 4, marginLeft: 6 }}>{tpl.code}</span>
+                              <span className="vault-doc-code">{tpl.code}</span>
                               {run && runStatusColor && (
                                 <span className={`badge rounded-pill bg-${runStatusColor}-subtle text-${runStatusColor} fw-semibold ms-2`} style={{ fontSize: 11, padding: '3px 9px' }}>
                                   <i className="ri-flow-chart" style={{ fontSize: 11, marginRight: 3 }} />{run.status}
@@ -2193,7 +2204,7 @@ export function VaultModal({
 
                           {/* 3-dot menu — audit trail + cancel (when a run exists) */}
                           <div style={{ position: 'relative' }}>
-                            <button type="button" onClick={() => setOpenMenuId(openMenuId === tpl.id ? null : tpl.id)}
+                            <button type="button" className="vault-kebab-btn" onClick={() => setOpenMenuId(openMenuId === tpl.id ? null : tpl.id)}
                               data-tooltip="More actions" data-tooltip-pos="left" aria-label="More actions"
                               style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--vz-border-color, #e5e7eb)', background: 'var(--vz-card-bg, #fff)', color: 'var(--vz-secondary-color, #6b7280)', cursor: 'pointer' }}>
                               <i className="ri-more-2-fill" />
@@ -2665,7 +2676,7 @@ export function VaultModal({
                       ? { bg: '#10b981', border: '#10b981', icon: '#fff',    pill: vaultDark ? '#6ee7b7' : '#10b981', pillBg: vaultDark ? 'rgba(16,185,129,0.18)' : '#d1fae5', pillBorder: vaultDark ? 'rgba(16,185,129,0.40)' : '#a7f3d0', label: 'Done',     iconClass: 'ri-check-line' }
                       : isCurrent
                       ? { bg: '#7c3aed', border: '#7c3aed', icon: '#fff',    pill: vaultDark ? '#c4b5fd' : '#7c3aed', pillBg: vaultDark ? 'rgba(124,58,237,0.20)' : '#ede9fe', pillBorder: vaultDark ? 'rgba(124,58,237,0.45)' : '#c4b5fd', label: 'Pending you', iconClass: 'ri-time-line' }
-                      : { bg: '#f3f4f6', border: '#d1d5db', icon: '#9ca3af', pill: vaultDark ? '#9ca3af' : '#6b7280', pillBg: vaultDark ? 'rgba(255,255,255,0.06)' : '#f3f4f6', pillBorder: vaultDark ? 'rgba(255,255,255,0.16)' : '#e5e7eb', label: 'Waiting',  iconClass: 'ri-time-line' };
+                      : { bg: vaultDark ? 'rgba(255,255,255,0.07)' : '#f3f4f6', border: vaultDark ? 'rgba(255,255,255,0.20)' : '#d1d5db', icon: vaultDark ? 'rgba(255,255,255,0.55)' : '#9ca3af', pill: vaultDark ? '#9ca3af' : '#6b7280', pillBg: vaultDark ? 'rgba(255,255,255,0.06)' : '#f3f4f6', pillBorder: vaultDark ? 'rgba(255,255,255,0.16)' : '#e5e7eb', label: 'Waiting',  iconClass: 'ri-time-line' };
 
                     return (
                       <div key={i} style={{ position: 'relative', display: 'flex', gap: 16, paddingBottom: isLast ? 0 : 20 }}>
@@ -2677,7 +2688,7 @@ export function VaultModal({
                             top: 36,
                             bottom: 0,
                             width: 2,
-                            background: done ? '#10b981' : '#e5e7eb',
+                            background: done ? '#10b981' : (vaultDark ? 'rgba(255,255,255,0.14)' : '#e5e7eb'),
                             borderRadius: 1,
                           }} />
                         )}
@@ -6418,6 +6429,11 @@ function Stage3Provisioning({
   const autoLabel = (
     <span className="auto" style={{ background: '#d6f4e3', color: '#108548' }}>EDITABLE</span>
   );
+  // Employee Code is system-generated from the number series — it is NOT
+  // editable, so it gets an "Auto Generated" badge instead of "EDITABLE".
+  const autoGenLabel = (
+    <span className="auto" style={{ background: '#ede9fe', color: '#5b3fd1' }}>AUTO GENERATED</span>
+  );
 
   // Lazy fallback: if HR landed on Stage 3 with an empty official_email
   // but Stage 1's Work Email IS filled (legacy rows or freshly-loaded
@@ -6477,7 +6493,7 @@ function Stage3Provisioning({
   )}
 </Col>
             <Col md={6}>
-              <label className="onb-init-label">Employee Code {autoLabel}</label>
+              <label className="onb-init-label">Employee Code {autoGenLabel}</label>
               <div className="onb-prov-input is-autofetched">
                 <i className="ri-checkbox-circle-line" />
                 <span>{emp.empId}</span>

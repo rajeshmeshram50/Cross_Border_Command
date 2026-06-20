@@ -2653,9 +2653,11 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
   // the current code path doesn't assign them.
   const allDocs: { status: DocStatus }[] = [...empDocsView, ...orgGroups.flatMap(g => g.docs), ...exitGroups.flatMap(g => g.docs)];
   const total      = allDocs.length;
-  const verified   = allDocs.filter(d => d.status === 'Verified').length;
   const signed     = allDocs.filter(d => d.status === 'Signed' || d.status === 'Generated' || d.status === 'Completed').length;
-  const pending    = allDocs.filter(d => d.status === 'Pending' || d.status === 'Sent' || d.status === 'Uploaded').length;
+  // Pending = documents genuinely awaiting action. An 'Uploaded' document is
+  // already received/present, so it must NOT inflate the Pending count — only
+  // docs still pending or sent-for-signature (awaiting) qualify.
+  const pending    = allDocs.filter(d => d.status === 'Pending' || d.status === 'Sent').length;
   const notGen     = allDocs.filter(d => d.status === 'Not Generated' || d.status === 'Optional').length;
   const completionPct = total > 0 ? Math.round(((total - notGen) / total) * 100) : 0;
 
@@ -2746,10 +2748,8 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
         <div className="ev-kpis rec-page-kpis">
           {[
             { label: 'Total Docs',      value: total,    icon: 'ri-file-list-3-line',     gradient: 'linear-gradient(135deg, #4338ca 0%, #6366f1 60%, #818cf8 100%)', deep: '#4338ca' },
-            { label: 'Verified',        value: verified, icon: 'ri-shield-check-line',    gradient: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
             { label: 'Signed',          value: signed,   icon: 'ri-quill-pen-line',       gradient: 'linear-gradient(135deg, #6d28d9 0%, #7c3aed 60%, #a78bfa 100%)', deep: '#6d28d9' },
             { label: 'Pending',         value: pending,  icon: 'ri-time-line',            gradient: 'linear-gradient(135deg, #c2410c 0%, #f59e0b 60%, #fbbf24 100%)', deep: '#c2410c' },
-            { label: 'Not Generated',   value: notGen,   icon: 'ri-file-forbid-line',     gradient: 'linear-gradient(135deg, #475569 0%, #64748b 60%, #94a3b8 100%)', deep: '#475569' },
           ].map(k => (
             <div key={k.label} className="rec-kpi-card">
               <span className="rec-kpi-strip" style={{ background: k.gradient }} />
