@@ -1092,6 +1092,9 @@ tbody tr:nth-child(10) {
 [data-bs-theme="dark"] .tc-wl-info,
 [data-bs-theme="dark"] .tc-wl-rows,
 [data-bs-theme="dark"] .tc-wl-btn { background: rgba(255, 255, 255, .06); border-color: rgba(167, 139, 250, .30); color: #c4b5fd; }
+/* The base hover fills the arrow white — a glaring disc in dark mode. Use a
+   translucent violet hover with light glyph so it stays on-theme. */
+[data-bs-theme="dark"] .tc-wl-btn:hover:not(:disabled) { background: rgba(124, 92, 252, .28); border-color: #a78bfa; color: #ffffff; box-shadow: 0 4px 12px rgba(124, 58, 237, .35); }
 [data-bs-theme="dark"] .tc-wl-info .tc-wl-hl { color: #ddd6fe; }
 [data-bs-theme="dark"] .tc-wl-rows select { color: #ddd6fe; }
 /* The native dropdown popup ignores the translucent pill background, so the

@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
 import api from '../../../api';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
+import { Shimmer } from '../../../components/ui/Shimmer';
 import TemplateEditor from './TemplateEditor';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
@@ -426,8 +427,50 @@ export default function TemplateFormPage() {
   // ── Render ─────────────────────────────────────────────────────────────────
   if (bootstrapping) {
     return (
-      <div className="rec-page" style={{ padding: 24 }}>
-        <Card><CardBody>Loading template…</CardBody></Card>
+      <div className="rec-page tpl-form-page">
+        {/* Header bar shimmer — mirrors the gradient strip + step indicators. */}
+        <Card className="mb-3" style={{ borderRadius: 14, overflow: 'hidden' }}>
+          <div style={{ padding: '16px 22px', background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%)' }}>
+            <div className="d-flex align-items-center gap-3">
+              <Shimmer width={36} height={36} radius={10} />
+              <Shimmer width={44} height={44} radius={12} />
+              <div className="flex-grow-1">
+                <Shimmer height={18} width="38%" />
+                <div style={{ height: 6 }} />
+                <Shimmer height={11} width="22%" />
+              </div>
+            </div>
+          </div>
+          <CardBody>
+            <div className="d-flex align-items-center gap-4 flex-wrap">
+              {[0, 1, 2].map(i => (
+                <div key={i} className="d-flex align-items-center gap-2">
+                  <Shimmer width={30} height={30} radius={999} />
+                  <Shimmer height={12} width={90} />
+                </div>
+              ))}
+            </div>
+          </CardBody>
+        </Card>
+        {/* Form body shimmer — a grid of label + field rows. */}
+        <Card style={{ borderRadius: 14 }}>
+          <CardBody>
+            <div className="row g-4">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div className="col-md-6" key={i}>
+                  <Shimmer height={11} width="35%" />
+                  <div style={{ height: 8 }} />
+                  <Shimmer height={40} radius={8} />
+                </div>
+              ))}
+              <div className="col-12">
+                <Shimmer height={11} width="20%" />
+                <div style={{ height: 8 }} />
+                <Shimmer height={120} radius={10} />
+              </div>
+            </div>
+          </CardBody>
+        </Card>
       </div>
     );
   }
