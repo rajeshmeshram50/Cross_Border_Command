@@ -1372,7 +1372,12 @@ export default function HrEmployees() {
         setEReportingMgr(`${mgrUserType}:${mgrUserId}`);
         const u = raw.reporting_manager_user;
         const nm = u?.name || u?.email || `User #${mgrUserId}`;
-        setSavedMgrOption({ value: `${mgrUserType}:${mgrUserId}`, label: nm });
+        // Label as "Name (Designation)" to match the dropdown options. Falls
+        // back to a readable user type (e.g. "Branch User") when the login
+        // user has no designation set — same shape as the managers() endpoint.
+        const desig = u?.designation?.trim()
+          || mgrUserType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        setSavedMgrOption({ value: `${mgrUserType}:${mgrUserId}`, label: `${nm} (${desig})` });
       } else {
         setEReportingMgr('');
         setSavedMgrOption(null);

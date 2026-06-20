@@ -191,7 +191,9 @@ class EmployeeController extends Controller
             ->where('onboarding_stage_completed', '>=', 6);
         $this->applyScope($eq, $user, $request->integer('branch_id') ?: null);
         $employees = $eq
-            ->select(['id', 'emp_code', 'display_name', 'first_name', 'last_name'])
+            // designation_id MUST be selected or the belongsTo('designation')
+            // eager-load returns null and every label falls back to "(Employee)".
+            ->select(['id', 'emp_code', 'display_name', 'first_name', 'last_name', 'designation_id'])
             ->with(['designation:id,name'])
             ->orderBy('display_name')
             ->get()

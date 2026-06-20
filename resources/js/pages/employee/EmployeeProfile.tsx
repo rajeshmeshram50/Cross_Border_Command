@@ -3449,14 +3449,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     </span>
                     <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>KYC Documents</h6>
                   </div>
-                  <span className="badge rounded-pill fw-semibold px-2 py-1" style={{ background: 'rgba(99,102,241,0.16)', color: '#4338ca', fontSize: 10.5 }}>3 / 4</span>
+                  <span className="badge rounded-pill fw-semibold px-2 py-1" style={{ background: 'rgba(99,102,241,0.16)', color: '#4338ca', fontSize: 10.5 }}>3 / 3</span>
                 </div>
                 <div className="px-3 py-3 flex-grow-1">
                   {[
                     { label: 'Aadhaar Card',   status: 'Uploaded' },
                     { label: 'PAN Card',       status: 'Uploaded' },
                     { label: 'Passport Photo', status: 'Uploaded' },
-                    { label: 'Address Proof',  status: 'Pending'  },
                   ].map(d => {
                     const uploaded = d.status === 'Uploaded';
                     return (
