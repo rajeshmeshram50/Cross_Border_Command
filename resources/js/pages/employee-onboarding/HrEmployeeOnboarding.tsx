@@ -2765,24 +2765,29 @@ export function VaultModal({
                     <>
                       <div style={{
                         marginTop: 24, paddingTop: 16,
-                        borderTop: '1px solid #f3f4f6',
+                        borderTop: `1px solid ${vaultDark ? 'rgba(255,255,255,0.10)' : '#f3f4f6'}`,
                         fontSize: 11, fontWeight: 800,
                         color: '#6b7280', letterSpacing: '0.08em',
                         textTransform: 'uppercase', marginBottom: 12,
                       }}>
                         Activity Log
                       </div>
-                      <div style={{ borderLeft: '2px solid #ede9fe', paddingLeft: 14, marginLeft: 8 }}>
+                      <div style={{ borderLeft: `2px solid ${vaultDark ? 'rgba(124,92,252,0.40)' : '#ede9fe'}`, paddingLeft: 14, marginLeft: 8 }}>
                         {auditRun.audit_log.slice().reverse().map((ev, i) => (
                           <div key={i} style={{ position: 'relative', marginBottom: 10 }}>
                             <span style={{
                               position: 'absolute',
-                              left: -22, top: 5,
+                              // Centre the 10px dot (+2px ring) on the 2px guide
+                              // line: line centre sits 15px left of the content
+                              // edge, so the content-box left = -20.
+                              left: -20, top: 4,
                               width: 10, height: 10,
                               borderRadius: '50%',
                               background: '#7c3aed',
-                              border: '2px solid #fff',
-                              boxShadow: '0 0 0 2px #ede9fe',
+                              // Ring matches the panel background so the dot reads
+                              // as sitting on the line (white ring glared on dark).
+                              border: `2px solid ${vaultDark ? 'var(--vz-secondary-bg, #1c2531)' : '#fff'}`,
+                              boxShadow: `0 0 0 2px ${vaultDark ? 'rgba(124,92,252,0.35)' : '#ede9fe'}`,
                             }} />
                             <div style={{ fontSize: 12.5, color: '#1f2937', fontWeight: 600 }}>
                               {ev.message}
@@ -7115,7 +7120,7 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
                 <div className="onb-pol-doc-meta">
                   <h6 className="onb-pol-doc-name">
                     {tpl.name || '(unnamed template)'}{' '}
-                    <span style={{ fontSize: 10.5, fontFamily: 'monospace', color: '#a16207', background: '#fef3c7', padding: '1px 6px', borderRadius: 4, marginLeft: 6 }}>{tpl.code}</span>
+                    <span className="vault-doc-code">{tpl.code}</span>
                     {tpl.status === 'Draft' && <span className="onb-doc-tag" style={{ marginLeft: 6 }}>Draft</span>}
                     {signers.length > 0 && (
                       <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 500 }}>

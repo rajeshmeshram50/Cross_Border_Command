@@ -382,6 +382,13 @@
         .vault-tab-btn.is-active { color: #5a3fd1; border-bottom-color: #7c5cfc; }
         .vault-tab-count { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 18px; padding: 0 6px; border-radius: 999px; background: var(--vz-light); color: var(--vz-secondary-color); font-size: 10.5px; font-weight: 700; }
         .vault-tab-btn.is-active .vault-tab-count { background: #ece6ff; color: #5a3fd1; }
+        /* Dark mode — the active tab's count chip was a light lavender block and
+           the active/hover text was a dark purple, both low-contrast on the dark
+           vault. Lift to translucent violet + light-violet text. */
+        [data-bs-theme="dark"] .vault-tab-count { background: rgba(255,255,255,0.10); color: rgba(255,255,255,0.72); }
+        [data-bs-theme="dark"] .vault-tab-btn.is-active .vault-tab-count { background: rgba(124,92,252,0.28); color: #c4b5fd; }
+        [data-bs-theme="dark"] .vault-tab-btn.is-active { color: #c4b5fd; border-bottom-color: #a78bfa; }
+        [data-bs-theme="dark"] .vault-tab-btn:hover { color: #c4b5fd; }
         .vault-doc-row { display: flex; align-items: center; gap: 14px; padding: 14px 4px; border-bottom: 1px solid var(--vz-border-color); }
         .vault-doc-row:last-child { border-bottom: none; }
         /* Wrapper card around the doc row + signing-workflow stepper.

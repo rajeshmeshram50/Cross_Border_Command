@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, Col, Row, Modal, ModalBody, Spinner, Input } from 'reactstrap';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
+import { useConfirm } from '../../contexts/ConfirmContext';
 import api from '../../api';
 import { ShimmerTableRows } from '../../components/ui/Shimmer';
 import Tooltip from '../../components/ui/Tooltip';
@@ -88,6 +89,7 @@ function formatDateTime(raw: any): string {
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function HrBroadcastCentre() {
   const toast = useToast();
+  const confirmDialog = useConfirm();
 
   const [rows, setRows] = useState<AnnRow[]>([]);
   const [stats, setStats] = useState<Stats>(ZERO_STATS);
@@ -147,13 +149,19 @@ export default function HrBroadcastCentre() {
   const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
   const goto = (p: number) => setPage(Math.max(1, Math.min(pageCount, p)));
 
+  // High-priority count isn't in the /stats payload (which is grouped by
+  // status), so derive it from the loaded list — rows holds every
+  // announcement (the table paginates client-side), so it's accurate.
+  const highPriorityCount = useMemo(() => rows.filter(r => r.priority === 'High').length, [rows]);
+
   // Same KPI shape the recruitment page uses — gradient on the top
   // accent strip + gradient on the icon tile + deep tone on the number.
   // Looks consistent with the rest of the HR module.
   const KPI_CARDS = [
-    { label: 'Total',     value: stats.total,     icon: 'ri-send-plane-fill',     gradient: 'linear-gradient(135deg,#299cdb 0%,#4dabf7 100%)', deep: '#1e6dd6' },
-    { label: 'Active',    value: stats.active,    icon: 'ri-checkbox-circle-fill',gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', deep: '#089d7a' },
-    { label: 'Draft',     value: stats.draft,     icon: 'ri-draft-line',          gradient: 'linear-gradient(135deg,#878a99 0%,#a3a6b4 100%)', deep: '#5b6478' },
+    { label: 'Total',         value: stats.total,       icon: 'ri-send-plane-fill',     gradient: 'linear-gradient(135deg,#299cdb 0%,#4dabf7 100%)', deep: '#1e6dd6' },
+    { label: 'Draft',         value: stats.draft,       icon: 'ri-draft-line',          gradient: 'linear-gradient(135deg,#878a99 0%,#a3a6b4 100%)', deep: '#5b6478' },
+    { label: 'Published',     value: stats.active,      icon: 'ri-checkbox-circle-fill',gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', deep: '#089d7a' },
+    { label: 'High Priority', value: highPriorityCount, icon: 'ri-fire-fill',           gradient: 'linear-gradient(135deg,#f06548 0%,#fb9b85 100%)', deep: '#c2410c' },
   ];
 
   const handleSaved = (saved: AnnRow) => {
@@ -168,7 +176,15 @@ export default function HrBroadcastCentre() {
   };
 
   const handleDelete = async (row: AnnRow) => {
-    if (!confirm(`Delete announcement ${row.code}? This cannot be undone.`)) return;
+    const ok = await confirmDialog({
+      title: 'Delete announcement',
+      message: <>Delete announcement <strong>{row.code}</strong>? This cannot be undone.</>,
+      tone: 'danger',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      icon: 'delete-bin-line',
+    });
+    if (!ok) return;
     try {
       await api.delete(`/announcements/${row.id}`);
       toast.success('Deleted', `${row.code} removed.`);
@@ -230,11 +246,10 @@ export default function HrBroadcastCentre() {
               </div>
             </div>
 
-            {/* KPI strip — explicit 5-column grid at xl+ so the cards
-                stretch the full width (default Col xl=2 leaves 16.67%
-                empty on the right since 5 × 2/12 = 10/12). Drops to
-                3 at md, 2 at sm, 1 at xs. */}
-            <Row className="g-2 mb-3 align-items-stretch rec-page-kpis row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-xl-5">
+            {/* KPI strip — 4 even columns at md+ so the cards stretch the
+                full width (Total / Draft / Published / High Priority). Drops
+                to 2 at sm, 1 at xs. */}
+            <Row className="g-2 mb-3 align-items-stretch rec-page-kpis row-cols-1 row-cols-sm-2 row-cols-md-4">
               {KPI_CARDS.map(k => (
                 <Col key={k.label}>
                   <div className="rec-kpi-card h-100">
@@ -350,11 +365,17 @@ export default function HrBroadcastCentre() {
                                       </button>
                                     </Tooltip>
                                   )}
-                                  <Tooltip label="Delete">
-                                    <button type="button" className="rec-act rec-act-reject rec-act--icon" aria-label="Delete" onClick={() => handleDelete(r)}>
-                                      <i className="ri-delete-bin-line" />
-                                    </button>
-                                  </Tooltip>
+                                  {/* Delete is only offered for Drafts — once an
+                                      announcement is published it's a record of what
+                                      went out and must not be removed; published rows
+                                      show View only. */}
+                                  {r.status === 'Draft' && (
+                                    <Tooltip label="Delete">
+                                      <button type="button" className="rec-act rec-act-reject rec-act--icon" aria-label="Delete" onClick={() => handleDelete(r)}>
+                                        <i className="ri-delete-bin-line" />
+                                      </button>
+                                    </Tooltip>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -454,15 +475,22 @@ function CreateAnnouncementModal({
   const [designations, setDesignations]         = useState<Array<{ id: number; name: string }>>([]);
   const [employees, setEmployees]               = useState<Array<{ id: number; display_name: string; emp_code?: string; primary_role_id?: number | null; ancillary_role_id?: number | null; designation_id?: number | null }>>([]);
 
-  const [saving, setSaving] = useState(false);
+  // Which action is in flight, so only the clicked footer button spins. A
+  // single boolean made Save Draft AND Publish show a loader on either click.
+  const [saving, setSaving] = useState<'draft' | 'publish' | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // A published announcement is a record of what went out — the View action
+  // opens this wizard read-only: the user can page through the steps to see
+  // the details, but Save Draft / Publish are hidden so it can't be re-saved.
+  const readOnly = !!editing && editing.status !== 'Draft';
 
   // Reset when opening / when editing row changes
   useEffect(() => {
     if (!isOpen) return;
     setStep(1);
     setErrors({});
-    setSaving(false);
+    setSaving(null);
     setAttachment(null);
 
     if (editing) {
@@ -611,7 +639,7 @@ function CreateAnnouncementModal({
 
   const handleSubmit = async (asDraft: boolean) => {
     if (!asDraft && !validateStep(1)) { setStep(1); return; }
-    setSaving(true);
+    setSaving(asDraft ? 'draft' : 'publish');
     try {
       const fd = buildPayload(asDraft ? 'Draft' : null);
       const isEdit = editing != null;
@@ -635,7 +663,7 @@ function CreateAnnouncementModal({
         toast.error('Could not save', err?.response?.data?.message || 'Please try again.');
       }
     } finally {
-      setSaving(false);
+      setSaving(null);
     }
   };
 
@@ -672,7 +700,7 @@ function CreateAnnouncementModal({
                 <i className="ri-send-plane-line" style={{ fontSize: 18, color: '#fff' }} />
               </span>
               <div>
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 16, lineHeight: 1.2 }}>{editing ? 'Edit Announcement' : 'Create Announcement'}</h5>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 16, lineHeight: 1.2 }}>{readOnly ? 'View Announcement' : editing ? 'Edit Announcement' : 'Create Announcement'}</h5>
                 <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>Manage company-wide communications and notifications</div>
               </div>
             </div>
@@ -796,33 +824,45 @@ function CreateAnnouncementModal({
         <div style={{ padding: '12px 16px', borderTop: '1px solid var(--vz-border-color, #e5e7eb)', background: 'var(--vz-secondary-bg, #fafafa)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span className="text-muted" style={{ fontSize: 12 }}>Step {step} of {TOTAL_STEPS}</span>
           <div className="d-flex gap-2">
-            <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+            <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={!!saving}>Cancel</button>
             {step > 1 && (
-              <button type="button" className="rec-btn-ghost" onClick={handleBack} disabled={saving}>
+              <button type="button" className="rec-btn-ghost" onClick={handleBack} disabled={!!saving}>
                 <i className="ri-arrow-left-line" />Back
               </button>
             )}
-            <button type="button" className="rec-btn-ghost" onClick={() => handleSubmit(true)} disabled={saving}>
-              {saving ? <Spinner size="sm" /> : <i className="ri-save-3-line" />}Save Draft
-            </button>
-            {step < TOTAL_STEPS ? (
-              <button type="button" className="rec-btn-primary" onClick={handleNext} disabled={saving}>
-                Save & Next<i className="ri-arrow-right-line" />
-              </button>
+            {/* Read-only (published) → no Save Draft / Publish; just let the
+                user page through to view, with Cancel to close. */}
+            {readOnly ? (
+              step < TOTAL_STEPS && (
+                <button type="button" className="rec-btn-primary" onClick={() => setStep(s => Math.min(TOTAL_STEPS, s + 1))}>
+                  Next<i className="ri-arrow-right-line" />
+                </button>
+              )
             ) : (
-              <button
-                type="button"
-                onClick={() => handleSubmit(false)}
-                disabled={saving}
-                style={{
-                  padding: '8px 18px', borderRadius: 10, border: 0,
-                  background: 'linear-gradient(135deg, #047857 0%, #10b981 100%)',
-                  color: '#fff', fontSize: 13, fontWeight: 700,
-                  display: 'inline-flex', alignItems: 'center', gap: 6,
-                }}
-              >
-                {saving ? <Spinner size="sm" /> : <i className="ri-send-plane-line" />}Publish
-              </button>
+              <>
+                <button type="button" className="rec-btn-ghost" onClick={() => handleSubmit(true)} disabled={!!saving}>
+                  {saving === 'draft' ? <Spinner size="sm" /> : <i className="ri-save-3-line" />}Save Draft
+                </button>
+                {step < TOTAL_STEPS ? (
+                  <button type="button" className="rec-btn-primary" onClick={handleNext} disabled={!!saving}>
+                    Save & Next<i className="ri-arrow-right-line" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleSubmit(false)}
+                    disabled={!!saving}
+                    style={{
+                      padding: '8px 18px', borderRadius: 10, border: 0,
+                      background: 'linear-gradient(135deg, #047857 0%, #10b981 100%)',
+                      color: '#fff', fontSize: 13, fontWeight: 700,
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                    }}
+                  >
+                    {saving === 'publish' ? <Spinner size="sm" /> : <i className="ri-send-plane-line" />}Publish
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>
