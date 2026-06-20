@@ -88,8 +88,7 @@ but since any action implies view, anyone with Edit/Delete/etc. always gets in.
 |---|---|
 | super_admin | client_admin only |
 | client_admin | branch_user only |
-| main branch_user | branch_user + employees in their client |
-| sub-branch_user | employees in their own branch |
+| branch_user | employees in their own branch |
 
 A granter can never hand out a flag they don't hold themselves. Because View is
 implied for the granter too, they can always delegate View alongside any action

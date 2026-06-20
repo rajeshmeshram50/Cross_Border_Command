@@ -42,8 +42,8 @@
 ### Notes
 
 - **Head Office (id=16)** is the auto-created placeholder stamped on signup. It has no login user attached and is hidden from the Branches list by default (visible with `?include_head_office=true`).
-- **Healthcare (id=18)** is the **main branch**. Its user (`healthcare@gmail.com`) has visibility across all sibling branches under IGC.
-- **Agriculture / Purvi / Vortex** are sub-branches. Their users see only their own branch's data.
+- **Healthcare (id=18)** is one of the branches. Every branch is an equal, isolated peer — its user (`healthcare@gmail.com`) sees only the Healthcare branch's data.
+- **Agriculture / Purvi / Vortex** are the other branches. Their users likewise see only their own branch's data. Only the client admin sees across all branches.
 
 ---
 
@@ -52,10 +52,10 @@
 | Role | URL | Email | Password |
 |---|---|---|---|
 | Client Admin | https://www.mailinator.com/v4/public/inboxes.jsp?to=igc | igc@mailinator.com | Test@123 |
-| Main Branch (Healthcare) | _(real Gmail)_ | healthcare@gmail.com | test@123 |
-| Sub Branch (Agriculture) | _(real Gmail)_ | agriculture@gmail.com | test@123 |
-| Sub Branch (Purvi) | _(real Gmail)_ | purvi@gmail.com | test@123 |
-| Sub Branch (Vortex) | _(real Gmail)_ | vortex@gmail.com | test@123 |
+| Branch (Healthcare) | _(real Gmail)_ | healthcare@gmail.com | test@123 |
+| Branch (Agriculture) | _(real Gmail)_ | agriculture@gmail.com | test@123 |
+| Branch (Purvi) | _(real Gmail)_ | purvi@gmail.com | test@123 |
+| Branch (Vortex) | _(real Gmail)_ | vortex@gmail.com | test@123 |
 
 ---
 
@@ -64,7 +64,7 @@
 | User | Sees |
 |---|---|
 | `igc@mailinator.com` (client_admin) | All 5 branches + all employees under IGC |
-| `healthcare@gmail.com` (main branch) | All sibling branches (Agriculture / Purvi / Vortex / Healthcare) + their data |
-| `agriculture@gmail.com` (sub branch) | Only Agriculture branch data |
-| `purvi@gmail.com` (sub branch) | Only Purvi branch data |
-| `vortex@gmail.com` (sub branch) | Only Vortex branch data |
+| `healthcare@gmail.com` (branch user) | Only Healthcare branch data |
+| `agriculture@gmail.com` (branch user) | Only Agriculture branch data |
+| `purvi@gmail.com` (branch user) | Only Purvi branch data |
+| `vortex@gmail.com` (branch user) | Only Vortex branch data |

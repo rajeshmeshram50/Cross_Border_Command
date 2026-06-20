@@ -12,7 +12,7 @@ Super Admin (SaaS Owner)
     │       │
     │       ├── Client Users (Org-level managers/viewers)
     │       │
-    │       ├── Main Branch ── [Can see ALL branches data]
+    │       ├── Branch 1 ── [equal, isolated peer]
     │       │       │
     │       │       ├── Branch Users / Employees
     │       │       └── Branch Users / Employees
@@ -51,8 +51,7 @@ Super Admin (SaaS Owner)
 
 ### Step 4: Client Adds Branches
 - Client creates branches under their organization
-- One branch can be marked as `is_main = true` (Main Branch)
-- Main Branch users can see ALL branches' data
+- Every branch is an equal, isolated peer — branch users see only their own branch's data; only the client admin sees across all branches
 
 ### Step 5: Branch Adds Employees/Users
 - Branch Manager adds users (employees)
@@ -186,11 +185,6 @@ CREATE TABLE branches (
     contact_person      VARCHAR(255) NULL,
     address             TEXT NULL,
     
-    -- Hierarchy
-    is_main             BOOLEAN NOT NULL DEFAULT FALSE,
-                        -- TRUE = Main Branch (can see ALL branches data)
-                        -- Only ONE per client
-    
     -- Status
     status              VARCHAR(20) NOT NULL DEFAULT 'active',
                         -- 'active', 'inactive'
@@ -202,12 +196,7 @@ CREATE TABLE branches (
 );
 
 CREATE INDEX idx_branches_client_id ON branches(client_id);
-CREATE INDEX idx_branches_is_main ON branches(is_main);
 CREATE INDEX idx_branches_status ON branches(status);
-
--- Ensure only ONE main branch per client
-CREATE UNIQUE INDEX idx_branches_one_main 
-    ON branches(client_id) WHERE is_main = TRUE AND deleted_at IS NULL;
 ```
 
 ---
@@ -599,8 +588,7 @@ switch ($user->user_type) {
         if ($user->branch->status !== 'active') {
             return error('Branch inactive');
         }
-        // Check if Main Branch
-        $isMainBranch = $user->branch->is_main;
+        // Branch users are scoped to their own branch (equal, isolated peers)
         break;
 }
 ```
@@ -613,8 +601,7 @@ switch ($user->user_type) {
 |------|-------------|
 | **One Login Table** | All users (admin, client, branch) login from `users` table |
 | **Client Activation** | Client must pay before accessing platform |
-| **One Main Branch** | Only 1 branch per client can be `is_main = true` |
-| **Main Branch Visibility** | Main branch users see ALL branches' data |
+| **Equal Branches** | Every branch is an isolated peer — branch users see only their own branch; only client admins see across branches |
 | **Permission Inheritance** | Child permissions cannot exceed parent |
 | **Plan Module Lock** | Modules not in plan show as locked |
 | **Maker-Checker** | Branch submits → Client Admin approves → Goes live |

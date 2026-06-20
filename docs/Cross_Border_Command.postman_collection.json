@@ -1105,11 +1105,6 @@
                                     "value": "India"
                                 },
                                 {
-                                    "key": "is_main",
-                                    "type": "text",
-                                    "value": "true"
-                                },
-                                {
                                     "key": "max_users",
                                     "type": "text",
                                     "value": "25"
@@ -1285,7 +1280,7 @@
                         "description": "`BranchController@update` — update a branch + branch_user; active→inactive cascades soft-deletes/token revocation, inactive→active restores.\n\nAuth: Bearer token required\nPath params: `{branch}` = branch id.",
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n  \"name\": \"Mumbai Head Office\",\n  \"status\": \"active\",\n  \"city\": \"Mumbai\",\n  \"state\": \"Maharashtra\",\n  \"is_main\": true,\n  \"max_users\": 30\n}",
+                            "raw": "{\n  \"name\": \"Mumbai Head Office\",\n  \"status\": \"active\",\n  \"city\": \"Mumbai\",\n  \"state\": \"Maharashtra\",\n  \"max_users\": 30\n}",
                             "options": {
                                 "raw": {
                                     "language": "json"
@@ -1326,7 +1321,7 @@
                                 }
                             ]
                         },
-                        "description": "`BranchController@destroy` — soft-deactivate a branch (status→inactive, soft-delete its users/employees, revoke tokens). Cannot delete the main branch.\n\nAuth: Bearer token required\nPath params: `{branch}` = branch id."
+                        "description": "`BranchController@destroy` — soft-deactivate a branch (status→inactive, soft-delete its users/employees, revoke tokens).\n\nAuth: Bearer token required\nPath params: `{branch}` = branch id."
                     },
                     "response": []
                 }
@@ -1981,7 +1976,7 @@
                                 "client-stats"
                             ]
                         },
-                        "description": "`DashboardController@clientStats` — client dashboard (branch/user/payment counts, plan, employee analytics). Cached 60s per client/branch/role. 422 if user has no client.\n\nAuth: Bearer token required\nQuery params: `branch_id` (optional integer) — scope to one branch (validated within the user's client; sub-branch users are locked to their own branch). Payment data is hidden from non-main-branch users."
+                        "description": "`DashboardController@clientStats` — client dashboard (branch/user/payment counts, plan, employee analytics). Cached 60s per client/branch/role. 422 if user has no client.\n\nAuth: Bearer token required\nQuery params: `branch_id` (optional integer) — scope to one branch (validated within the user's client; branch users are locked to their own branch). Payment data is hidden from branch users (client-admin only)."
                     },
                     "response": []
                 },
@@ -4097,7 +4092,7 @@
                                 }
                             ]
                         },
-                        "description": "`SalesPdfController@emailProformaInvoice` — render the PI PDF and email it to the customer; stamps `emailed_at` on first send. Requires write scope (normal branch users can't email main-branch records).\n\nAuth: Bearer token required\nPath params: `{id}` = PI id.",
+                        "description": "`SalesPdfController@emailProformaInvoice` — render the PI PDF and email it to the customer; stamps `emailed_at` on first send. Requires write scope (branch users can only email their own branch's records).\n\nAuth: Bearer token required\nPath params: `{id}` = PI id.",
                         "body": {
                             "mode": "raw",
                             "raw": "{\n  \"to\": \"buyer@alfalah.example\",\n  \"signature\": true\n}",
@@ -4963,7 +4958,7 @@
                                 }
                             ]
                         },
-                        "description": "`SalesTodoController@updateMeeting` — update a meeting; if `type` flips, a fresh code is re-allocated. Only own rows unless admin/main-branch.\n\nAuth: Bearer token required\nPath params: `{id}` = meeting id.",
+                        "description": "`SalesTodoController@updateMeeting` — update a meeting; if `type` flips, a fresh code is re-allocated. Only own rows unless admin (super_admin / client_admin / client_user).\n\nAuth: Bearer token required\nPath params: `{id}` = meeting id.",
                         "body": {
                             "mode": "raw",
                             "raw": "{\n  \"type\": \"physical\",\n  \"customer\": \"Al Falah Trading LLC\",\n  \"contact\": \"+91 9850558881\",\n  \"platform\": \"On-site\",\n  \"date\": \"2026-06-12\",\n  \"start_time\": \"11:00\",\n  \"end_time\": \"12:00\",\n  \"venue\": \"Solitaire Business Hub Baner Pune\",\n  \"agenda\": \"Final negotiation and contract signing\",\n  \"status\": \"in_progress\"\n}",
@@ -5008,7 +5003,7 @@
                                 }
                             ]
                         },
-                        "description": "`SalesTodoController@destroyMeeting` — soft-delete a meeting. Only own rows unless admin/main-branch.\n\nAuth: Bearer token required\nPath params: `{id}` = meeting id."
+                        "description": "`SalesTodoController@destroyMeeting` — soft-delete a meeting. Only own rows unless admin (super_admin / client_admin / client_user).\n\nAuth: Bearer token required\nPath params: `{id}` = meeting id."
                     },
                     "response": []
                 },
@@ -5197,7 +5192,7 @@
                                 }
                             ]
                         },
-                        "description": "`SalesTodoController@updateReminder` — update a reminder; replacing the attachment deletes the old file. Only own rows unless admin/main-branch.\n\nAuth: Bearer token required\nPath params: `{id}` = reminder id.",
+                        "description": "`SalesTodoController@updateReminder` — update a reminder; replacing the attachment deletes the old file. Only own rows unless admin (super_admin / client_admin / client_user).\n\nAuth: Bearer token required\nPath params: `{id}` = reminder id.",
                         "body": {
                             "mode": "formdata",
                             "formdata": [
@@ -5263,7 +5258,7 @@
                                 }
                             ]
                         },
-                        "description": "`SalesTodoController@destroyReminder` — delete a reminder (and its attachment file). Only own rows unless admin/main-branch.\n\nAuth: Bearer token required\nPath params: `{id}` = reminder id."
+                        "description": "`SalesTodoController@destroyReminder` — delete a reminder (and its attachment file). Only own rows unless admin (super_admin / client_admin / client_user).\n\nAuth: Bearer token required\nPath params: `{id}` = reminder id."
                     },
                     "response": []
                 },

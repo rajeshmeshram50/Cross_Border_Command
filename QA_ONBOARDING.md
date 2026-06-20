@@ -49,7 +49,7 @@ Super Admin  (SaaS owner — seeded, only 1)
    |     |
    |     +-- Client User      (org-level manager / viewer)
    |     |
-   |     +-- Main Branch      (is_main = true; sees ALL branches data)
+   |     +-- Branch 1         (equal, isolated peer; sees only own branch)
    |     |     +-- Branch Users (employees)
    |     |
    |     +-- Branch 2, Branch 3, ...
@@ -69,7 +69,7 @@ There are **4 user types** in the single `users` table (one login table for ever
 
 **Core business rules:**
 1. **Tenant isolation** — Client A must never see / read / write Client B's data. Highest-severity rule.
-2. **One main branch per client** (`is_main = true`).
+2. **Branch isolation** — every branch is an equal peer; a branch user sees only their own branch's data.
 3. **Permission inheritance** — child permissions cannot exceed parent.
 4. **Inactive client = blocked** — payment must succeed before that tenant's users can use the platform.
 5. **Soft delete** — `users`, `clients`, `branches` use `deleted_at`. Soft-deleted records must not appear in lists.
@@ -126,7 +126,7 @@ Defined under [database/migrations/](database/migrations/) and [app/Models/](app
 |---|---|
 | `users` | Single login table for super_admin / client_admin / client_user / branch_user |
 | `clients` | Organizations / tenants |
-| `branches` | Branches under each client (one is `is_main`) |
+| `branches` | Branches under each client (all equal, isolated peers) |
 | `plans` | Subscription plans (Starter / Basic / Pro / Business / Enterprise) |
 | `modules` | Platform modules (parent_id supports sub-modules) |
 | `plan_modules` | Which modules each plan unlocks (full / limited / addon / not_included) |
@@ -220,8 +220,8 @@ Pick plan → create order → pay (test mode) → verify-payment → client sta
 ### D. Permissions matrix
 Super Admin assigns module permissions to Client. Client Admin assigns to Branch / User. Child must NEVER exceed parent. `can_view = false` → menu / page / API hidden.
 
-### E. Main-branch visibility
-Main-branch user (`is_main = true`) sees all branches' data. Non-main user sees own branch only. Only one main branch per client — try creating two.
+### E. Branch visibility
+Every branch is an equal, isolated peer — a branch user sees only their own branch's data. Only the client admin sees across all branches. Verify a branch user cannot read a sibling branch's rows.
 
 ### F. Master CRUD (50+ tables)
 For each master: create / list / edit / delete + duplicate-name handling, validation, pagination, search. Endpoint pattern `/api/master/{slug}` — try invalid slugs, SQL injection in slug.
@@ -398,7 +398,7 @@ Severity: P0 / P1 / P2 / P3
 Environment: Local / Staging / Prod
 Browser + version: Chrome 130, Firefox 120, etc.
 User type used: super_admin / client_admin / client_user / branch_user
-Tenant (client) / branch: e.g. Client "Acme Inc" / Main Branch
+Tenant (client) / branch: e.g. Client "Acme Inc" / Mumbai Branch
 
 Steps to reproduce:
 1.

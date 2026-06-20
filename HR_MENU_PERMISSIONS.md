@@ -106,7 +106,7 @@ Same as every other module:
 
 - **Super admin** has implicit access to everything
 - **Client admin** (after plan activation) can grant any HR leaf permission to branch users — subject to plan-module restrictions if HR is later wired into Plan modules
-- **Main branch user** can grant HR leaves to other users in their own branch (via the BUG-17 fix)
+- **Branch user** can grant HR leaves to employees in their own branch (via the BUG-17 fix)
 - Each leaf supports the 7 standard flags: `can_view`, `can_add`, `can_edit`, `can_delete`, `can_export`, `can_import`, `can_approve`
 - Parents (`hr`, `hr.command`, etc.) cannot have permissions — they only group leaves visually
 

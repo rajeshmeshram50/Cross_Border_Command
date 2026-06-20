@@ -451,7 +451,6 @@ curl -X POST 'http://127.0.0.1:8000/api/branches' \
   --form 'state=Maharashtra' \
   --form 'pincode=400093' \
   --form 'country=India' \
-  --form 'is_main=true' \
   --form 'max_users=25' \
   --form 'status=active' \
   --form 'user_name=Anil Kulkarni' \
@@ -467,7 +466,7 @@ curl -X POST 'http://127.0.0.1:8000/api/branches' \
 - Optional: `code` (max:50, auto BR-### if blank), `email` (email), `phone`/`user_phone` (regex 7–20 chars), `website` (URL regex), `contact_person`, `branch_type`, `industry`, `description`.
 - Legal/export: `gst_number` (GSTIN regex, unique per client), `pan_number` (PAN regex, unique per client), `registration_number`, `gst_state_code` (max:10), `cin` (max:30), `iec` (max:30), `drug_license`, `pcpndt_no`, `aeo_code`, `one_star_file_no`, `one_star_udin_no` (each max:60).
 - Address: `address`, `city`, `district`, `taluka`, `state`, `pincode` (max:10), `country`.
-- Flags/files: `is_main` (bool), `max_users` (int, min:0), `established_at` (date), `notes`, `logo`/`profile_photo` (image, max 2 MB), `signature_path` (image jpg/jpeg/png/webp, max 2 MB), `primary_color`/`secondary_color` (max:7), `user_designation` (max:100), `user_status` (active|inactive|pending).
+- Flags/files: `max_users` (int, min:0), `established_at` (date), `notes`, `logo`/`profile_photo` (image, max 2 MB), `signature_path` (image jpg/jpeg/png/webp, max 2 MB), `primary_color`/`secondary_color` (max:7), `user_designation` (max:100), `user_status` (active|inactive|pending).
 
 ---
 
@@ -525,7 +524,6 @@ curl -X PUT 'http://127.0.0.1:8000/api/branches/8' \
   "status": "active",
   "city": "Mumbai",
   "state": "Maharashtra",
-  "is_main": true,
   "max_users": 30
 }'
 ```
@@ -535,7 +533,7 @@ curl -X PUT 'http://127.0.0.1:8000/api/branches/8' \
 ---
 
 ### DELETE /api/branches/{branch}
-**Action:** `BranchController@destroy` — soft-deactivate a branch (status→inactive, soft-delete its users/employees, revoke tokens). Cannot delete the main branch.
+**Action:** `BranchController@destroy` — soft-deactivate a branch (status→inactive, soft-delete its users/employees, revoke tokens).
 **Auth:** Bearer token required
 **Path params:** `{branch}` = branch id.
 
@@ -781,7 +779,7 @@ curl -X POST 'http://127.0.0.1:8000/api/permissions/user/57' \
 - `permissions` (required, array).
 - `permissions.*.module_id` (required, exists:modules,id).
 - `permissions.*.can_view` / `can_add` / `can_edit` / `can_delete` / `can_export` / `can_import` / `can_approve` (boolean, optional — default false).
-- Grant scope: super_admin → client_admin only; client_admin → branch_user only; main-branch user → branch_user + employee; sub-branch user → employees in their own branch.
+- Grant scope: super_admin → client_admin only; client_admin → branch_user only; branch_user → employees in their own branch.
 
 ---
 
@@ -858,7 +856,7 @@ curl -X GET 'http://127.0.0.1:8000/api/dashboard/admin-stats' \
 ### GET /api/dashboard/client-stats
 **Action:** `DashboardController@clientStats` — client dashboard (branch/user/payment counts, plan, employee analytics). Cached 60s per client/branch/role. 422 if user has no client.
 **Auth:** Bearer token required
-**Query params:** `branch_id` (optional integer) — scope to one branch (validated within the user's client; sub-branch users are locked to their own branch). Payment data is hidden from non-main-branch users.
+**Query params:** `branch_id` (optional integer) — scope to one branch (validated within the user's client; branch users are locked to their own branch). Payment data is hidden from branch users (client-admin only).
 
 ```bash
 curl -X GET 'http://127.0.0.1:8000/api/dashboard/client-stats?branch_id=8' \

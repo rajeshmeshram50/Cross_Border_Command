@@ -409,7 +409,7 @@ $bankOk = preg_match('/^[A-Z]{4}0[A-Z0-9]{6}$/', $ifsc) && preg_match('/^\d{6,18
 4. Row lock — [PayrollService.php:440](../app/Services/PayrollService.php#L440): `PayrollPeriod::whereKey()->lockForUpdate()` serialises concurrent generate.
 
 **Small points:**
-- Protects the main-branch vs sub-branch same-month overlap.
+- Protects the cross-branch same-month overlap.
 - Row lock prevents the double-click / two-HR-user race that previously created duplicate slip sets.
 
 **QA cases:**

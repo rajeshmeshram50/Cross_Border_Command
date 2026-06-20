@@ -20,13 +20,12 @@ Cross_Border_Command is a **multi-tenant SaaS HRMS / operations platform**. Each
 ```
 Super Admin
    └── Client (tenant)
-         └── Branch  (one branch per client may be is_main = true → "Main Branch")
+         └── Branch  (every branch is an equal, isolated peer)
                └── User (branch_user, employee, etc.)
                      └── Permissions (per-module RBAC)
 ```
 - **client_admin** sees everything inside their client
-- **main_branch user** sees their own branch AND all sibling branches under the same client
-- **branch_user** (non-main) sees only their own branch
+- **branch_user** sees only their own branch (every branch is an isolated peer)
 - **super_admin** has no tenant attachment; sees every client
 
 ### 1.4 User types (User.user_type)
@@ -35,7 +34,7 @@ Super Admin
 | `super_admin` | Operates the SaaS itself |
 | `client_admin` | Owns a tenant org (the Client) |
 | `client_user` | Standard user inside a tenant (legacy / minimal) |
-| `branch_user` | Belongs to a branch; main-branch user has wider scope |
+| `branch_user` | Belongs to a branch; scoped to that branch only (equal, isolated peers) |
 | `employee` | HR-managed; may or may not have user-login enabled |
 
 ### 1.5 Plans & subscription
@@ -57,7 +56,7 @@ Super Admin
 ### 1.7 High-level feature areas
 1. Auth (login, Google login, OTP forgot password, change password, profile, branding)
 2. Clients (super-admin CRUD, soft delete, status, stats)
-3. Branches (client-admin CRUD, main-branch flag, branch user provisioning)
+3. Branches (client-admin CRUD, branch user provisioning)
 4. Employees / HRMS (CRUD, ancillary roles, documents, exit, previous employment, onboarding invites)
 5. Permissions (module list, manageable users, get/save user permissions, cascade-clear on plan downgrade or admin-revoke)
 6. Plans + Subscriptions (plans CRUD, subscription create-order/verify/cancel, Razorpay webhook)
@@ -84,7 +83,7 @@ Super Admin
 ## PART 2 — TEST PLAN
 
 ### 2.1 Test environment prerequisites
-- DB seeded with: 1 super_admin, ≥2 active clients (each with ≥2 branches incl. one `is_main=true`), ≥1 employee per branch, ≥3 plans (Starter free, Basic paid, Enterprise paid).
+- DB seeded with: 1 super_admin, ≥2 active clients (each with ≥2 branches), ≥1 employee per branch, ≥3 plans (Starter free, Basic paid, Enterprise paid).
 - SMTP working (gmail.com:587, app password set in `.env`).
 - Razorpay keys set in `.env` (test mode).
 - Browser DevTools open during UI tests to capture XHRs.
@@ -96,8 +95,8 @@ Super Admin
 |---|---|---|---|
 | Super Admin | super@cbc.test | Test@123 | Platform-wide |
 | Client Admin (Client A) | admin-a@cbc.test | Test@123 | Tenant A |
-| Main Branch User (Client A) | main-a@cbc.test | Test@123 | Branch A1 (`is_main=true`) |
-| Sub Branch User (Client A) | sub-a@cbc.test | Test@123 | Branch A2 (`is_main=false`) |
+| Branch User A1 (Client A) | branch-a1@cbc.test | Test@123 | Branch A1 |
+| Branch User A2 (Client A) | branch-a2@cbc.test | Test@123 | Branch A2 |
 | Employee (Client A) | emp-a@cbc.test | Test@123 | Linked to a branch in A |
 | Client Admin (Client B) | admin-b@cbc.test | Test@123 | Tenant B (data-isolation reference) |
 
@@ -113,8 +112,8 @@ Each case below uses: `ID | Title | Preconditions | Steps | Expected | Severity`
 |---|---|---|---|---|
 | AUTH-001 | Login with valid super_admin credentials | super_admin user exists, status=active | POST /api/login with correct email+password | 200, `token` and `user` returned, `user.user_type=super_admin` |
 | AUTH-002 | Login with valid client_admin | client_admin status=active, client.status=active | Login | 200, user.client_id set, plan info populated |
-| AUTH-003 | Login with valid branch_user (main) | main-branch user, branch.status=active | Login | 200, `is_main_branch=true` |
-| AUTH-004 | Login with valid branch_user (sub) | non-main branch user | Login | 200, `is_main_branch=false` |
+| AUTH-003 | Login with valid branch_user | branch_user, branch.status=active | Login | 200, user.branch_id set, scoped to own branch |
+| AUTH-004 | Login with second branch_user | a different branch's user | Login | 200, sees only their own branch's data |
 | AUTH-005 | Login with valid employee user | employee user_type | Login | 200, `employee_id` and `employee_code` populated |
 | AUTH-006 | Login with wrong password | Any user | POST with bad password | 422, error: "Invalid email or password" |
 | AUTH-007 | Login with non-existent email | — | POST /api/login | 422, same generic error (no user enumeration) |
@@ -227,7 +226,7 @@ Each case below uses: `ID | Title | Preconditions | Steps | Expected | Severity`
 | BR-008 | Create branch with malformed website | website="not-a-url" | POST | 422, regex error |
 | BR-009 | Create branch with duplicate GSTIN per client | — | POST | 422, "This GSTIN is already registered to another branch" |
 | BR-010 | Create branch with duplicate user_email anywhere | Email exists in users | POST | 422, "This email is already registered" |
-| BR-011 | Create branch as is_main=true with another main present | Client has main branch X | POST new branch is_main=true | 201, X.is_main flipped to false (only one main allowed) |
+| BR-011 | Create a second branch under a client | Client already has branch X | POST new branch | 201, both branches exist as equal peers (no privileged "main") |
 | BR-012 | View single branch (own client) | client_admin | GET /api/branches/{id} | 200, includes branch_user info |
 | BR-013 | View branch across tenant | client_admin A → branch under B | GET | 403, "Unauthorized" |
 | BR-014 | Update branch (rename, no name conflict) | — | PUT new name | 200 |
@@ -236,7 +235,7 @@ Each case below uses: `ID | Title | Preconditions | Steps | Expected | Severity`
 | BR-017 | Update branch user email | — | PUT user_email=Y | 200, branch user's email changed |
 | BR-018 | Update branch status to inactive | — | PUT status=inactive | 200, **all branch users' tokens revoked** for that branch |
 | BR-019 | Soft-delete branch | — | DELETE /api/branches/{id} | 200, branch and its users soft-deleted; tokens killed |
-| BR-020 | Plan downgrade prunes excess branches | Was Pro (25 max), down to Basic (5 max), have 8 branches | Downgrade subscription | After activation, 3 oldest non-main branches deactivated; main preserved |
+| BR-020 | Plan downgrade prunes excess branches | Was Pro (25 max), down to Basic (5 max), have 8 branches | Downgrade subscription | After activation, excess branches deactivated down to the cap (any branch may be kept/retired — no privileged "main") |
 
 ---
 
@@ -246,8 +245,8 @@ Each case below uses: `ID | Title | Preconditions | Steps | Expected | Severity`
 | ID | Title | Preconditions | Steps | Expected |
 |---|---|---|---|---|
 | EMP-001 | List employees as client_admin | — | GET /api/employees | 200, all employees in own client |
-| EMP-002 | List employees as main_branch user | — | GET | 200, all employees across sibling branches |
-| EMP-003 | List employees as sub-branch user | — | GET | 200, only employees in own branch |
+| EMP-002 | List employees as client_admin (all branches) | — | GET | 200, all employees across the client's branches |
+| EMP-003 | List employees as branch_user | — | GET | 200, only employees in own branch |
 | EMP-004 | Get next emp_code | — | GET /api/employees/next-code | 200, format `EMP-NNN` |
 | EMP-005 | Get reporting managers list | — | GET /api/employees/managers | 200, names and IDs |
 | EMP-006 | Create employee with full payload | — | POST /api/employees | 201, row + linked User created (if login_enabled), **WelcomeCredentialsMail** sent |
@@ -299,8 +298,8 @@ Each case below uses: `ID | Title | Preconditions | Steps | Expected | Severity`
 | PERM-001 | List modules | Logged in | GET /api/modules | 200, tree of modules with parent_id, slug, icon |
 | PERM-002 | manageableUsers as super_admin | — | GET /api/permissions/users | 200, list of client_admins (active org only) |
 | PERM-003 | manageableUsers as client_admin | — | GET | 200, branch_users + employees in own client (excluding self) |
-| PERM-004 | manageableUsers as main_branch user | — | GET | 200, branch_users + employees across sibling branches (excluding self) |
-| PERM-005 | manageableUsers as non-main branch_user | — | GET | 200, returns empty collection |
+| PERM-004 | manageableUsers as branch_user | — | GET | 200, only employees in own branch (excluding self) |
+| PERM-005 | manageableUsers as employee | — | GET | 200, returns empty collection |
 | PERM-006 | getUserPermissions for self | — | GET /api/permissions/user/{self} | 200, own perms |
 | PERM-007 | getUserPermissions for orphan employee (NULL client_id) by client_admin | — | GET | 200, allowed (per orphan-adoption rule) |
 | PERM-008 | getUserPermissions cross-tenant | client_admin A → user under B | GET | 403 |
@@ -328,7 +327,7 @@ Each case below uses: `ID | Title | Preconditions | Steps | Expected | Severity`
 | PLAN-007 | Cancel pending order | — | POST /api/subscription/cancel-order | 200, payment.status=failed |
 | PLAN-008 | Subscribe with branches > new plan limit | Have 8 branches, downgrade to Basic (5 max) | Provide `kept_branch_ids` array | 200, only kept branches stay active |
 | PLAN-009 | Subscribe without `kept_branch_ids` when over limit | Same as above | POST without selection | 422, "must include kept_branch_ids" |
-| PLAN-010 | `kept_branch_ids` must include the main branch | List excludes is_main | POST | 422 |
+| PLAN-010 | `kept_branch_ids` honoured on downgrade | Over-limit client picks branches to keep | POST with kept_branch_ids | 200, only the selected branches stay active (any branch may be kept) |
 | PLAN-011 | Plan CRUD as super_admin | — | POST/PUT/DELETE /api/plans | 200/201, status changes |
 | PLAN-012 | Plan CRUD as non-super_admin | client_admin | DELETE /api/plans/{id} | 403 |
 | PLAN-013 | Razorpay webhook valid signature `payment.captured` | — | POST /api/razorpay/webhook | 200, payment.status=success, **PaymentInvoiceMail** dispatched |
@@ -522,9 +521,9 @@ Each case below uses: `ID | Title | Preconditions | Steps | Expected | Severity`
 | TEN-002 | client_admin A view employee in B | GET /api/employees/{B-id} | 403 / 404 |
 | TEN-003 | client_admin A update branch in B | PUT /api/branches/{B-id} | 403, "Unauthorized" |
 | TEN-004 | client_admin A list clients | GET /api/clients | 403 (super_admin only) |
-| TEN-005 | branch_user (sub) list permissions users | GET /api/permissions/users | Empty collection (sub branch users can't manage) |
-| TEN-006 | Main-branch user sees siblings | branch=A1 (main), siblings A2/A3 | GET /api/employees | All employees across A1+A2+A3 |
-| TEN-007 | Sub-branch user sees only own | branch=A2 (not main) | GET /api/employees | Only A2 employees |
+| TEN-005 | employee list permissions users | GET /api/permissions/users | Empty collection (employees can't manage) |
+| TEN-006 | client_admin sees all branches | branches A1/A2/A3 under client A | GET /api/employees | All employees across A1+A2+A3 |
+| TEN-007 | branch_user sees only own branch | branch=A2 | GET /api/employees | Only A2 employees (sibling branches hidden) |
 | TEN-008 | Plan limits scoped to client | Client A on Pro (25), Client B on Starter (1) | A creates branch | B's limit unaffected |
 
 ---
@@ -542,7 +541,7 @@ Each case below uses: `ID | Title | Preconditions | Steps | Expected | Severity`
 | UI-005 | HrEmployees table | Multi-ancillary roles render as "Role A +2"; clicking +N opens popover with all roles |
 | UI-006 | Employee profile | Multi-ancillary chips show in 3 places: hero, Job Title (Secondary), Role & Positioning |
 | UI-007 | Employee profile direct URL | `/hr/employees/{id}/profile` opened directly without state — should still load (currently has bug E2 — see TENANT_BUGS list) |
-| UI-008 | Branch switcher | Main-branch user can switch between sibling branches; sub-branch user has no switcher |
+| UI-008 | Branch switcher | Client admin can switch between branches; branch users + employees have no switcher (locked to own branch) |
 | UI-009 | Forgot password UI | Form: send-otp → verify-otp → set-password → see success toast → redirect to login |
 | UI-010 | Plan upgrade | Razorpay modal opens, payment flow completes, plan activates within ~5s |
 
@@ -554,7 +553,7 @@ Each case below uses: `ID | Title | Preconditions | Steps | Expected | Severity`
 |---|---|---|
 | Employee profile drops chips on direct URL load (no state) | **Bug** | resources/js/pages/employee/EmployeeProfile.tsx |
 | Hardcoded mock data on profile (Joining Date "29-Apr-2026", Legal Entity, Probation, etc.) | **Bug** | EmployeeProfile.tsx lines 1440, 1487, 1489, 1557-1560 |
-| Main-branch user revoking own permission does NOT cascade-clear downstream | **Bug** | PermissionController.php:254 (cascade only fires for super_admin → client_admin) |
+| branch_user revoking own permission does NOT cascade-clear downstream | **Bug** | PermissionController.php:254 (cascade only fires for super_admin → client_admin) |
 | Orphan employees not visible in /permissions/users picker (but reachable via HR) | UX gap | PermissionController.php manageableUsers() |
 | HR mega-menu `useLayoutEffect` has no dep array — runs on every render | Perf/Minor | HorizontalLayout/index.tsx |
 | HR mega-menu only handles overflowLeft, ignores overflowRight | Mobile | HorizontalLayout/index.tsx clamp logic |
@@ -580,9 +579,9 @@ $admin = App\Models\User::create([
   'name'=>'QA Admin','email'=>'qa-admin@cbc.test','user_type'=>'client_admin',
   'password'=>Hash::make('Test@123'),'client_id'=>$client->id,'status'=>'active',
 ]);
-foreach (['Main','North','South'] as $i => $b) {
+foreach (['East','North','South'] as $i => $b) {
   $branch = App\Models\Branch::create([
-    'client_id'=>$client->id,'name'=>"QA $b Branch",'is_main'=>$i===0,
+    'client_id'=>$client->id,'name'=>"QA $b Branch",
     'status'=>'active','country'=>'India','created_by'=>$admin->id,
   ]);
   App\Models\User::create([

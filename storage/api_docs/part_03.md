@@ -392,7 +392,7 @@ curl -X POST 'http://127.0.0.1:8000/api/sales/proforma-invoices/30/preview-pdf?s
 **Body fields:** none (uses `?signature=` query flag).
 
 ### POST /api/sales/proforma-invoices/{id}/email
-**Action:** `SalesPdfController@emailProformaInvoice` — render the PI PDF and email it to the customer; stamps `emailed_at` on first send. Requires write scope (normal branch users can't email main-branch records).
+**Action:** `SalesPdfController@emailProformaInvoice` — render the PI PDF and email it to the customer; stamps `emailed_at` on first send. Requires write scope (branch users can only email their own branch's records).
 **Auth:** Bearer token required
 **Path params:** `{id}` = PI id.
 
@@ -657,7 +657,7 @@ curl -X POST 'http://127.0.0.1:8000/api/sales/shipment-orders/8' \
 
 ## SalesTodoController
 
-Productivity tracker: reminders + meetings. Default scope is "mine" (own rows); admins / main-branch users may pass `?scope=all`. Free-text fields enforce a letters/digits/spaces-only rule. Meeting codes are `M-###` (virtual) / `P-###` (physical).
+Productivity tracker: reminders + meetings. Default scope is "mine" (own rows); admins (super_admin / client_admin / client_user) may pass `?scope=all`. Free-text fields enforce a letters/digits/spaces-only rule. Meeting codes are `M-###` (virtual) / `P-###` (physical).
 
 ### GET /api/sales/meetings
 **Action:** `SalesTodoController@listMeetings` — list meetings (scoped); ordered by date desc.
@@ -717,7 +717,7 @@ curl -X GET 'http://127.0.0.1:8000/api/sales/meetings/next-code?type=physical' \
 ```
 
 ### PUT /api/sales/meetings/{id}
-**Action:** `SalesTodoController@updateMeeting` — update a meeting; if `type` flips, a fresh code is re-allocated. Only own rows unless admin/main-branch.
+**Action:** `SalesTodoController@updateMeeting` — update a meeting; if `type` flips, a fresh code is re-allocated. Only own rows unless admin (super_admin / client_admin / client_user).
 **Auth:** Bearer token required
 **Path params:** `{id}` = meeting id.
 
@@ -742,7 +742,7 @@ curl -X PUT 'http://127.0.0.1:8000/api/sales/meetings/17' \
 **Body fields:** same rule set as `storeMeeting` (`type`, `customer`, `contact`, `platform`, `date`, `start_time`, `end_time`, `agenda` required; `link`/`venue` conditionally required by type).
 
 ### DELETE /api/sales/meetings/{id}
-**Action:** `SalesTodoController@destroyMeeting` — soft-delete a meeting. Only own rows unless admin/main-branch.
+**Action:** `SalesTodoController@destroyMeeting` — soft-delete a meeting. Only own rows unless admin (super_admin / client_admin / client_user).
 **Auth:** Bearer token required
 **Path params:** `{id}` = meeting id.
 
@@ -801,7 +801,7 @@ curl -X POST 'http://127.0.0.1:8000/api/sales/reminders' \
 - `attachment` (optional file — `png,jpg,jpeg,pdf,doc,docx,xls,xlsx,csv`, max 20480 KB).
 
 ### PUT /api/sales/reminders/{id}
-**Action:** `SalesTodoController@updateReminder` — update a reminder; replacing the attachment deletes the old file. Only own rows unless admin/main-branch.
+**Action:** `SalesTodoController@updateReminder` — update a reminder; replacing the attachment deletes the old file. Only own rows unless admin (super_admin / client_admin / client_user).
 **Auth:** Bearer token required
 **Path params:** `{id}` = reminder id.
 
@@ -818,7 +818,7 @@ curl -X PUT 'http://127.0.0.1:8000/api/sales/reminders/9' \
 **Body fields:** same rule set as `storeReminder` (`subject` + `set_date` required; others optional). Send as multipart when attaching a file.
 
 ### DELETE /api/sales/reminders/{id}
-**Action:** `SalesTodoController@destroyReminder` — delete a reminder (and its attachment file). Only own rows unless admin/main-branch.
+**Action:** `SalesTodoController@destroyReminder` — delete a reminder (and its attachment file). Only own rows unless admin (super_admin / client_admin / client_user).
 **Auth:** Bearer token required
 **Path params:** `{id}` = reminder id.
 

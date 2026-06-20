@@ -56,7 +56,6 @@ erDiagram
         int created_by FK
         string name
         string code
-        boolean is_main
         string status
     }
     USERS {

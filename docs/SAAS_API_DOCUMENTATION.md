@@ -13,7 +13,7 @@
 - **Base URL:** every route below is prefixed with `/api` by Laravel. E.g. `POST /login` is really `POST /api/login`.
 - **Local base:** `http://127.0.0.1:8000/api`.
 - **Auth:** unless a route is in the **Public** section, you must send `Authorization: Bearer <sanctum_token>`.
-- **Branch scoping:** the React Axios client auto-appends `?branch_id=<active branch>` on **every GET**. When testing by hand you can add it manually — but note it is only honoured for roles that can switch branches (super_admin, client_*, main-branch admin). Sub-branch users and employees have it silently ignored (see [Data Visibility](#data-visibility-note)).
+- **Branch scoping:** the React Axios client auto-appends `?branch_id=<active branch>` on **every GET**. When testing by hand you can add it manually — but note it is only honoured for roles that can switch branches (super_admin, client_admin, client_user). Branch users and employees have it silently ignored (every branch is an isolated peer; see [Data Visibility](#data-visibility-note)).
 - **Response shapes:**
   - Collection → `{ "data": [...], "meta": {...}? }`
   - Single item → `{ "data": {...} }`
@@ -452,10 +452,9 @@ Index/list endpoints for Customers, Consignees, Vendors, Products, CLM signature
 |---|---|
 | super_admin | all rows (optionally narrowed by `?branch_id`) |
 | client_admin / client_user | all the client's rows + globals |
-| **main-branch** branch_user | all the client's rows (every sub-branch + every main-branch employee) |
-| **sub-branch** branch_user | globals + client-level + own branch + rows created by the **main-branch admin** — but NOT main-branch employees' rows |
-| employee | globals + client-level + **only own rows** + main-branch-admin rows (peer employees hidden from each other) |
+| **branch_user** | globals + client-level + own branch only (every branch is an isolated peer; sibling branches hidden) |
+| employee | globals + client-level + **only own rows** (peer employees hidden from each other) |
 
-Mutate (PUT/DELETE) adds a second gate (`hierarchicalDenial`): own rows always editable; employees can only edit their own rows; otherwise the caller's tier must be ≥ the row's tier (super > client > main-branch > sub-branch). Deep-diving this is the answer to most "why does user X get a 403 / why is the list empty" questions. Full rules in [SAAS_TECHNICAL_DOCUMENTATION.md](SAAS_TECHNICAL_DOCUMENTATION.md#data-visibility) and [SAAS_FUNCTIONAL_DOCUMENTATION.md](SAAS_FUNCTIONAL_DOCUMENTATION.md#data-visibility).
+Mutate (PUT/DELETE) adds a second gate (`hierarchicalDenial`): own rows always editable; employees can only edit their own rows; otherwise the caller's tier must be ≥ the row's tier (super > client > branch). Deep-diving this is the answer to most "why does user X get a 403 / why is the list empty" questions. Full rules in [SAAS_TECHNICAL_DOCUMENTATION.md](SAAS_TECHNICAL_DOCUMENTATION.md#data-visibility) and [SAAS_FUNCTIONAL_DOCUMENTATION.md](SAAS_FUNCTIONAL_DOCUMENTATION.md#data-visibility).
 
 > ⚠️ **Sales Matrix & CLM API endpoints are not yet flag-checked server-side** — the menu/page is hidden on the frontend, but a deep-linked API call isn't blocked. Master data + HR core/documents **are** enforced server-side. Log a separate finding if API-level enforcement matters for a test.

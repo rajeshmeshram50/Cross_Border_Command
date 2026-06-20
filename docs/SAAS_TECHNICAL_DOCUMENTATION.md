@@ -65,19 +65,16 @@ External: Razorpay · Zoho Sign · Google OAuth · IndiaMart · Azure Blob
 
 ## <a id="data-visibility"></a>3. DATA VISIBILITY ENGINE (in depth)
 
-**File:** [app/Support/MasterVisibility.php](../app/Support/MasterVisibility.php). Models expose it via a `scopeForUser($user)` query scope (Customer, Consignee, Vendor, ClmSignatureRequest, master models). This is the authoritative answer to "main branch vs normal branch — who sees what".
+**File:** [app/Support/MasterVisibility.php](../app/Support/MasterVisibility.php). Models expose it via a `scopeForUser($user)` query scope (Customer, Consignee, Vendor, ClmSignatureRequest, master models). This is the authoritative answer to "who sees what". Every branch is an equal, isolated peer.
 
 ### 3.1 Tenant tree & tiers
 ```
 Client
- └── Main Branch (is_main = true)
-       ├── Main-branch branch_user  (admin — rows = shared REFERENCE DATA, cascade down)
-       ├── Main-branch employees    (rows = PRIVATE, peer-isolated)
-       └── Sub Branches (is_main = false)
-             ├── Sub-branch branch_user (branch admin)
-             └── Sub-branch employees   (peer-isolated)
+ └── Branches (all equal, isolated peers — no privileged "main")
+       ├── Branch branch_user  (branch admin — scoped to own branch)
+       └── Branch employees    (peer-isolated)
 ```
-Tier constants: `super=5 > client=4 > main=3 > sub=2 > none=0`.
+Tier constants: `super=5 > client=4 > branch=2 > none=0`.
 
 ### 3.2 READ scope — `applyReadScope(Builder $q, $user, ?int $branchFilter)`
 
@@ -88,12 +85,11 @@ The method short-circuits per role:
 | no user | `WHERE 1=0` (sees nothing) |
 | `super_admin` | no client filter; if `$branchFilter` set → `WHERE branch_id = ?` |
 | `client_admin` / `client_user` | `WHERE client_id IS NULL OR client_id = <client>` + optional switcher narrowing |
-| `employee` | globals **OR** (`client_id = <client>` AND (`branch_id IS NULL` **OR** `created_by = self` **OR** `created_by IN <main-branch admin ids>`)). Switcher ignored. |
-| `branch_user` **main** | `WHERE client_id IS NULL OR client_id = <client>` + optional switcher narrowing (sees whole client) |
-| `branch_user` **sub** | globals **OR** (`client_id = <client>` AND (`branch_id IS NULL` **OR** `branch_id = <own>` **OR** `created_by IN <main-branch admin ids>`)). Switcher ignored. |
+| `employee` | globals **OR** (`client_id = <client>` AND (`branch_id IS NULL` **OR** `created_by = self`)). Switcher ignored. |
+| `branch_user` | globals **OR** (`client_id = <client>` AND (`branch_id IS NULL` **OR** `branch_id = <own>`)). Switcher ignored — own branch only. |
 | unknown `user_type` | `WHERE 1=0` |
 
-**`<main-branch admin ids>`** = ids of `branch_user`s whose branch `is_main = true` for that client (resolved once per query). This is how main-branch *admin* rows cascade down to sub-branches/employees, while main-branch *employee* rows stay private (they're not in that id set).
+There is no cross-branch "reference data" cascade — a branch user sees only their own branch's rows (plus globals and client-level rows).
 
 ### 3.3 WRITE/DELETE gate — `hierarchicalDenial(?User $user, $row, string $action): ?string`
 Returns `null` if allowed, else a human-readable denial string (used to 403 in `update`/`destroy`). Order of checks:
@@ -104,22 +100,21 @@ Returns `null` if allowed, else a human-readable denial string (used to 403 in `
 4. Compute **row tier from the row's own stamps** (not the creator's current state):
    - no `client_id` → super tier
    - `client_id` but no `branch_id` → client tier
-   - else look up the branch: `is_main` → main tier, else sub tier
-5. Allow iff `rowTier <= userTier`; else 403 *"it was created by {the Main Branch / another Branch / a Client user / a Super Admin}"*.
+   - else → branch tier
+5. Allow iff `rowTier <= userTier`; else 403 *"it was created by {another Branch / a Client user / a Super Admin}"*.
 
-**Why row tier comes from stamps, not the live creator:** if a creator later moves main→sub branch, their old main-branch rows must stay main-tier — otherwise sibling sub-branch users could suddenly delete them. The `created_by` user is resolved only to refine the error label. The fallback to stamps is also what protects rows with NULL/stale/deleted `created_by` (seeded/migrated data) from becoming deletable by any tier.
+**Why row tier comes from stamps, not the live creator:** if a creator later moves between branches, their old rows must stay classified by where they were stamped — otherwise another branch's users could suddenly reach them. The `created_by` user is resolved only to refine the error label. The fallback to stamps is also what protects rows with NULL/stale/deleted `created_by` (seeded/migrated data) from becoming deletable by any tier.
 
 ### 3.4 Branch Switcher narrowing — `applySwitcherBranchFilter`
-Only roles that pass through it (super, client_*, main-branch) honour `?branch_id`. A `branch_id` not belonging to the caller's client is silently dropped. Sub-branch users and employees never reach it.
+Only roles that pass through it (super, client_admin, client_user) honour `?branch_id`. A `branch_id` not belonging to the caller's client is silently dropped. Branch users and employees never reach it (they're locked to their own branch).
 
 ### 3.5 Quick lookup matrix
 | Viewer | Reads | Can edit/delete |
 |---|---|---|
 | super_admin | all | all |
 | client_admin/user | whole client + globals | row tier ≤ client (everything in client) |
-| main-branch admin | whole client + globals | row tier ≤ main (own + sub + main; not client/super unless own) |
-| sub-branch admin | own branch + main-admin reference + globals | own rows + rows with tier ≤ sub |
-| employee | own rows + main-admin reference + globals | **own rows only** |
+| branch_user | own branch + client-level + globals | own rows + rows with tier ≤ branch (own branch) |
+| employee | own rows + client-level + globals | **own rows only** |
 
 ---
 

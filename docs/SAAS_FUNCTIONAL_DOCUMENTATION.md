@@ -18,7 +18,7 @@ Cross_Border_Command is a **multi-tenant SaaS ERP for export/import (cross-borde
 ### The hierarchy
 ```
 Client (the company that bought the SaaS)
- └── Branch  (their offices — exactly one is the MAIN branch, is_main = true)
+ └── Branch  (their offices — every branch is an equal, isolated peer)
        └── User (an employee login within a branch)
 ```
 
@@ -28,11 +28,10 @@ Client (the company that bought the SaaS)
 | `super_admin` | Platform owner (you/the vendor) | Across all clients; dedicated `/admin-stats` |
 | `client_admin` | The buyer's top admin | Everything inside their client |
 | `client_user` | Client-level staff | Everything inside their client |
-| `branch_user` (main branch) | Admin of the MAIN branch | Everything inside the client (all sub-branches + all employees) |
-| `branch_user` (sub branch) | Admin of a sub-branch | Their branch + reference data the main-branch admin created |
-| `employee` | Ordinary staff | Their own rows + reference data (peer-isolated) |
+| `branch_user` | Admin of a branch | Their own branch only (every branch is an isolated peer) |
+| `employee` | Ordinary staff | Their own rows + client-level reference data (peer-isolated) |
 
-> **Key distinction the docs hammer on:** a `branch_user` in the **main** branch is effectively a client-wide admin; a `branch_user` in a **sub** branch is not. The line between "main branch" and "normal branch" is the single biggest driver of who-sees-what.
+> **Key distinction the docs hammer on:** every branch is an equal, isolated peer — a `branch_user` sees only their own branch's data; only `client_admin`/`client_user` see across all branches. There is no privileged "main" branch.
 
 ### Two authorization layers
 1. **Module permissions** (`Permission` model, the *Permissions sheet*): per-user View/Add/Edit/Delete/Export/Import/Approve flags on each leaf module.
@@ -46,27 +45,23 @@ This is the part to internalise. Tenant data is **not** scoped by a flat `client
 
 ### 3.1 The tier ladder
 ```
-super_admin (5)  >  client_admin / client_user (4)  >  main-branch user (3)  >  sub-branch user (2)  >  none (0)
+super_admin (5)  >  client_admin / client_user (4)  >  branch_user / employee (2)  >  none (0)
 ```
 
 ### 3.2 READ — what each role sees in a list/index
 
-| Logged in as | Globals (client_id = NULL) | Client-level rows (branch_id = NULL) | Own branch rows | Other sub-branch rows | Main-branch ADMIN rows | Main-branch EMPLOYEE rows | Own rows |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **super_admin** | ✅ all clients | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **client_admin / client_user** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **main-branch branch_user** | ✅ | ✅ | ✅ | ✅ (every sub-branch) | ✅ | ✅ | ✅ |
-| **sub-branch branch_user** | ✅ | ✅ | ✅ (own only) | ❌ | ✅ (reference data) | ❌ | ✅ |
-| **employee** (any branch) | ✅ | ✅ | ❌ (peers hidden) | ❌ | ✅ (reference data) | ❌ | ✅ (only own) |
+| Logged in as | Globals (client_id = NULL) | Client-level rows (branch_id = NULL) | Own branch rows | Other branches' rows | Own rows |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **super_admin** | ✅ all clients | ✅ | ✅ | ✅ | ✅ |
+| **client_admin / client_user** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **branch_user** | ✅ | ✅ | ✅ (own only) | ❌ | ✅ |
+| **employee** (any branch) | ✅ | ✅ | ❌ (peers hidden) | ❌ | ✅ (only own) |
 
 **Plain-English summary:**
 - **Super admin** sees everything across every client. Can narrow with the Branch Switcher.
 - **Client admin / client user** see the whole client.
-- **Main-branch admin** = client-wide admin: sees every sub-branch's data and every main-branch employee's data.
-- **Sub-branch admin** sees their own branch, plus anything the **main-branch admin** created (treated as shared "reference data" that cascades down). They do **not** see sibling sub-branches, and they do **not** see main-branch *employees'* personal rows.
-- **Employee** is **peer-isolated**: they see only the rows they personally created, plus globals/client-level rows, plus main-branch-admin reference data. **Two employees in the same branch cannot see each other's rows.**
-
-> Why "main-branch admin rows cascade but main-branch employee rows don't": the main-branch admin's rows are treated as company reference data (e.g. shared customers/products). An individual main-branch employee's records are personal and stay private to them, exactly like any other employee.
+- **Branch user** sees their own branch only — every branch is an isolated peer. They do **not** see sibling branches.
+- **Employee** is **peer-isolated**: they see only the rows they personally created, plus globals/client-level rows. **Two employees in the same branch cannot see each other's rows.**
 
 ### 3.3 WRITE/DELETE — who can edit or delete a row (`hierarchicalDenial`)
 
@@ -75,16 +70,16 @@ A second gate runs on update/delete even when a row is visible:
 1. **super_admin** → can mutate anything.
 2. **The row's own creator** (`created_by == you`) → always allowed.
 3. **employee** → can ONLY mutate rows they created themselves. Even a row their own branch admin created is read-only to them. (403: *"employees can only manage rows they created themselves."*)
-4. **Everyone else** → your tier must be **≥ the row's tier**. A sub-branch admin cannot edit a main-branch or client-level row (403: *"it was created by the Main Branch / a Client user / a Super Admin."*).
+4. **Everyone else** → your tier must be **≥ the row's tier**. A branch user cannot edit a client-level row (403: *"it was created by a Client user / a Super Admin."*).
 
-**Important subtlety (a real bug this prevents):** a row's tier is derived from the row's **own** `client_id`/`branch_id` stamps at create time — *not* from the creator's current branch. So if an employee is later moved from the main branch to a sub-branch, their old main-branch rows stay classified as main-branch rows and don't suddenly become editable by sibling sub-branch users.
+**Important subtlety (a real bug this prevents):** a row's tier is derived from the row's **own** `client_id`/`branch_id` stamps at create time — *not* from the creator's current branch. So if a user is later moved between branches, their old rows stay classified by where they were stamped and don't suddenly become editable by another branch's users.
 
 ### 3.4 Branch Switcher interaction
-The Axios client injects `?branch_id=<active>` on GETs. It only narrows results for roles that *can* switch (super_admin, client_*, main-branch admin). For sub-branch users and employees the filter is **silently ignored** — they already have a fixed, narrower scope. A cross-tenant `branch_id` is always dropped.
+The Axios client injects `?branch_id=<active>` on GETs. It only narrows results for roles that *can* switch (super_admin, client_admin, client_user). For branch users and employees the filter is **silently ignored** — they already have a fixed, narrower scope (their own branch). A cross-tenant `branch_id` is always dropped.
 
 ### 3.5 QA reproduction recipe
 To test "why can't user X see/edit row Y":
-1. Identify X's `user_type` and whether X's branch is `is_main`.
+1. Identify X's `user_type` and `branch_id`.
 2. Identify row Y's `created_by`, `client_id`, `branch_id`.
 3. Walk the READ table (§3.2) for visibility, then the WRITE rules (§3.3) for edit/delete.
 4. Test tenant: **IGC GROUP** (client id 12) is the main local multi-branch test client — logins/branch layout in [IGC_CLIENT.md](IGC_CLIENT.md).
@@ -104,8 +99,7 @@ Each leaf module carries **7 flags**: `can_view`, `can_add`, `can_edit`, `can_de
 |---|---|
 | super_admin | client_admin only |
 | client_admin | branch_user only |
-| main-branch branch_user | branch_user + employees in their client |
-| sub-branch branch_user | employees in their own branch |
+| branch_user | employees in their own branch |
 
 A granter can never hand out a flag they don't hold.
 

@@ -126,11 +126,11 @@ super_admin (admin@saas.com)
    │     ├── client_admin    (owner — set during client create)
    │     ├── client_user[]   (org-level managers/viewers — no branch_id)
    │     │
-   │     ├── Branch 1 (is_main=true)
+   │     ├── Branch 1 (equal, isolated peer)
    │     │     ├── branch_user (HR-equivalent for that branch)
    │     │     ├── employee[]
    │     │
-   │     ├── Branch 2 (is_main=false, sub-branch)
+   │     ├── Branch 2 (equal, isolated peer)
    │     │     ├── branch_user
    │     │     ├── employee[]
    │     │
@@ -146,12 +146,12 @@ super_admin (admin@saas.com)
 | `super_admin` | NULL | NULL | SaaS platform owner. Seeded — only one row. |
 | `client_admin` | set | NULL | Organization owner. Created when super_admin creates a Client. |
 | `client_user` | set | NULL | Org-wide manager/viewer. Auxiliary admin role. |
-| `branch_user` | set | set | Branch's HR / ops admin. Main vs sub determined by `branches.is_main`. |
+| `branch_user` | set | set | Branch's HR / ops admin. Scoped to their own branch (every branch is an equal, isolated peer). |
 | `employee` | set | set | Regular staff. Linked 1:1 to `employees` row via `users.id = employees.user_id`. |
 
 ### Core business rules
 1. **Tenant isolation** — Client A's data must NEVER be visible to Client B. Enforced per-controller via `applyScope()` walking `client_id` + `branch_id`.
-2. **One main branch per client** (`is_main=true`). Main branch users see ALL branches of their client.
+2. **Branch isolation** — every branch is an equal peer; a branch user sees only their own branch's data. Only client admins see across all branches.
 3. **Permission inheritance** — A user cannot grant a permission they don't have themselves. Cascades downwards on revoke.
 4. **Inactive client = blocked** — Client status `inactive`/`suspended`/`pending` blocks ALL of its users from login. Existing tokens are revoked.
 5. **Soft delete** — `users`, `clients`, `branches`, `employees`, etc. use `deleted_at`. Soft-deleted rows hidden from lists unless tab=Disabled.
@@ -236,8 +236,7 @@ Each row gates ONE user on ONE leaf module with 7 boolean flags:
 |---|---|---|
 | super_admin | client_admin | Permissions page in main sidebar |
 | client_admin | branch_user only (NOT employees) | Permissions page |
-| main_branch_user | branch_user + employee under client | Permissions page |
-| sub-branch user | employee under same branch | Permissions page (limited) |
+| branch_user | employees in their own branch | Permissions page (limited) |
 | anyone else | nothing | Page hidden |
 
 ### Inheritance rule (enforced server-side)
@@ -272,8 +271,7 @@ This is BUG-02 from the QA verification — a known UX issue, not a security hol
 | super_admin | Nothing | — | — |
 | client_admin | Dropdown | "All Branches" | Yes — any branch in their client |
 | client_user | Dropdown | "All Branches" | Yes |
-| main_branch_user (`branch_user` + `is_main=true`) | Dropdown | Their own branch | Yes |
-| sub_branch_user | **Read-only label** | Locked to own branch | **No** |
+| branch_user | **Read-only label** | Locked to own branch | **No** |
 | employee | **Read-only label** | Locked to own branch | **No** |
 
 ### Persistence
@@ -286,7 +284,7 @@ Selected branch is stored per-user in `localStorage` key `cbc_selected_branch_id
 Every list controller's `applyScope()`:
 1. Resolves user's tenant scope (client_id, branch_id)
 2. Validates incoming `?branch_id=` belongs to user's client (else silently ignored — no cross-tenant leak)
-3. Sub-branch users are **server-locked** regardless of frontend filter
+3. Branch users are **server-locked** to their own branch regardless of frontend filter
 
 ---
 
@@ -390,7 +388,7 @@ Full CRUD over the `clients` table. Endpoints: `apiResource('clients')`.
 
 **On create:**
 1. Client row inserted with `plan_type='free'`, `status='inactive'`
-2. Default branch auto-created: `<OrgName> — Head Office` with `code='HO'`, `is_main=false` (the **HO placeholder** is hidden from Branches list — placeholder so the client_admin user has a `branch_id` FK target)
+2. Default branch auto-created: `<OrgName> — Head Office` with `code='HO'` (the **HO placeholder** is hidden from Branches list — placeholder so the client_admin user has a `branch_id` FK target)
 3. Client admin user provisioned with `user_type='client_admin'`, hash-bcrypt password
 4. Welcome email sent (`WelcomeCredentialsMail`) — gated by Settings → notifications.newUser
 
@@ -515,7 +513,7 @@ SYSTEM
 Note: The **HR** menu group is NOT shown to client_admin by default (product call — HR runs at branch level). Direct URL access (e.g. `/hr/employees`) still works.
 
 ### Client Dashboard (`/dashboard`)
-Backed by `GET /api/dashboard/client-stats`. Honors `?branch_id` for main-branch users (sub-branch users locked).
+Backed by `GET /api/dashboard/client-stats`. Honors `?branch_id` for client admins (branch users are locked to their own branch).
 
 **KPI strip:**
 - Total Branches / Active Branches
@@ -525,7 +523,7 @@ Backed by `GET /api/dashboard/client-stats`. Honors `?branch_id` for main-branch
 
 **Plan info card:** Plan name, status (active/expired/no_plan), days remaining, monthly price.
 
-**Payment trend chart** (last 6 months) — only renders for client_admin + main_branch_user (sub-branch users get zeroes).
+**Payment trend chart** (last 6 months) — only renders for client_admin (branch users get zeroes).
 
 **Recent payments table** — same gating.
 
@@ -554,7 +552,6 @@ Full CRUD over branches. Excludes the auto-created "Head Office" placeholder (ro
 - **Branch Info:** name (unique within client), code, email, phone, website, contact_person, branch_type, industry, description
 - **Legal:** gst_number (regex + unique per client), pan_number (regex + unique per client), registration_number
 - **Address:** address, city, district, taluka, state, pincode, country
-- **Hierarchy:** is_main (toggling ON unsets is_main on any other branch in the client — exactly one main)
 - **Limits:** max_users, established_at, status
 - **Branding:** logo, profile_photo, primary_color, secondary_color
 - **Branch User credentials:** user_name, user_email, user_password, user_phone, user_designation, user_status
@@ -563,7 +560,7 @@ Full CRUD over branches. Excludes the auto-created "Head Office" placeholder (ro
 
 **On status flip active → inactive:** Revokes all Sanctum tokens for users in this branch — same pattern as Client deactivation.
 
-**On delete:** Blocks if `is_main=true` (must transfer main first). Otherwise revokes tokens, soft-deletes users, soft-deletes branch.
+**On delete:** Revokes tokens, soft-deletes users, soft-deletes branch.
 
 **Auto branch code:** BR-001, BR-002, … per client (`peekNextBranchCode` + `allocateBranchCode` with `lockForUpdate`).
 
@@ -601,7 +598,7 @@ Backed by `PlanSelection.tsx`. Powered by `SubscriptionController`.
 Per the per-module `can_view` flag granted by super_admin. Typically client_admin can see all client-level masters (departments, designations, roles, KPIs, legal entities, vendor directory, etc.) but NOT super-admin global masters (countries, states are still read-visible globally).
 
 ### Permissions module (client_admin scope)
-Client admin grants to `branch_user` rows ONLY (not employees — main_branch_user handles that). Inheritance: cannot grant a flag they don't have themselves.
+Client admin grants to `branch_user` rows ONLY (not employees — a branch_user grants to employees in its own branch). Inheritance: cannot grant a flag they don't have themselves.
 
 ### Profile module
 - Personal info: name, phone, designation
@@ -636,18 +633,12 @@ In practice client_user is rare — most installs use client_admin + branch_user
 
 `branch_user` is the HR/ops admin for a specific branch. Has both `client_id` and `branch_id`. Two flavors:
 
-### Main Branch User (`branch.is_main = true`)
-**Scope:** Sees ALL branches under the client. Can switch BranchSwitcher freely or view "All Branches".
-- All HR data across all branches visible
-- Can pick any branch as filter
-- Granted permissions over branch_users + employees in any branch
-- Treated as "head office HR" for the org
-
-### Sub-Branch User (`branch.is_main = false`)
-**Scope:** **Strictly locked** to their own branch's data. BranchSwitcher renders as read-only label.
+### Branch User (`branch_user`)
+**Scope:** **Strictly locked** to their own branch's data — every branch is an equal, isolated peer. BranchSwitcher renders as a read-only label.
 - Backend `applyScope()` rewrites their incoming `?branch_id` to their own — cross-tenant ids silently dropped
 - Sees only their branch's employees, candidates, expense claims, leaves, recruitments, announcements
-- Master tables: sees globally-owned (NULL client_id) + their client_id rows + their branch_id rows + main-branch's rows (shared template data)
+- Master tables: sees globally-owned (NULL client_id) + client-level rows (NULL branch_id) + their own branch's rows
+- Grants permissions to employees in their own branch only
 
 ### Sidebar layout for branch_user
 ```
@@ -692,7 +683,7 @@ SYSTEM
 ```
 
 ### Branch Dashboard
-Same data as Client Dashboard but scoped to the branch (or all branches if main). Includes all employee analytics + face biometric counts + payment trends (only for main_branch_user).
+Same data as Client Dashboard but scoped to the user's own branch. Includes all employee analytics + face biometric counts. Payment trends are client-level and not shown to branch users.
 
 ### Branch HR responsibilities
 Branch user runs HR for their scope:
@@ -707,9 +698,9 @@ Branch user runs HR for their scope:
 - Handle exits
 
 ### Branch user CANNOT
-- Manage other branches (sub-branch user)
-- Grant permissions outside their branch (sub-branch) — only client_admin / main_branch_user can grant cross-branch
-- View payments / billing (sub-branch — only main_branch_user sees the org's payment data)
+- Manage or see other branches (every branch is an isolated peer)
+- Grant permissions outside their own branch — only client_admin can grant across branches
+- View payments / billing — only the client_admin sees the org's payment data
 - Edit/delete records created by client_admin (hierarchical guard)
 
 ### Profile module
@@ -939,7 +930,7 @@ Card-grid view of all 50+ masters. Each card shows:
 - **Active / Inactive / Total** count badges (loaded in ONE batch via `GET /api/master-counts`)
 - "Open" button → routes to `/master/:slug`
 
-Permission-gated: only masters with `can_view=true` for the current user render. Sub-branch users see fewer masters.
+Permission-gated: only masters with `can_view=true` for the current user render. Branch users see only their own branch's master rows.
 
 ### Generic MasterPage (`/master/:slug`)
 Powered by a single component (`MasterPage.tsx` — 3719 lines) that reads `masterConfigs.ts` for the slug's field/column/seed definitions and renders:
@@ -970,9 +961,8 @@ The `uFields` array in `masterConfigs.ts` decides per-row uniqueness:
 Same `applyScope()` pattern as employees:
 - **super_admin** → sees everything
 - **client_admin/user** → NULL client_id (global) + own client_id
-- **main_branch_user** → NULL client_id + own client_id (all branches)
-- **sub_branch_user** → NULL client_id + own client_id (only client-level NULL branch_id OR own branch_id OR main_branch_id rows)
-- **employee** → same as sub_branch_user
+- **branch_user** → NULL client_id + own client_id (client-level NULL branch_id OR own branch_id rows only)
+- **employee** → NULL client_id + own client_id (client-level NULL branch_id OR own rows only; peer-isolated)
 
 ### Hierarchical edit/delete
 Same rule everywhere: lower-ranked user cannot edit/delete records created by higher-ranked. `super_admin=3 > client_admin=client_user=2 > branch_user=1`. Friendly 403 message tells you who created it.
@@ -1568,8 +1558,8 @@ Admin viewing another's profile passes explicit `employee_id` / `employee_code` 
 Complex `ensureTenantAccess` + `applyTenantScope`:
 - super_admin → all
 - client_admin/user → same client_id
-- main_branch_user → all branches of client
-- sub_branch_user / employee → own branch + main_branch + globally-owned + own claims + claims where I'm the manager
+- branch_user → own branch + globally-owned + client-level rows
+- employee → own branch + globally-owned + own claims + claims where I'm the manager
 
 ### Attachment download
 `GET /api/expense-claims/{id}/attachments/{index}` — query-token auth (`?token=<sanctum>`). Lives OUTSIDE sanctum middleware for plain `<a>` clicks.

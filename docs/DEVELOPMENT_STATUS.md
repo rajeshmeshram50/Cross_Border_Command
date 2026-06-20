@@ -54,9 +54,9 @@
 ## 1.3 Branch Switching
 | Feature | Status | Notes |
 |---|---|---|
-| Branch switcher (dropdown / badge) | ✅ | Dropdown for main-branch + client admin; static badge for sub-branch/employee |
+| Branch switcher (dropdown / badge) | ✅ | Dropdown for client admin; static badge for branch users / employees (locked to own branch) |
 | Auto-inject `branch_id` on GETs | ✅ | Axios interceptor; per-call opt-out supported |
-| Sub-branch user lock | ✅ | Forced to own branch |
+| Branch user lock | ✅ | Forced to own branch (every branch is an isolated peer) |
 | Full reload on switch | ✅ | Re-fetches all data fresh |
 
 ## 1.4 Notifications & Feedback
@@ -163,9 +163,9 @@
 | Feature | Status | Notes |
 |---|---|---|
 | List modules (tree) | ✅ | Parent/child, leaf-only grants |
-| Get user permissions | ✅ | Self/super/client/sub-branch scoping |
+| Get user permissions | ✅ | Self/super/client/branch scoping |
 | Save with cascade | ✅ | Downstream revoke, orphan adoption, 7-bit flag matrix |
-| Grant-scope enforcement | ✅ | super→client_admin, client_admin→branch, main-branch→branch+employee, sub→own-branch employees |
+| Grant-scope enforcement | ✅ | super→client_admin, client_admin→branch_user, branch_user→own-branch employees |
 | 7 permission flags | ✅ | view/add/edit/delete/export/import/approve |
 | ClientPermissions + EmployeePermissions pages | ✅ | PermissionMatrix UI, admin-only slugs hidden |
 
@@ -229,7 +229,7 @@
 | Payment success ring | ✅ |
 | Branches list + recent payments | ✅ |
 | Team-roles chip row | ✅ |
-| Branch filtering + payment gating for sub-branch | ✅ |
+| Branch filtering + payment gating for branch users | ✅ |
 
 ## 4.3 Branch Dashboard (Workforce Analytics)
 | Widget | Status |
