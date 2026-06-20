@@ -1536,6 +1536,9 @@
   line-height: 1;
 }
 .rec-act--icon > span { display: none; }
+/* …but NOT a loading spinner — the rule above hid the publish/processing
+   spinner span, so the icon vanished with nothing in its place. */
+.rec-act--icon > span.spinner-border { display: inline-block; width: 14px; height: 14px; border-width: 2px; }
 
 /* In icon-only mode, neutralise the bold solid Create-Recruitment treatment
    and use the same soft violet chrome as the View button so all action
