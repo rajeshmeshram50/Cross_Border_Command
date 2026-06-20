@@ -77,7 +77,9 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
   // stage change and the Stage-2 preview can render the same logo/header/footer.
   const [header, setHeader] = useState<HeaderConfig>(DEFAULT_HEADER);
   const [footer, setFooter] = useState<FooterConfig>(DEFAULT_FOOTER);
-  useEffect(() => { if (org?.name) setHeader(h => h.title === DEFAULT_HEADER.title ? { ...h, title: org.name } : h); }, [org]);
+  // Note: the selected organization is intentionally NOT injected into the
+  // document header title — the org name should not appear in the draft's
+  // top-right corner. The header title stays user-configurable (Stage 1).
 
   const errMsg = (e: unknown) => (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
   const refreshRecord = async (id?: number | null) => {
