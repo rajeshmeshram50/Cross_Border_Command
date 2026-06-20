@@ -1066,7 +1066,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
               /* Final repository → the fully-signed PDF returned by Zoho Sign. */
               <iframe title="Signed document" src={`${signedUrl}#toolbar=1&navpanes=0&view=FitH`} style={{ width: '100%', height: '100%', minHeight: 560, border: 'none', borderRadius: 6, background: '#fff', boxShadow: '0 2px 14px rgba(0,0,0,.12)' }} />
             ) : (
-            <div style={{ maxWidth: 600, margin: '0 auto', background: t.dark ? '#1a1530' : '#fff', borderRadius: 6, boxShadow: '0 2px 12px rgba(0,0,0,.1)', padding: '36px 40px', position: 'relative' }}>
+            <div style={{ width: '100%', maxWidth: 820, margin: '0 auto', background: t.dark ? '#1a1530' : '#fff', borderRadius: 6, boxShadow: '0 2px 12px rgba(0,0,0,.1)', padding: '36px 48px', position: 'relative' }}>
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 5, background: stage === 4 ? 'linear-gradient(90deg,#047857,#059669,#10B981)' : 'linear-gradient(90deg,#4C1D95,#7C3AED,#A78BFA)', borderRadius: '6px 6px 0 0' }} />
               {/* Configured document header from Stage 1 — logo + title are
                   free-positioned via logo_pos / title_pos (% of the band, centre

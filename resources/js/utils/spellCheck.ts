@@ -9,8 +9,10 @@
  *
  *   1. Common misspellings — a curated typo → correction map (gives a
  *      suggestion the writer can act on).
- *   2. Gibberish / keyboard-mash tokens — words with no vowels, a letter
- *      repeated 3+ times, or a 6+ consonant run (e.g. "sdfghjkl").
+ *   2. Gibberish / keyboard-mash tokens — words (3+ letters) with no vowels,
+ *      a letter repeated 3+ times, or a 6+ consonant run (e.g. "tst",
+ *      "sdfghjkl"). A short allow-list keeps vowel-less abbreviations
+ *      (Ltd, Pvt, Mfg…) from being flagged.
  *
  * All-uppercase acronyms (DGFT, FSSAI, GST…) and numbers are skipped, and
  * the gibberish rules ignore acronyms, so false positives are rare.
@@ -65,15 +67,20 @@ const COMMON_MISSPELLINGS: Record<string, string> = {
 
 const VOWELS = new Set(['a', 'e', 'i', 'o', 'u', 'y']);
 
+/* Vowel-less words that are nonetheless valid — common business/trade
+ * abbreviations. Without this list the no-vowel rule below would wrongly flag
+ * "Ltd", "Pvt", "Mfg" etc. (all real, all vowel-less). */
+const NO_VOWEL_OK = new Set(['ltd', 'pvt', 'mfg', 'pkg', 'mrs', 'hrs', 'pcs', 'kgs', 'mts', 'gms', 'tbd', 'fyi', 'nb']);
+
 /* Looks like a typo even though it's not in the misspelling map. Applied only
  * to real word tokens (letters), skipping all-uppercase acronyms. */
 function looksLikeGibberish(lower: string, original: string): boolean {
-  if (lower.length < 4) return false;
+  if (lower.length < 3) return false;
   if (original === original.toUpperCase()) return false;       // acronym (GST, DGFT…)
   if (/(.)\1\1/.test(lower)) return true;                       // same letter 3+ in a row
   let hasVowel = false;
   for (const ch of lower) if (VOWELS.has(ch)) { hasVowel = true; break; }
-  if (!hasVowel) return true;                                   // no vowel at all
+  if (!hasVowel) return NO_VOWEL_OK.has(lower) ? false : true;  // no vowel → typo (e.g. "tst"), unless a known abbrev
   if (/[bcdfghjklmnpqrstvwxz]{6,}/.test(lower)) return true;    // 6+ consonant run
   return false;
 }
