@@ -333,7 +333,13 @@ export default function ClmCaseToCasePage() {
                             <ActBtn t={t} tone="green" title="Download signed copy / latest PDF" onClick={() => downloadContract(c)}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                             </ActBtn>
-                            <ActBtn t={t} tone="violet" title="Edit CTC" onClick={() => { setEditing(c); setFormOpen(true); }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg></ActBtn>
+                            {/* Once signed, the agreement is locked → show a view (eye) icon
+                                instead of edit; opening it lands on the view-only stage. */}
+                            {c.status === 'signed' ? (
+                              <ActBtn t={t} tone="violet" title="View CTC" onClick={() => { setEditing(c); setFormOpen(true); }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg></ActBtn>
+                            ) : (
+                              <ActBtn t={t} tone="violet" title="Edit CTC" onClick={() => { setEditing(c); setFormOpen(true); }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg></ActBtn>
+                            )}
                             <ActBtn t={t} tone="blue" title="Version History" onClick={() => openLifecycle(c, 'version')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="12 8 12 12 14 14" /><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" /></svg></ActBtn>
                             <ActBtn t={t} tone="amber" title="Agreement Timeline" onClick={() => openLifecycle(c, 'timeline')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg></ActBtn>
                           </div>

@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import * as pdfjsLib from 'pdfjs-dist';
+import PdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = PdfjsWorkerUrl as unknown as string;
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import ClmInsertPlaceholderModal from './ClmInsertPlaceholderModal';
 import ClmClauseInsertPanel from './ClmClauseInsertPanel';
@@ -587,13 +591,27 @@ function Stage1(p: {
     else p.onNext();
   };
   const midBack = () => { if (midStep > 1) setMidStep((midStep - 1) as 1 | 2 | 3); };
+  // Section completion chips (Figma-style) — counterparty section is "done"
+  // once at least one party is added; organisation once one is selected.
+  const cpPct = p.cps.length ? 100 : 0;
+  const orgPct = p.org ? 100 : 0;
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', gap: 12, flex: 1, minHeight: 0, width: '100%' }}>
       {/* LEFT — Counterparty Details */}
       <div style={{ flex: leftOpen ? 2 : '0 0 48px', minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', transition: 'flex .25s cubic-bezier(.22,1,.36,1)' }}>
         {!leftOpen ? <CollapsedBar t={t} title="Counterparty Details" headGrad="#4C1D95,#6D28D9,#7C3AED,#8B5CF6,#A78BFA" dir="left" onExpand={() => setLeftOpen(true)} /> :
         <Panel t={t} header="Panel 01" title="Counterparty Details" headGrad="#4C1D95,#6D28D9,#7C3AED,#8B5CF6,#A78BFA" onCollapse={() => setLeftOpen(false)} collapseDir="left">
-          <div className="ctc-mid-scroll ctc-noshrink" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 10, padding: 12, overflowY: 'auto' }}>
+          <div className="ctc-mid-scroll ctc-noshrink" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 12, padding: 12, overflowY: 'auto' }}>
+            {/* Counterparty sub-card */}
+            <div style={{ borderRadius: 14, overflow: 'hidden', border: `1px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#E4DCFB'}`, background: t.surface, boxShadow: '0 4px 14px rgba(109,40,217,.1)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(110deg,#4C1D95,#6D28D9,#7C3AED)', backgroundSize: '14px 14px, auto' }}>
+                <div style={{ width: 26, height: 26, borderRadius: 8, background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.28)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+                </div>
+                <span style={{ flex: 1, fontSize: 11, fontWeight: 800, color: '#fff', letterSpacing: '-.2px' }}>Counterparty Details</span>
+                <span style={{ fontSize: 9, fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,.2)', border: '1px solid rgba(255,255,255,.32)', borderRadius: 20, padding: '3px 9px' }}>{cpPct}%</span>
+              </div>
+              <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
             {(() => {
               const total = p.cps.length;
               const pages = Math.max(1, Math.ceil(total / 2));
@@ -639,7 +657,18 @@ function Stage1(p: {
                 </>
               );
             })()}
-            {/* Org */}
+              </div>
+            </div>
+            {/* Our Organisation sub-card */}
+            <div style={{ borderRadius: 14, border: `1px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#E4DCFB'}`, background: t.surface, boxShadow: '0 4px 14px rgba(109,40,217,.1)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', borderRadius: '13px 13px 0 0', background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(110deg,#4C1D95,#6D28D9,#7C3AED)', backgroundSize: '14px 14px, auto' }}>
+                <div style={{ width: 26, height: 26, borderRadius: 8, background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.28)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18" /><path d="M5 21V7l8-4v18" /><path d="M19 21V11l-6-4" /><line x1="9" y1="9" x2="9" y2="9" /><line x1="9" y1="12" x2="9" y2="12" /><line x1="9" y1="15" x2="9" y2="15" /></svg>
+                </div>
+                <span style={{ flex: 1, fontSize: 11, fontWeight: 800, color: '#fff', letterSpacing: '-.2px' }}>Our Organisation Details</span>
+                <span style={{ fontSize: 9, fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,.2)', border: '1px solid rgba(255,255,255,.32)', borderRadius: 20, padding: '3px 9px' }}>{orgPct}%</span>
+              </div>
+              <div style={{ padding: 10 }}>
             <div style={{ position: 'relative' }}>
               {!p.org ? (
                 <div onClick={() => p.setOrgOpen(!p.orgOpen)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 10px', borderRadius: 8, border: '1.5px dashed #C4B5FD', background: 'transparent', cursor: 'pointer' }}>
@@ -674,31 +703,45 @@ function Stage1(p: {
                 </div>
               )}
             </div>
+              </div>
+            </div>
           </div>
         </Panel>}
       </div>
 
       {/* MIDDLE — Draft workspace */}
       <div style={{ flex: 5.5, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        <Panel t={t} header="Panel 02 · Main Workspace" title="Agreement Draft Workspace" headGrad="#4C1D95,#6D28D9,#7C3AED,#8B5CF6,#A78BFA">
+        <Panel t={t} header="Panel 02 · Main Workspace" title="Agreement Draft Workspace" headGrad="#4C1D95,#6D28D9,#7C3AED,#8B5CF6,#A78BFA" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="13" y2="17" /></svg>}>
           <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 18px 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
 
             {/* ── inner STEP stepper ── */}
             <div style={{ display: 'flex', alignItems: 'center', background: t.surface, borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, padding: '10px 14px', flexShrink: 0, boxShadow: '0 2px 10px rgba(109,40,217,.07)' }}>
               {MID_STEPS.map((s, i) => {
                 const on = midStep === s.n, done = midStep > s.n;
+                const stroke = on || done ? '#fff' : (t.dark ? '#a78bfa' : '#C4B5FD');
+                // done = green + check, active = purple + step icon, upcoming = light.
+                const boxBg = done ? 'linear-gradient(135deg,#059669,#10B981)' : on ? 'linear-gradient(135deg,#4F46E5,#7C3AED)' : (t.dark ? 'rgba(255,255,255,.05)' : '#F5F0FF');
+                const boxShadow = done ? '0 4px 12px rgba(16,185,129,.4)' : on ? '0 4px 12px rgba(79,70,229,.4)' : 'none';
+                const titleColor = done ? (t.dark ? '#6ee7b7' : '#059669') : on ? (t.dark ? '#c4b5fd' : '#4F46E5') : (t.dark ? '#7c87a8' : '#C4B5FD');
+                const labelColor = done ? (t.dark ? '#34d399' : '#10B981') : on ? (t.dark ? '#a78bfa' : '#A78BFA') : (t.dark ? '#7c87a8' : '#C4B5FD');
                 return (
                   <div key={s.n} style={{ display: 'flex', alignItems: 'center', flex: i < 2 ? 1 : '0 1 auto', minWidth: 0 }}>
                     <div onClick={() => setMidStep(s.n)} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', minWidth: 0 }}>
-                      <div style={{ width: 32, height: 32, borderRadius: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: on || done ? 'linear-gradient(135deg,#4F46E5,#7C3AED)' : (t.dark ? 'rgba(255,255,255,.05)' : '#F5F0FF'), border: on || done ? 'none' : `2px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, boxShadow: on ? '0 3px 10px rgba(79,70,229,.4)' : 'none' }}>
-                        <span style={{ fontSize: 11, fontWeight: 900, color: on || done ? '#fff' : (t.dark ? '#a78bfa' : '#C4B5FD') }}>{pad2(s.n)}</span>
+                      <div style={{ width: 36, height: 36, borderRadius: 12, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: boxBg, border: on || done ? 'none' : `2px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, boxShadow }}>
+                        {done
+                          ? <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                          : s.n === 1
+                          ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+                          : s.n === 2
+                          ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
+                          : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>}
                       </div>
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 6, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: on || done ? (t.dark ? '#a78bfa' : '#A78BFA') : (t.dark ? '#7c87a8' : '#C4B5FD'), lineHeight: 1, marginBottom: 1 }}>Step {pad2(s.n)}</div>
-                        <div style={{ fontSize: 8.5, fontWeight: on ? 800 : 700, color: on || done ? (t.dark ? '#c4b5fd' : '#4F46E5') : (t.dark ? '#7c87a8' : '#C4B5FD'), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2 }}>{s.label}</div>
+                        <div style={{ fontSize: 6, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: labelColor, lineHeight: 1, marginBottom: 1 }}>Step {pad2(s.n)}</div>
+                        <div style={{ fontSize: 8.5, fontWeight: on ? 800 : 700, color: titleColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2 }}>{s.label}</div>
                       </div>
                     </div>
-                    {i < 2 && <div style={{ flex: 1, height: 2, margin: '0 8px', borderRadius: 2, background: done ? 'linear-gradient(90deg,#7C3AED,#DDD6FE)' : (t.dark ? 'rgba(148,163,184,.15)' : '#EDE9FE') }} />}
+                    {i < 2 && <div style={{ flex: 1, height: 2, margin: '0 8px', borderRadius: 2, background: done ? 'linear-gradient(90deg,#10b981,#a7f3d0)' : (t.dark ? 'rgba(148,163,184,.15)' : '#EDE9FE') }} />}
                   </div>
                 );
               })}
@@ -746,7 +789,7 @@ function Stage1(p: {
                   <ReadEmpty t={t} title="Organisation not selected" sub="Please select your organisation from the left panel." chips={[]} />
                 ) : (
                   <div style={{ borderRadius: 14, overflow: 'hidden', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, background: t.surface, boxShadow: '0 4px 16px rgba(109,40,217,.08)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: `linear-gradient(118deg,${p.org.grad})` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: 'radial-gradient(rgba(255,255,255,.28) 1.3px, transparent 1.3px), linear-gradient(118deg,#4C1D95,#6D28D9,#7C3AED,#8B5CF6,#A78BFA)', backgroundSize: '14px 14px, auto', borderRadius: '14px 14px 0 0' }}>
                       <div style={{ width: 40, height: 40, borderRadius: 11, background: 'rgba(255,255,255,.2)', border: '1.5px solid rgba(255,255,255,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>{p.org.initials}</span></div>
                       <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff' }}>{p.org.name}</div><div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.7)', fontWeight: 500 }}>Short Code: {p.org.shortCode}</div></div>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 20, background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.3)' }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#34d399' }} /><span style={{ fontSize: 9, fontWeight: 800, color: '#fff' }}>Active</span></span>
@@ -826,7 +869,7 @@ function Stage1(p: {
                 ? { position: 'fixed', inset: 16, zIndex: 400, background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD'}`, overflow: 'hidden', boxShadow: '0 30px 80px rgba(8,3,28,.5)', display: 'flex', flexDirection: 'column' }
                 : { flex: 1, minHeight: 0, background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, overflow: 'hidden', boxShadow: '0 2px 12px rgba(109,40,217,.08)', display: 'flex', flexDirection: 'column' }}>
                 {/* header with actions */}
-                <div style={{ padding: '12px 14px', background: 'linear-gradient(118deg,#3B0764 0%,#5B21B6 35%,#7C3AED 65%,#8B5CF6 100%)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
+                <div style={{ padding: '12px 14px', background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#4C1D95 0%,#6D28D9 40%,#7C3AED 75%,#8B5CF6 100%)', backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div style={{ width: 30, height: 30, borderRadius: 9, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg></div>
                     <div><div style={{ fontSize: 7, fontWeight: 800, letterSpacing: '.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,.6)' }}>Stage 03</div><div style={{ fontSize: 12.5, fontWeight: 800, color: '#fff' }}>Draft Agreement Content</div><div style={{ fontSize: 8, fontWeight: 500, color: 'rgba(255,255,255,.65)' }}>Write or paste your agreement text below</div></div>
@@ -840,7 +883,7 @@ function Stage1(p: {
                   </div>
                 </div>
                 {/* full toolbar */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 1, padding: '6px 10px', borderBottom: `1px solid ${t.dark ? 'rgba(124,58,237,.18)' : '#F1EEFF'}`, background: t.dark ? 'rgba(255,255,255,.02)' : '#FAFBFF', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 1, padding: '7px 10px', borderBottom: `1px solid ${t.dark ? 'rgba(124,58,237,.18)' : '#ECE6FB'}`, background: t.dark ? 'rgba(255,255,255,.02)' : '#F6F3FF', flexWrap: 'wrap' }}>
                   <select defaultValue="12" onChange={e => exec('fontSize', ({ '10': '1', '11': '2', '12': '3', '14': '4', '16': '5', '18': '6' } as Record<string, string>)[e.target.value] || '3')} style={{ height: 24, padding: '0 4px', borderRadius: 5, border: `1px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#E4DEFF'}`, fontSize: 9, fontFamily: 'inherit', color: t.dark ? '#c4b5fd' : '#4C1D95', background: t.dark ? 'rgba(255,255,255,.04)' : '#F8F6FF', cursor: 'pointer', marginRight: 3 }}>{['10', '11', '12', '14', '16', '18'].map(s => <option key={s}>{s}</option>)}</select>
                   <select defaultValue="Paragraph" onChange={e => exec('formatBlock', ({ 'Paragraph': 'p', 'Heading 1': 'h1', 'Heading 2': 'h2', 'Heading 3': 'h3' } as Record<string, string>)[e.target.value] || 'p')} style={{ height: 24, padding: '0 5px', borderRadius: 5, border: `1px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#E4DEFF'}`, fontSize: 9, fontFamily: 'inherit', color: t.dark ? '#c4b5fd' : '#4C1D95', background: t.dark ? 'rgba(255,255,255,.04)' : '#F8F6FF', cursor: 'pointer', marginRight: 5, minWidth: 72 }}>{['Paragraph', 'Heading 1', 'Heading 2', 'Heading 3'].map(s => <option key={s}>{s}</option>)}</select>
                   <ToolDiv t={t} />
@@ -936,7 +979,7 @@ function Stage1(p: {
       {/* RIGHT — Summary */}
       <div style={{ flex: rightOpen ? 2.5 : '0 0 48px', minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', transition: 'flex .25s cubic-bezier(.22,1,.36,1)' }}>
         {!rightOpen ? <CollapsedBar t={t} title="Agreement Summary Details" headGrad="#6D28D9,#7C3AED,#8B5CF6,#A78BFA,#C4B5FD" dir="right" onExpand={() => setRightOpen(true)} /> :
-        <Panel t={t} header="Panel 03" title="Agreement Summary Details" headGrad="#6D28D9,#7C3AED,#8B5CF6,#A78BFA,#C4B5FD" onCollapse={() => setRightOpen(false)} collapseDir="right">
+        <Panel t={t} header="Panel 03" title="Agreement Summary Details" headGrad="#6D28D9,#7C3AED,#8B5CF6,#A78BFA,#C4B5FD" onCollapse={() => setRightOpen(false)} collapseDir="right" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" /><rect x="9" y="3" width="6" height="4" rx="1" /><line x1="9" y1="12" x2="15" y2="12" /><line x1="9" y1="16" x2="13" y2="16" /></svg>}>
           <RightTools t={t} active={midStep === 3 && !p.editLock} draft={p.draft} declineReason={p.declineReason} declinedBy={p.declinedBy} onInsert={(tok) => { if (midStep !== 3 || p.editLock) return; if (editorRef.current) insertText(tok); else p.setDraft((p.draft ? p.draft + ' ' : '') + tok); }} summary={[['Agreement', p.agTitle || '—'], ['Type', p.agType || '—'], ['Eff. Date', p.effDate || '—'], ['End Date', p.endDate || '—'], ['Counterparties', p.cps.length ? `${p.cps.length} added` : '—'], ['CP 1', cp1?.name || '—'], ['Organisation', p.org?.name || '—']]} />
         </Panel>}
       </div>
@@ -958,8 +1001,12 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
   onBack: () => void; onNext: () => void; onSave: () => void;
 }) {
   const [reminded, setReminded] = useState(false);
+  const [reminding, setReminding] = useState(false);   // in-flight guard for the Send Reminder button
   const [signingOpen, setSigningOpen] = useState(false);
   const [vhOpen, setVhOpen] = useState(false);
+  const [signedCelebrationOpen, setSignedCelebrationOpen] = useState(false);
+  const celebratedRef = useRef(false);
+  const loadedSignedRef = useRef<boolean | null>(null);   // signed-state at first record load
   const [clarReply, setClarReply] = useState('');     // sender's reply to an open clarification
   const [clarSending, setClarSending] = useState(false);
   const versions = (Array.isArray(record?.versions) ? record!.versions : []) as CtcVersion[];
@@ -972,6 +1019,23 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
   // viewing (and the legitimate "Move to Final Repository" once all signed).
   const signedLock = allSigned || String(record?.status ?? '') === 'signed' || stage >= 4;
   const code = String((record?.code as string) ?? 'CTC');
+  // Fully signed when every recipient signed OR a counterparty-signed date /
+  // signed status is already on record (covers reopening an already-signed CTC).
+  const fullySigned = allSigned || !!record?.cp_signed_date || String(record?.status ?? '') === 'signed';
+  // Celebrate ONLY when signing completes LIVE this session — i.e. the contract
+  // loaded as NOT-signed and then became fully signed while on Stage 3. Don't
+  // pop it when opening an already-signed contract to view, nor on Stage 4→3.
+  useEffect(() => {
+    if (!record) return;                                  // wait for the record to load
+    if (loadedSignedRef.current === null) {               // first load → remember, never celebrate
+      loadedSignedRef.current = fullySigned;
+      return;
+    }
+    if (!loadedSignedRef.current && fullySigned && stage === 3 && !isDeclined && !celebratedRef.current) {
+      celebratedRef.current = true;
+      setSignedCelebrationOpen(true);
+    }
+  }, [record, fullySigned, stage, isDeclined]);
   const rejReason = String((record?.rejection_reason as string) ?? '');
   // Clarification thread raised by an approver from "Agreements To Approve".
   // Surfaced here so the sender sees the query in Stage 2 and can reply without
@@ -1015,8 +1079,8 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
   const previewDraft = (resolvedPreview || '').replace(/\{\{\s*signature\s*\}\}/gi, sigToken);
   const MID = {
     2: { head: '#3B0764,#5B21B6,#7C3AED,#8B5CF6', sup: 'Panel 02 · Agreement Preview', title: 'Agreement Preview' },
-    3: { head: '#0e7490,#0891b2,#06b6d4', sup: 'Panel 02 · Negotiation & Signing', title: 'Counterparty Negotiation & Signing' },
-    4: { head: '#064E3B,#059669,#10B981', sup: 'Panel 02 · Signed Agreement', title: 'Final Contract Repository' },
+    3: { head: '#3B0764,#5B21B6,#7C3AED,#8B5CF6', sup: 'Panel 02 · Negotiation & Signing', title: 'Counterparty Negotiation & Signing' },
+    4: { head: '#064E3B,#059669,#10B981', sup: 'Panel 02 · Executed Agreement', title: 'Signed Agreement' },
   }[stage]!;
   const cp1 = cps[0] ?? null;
   const cp2 = cps[1] ?? null;
@@ -1027,8 +1091,8 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
 
       {/* LEFT — Counterparty Details (stages 2-3) · Contract Summary (stage 4) */}
       <div style={{ flex: 2, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ flex: 1, minHeight: 0, background: t.dark ? '#161226' : 'linear-gradient(160deg,#faf8ff,#f3effe 50%,#ede8fd)', borderRadius: 16, border: `1.5px solid ${stage === 4 ? (t.dark ? 'rgba(16,185,129,.3)' : 'rgba(16,185,129,.3)') : (t.dark ? 'rgba(139,92,246,.3)' : 'rgba(139,92,246,.22)')}`, boxShadow: '0 4px 20px rgba(109,40,217,.1)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '11px 14px', background: stage === 4 ? 'linear-gradient(118deg,#064E3B,#047857,#059669,#10B981)' : 'linear-gradient(118deg,#4C1D95,#6D28D9,#7C3AED,#8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <div style={{ flex: 1, minHeight: 0, background: t.dark ? '#161226' : 'linear-gradient(160deg,#faf8ff,#f3effe 50%,#ede8fd)', borderRadius: 16, border: `1.5px solid ${t.dark ? 'rgba(139,92,246,.3)' : 'rgba(139,92,246,.22)'}`, boxShadow: '0 4px 20px rgba(109,40,217,.1)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ padding: '11px 14px', background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#4C1D95,#6D28D9,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{stage === 4
                 ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
@@ -1054,7 +1118,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
       {/* MIDDLE — changes per stage */}
       <div style={{ flex: 5.5, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div style={{ flex: 1, minHeight: 0, background: t.surface, borderRadius: 16, border: `1.5px solid ${stage === 4 ? 'rgba(5,150,105,.25)' : (t.dark ? 'rgba(124,58,237,.25)' : 'rgba(124,58,237,.18)')}`, boxShadow: '0 4px 20px rgba(109,40,217,.08)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '11px 16px', background: `linear-gradient(118deg,${MID.head})`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          <div style={{ padding: '11px 16px', background: `radial-gradient(rgba(255,255,255,.26) 1.2px, transparent 1.2px), linear-gradient(118deg,${MID.head})`, backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></div>
               <div><div style={{ fontSize: 7, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase' }}>{MID.sup}</div><div style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{MID.title}</div></div>
@@ -1063,8 +1127,10 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
           </div>
           <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#F0EFF8', padding: '18px 24px' }}>
             {stage === 4 && signedUrl ? (
-              /* Final repository → the fully-signed PDF returned by Zoho Sign. */
-              <iframe title="Signed document" src={`${signedUrl}#toolbar=1&navpanes=0&view=FitH`} style={{ width: '100%', height: '100%', minHeight: 560, border: 'none', borderRadius: 6, background: '#fff', boxShadow: '0 2px 14px rgba(0,0,0,.12)' }} />
+              /* Final repository → the fully-signed PDF rendered as page canvases
+                 (pdf.js) so it flows inside this column's own scrollbar — no black
+                 native-viewer chrome, no inner scrollbar. */
+              <SignedPdfViewer t={t} signatureRequestId={Number(record?.signature_request_id) || null} signedUrl={signedUrl} />
             ) : (
             <div style={{ maxWidth: 600, margin: '0 auto', background: t.dark ? '#1a1530' : '#fff', borderRadius: 6, boxShadow: '0 2px 12px rgba(0,0,0,.1)', padding: '36px 40px', position: 'relative' }}>
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 5, background: stage === 4 ? 'linear-gradient(90deg,#047857,#059669,#10B981)' : 'linear-gradient(90deg,#4C1D95,#7C3AED,#A78BFA)', borderRadius: '6px 6px 0 0' }} />
@@ -1135,14 +1201,14 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
               )}
               {/* Stage 3 — awaiting e-signatures → nudge the signers via Zoho Sign */}
               {stage === 3 && !isDeclined && !allSigned && !signedLock && (
-                <button onClick={onRemind} disabled={signers.length === 0} title="Re-email the counterparty signers via Zoho Sign" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: signers.length === 0 ? (t.dark ? 'rgba(255,255,255,.04)' : '#F1F5F9') : 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', border: 'none', cursor: signers.length === 0 ? 'not-allowed' : 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: signers.length === 0 ? t.textMuted : '#fff', boxShadow: signers.length === 0 ? 'none' : '0 3px 10px rgba(8,145,178,.35)' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg> Send Reminder</button>
+                <button onClick={async () => { if (reminding || signers.length === 0) return; setReminding(true); try { await onRemind(); } finally { setReminding(false); } }} disabled={signers.length === 0 || reminding} title="Re-email the counterparty signers via Zoho Sign" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: (signers.length === 0 || reminding) ? (t.dark ? 'rgba(255,255,255,.04)' : '#F1F5F9') : 'linear-gradient(135deg,#5B21B6,#6D28D9,#7C3AED)', border: 'none', cursor: (signers.length === 0 || reminding) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: (signers.length === 0 || reminding) ? t.textMuted : '#fff', boxShadow: (signers.length === 0 || reminding) ? 'none' : '0 3px 10px rgba(109,40,217,.35)' }}>{reminding ? <><svg className="ctc-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> Sending…</> : <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg> Send Reminder</>}</button>
               )}
               {stage === 3 && !isDeclined && allSigned && (
                 <button onClick={onMoveToRepository} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#059669,#047857)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(5,150,105,.35)' }}>Move to Final Repository <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg></button>
               )}
               {/* Stage 4 — store finalized agreement */}
               {stage === 4 && (
-                <button onClick={onSave} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#059669,#047857)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(5,150,105,.35)' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg> Store in Repository</button>
+                <button onClick={onSave} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#059669,#047857)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(5,150,105,.35)' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg> Contract Stored in Repository</button>
               )}
             </div>
           </div>
@@ -1152,7 +1218,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
       {/* RIGHT — Internal Review & Approval (2-3) · Contract History (stage 4) */}
       <div style={{ flex: 2.5, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div style={{ flex: 1, minHeight: 0, background: stage === 4 ? (t.dark ? '#0e1f1a' : 'linear-gradient(160deg,#f0fdf6,#ecfdf3 45%,#e3fbec)') : (t.dark ? '#161226' : 'linear-gradient(160deg,#faf8ff,#f3effe 40%,#ede8fd)'), borderRadius: 16, border: `1.5px solid ${stage === 4 ? (t.dark ? 'rgba(16,185,129,.3)' : 'rgba(16,185,129,.3)') : (t.dark ? 'rgba(167,139,250,.3)' : 'rgba(167,139,250,.28)')}`, boxShadow: '0 4px 24px rgba(109,40,217,.1)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '11px 14px', background: stage === 4 ? 'linear-gradient(118deg,#064E3B,#047857,#059669,#10B981)' : 'linear-gradient(118deg,#6D28D9,#7C3AED,#8B5CF6,#A78BFA)', display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
+          <div style={{ padding: '11px 14px', background: stage === 4 ? 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#064E3B,#047857,#059669,#10B981)' : 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#6D28D9,#7C3AED,#8B5CF6,#A78BFA)', backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
             <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{stage === 4
               ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
               : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>}</div>
@@ -1332,14 +1398,51 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
       </div>
 
       {vhOpen && <VersionHistoryModal t={t} code={code} workingId={workingId} versions={versions} onClose={() => setVhOpen(false)} />}
-      {signingOpen && <SendForSigningModal t={t} cps={cps} code={code} title={agTitle} onClose={() => setSigningOpen(false)} onSend={(recipients, days) => { setSigningOpen(false); onSendForSigning(recipients, days); }} />}
+      {signingOpen && <SendForSigningModal t={t} cps={cps} org={org} code={code} title={agTitle} onClose={() => setSigningOpen(false)} onSend={(recipients, days) => { setSigningOpen(false); onSendForSigning(recipients, days); }} />}
+      {signedCelebrationOpen && (
+        <div onClick={() => setSignedCelebrationOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,7,50,.55)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: "'Rubik',system-ui,sans-serif", overflow: 'hidden' }}>
+          <div onClick={e => e.stopPropagation()} style={{ position: 'relative', zIndex: 1, width: 'min(330px,90vw)', background: '#fff', borderRadius: 22, padding: '28px 26px 22px', textAlign: 'center', boxShadow: '0 40px 90px rgba(8,3,28,.4)', border: '1.5px solid #A7F3D0', animation: 'ataSlideUp .26s cubic-bezier(.22,1,.36,1) both' }}>
+            <div style={{ fontSize: 44, lineHeight: 1 }}>🎉</div>
+            <div style={{ width: 56, height: 56, borderRadius: 16, margin: '14px auto 0', background: 'linear-gradient(135deg,#059669,#10B981)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 26px rgba(16,185,129,.45)' }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" /></svg>
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: '#1e1b4b', marginTop: 16, letterSpacing: '-.3px' }}>Agreement Signed! 🎉</div>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: '#059669', marginTop: 5 }}>All parties have signed the agreement</div>
+            <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 8, lineHeight: 1.55, maxWidth: 270, marginInline: 'auto' }}>The agreement is now legally binding and ready to be moved to the Final Contract Repository.</div>
+            <button onClick={() => { setSignedCelebrationOpen(false); onMoveToRepository(); }} style={{ width: '100%', marginTop: 20, padding: 12, borderRadius: 12, border: 'none', background: 'linear-gradient(135deg,#5B21B6,#6D28D9,#7C3AED)', color: '#fff', fontFamily: 'inherit', fontSize: 12, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, boxShadow: '0 6px 18px rgba(109,40,217,.4)' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+              Move to Final Contract Repository
+            </button>
+            <button onClick={() => setSignedCelebrationOpen(false)} style={{ width: '100%', marginTop: 8, padding: 11, borderRadius: 12, border: '1.5px solid #DDD6FE', background: '#F5F0FF', color: '#6D28D9', fontFamily: 'inherit', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>Stay in Stage 3</button>
+          </div>
+          {/* Confetti rain — continuous (infinite), above the card (pointerEvents none). */}
+          <div style={{ position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none', overflow: 'hidden' }}>
+            {Array.from({ length: 90 }).map((_, i) => {
+              const colors = ['#7C3AED', '#10B981', '#F59E0B', '#EF4444', '#06b6d4', '#EC4899', '#A78BFA', '#34d399', '#FBBF24', '#38bdf8'];
+              const left = (i * 1.13) % 100;
+              const delay = (i % 16) * 0.16;
+              const dur = 2.6 + (i % 6) * 0.45;
+              const anim = `confettiFall ${dur}s linear ${delay}s infinite`;
+              // ~1 golden star for every 5 other pieces, and kept small.
+              if (i % 6 === 0) {
+                const ssize = 10 + (i % 2) * 2;
+                return <span key={i} style={{ position: 'absolute', top: -24, left: `${left}%`, color: '#FFC400', fontSize: ssize, lineHeight: 1, textShadow: '0 0 4px rgba(251,191,36,.6)', animation: anim }}>★</span>;
+              }
+              const c = colors[i % colors.length];
+              const size = 5 + (i % 5) * 2;
+              const round = i % 3 === 1;
+              return <span key={i} style={{ position: 'absolute', top: -24, left: `${left}%`, width: size, height: round ? size : size * 0.55, background: c, borderRadius: round ? '50%' : 2, opacity: 0.92, animation: anim }} />;
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 /* ── Send for Signing & Negotiation — pick recipients (counterparties + contact + days) ── */
 type SignContact = { name: string; email: string; designation: string; phone: string; is_primary: boolean };
-function SendForSigningModal({ t, cps, code, title, onClose, onSend }: { t: OpsTokens; cps: CP[]; code: string; title: string; onClose: () => void; onSend: (recipients: { name: string; email: string; role: string; contact: string }[], days: number | null) => void }) {
+function SendForSigningModal({ t, cps, org, code, title, onClose, onSend }: { t: OpsTokens; cps: CP[]; org: Org | null; code: string; title: string; onClose: () => void; onSend: (recipients: { name: string; email: string; role: string; contact: string }[], days: number | null) => void }) {
   const toast = useToast();
   const [contacts, setContacts] = useState<SignContact[][]>(() => cps.map(() => []));
   const [loading, setLoading] = useState(true);
@@ -1381,9 +1484,9 @@ function SendForSigningModal({ t, cps, code, title, onClose, onSend }: { t: OpsT
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,7,50,.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: "'Rubik',system-ui,sans-serif" }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 'min(620px,95vw)', maxHeight: '88vh', background: t.surface, borderRadius: 20, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.25)'}`, boxShadow: '0 40px 80px rgba(109,40,217,.35)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 'min(500px,94vw)', maxHeight: '88vh', background: t.surface, borderRadius: 20, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.25)'}`, boxShadow: '0 40px 80px rgba(109,40,217,.35)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* header */}
-        <div style={{ padding: '16px 20px', background: 'linear-gradient(120deg,#4C1D95,#6D28D9,#7C3AED,#8B5CF6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <div style={{ padding: '16px 20px', background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(120deg,#4C1D95,#6D28D9,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg></div>
             <div><div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,.6)' }}>Send for Signature &amp; Negotiation · {code}</div><div style={{ fontSize: 17, fontWeight: 800, color: '#fff', letterSpacing: '-.3px', marginTop: 1 }}>{title || 'Agreement'}</div><div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.7)" strokeWidth="2.2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg><span style={{ fontSize: 9, color: 'rgba(255,255,255,.72)', fontWeight: 500 }}>Sent via secure e-sign link · All parties notified</span></div></div>
@@ -1402,7 +1505,7 @@ function SendForSigningModal({ t, cps, code, title, onClose, onSend }: { t: OpsT
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 14px', background: t.dark ? 'rgba(124,58,237,.08)' : '#FAFBFF', borderBottom: `1px solid ${t.dark ? 'rgba(124,58,237,.15)' : '#F1EEFF'}` }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
                     <div style={{ width: 38, height: 38, borderRadius: 11, background: `linear-gradient(135deg,${cp.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{cp.initials}</span></div>
-                    <div style={{ minWidth: 0 }}><div style={{ fontSize: 12.5, fontWeight: 800, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cp.name}</div><div style={{ fontSize: 9, fontWeight: 600, color: tone.fg, marginTop: 1 }}>Counter Party {i + 1} · Will receive agreement</div></div>
+                    <div style={{ minWidth: 0 }}><div style={{ fontSize: 12.5, fontWeight: 600, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cp.name}</div><div style={{ fontSize: 9, fontWeight: 600, color: tone.fg, marginTop: 1 }}>Counter Party {i + 1} · Will receive agreement</div></div>
                   </div>
                   <span style={{ padding: '4px 11px', borderRadius: 20, border: `1.5px solid ${tone.fg}55`, fontSize: 8.5, fontWeight: 800, color: tone.fg, flexShrink: 0 }}>Will receive</span>
                 </div>
@@ -1417,7 +1520,7 @@ function SendForSigningModal({ t, cps, code, title, onClose, onSend }: { t: OpsT
                             <div key={j} onClick={() => toggle(k)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', borderRadius: 10, cursor: 'pointer', border: `1.5px solid ${on ? `${tone.fg}66` : (t.dark ? 'rgba(148,163,184,.18)' : '#EDE9FE')}`, background: on ? (t.dark ? 'rgba(124,58,237,.1)' : '#F7F4FF') : t.surface }}>
                               <div style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, border: `2px solid ${on ? tone.fg : (t.dark ? 'rgba(148,163,184,.4)' : '#CBD5E1')}`, background: on ? `linear-gradient(135deg,${cp.grad})` : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{on && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>}</div>
                               <div style={{ width: 28, height: 28, borderRadius: 8, background: `linear-gradient(135deg,${cp.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 9, fontWeight: 800, color: '#fff' }}>C{j + 1}</span></div>
-                              <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 10.5, fontWeight: 800, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name || `Contact ${j + 1}`}</div><div style={{ fontSize: 8, color: t.textMuted, fontWeight: 600 }}>{c.designation || (c.is_primary ? 'Primary Contact' : 'Contact')}</div></div>
+                              <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 10.5, fontWeight: 600, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name || `Contact ${j + 1}`}</div><div style={{ fontSize: 8, color: t.textMuted, fontWeight: 600 }}>{c.designation || (c.is_primary ? 'Primary Contact' : 'Contact')}</div></div>
                               {c.email && <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={t.textMuted} strokeWidth="2" strokeLinecap="round"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 5L2 7" /></svg><span style={{ fontSize: 8.5, color: t.textMuted, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 150 }}>{c.email}</span></div>}
                             </div>
                           );
@@ -1427,9 +1530,24 @@ function SendForSigningModal({ t, cps, code, title, onClose, onSend }: { t: OpsT
               </div>
             );
           })}
+          {/* Our Organisation — always the initiator, signs first. */}
+          {org && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 14px', borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(16,185,129,.35)' : '#A7F3D0'}`, background: t.dark ? 'rgba(16,185,129,.10)' : 'linear-gradient(110deg,#ECFDF5,#F0FDF9)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
+                <div style={{ width: 38, height: 38, borderRadius: 11, background: 'linear-gradient(135deg,#059669,#10B981)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{orgInitials(org.name)}</span></div>
+                <div style={{ minWidth: 0 }}><div style={{ fontSize: 12.5, fontWeight: 600, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{org.name}</div><div style={{ fontSize: 9, fontWeight: 600, color: t.dark ? '#6ee7b7' : '#059669', marginTop: 1 }}>Our Organisation · Signs first · Always included</div></div>
+              </div>
+              <span style={{ padding: '4px 11px', borderRadius: 20, border: `1.5px solid ${t.dark ? 'rgba(16,185,129,.5)' : '#6EE7B7'}`, fontSize: 8.5, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#059669', flexShrink: 0 }}>Initiator</span>
+            </div>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, background: t.dark ? 'rgba(255,255,255,.03)' : '#FAFBFF' }}>
-            <div style={{ flex: 1 }}><div style={{ fontSize: 9.5, fontWeight: 800, color: t.textStrong }}>Days to Sign</div><div style={{ fontSize: 8, color: t.textMuted, marginTop: 1 }}>Deadline for all parties to complete signing</div></div>
-            <input type="number" min={1} max={365} value={days} onChange={e => setDays(e.target.value)} style={{ width: 80, height: 34, padding: '0 10px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 9, fontSize: 12, fontWeight: 700, fontFamily: 'inherit', color: t.text, outline: 'none', background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', textAlign: 'center', boxSizing: 'border-box' }} />
+            <div style={{ width: 32, height: 32, borderRadius: 9, background: t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg></div>
+            <div style={{ flex: 1 }}><div style={{ fontSize: 9.5, fontWeight: 600, color: t.textStrong }}>Days to Sign</div><div style={{ fontSize: 8, color: t.textMuted, marginTop: 1 }}>Deadline for all parties to complete signing</div></div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button onClick={() => setDays(String(Math.max(1, (Number(days) || 14) - 1)))} style={{ width: 28, height: 28, borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 15, cursor: 'pointer', flexShrink: 0, fontFamily: 'inherit' }}>−</button>
+              <span style={{ minWidth: 30, textAlign: 'center', fontSize: 15, fontWeight: 800, color: t.textStrong }}>{days}</span>
+              <button onClick={() => setDays(String(Math.min(365, (Number(days) || 14) + 1)))} style={{ width: 28, height: 28, borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 15, cursor: 'pointer', flexShrink: 0, fontFamily: 'inherit' }}>+</button>
+            </div>
           </div>
         </div>
         {/* footer */}
@@ -1445,20 +1563,76 @@ function SendForSigningModal({ t, cps, code, title, onClose, onSend }: { t: OpsT
   );
 }
 
+/* Signed-PDF viewer — renders the executed document as page canvases via pdf.js
+   so it scrolls with the parent column (single scrollbar) on a white background,
+   instead of the browser's black native PDF chrome inside an iframe. */
+function SignedPdfViewer({ t, signatureRequestId, signedUrl }: { t: OpsTokens; signatureRequestId: number | null; signedUrl: string }) {
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        let buf: ArrayBuffer;
+        if (signatureRequestId) {
+          const res = await api.get(`/clm/signature-requests/${signatureRequestId}/download-file/0`, { responseType: 'blob' });
+          buf = await (res.data as Blob).arrayBuffer();
+        } else {
+          const r = await fetch(signedUrl); buf = await (await r.blob()).arrayBuffer();
+        }
+        if (cancelled) return;
+        const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+        if (cancelled) return;
+        const wrap = wrapRef.current; if (!wrap) return;
+        wrap.innerHTML = '';
+        const width = Math.min(640, wrap.clientWidth || 600);
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const base = page.getViewport({ scale: 1 });
+          const vp = page.getViewport({ scale: width / base.width });
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
+          canvas.style.cssText = 'width:100%;max-width:640px;height:auto;display:block;margin:0 auto 14px;border-radius:6px;box-shadow:0 2px 14px rgba(0,0,0,.12);background:#fff;';
+          wrap.appendChild(canvas);
+          const ctx = canvas.getContext('2d'); if (ctx) await page.render({ canvasContext: ctx, viewport: vp }).promise;
+          if (cancelled) return;
+        }
+        setLoading(false);
+      } catch { if (!cancelled) { setError(true); setLoading(false); } }
+    })();
+    return () => { cancelled = true; };
+  }, [signatureRequestId, signedUrl]);
+  return (
+    <div>
+      <div ref={wrapRef} />
+      {loading && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '40px 0', color: t.textMuted, fontSize: 12, fontWeight: 600 }}><svg className="ctc-spin" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> Loading signed document…</div>}
+      {error && <div style={{ textAlign: 'center', padding: '40px 0', color: '#dc2626', fontSize: 12, fontWeight: 600 }}>Could not load the signed document.</div>}
+    </div>
+  );
+}
+
 /* Stage 4 right panel — repository status, completed timeline, quick actions. */
 function ContractHistoryPanel({ t, draftCount, signedUrl, signatureRequestId, onVersionHistory, onExit }: { t: OpsTokens; draftCount: number; signedUrl?: string; signatureRequestId?: number | null; onVersionHistory: () => void; onExit: () => void }) {
   const toast = useToast();
+  const [downloading, setDownloading] = useState(false);
   const downloadSigned = async () => {
-    if (signatureRequestId) {
-      try {
-        const res = await api.get(`/clm/signature-requests/${signatureRequestId}/download-file/0`, { responseType: 'blob' });
-        const url = URL.createObjectURL(res.data as Blob);
-        const a = document.createElement('a'); a.href = url; a.download = 'signed-agreement.pdf'; document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(url); return;
-      } catch { /* fall through to direct URL */ }
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      if (signatureRequestId) {
+        try {
+          const res = await api.get(`/clm/signature-requests/${signatureRequestId}/download-file/0`, { responseType: 'blob' });
+          const url = URL.createObjectURL(res.data as Blob);
+          const a = document.createElement('a'); a.href = url; a.download = 'signed-agreement.pdf'; document.body.appendChild(a); a.click(); a.remove();
+          URL.revokeObjectURL(url); return;
+        } catch { /* fall through to direct URL */ }
+      }
+      if (signedUrl) { window.open(signedUrl, '_blank'); return; }
+      toast.info('Not ready yet', 'The signed copy will be available once all parties have signed.');
+    } finally {
+      setDownloading(false);
     }
-    if (signedUrl) { window.open(signedUrl, '_blank'); return; }
-    toast.info('Not ready yet', 'The signed copy will be available once all parties have signed.');
   };
   const steps = [
     { title: 'Contract Stored', sub: 'Moved to Final Contract Repository' },
@@ -1470,11 +1644,6 @@ function ContractHistoryPanel({ t, draftCount, signedUrl, signatureRequestId, on
   const doneBadge = <span style={{ padding: '2px 8px', borderRadius: 20, background: t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5', border: `1px solid ${t.dark ? 'rgba(16,185,129,.4)' : '#A7F3D0'}`, fontSize: 7.5, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#059669', flexShrink: 0 }}>Done</span>;
   return (
     <>
-      {/* Download the fully-signed copy — pinned at the top of the card */}
-      <button onClick={downloadSigned} disabled={!signedUrl} title={signedUrl ? '' : 'Available once all parties have signed'} style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '11px', borderRadius: 11, border: 'none', background: signedUrl ? 'linear-gradient(135deg,#059669,#047857)' : (t.dark ? 'rgba(255,255,255,.06)' : '#E2E8F0'), cursor: signedUrl ? 'pointer' : 'not-allowed', fontFamily: 'inherit', boxShadow: signedUrl ? '0 4px 12px rgba(5,150,105,.32)' : 'none' }}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={signedUrl ? '#fff' : (t.dark ? '#94a3b8' : '#94A3B8')} strokeWidth="2.3" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-        <span style={{ fontSize: 10.5, fontWeight: 800, color: signedUrl ? '#fff' : (t.dark ? '#94a3b8' : '#94A3B8') }}>{signedUrl ? 'Download Signed Copy' : 'Awaiting Signed Copy'}</span>
-      </button>
       {/* Repository status */}
       <div style={{ flexShrink: 0, borderRadius: 12, padding: '13px 14px', background: 'linear-gradient(135deg,#064E3B,#047857,#059669)', boxShadow: '0 6px 18px rgba(5,150,105,.3)' }}>
         <div style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,.65)' }}>Repository Status</div>
@@ -1508,6 +1677,17 @@ function ContractHistoryPanel({ t, draftCount, signedUrl, signatureRequestId, on
             <div style={{ flex: 1, textAlign: 'left' }}><div style={{ fontSize: 9.5, fontWeight: 800, color: t.dark ? '#ddd6fe' : '#3B0764' }}>Version History</div><div style={{ fontSize: 7.5, color: t.dark ? '#a78bfa' : '#A78BFA', marginTop: 1 }}>View all drafts &amp; revisions</div></div>
             <span style={{ padding: '2px 8px', borderRadius: 10, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', fontSize: 7.5, fontWeight: 800, color: '#fff', flexShrink: 0 }}>v{draftCount || 1}</span>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#a78bfa' : '#C4B5FD'} strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0 }}><polyline points="9 18 15 12 9 6" /></svg>
+          </button>
+          {/* Download the fully-signed copy */}
+          <button onClick={downloadSigned} disabled={!signedUrl || downloading} title={signedUrl ? '' : 'Available once all parties have signed'} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '10px', borderRadius: 10, border: 'none', background: (signedUrl && !downloading) ? 'linear-gradient(135deg,#059669,#047857)' : (t.dark ? 'rgba(255,255,255,.06)' : '#E2E8F0'), cursor: (!signedUrl || downloading) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', boxShadow: (signedUrl && !downloading) ? '0 4px 12px rgba(5,150,105,.3)' : 'none' }}>
+            {downloading
+              ? <><svg className="ctc-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg><span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>Downloading…</span></>
+              : <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={signedUrl ? '#fff' : (t.dark ? '#94a3b8' : '#94A3B8')} strokeWidth="2.3" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg><span style={{ fontSize: 10, fontWeight: 800, color: signedUrl ? '#fff' : (t.dark ? '#94a3b8' : '#94A3B8') }}>{signedUrl ? 'Download Signed Copy' : 'Awaiting Signed Copy'}</span></>}
+          </button>
+          {/* Back to the CTC list */}
+          <button onClick={onExit} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px', borderRadius: 10, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.1)' : '#F5F0FF', color: t.dark ? '#c4b5fd' : '#6D28D9', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 700 }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
+            Back to CTC List
           </button>
         </div>
       </div>
@@ -1615,10 +1795,10 @@ function ContractSummaryCard({ t, code, agTitle, agType, cps, org, effDate, endD
     : [{ role: 'Disclosing Party', name: cp1?.name || '—', signed: true }, { role: 'Receiving Party', name: org?.name || cps[1]?.name || '—', signed: true }];
   return (
     <>
-      <div style={{ flexShrink: 0, position: 'relative', overflow: 'hidden', borderRadius: 14, padding: '16px 18px', background: 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', boxShadow: '0 6px 20px rgba(109,40,217,.3)' }}>
-        <div style={{ position: 'absolute', bottom: -18, right: 6, fontSize: 72, fontWeight: 900, color: 'rgba(255,255,255,.1)', lineHeight: 1, pointerEvents: 'none' }}>04</div>
+      <div style={{ flexShrink: 0, position: 'relative', overflow: 'hidden', borderRadius: 14, padding: '10px 16px', background: 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', boxShadow: '0 6px 20px rgba(109,40,217,.3)' }}>
+        <div style={{ position: 'absolute', bottom: -14, right: 6, fontSize: 54, fontWeight: 900, color: 'rgba(255,255,255,.1)', lineHeight: 1, pointerEvents: 'none' }}>04</div>
         <div style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.14em', textTransform: 'uppercase', color: 'rgba(255,255,255,.6)' }}>Agreement ID</div>
-        <div style={{ fontSize: 22, fontWeight: 900, color: '#fff', letterSpacing: '-.5px', margin: '3px 0 2px' }}>{code}</div>
+        <div style={{ fontSize: 19, fontWeight: 900, color: '#fff', letterSpacing: '-.5px', margin: '2px 0 1px' }}>{code}</div>
         <div style={{ fontSize: 10, fontWeight: 500, color: 'rgba(255,255,255,.72)' }}>{agType || agTitle || '—'}</div>
       </div>
       <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(16,185,129,.4)' : '#A7F3D0'}`, background: t.dark ? 'rgba(16,185,129,.1)' : '#ECFDF5' }}>
@@ -1660,7 +1840,7 @@ function ContractSummaryCard({ t, code, agTitle, agType, cps, org, effDate, endD
 function CpReadCard({ t, idx, cp }: { t: OpsTokens; idx: number; cp: CP }) {
   return (
     <div style={{ flexShrink: 0, background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, overflow: 'hidden', boxShadow: '0 4px 16px rgba(109,40,217,.08)' }}>
-      <div style={{ background: `linear-gradient(118deg,${cp.badge === 'BUYER' ? '#0e7490,#0891b2,#06b6d4' : cp.badge === 'SUPPLIER' ? '#047857,#059669,#10b981' : '#4C1D95,#6D28D9,#7C3AED'})`, padding: '10px 14px' }}>
+      <div style={{ background: `radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,${cp.badge === 'BUYER' ? '#0e7490,#0891b2,#06b6d4' : cp.badge === 'SUPPLIER' ? '#047857,#059669,#10b981' : '#4C1D95,#6D28D9,#7C3AED'})`, backgroundSize: '14px 14px, auto', padding: '10px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
           <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,.7)' }}>Counter Party {idx}</span>
           {cp.badge && <span style={{ fontSize: 8, fontWeight: 800, padding: '2px 8px', borderRadius: 20, background: 'rgba(255,255,255,.2)', border: '1px solid rgba(255,255,255,.35)', color: '#fff', textTransform: 'uppercase' }}>{cp.badge === 'BUYER' ? 'CUSTOMER' : cp.badge}</span>}
@@ -1840,12 +2020,12 @@ function RightTools({ t, draft, onInsert, summary, declineReason, declinedBy, ac
 }
 
 /* ── building blocks ── */
-function Panel({ t, header, title, headGrad, children, onCollapse, collapseDir }: { t: OpsTokens; header: string; title: string; headGrad: string; children: React.ReactNode; onCollapse?: () => void; collapseDir?: 'left' | 'right' }) {
+function Panel({ t, header, title, headGrad, children, onCollapse, collapseDir, icon }: { t: OpsTokens; header: string; title: string; headGrad: string; children: React.ReactNode; onCollapse?: () => void; collapseDir?: 'left' | 'right'; icon?: React.ReactNode }) {
   return (
     <div style={{ flex: 1, minHeight: 0, background: t.dark ? '#161226' : 'linear-gradient(160deg,#faf8ff 0%,#f5f0fe 35%,#ede8fd 100%)', borderRadius: 16, border: `1.5px solid ${t.dark ? 'rgba(139,92,246,.3)' : 'rgba(139,92,246,.28)'}`, boxShadow: '0 6px 32px rgba(109,40,217,.12)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{ padding: '13px 14px', display: 'flex', alignItems: 'center', gap: 11, flexShrink: 0, position: 'relative', overflow: 'hidden', background: `linear-gradient(118deg,${headGrad})`, borderRadius: '14px 14px 0 0' }}>
+      <div style={{ padding: '13px 14px', display: 'flex', alignItems: 'center', gap: 11, flexShrink: 0, position: 'relative', overflow: 'hidden', background: `radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,${headGrad})`, backgroundSize: '14px 14px, auto', borderRadius: '14px 14px 0 0' }}>
         <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '55%', background: 'linear-gradient(180deg,rgba(255,255,255,.2),transparent)', pointerEvents: 'none', borderRadius: '14px 14px 0 0' }} />
-        <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, position: 'relative', zIndex: 1 }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg></div>
+        <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, position: 'relative', zIndex: 1 }}>{icon ?? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}</div>
         <div style={{ flex: 1, minWidth: 0, position: 'relative', zIndex: 1 }}><div style={{ fontSize: 7, fontWeight: 800, letterSpacing: '.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,.65)', marginBottom: 2 }}>{header}</div><div style={{ fontSize: 13, fontWeight: 800, color: '#fff', letterSpacing: '-.25px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div></div>
         {onCollapse && (
           <button onClick={onCollapse} title="Collapse panel" style={{ width: 26, height: 26, borderRadius: 8, flexShrink: 0, position: 'relative', zIndex: 1, background: 'rgba(255,255,255,.16)', border: '1.5px solid rgba(255,255,255,.3)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1971,11 +2151,17 @@ function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens
       </div>
     </div>
   );
+  // Realistic dates: approval starts today, is due after `days`, and the
+  // reminder fires `reminder` days before the due date (clamped to ≥ start).
+  const fmtD = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const startD = new Date();
+  const dueD = new Date(startD); dueD.setDate(dueD.getDate() + days);
+  let remindD = new Date(dueD); remindD.setDate(remindD.getDate() - reminder); if (remindD < startD) remindD = new Date(startD);
   return (
     <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,7,50,.72)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, fontFamily: "'Rubik', system-ui, sans-serif" }}>
       <div style={{ width: '100%', maxWidth: 420, borderRadius: 20, overflow: 'hidden', boxShadow: '0 40px 80px rgba(109,40,217,.3)', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.25)'}` }}>
         {/* header */}
-        <div style={{ background: 'linear-gradient(118deg,#3B0764,#5B21B6,#7C3AED,#8B5CF6)', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#3B0764,#5B21B6,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg></div>
             <div><div style={{ fontSize: 7.5, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase' }}>Stage 02</div><div style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>Review &amp; Approval Workflow</div><div style={{ fontSize: 8.5, color: 'rgba(255,255,255,.65)', fontWeight: 500 }}>Select approvers for this agreement draft</div></div>
@@ -2025,6 +2211,15 @@ function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens
             {stepper('Days to Approve', days, setDays)}
             {stepper('Reminder', reminder, setReminder, 'd', <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#a78bfa' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>)}
           </div>
+          {/* Realistic timeline derived from the steppers above */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 11px', borderRadius: 10, background: t.dark ? 'rgba(124,58,237,.10)' : '#F6F3FF', border: `1px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#E4DEFF'}` }}>
+            {([['Starts', startD, '#7C3AED'], ['Due by', dueD, '#0891b2'], ['Reminder', remindD, '#D97706']] as [string, Date, string][]).map(([lbl, d, c], i) => (
+              <div key={lbl} style={{ flex: 1, textAlign: i === 0 ? 'left' : i === 1 ? 'center' : 'right' }}>
+                <div style={{ fontSize: 7, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: t.dark ? '#a78bfa' : c, marginBottom: 2 }}>{lbl}</div>
+                <div style={{ fontSize: 9.5, fontWeight: 800, color: t.textStrong, whiteSpace: 'nowrap' }}>{fmtD(d)}</div>
+              </div>
+            ))}
+          </div>
           {/* submit */}
           <button disabled={approvers.length === 0 || submitting} onClick={submit} title={approvers.length === 0 ? 'Add at least one approver' : ''} style={{ width: '100%', padding: 11, borderRadius: 11, border: 'none', background: (approvers.length === 0 || submitting) ? (t.dark ? 'rgba(124,58,237,.25)' : '#C4B5FD') : 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', color: '#fff', fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800, cursor: (approvers.length === 0 || submitting) ? 'not-allowed' : 'pointer', opacity: (approvers.length === 0 || submitting) ? .6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, boxShadow: (approvers.length === 0 || submitting) ? 'none' : '0 4px 14px rgba(109,40,217,.4)' }}>
             {submitting
@@ -2043,7 +2238,8 @@ function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens
  * employees under the active branch (GET /clm/ctc-contracts/approver-candidates). */
 const ROLE_FG = ['#D97706', '#059669', '#DC2626', '#7C3AED', '#0891b2', '#DB2777'];
 function ApproverPickerModal({ t, existing, onClose, onAdd }: { t: OpsTokens; existing: string[]; onClose: () => void; onAdd: (a: Approver[]) => void }) {
-  type Emp = { name: string; email: string; title: string; role: string; roleFg: string; initials: string; grad: string };
+  const toast = useToast();
+  type Emp = { name: string; email: string; title: string; role: string; roleFg: string; initials: string; grad: string; branch: string };
   const [emps, setEmps] = useState<Emp[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -2061,7 +2257,7 @@ function ApproverPickerModal({ t, existing, onClose, onAdd }: { t: OpsTokens; ex
           const roleFg = ut === 'client_admin' ? '#7C3AED' : ut === 'branch_user' ? '#0891b2' : ROLE_FG[role.split('').reduce((s, c) => s + c.charCodeAt(0), 0) % ROLE_FG.length];
           const title = ut === 'client_admin' ? 'Client Administrator' : ut === 'branch_user' ? (branchName ? `${branchName} · Branch` : 'Branch') : branchName;
           const name = String(e.name ?? 'User');
-          return { name, email: String(e.email ?? ''), title, role, roleFg, initials: orgInitials(name), grad: ORG_GRADS[i % ORG_GRADS.length] };
+          return { name, email: String(e.email ?? ''), title, role, roleFg, initials: orgInitials(name), grad: ORG_GRADS[i % ORG_GRADS.length], branch: branchName };
         }));
         setLoading(false);
       })
@@ -2071,6 +2267,10 @@ function ApproverPickerModal({ t, existing, onClose, onAdd }: { t: OpsTokens; ex
   const q = search.trim().toLowerCase();
   const list = q ? emps.filter(e => (e.name + e.role + e.title + e.email).toLowerCase().includes(q)) : emps;
   const keyOf = (e: Emp) => e.email || e.name;
+  // All approvers must belong to the SAME branch — lock to the branch of the
+  // first selected (branch-scoped) person; client-level entries (no branch)
+  // never lock and are never locked out.
+  const selBranch = emps.find(e => sel.has(keyOf(e)) && e.branch)?.branch ?? '';
   const toggle = (k: string) => setSel(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
   const confirm = () => {
     const picked: Approver[] = emps.filter(e => sel.has(keyOf(e))).map(e => ({ name: e.name, email: e.email, initials: e.initials, grad: e.grad, tags: e.role ? [[e.role, e.roleFg]] as [string, string][] : [], locked: false }));
@@ -2080,10 +2280,10 @@ function ApproverPickerModal({ t, existing, onClose, onAdd }: { t: OpsTokens; ex
   return (
     <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 99999999, background: 'rgba(15,7,50,.72)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, fontFamily: "'Rubik', system-ui, sans-serif" }}>
       <div style={{ width: '100%', maxWidth: 520, maxHeight: '86vh', borderRadius: 20, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 40px 80px rgba(109,40,217,.3)', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.25)'}` }}>
-        <div style={{ background: 'linear-gradient(118deg,#5B21B6,#6D28D9,#7C3AED,#8B5CF6)', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <div style={{ background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#5B21B6,#6D28D9,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg></div>
-            <div><div style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>Select Approvers</div><div style={{ fontSize: 8.5, color: 'rgba(255,255,255,.7)', fontWeight: 500 }}>Client, branch &amp; employees — select multiple</div></div>
+            <div><div style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>Select Approvers</div><div style={{ fontSize: 8.5, color: 'rgba(255,255,255,.7)', fontWeight: 500 }}>Same branch only — select multiple</div></div>
           </div>
           <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.12)', border: '1.5px solid rgba(255,255,255,.22)', color: '#fff', cursor: 'pointer', fontSize: 13, flexShrink: 0 }}>✕</button>
         </div>
@@ -2098,12 +2298,15 @@ function ApproverPickerModal({ t, existing, onClose, onAdd }: { t: OpsTokens; ex
             <div style={{ textAlign: 'center', padding: '32px 0', fontSize: 11, fontWeight: 600, color: t.textMuted }}>{loading ? 'Loading employees…' : 'No employees found'}</div>
           ) : list.map(e => {
             const k = keyOf(e); const on = sel.has(k); const already = existing.includes(k);
+            // Different branch than the one already chosen → not selectable.
+            const crossBranch = !on && !!e.branch && !!selBranch && e.branch !== selBranch;
+            const blocked = already || crossBranch;
             return (
-              <div key={k} onClick={() => !already && toggle(k)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 12px', borderRadius: 12, border: `1.5px solid ${on ? '#7C3AED' : (t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE')}`, background: already ? (t.dark ? 'rgba(255,255,255,.02)' : '#F8FAFC') : on ? (t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF') : t.surface, cursor: already ? 'not-allowed' : 'pointer', opacity: already ? .55 : 1 }}>
+              <div key={k} onClick={() => { if (already) return; if (crossBranch) { toast.warning('Same branch only', 'All approvers must be from the same branch.'); return; } toggle(k); }} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 12px', borderRadius: 12, border: `1.5px solid ${on ? '#7C3AED' : (t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE')}`, background: blocked ? (t.dark ? 'rgba(255,255,255,.02)' : '#F8FAFC') : on ? (t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF') : t.surface, cursor: crossBranch ? 'not-allowed' : already ? 'not-allowed' : 'pointer', opacity: blocked ? .5 : 1 }}>
               <div style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, border: `2px solid ${on || already ? '#7C3AED' : (t.dark ? 'rgba(148,163,184,.4)' : '#C4B5FD')}`, background: on || already ? '#7C3AED' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{(on || already) && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>}</div>
                 <div style={{ width: 38, height: 38, borderRadius: 10, background: `linear-gradient(135deg,${e.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{e.initials}</span></div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}><span style={{ fontSize: 12.5, fontWeight: 800, color: t.textStrong }}>{e.name}</span>{e.role && <span style={{ padding: '1px 7px', borderRadius: 5, background: roleBg(e.roleFg), border: `1px solid ${e.roleFg}55`, fontSize: 7.5, fontWeight: 800, color: e.roleFg, letterSpacing: '.04em' }}>{e.role}</span>}{already && <span style={{ fontSize: 8, fontWeight: 700, color: t.textMuted }}>· added</span>}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}><span style={{ fontSize: 12.5, fontWeight: 800, color: t.textStrong }}>{e.name}</span>{e.role && <span style={{ padding: '1px 7px', borderRadius: 5, background: roleBg(e.roleFg), border: `1px solid ${e.roleFg}55`, fontSize: 7.5, fontWeight: 800, color: e.roleFg, letterSpacing: '.04em' }}>{e.role}</span>}{already && <span style={{ fontSize: 8, fontWeight: 700, color: t.textMuted }}>· added</span>}{crossBranch && <span style={{ fontSize: 8, fontWeight: 700, color: '#D97706' }}>· other branch</span>}</div>
                   {e.title && <div style={{ fontSize: 10, color: t.textMuted, fontWeight: 500, marginTop: 1 }}>{e.title}</div>}
                 </div>
               </div>
@@ -2231,14 +2434,12 @@ const CTC_FORM_CSS = `
    this, children with overflow:hidden get min-height:0 and compress to fit
    instead of overflowing, so the scrollbar never appears. */
 .ctc-noshrink > * { flex-shrink: 0; }
-.ctc-mid-scroll { scrollbar-width: thin; scrollbar-color: rgba(124,58,237,.55) transparent; }
-.ctc-mid-scroll::-webkit-scrollbar { width: 9px; }
-.ctc-mid-scroll::-webkit-scrollbar-track { background: transparent; margin: 4px 0; }
-.ctc-mid-scroll::-webkit-scrollbar-thumb { background: linear-gradient(180deg,#8B5CF6,#7C3AED,#6D28D9); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
-.ctc-mid-scroll::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg,#7C3AED,#6D28D9,#5B21B6); background-clip: padding-box; }
+/* Default browser scrollbar — no custom colour. */
 .ctc-editor:empty:before { content: attr(data-ph); color: #94a3b8; pointer-events: none; white-space: pre-wrap; }
 .ctc-editor h1, .ctc-editor h2, .ctc-editor h3 { font-weight: 800; margin: 8px 0 4px; }
 .ctc-editor ul, .ctc-editor ol { padding-left: 22px; margin: 6px 0; }
 .ctc-spin { animation: ctcSpin .7s linear infinite; }
 @keyframes ctcSpin { to { transform: rotate(360deg); } }
+@keyframes ataSlideUp { from { opacity: 0; transform: translateY(14px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes confettiFall { 0% { transform: translateY(-24px) rotate(0deg); } 100% { transform: translateY(100vh) rotate(560deg); } }
 `;

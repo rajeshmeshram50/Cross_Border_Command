@@ -410,8 +410,8 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, t 
   return (
     <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(8,3,28,.82)', backdropFilter: 'blur(14px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: "'Rubik', system-ui, sans-serif" }}>
       <div style={{ width: '100%', maxWidth: 520, borderRadius: 24, overflow: 'hidden', boxShadow: '0 50px 100px rgba(8,3,28,.5),0 20px 40px rgba(6,182,212,.12)', border: '1px solid rgba(255,255,255,.1)', animation: 'ataSlideUp .24s cubic-bezier(.22,1,.36,1) both', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
-        {/* Header */}
-        <div style={{ background: 'linear-gradient(135deg,#0e7490 0%,#0891b2 45%,#06b6d4 80%,#22d3ee 100%)', padding: '22px 24px 20px', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
+        {/* Header — red for reject, cyan for clarify / default. */}
+        <div style={{ background: choice === 'reject' ? 'linear-gradient(135deg,#7f1d1d 0%,#b91c1c 42%,#dc2626 78%,#ef4444 100%)' : 'linear-gradient(135deg,#0e7490 0%,#0891b2 45%,#06b6d4 80%,#22d3ee 100%)', padding: '22px 24px 20px', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '55%', background: 'linear-gradient(180deg,rgba(255,255,255,.18),transparent)', pointerEvents: 'none' }} />
           <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>

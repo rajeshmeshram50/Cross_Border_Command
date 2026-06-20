@@ -1102,6 +1102,10 @@ class ClmSignatureController extends Controller
         $branch = $c->branch_id ? Branch::find($c->branch_id) : null;
         $c->org_signature_url = $branch?->signature_url;
         $c->signed_document_url = $this->ctcSignedDocumentUrl($c);
+        // Resolved preview (party + org tokens filled, leftovers blanked, but
+        // {{signature}} kept for the SPA) so Stage-3's live-polled record shows
+        // real data — not raw {{customer.*}} placeholders.
+        $c->content_preview = $c->content ? $this->resolveCtcContent((string) $c->content, $c, true) : '';
         return response()->json(['status' => true, 'data' => $c]);
     }
 
@@ -1186,7 +1190,7 @@ class ClmSignatureController extends Controller
      * any leftover token. {{signature}} must already be substituted by the
      * caller (renderCtcPdf) before this runs.
      */
-    private function resolveCtcContent(string $html, CtcContract $c): string
+    private function resolveCtcContent(string $html, CtcContract $c, bool $keepSignature = false): string
     {
         // Organisation tokens from the Company Details master.
         $orgName = trim((string) ($c->org_name ?? ''));
@@ -1214,7 +1218,9 @@ class ClmSignatureController extends Controller
         }
 
         // Blank any placeholder still left (unmapped party, missing data, typo).
-        return preg_replace('/\{\{[^{}]*\}\}/', '', $html);
+        // When keepSignature is set (preview use), leave {{signature}} for the SPA.
+        $pattern = $keepSignature ? '/\{\{\s*(?!signature\s*\}\})[^{}]*\}\}/i' : '/\{\{[^{}]*\}\}/';
+        return preg_replace($pattern, '', $html);
     }
 
     /** Live model + CLM model-name for a CTC counterparty reference. */
