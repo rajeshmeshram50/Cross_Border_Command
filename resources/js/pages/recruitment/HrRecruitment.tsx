@@ -745,7 +745,13 @@ export default function HrRecruitment() {
                           <tr key={r.id}>
                             <td className="ps-3 text-center text-muted fs-13">{sliceFrom + idx + 1}</td>
                             <td><span className="rec-id-pill">{r.code || r.id}</span></td>
-                            <td className="fw-bold fs-13" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.jobTitle}>{r.jobTitle}</td>
+                            <td className="fw-bold fs-13" style={{ maxWidth: 220 }}>
+                              {/* Styled Tooltip (same as the action buttons)
+                                  instead of the native browser title= popup. */}
+                              <Tooltip label={r.jobTitle}>
+                                <span style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', verticalAlign: 'middle' }}>{r.jobTitle}</span>
+                              </Tooltip>
+                            </td>
                             <td className="fs-13">{r.department}</td>
                             <td className="fs-13">{r.designation}</td>
                             <td>
@@ -2179,10 +2185,14 @@ type RecMastersCache = {
 let recMastersCache: RecMastersCache | null = null;
 
 function buildRecMasters(deptData: any, desigData: any, roleData: any, empData: any): RecMastersCache {
-  const deptRows: any[]  = Array.isArray(deptData)  ? deptData  : [];
-  const desigRows: any[] = Array.isArray(desigData) ? desigData : [];
-  const roleRows: any[]  = Array.isArray(roleData)  ? roleData  : [];
-  const empRows: any[]   = Array.isArray(empData)   ? empData   : [];
+  // Accept either a bare array or a wrapped { data: [...] } / paginated
+  // payload so the dropdowns don't silently empty if an endpoint's response
+  // shape differs from the expected array (HRMS-BUG-063).
+  const asRows = (d: any): any[] => Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []);
+  const deptRows  = asRows(deptData);
+  const desigRows = asRows(desigData);
+  const roleRows  = asRows(roleData);
+  const empRows   = asRows(empData);
 
   // Active-only filter — masters expose a 'status' column; treat
   // missing/blank status as active so older rows still show up.
@@ -2302,13 +2312,17 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
 
     (async () => {
       try {
+        // Per-request fallbacks so ONE flaky endpoint can't blank every
+        // dropdown — previously a single rejection in Promise.all wiped
+        // Designation / Primary Role / Hiring Manager / Assigned HR all at
+        // once (HRMS-BUG-063). Each list now populates independently.
         const [deptRes, desigRes, roleRes, empRes] = await Promise.all([
-          api.get('/master/departments'),
-          api.get('/master/designations'),
-          api.get('/master/roles'),
+          api.get('/master/departments').catch(() => ({ data: [] })),
+          api.get('/master/designations').catch(() => ({ data: [] })),
+          api.get('/master/roles').catch(() => ({ data: [] })),
           // onboarded_only → Hiring Manager / Assigned HR dropdowns only list
           // fully-onboarded, active employees (HRMS-BUG-048 / 049).
-          api.get('/employees', { params: { onboarded_only: 1 } }),
+          api.get('/employees', { params: { onboarded_only: 1 } }).catch(() => ({ data: [] })),
         ]);
         if (cancelled) return;
         const cache = buildRecMasters(deptRes.data, desigRes.data, roleRes.data, empRes.data);
