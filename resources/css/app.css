@@ -1094,6 +1094,13 @@ tbody tr:nth-child(10) {
 [data-bs-theme="dark"] .tc-wl-btn { background: rgba(255, 255, 255, .06); border-color: rgba(167, 139, 250, .30); color: #c4b5fd; }
 [data-bs-theme="dark"] .tc-wl-info .tc-wl-hl { color: #ddd6fe; }
 [data-bs-theme="dark"] .tc-wl-rows select { color: #ddd6fe; }
+/* The native dropdown popup ignores the translucent pill background, so the
+   10 / 25 / 50 options render light-on-light. Pin a solid dark surface +
+   readable text on the options themselves so the popup follows the theme. */
+[data-bs-theme="dark"] .tc-wl-rows select option {
+  background-color: #1f1b3a;
+  color: #ddd6fe;
+}
 
 /* Non-bleed band for the reusable WorklistPager (used in HR tables). Same
    look as .tc-wl-pag but without the full-bleed negative margins. */

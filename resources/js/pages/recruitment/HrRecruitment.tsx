@@ -1737,15 +1737,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
               >
                 <i className={t.icon} style={{ fontSize: 14 }} />
                 {t.label}
-                <span style={{
-                  marginLeft: 2,
-                  padding: '2px 8px',
-                  borderRadius: 999,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  background: active ? 'rgba(255,255,255,0.25)' : '#fff',
-                  color: active ? '#fff' : '#4338ca',
-                }}>{t.count}</span>
+                <span className={`rec-tab-count${active ? ' rec-tab-count--active' : ''}`}>{t.count}</span>
               </button>
             );
           })}
@@ -1843,15 +1835,16 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
                     <td className="fs-13"><span className="rec-date">{formatDate(r.targetJoinDate)}</span></td>
                     <td className="pe-4">
                       <div className="rec-row-actions">
-                        <button
-                          type="button"
-                          className="rec-act rec-act-view rec-act--icon"
-                          onClick={() => setViewing(r)}
-                          title="View"
-                          aria-label="View"
-                        >
-                          <i className="ri-eye-line" />
-                        </button>
+                        <Tooltip label="View">
+                          <button
+                            type="button"
+                            className="rec-act rec-act-view rec-act--icon"
+                            onClick={() => setViewing(r)}
+                            aria-label="View"
+                          >
+                            <i className="ri-eye-line" />
+                          </button>
+                        </Tooltip>
                         {/* No Edit action here by design — a hiring
                             request can only be edited from the Employee
                             Profile > Hiring Requests tab of the manager
@@ -1865,15 +1858,16 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
                             recruitment from being raised against the
                             same hiring request. */}
                         {tab === 'pending' && (
-                          <button
-                            type="button"
-                            className="rec-act rec-act-create rec-act--icon"
-                            onClick={() => onCreateRecruitment(r)}
-                            title="Create Recruitment"
-                            aria-label="Create Recruitment"
-                          >
-                            <i className="ri-user-search-line" />
-                          </button>
+                          <Tooltip label="Create Recruitment">
+                            <button
+                              type="button"
+                              className="rec-act rec-act-create rec-act--icon"
+                              onClick={() => onCreateRecruitment(r)}
+                              aria-label="Create Recruitment"
+                            >
+                              <i className="ri-user-search-line" />
+                            </button>
+                          </Tooltip>
                         )}
                       </div>
                     </td>
@@ -2640,20 +2634,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
               opened from a hiring request, so the recruiter knows where the
               prefilled values came from. */}
           {mode === 'add' && prefillFromHr && (
-            <div
-              style={{
-                padding: '10px 14px',
-                marginBottom: 10,
-                borderRadius: 10,
-                background: '#eef2ff',
-                border: '1px solid #c7d2fe',
-                color: '#3730a3',
-                fontSize: 13,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-              }}
-            >
+            <div className="rec-prefill-note">
               <i className="ri-link" />
               <span>
                 Prefilled from hiring request <strong>{prefillFromHr.code || `HRQ-${prefillFromHr.id}`}</strong>
