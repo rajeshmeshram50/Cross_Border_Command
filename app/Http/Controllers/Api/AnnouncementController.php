@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class AnnouncementController extends Controller
 {
@@ -203,6 +204,18 @@ class AnnouncementController extends Controller
         $merged = array_merge($row->toArray(), $data);
         $data['status'] = $this->resolveLifecycleStatus($merged);
         $data['updated_by'] = $request->user()?->id;
+
+        // Guard the Draft → Active transition: publishing requires the
+        // mandatory content. Drafts may be saved blank, but a one-click
+        // "Publish Now" must not push an empty announcement live.
+        if ($row->status !== 'Active' && $data['status'] === 'Active') {
+            $errors = [];
+            if (trim((string) ($merged['title'] ?? '')) === '')       $errors['title'] = ['The title is required to publish.'];
+            if (trim((string) ($merged['description'] ?? '')) === '')  $errors['description'] = ['The description is required to publish.'];
+            if ($errors) {
+                throw ValidationException::withMessages($errors);
+            }
+        }
 
         $previousStatus = $row->status;
         $row->update($data);

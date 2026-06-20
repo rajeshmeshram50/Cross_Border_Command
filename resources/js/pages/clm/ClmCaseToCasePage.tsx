@@ -62,6 +62,8 @@ export default function ClmCaseToCasePage() {
   };
   const [tab, setTab]   = useState<CtcTab>('all');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PER_PAGE);   // dynamic rows-per-page (worklist pager)
+  const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
   const [search, setSearch] = useState('');
   const [infoOpen, setInfoOpen] = useState(false);   // "What We Are Doing Here" starts collapsed
   const [cpOpen, setCpOpen] = useState<{ id: string; names: string[]; x: number; y: number } | null>(null);   // counterparties popover
@@ -69,6 +71,7 @@ export default function ClmCaseToCasePage() {
   const [editing, setEditing] = useState<CtcContract | null>(null);
   const [rows, setRows] = useState<CtcContract[]>([]);
   const [loading, setLoading] = useState(true);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);   // row currently downloading
   // Stretch the contracts card to fill the viewport so its footer (pagination)
   // sits at the bottom of the card even with few rows — same dynamic behaviour
   // as the CLM master tables.
@@ -119,6 +122,8 @@ export default function ClmCaseToCasePage() {
   // otherwise the latest drafted version rendered to PDF.
   const downloadContract = async (c: CtcContract) => {
     if (!c.dbId) { toast.error('Not available', 'This agreement has no saved record yet.'); return; }
+    if (downloadingId) return;   // a download is already in flight — ignore extra clicks
+    setDownloadingId(c.id);
     const grab = async (url: string, name: string) => {
       const f = await api.get(url, { responseType: 'blob' });
       const u = URL.createObjectURL(f.data as Blob);
@@ -139,6 +144,7 @@ export default function ClmCaseToCasePage() {
       await grab(`/clm/ctc-contracts/${c.dbId}/versions/${latestV}/download`, `${c.id}.pdf`);
       toast.success('Download started', c.id);
     } catch { toast.error('Download failed', 'Could not download the contract.'); }
+    finally { setDownloadingId(null); }
   };
 
   const counts = useMemo(() => {
@@ -158,10 +164,10 @@ export default function ClmCaseToCasePage() {
     return tab === 'all' ? f : f.filter(c => c.status === tab);
   }, [search, tab, rows]);
 
-  const totalPages = Math.max(1, Math.ceil(list.length / PER_PAGE));
+  const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
   const safe = Math.min(page, totalPages);
-  const start = (safe - 1) * PER_PAGE;
-  const slice = list.slice(start, start + PER_PAGE);
+  const start = (safe - 1) * pageSize;
+  const slice = list.slice(start, start + pageSize);
 
   // Recompute the contracts card height so it fills down to the bottom of the
   // viewport, pushing the pagination footer to the bottom of the card.
@@ -286,7 +292,7 @@ export default function ClmCaseToCasePage() {
 
         {/* TABLE */}
         <div style={{ background: t.tableBg, flex: 1, display: 'flex', flexDirection: 'column' }}>
-          {slice.length === 0 ? (
+          {!loading && slice.length === 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '56px 20px', textAlign: 'center', background: t.dark ? 'rgba(255,255,255,.02)' : '#FAFBFF' }}>
               <div style={{ width: 52, height: 52, borderRadius: 14, background: 'linear-gradient(135deg,#EDE9FE,#DDD6FE)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', boxShadow: '0 4px 12px rgba(109,40,217,.12)' }}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></div>
               <div style={{ fontSize: 13, fontWeight: 800, color: t.textStrong, marginBottom: 6 }}>No Contracts Found</div>
@@ -330,7 +336,7 @@ export default function ClmCaseToCasePage() {
                         <td style={{ ...TD, width: 122 }}>{cpS === '—' ? <span style={{ fontSize: 11.5, fontWeight: 600, color: '#C4B5FD' }}>—</span> : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10.5, fontWeight: 700, color: '#059669', whiteSpace: 'nowrap' }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>{cpS}</span>}</td>
                         <td style={{ ...TD, width: 150 }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
-                            <ActBtn t={t} tone="green" title="Download signed copy / latest PDF" onClick={() => downloadContract(c)}>
+                            <ActBtn t={t} tone="green" title="Download signed copy / latest PDF" busy={downloadingId === c.id} onClick={() => downloadContract(c)}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                             </ActBtn>
                             {/* Once signed, the agreement is locked → show a view (eye) icon
@@ -349,13 +355,28 @@ export default function ClmCaseToCasePage() {
                   })}
                 </tbody>
               </table>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 18px', background: t.pagerBg, borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#DDD6FE'}`, marginTop: 'auto' }}>
-                <span style={{ fontSize: 12, color: t.tabInactive, fontWeight: 500 }}>Showing <b style={{ color: t.textStrong, fontWeight: 800 }}>{start + 1}–{Math.min(start + PER_PAGE, list.length)}</b> of <b style={{ color: t.textStrong, fontWeight: 800 }}>{list.length}</b> contract{list.length !== 1 ? 's' : ''}</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => {
-                    const a = p === safe;
-                    return <button key={p} onClick={() => setPage(p)} disabled={a} style={{ minWidth: 26, height: 26, padding: '0 6px', borderRadius: 7, border: `1.5px solid ${a ? '#6D28D9' : (t.dark ? 'rgba(124,58,237,.3)' : 'rgba(109,40,217,.18)')}`, background: a ? 'linear-gradient(135deg,#6D28D9,#7C3AED)' : t.pagerBtn, color: a ? '#fff' : t.tabInactive, fontFamily: 'inherit', fontSize: 12, fontWeight: a ? 900 : 600, cursor: a ? 'default' : 'pointer' }}>{p}</button>;
-                  })}
+              <div className="tc-wl-pag" style={{ margin: 0, marginTop: 'auto' }}>
+                <span className="tc-wl-info">
+                  {list.length === 0
+                    ? 'No records'
+                    : <>Showing <span className="tc-wl-hl">{start + 1}–{Math.min(start + pageSize, list.length)}</span> of <span className="tc-wl-hl">{list.length}</span></>}
+                </span>
+                <div className="tc-wl-right">
+                  <span className="tc-wl-rows">
+                    Rows per page:
+                    <select value={pageSize} onChange={e => { setPageSize(parseInt(e.target.value, 10)); setPage(1); }}>
+                      {[...new Set([pageSize, ...PAGE_SIZE_OPTIONS])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </span>
+                  <span className="tc-wl-range">{safe} / {totalPages}</span>
+                  <div className="tc-wl-nav">
+                    <button type="button" className="tc-wl-btn" disabled={safe <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} aria-label="Previous page">
+                      <i className="ri-arrow-left-s-line"></i>
+                    </button>
+                    <button type="button" className="tc-wl-btn" disabled={safe >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))} aria-label="Next page">
+                      <i className="ri-arrow-right-s-line"></i>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -392,14 +413,16 @@ const ACT_TONES = {
   amber:  { light: { bg: '#FEF3C7', border: '#FCD34D', color: '#B45309' }, dark: { bg: 'rgba(245,158,11,.16)',  border: 'rgba(245,158,11,.42)', color: '#fcd34d' } },
 } as const;
 
-function ActBtn({ t, tone, title, onClick, children }: { t: OpsTokens; tone: keyof typeof ACT_TONES; title: string; onClick: () => void; children: React.ReactNode }) {
+function ActBtn({ t, tone, title, onClick, children, busy }: { t: OpsTokens; tone: keyof typeof ACT_TONES; title: string; onClick: () => void; children: React.ReactNode; busy?: boolean }) {
   const s = t.dark ? ACT_TONES[tone].dark : ACT_TONES[tone].light;
   return (
-    <Tooltip label={title}>
-      <button onClick={onClick} aria-label={title} style={{ width: 26, height: 26, borderRadius: 7, border: `1.5px solid ${s.border}`, background: s.bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: s.color, opacity: .85, flexShrink: 0, transition: 'all .15s' }}
-        onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,.15)'; }}
-        onMouseLeave={e => { e.currentTarget.style.opacity = '.85'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
-        {children}
+    <Tooltip label={busy ? 'Downloading…' : title}>
+      <button onClick={onClick} aria-label={title} disabled={busy} style={{ width: 26, height: 26, borderRadius: 7, border: `1.5px solid ${s.border}`, background: s.bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'wait' : 'pointer', color: s.color, opacity: busy ? 1 : .85, flexShrink: 0, transition: 'all .15s' }}
+        onMouseEnter={e => { if (busy) return; e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,.15)'; }}
+        onMouseLeave={e => { if (busy) return; e.currentTarget.style.opacity = '.85'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
+        {busy
+          ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'ctcSpin .7s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+          : children}
       </button>
     </Tooltip>
   );
@@ -407,4 +430,5 @@ function ActBtn({ t, tone, title, onClick, children }: { t: OpsTokens; tone: key
 
 const CTC_CSS = `
 @keyframes ctcFade { from { opacity:0 } to { opacity:1 } }
+@keyframes ctcSpin { to { transform: rotate(360deg) } }
 `;

@@ -16,7 +16,7 @@ import type { OpsTokens } from './useOpsTheme';
 export type CtcVersion = { v: number; label: string; status: string; date: string; by: string };
 export type CtcSigner = { name: string; email: string; role: string; contact: string; signed: boolean; signed_at: string | null; declined?: boolean; decline_reason?: string };
 
-/* ── Version History — per-version PDF download ── */
+/* ── Version History — per-version PDF download (timeline-card design) ── */
 export function VersionHistoryModal({ t, code, workingId, versions, onClose }: { t: OpsTokens; code: string; workingId: number | null; versions: CtcVersion[]; onClose: () => void }) {
   const toast = useToast();
   const [busy, setBusy] = useState<number | null>(null);

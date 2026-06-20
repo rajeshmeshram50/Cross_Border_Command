@@ -192,6 +192,17 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
 
   const wonOn = useMemo(() => fmtDate(lead?.won_at ?? null), [lead?.won_at]);
 
+  // Opportunity date for the Shipment Details cell. `header.oppDate` is a
+  // dd/mm/yyyy display string that fmtDate (new Date(...)) can't parse, so it
+  // rendered as "—". Prefer the server's ISO opportunity date (query_time ??
+  // created_at), then created_at, then fall back to the already-formatted
+  // header string as-is.
+  const oppDateText = useMemo(() => {
+    const iso = lead?.opportunity_date_iso ?? lead?.created_at;
+    if (iso) { const f = fmtDate(iso); if (f !== '—') return f; }
+    return header.oppDate || '—';
+  }, [lead?.opportunity_date_iso, lead?.created_at, header.oppDate]);
+
   // Days the deal took: from when the LEAD was created to the moment its PI
   // was SIGNED. Null (shows "—") until the PI is signed. Falls back to the
   // opportunity date if the lead's created_at isn't present.
@@ -366,7 +377,7 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
                 <Cell label="SHIPMENT ID"      value={`SHP-${String(shipment.id).padStart(3, '0')}`} amber />
                 <Cell label="SHIPMENT DATE"    value={fmtDate(shipment.created_at)} />
                 <Cell label="OPPORTUNITY ID"   value={header.oppId} amber />
-                <Cell label="OPPORTUNITY DATE" value={fmtDate(header.oppDate)} />
+                <Cell label="OPPORTUNITY DATE" value={oppDateText} />
                 <Cell label="PI NUMBER"        value={shipment.proforma_invoice?.code ?? latestPi?.code ?? '—'} amber />
                 <Cell label="PI DATE"          value={fmtDate(shipment.proforma_invoice?.created_at ?? latestPi?.created_at ?? null)} />
                 <Cell label="CREATED BY"       value={shipment.creator?.name ?? '—'} />

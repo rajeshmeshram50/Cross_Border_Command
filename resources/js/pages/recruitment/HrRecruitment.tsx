@@ -1045,7 +1045,10 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
   // Justification / Current Team Gap / What If Not Filled were all
   // free-text rationales that the recruitment team rarely consumed.
 
-  const [saving, setSaving] = useState(false);
+  // Which action is in flight, so only the clicked button spins. Save as
+  // Draft and Submit to HR are separate operations — sharing one boolean
+  // made both buttons show a loading state on either click.
+  const [saving, setSaving] = useState<'draft' | 'submit' | null>(null);
 
   // Errors — only fields still on the form.
   type RaiseErrors = Partial<Record<
@@ -1082,7 +1085,7 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
       setOpenings(''); setEmployType(''); setWorkMode(''); setUrgency('');
       setJobDesc(''); setDailyResp(''); setRequiredSkills(''); setRequiredExp(''); setRequiredQual('');
     }
-    setErrors({}); setSaving(false);
+    setErrors({}); setSaving(null);
   }, [isOpen, editing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const clear = (k: keyof RaiseErrors) =>
@@ -1194,7 +1197,7 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
       status:                 asDraft ? 'Draft' : 'Submitted',
     };
 
-    setSaving(true);
+    setSaving(asDraft ? 'draft' : 'submit');
     try {
       /* Edit mode → PUT to the existing row, create mode → POST.
        * The same payload shape works for both since the backend
@@ -1500,14 +1503,14 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
         <div className="rec-form-footer">
           <span className="hint">Fields marked <span style={{ color: '#f06548', fontWeight: 700 }}>*</span> are required</span>
           <div className="d-flex gap-2">
-            <button type="button" className="rec-btn-ghost" onClick={() => handleSubmit(true)} disabled={saving}>
-              {saving ? <Spinner size="sm" style={{ width: 14, height: 14 }} /> : <i className="ri-save-3-line" />}
+            <button type="button" className="rec-btn-ghost" onClick={() => handleSubmit(true)} disabled={!!saving}>
+              {saving === 'draft' ? <Spinner size="sm" style={{ width: 14, height: 14 }} /> : <i className="ri-save-3-line" />}
               Save as Draft
             </button>
-            <button type="button" className="rec-btn-primary" onClick={() => handleSubmit(false)} disabled={saving}>
-              {saving ? <Spinner size="sm" style={{ width: 14, height: 14 }} /> : <i className="ri-send-plane-line" />}
+            <button type="button" className="rec-btn-primary" onClick={() => handleSubmit(false)} disabled={!!saving}>
+              {saving === 'submit' ? <Spinner size="sm" style={{ width: 14, height: 14 }} /> : <i className="ri-send-plane-line" />}
               Submit to HR
-              {!saving && <i className="ri-arrow-right-line" />}
+              {saving !== 'submit' && <i className="ri-arrow-right-line" />}
             </button>
           </div>
         </div>
@@ -1534,7 +1537,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
   // yet) vs "Recruitment Created" (one or more recruitments link back
   // via hiring_request_id). The membership Set is rebuilt every time
   // the modal opens / the refresh key changes.
-  const [tab, setTab] = useState<'pending' | 'created'>('pending');
+  const [tab, setTab] = useState<'pending' | 'created' | 'rejected'>('pending');
 
   const [statusFilter, setStatusFilter]   = useState<string>('All');
   const [urgencyFilter, setUrgencyFilter] = useState<string>('All');
@@ -1563,7 +1566,11 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
         ]);
         if (cancelled) return;
         const rows: any[] = Array.isArray(reqRes.data) ? reqRes.data : [];
-        setRequests(rows.map(apiToHiringRequestRow));
+        // Drafts are private to the raiser's own Employee Profile —
+        // "Save as Draft" must NOT push the request to HR. A request
+        // only becomes visible here once it's actually Submitted, so we
+        // drop Draft-status rows from the recruitment view entirely.
+        setRequests(rows.map(apiToHiringRequestRow).filter(r => r.status !== 'Draft'));
         const recs: any[] = Array.isArray(recRes.data) ? recRes.data : [];
         const ids = new Set<number>();
         for (const r of recs) {
@@ -1584,13 +1591,8 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
 
   // Detail-view sub-modal (when "View" is clicked on a row).
   const [viewing, setViewing] = useState<HiringRequestRow | null>(null);
-  /* Draft being edited from the row's pencil-icon button. When set,
-   * the RaiseHiringRequestModal opens in edit mode prefilled from
-   * this row; a successful save replaces the matching entry in
-   * `requests` so the list reflects the new content without a refetch. */
-  const [editingDraft, setEditingDraft] = useState<HiringRequestRow | null>(null);
 
-  useEffect(() => { if (!isOpen) { setStatusFilter('All'); setUrgencyFilter('All'); setQ(''); setViewing(null); setEditingDraft(null); setPage(1); setTab('pending'); } }, [isOpen]);
+  useEffect(() => { if (!isOpen) { setStatusFilter('All'); setUrgencyFilter('All'); setQ(''); setViewing(null); setPage(1); setTab('pending'); } }, [isOpen]);
   // Reset to page 1 whenever filters, search or the active tab change
   // so the user never ends up on an empty page after narrowing.
   useEffect(() => { setPage(1); }, [statusFilter, urgencyFilter, q, tab]);
@@ -1603,11 +1605,11 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
     // KPIs were retired because no path in the app sets those statuses
     // — they were aspirational and always read as zero.
     const total              = requests.length;
-    const draft              = requests.filter(r => r.status === 'Draft').length;
+    const rejected           = requests.filter(r => r.status === 'Rejected').length;
     const submitted          = requests.filter(r => r.status === 'Submitted').length;
     const critical           = requests.filter(r => r.urgency === 'Critical').length;
     const recruitmentCreated = requests.filter(r => linkedHrIds.has(Number(r.id))).length;
-    return { total, draft, submitted, critical, recruitmentCreated };
+    return { total, rejected, submitted, critical, recruitmentCreated };
   }, [requests, linkedHrIds]);
 
   // Tab partition runs FIRST so the count on each tab reflects the
@@ -1616,7 +1618,11 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
   const tabRequests = useMemo(() => {
     return requests.filter(r => {
       const linked = linkedHrIds.has(Number(r.id));
-      return tab === 'created' ? linked : !linked;
+      const rejected = r.status === 'Rejected';
+      if (tab === 'created')  return linked;
+      if (tab === 'rejected') return rejected && !linked;
+      // pending: not yet promoted to a recruitment and not rejected
+      return !linked && !rejected;
     });
   }, [requests, linkedHrIds, tab]);
 
@@ -1637,8 +1643,9 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
   }, [tabRequests, statusFilter, urgencyFilter, q]);
 
   // Per-tab counts for the badge pills.
-  const pendingCount = useMemo(() => requests.filter(r => !linkedHrIds.has(Number(r.id))).length, [requests, linkedHrIds]);
-  const createdCount = useMemo(() => requests.filter(r =>  linkedHrIds.has(Number(r.id))).length, [requests, linkedHrIds]);
+  const pendingCount  = useMemo(() => requests.filter(r => !linkedHrIds.has(Number(r.id)) && r.status !== 'Rejected').length, [requests, linkedHrIds]);
+  const createdCount  = useMemo(() => requests.filter(r =>  linkedHrIds.has(Number(r.id))).length, [requests, linkedHrIds]);
+  const rejectedCount = useMemo(() => requests.filter(r => !linkedHrIds.has(Number(r.id)) && r.status === 'Rejected').length, [requests, linkedHrIds]);
 
   // Derive page slice — clamp `page` so a stale value can't land us past
   // the end of the list when filters shrink the result set.
@@ -1683,7 +1690,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
         <div className="rec-req-stats">
           {[
             { label: 'Total',                value: stats.total,              icon: 'ri-file-list-3-line',     accent: 'linear-gradient(135deg, #4338ca 0%, #6366f1 60%, #818cf8 100%)', deep: '#4338ca' },
-            { label: 'Draft',                value: stats.draft,              icon: 'ri-draft-line',           accent: 'linear-gradient(135deg, #525252 0%, #737373 60%, #a3a3a3 100%)', deep: '#525252' },
+            { label: 'Rejected',             value: stats.rejected,           icon: 'ri-close-circle-line',    accent: 'linear-gradient(135deg, #be123c 0%, #f43f5e 60%, #fb7185 100%)', deep: '#be123c' },
             { label: 'Submitted',            value: stats.submitted,          icon: 'ri-send-plane-line',      accent: 'linear-gradient(135deg, #7c3aed 0%, #9333ea 60%, #a855f7 100%)', deep: '#7c3aed' },
             { label: 'Recruitment Created',  value: stats.recruitmentCreated, icon: 'ri-user-search-line',     accent: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
             { label: 'Critical',             value: stats.critical,           icon: 'ri-flashlight-line',      accent: 'linear-gradient(135deg, #be123c 0%, #ef4444 60%, #fb7185 100%)', deep: '#be123c' },
@@ -1707,8 +1714,9 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
             bucket regardless of search / status filters. */}
         <div className="rec-req-tab-strip d-flex align-items-center gap-2 flex-wrap" style={{ padding: '8px 18px 12px' }}>
           {([
-            { key: 'pending', label: 'Pending Hiring Requests', icon: 'ri-time-line',  count: pendingCount },
-            { key: 'created', label: 'Recruitment Created',     icon: 'ri-user-search-line', count: createdCount },
+            { key: 'pending',  label: 'Pending Hiring Requests', icon: 'ri-time-line',        count: pendingCount },
+            { key: 'created',  label: 'Recruitment Created',     icon: 'ri-user-search-line', count: createdCount },
+            { key: 'rejected', label: 'Rejected',                icon: 'ri-close-circle-line', count: rejectedCount },
           ] as const).map(t => {
             const active = tab === t.key;
             return (
@@ -1729,15 +1737,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
               >
                 <i className={t.icon} style={{ fontSize: 14 }} />
                 {t.label}
-                <span style={{
-                  marginLeft: 2,
-                  padding: '2px 8px',
-                  borderRadius: 999,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  background: active ? 'rgba(255,255,255,0.25)' : '#fff',
-                  color: active ? '#fff' : '#4338ca',
-                }}>{t.count}</span>
+                <span className={`rec-tab-count${active ? ' rec-tab-count--active' : ''}`}>{t.count}</span>
               </button>
             );
           })}
@@ -1785,7 +1785,9 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
                       : tabRequests.length === 0
                         ? (tab === 'created'
                             ? 'No hiring requests have been promoted into a recruitment yet.'
-                            : 'Every hiring request has been moved into a recruitment.')
+                            : tab === 'rejected'
+                              ? 'No hiring requests have been rejected.'
+                              : 'Every hiring request has been moved into a recruitment.')
                         : 'No requests match your filters'}
                   </td>
                 </tr>
@@ -1833,30 +1835,22 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
                     <td className="fs-13"><span className="rec-date">{formatDate(r.targetJoinDate)}</span></td>
                     <td className="pe-4">
                       <div className="rec-row-actions">
-                        <button
-                          type="button"
-                          className="rec-act rec-act-view rec-act--icon"
-                          onClick={() => setViewing(r)}
-                          title="View"
-                          aria-label="View"
-                        >
-                          <i className="ri-eye-line" />
-                        </button>
-                        {/* Edit — Draft rows only. Once a request is
-                            Submitted it's committed for HR review and
-                            shouldn't be editable in place; the admin
-                            would create a new request instead. */}
-                        {r.status === 'Draft' && (
+                        <Tooltip label="View">
                           <button
                             type="button"
-                            className="rec-act rec-act-edit rec-act--icon"
-                            onClick={() => setEditingDraft(r)}
-                            title="Edit Draft"
-                            aria-label="Edit Draft"
+                            className="rec-act rec-act-view rec-act--icon"
+                            onClick={() => setViewing(r)}
+                            aria-label="View"
                           >
-                            <i className="ri-pencil-line" />
+                            <i className="ri-eye-line" />
                           </button>
-                        )}
+                        </Tooltip>
+                        {/* No Edit action here by design — a hiring
+                            request can only be edited from the Employee
+                            Profile > Hiring Requests tab of the manager
+                            who raised it. In this HR recruitment view the
+                            request is read-only: HR reviews it and either
+                            creates a recruitment or rejects it. */}
                         {/* Create-Recruitment is only meaningful for
                             rows in the Pending tab. Rows in the
                             "Recruitment Created" tab already have one,
@@ -1864,15 +1858,16 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
                             recruitment from being raised against the
                             same hiring request. */}
                         {tab === 'pending' && (
-                          <button
-                            type="button"
-                            className="rec-act rec-act-create rec-act--icon"
-                            onClick={() => onCreateRecruitment(r)}
-                            title="Create Recruitment"
-                            aria-label="Create Recruitment"
-                          >
-                            <i className="ri-user-search-line" />
-                          </button>
+                          <Tooltip label="Create Recruitment">
+                            <button
+                              type="button"
+                              className="rec-act rec-act-create rec-act--icon"
+                              onClick={() => onCreateRecruitment(r)}
+                              aria-label="Create Recruitment"
+                            >
+                              <i className="ri-user-search-line" />
+                            </button>
+                          </Tooltip>
                         )}
                       </div>
                     </td>
@@ -1913,21 +1908,6 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
         }}
       />
 
-      {/* Edit Draft sub-modal — opens when the pencil-icon button on a
-          Draft row is clicked. Reuses RaiseHiringRequestModal in edit
-          mode (PUT instead of POST). On save we splice the updated row
-          back into `requests` so the list reflects the change without
-          a full refetch round-trip. */}
-      <RaiseHiringRequestModal
-        isOpen={!!editingDraft}
-        onClose={() => setEditingDraft(null)}
-        editing={editingDraft}
-        zIndex={2200}
-        onSubmit={(saved) => {
-          setRequests(prev => prev.map(r => r.id === saved.id ? saved : r));
-          setEditingDraft(null);
-        }}
-      />
     </Modal>
   );
 }
@@ -2654,20 +2634,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
               opened from a hiring request, so the recruiter knows where the
               prefilled values came from. */}
           {mode === 'add' && prefillFromHr && (
-            <div
-              style={{
-                padding: '10px 14px',
-                marginBottom: 10,
-                borderRadius: 10,
-                background: '#eef2ff',
-                border: '1px solid #c7d2fe',
-                color: '#3730a3',
-                fontSize: 13,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-              }}
-            >
+            <div className="rec-prefill-note">
               <i className="ri-link" />
               <span>
                 Prefilled from hiring request <strong>{prefillFromHr.code || `HRQ-${prefillFromHr.id}`}</strong>

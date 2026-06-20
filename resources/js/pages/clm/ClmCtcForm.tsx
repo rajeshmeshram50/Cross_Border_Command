@@ -81,7 +81,9 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
   // stage change and the Stage-2 preview can render the same logo/header/footer.
   const [header, setHeader] = useState<HeaderConfig>(DEFAULT_HEADER);
   const [footer, setFooter] = useState<FooterConfig>(DEFAULT_FOOTER);
-  useEffect(() => { if (org?.name) setHeader(h => h.title === DEFAULT_HEADER.title ? { ...h, title: org.name } : h); }, [org]);
+  // Note: the selected organization is intentionally NOT injected into the
+  // document header title — the org name should not appear in the draft's
+  // top-right corner. The header title stays user-configurable (Stage 1).
 
   const errMsg = (e: unknown) => (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
   const refreshRecord = async (id?: number | null) => {
@@ -1132,7 +1134,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                  native-viewer chrome, no inner scrollbar. */
               <SignedPdfViewer t={t} signatureRequestId={Number(record?.signature_request_id) || null} signedUrl={signedUrl} />
             ) : (
-            <div style={{ maxWidth: 600, margin: '0 auto', background: t.dark ? '#1a1530' : '#fff', borderRadius: 6, boxShadow: '0 2px 12px rgba(0,0,0,.1)', padding: '36px 40px', position: 'relative' }}>
+            <div style={{ width: '100%', maxWidth: 820, margin: '0 auto', background: t.dark ? '#1a1530' : '#fff', borderRadius: 6, boxShadow: '0 2px 12px rgba(0,0,0,.1)', padding: '36px 48px', position: 'relative' }}>
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 5, background: stage === 4 ? 'linear-gradient(90deg,#047857,#059669,#10B981)' : 'linear-gradient(90deg,#4C1D95,#7C3AED,#A78BFA)', borderRadius: '6px 6px 0 0' }} />
               {/* Configured document header from Stage 1 — logo + title are
                   free-positioned via logo_pos / title_pos (% of the band, centre

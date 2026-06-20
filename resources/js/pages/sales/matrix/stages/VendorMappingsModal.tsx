@@ -100,7 +100,7 @@ export default function VendorMappingsModal({ open, productId, productCode, prod
             <div className="vmm-head-sub">
               Product: <strong>{productName ?? '—'}</strong>
               <span className="vmm-head-chip">{code}</span>
-              <span className="vmm-head-count">{maps.length} vendor(s)</span>
+              <span className="vmm-head-count">{maps.length} vendor</span>
             </div>
           </div>
           <button className="vmm-close" onClick={onClose} aria-label="Close">
