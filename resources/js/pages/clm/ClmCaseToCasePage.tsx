@@ -62,6 +62,8 @@ export default function ClmCaseToCasePage() {
   };
   const [tab, setTab]   = useState<CtcTab>('all');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PER_PAGE);   // dynamic rows-per-page (worklist pager)
+  const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
   const [search, setSearch] = useState('');
   const [infoOpen, setInfoOpen] = useState(false);   // "What We Are Doing Here" starts collapsed
   const [cpOpen, setCpOpen] = useState<{ id: string; names: string[]; x: number; y: number } | null>(null);   // counterparties popover
@@ -162,10 +164,10 @@ export default function ClmCaseToCasePage() {
     return tab === 'all' ? f : f.filter(c => c.status === tab);
   }, [search, tab, rows]);
 
-  const totalPages = Math.max(1, Math.ceil(list.length / PER_PAGE));
+  const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
   const safe = Math.min(page, totalPages);
-  const start = (safe - 1) * PER_PAGE;
-  const slice = list.slice(start, start + PER_PAGE);
+  const start = (safe - 1) * pageSize;
+  const slice = list.slice(start, start + pageSize);
 
   // Recompute the contracts card height so it fills down to the bottom of the
   // viewport, pushing the pagination footer to the bottom of the card.
@@ -349,13 +351,28 @@ export default function ClmCaseToCasePage() {
                   })}
                 </tbody>
               </table>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 18px', background: t.pagerBg, borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#DDD6FE'}`, marginTop: 'auto' }}>
-                <span style={{ fontSize: 12, color: t.tabInactive, fontWeight: 500 }}>Showing <b style={{ color: t.textStrong, fontWeight: 800 }}>{start + 1}–{Math.min(start + PER_PAGE, list.length)}</b> of <b style={{ color: t.textStrong, fontWeight: 800 }}>{list.length}</b> contract{list.length !== 1 ? 's' : ''}</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => {
-                    const a = p === safe;
-                    return <button key={p} onClick={() => setPage(p)} disabled={a} style={{ minWidth: 26, height: 26, padding: '0 6px', borderRadius: 7, border: `1.5px solid ${a ? '#6D28D9' : (t.dark ? 'rgba(124,58,237,.3)' : 'rgba(109,40,217,.18)')}`, background: a ? 'linear-gradient(135deg,#6D28D9,#7C3AED)' : t.pagerBtn, color: a ? '#fff' : t.tabInactive, fontFamily: 'inherit', fontSize: 12, fontWeight: a ? 900 : 600, cursor: a ? 'default' : 'pointer' }}>{p}</button>;
-                  })}
+              <div className="tc-wl-pag" style={{ margin: 0, marginTop: 'auto' }}>
+                <span className="tc-wl-info">
+                  {list.length === 0
+                    ? 'No records'
+                    : <>Showing <span className="tc-wl-hl">{start + 1}–{Math.min(start + pageSize, list.length)}</span> of <span className="tc-wl-hl">{list.length}</span></>}
+                </span>
+                <div className="tc-wl-right">
+                  <span className="tc-wl-rows">
+                    Rows per page:
+                    <select value={pageSize} onChange={e => { setPageSize(parseInt(e.target.value, 10)); setPage(1); }}>
+                      {[...new Set([pageSize, ...PAGE_SIZE_OPTIONS])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </span>
+                  <span className="tc-wl-range">{safe} / {totalPages}</span>
+                  <div className="tc-wl-nav">
+                    <button type="button" className="tc-wl-btn" disabled={safe <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} aria-label="Previous page">
+                      <i className="ri-arrow-left-s-line"></i>
+                    </button>
+                    <button type="button" className="tc-wl-btn" disabled={safe >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))} aria-label="Next page">
+                      <i className="ri-arrow-right-s-line"></i>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
