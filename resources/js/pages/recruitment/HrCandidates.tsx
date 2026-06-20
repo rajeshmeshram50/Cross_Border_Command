@@ -1202,15 +1202,10 @@ function CvCell({
 
   return (
     <label
-      className="cand-cv-chip"
-      // Override the green "downloaded" tone so the upload state reads as a
-      // clear call-to-action, not a "CV already attached" affordance.
-      style={{
-        cursor: uploading ? 'progress' : 'pointer',
-        background: uploading ? '#e0e7ff' : '#eef2ff',
-        color: '#4338ca',
-        border: '1px dashed #c7d2fe',
-      }}
+      // --upload swaps the green "downloaded" tone for an indigo dashed
+      // call-to-action; themed in CSS so it follows dark mode too.
+      className={`cand-cv-chip cand-cv-chip--upload${uploading ? ' is-uploading' : ''}`}
+      style={{ cursor: uploading ? 'progress' : 'pointer' }}
       title="Upload CV"
     >
       {uploading

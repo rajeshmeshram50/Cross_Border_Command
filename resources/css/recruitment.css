@@ -3821,6 +3821,32 @@
   color: #d1fae5;
 }
 
+/* Upload variant — shown when a candidate has no CV yet. Indigo dashed
+   call-to-action instead of the green "attached" tone. Themed so the chip
+   doesn't render as a bright white pill in dark mode. */
+.cand-cv-chip--upload {
+  background: #eef2ff;
+  color: #4338ca;
+  border: 1px dashed #c7d2fe;
+}
+.cand-cv-chip--upload:hover {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+.cand-cv-chip--upload.is-uploading { background: #e0e7ff; }
+[data-bs-theme="dark"] .cand-cv-chip--upload {
+  background: color-mix(in srgb, #818cf8 16%, transparent);
+  color: #c7d2fe;
+  border: 1px dashed color-mix(in srgb, #818cf8 45%, transparent);
+}
+[data-bs-theme="dark"] .cand-cv-chip--upload:hover {
+  background: color-mix(in srgb, #818cf8 26%, transparent);
+  color: #e0e7ff;
+}
+[data-bs-theme="dark"] .cand-cv-chip--upload.is-uploading {
+  background: color-mix(in srgb, #818cf8 26%, transparent);
+}
+
 /* ════════════════════════════════════════════════════════════════════════
    Exit Management — responsive KPI grid
    5 cards across at xl, then 3 → 2 → 1 as the viewport narrows.

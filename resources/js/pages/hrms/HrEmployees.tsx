@@ -151,7 +151,7 @@ interface ApiEmployee {
   designation?: { id: number; name: string } | null;
   primary_role?: { id: number; name: string } | null;
   ancillary_role?: { id: number; name: string } | null;
-  reporting_manager?: { id: number; display_name?: string | null; emp_code?: string | null; first_name?: string | null; last_name?: string | null } | null;
+  reporting_manager?: { id: number; display_name?: string | null; emp_code?: string | null; first_name?: string | null; last_name?: string | null; designation?: { id: number; name?: string | null } | null } | null;
   reporting_manager_user?: { id: number; name?: string | null; email?: string | null; user_type?: string | null; designation?: string | null } | null;
   legal_entity?: { id: number; entity_name?: string; city?: string | null } | null;
   work_country?: { id: number; name: string } | null;
@@ -1364,7 +1364,10 @@ export default function HrEmployees() {
         const nm = m?.display_name
           || [m?.first_name, m?.last_name].filter(Boolean).join(' ').trim()
           || `Employee #${raw.reporting_manager_id}`;
-        setSavedMgrOption({ value: `employee:${raw.reporting_manager_id}`, label: `${nm} (Employee)` });
+        // Label by the manager's designation (e.g. "Anushka Bakde (HOD)");
+        // fall back to the generic "(Employee)" only when none is set.
+        const desig = m?.designation?.name?.trim() || 'Employee';
+        setSavedMgrOption({ value: `employee:${raw.reporting_manager_id}`, label: `${nm} (${desig})` });
       } else if (mgrUserId && mgrUserType) {
         setEReportingMgr(`${mgrUserType}:${mgrUserId}`);
         const u = raw.reporting_manager_user;
@@ -3712,7 +3715,11 @@ export default function HrEmployees() {
             color: rgba(255,255,255,0.85) !important;
           }
           [data-bs-theme="dark"] .toggle-confirm-emp-card {
-            background: rgba(255,255,255,0.04) !important;
+            /* Opaque, not translucent — the card overlaps the tinted header
+               band (marginTop:-22), so a see-through fill let the green/amber
+               header bleed through and tint the card. A solid blackish
+               surface keeps it neutral on both the enable + disable paths. */
+            background: #2a313c !important;
             border-color: rgba(255,255,255,0.12) !important;
           }
           [data-bs-theme="dark"] .toggle-confirm-emp-name { color: rgba(255,255,255,0.95) !important; }
