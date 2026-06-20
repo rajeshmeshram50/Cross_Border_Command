@@ -206,15 +206,6 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
             <Col className="min-w-0">
               <div className="d-flex align-items-center gap-2 flex-wrap mb-1">
                 <h3 className="text-white mb-0 fw-semibold">{branch.name}</h3>
-                {branch.is_main && (
-                  <span
-                    className="badge rounded-pill text-uppercase fw-semibold d-inline-flex align-items-center gap-1"
-                    style={{ background: 'rgba(255,255,255,0.22)', color: '#fff', fontSize: 10, padding: '3px 10px' }}
-                  >
-                    <i className="ri-star-fill" style={{ color: '#ffd47a' }} />
-                    Main Branch
-                  </span>
-                )}
                 <span
                   className="badge rounded-pill text-uppercase fw-semibold d-inline-flex align-items-center gap-1"
                   style={{
@@ -313,7 +304,7 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
             <CardBody>
               <SectionHeader title="About" gradient={GRAD_PRIMARY} icon="ri-information-line" />
               <p className="text-muted mb-3">
-                <strong>{branch.name}</strong> is a {branch.is_main ? 'main' : ''} {branch.branch_type || 'branch'}
+                <strong>{branch.name}</strong> is a {branch.branch_type || 'branch'}
                 {branch.industry && <> operating in the <strong>{branch.industry}</strong> sector</>}
                 {location && <> based in <strong>{location}</strong></>}.
                 Manage contact details, branch user, address and operations from this page.

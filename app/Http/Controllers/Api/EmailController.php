@@ -28,7 +28,7 @@ class EmailController extends Controller
 {
     private const WITH = [
         'client:id,org_name',
-        'branch:id,name,is_main',
+        'branch:id,name',
         'sender:id,name,user_type',
         'employee:id,first_name,last_name,display_name,emp_code',
     ];
@@ -216,9 +216,9 @@ class EmailController extends Controller
             ->whereNotNull('email')
             ->select(['id', 'first_name', 'last_name', 'display_name', 'emp_code', 'email', 'branch_id']);
         if ($clientId !== null) $empQ->where('client_id', $clientId);
-        // Sub-branch user → only their own branch's staff. Main-branch / client
-        // admin / super_admin see the whole client.
-        if ($branchId !== null && !($user->branch?->is_main ?? false)) {
+        // Branch user → only their own branch's staff. Client admin /
+        // super_admin see the whole client.
+        if ($branchId !== null) {
             $empQ->where('branch_id', $branchId);
         }
         $employees = $empQ->orderBy('first_name')->limit(1000)->get()->map(fn ($e) => [
@@ -230,7 +230,7 @@ class EmailController extends Controller
 
         $branchQ = Branch::query()->whereNotNull('email')->select(['id', 'name', 'email']);
         if ($clientId !== null) $branchQ->where('client_id', $clientId);
-        if ($branchId !== null && !($user->branch?->is_main ?? false)) $branchQ->where('id', $branchId);
+        if ($branchId !== null) $branchQ->where('id', $branchId);
         $branches = $branchQ->orderBy('name')->get()->map(fn ($b) => [
             'id'    => $b->id,
             'name'  => $b->name,
@@ -243,7 +243,7 @@ class EmailController extends Controller
             ->whereNotNull('primary_email')->where('primary_email', '!=', '')
             ->select(['id', 'company_name', 'customer_code', 'primary_email', 'branch_id']);
         if ($clientId !== null) $custQ->where('client_id', $clientId);
-        if ($branchId !== null && !($user->branch?->is_main ?? false)) {
+        if ($branchId !== null) {
             $custQ->where('branch_id', $branchId);
         }
         $customers = $custQ->orderBy('company_name')->limit(1000)->get()->map(fn ($c) => [
@@ -404,23 +404,13 @@ class EmailController extends Controller
         if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
             $clientId = $user->client_id;
             $branchId = $user->branch_id;
-            $isMain   = $user->branch?->is_main ?? false;
 
-            if ($isMain) {
-                $q->where(function ($w) use ($clientId) {
-                    $w->whereNull('client_id')->orWhere('client_id', $clientId);
-                });
-                $this->applySwitcherBranchFilter($q, $user, $branchFilter);
-                return;
-            }
-
-            $mainBranchId = Branch::where('client_id', $clientId)->where('is_main', true)->value('id');
-            $q->where(function ($w) use ($clientId, $branchId, $mainBranchId) {
+            // Every branch is an isolated peer — globals + client-level rows + own branch only.
+            $q->where(function ($w) use ($clientId, $branchId) {
                 $w->whereNull('client_id')
-                  ->orWhere(function ($ww) use ($clientId, $branchId, $mainBranchId) {
-                      $ww->where('client_id', $clientId)->where(function ($wb) use ($branchId, $mainBranchId) {
+                  ->orWhere(function ($ww) use ($clientId, $branchId) {
+                      $ww->where('client_id', $clientId)->where(function ($wb) use ($branchId) {
                           $wb->whereNull('branch_id')->orWhere('branch_id', $branchId);
-                          if ($mainBranchId) $wb->orWhere('branch_id', $mainBranchId);
                       });
                   });
             });

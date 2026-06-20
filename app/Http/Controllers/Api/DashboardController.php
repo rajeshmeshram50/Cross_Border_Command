@@ -323,7 +323,9 @@ class DashboardController extends Controller
                 : null;
             if (!$userBranch) {
                 $branchId = -1;
-            } elseif (!$userBranch->is_main) {
+            } else {
+                // Every branch is an isolated peer — a branch user is always
+                // pinned to their own branch.
                 $branchId = $user->branch_id;
             }
         }
@@ -332,8 +334,8 @@ class DashboardController extends Controller
         // client_id + validated branch_id + user_type so different tenants,
         // branches, and role views each get their own cache entry. The
         // user_type segment in the key matters because $canViewPayments
-        // differs between main-branch and sub-branch users, so caching
-        // across roles would leak revenue numbers to non-main branches.
+        // differs between client admins and branch users, so caching
+        // across roles would leak revenue numbers to branch users.
         $cacheKey = 'dashboard:client-stats:' . $clientId
             . ':branch:' . ($branchId ?? 'all')
             . ':role:' . $user->user_type;
@@ -352,11 +354,11 @@ class DashboardController extends Controller
     {
         $user = $request->user();
 
-        // Payment data is billing-level info — only the client admin and the
-        // main branch (head office) should see actual amounts and history.
-        // Non-main branch users get zeros / empty so the dashboard doesn't
-        // leak revenue / invoice numbers across the org.
-        $canViewPayments = $user->user_type !== 'branch_user' || (bool) $userBranch?->is_main;
+        // Payment data is billing-level info — only the client admin should
+        // see actual amounts and history. Branch users get zeros / empty so
+        // the dashboard doesn't leak revenue / invoice numbers across the org
+        // (every branch is an isolated peer).
+        $canViewPayments = $user->user_type !== 'branch_user';
 
         $client = Client::with('plan')->find($clientId);
 
@@ -388,8 +390,8 @@ class DashboardController extends Controller
             ->count();
 
         // Payments are subscription-level (per client, not per branch). Show client-level
-        // counts to client admins and main-branch users only — sub-branch users get
-        // zeros so we don't leak finance data through the dashboard.
+        // counts to client admins only — branch users get zeros so we don't
+        // leak finance data through the dashboard.
         if ($canViewPayments) {
             $totalPayments = Payment::where('client_id', $clientId)->count();
             $successPayments = Payment::where('client_id', $clientId)->where('status', 'success')->count();
@@ -428,9 +430,8 @@ class DashboardController extends Controller
             ->where('code', '!=', 'HO')
             ->when($branchId, fn($q) => $q->where('id', $branchId))
             ->withCount(['users', 'employees'])
-            ->orderByDesc('is_main')
             ->orderBy('name')
-            ->get(['id', 'name', 'code', 'status', 'is_main', 'city', 'state', 'email', 'phone']);
+            ->get(['id', 'name', 'code', 'status', 'city', 'state', 'email', 'phone']);
 
         // Payment trend (last 6 months) — same gating as recent payments.
         // For restricted users we still emit month buckets with 0 amounts so
@@ -461,9 +462,9 @@ class DashboardController extends Controller
             ->toArray();
 
         // ── Employee analytics ──────────────────────────────────────────
-        // Scope mirrors the user/branch counts above: a sub-branch user is
+        // Scope mirrors the user/branch counts above: a branch user is
         // pinned to their own branch (via the $branchId rewrite up top), a
-        // main-branch user sees the whole client unless they pick a branch.
+        // client admin sees the whole client unless they pick a branch.
         // Count LIVE employees only (no withTrashed). A soft-deleted employee
         // is no longer current staff, so counting them — and worse, counting a
         // soft-deleted "Active" row as active — inflates the KPI and makes it

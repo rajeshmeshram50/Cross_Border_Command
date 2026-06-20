@@ -2,28 +2,31 @@
 /**
  * Comprehensive SaaS multi-tenant scope test.
  *
+ * Every branch is an equal, isolated peer — there is NO "main" branch. A
+ * branch user sees globals + client-level rows + ONLY their own branch's rows.
+ *
  * Topology:
  *   super_admin
  *   ├── Client A (client_id = 901)
- *   │     ├── Main  Branch A1 (branch_id = 801, is_main = true)  — user "mainA"
- *   │     ├── Sub   Branch A2 (branch_id = 802, is_main = false) — user "subA2"
- *   │     ├── Sub   Branch A3 (branch_id = 803, is_main = false) — user "subA3"
+ *   │     ├── Branch A1 (branch_id = 801) — user "mainA"
+ *   │     ├── Branch A2 (branch_id = 802) — user "subA2"
+ *   │     ├── Branch A3 (branch_id = 803) — user "subA3"
  *   │     └── client_admin A (clientA)
  *   └── Client B (client_id = 902)
- *         ├── Main  Branch B1 (branch_id = 811, is_main = true)  — user "mainB"
+ *         ├── Branch B1 (branch_id = 811) — user "mainB"
  *         └── client_admin B (clientB)
  *
  * Visibility matrix tested against the `countries` master:
  *
- *   Row created by       | super | clientA | clientB | mainA | subA2 | subA3 | mainB
- *   --------------------- | ----- | ------- | ------- | ----- | ----- | ----- | -----
- *   super (client=null)   |   ✓   |    ✓    |    ✓    |   ✓   |   ✓   |   ✓   |   ✓
- *   clientA (branch=null) |   ✓   |    ✓    |    ✗    |   ✓   |   ✓   |   ✓   |   ✗
- *   mainA (branch=801)    |   ✓   |    ✓    |    ✗    |   ✓   |   ✓   |   ✓   |   ✗
- *   subA2 (branch=802)    |   ✓   |    ✓    |    ✗    |   ✓   |   ✓   |   ✗   |   ✗
- *   subA3 (branch=803)    |   ✓   |    ✓    |    ✗    |   ✓   |   ✗   |   ✓   |   ✗
- *   clientB (branch=null) |   ✓   |    ✗    |    ✓    |   ✗   |   ✗   |   ✗   |   ✓
- *   mainB  (branch=811)   |   ✓   |    ✗    |    ✓    |   ✗   |   ✗   |   ✗   |   ✓
+ *   Row created by       | super | clientA | clientB | A1(801) | A2(802) | A3(803) | B1(811)
+ *   --------------------- | ----- | ------- | ------- | ------- | ------- | ------- | -------
+ *   super (client=null)   |   ✓   |    ✓    |    ✓    |    ✓    |    ✓    |    ✓    |    ✓
+ *   clientA (branch=null) |   ✓   |    ✓    |    ✗    |    ✓    |    ✓    |    ✓    |    ✗
+ *   A1 (branch=801)       |   ✓   |    ✓    |    ✗    |    ✓    |    ✗    |    ✗    |    ✗
+ *   A2 (branch=802)       |   ✓   |    ✓    |    ✗    |    ✗    |    ✓    |    ✗    |    ✗
+ *   A3 (branch=803)       |   ✓   |    ✓    |    ✗    |    ✗    |    ✗    |    ✓    |    ✗
+ *   clientB (branch=null) |   ✓   |    ✗    |    ✓    |    ✗    |    ✗    |    ✗    |    ✓
+ *   B1 (branch=811)       |   ✓   |    ✗    |    ✓    |    ✗    |    ✗    |    ✗    |    ✓
  *
  * Run: php scripts/smoke-saas-scope.php
  */
@@ -58,11 +61,12 @@ function seed(): array {
         'email' => 'cb@test.local', 'status' => 'active',
     ]);
 
-    // Branches
-    Branch::forceCreate(['id' => 801, 'client_id' => 901, 'name' => 'A-Main', 'is_main' => true,  'status' => 'active']);
-    Branch::forceCreate(['id' => 802, 'client_id' => 901, 'name' => 'A-Sub2', 'is_main' => false, 'status' => 'active']);
-    Branch::forceCreate(['id' => 803, 'client_id' => 901, 'name' => 'A-Sub3', 'is_main' => false, 'status' => 'active']);
-    Branch::forceCreate(['id' => 811, 'client_id' => 902, 'name' => 'B-Main', 'is_main' => true,  'status' => 'active']);
+    // Branches — all equal, isolated peers (no "main" branch). The names
+    // A1/A2/A3/B1 are just labels; none is privileged.
+    Branch::forceCreate(['id' => 801, 'client_id' => 901, 'name' => 'A-1', 'status' => 'active']);
+    Branch::forceCreate(['id' => 802, 'client_id' => 901, 'name' => 'A-2', 'status' => 'active']);
+    Branch::forceCreate(['id' => 803, 'client_id' => 901, 'name' => 'A-3', 'status' => 'active']);
+    Branch::forceCreate(['id' => 811, 'client_id' => 902, 'name' => 'B-1', 'status' => 'active']);
 
     // Users (not persisted — Auth::setUser accepts any Authenticatable-like instance)
     $super   = new User(['name' => 'Super',   'email' => 's@test',    'user_type' => 'super_admin']);            $super->id   = 99001;
@@ -128,14 +132,16 @@ ok($byName('R_MAINB')->client_id == 902 && $byName('R_MAINB')->branch_id == 811,
 
 /* -------- Part 2: visibility matrix per role -------- */
 
+// Every branch is an equal, isolated peer — a branch user sees globals +
+// client-level rows + ONLY their own branch's rows (no cross-branch view).
 $visibilityMatrix = [
     // rows each role MUST see (others MUST be hidden)
     'super'   => ['R_SUPER','R_CLIENTA','R_CLIENTB','R_MAINA','R_SUBA2','R_SUBA3','R_MAINB'],
     'clientA' => ['R_SUPER','R_CLIENTA','R_MAINA','R_SUBA2','R_SUBA3'],
     'clientB' => ['R_SUPER','R_CLIENTB','R_MAINB'],
-    'mainA'   => ['R_SUPER','R_CLIENTA','R_MAINA','R_SUBA2','R_SUBA3'],
-    'subA2'   => ['R_SUPER','R_CLIENTA','R_MAINA','R_SUBA2'],         // own + client + main, not A3
-    'subA3'   => ['R_SUPER','R_CLIENTA','R_MAINA','R_SUBA3'],         // own + client + main, not A2
+    'mainA'   => ['R_SUPER','R_CLIENTA','R_MAINA'],                   // globals + client-level + own branch (801) only
+    'subA2'   => ['R_SUPER','R_CLIENTA','R_SUBA2'],                   // own branch (802) only — not A1, not A3
+    'subA3'   => ['R_SUPER','R_CLIENTA','R_SUBA3'],                   // own branch (803) only — not A1, not A2
     'mainB'   => ['R_SUPER','R_CLIENTB','R_MAINB'],
 ];
 
@@ -180,16 +186,17 @@ asUser($users['subA3'], function () use ($rowSubA2) {
 
 // But subA3 CAN see subA2's row? No — per matrix, subA3 should NOT see subA2's row. Already covered above.
 
-// Main branch CAN update/delete any row under its client (main-branch privilege)
+// Branch A1 CANNOT touch another branch's row — every branch is an isolated
+// peer now (no "main branch" privilege).
 asUser($users['mainA'], function () use ($rowSubA2) {
-    [$s] = call('PUT', "/master/countries/{$rowSubA2->id}", ['name' => 'R_SUBA2', 'iso_code' => 'S2', 'status' => 'Active']);
-    ok($s === 200, "mainA CAN update sub-branch row under same client (200) — main-branch privilege");
+    [$s] = call('PUT', "/master/countries/{$rowSubA2->id}", ['name' => 'HACK', 'iso_code' => 'HK', 'status' => 'Active']);
+    ok($s === 404, "branch A1 CANNOT update another branch's row (404) — branch isolation");
 });
 
 // Client admin CAN update any row under its client
 asUser($users['clientA'], function () use ($rowMainA) {
     [$s] = call('PUT', "/master/countries/{$rowMainA->id}", ['name' => 'R_MAINA', 'iso_code' => 'MA', 'status' => 'Active']);
-    ok($s === 200, "clientA CAN update main-branch row under same client (200)");
+    ok($s === 200, "clientA CAN update any branch's row under same client (200)");
 });
 
 // Sub branch cannot reach global (super_admin) rows' mutations either — they only appear in list; writes by non-owners fail silently via findOrFail scoping

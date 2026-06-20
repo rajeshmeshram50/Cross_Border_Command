@@ -460,9 +460,8 @@ class SubscriptionController extends Controller
 
         $activeBranches = Branch::where('client_id', $client->id)
             ->where('status', 'active')
-            ->orderByDesc('is_main')
             ->orderBy('created_at')
-            ->get(['id', 'is_main', 'status', 'created_at']);
+            ->get(['id', 'status', 'created_at']);
 
         if ($activeBranches->count() <= $maxBranches) {
             return 0;
@@ -476,16 +475,9 @@ class SubscriptionController extends Controller
                 ->values()
                 ->all();
 
-            // Always keep the main branch — even if the client forgot to tick it
-            $mainId = $activeBranches->firstWhere('is_main', true)?->id;
-            if ($mainId && !in_array($mainId, $validKeptIds, true)) {
-                array_unshift($validKeptIds, $mainId);
-                $validKeptIds = array_slice($validKeptIds, 0, $maxBranches);
-            }
-
             $excess = $activeBranches->whereNotIn('id', $validKeptIds);
         } else {
-            // No selection submitted — pick main + oldest sub-branches
+            // No selection submitted — keep the oldest branches
             $excess = $activeBranches->slice($maxBranches);
         }
 
@@ -526,7 +518,7 @@ class SubscriptionController extends Controller
 
         $clientBranches = Branch::where('client_id', $client->id)
             ->where('status', 'active')
-            ->get(['id', 'is_main']);
+            ->get(['id']);
 
         $currentCount = $clientBranches->count();
         $shrinkRequired = $currentCount > $maxBranches;
@@ -567,16 +559,6 @@ class SubscriptionController extends Controller
             ], 422);
         }
 
-      
-        $mainId = $clientBranches->firstWhere('is_main', true)?->id;
-        $kept = $submitted->all();
-        if ($mainId && !in_array($mainId, $kept, true)) {
-            if (count($kept) >= $maxBranches) {
-                array_pop($kept);
-            }
-            array_unshift($kept, $mainId);
-        }
-
-        return array_values(array_unique(array_map('intval', $kept)));
+        return array_values(array_unique(array_map('intval', $submitted->all())));
     }
 }

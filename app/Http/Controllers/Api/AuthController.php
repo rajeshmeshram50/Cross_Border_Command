@@ -614,7 +614,6 @@ class AuthController extends Controller
             // is dropped so we never inject malformed CSS into :root.
             'primary_color' => $this->pickHexColor($user->branch?->primary_color, $user->client?->primary_color),
             'secondary_color' => $this->pickHexColor($user->branch?->secondary_color, $user->client?->secondary_color),
-            'is_main_branch' => (bool) ($user->branch?->is_main),
             'is_reporting_manager' => $isReportingManager,
             'has_direct_reports'   => $hasReports,
             'inbox_count'          => $inboxCount,

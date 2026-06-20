@@ -136,11 +136,6 @@ class User extends Authenticatable
         return $this->user_type === 'branch_user';
     }
 
-    public function isMainBranchUser(): bool
-    {
-        return $this->isBranchUser() && $this->branch?->is_main;
-    }
-
     public function isActive(): bool
     {
         return $this->status === 'active';

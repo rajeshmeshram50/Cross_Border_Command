@@ -9,7 +9,7 @@ use Illuminate\Support\Carbon;
 /**
  * One-off QA fixture: 20 customers, 20 consignees, 20 products and
  * 20 vendors (suppliers) of realistic Indian export/import data for the
- * IGC GROUP tenant (client_id = 1, main branch Healthcare = 2,
+ * IGC GROUP tenant (client_id = 1, Healthcare branch = 2,
  * owned by the QA user rajeshmeshram = user id 3).
  *
  * Codes are allocated exactly the way the controllers do:
@@ -23,8 +23,8 @@ use Illuminate\Support\Carbon;
 class IndianTestDataSeeder extends Seeder
 {
     private int $clientId = 1;
-    private int $branchId = 2;   // Healthcare (main branch)
-    private int $createdBy = 3;  // rajeshmeshram (branch_user on main branch)
+    private int $branchId = 2;   // Healthcare branch
+    private int $createdBy = 3;  // rajeshmeshram (branch_user on the Healthcare branch)
 
     public function run(): void
     {

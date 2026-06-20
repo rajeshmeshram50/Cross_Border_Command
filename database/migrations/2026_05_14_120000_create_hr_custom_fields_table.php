@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Schema;
  * document-generation time.
  *
  * Tenant scoping mirrors hr_document_templates: (client_id, branch_id) with
- * main-branch + BranchSwitcher visibility rules applied by the controller.
+ * per-branch + BranchSwitcher visibility rules applied by the controller.
  * "used_in" is intentionally NOT stored — it's derived on read by scanning
  * hr_document_templates.content_html for {{FieldName}} occurrences, so the
  * answer is always truthful even when templates are edited.

@@ -14,7 +14,7 @@ use App\Models\User;
  * leads (and everything derived from them — quotations, PIs, distribution
  * counts) to one of three TIERS:
  *
- *   'all'   → Super Admin / Client Admin / Branch Admin (main-branch user) /
+ *   'all'   → Super Admin / Client Admin / Branch Admin (branch_user) /
  *             Designation = Head of Department (HOD, the Sales Manager).
  *             Sees EVERY lead in scope and may distribute to anyone.
  *   'team'  → Designation = Team Leader WHO HAS the delegated distribution
@@ -55,9 +55,7 @@ class SalesVisibility
         // The designation hierarchy applies ONLY to HR employees (the people
         // who carry a Sales designation). Every other account type — Super
         // Admin, Client Admin, Client User, and the Branch Admin (branch_user)
-        // — sees its full scope. NOTE: we key off user_type, not branch.is_main,
-        // because branches in this tenant may all be is_main = false; gating on
-        // is_main wrongly stripped branch users of access.
+        // — sees its full scope (designation tiers apply only to employees).
         if ($user->user_type !== 'employee') {
             $result = 'all';
         } else {

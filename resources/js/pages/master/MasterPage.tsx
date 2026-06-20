@@ -1496,35 +1496,27 @@ function MasterPageInner({
         const showAny = caps.view || caps.edit || caps.delete;
         const row = info.row.original;
         // ── Hierarchical edit/delete rule (mirrors backend MasterVisibility) ──
-        // super_admin (4) > client_admin/client_user (3) > main_branch (2) > sub_branch (1).
-        // Main Branch and Sub Branch users share user_type='branch_user' on
-        // the backend — the `is_main` flag on their branch is what
-        // distinguishes them. Both the current user (via auth context's
-        // `is_main_branch`) and the row's creator (via the new
-        // `creator_branch_is_main` field returned by the API) carry that
-        // flag, so the frontend now correctly blocks a sub-branch user
-        // from editing/deleting main-branch-created rows.
-        const rankFor = (t?: string, isMain?: boolean): number => {
+        // super_admin (4) > client_admin/client_user (3) > branch_user/employee (2).
+        // Every branch is an isolated peer, so all branch_user/employee
+        // creators share one tier.
+        const rankFor = (t?: string): number => {
           switch (t) {
             case 'super_admin':                return 4;
             case 'client_admin':
             case 'client_user':                return 3;
-            case 'branch_user': case 'employee': return isMain ? 2 : 1;
+            case 'branch_user': case 'employee': return 2;
             default:                           return 0;
           }
         };
-        const myRank = rankFor(user?.user_type, user?.is_main_branch === true);
-        const creatorRank = rankFor(row?.creator_user_type, !!row?.creator_branch_is_main);
+        const myRank = rankFor(user?.user_type);
+        const creatorRank = rankFor(row?.creator_user_type);
         // Fallback: when the row carries no creator user (NULL or stale
-        // created_by) the API still ships `branch_is_main` for the row
-        // itself, so we can still rank it by its own ownership stamp.
-        // Treat a row stamped under main branch (or a client-level row
-        // with no branch) as TIER >= MAIN.
+        // created_by) rank it by its own ownership stamp (client-level row
+        // with no branch ranks above a branch-stamped row).
         const fallbackCreatorRank = !row?.created_by
           ? (row?.client_id == null ? 4
               : row?.branch_id == null ? 3
-              : row?.branch_is_main ? 2
-              : 1)
+              : 2)
           : creatorRank;
         // Block edit/delete only when the creator is strictly higher-
         // ranked AND it's not the user's own record. Super admin always
@@ -1537,7 +1529,7 @@ function MasterPageInner({
                        : row?.creator_user_type === 'client_admin'                           ? 'Client Admin'
                        : row?.creator_user_type === 'client_user'                            ? 'Client user'
                        : (row?.creator_user_type === 'branch_user' || row?.creator_user_type === 'employee')
-                         ? (row?.creator_branch_is_main ? 'the Main Branch' : 'another Branch')
+                         ? 'another Branch'
                        : 'a higher-privileged user';
         // System-seeded rows ("Office" address type, "Laptop" / "Mobile"
         // asset categories, "Standard" / "VIP" classifications, etc.)

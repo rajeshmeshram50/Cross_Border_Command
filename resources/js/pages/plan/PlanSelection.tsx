@@ -49,8 +49,8 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
   const [txnResult, setTxnResult] = useState<any>(null);
 
   // Branch-shrink flow — when the chosen plan caps branches below the active
-  // count, the client must pick which to keep before payment. The main branch
-  // is always kept (locked in the UI) so the tenant model stays intact.
+  // count, the client must pick which to keep before payment. All branches
+  // are equal peers, so any of them may be kept or retired.
   const [branchKeepModal, setBranchKeepModal] = useState(false);
   const [keptBranchIds, setKeptBranchIds] = useState<number[]>([]);
 
@@ -58,7 +58,6 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
   const nextRef = useRef<HTMLButtonElement>(null);
 
   const activeBranches = branches.filter(b => b.status === 'active');
-  const mainBranchId = activeBranches.find(b => b.is_main)?.id ?? null;
 
   useEffect(() => {
     api.get('/subscription/plans').then(res => setPlans(res.data || []))
@@ -96,10 +95,10 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
     setPaymentStep('select');
 
     if (requiredShrinkCap(plan) !== null) {
-      // Pre-select main branch + (cap - 1) most-recently-used / oldest branches
-      // so the user has a sensible starting state. They can adjust freely.
+      // Pre-select the first `cap` branches so the user has a sensible
+      // starting state. They can adjust freely.
       const cap = plan.max_branches ?? 0;
-      const initial = mainBranchId ? [mainBranchId] : [];
+      const initial: number[] = [];
       for (const b of activeBranches) {
         if (initial.length >= cap) break;
         if (!initial.includes(b.id)) initial.push(b.id);
@@ -115,7 +114,6 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
 
   const toggleKeptBranch = (branchId: number) => {
     if (!selectedPlan) return;
-    if (branchId === mainBranchId) return; // main is locked — always kept
     const cap = selectedPlan.max_branches ?? 0;
     setKeptBranchIds(prev => {
       if (prev.includes(branchId)) {
@@ -138,10 +136,6 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
     }
     if (cap > 0 && keptBranchIds.length > cap) {
       toast.error('Too many selected', `This plan allows only ${cap} branches.`);
-      return;
-    }
-    if (mainBranchId && !keptBranchIds.includes(mainBranchId)) {
-      toast.error('Main branch required', 'The main branch must remain active. Switch your main branch first if you want to retire it.');
       return;
     }
     setBranchKeepModal(false);
@@ -630,9 +624,9 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
       )}
 
       {/* Branch-keep Modal — shown only when downgrading shrinks max_branches.
-          Main branch is always kept (locked); the user picks up to (cap - 1)
-          additional sub-branches. Unselected branches will be deactivated on
-          plan activation (data preserved — re-upgrading restores them). */}
+          The user picks up to `cap` branches to keep. Unselected branches will
+          be deactivated on plan activation (data preserved — re-upgrading
+          restores them). */}
       <Modal
         isOpen={branchKeepModal}
         toggle={() => !processing && setBranchKeepModal(false)}
@@ -695,19 +689,18 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
                   }}
                 >
                   {activeBranches.map((b, idx) => {
-                    const isMain = b.id === mainBranchId;
                     const isKept = keptBranchIds.includes(b.id);
                     const atCap = !isKept && cap > 0 && keptBranchIds.length >= cap;
                     return (
                       <div
                         key={b.id}
-                        onClick={() => !isMain && !atCap && toggleKeptBranch(b.id)}
+                        onClick={() => !atCap && toggleKeptBranch(b.id)}
                         role="button"
                         className="d-flex align-items-center gap-3 px-3 py-2"
                         style={{
                           borderTop: idx === 0 ? 'none' : '1px solid var(--vz-border-color)',
                           background: isKept ? '#0ab39c10' : 'transparent',
-                          cursor: isMain ? 'not-allowed' : atCap ? 'not-allowed' : 'pointer',
+                          cursor: atCap ? 'not-allowed' : 'pointer',
                           opacity: !isKept && atCap ? 0.5 : 1,
                           transition: 'background 0.15s ease',
                         }}
@@ -715,30 +708,15 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
                         <Input
                           type="checkbox"
                           checked={isKept}
-                          disabled={isMain || atCap}
+                          disabled={atCap}
                           onChange={() => toggleKeptBranch(b.id)}
                           onClick={e => e.stopPropagation()}
                           className="m-0 flex-shrink-0"
-                          style={{ cursor: isMain ? 'not-allowed' : 'pointer' }}
+                          style={{ cursor: 'pointer' }}
                         />
                         <div className="flex-grow-1 min-w-0">
                           <div className="d-flex align-items-center gap-2">
                             <span className="fw-semibold text-truncate" style={{ fontSize: 13.5 }}>{b.name}</span>
-                            {isMain && (
-                              <span
-                                className="rounded-pill px-2 fw-bold"
-                                style={{
-                                  background: '#40518915',
-                                  color: '#405189',
-                                  border: '1px solid #40518930',
-                                  fontSize: 9.5,
-                                  letterSpacing: '0.04em',
-                                  padding: '1px 6px',
-                                }}
-                              >
-                                MAIN · ALWAYS KEPT
-                              </span>
-                            )}
                           </div>
                           <div className="text-muted text-truncate" style={{ fontSize: 11.5 }}>
                             {[b.code, b.city, b.state].filter(Boolean).join(' · ') || '—'}
@@ -751,8 +729,8 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
 
                 <div className="text-muted mt-2 px-1" style={{ fontSize: 11.5 }}>
                   <i className="ri-shield-check-line me-1" />
-                  Deactivated branches keep their data. To change which branch is "main",
-                  edit the branch settings before downgrading.
+                  Deactivated branches keep their data and are reactivated if you
+                  upgrade again later.
                 </div>
               </>
             );

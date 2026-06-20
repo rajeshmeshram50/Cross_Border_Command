@@ -28,7 +28,7 @@ class EmployeeController extends Controller
    
     private const WITH = [
         'client:id,org_name',
-        'branch:id,name,is_main',
+        'branch:id,name',
         'creator:id,name,user_type',
         'user:id,name,email,status,last_login_at',
         'department:id,name,code',
@@ -927,8 +927,8 @@ class EmployeeController extends Controller
 
     /** Same scoping rules as the master tables — keeps every list query consistent.
      *  When the SPA's BranchSwitcher injects `?branch_id=N`, we narrow further
-     *  within the user's existing tenant scope so client_admin and main-branch
-     *  user can drill into a single sibling branch's data. The narrow only
+     *  within the user's existing tenant scope so a client_admin can drill
+     *  into a single branch's data. The narrow only
      *  applies if the requested branch belongs to the user's own client (else
      *  silently ignored — no cross-tenant leak even with a hostile param). */
     private function applyScope($q, $user, ?int $branchFilter = null): void
@@ -951,32 +951,19 @@ class EmployeeController extends Controller
         if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
             $clientId = $user->client_id;
             $branchId = $user->branch_id;
-            $isMain   = $user->branch?->is_main ?? false;
 
-            if ($isMain) {
-                // Main branch user sees their own branch + every sub-branch
-                // under the same client (the whole tenant's employees).
-                $q->where(function ($w) use ($clientId) {
-                    $w->whereNull('client_id')->orWhere('client_id', $clientId);
-                });
-                $this->applySwitcherBranchFilter($q, $user, $branchFilter);
-                return;
-            }
-
-            // Sub-branch user — strict branch isolation. They see ONLY rows
-            // belonging to their own branch within this tenant. Master-data
-            // scoping (which lets sub-branches see client/main-branch master
-            // rows) does NOT apply to operational employee records: an
-            // employee booked under the main branch must not appear in a
-            // sub-branch user's list. Globally-owned rows (client_id IS NULL)
-            // stay visible — they're system rows, not tenant data.
+            // Every branch is an isolated peer — strict branch isolation. They
+            // see ONLY rows belonging to their own branch within this tenant.
+            // An employee booked under another branch must not appear in this
+            // branch user's list. Globally-owned rows (client_id IS NULL) stay
+            // visible — they're system rows, not tenant data.
             $q->where(function ($w) use ($clientId, $branchId) {
                 $w->whereNull('client_id')
                     ->orWhere(function ($ww) use ($clientId, $branchId) {
                         $ww->where('client_id', $clientId)->where('branch_id', $branchId);
                     });
             });
-            // Sub-branch users can't switch — ignore any incoming branch_id.
+            // Branch users can't switch — ignore any incoming branch_id.
             return;
         }
 

@@ -1808,8 +1808,8 @@ class SalesLeadController extends Controller
 
         if ($user->user_type !== 'super_admin') {
             $usersQ->where('client_id', $user->client_id);
-            $isMain = $user->branch?->is_main ?? false;
-            if ($user->user_type === 'branch_user' && !$isMain) {
+            if ($user->user_type === 'branch_user') {
+                // Every branch is an isolated peer — lock to own branch.
                 $usersQ->where(function ($w) use ($user) {
                     $w->whereNull('branch_id')->orWhere('branch_id', $user->branch_id);
                 });
@@ -2053,9 +2053,9 @@ class SalesLeadController extends Controller
      * ───────────────────────────────────────────────────────────────── */
 
     /**
-     * Tenant scope — pin rows to the caller's tenant. Sub-branch users
-     * (non-main branch_user) are pinned to their branch. Mirror of
-     * SalesTodoController::applyScope tailored for leads.
+     * Tenant scope — pin rows to the caller's tenant. Branch users are
+     * pinned to their own branch (every branch is an isolated peer).
+     * Mirror of SalesTodoController::applyScope tailored for leads.
      */
     private function applyScope($q, $user, ?int $branchFilter = null): void
     {
@@ -2068,10 +2068,10 @@ class SalesLeadController extends Controller
             $q->where('client_id', $user->client_id);
         }
 
-        $isMain = $user->branch?->is_main ?? false;
-        if ($user->user_type === 'branch_user' && !$isMain) {
-            // Sub-branch users are locked to own + main branch; they can't use
-            // the BranchSwitcher, so $branchFilter is ignored here.
+        if ($user->user_type === 'branch_user') {
+            // Branch users are locked to their own branch — every branch is an
+            // isolated peer; they can't use the BranchSwitcher, so
+            // $branchFilter is ignored here.
             $q->where(function ($w) use ($user) {
                 $w->whereNull('branch_id')->orWhere('branch_id', $user->branch_id);
             });
@@ -2081,8 +2081,8 @@ class SalesLeadController extends Controller
             return;
         }
 
-        // Switchable roles (client-level admins + main-branch users): honour
-        // the BranchSwitcher's narrowing when a specific branch is picked.
+        // Switchable roles (client-level admins): honour the BranchSwitcher's
+        // narrowing when a specific branch is picked.
         $this->applySwitcherBranchFilter($q, $user, $branchFilter);
         // Same role-based narrowing (no-op for admins / Branch-Admin tiers).
         \App\Support\SalesVisibility::applyToLeads($q, $user);

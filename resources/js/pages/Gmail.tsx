@@ -23,7 +23,7 @@ interface EmailRow {
   is_starred: boolean;
   sent_at: string | null;
   created_at: string;
-  branch?: { id: number; name: string; is_main?: boolean } | null;
+  branch?: { id: number; name: string } | null;
   employee?: { id: number; display_name: string | null; first_name: string | null; last_name: string | null; emp_code: string | null } | null;
   sender?: { id: number; name: string; user_type: string } | null;
 }

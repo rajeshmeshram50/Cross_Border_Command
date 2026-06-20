@@ -28,7 +28,7 @@ interface TeamEmployee {
   department?: { id: number; name: string } | null;
   designation?: { id: number; name: string; level?: string | null } | null;
   reportingManager?: { id: number; display_name: string; emp_code: string } | null;
-  branch?: { id: number; name: string; is_main: boolean } | null;
+  branch?: { id: number; name: string } | null;
   status: string;
 }
 

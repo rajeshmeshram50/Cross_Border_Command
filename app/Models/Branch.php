@@ -45,7 +45,6 @@ class Branch extends Model
         'state',
         'pincode',
         'country',
-        'is_main',
         'max_users',
         'established_at',
         'status',
@@ -58,7 +57,6 @@ class Branch extends Model
     protected function casts(): array
     {
         return [
-            'is_main' => 'boolean',
             'max_users' => 'integer',
             'established_at' => 'date',
         ];
@@ -123,11 +121,6 @@ class Branch extends Model
     }
 
     // ── Helpers ──
-
-    public function isMain(): bool
-    {
-        return (bool) $this->is_main;
-    }
 
     public function isActive(): bool
     {

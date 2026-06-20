@@ -87,7 +87,7 @@ class BranchController extends Controller
             }
         }
 
-        $branches = $query->orderByDesc('is_main')->orderBy('name')
+        $branches = $query->orderBy('name')
             ->paginate($request->query('per_page', 15));
 
         return response()->json($branches);
@@ -165,7 +165,6 @@ class BranchController extends Controller
             'state' => 'nullable|string|max:100',
             'pincode' => 'nullable|string|max:10',
             'country' => 'nullable|string|max:100',
-            'is_main' => 'nullable|boolean',
             'max_users' => 'nullable|integer|min:0',
             'established_at' => 'nullable|date',
             'status' => 'required|in:active,inactive',
@@ -195,13 +194,6 @@ class BranchController extends Controller
 
         try {
             return DB::transaction(function () use ($request, $clientId, $user) {
-            // If setting as main, unset existing main branch
-            if ($request->boolean('is_main')) {
-                Branch::where('client_id', $clientId)
-                    ->where('is_main', true)
-                    ->update(['is_main' => false]);
-            }
-
             // Auto-allocate BR-### when the user didn't supply a code.
             // Race-safe — allocateBranchCode() uses lockForUpdate() inside
             // the surrounding transaction so two concurrent creates can't
@@ -240,7 +232,6 @@ class BranchController extends Controller
                 'state' => $request->state,
                 'pincode' => $request->pincode,
                 'country' => $request->country ?? 'India',
-                'is_main' => $request->boolean('is_main'),
                 'max_users' => $request->max_users ?? 0,
                 'established_at' => $request->established_at,
                 'status' => $request->status ?? 'active',
@@ -468,7 +459,6 @@ class BranchController extends Controller
             'state' => 'nullable|string|max:100',
             'pincode' => 'nullable|string|max:10',
             'country' => 'nullable|string|max:100',
-            'is_main' => 'nullable|boolean',
             'max_users' => 'nullable|integer|min:0',
             'established_at' => 'nullable|date',
             'status' => 'required|in:active,inactive',
@@ -496,14 +486,6 @@ class BranchController extends Controller
 
         try {
             return DB::transaction(function () use ($request, $branch, $branchUser) {
-            // If setting as main, unset existing main
-            if ($request->boolean('is_main') && !$branch->is_main) {
-                Branch::where('client_id', $branch->client_id)
-                    ->where('is_main', true)
-                    ->where('id', '!=', $branch->id)
-                    ->update(['is_main' => false]);
-            }
-
             // Detect status transition from active → inactive. Existing user
             // sessions need to be revoked otherwise the login guard only blocks
             // FRESH logins; users already logged in keep working with their
@@ -528,7 +510,7 @@ class BranchController extends Controller
                 'drug_license', 'pcpndt_no', 'aeo_code',
                 'one_star_file_no', 'one_star_udin_no',
                 'address', 'city', 'district', 'taluka', 'state', 'pincode', 'country',
-                'is_main', 'max_users', 'established_at', 'status', 'notes',
+                'max_users', 'established_at', 'status', 'notes',
                 'primary_color', 'secondary_color',
             ]));
 
@@ -665,10 +647,6 @@ class BranchController extends Controller
 
         if ($user->client_id && $branch->client_id !== $user->client_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
-        if ($branch->is_main) {
-            return response()->json(['message' => 'Cannot delete the main branch. Set another branch as main first.'], 422);
         }
 
         // "Delete" is now a soft *deactivate* — the branch row stays so

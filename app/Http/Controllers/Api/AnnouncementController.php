@@ -23,7 +23,7 @@ class AnnouncementController extends Controller
     /** Eager-loads used by every read endpoint. */
     private const WITH = [
         'client:id,org_name',
-        'branch:id,name,is_main',
+        'branch:id,name',
         'creator:id,name,user_type',
     ];
 
@@ -295,23 +295,13 @@ class AnnouncementController extends Controller
         if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
             $clientId = $user->client_id;
             $branchId = $user->branch_id;
-            $isMain   = $user->branch?->is_main ?? false;
 
-            if ($isMain) {
-                $q->where(function ($w) use ($clientId) {
-                    $w->whereNull('client_id')->orWhere('client_id', $clientId);
-                });
-                $this->applySwitcherBranchFilter($q, $user, $branchFilter);
-                return;
-            }
-
-            $mainBranchId = Branch::where('client_id', $clientId)->where('is_main', true)->value('id');
-            $q->where(function ($w) use ($clientId, $branchId, $mainBranchId) {
+            // Every branch is an isolated peer — globals + client-level rows + own branch only.
+            $q->where(function ($w) use ($clientId, $branchId) {
                 $w->whereNull('client_id')
-                  ->orWhere(function ($ww) use ($clientId, $branchId, $mainBranchId) {
-                      $ww->where('client_id', $clientId)->where(function ($wb) use ($branchId, $mainBranchId) {
+                  ->orWhere(function ($ww) use ($clientId, $branchId) {
+                      $ww->where('client_id', $clientId)->where(function ($wb) use ($branchId) {
                           $wb->whereNull('branch_id')->orWhere('branch_id', $branchId);
-                          if ($mainBranchId) $wb->orWhere('branch_id', $mainBranchId);
                       });
                   });
             });
@@ -477,9 +467,9 @@ class AnnouncementController extends Controller
                 $w->whereNull('client_id')->orWhere('client_id', $clientId);
             });
         }
-        // Branch scoping is best-effort — main branches see everyone in
-        // the client, sub-branches see their own + main + null. Mirrors
-        // applyScope's logic at a high level.
+        // Branch scoping is best-effort — branch users see their own branch
+        // + client-level + null rows (every branch is an isolated peer).
+        // Mirrors applyScope's logic at a high level.
         if ($branchId !== null) {
             $q->where(function ($w) use ($branchId) {
                 $w->whereNull('branch_id')->orWhere('branch_id', $branchId);

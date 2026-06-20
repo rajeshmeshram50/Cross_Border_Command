@@ -43,7 +43,6 @@ export interface AuthUser {
   // so the frontend just applies these directly. null = use app defaults.
   primary_color?: string | null;
   secondary_color?: string | null;
-  is_main_branch?: boolean;
   // Computed server-side: true for any login that should see the My Team
   // dropdown (anyone with direct reports + every branch / client user).
   is_reporting_manager?: boolean;
@@ -170,7 +169,6 @@ export interface Branch {
   state: string | null;
   pincode: string | null;
   country: string | null;
-  is_main: boolean;
   max_users: number;
   established_at: string | null;
   status: string;

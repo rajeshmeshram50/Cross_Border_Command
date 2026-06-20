@@ -234,7 +234,6 @@ export default function IdimsHeader() {
 
   /* ── Branch label ── */
   const branchName = selectedBranch?.name || user?.branch_name || user?.client_name || 'All Branches';
-  const isMainSel = selectedBranch ? selectedBranch.is_main : (selectedBranchId === null);
 
   /* ── Close popovers on outside click / Escape ── */
   useEffect(() => {
@@ -612,7 +611,6 @@ export default function IdimsHeader() {
                 <span className="idims-branch-ico">{IC.building}</span>
                 <span className="idims-branch-meta">
                   <span className="idims-branch-name">{branchName}</span>
-                  {isMainSel && <span className="idims-branch-tag">Main Branch</span>}
                 </span>
                 {canSwitch && <span className="idims-branch-chev">{IC.chev}</span>}
               </button>
@@ -639,7 +637,6 @@ export default function IdimsHeader() {
                         <div className="idims-branch-item-text">
                           <span className="idims-branch-name-row">
                             <span className="idims-branch-item-name">{b.name}</span>
-                            {b.is_main && <span className="idims-branch-main-badge">Main</span>}
                           </span>
                           <span className="idims-branch-item-sub">{[b.city, b.state].filter(Boolean).join(', ') || '—'}</span>
                         </div>

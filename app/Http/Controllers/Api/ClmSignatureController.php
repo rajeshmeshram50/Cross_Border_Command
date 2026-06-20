@@ -1727,7 +1727,7 @@ class ClmSignatureController extends Controller
         }
 
         // Honour the BranchSwitcher (see CustomerController::index) so a
-        // main-branch user viewing "as" a specific branch only sees that
+        // client admin viewing "as" a specific branch only sees that
         // branch's signature requests.
         $q = ClmSignatureRequest::query()
             ->forUser($user, $request->integer('branch_id') ?: null)

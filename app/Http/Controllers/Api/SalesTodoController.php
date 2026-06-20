@@ -402,9 +402,9 @@ class SalesTodoController extends Controller
                     $w->whereNull('client_id')->orWhere('client_id', $user->client_id);
                 });
             }
-            // Sub-branch users (non-main) are pinned to their own branch.
-            $isMain = $user->branch?->is_main ?? false;
-            if ($user->user_type === 'branch_user' && !$isMain) {
+            // Branch users are pinned to their own branch — every branch is
+            // an isolated peer.
+            if ($user->user_type === 'branch_user') {
                 $q->where(function ($w) use ($user) {
                     $w->whereNull('branch_id')->orWhere('branch_id', $user->branch_id);
                 });
@@ -415,8 +415,7 @@ class SalesTodoController extends Controller
             // Admin / HR scope — only privileged roles can request this
             // and actually see other people's rows. Everyone else gets
             // their own rows back even when they ask for "all".
-            $allowedAll = in_array($user->user_type, ['super_admin', 'client_admin', 'client_user'], true)
-                || ($user->user_type === 'branch_user' && ($user->branch?->is_main ?? false));
+            $allowedAll = in_array($user->user_type, ['super_admin', 'client_admin', 'client_user'], true);
             if ($allowedAll) return;
         }
 
@@ -430,8 +429,7 @@ class SalesTodoController extends Controller
         $row = $q->whereKey($id)->first();
         if (!$row) abort(404, 'Reminder not found.');
         // Non-admin users can only modify their own rows — re-check.
-        $canTouchAnyone = in_array($user->user_type, ['super_admin', 'client_admin', 'client_user'], true)
-            || ($user->user_type === 'branch_user' && ($user->branch?->is_main ?? false));
+        $canTouchAnyone = in_array($user->user_type, ['super_admin', 'client_admin', 'client_user'], true);
         if (!$canTouchAnyone && (int) $row->created_by_user_id !== (int) $user->id) {
             abort(403, 'You cannot modify another user\'s reminder.');
         }
@@ -444,8 +442,7 @@ class SalesTodoController extends Controller
         $this->applyScope($q, $user, 'all');
         $row = $q->whereKey($id)->first();
         if (!$row) abort(404, 'Meeting not found.');
-        $canTouchAnyone = in_array($user->user_type, ['super_admin', 'client_admin', 'client_user'], true)
-            || ($user->user_type === 'branch_user' && ($user->branch?->is_main ?? false));
+        $canTouchAnyone = in_array($user->user_type, ['super_admin', 'client_admin', 'client_user'], true);
         if (!$canTouchAnyone && (int) $row->created_by_user_id !== (int) $user->id) {
             abort(403, 'You cannot modify another user\'s meeting.');
         }

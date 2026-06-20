@@ -502,8 +502,8 @@ class SalesPdfController extends Controller
             'salesManager:id,name',
         ])->findOrFail($id);
 
-        // Email = WRITE (stamps emailed_at + sends mail). Normal branch
-        // users can't email main-branch quotations.
+        // Email = WRITE (stamps emailed_at + sends mail). Branch users can
+        // only email their own branch's quotations.
         $this->assertRecordScope($quot, $user, 'write');
         $rateLimitKey = 'email-quotation:' . $user->id . ':' . $quot->id;
         $maxAttempts = 3;
@@ -1712,13 +1712,11 @@ class SalesPdfController extends Controller
      * Mirrors QuotationController::assertScope so that the PDF / email
      * endpoints exposed here enforce identical hierarchy rules:
      *
-     *   - super_admin / client_admin / client_user        → full access
-     *   - main_branch_user (branch with is_main = true)   → full access
-     *   - normal branch_user → own-branch full, main-branch read-only,
-     *                          other branches: 404 (invisible)
+     *   - super_admin / client_admin / client_user → full access
+     *   - branch_user → own-branch full, other branches: 404 (invisible)
      *
-     * $action: 'read' allows main-branch records, 'write' rejects them
-     *          for normal branch users with 403.
+     * Every branch is an isolated peer, so $action is no longer used to
+     * distinguish read vs write across branches.
      */
     private function assertRecordScope($record, $user, string $action = 'read'): void
     {
@@ -1727,18 +1725,9 @@ class SalesPdfController extends Controller
             abort(404);
         }
         if ($user->user_type !== 'branch_user' || !$user->branch_id) return;
-        if ($user->branch && (bool) $user->branch->is_main) return;
         if ((int) $record->branch_id === (int) $user->branch_id) return;
 
-        $isFromMainBranch = \DB::table('branches')
-            ->where('id', $record->branch_id)
-            ->where('client_id', $user->client_id)
-            ->value('is_main');
-
-        if ($isFromMainBranch) {
-            if ($action === 'read') return;
-            abort(403, 'Main-branch records are view-only for branch users.');
-        }
+        // Foreign branch — invisible to this user.
         abort(404);
     }
 

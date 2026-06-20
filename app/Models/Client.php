@@ -130,11 +130,6 @@ class Client extends Model
         return $this->plan_type === 'paid';
     }
 
-    public function mainBranch()
-    {
-        return $this->branches()->where('is_main', true)->first();
-    }
-
     public function getSetting(string $key, $default = null)
     {
         $setting = $this->settings()->where('key', $key)->first();

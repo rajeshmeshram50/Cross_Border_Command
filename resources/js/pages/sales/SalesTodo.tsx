@@ -205,15 +205,14 @@ export default function SalesTodo() {
    * selecting an opportunity can auto-fill the Opportunity Date. Falls back
    * to the static OPP_ID_OPTIONS list if the fetch fails / returns none. */
   const [oppOptions, setOppOptions] = useState<{ value: string; label: string; date: string }[]>([]);
-  // Admins (super_admin / client_admin / main_branch_user) see the whole tenant
-  // by default; everyone else sees their own rows. Mirrors the controller's
-  // applyScope() — the SPA just hints at which scope to ask for.
-  const isMainBranch = (user?.user_type === 'branch_user' && user?.is_main_branch === true);
+  // Admins (super_admin / client_admin / client_user) see the whole tenant
+  // by default; everyone else (branch users + employees) sees their own rows.
+  // Mirrors the controller's applyScope() — the SPA just hints at which scope
+  // to ask for.
   const defaultScope: 'mine' | 'all' = (
     user?.user_type === 'super_admin' ||
     user?.user_type === 'client_admin' ||
-    user?.user_type === 'client_user' ||
-    isMainBranch
+    user?.user_type === 'client_user'
   ) ? 'all' : 'mine';
   const [scope] = useState<'mine' | 'all'>(defaultScope);
 

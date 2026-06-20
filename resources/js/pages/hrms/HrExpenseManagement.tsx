@@ -184,8 +184,8 @@ export default function HrExpenseManagement() {
   }, []);
 
   // HR users can approve when their permission row on the `hr.expense`
-  // module includes can_approve. Super admins and main-branch admins
-  // bypass the explicit flag — the backend mirrors this.
+  // module includes can_approve. Super admins bypass the explicit flag —
+  // the backend mirrors this.
   const canHrApprove = useMemo(() => {
     if (!user) return false;
     if (user.user_type === 'super_admin') return true;

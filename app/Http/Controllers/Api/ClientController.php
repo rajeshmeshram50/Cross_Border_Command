@@ -249,14 +249,13 @@ class ClientController extends Controller
                 $client->update($brandingUpdates);
             }
 
-            // Create default branch (NOT main — main is set manually by client)
+            // Create default branch (Head Office). All branches are equal peers.
             $branch = Branch::create([
                 'client_id' => $client->id,
                 'name' => $request->org_name . ' — Head Office',
                 'code' => 'HO',
                 'email' => $request->email,
                 'phone' => $request->phone,
-                'is_main' => false,
                 'status' => 'active',
                 'created_by' => $request->user()->id,
             ]);

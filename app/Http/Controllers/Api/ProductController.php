@@ -28,9 +28,10 @@ class ProductController extends Controller
     /* ──────────────────────────────────────────────────────────────────
      * Tenant scoping
      *
-     * Products use the shared creator-hierarchy read rule — sub-branch
-     * users see globals + client-level + main-branch + own sub-branch
-     * rows; sibling sub-branches are blocked. See MasterVisibility.
+     * Products use the shared creator-hierarchy read rule — branch users
+     * see globals + client-level + their own branch's rows; sibling
+     * branches are blocked (every branch is an isolated peer). See
+     * MasterVisibility.
      * ────────────────────────────────────────────────────────────── */
     private function applyScope($query, Request $request, bool $applyBranchFilter = false)
     {
@@ -94,7 +95,7 @@ class ProductController extends Controller
                 // show "Person Name · Branch Name" and resolve filtering
                 // on the frontend without a second lookup.
                 'creator:id,name,user_type,branch_id',
-                'creator.branch:id,name,is_main',
+                'creator.branch:id,name',
             ]);
 
         $query = $this->applyScope($query, $request, true); // opt-in BranchSwitcher narrowing
@@ -640,17 +641,14 @@ class ProductController extends Controller
      *
      * Returns the list of users eligible to own a product, scoped to
      * what the caller is allowed to see:
-     *   - Main-branch user (branch_user/employee on a branch with
-     *     is_main = true): every branch_user + employee across every
-     *     branch of their client.
-     *   - Sub-branch user (branch_user/employee on a non-main branch):
-     *     only branch_user + employee rows in their own branch.
+     *   - branch_user/employee: only branch_user + employee rows in their
+     *     own branch (every branch is an isolated peer).
      *   - Anyone else (client_admin, client_user, super_admin): an
      *     empty list — they don't use this filter UI.
      *
      * The frontend's Product Owner filter consumes this directly; rows
-     * are typed as {id, name, branch_id, branch_name, is_main_branch}
-     * so the dropdown can group / label by branch.
+     * are typed as {id, name, branch_id, branch_name} so the dropdown can
+     * group / label by branch.
      * ────────────────────────────────────────────────────────────── */
     public function owners(Request $request)
     {
@@ -659,31 +657,25 @@ class ProductController extends Controller
             return response()->json(['data' => []]);
         }
 
-        // Confirm the caller's branch + whether it's the main branch.
         // No branch context → nothing to scope by, so return empty.
         $myBranch = $user->branch_id ? Branch::find($user->branch_id) : null;
         if (!$myBranch) {
             return response()->json(['data' => []]);
         }
 
+        // Lock the dropdown to only the caller's own branch users.
         $q = User::query()
             ->where('client_id', $user->client_id)
             ->whereIn('user_type', ['branch_user', 'employee'])
-            ->with('branch:id,name,is_main')
+            ->where('branch_id', $user->branch_id)
+            ->with('branch:id,name')
             ->orderBy('name');
-
-        // Sub-branch user: lock the dropdown to only their own branch's
-        // users. Main-branch user falls through and sees every branch.
-        if (!$myBranch->is_main) {
-            $q->where('branch_id', $user->branch_id);
-        }
 
         $rows = $q->get(['id', 'name', 'branch_id'])->map(fn ($u) => [
             'id'              => $u->id,
             'name'            => $u->name,
             'branch_id'       => $u->branch_id,
             'branch_name'     => $u->branch->name ?? null,
-            'is_main_branch'  => (bool) ($u->branch->is_main ?? false),
         ])->values();
 
         return response()->json(['data' => $rows]);

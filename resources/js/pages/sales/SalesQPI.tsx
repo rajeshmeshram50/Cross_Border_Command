@@ -59,26 +59,20 @@ export type Quotation = {
   emailedAt?: string | null;
   reminderCount?: number;
   // Server-computed: true when the current user can mutate this row.
-  // Driven by the branch-hierarchy rule — a normal branch user CAN
-  // see (but NOT modify) main-branch quotations. Frontend uses this
-  // to grey out Edit / Delete / Email / Reminder / Convert-to-PI on
-  // read-only rows so the user gets immediate visual feedback before
-  // hitting a 403. Defaults to true so legacy rows (and shows where
-  // the backend hasn't stamped the flag yet) remain editable.
+  // Frontend uses it to grey out Edit / Delete / Email / Reminder /
+  // Convert-to-PI on read-only rows so the user gets immediate visual
+  // feedback before hitting a 403. Defaults to true so legacy rows (and
+  // shows where the backend hasn't stamped the flag yet) remain editable.
   canModify?: boolean;
   // Owning branch (eager-loaded). Drives the "Branch" column so
-  // multi-branch users can tell which branch each record belongs to.
-  // `isMainBranch` is a quick-look flag for the "Main" badge.
+  // client-level users can tell which branch each record belongs to.
   branchName?: string;
-  isMainBranch?: boolean;
   // Creator info — drives the "Created By" pill. Pill tone is keyed
   // off user_type (super_admin / client_admin / client_user /
-  // branch_user); the sub-label shows the creator's branch tier
-  // (Main Branch vs the actual branch name on the row).
+  // branch_user); the sub-label shows the creator's branch name.
   createdBy?: string;
   createdById?: number | null;
   creatorUserType?: string;
-  creatorBranchIsMain?: boolean;
 };
 
 type PI = {
@@ -100,16 +94,14 @@ type PI = {
   // Same email/reminder state as Quotation rows above.
   emailedAt?: string | null;
   reminderCount?: number;
-  // Branch-hierarchy read-only flag — see Quotation type above.
+  // Read-only flag — see Quotation type above.
   canModify?: boolean;
   // Owning branch — see Quotation type above.
   branchName?: string;
-  isMainBranch?: boolean;
   // Creator info — see Quotation type above.
   createdBy?: string;
   createdById?: number | null;
   creatorUserType?: string;
-  creatorBranchIsMain?: boolean;
   // True when the source opportunity has reached Stage 6 (Victory
   // Stage) — i.e. shipment is considered complete. Drives the
   // With Shipment vs Without Shipment tab split. PIs whose
@@ -130,13 +122,8 @@ const ROWS_PER_PAGE = 10;
  *
  *   1. If the LOGGED-IN user is the creator → pill = "You"
  *      (showing your own name on your own dashboard is noise).
- *   2. Else if the row was created by someone on the MAIN branch AND
- *      the logged-in user is NOT on the main branch → pill = "Main Branch"
- *      (normal-branch users see Head-Office records as "Main Branch"
- *      instead of a stranger's name).
- *   3. Else → pill = creator's actual name + sub-label with their
- *      branch / role (so a Main-Branch viewer can still tell which
- *      employee on which sub-branch made it).
+ *   2. Else → pill = creator's actual name + sub-label with their
+ *      branch / role.
  *
  * Pill tone is keyed off `user_type` (super-admin / client / branch)
  * so the visual language matches the Master Details "Created By"
@@ -146,17 +133,13 @@ function renderCreatorCell(
   name: string | undefined,
   creatorId: number | null | undefined,
   userType: string | undefined,
-  creatorBranchIsMain: boolean | undefined,
   branchName: string | undefined,
   currentUserId: number | undefined,
-  currentUserIsMain: boolean | undefined,
 ) {
   if (!name && !creatorId) return <span className="qpi-em">—</span>;
 
   // Rule 1: self-created → "You"
   const isSelf = !!currentUserId && !!creatorId && currentUserId === creatorId;
-  // Rule 2: main-branch creation viewed by a normal-branch user
-  const showAsMainBranch = !isSelf && !!creatorBranchIsMain && !currentUserIsMain;
 
   const t = String(userType ?? '').toLowerCase();
   // Pill tone — keyed off user_type. Self-pill borrows the client tone
@@ -164,8 +147,6 @@ function renderCreatorCell(
   const tone =
     isSelf
       ? { bg: '#e0e7ff', fg: '#3730a3', kind: 'self' as const }
-    : showAsMainBranch
-      ? { bg: '#ede9fe', fg: '#6d28d9', kind: 'main' as const }
     : t === 'super_admin'
       ? { bg: '#ede9fe', fg: '#6d28d9', kind: 'super' as const }
     : t === 'client_admin' || t === 'client_user'
@@ -176,22 +157,15 @@ function renderCreatorCell(
 
   // Primary pill text per rule above. Self-created rows show the creator's
   // actual NAME (not "You"); the self tone/colour still marks it as yours.
-  const primary =
-    isSelf            ? (name || 'You')
-    : showAsMainBranch ? 'Main Branch'
-    : (name || '—');
+  const primary = isSelf ? (name || 'You') : (name || '—');
 
-  // Sub-label — context line under the pill. Skipped for "You" and
-  // "Main Branch" so the cell stays compact (the long tenant/company
-  // name as a sub-line was eating too much horizontal space and made
-  // the table look misaligned). For other creators we still show the
-  // role / branch context.
+  // Sub-label — context line under the pill. Skipped for "You" so the cell
+  // stays compact. For other creators we still show the role / branch context.
   const subLabel = (() => {
-    if (showAsMainBranch) return '';
     if (isSelf) return '';
     if (tone.kind === 'super')  return 'Super Admin';
     if (tone.kind === 'client') return t === 'client_admin' ? 'Client Admin' : 'Client user';
-    if (tone.kind === 'branch') return creatorBranchIsMain ? 'Main Branch' : (branchName || 'Branch');
+    if (tone.kind === 'branch') return branchName || 'Branch';
     return '';
   })();
 
@@ -606,9 +580,8 @@ const STEPS = [
 
 export default function SalesQPI() {
   const toast = useToast();
-  // Current user — needed by the "Created By" column to swap names for
-  // "You" (self-created) or "Main Branch" (normal-branch viewer sees
-  // a main-branch-created row).
+  // Current user — needed by the "Created By" column to swap the creator's
+  // name for "You" on self-created rows.
   const { user: currentUser } = useAuth();
   const [tab, setTab] = useState<QPITab>('quotation');
   const [piSub, setPiSub] = useState<PISubTab>('with');
@@ -655,16 +628,12 @@ export default function SalesQPI() {
           status:       r.status ?? 'draft',
           emailedAt:    r.emailed_at ?? null,
           reminderCount: Number(r.reminder_count ?? 0),
-          // Default to TRUE so rows from older API versions stay
-          // editable. Server explicitly returns false for cross-branch
-          // read-only rows (normal branch viewing main-branch records).
+          // Default to TRUE so rows from older API versions stay editable.
           canModify:    r.can_modify !== false,
           branchName:   r.branch?.name ?? '',
-          isMainBranch: Boolean(r.branch?.is_main),
           createdBy:    r.creator_name ?? r.creator?.name ?? '',
           createdById:  r.created_by ?? r.creator?.id ?? null,
           creatorUserType:     r.creator_user_type ?? r.creator?.user_type ?? '',
-          creatorBranchIsMain: Boolean(r.creator_branch_is_main),
         }));
         setQuotations(rows);
       })
@@ -706,11 +675,9 @@ export default function SalesQPI() {
           reminderCount: Number(r.reminder_count ?? 0),
           canModify:   r.can_modify !== false,
           branchName:  r.branch?.name ?? '',
-          isMainBranch: Boolean(r.branch?.is_main),
           createdBy:   r.creator_name ?? r.creator?.name ?? '',
           createdById: r.created_by ?? r.creator?.id ?? null,
           creatorUserType:     r.creator_user_type ?? r.creator?.user_type ?? '',
-          creatorBranchIsMain: Boolean(r.creator_branch_is_main),
           // Server-computed: opportunity reached Stage 6 (Victory).
           // Fallback to checking the eager-loaded lead.lead_stage_id /
           // lead.won_at directly so an older API response that doesn't
@@ -1255,7 +1222,7 @@ export default function SalesQPI() {
               </button>
             </Tooltip>
           ) : (
-            <Tooltip label={readOnly ? 'View-only — this record belongs to the main branch.' : 'Send for Signature'}>
+            <Tooltip label={readOnly ? 'View-only — you don\'t have permission to modify this record.' : 'Send for Signature'}>
               <button
                 type="button"
                 className="qpi-convert-btn qpi-send-btn"
@@ -1341,8 +1308,8 @@ export default function SalesQPI() {
       cell: (info: any) => {
         const r = info.row.original as Quotation;
         return renderCreatorCell(
-          r.createdBy, r.createdById, r.creatorUserType, r.creatorBranchIsMain, r.branchName,
-          currentUser?.id, currentUser?.is_main_branch === true,
+          r.createdBy, r.createdById, r.creatorUserType, r.branchName,
+          currentUser?.id,
         );
       },
     },
@@ -1351,14 +1318,13 @@ export default function SalesQPI() {
       id: '__actions', meta: { align: 'center' },
       cell: (info: any) => {
         const r = info.row.original as Quotation;
-        // Branch-hierarchy: a normal branch user viewing a main-branch
-        // quotation can SEE the row (and open the More-Options preview)
-        // but cannot Convert / Email / Remind / Edit / Delete. We dim
-        // those buttons + show an explanatory tooltip so the user
-        // understands why the action is unavailable instead of just
-        // clicking and hitting a 403.
+        // A row the user lacks permission to mutate can still be SEEN (and
+        // opened in the More-Options preview) but Convert / Email / Remind /
+        // Edit / Delete are dimmed with an explanatory tooltip so the user
+        // understands why the action is unavailable instead of just clicking
+        // and hitting a 403.
         const readOnly = r.canModify === false;
-        const readOnlyHint = 'View-only — this record belongs to the main branch.';
+        const readOnlyHint = 'View-only — you don\'t have permission to modify this record.';
         return (
           <div className="d-inline-flex align-items-center gap-2 justify-content-center">
             {r.status === 'converted_to_pi' ? (
@@ -1389,8 +1355,8 @@ export default function SalesQPI() {
             {/* Email button — matches the in-matrix Stage 5 table: stays
                 available after every send (no one-time disable) so the
                 quotation can be re-emailed; each send fires a toast.
-                Read-only rows (main-branch viewed by a normal branch) show
-                a hint and stay disabled. */}
+                Read-only rows (no mutate permission) show a hint and stay
+                disabled. */}
             <ActionBtn
               title={
                 readOnly
@@ -1500,7 +1466,7 @@ export default function SalesQPI() {
         );
       },
     },
-  ], [convertingId, sigByRow, currentUser?.id, currentUser?.is_main_branch, emailingKeys, emailCooldowns]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [convertingId, sigByRow, currentUser?.id, emailingKeys, emailCooldowns]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── PI table columns — header set differs by sub-tab (BT ID / BT Date
    *    only on With Shipment). Build both column sets memoised. */
@@ -1535,8 +1501,8 @@ export default function SalesQPI() {
       cell: (info: any) => {
         const r = info.row.original as PI;
         return renderCreatorCell(
-          r.createdBy, r.createdById, r.creatorUserType, r.creatorBranchIsMain, r.branchName,
-          currentUser?.id, currentUser?.is_main_branch === true,
+          r.createdBy, r.createdById, r.creatorUserType, r.branchName,
+          currentUser?.id,
         );
       },
     },
@@ -1558,10 +1524,10 @@ export default function SalesQPI() {
       id: '__actions', meta: { align: 'center' },
       cell: (info: any) => {
         const r = info.row.original as PI;
-        // Same branch-hierarchy gate as the Quotation row — main-branch
-        // PIs are visible-but-locked to a normal branch user.
+        // Same permission gate as the Quotation row — a PI the user can't
+        // mutate is visible-but-locked.
         const readOnly = r.canModify === false;
-        const readOnlyHint = 'View-only — this record belongs to the main branch.';
+        const readOnlyHint = 'View-only — you don\'t have permission to modify this record.';
         return (
           <div className="d-inline-flex align-items-center gap-2 justify-content-center">
             {/* Send for Signature (Zoho Sign) — status-aware control. */}
@@ -1663,8 +1629,8 @@ export default function SalesQPI() {
       },
     },
   ];
-  const piWithColumns    = useMemo<any[]>(() => piColumnsBase(true),  [sigByRow, currentUser?.id, currentUser?.is_main_branch, emailingKeys, emailCooldowns]); // eslint-disable-line react-hooks/exhaustive-deps
-  const piWithoutColumns = useMemo<any[]>(() => piColumnsBase(false), [sigByRow, currentUser?.id, currentUser?.is_main_branch, emailingKeys, emailCooldowns]); // eslint-disable-line react-hooks/exhaustive-deps
+  const piWithColumns    = useMemo<any[]>(() => piColumnsBase(true),  [sigByRow, currentUser?.id, emailingKeys, emailCooldowns]); // eslint-disable-line react-hooks/exhaustive-deps
+  const piWithoutColumns = useMemo<any[]>(() => piColumnsBase(false), [sigByRow, currentUser?.id, emailingKeys, emailCooldowns]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="qpi-root">
@@ -5111,9 +5077,9 @@ const SCOPED_CSS = `
 .qpi-em-center { text-align: center; color: #cbd5e1; font-weight: 400; }
 
 /* Created By — colored pill keyed off user_type, with a small
- * sub-label (Main Branch / branch name / role). Same scheme as the
- * Master Details "Created By" column so the visual language stays
- * consistent between the two pages. */
+ * sub-label (branch name / role). Same scheme as the Master Details
+ * "Created By" column so the visual language stays consistent between
+ * the two pages. */
 .qpi-creator-cell {
   display: flex;
   flex-direction: column;
@@ -5138,7 +5104,6 @@ const SCOPED_CSS = `
    translucent fills + light text (!important to beat the inline style), matching
    how the other app badges read in dark mode. */
 [data-bs-theme="dark"] .qpi-creator-self   { background: rgba(99,102,241,.20) !important;  color: #c7d2fe !important; }
-[data-bs-theme="dark"] .qpi-creator-main,
 [data-bs-theme="dark"] .qpi-creator-super  { background: rgba(139,92,246,.20) !important;  color: #ddd6fe !important; }
 [data-bs-theme="dark"] .qpi-creator-client { background: rgba(59,130,246,.20) !important;   color: #bfdbfe !important; }
 [data-bs-theme="dark"] .qpi-creator-branch { background: rgba(20,184,166,.20) !important;   color: #99f6e4 !important; }

@@ -71,7 +71,7 @@ return new class extends Migration {
             'help' => [
                 'faqs' => [
                     ['q' => 'How to add a new client?',          'a' => 'Go to Clients and click Add Client. Fill in the organization details and admin credentials. The client admin will receive a welcome email with login credentials.'],
-                    ['q' => 'How to manage branches?',           'a' => 'Client admins can add branches from the Branches page. Set one branch as "Main" (Head Office) to give its users visibility across all branches.'],
+                    ['q' => 'How to manage branches?',           'a' => 'Client admins can add branches from the Branches page. Every branch is independent — each branch user sees only their own branch\'s data, while client admins can view across all branches.'],
                     ['q' => 'How do permissions work?',          'a' => 'Super admins assign permissions to client admins. Client admins can then assign permissions to their branch users. Each module has View, Add, Edit, Delete, Export, Import, and Approve permissions.'],
                     ['q' => 'How to subscribe to a plan?',       'a' => 'Client admins can go to My Plan page to view available plans and subscribe. Plans determine which modules and features are available.'],
                     ['q' => 'What happens when a plan expires?', 'a' => 'Branch users will be blocked from accessing the platform. Client admins will only see the plan selection page until they renew.'],

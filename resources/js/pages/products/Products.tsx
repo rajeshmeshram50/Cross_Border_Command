@@ -203,13 +203,11 @@ export default function Products() {
   const [vendorOpts,  setVendorOpts]    = useState<string[]>(VENDORS);
   const [gstRateOpts, setGstRateOpts]   = useState<string[]>(GST_RATES);
   /* Product Owner options — sourced from /products/owners. The endpoint
-     scopes the list per user_type:
-       • main-branch user → every branch_user / employee across the client
-       • sub-branch user  → only their own branch's users
-     The old `PRODUCT_OWNERS` const was generic role labels (Branch Admin,
-     Inventory Manager…) that never matched a real `created_by` row, so the
-     filter never selected anything. */
-  type OwnerOpt = { id: number; name: string; branchId: number | null; branchName: string; isMainBranch: boolean };
+     scopes the list to the caller's own branch users (every branch is an
+     isolated peer). The old `PRODUCT_OWNERS` const was generic role labels
+     (Branch Admin, Inventory Manager…) that never matched a real
+     `created_by` row, so the filter never selected anything. */
+  type OwnerOpt = { id: number; name: string; branchId: number | null; branchName: string };
   const [ownerOpts, setOwnerOpts] = useState<OwnerOpt[]>([]);
 
   useEffect(() => {
@@ -288,13 +286,12 @@ export default function Products() {
       }
 
       // Product Owner dropdown — pulls the user list the backend says
-      // is in scope (main branch → whole client, sub branch → own
-      // branch only). Empty list means the role has no use for the
-      // filter (e.g. client_admin) and the panel will just render
-      // empty. Kept as a separate fetch because the shape doesn't fit
-      // the master bundle.
+      // is in scope (the caller's own branch users). Empty list means the
+      // role has no use for the filter (e.g. client_admin) and the panel
+      // will just render empty. Kept as a separate fetch because the shape
+      // doesn't fit the master bundle.
       try {
-        type OwnerRow = { id: number; name: string; branch_id: number | null; branch_name: string | null; is_main_branch: boolean };
+        type OwnerRow = { id: number; name: string; branch_id: number | null; branch_name: string | null };
         const res = await api.get<{ data?: OwnerRow[] }>('/products/owners');
         const rows = Array.isArray(res.data?.data) ? res.data!.data! : [];
         setOwnerOpts(rows.map(r => ({
@@ -302,7 +299,6 @@ export default function Products() {
           name:         r.name,
           branchId:     r.branch_id,
           branchName:   r.branch_name ?? '',
-          isMainBranch: !!r.is_main_branch,
         })));
       } catch { /* leave panel empty on error */ }
     })();
@@ -1008,11 +1004,9 @@ export default function Products() {
             {ownerOpts.length === 0 ? (
               <div className="prd-filter-empty">No owners available</div>
             ) : ownerOpts.map(o => {
-              /* Main-branch user sees rows from every branch — append
-                 the branch suffix so two people named "Ravi" in
-                 different branches stay distinguishable. Sub-branch
-                 user only ever sees their own branch, so the suffix
-                 would be redundant noise. */
+              /* Append the branch suffix only when the list spans more
+                 than one branch, so two people named "Ravi" in different
+                 branches stay distinguishable; redundant noise otherwise. */
               const showBranch = ownerOpts.some(x => x.branchId !== o.branchId);
               const label = showBranch && o.branchName ? `${o.name} · ${o.branchName}` : o.name;
               const id = String(o.id);

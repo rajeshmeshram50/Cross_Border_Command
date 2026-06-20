@@ -820,9 +820,9 @@ export default function ClientDashboard() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{
                       width: 36, height: 36, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      background: b.is_main ? `${ACCENT}14` : 'var(--vz-light)',
-                      color: b.is_main ? ACCENT : 'var(--vz-secondary-color)',
-                      border: `1px solid ${b.is_main ? ACCENT + '33' : 'var(--vz-border-color)'}`,
+                      background: 'var(--vz-light)',
+                      color: 'var(--vz-secondary-color)',
+                      border: '1px solid var(--vz-border-color)',
                       fontWeight: 700, fontSize: 12, flexShrink: 0,
                     }}>
                       {b.code?.substring(0, 2).toUpperCase() || (b.name || '?').charAt(0).toUpperCase()}
@@ -830,7 +830,6 @@ export default function ClientDashboard() {
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                         {b.name}
-                        {b.is_main && <i className="ri-star-fill" style={{ color: ACCENT, fontSize: 11 }}></i>}
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 1 }}>
                         {[b.city, b.state].filter(Boolean).join(', ') || 'No location'}

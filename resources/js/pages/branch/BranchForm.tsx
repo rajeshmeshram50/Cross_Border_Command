@@ -29,7 +29,7 @@ const empty = {
   one_star_file_no: '', one_star_udin_no: '',
   address: '', city: '', district: '', taluka: '', pincode: '',
   state: '', country: '',
-  is_main: 'false', max_users: '0',
+  max_users: '0',
   established_at: '', status: 'active', notes: '',
   primary_color: '#4F46E5', secondary_color: '#10B981',
   user_name: '', user_email: '', user_phone: '',
@@ -397,7 +397,6 @@ export default function BranchForm({ onBack, editId }: Props) {
   // ── one state per dropdown ──────────────────────────────────────────────────
   const [ddBranchType, setDdBranchType] = useState(false);
   const [ddStatus,     setDdStatus]     = useState(false);
-  const [ddIsMain,     setDdIsMain]     = useState(false);
   const [ddState,      setDdState]      = useState(false);
   const [ddCountry,    setDdCountry]    = useState(false);
   const [ddUserStatus, setDdUserStatus] = useState(false);
@@ -550,7 +549,6 @@ export default function BranchForm({ onBack, editId }: Props) {
         address: b.address || '', city: b.city || '',
         district: b.district || '', taluka: b.taluka || '',
         pincode: b.pincode || '', state: b.state || '', country: b.country || '',
-        is_main: b.is_main ? 'true' : 'false',
         max_users: String(b.max_users ?? 0),
         established_at: b.established_at || '', status: b.status || 'active',
         notes: b.notes || '',
@@ -614,10 +612,6 @@ export default function BranchForm({ onBack, editId }: Props) {
         payload.user_password = null;
       }
       Object.keys(payload).forEach(k => { if (payload[k] === '') payload[k] = null; });
-      // Serialize as '1'/'0' so the value survives multipart/form-data
-      // (which only carries strings) — Laravel's `boolean` rule accepts
-      // '1'/'0' but rejects 'true'/'false' string forms.
-      payload.is_main = form.is_main === 'true' ? '1' : '0';
       payload.max_users = parseInt(form.max_users) || 0;
 
       if (isEdit) {
@@ -1487,21 +1481,10 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
             </Row>
 
-            {/* ══ B: Main Branch & Limits ══ */}
-            <SectionHeader icon="ri-star-line" title="Main Branch & Limits" badge="B" />
+            {/* ══ B: Limits ══ */}
+            <SectionHeader icon="ri-group-line" title="Limits" badge="B" />
             <Row className="g-2 mb-3">
-              <Col md={4}>
-                <Lbl>Is Main Branch?</Lbl>
-                <SelectDD
-                  isOpen={ddIsMain} toggle={() => setDdIsMain(o => !o)}
-                  value={form.is_main} fieldKey="is_main"
-                  options={[
-                    { label: 'No (Regular Branch)',       value: 'false' },
-                    { label: 'Yes (Main / Head Office)',  value: 'true' },
-                  ]}
-                />
-              </Col>
-              <Col md={4}>
+              <Col md={6}>
                 <Lbl>Max Users (0 = unlimited)</Lbl>
                 <Input name="max_users" style={css.input} type="number" min={0} value={form.max_users}
                   invalid={fieldInvalid('max_users')}

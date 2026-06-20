@@ -398,22 +398,18 @@ ${schemaMapLines}
     }
 
     /**
-     * Scope a query to what the current user is allowed to see. Rules:
+     * Scope a query to what the current user is allowed to see. Rules
+     * (every branch is an equal, isolated peer — no "main" branch):
      *
      *   super_admin         -> everything
      *
      *   client_admin/user   -> rows where client_id IS NULL (super-admin "global" rows)
      *                          OR client_id = own client
      *
-     *   branch_user (main)  -> rows where client_id IS NULL
-     *                          OR client_id = own client (any branch, any null branch)
-     *                          A main-branch user sees every row under their client.
-     *
-     *   branch_user (sub)   -> rows where client_id IS NULL
+     *   branch_user         -> rows where client_id IS NULL
      *                          OR (client_id = own client AND (
-     *                                branch_id IS NULL                    -- client-level rows
-     *                                OR branch_id = own branch            -- own rows
-     *                                OR branch_id = main branch id        -- main-branch shared rows
+     *                                branch_id IS NULL          -- client-level rows
+     *                                OR branch_id = own branch  -- own branch rows
      *                              ))
      */
     private function applyScope($q, $user): void
@@ -432,30 +428,14 @@ ${schemaMapLines}
         if ($user->user_type === 'branch_user') {
             $clientId = $user->client_id;
             $branchId = $user->branch_id;
-            $isMain   = $user->branch?->is_main ?? false;
 
-            if ($isMain) {
-                $q->where(function ($w) use ($clientId) {
-                    $w->whereNull('client_id')->orWhere('client_id', $clientId);
-                });
-                return;
-            }
-
-            // Non-main branch user: include global rows, client-level rows, own branch, main-branch-shared rows.
-            $mainBranchId = \\App\\Models\\Branch::where('client_id', $clientId)
-                ->where('is_main', true)
-                ->value('id');
-
-            $q->where(function ($w) use ($clientId, $branchId, $mainBranchId) {
+            $q->where(function ($w) use ($clientId, $branchId) {
                 $w->whereNull('client_id')
-                  ->orWhere(function ($ww) use ($clientId, $branchId, $mainBranchId) {
+                  ->orWhere(function ($ww) use ($clientId, $branchId) {
                       $ww->where('client_id', $clientId)
-                         ->where(function ($wb) use ($branchId, $mainBranchId) {
+                         ->where(function ($wb) use ($branchId) {
                              $wb->whereNull('branch_id')
                                 ->orWhere('branch_id', $branchId);
-                             if ($mainBranchId) {
-                                 $wb->orWhere('branch_id', $mainBranchId);
-                             }
                          });
                   });
             });

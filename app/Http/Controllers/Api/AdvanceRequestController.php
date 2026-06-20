@@ -440,13 +440,11 @@ class AdvanceRequestController extends Controller
             if ($row->client_id !== null && $row->client_id !== $user->client_id) {
                 abort(403, 'Out of tenant scope.');
             }
-            $isMain = $user->branch?->is_main ?? false;
-            if (!$isMain && $row->branch_id !== null) {
-                $mainBranchId = Branch::where('client_id', $user->client_id)
-                    ->where('is_main', true)
-                    ->value('id');
-                $allowed = $row->branch_id === $user->branch_id
-                    || ($mainBranchId && $row->branch_id === $mainBranchId);
+            // Every branch is an isolated peer — a branch row is accessible only
+            // when it belongs to the caller's own branch, or the caller is the
+            // requesting employee / assigned manager.
+            if ($row->branch_id !== null) {
+                $allowed = $row->branch_id === $user->branch_id;
                 $myEmployeeId = $this->currentEmployeeId($user);
                 if (!$allowed
                     && $row->employee_id !== $myEmployeeId
@@ -476,31 +474,17 @@ class AdvanceRequestController extends Controller
         if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
             $clientId = $user->client_id;
             $branchId = $user->branch_id;
-            $isMain   = $user->branch?->is_main ?? false;
-
-            if ($isMain) {
-                $q->where(function ($w) use ($clientId) {
-                    $w->whereNull('client_id')->orWhere('client_id', $clientId);
-                });
-                $this->applySwitcherBranchFilter($q, $user, $branchFilter);
-                return;
-            }
-
-            $mainBranchId = Branch::where('client_id', $clientId)
-                ->where('is_main', true)
-                ->value('id');
             $myEmployeeId = $this->currentEmployeeId($user);
 
-            $q->where(function ($w) use ($clientId, $branchId, $mainBranchId, $myEmployeeId) {
+            // Every branch is an isolated peer — globals + client-level rows + own branch only,
+            // plus rows where the caller is the requesting employee or assigned manager.
+            $q->where(function ($w) use ($clientId, $branchId, $myEmployeeId) {
                 $w->whereNull('client_id')
-                  ->orWhere(function ($ww) use ($clientId, $branchId, $mainBranchId, $myEmployeeId) {
+                  ->orWhere(function ($ww) use ($clientId, $branchId, $myEmployeeId) {
                       $ww->where('client_id', $clientId)
-                         ->where(function ($wb) use ($branchId, $mainBranchId, $myEmployeeId) {
+                         ->where(function ($wb) use ($branchId, $myEmployeeId) {
                              $wb->whereNull('branch_id')
                                 ->orWhere('branch_id', $branchId);
-                             if ($mainBranchId) {
-                                 $wb->orWhere('branch_id', $mainBranchId);
-                             }
                              if ($myEmployeeId) {
                                  $wb->orWhere('employee_id', $myEmployeeId)
                                     ->orWhere('manager_id', $myEmployeeId);

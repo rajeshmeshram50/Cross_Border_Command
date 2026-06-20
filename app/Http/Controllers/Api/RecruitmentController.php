@@ -18,7 +18,7 @@ class RecruitmentController extends Controller
     
     private const WITH = [
         'client:id,org_name',
-        'branch:id,name,is_main',
+        'branch:id,name',
         'creator:id,name,user_type',
         'department:id,name,code',
         'designation:id,name',
@@ -253,7 +253,6 @@ class RecruitmentController extends Controller
         // Tenant-level admins always pass.
         if ($user->isSuperAdmin())     return;
         if ($user->isClientAdmin())    return;
-        if ($user->isMainBranchUser()) return;
 
         // Reporting managers get implicit access — they own the hiring
         // pipeline for their direct reports, so the Recruitment module
@@ -307,7 +306,7 @@ class RecruitmentController extends Controller
 
     /** Tenant scoping — same rules used everywhere else. The optional
      *  $branchFilter is honoured when the SPA's BranchSwitcher injects
-     *  ?branch_id=N for client_admin / main-branch user views. */
+     *  ?branch_id=N for client_admin views. */
     private function applyScope($q, $user, ?int $branchFilter = null): void
     {
         if (!$user) return;
@@ -325,25 +324,16 @@ class RecruitmentController extends Controller
         }
 
         if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
+            // Every branch is an isolated peer — globals + client-level rows
+            // + own branch's rows only.
             $clientId = $user->client_id;
             $branchId = $user->branch_id;
-            $isMain   = $user->branch?->is_main ?? false;
 
-            if ($isMain) {
-                $q->where(function ($w) use ($clientId) {
-                    $w->whereNull('client_id')->orWhere('client_id', $clientId);
-                });
-                $this->applySwitcherBranchFilter($q, $user, $branchFilter);
-                return;
-            }
-
-            $mainBranchId = Branch::where('client_id', $clientId)->where('is_main', true)->value('id');
-            $q->where(function ($w) use ($clientId, $branchId, $mainBranchId) {
+            $q->where(function ($w) use ($clientId, $branchId) {
                 $w->whereNull('client_id')
-                  ->orWhere(function ($ww) use ($clientId, $branchId, $mainBranchId) {
-                      $ww->where('client_id', $clientId)->where(function ($wb) use ($branchId, $mainBranchId) {
+                  ->orWhere(function ($ww) use ($clientId, $branchId) {
+                      $ww->where('client_id', $clientId)->where(function ($wb) use ($branchId) {
                           $wb->whereNull('branch_id')->orWhere('branch_id', $branchId);
-                          if ($mainBranchId) $wb->orWhere('branch_id', $mainBranchId);
                       });
                   });
             });

@@ -26,7 +26,7 @@ class MyTeamController extends Controller
         'department:id,name',
         'designation:id,name,level',
         'reportingManager:id,display_name,first_name,last_name,emp_code',
-        'branch:id,name,is_main',
+        'branch:id,name',
         'photoDocument:id,employee_id,document_key,file_path',
     ];
 
@@ -682,31 +682,18 @@ class MyTeamController extends Controller
         }
 
         if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
+            // Every branch is an isolated peer — globals + client-level rows
+            // + own branch's rows (+ rows the user manages).
             $clientId = $user->client_id;
             $branchId = $user->branch_id;
-            $isMain   = $user->branch?->is_main ?? false;
 
-            if ($isMain) {
-                $q->where(function ($w) use ($clientId) {
-                    $w->whereNull('client_id')->orWhere('client_id', $clientId);
-                });
-                return;
-            }
-
-            $mainBranchId = Branch::where('client_id', $clientId)
-                ->where('is_main', true)
-                ->value('id');
-
-            $q->where(function ($w) use ($clientId, $branchId, $mainBranchId, $myEmployeeId) {
+            $q->where(function ($w) use ($clientId, $branchId, $myEmployeeId) {
                 $w->whereNull('client_id')
-                  ->orWhere(function ($ww) use ($clientId, $branchId, $mainBranchId, $myEmployeeId) {
+                  ->orWhere(function ($ww) use ($clientId, $branchId, $myEmployeeId) {
                       $ww->where('client_id', $clientId)
-                         ->where(function ($wb) use ($branchId, $mainBranchId, $myEmployeeId) {
+                         ->where(function ($wb) use ($branchId, $myEmployeeId) {
                              $wb->whereNull('branch_id')
                                 ->orWhere('branch_id', $branchId);
-                             if ($mainBranchId) {
-                                 $wb->orWhere('branch_id', $mainBranchId);
-                             }
                              if ($myEmployeeId) {
                                  $wb->orWhere('manager_id', $myEmployeeId);
                              }
@@ -745,8 +732,7 @@ class MyTeamController extends Controller
      * Resolves the visibility window:
      *   super_admin → all employees
      *   client_admin / client_user → everyone in the client
-     *   branch_user (main) → everyone in the client (main branch sees siblings)
-     *   branch_user (sub)  → only their branch
+     *   branch_user → only their branch (every branch is an isolated peer)
      *   employee (manager) → only direct reports (employees whose
      *                        reporting_manager_id points to this user's
      *                        linked employee row)
@@ -761,13 +747,8 @@ class MyTeamController extends Controller
         }
 
         if ($user->user_type === 'branch_user') {
-            $isMain = $user->branch?->is_main ?? false;
-            if ($isMain) {
-                $q->where('client_id', $user->client_id);
-            } else {
-                $q->where('client_id', $user->client_id)
-                  ->where('branch_id', $user->branch_id);
-            }
+            $q->where('client_id', $user->client_id)
+              ->where('branch_id', $user->branch_id);
             return;
         }
 
@@ -797,9 +778,7 @@ class MyTeamController extends Controller
             return ['kind' => 'client', 'label' => 'All branches in your organisation'];
         }
         if ($user->user_type === 'branch_user') {
-            $isMain = $user->branch?->is_main ?? false;
-            return ['kind' => $isMain ? 'client' : 'branch',
-                'label' => $isMain ? 'All branches in your organisation' : 'Employees in your branch'];
+            return ['kind' => 'branch', 'label' => 'Employees in your branch'];
         }
         if ($user->user_type === 'employee') {
             return ['kind' => 'reports', 'label' => 'Employees reporting to you'];

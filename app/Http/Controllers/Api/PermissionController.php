@@ -27,21 +27,17 @@ class PermissionController extends Controller
         $authUser = $request->user();
         $targetUser = User::findOrFail($userId);
 
-        // Allow self-read; super admin reads anyone; client admin and main
-        // branch user both read anyone in their client. Main branch sees
-        // sibling sub-branches per the tenant model, and the HR Employees
-        // page surfaces those employees — gating perm-read by branch_id
-        // would 403 every sibling-branch employee a main branch user opens.
+        // Allow self-read; super admin reads anyone; client admin reads anyone
+        // in their client.
         //
         // Orphan target (NULL client_id, e.g. an employee super_admin created
-        // without a tenant) is also allowed for client_admin / main_branch
-        // user — the HR Employees scope shows orphans to them, so the perms
-        // page must load too. The save path then adopts the orphan into the
-        // granter's tenant.
-        $isPrivilegedGranter = $authUser->isClientAdmin() || $authUser->isMainBranchUser();
-        // Sub-branch user can read perms for employees in their own
-        // branch only — mirrors the savePermissions scope below.
-        $isSubBranchGranter = $authUser->isBranchUser() && !$authUser->isMainBranchUser();
+        // without a tenant) is also allowed for client_admin — the HR
+        // Employees scope shows orphans to them, so the perms page must load
+        // too. The save path then adopts the orphan into the granter's tenant.
+        $isPrivilegedGranter = $authUser->isClientAdmin();
+        // Branch user can read perms for employees in their own branch only —
+        // mirrors the savePermissions scope below.
+        $isSubBranchGranter = $authUser->isBranchUser();
         $subBranchAllowed = $isSubBranchGranter
             && $targetUser->user_type === 'employee'
             && $authUser->client_id === $targetUser->client_id
@@ -80,12 +76,9 @@ class PermissionController extends Controller
                 ->whereHas('client', fn($q) => $q->where('status', 'active'))
                 ->with(['client:id,org_name,status'])
                 ->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status']);
-        } elseif ($authUser->isClientAdmin() || $authUser->isMainBranchUser()) {
-            // Client admin AND main branch user both manage every active
-            // branch_user/employee in the client (excluding self). Main
-            // branch sees sibling sub-branches per the tenant model, so its
-            // picker mirrors the client admin scope rather than its own
-            // branch alone.
+        } elseif ($authUser->isClientAdmin()) {
+            // Client admin manages every active branch_user/employee in the
+            // client (excluding self).
             $query = User::where('client_id', $authUser->client_id)
                 ->where('id', '!=', $authUser->id)
                 ->whereIn('user_type', ['branch_user', 'employee'])
@@ -113,12 +106,11 @@ class PermissionController extends Controller
             }
 
             $users = $query->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status']);
-        } elseif ($authUser->isBranchUser() && !$authUser->isMainBranchUser()) {
-            // Sub-branch user — picker is restricted to employees in
-            // their own branch (no other branch_users, no employees
-            // from sibling branches, no client_admin). Same active-row
-            // shape as the main-branch path so the SPA can render the
-            // list identically.
+        } elseif ($authUser->isBranchUser()) {
+            // Branch user — picker is restricted to employees in their own
+            // branch (no other branch_users, no employees from sibling
+            // branches, no client_admin). Same active-row shape as the
+            // client-admin path so the SPA can render the list identically.
             $users = User::where('client_id', $authUser->client_id)
                 ->where('branch_id', $authUser->branch_id)
                 ->where('id', '!=', $authUser->id)
@@ -157,23 +149,18 @@ class PermissionController extends Controller
         ]);
 
         // Authorization — per spec §5 "Grant scope" table:
-        //   super_admin       → client_admin only
-        //   client_admin      → branch_user only  (NOT employees)
-        //   main_branch_user  → branch_user + employee under client
-        //   sub_branch_user   → employees in same (client_id, branch_id)
+        //   super_admin   → client_admin only
+        //   client_admin  → branch_user only  (NOT employees)
+        //   branch_user   → employees in same (client_id, branch_id)
         if ($authUser->isSuperAdmin()) {
             if (!$targetUser->isClientAdmin()) {
                 return response()->json([
                     'message' => 'Super admin can only assign permissions to client admins. For branch-user / employee grants, the tenant\'s client_admin owns the Permissions page.',
                 ], 403);
             }
-        } elseif ($authUser->isClientAdmin() || $authUser->isMainBranchUser()) {
-            // Client admin = branch_user only. Main branch user can also
-            // grant to employees (they're the tenant's HR proxy and surface
-            // sub-branches in HR Employees).
-            $manageableTypes = $authUser->isClientAdmin()
-                ? ['branch_user']
-                : ['branch_user', 'employee'];
+        } elseif ($authUser->isClientAdmin()) {
+            // Client admin = branch_user only.
+            $manageableTypes = ['branch_user'];
 
             // Adopt orphan targets (NULL client_id — typically employees that
             // super_admin created without tenant attribution) into the
@@ -234,13 +221,13 @@ class PermissionController extends Controller
                     }
                 }
             }
-        } elseif ($authUser->isBranchUser() && !$authUser->isMainBranchUser()) {
-            // Sub-branch user — can only grant to employees in their
-            // own (client_id, branch_id). Matches the spec line in the
-            // big comment above ("sub_branch_user → employees in same
-            // branch"). Cannot grant to other branch_users, cannot
-            // adopt orphans (that's reserved for the main-branch / client
-            // admin path which is the tenant's HR proxy).
+        } elseif ($authUser->isBranchUser()) {
+            // Branch user — can only grant to employees in their own
+            // (client_id, branch_id). Matches the spec line in the big
+            // comment above ("branch_user → employees in same branch").
+            // Cannot grant to other branch_users, cannot adopt orphans
+            // (that's reserved for the client admin path which is the
+            // tenant's HR proxy).
             $allowed = $targetUser->user_type === 'employee'
                 && $targetUser->client_id === $authUser->client_id
                 && $targetUser->branch_id === $authUser->branch_id

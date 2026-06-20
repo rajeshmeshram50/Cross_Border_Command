@@ -489,19 +489,13 @@ class ExpenseClaimController extends Controller
         }
 
         if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
-            // Same rules as MasterController::applyScope — branch users see
-            // their own branch + main-branch shared rows; main-branch users
-            // see all branches under the client.
+            // Every branch is an isolated peer — branch users + employees may
+            // only reach their own branch's rows (plus rows they own / manage).
             if ($row->client_id !== null && $row->client_id !== $user->client_id) {
                 abort(403, 'Out of tenant scope.');
             }
-            $isMain = $user->branch?->is_main ?? false;
-            if (!$isMain && $row->branch_id !== null) {
-                $mainBranchId = Branch::where('client_id', $user->client_id)
-                    ->where('is_main', true)
-                    ->value('id');
-                $allowed = $row->branch_id === $user->branch_id
-                    || ($mainBranchId && $row->branch_id === $mainBranchId);
+            if ($row->branch_id !== null) {
+                $allowed = $row->branch_id === $user->branch_id;
                 // Owner / assigned manager always have access regardless of
                 // branch (e.g. claims created by the user themselves).
                 $myEmployeeId = $this->currentEmployeeId($user);
@@ -531,33 +525,19 @@ class ExpenseClaimController extends Controller
         }
 
         if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
+            // Every branch is an isolated peer — globals + client-level rows
+            // + own branch's rows (+ rows the user owns / manages).
             $clientId = $user->client_id;
             $branchId = $user->branch_id;
-            $isMain   = $user->branch?->is_main ?? false;
-
-            if ($isMain) {
-                $q->where(function ($w) use ($clientId) {
-                    $w->whereNull('client_id')->orWhere('client_id', $clientId);
-                });
-                $this->applySwitcherBranchFilter($q, $user, $branchFilter);
-                return;
-            }
-
-            $mainBranchId = Branch::where('client_id', $clientId)
-                ->where('is_main', true)
-                ->value('id');
             $myEmployeeId = $this->currentEmployeeId($user);
 
-            $q->where(function ($w) use ($clientId, $branchId, $mainBranchId, $myEmployeeId) {
+            $q->where(function ($w) use ($clientId, $branchId, $myEmployeeId) {
                 $w->whereNull('client_id')
-                  ->orWhere(function ($ww) use ($clientId, $branchId, $mainBranchId, $myEmployeeId) {
+                  ->orWhere(function ($ww) use ($clientId, $branchId, $myEmployeeId) {
                       $ww->where('client_id', $clientId)
-                         ->where(function ($wb) use ($branchId, $mainBranchId, $myEmployeeId) {
+                         ->where(function ($wb) use ($branchId, $myEmployeeId) {
                              $wb->whereNull('branch_id')
                                 ->orWhere('branch_id', $branchId);
-                             if ($mainBranchId) {
-                                 $wb->orWhere('branch_id', $mainBranchId);
-                             }
                              if ($myEmployeeId) {
                                  $wb->orWhere('employee_id', $myEmployeeId)
                                     ->orWhere('manager_id', $myEmployeeId);

@@ -107,13 +107,7 @@ export default function Branches({ onNavigate }: Props) {
     return { total, active, inactive, users };
   }, [branches]);
 
-  const mainBranchName = branches.find(b => b.is_main)?.name;
-
   const openDeleteModal = (branch: Branch) => {
-    if (branch.is_main) {
-      toast.warning('Cannot Delete', 'Main branch cannot be deleted. Set another branch as main first.');
-      return;
-    }
     setDeleteModal({ open: true, branch });
   };
 
@@ -140,7 +134,6 @@ export default function Branches({ onNavigate }: Props) {
         '#': i + 1,
         'Branch': b.name,
         'Code': b.code || '',
-        'Main Branch': b.is_main ? 'Yes' : 'No',
         'Type': b.branch_type || '',
         'Industry': b.industry || '',
         'Contact Person': b.contact_person || '',
@@ -255,11 +248,6 @@ export default function Branches({ onNavigate }: Props) {
             <div className="min-w-0">
               <div className="fw-semibold fs-13 d-flex align-items-center gap-1 text-truncate">
                 {b.name}
-                {b.is_main && (
-                  <span className="badge bg-warning-subtle text-warning text-uppercase fs-10 px-1 ms-1">
-                    <i className="ri-star-fill me-1" />MAIN
-                  </span>
-                )}
               </div>
               {b.description && <div className="text-muted fs-11 text-truncate" style={{ maxWidth: 240 }}>{b.description}</div>}
             </div>
@@ -652,12 +640,6 @@ export default function Branches({ onNavigate }: Props) {
                           <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
                             {k.value.toLocaleString()}
                           </h3>
-                        )}
-                        {!loading && k.label === 'Total Branches' && mainBranchName && (
-                          <p className="text-muted mt-2 mb-0" style={{ fontSize: 11 }}>
-                            <i className="ri-star-fill text-warning me-1" />
-                            Main: {mainBranchName}
-                          </p>
                         )}
                       </div>
                       <div className="branches-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>

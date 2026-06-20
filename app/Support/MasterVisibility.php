@@ -12,58 +12,47 @@ use Illuminate\Database\Eloquent\Builder;
  *
  * Tenant tree (per client):
  *   Client
- *     └── Main Branch (is_main = true)
- *            ├── Main-branch branch_user (admin — shared reference data)
- *            ├── Main-branch employees   (private — peer-isolated)
- *            └── Sub Branches (is_main = false)
- *                   ├── Sub-branch branch_user (branch admin)
- *                   └── Sub-branch employees   (peer-isolated)
+ *     └── Branches (all equal peers — no privileged "main" branch)
+ *            ├── Branch branch_user (branch admin — scoped to own branch)
+ *            └── Branch employees    (private — peer-isolated)
  *
  * Key idea: rows are visible based on *who created them*, not just where
- * the row is stamped. Main-branch ADMIN rows are reference data that
- * cascades down; main-branch EMPLOYEE rows are personal and stay
- * private even from sub-branches.
+ * the row is stamped.
  *
  * READ visibility — every row is visible to:
  *   - super_admin                         : all rows
  *   - client_admin / client_user          : their client's rows + globals
- *   - main-branch branch_user             : their client's rows + globals
- *                                           (sees every sub-branch + every
- *                                           main-branch employee's data)
- *   - sub-branch branch_user              : globals + client-level rows
- *                                           + own sub-branch rows
- *                                           + rows created by main-branch
- *                                             ADMIN (branch_user) — but
- *                                             NOT rows created by main-
- *                                             branch employees
- *   - employee (any branch)               : globals + client-level rows
+ *                                           (may narrow via BranchSwitcher)
+ *   - branch_user                         : globals + client-level rows
+ *                                           + own branch rows. Other
+ *                                             branches stay hidden — every
+ *                                             branch is an isolated peer.
+ *   - employee                            : globals + client-level rows
  *                                           + ONLY OWN rows (created_by = self)
- *                                           + rows created by main-branch
- *                                             ADMIN (shared reference data)
  *                                           — peer employees in the same
  *                                           branch are HIDDEN from each
  *                                           other.
  *
- * MUTATE (edit/delete) — only the creator + ancestor branches can modify:
+ * MUTATE (edit/delete) — only the creator + ancestor tiers can modify:
  *   - super_admin                         : any row
  *   - own row (created_by == auth)        : always allowed
  *   - employee viewer                     : ONLY own rows (peer-isolated)
- *   - else: viewer's tier must be >= creator's tier on the ladder
- *           super_admin > client > main-branch > sub-branch
+ *   - else: viewer's tier must be >= the row's tier on the ladder
+ *           super_admin > client > branch
  */
 class MasterVisibility
 {
     private const TIER_SUPER  = 5;
     private const TIER_CLIENT = 4;
-    private const TIER_MAIN   = 3;
-    private const TIER_SUB    = 2;
+    private const TIER_BRANCH = 2;
     private const TIER_NONE   = 0;
 
     /**
      * Apply the standard creator-hierarchy READ scope to a query.
      *
      * `$branchFilter` is the BranchSwitcher's narrowing (only honoured for
-     * roles that can switch — silently ignored for sub-branch users).
+     * roles that can switch — client_admin / client_user; silently ignored
+     * for branch users and employees, who are locked to their own scope).
      */
     public static function applyReadScope(Builder $q, $user, ?int $branchFilter = null): void
     {
@@ -87,43 +76,18 @@ class MasterVisibility
             return;
         }
 
-        // Resolve the main-branch admin (branch_user) ids for the
-        // current tenant — used by both the employee and sub-branch
-        // read scopes below to surface "reference data" (rows created
-        // by the main branch admin) while still hiding main-branch
-        // EMPLOYEE rows from everyone below.
-        $resolveMainAdminIds = function () use ($clientId): array {
-            $mainBranchId = Branch::where('client_id', $clientId)
-                ->where('is_main', true)
-                ->value('id');
-            if (!$mainBranchId) return [];
-            return \App\Models\User::where('branch_id', $mainBranchId)
-                ->where('user_type', 'branch_user')
-                ->pluck('id')
-                ->all();
-        };
-
-        // Employees are PEER-ISOLATED — they see only their own rows
-        // plus ancestor-tier reference data (globals + client-level +
-        // anything the MAIN-BRANCH ADMIN created). Main-branch employee
-        // rows are NOT considered reference data and stay hidden.
+        // Employees are PEER-ISOLATED — they see only their own rows plus
+        // ancestor-tier reference data (globals + client-level rows).
         if (($user->user_type ?? null) === 'employee') {
-            $userId        = (int) $user->id;
-            $mainAdminIds  = $resolveMainAdminIds();
+            $userId = (int) $user->id;
 
-            $q->where(function ($w) use ($clientId, $userId, $mainAdminIds) {
+            $q->where(function ($w) use ($clientId, $userId) {
                 $w->whereNull('client_id')                      // globals
-                  ->orWhere(function ($ww) use ($clientId, $userId, $mainAdminIds) {
+                  ->orWhere(function ($ww) use ($clientId, $userId) {
                       $ww->where('client_id', $clientId)
-                         ->where(function ($wb) use ($userId, $mainAdminIds) {
+                         ->where(function ($wb) use ($userId) {
                              $wb->whereNull('branch_id')        // client-level rows
                                 ->orWhere('created_by', $userId); // own rows
-                             if (!empty($mainAdminIds)) {
-                                 // Main-branch ADMIN rows (reference data
-                                 // cascades down). Employee rows in main
-                                 // branch stay private.
-                                 $wb->orWhereIn('created_by', $mainAdminIds);
-                             }
                          });
                   });
             });
@@ -132,39 +96,21 @@ class MasterVisibility
         }
 
         if (($user->user_type ?? null) === 'branch_user') {
-            $isMain = $user->branch?->is_main ?? false;
+            // Branch admin: globals + client-level rows + own branch rows.
+            // Every branch is an isolated peer — sibling branches stay hidden.
+            $branchId = $user->branch_id;
 
-            if ($isMain) {
-                // Main-branch admin sees everything in their client.
-                $q->where(function ($w) use ($clientId) {
-                    $w->whereNull('client_id')->orWhere('client_id', $clientId);
-                });
-                self::applySwitcherBranchFilter($q, $user, $branchFilter);
-                return;
-            }
-
-            // Sub-branch admin: globals + client-level + own branch
-            // + ONLY rows created by the main-branch admin (reference
-            // data). Main-branch EMPLOYEE rows are hidden — they're
-            // personal data scoped to that employee. Sibling sub-
-            // branches stay blocked.
-            $branchId     = $user->branch_id;
-            $mainAdminIds = $resolveMainAdminIds();
-
-            $q->where(function ($w) use ($clientId, $branchId, $mainAdminIds) {
+            $q->where(function ($w) use ($clientId, $branchId) {
                 $w->whereNull('client_id')
-                  ->orWhere(function ($ww) use ($clientId, $branchId, $mainAdminIds) {
+                  ->orWhere(function ($ww) use ($clientId, $branchId) {
                       $ww->where('client_id', $clientId)
-                         ->where(function ($wb) use ($branchId, $mainAdminIds) {
+                         ->where(function ($wb) use ($branchId) {
                              $wb->whereNull('branch_id')
                                 ->orWhere('branch_id', $branchId);
-                             if (!empty($mainAdminIds)) {
-                                 $wb->orWhereIn('created_by', $mainAdminIds);
-                             }
                          });
                   });
             });
-            // Sub-branch users can't use the switcher — branchFilter ignored.
+            // Branch users can't use the switcher — branchFilter ignored.
             return;
         }
 
@@ -177,13 +123,12 @@ class MasterVisibility
      * allowed. Use in update() / destroy() to block descendants from
      * modifying ancestor-created rows even when they can see them.
      *
-     * The row's tier is determined by — in order — (1) its creator's
-     * user_type when `created_by` resolves to a live user, otherwise
-     * (2) its ownership stamp (`client_id` + `branch_id`). The fallback
-     * is critical: without it, rows with a NULL or stale `created_by`
-     * (seeded data, migrated rows, rows whose creator was deleted)
-     * would silently fall through this check and become deletable by
-     * any tier — a sub-branch user could delete a Main-Branch row.
+     * The row's tier is determined by its ownership stamp (`client_id` +
+     * `branch_id`). Deriving the tier from the stamp — not the creator's
+     * *current* user_type — is critical: without it, rows with a NULL or
+     * stale `created_by` (seeded data, migrated rows, rows whose creator
+     * was deleted) would silently fall through and become deletable by any
+     * tier.
      */
     public static function hierarchicalDenial(?User $user, $row, string $action): ?string
     {
@@ -217,16 +162,8 @@ class MasterVisibility
 
         $userTier = self::tierFor($user);
 
-        // Row's tier is ALWAYS derived from its own ownership stamps
-        // (client_id + branch_id), never from the creator's *current*
-        // state. Reason: if the creator later moves from Main Branch
-        // to a Sub Branch, their old Main-Branch rows would otherwise
-        // be re-classified as Sub-tier and become editable by sibling
-        // Sub-Branch users — exactly the bug the user reported. The
-        // row's branch_id is stamped at create time and is the
-        // authoritative source for its tier. The creator user, if
-        // resolvable, is used only to pick the role label in the
-        // error message.
+        // Row's tier is derived from its own ownership stamps
+        // (client_id + branch_id), never from the creator's *current* state.
         $rowClientId = $row->client_id ?? null;
         $rowBranchId = $row->branch_id ?? null;
 
@@ -237,12 +174,8 @@ class MasterVisibility
             $rowTier = self::TIER_CLIENT;
             $defaultLabel = 'a Client user';
         } else {
-            $isMain = Branch::where('id', $rowBranchId)
-                ->where('client_id', $rowClientId)
-                ->where('is_main', true)
-                ->exists();
-            $rowTier      = $isMain ? self::TIER_MAIN : self::TIER_SUB;
-            $defaultLabel = $isMain ? 'the Main Branch' : 'another Branch';
+            $rowTier = self::TIER_BRANCH;
+            $defaultLabel = 'another Branch';
         }
 
         // Resolve the creator just to refine the error message — the
@@ -255,9 +188,9 @@ class MasterVisibility
             'super_admin'             => 'a Super Admin',
             'client_admin'            => 'a Client Admin',
             'client_user'             => 'a Client user',
-            'branch_user', 'employee' => $rowTier === self::TIER_MAIN
-                ? 'the Main Branch'
-                : ($rowTier === self::TIER_SUB ? 'another Branch' : $defaultLabel),
+            'branch_user', 'employee' => $rowTier === self::TIER_BRANCH
+                ? 'another Branch'
+                : $defaultLabel,
             default                   => $defaultLabel,
         } : $defaultLabel;
 
@@ -279,28 +212,15 @@ class MasterVisibility
         $q->where('branch_id', $branchFilter);
     }
 
-    /**
-     * Tier of a user. `$fallbackBranchId` lets the caller pass a row's
-     * branch_id so a creator whose own branch_id has since been cleared
-     * is still ranked at the level the row was stamped at.
-     */
-    private static function tierFor(?User $u, $fallbackBranchId = null): int
+    /** Tier of a user on the ladder super_admin > client > branch. */
+    private static function tierFor(?User $u): int
     {
         if (!$u) return self::TIER_NONE;
         return match ($u->user_type) {
             'super_admin'                  => self::TIER_SUPER,
             'client_admin', 'client_user'  => self::TIER_CLIENT,
-            'branch_user', 'employee'      => self::isMainBranchUser($u, $fallbackBranchId)
-                ? self::TIER_MAIN
-                : self::TIER_SUB,
+            'branch_user', 'employee'      => self::TIER_BRANCH,
             default                        => self::TIER_NONE,
         };
-    }
-
-    private static function isMainBranchUser(User $u, $fallbackBranchId): bool
-    {
-        $branchId = $u->branch_id ?: $fallbackBranchId;
-        if (!$branchId) return false;
-        return (bool) Branch::where('id', $branchId)->value('is_main');
     }
 }

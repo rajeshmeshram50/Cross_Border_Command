@@ -7,7 +7,6 @@ interface BranchSwitcherCtx {
   branches: Branch[];
   selectedBranchId: number | null; // null = "All Branches"
   selectedBranch: Branch | null;
-  isMainBranchUser: boolean;
   canSwitch: boolean;
   setBranch: (id: number | null) => void;
   loading: boolean;
@@ -15,7 +14,7 @@ interface BranchSwitcherCtx {
 
 const Ctx = createContext<BranchSwitcherCtx>({
   branches: [], selectedBranchId: null, selectedBranch: null,
-  isMainBranchUser: false, canSwitch: false, setBranch: () => {}, loading: false,
+  canSwitch: false, setBranch: () => {}, loading: false,
 });
 
 // Storage key is scoped per-user so logging in as a different user on the same
@@ -49,12 +48,11 @@ function computeInitial(
 ): number | null {
   if (!userId) return null;
 
-  // Sub-branch users (non-main) are ALWAYS locked to their own branch — never
-  // honour saved state. Backend enforces too, but we keep UI consistent.
+  // Branch users are ALWAYS locked to their own branch — never honour saved
+  // state. Backend enforces too, but we keep UI consistent. Every branch is
+  // an isolated peer.
   if (userType === 'branch_user') {
-    const myBranch = loadedBranches.find(b => b.id === userBranchId);
-    if (myBranch && !myBranch.is_main) return userBranchId ?? null;
-    // Branches not loaded yet OR is main — fall through to saved/default
+    return userBranchId ?? null;
   }
 
   const saved = readSaved(userId);
@@ -95,9 +93,9 @@ export function BranchSwitcherProvider({ children }: { children: ReactNode }) {
   const isBranchUser = user?.user_type === 'branch_user';
   const isClientAdmin = user?.user_type === 'client_admin';
 
-  const userBranch = branches.find(b => b.id === user?.branch_id);
-  const isMainBranchUser = !!(isBranchUser && userBranch?.is_main);
-  const canSwitch = isMainBranchUser || isClientAdmin;
+  // Branch users are locked to their own branch — every branch is an isolated
+  // peer. Only client admins switch across branches.
+  const canSwitch = isClientAdmin;
 
   // Reset + reload branches whenever the active user changes.
   useEffect(() => {
@@ -134,8 +132,8 @@ export function BranchSwitcherProvider({ children }: { children: ReactNode }) {
 
   const setBranch = (id: number | null) => {
     if (!user?.id) return;
-    // Sub-branch user (non-main) cannot switch — silently ignore
-    if (isBranchUser && !isMainBranchUser) return;
+    // Branch users cannot switch — silently ignore (every branch is isolated).
+    if (isBranchUser) return;
     // Validate id is in our branches list (or null)
     if (id !== null && !branches.some(b => b.id === id)) return;
     // No-op if nothing actually changes — avoids a pointless reload when the
@@ -164,7 +162,7 @@ export function BranchSwitcherProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={{
       branches, selectedBranchId, selectedBranch,
-      isMainBranchUser, canSwitch,
+      canSwitch,
       setBranch, loading,
     }}>
       {children}

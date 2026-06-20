@@ -34,7 +34,7 @@ Countries::query()->delete();
 
 // Fabricate three users in-memory. We don't persist — Auth::login accepts any
 // Authenticatable, and the controller only reads ->id / ->user_type / ->client_id /
-// ->branch_id / ->branch->is_main.
+// ->branch_id.
 $super    = new User(['name' => 'S', 'email' => 's@t', 'user_type' => 'super_admin']);   $super->id = 9001;
 $clientA  = new User(['name' => 'CA', 'email' => 'ca@t', 'user_type' => 'client_admin', 'client_id' => 101]); $clientA->id = 9002;
 $clientB  = new User(['name' => 'CB', 'email' => 'cb@t', 'user_type' => 'client_admin', 'client_id' => 102]); $clientB->id = 9003;

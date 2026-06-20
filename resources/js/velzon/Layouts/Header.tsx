@@ -149,7 +149,7 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
                                 </DropdownMenu>
                             </Dropdown>
 
-                            {/* Branch Switcher (visible to main-branch users & client admins) */}
+                            {/* Branch Switcher */}
                             <div className="ms-1 header-item d-flex align-items-center">
                                 <BranchSwitcher />
                             </div>

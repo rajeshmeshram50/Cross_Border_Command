@@ -11,7 +11,7 @@ import DashboardSections, { KpiCard, AnimatedNumber, ChartTooltip, cardStyle, ca
 
 /* Branch dashboard — fetches branch-scoped stats and renders the shared
  * business-analytics sections (Sales · Procurement · CLM · Workforce) plus
- * its own Billing block (visible only to main-branch / billing-enabled users). */
+ * its own Billing block (visible only to billing-enabled users). */
 
 const methodLabels: Record<string, string> = {
   upi: 'UPI', credit_card: 'Credit Card', debit_card: 'Debit Card',
@@ -65,7 +65,7 @@ export default function BranchDashboard() {
       <DashboardSections data={data} scope="branch" />
 
       {/* Billing — Total Paid / Payments / trend / recent. Hidden for users
-          without billing access (non-main-branch). */}
+          without billing access. */}
       {can_view_payments && (
         <Row className="g-2 mb-2">
           <Col md={6} xs={6}>

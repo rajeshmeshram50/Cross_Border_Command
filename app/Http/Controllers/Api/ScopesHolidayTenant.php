@@ -45,25 +45,16 @@ trait ScopesHolidayTenant
         }
 
         if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
+            // Every branch is an isolated peer — branch users + employees
+            // see globals + client-level rows + their own branch's rows.
             $clientId = $user->client_id;
             $branchId = $user->branch_id;
-            $isMain   = $user->branch?->is_main ?? false;
 
-            if ($isMain) {
-                $q->where(function ($w) use ($clientId) {
-                    $w->whereNull('client_id')->orWhere('client_id', $clientId);
-                });
-                $this->applySwitcherBranchFilter($q, $user, $branchFilter);
-                return;
-            }
-
-            $mainBranchId = Branch::where('client_id', $clientId)->where('is_main', true)->value('id');
-            $q->where(function ($w) use ($clientId, $branchId, $mainBranchId) {
+            $q->where(function ($w) use ($clientId, $branchId) {
                 $w->whereNull('client_id')
-                  ->orWhere(function ($ww) use ($clientId, $branchId, $mainBranchId) {
-                      $ww->where('client_id', $clientId)->where(function ($wb) use ($branchId, $mainBranchId) {
+                  ->orWhere(function ($ww) use ($clientId, $branchId) {
+                      $ww->where('client_id', $clientId)->where(function ($wb) use ($branchId) {
                           $wb->whereNull('branch_id')->orWhere('branch_id', $branchId);
-                          if ($mainBranchId) $wb->orWhere('branch_id', $mainBranchId);
                       });
                   });
             });

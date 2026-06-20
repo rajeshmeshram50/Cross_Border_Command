@@ -182,14 +182,11 @@ class MasterController extends Controller
      */
     private const OWNERSHIP_WITH = [
         'client:id,org_name',
-        'branch:id,name,is_main',
-        /* eager-load the creator's branch too so the frontend can tell
-         * Main Branch creators apart from Sub Branch creators without
-         * a second round-trip. Without `is_main` the UI was treating
-         * every branch_user as the same tier and leaving Edit/Delete
-         * enabled for sub-branch users staring at main-branch rows. */
+        'branch:id,name',
+        // eager-load the creator's branch too so the frontend can render
+        // the "Created By" sub-label without a second round-trip.
         'creator:id,name,user_type,branch_id',
-        'creator.branch:id,name,is_main',
+        'creator.branch:id,name',
     ];
 
     /**
@@ -591,14 +588,11 @@ class MasterController extends Controller
      * Rank order (higher = more privileged):
      *   super_admin              5
      *   client_admin / user      4
-     *   branch_user on MAIN      3
-     *   branch_user on SUB       2
-     *   employee                 1
+     *   branch_user / employee   2   (every branch is an isolated peer)
      *
      * Rule: rank(creator) must be <= rank(currentUser). The creator's
-     * "level" is computed at row-creation time from the user_type AND
-     * (for branch_user) the branches.is_main flag of the user's branch
-     * stored on the row's `branch_id` column when applicable.
+     * "level" is derived from the row's ownership stamps (client_id +
+     * branch_id).
      *
      * Users may always mutate their OWN rows (created_by === user.id).
      */
@@ -616,17 +610,8 @@ class MasterController extends Controller
         $arr = $row->toArray();
         $arr['client_name']       = $row->client?->org_name;
         $arr['branch_name']       = $row->branch?->name;
-        /* Row's own branch tier — true when the row was stamped under
-         * the client's Main Branch. Lets the frontend hide Edit/Delete
-         * from sub-branch users without a separate fetch. */
-        $arr['branch_is_main']    = (bool) ($row->branch?->is_main);
         $arr['creator_name']      = $row->creator?->name;
         $arr['creator_user_type'] = $row->creator?->user_type;
-        /* Creator's branch tier — distinguishes Main Branch creators
-         * from Sub Branch creators. Without this, both look identical
-         * to the UI and the frontend rank check fails to block sub-
-         * branch users from editing main-branch-created rows. */
-        $arr['creator_branch_is_main'] = (bool) ($row->creator?->branch?->is_main);
 
         // Inline sublists — return embedded child rows alongside the parent so the
         // edit form can pre-fill them without a second roundtrip. Currently only
@@ -745,16 +730,12 @@ class MasterController extends Controller
      *   client_admin/user   -> rows where client_id IS NULL (super-admin "global" rows)
      *                          OR client_id = own client
      *
-     *   branch_user (main)  -> rows where client_id IS NULL
-     *                          OR client_id = own client (any branch, any null branch)
-     *                          A main-branch user sees every row under their client.
-     *
-     *   branch_user (sub)   -> rows where client_id IS NULL
+     *   branch_user         -> rows where client_id IS NULL
      *                          OR (client_id = own client AND (
-     *                                branch_id IS NULL                    -- client-level rows
-     *                                OR branch_id = own branch            -- own rows
-     *                                OR branch_id = main branch id        -- main-branch shared rows
+     *                                branch_id IS NULL          -- client-level rows
+     *                                OR branch_id = own branch  -- own branch rows
      *                              ))
+     *                          Every branch is an equal, isolated peer.
      */
     private function applyScope($q, $user, ?int $branchFilter = null): void
     {

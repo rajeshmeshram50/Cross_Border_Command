@@ -28,16 +28,15 @@ class QuotationController extends Controller
                 'consignee:id,consignee_code,company_name',
                 'lead:id,opp_code',
                 'salesManager:id,name',
-                // Branch name + is_main are surfaced as a column in the
-                // QPI list so multi-branch users can tell at a glance
-                // which branch each record belongs to (head office vs
-                // their own branch vs others).
-                'branch:id,name,code,is_main',
+                // Branch name is surfaced as a column in the QPI list so
+                // multi-branch users can tell at a glance which branch each
+                // record belongs to.
+                'branch:id,name,code',
                 // Creator (+ creator's branch) drives the "Created By"
                 // column. Mirrors the Master Details pattern — pill
                 // tone is keyed off user_type, sub-label off branch.
                 'creator:id,name,user_type,branch_id',
-                'creator.branch:id,is_main',
+                'creator.branch:id,name',
             ])
             ->orderByDesc('id');
 
@@ -50,18 +49,15 @@ class QuotationController extends Controller
 
         // Stamp a per-row `can_modify` flag so the frontend can dim
         // edit / delete / email / reminder buttons on rows the user
-        // is only allowed to read (main-branch records seen by a
-        // normal branch user). Cheaper than the frontend re-deriving
-        // the rule from user.branch + branches.is_main.
+        // is only allowed to read (rows outside their own branch).
         $rows = collect($paginator->items())->map(function ($r) use ($user) {
             $r->can_modify = $this->userCanModify($r, $user);
             // Flatten the eager-loaded creator + creator's branch into
             // top-level fields so the frontend can read them without
             // walking the relation tree (matches the Master Details
             // shape).
-            $r->creator_name           = $r->creator?->name;
-            $r->creator_user_type      = $r->creator?->user_type;
-            $r->creator_branch_is_main = (bool) ($r->creator?->branch?->is_main);
+            $r->creator_name      = $r->creator?->name;
+            $r->creator_user_type = $r->creator?->user_type;
             return $r;
         })->all();
 
@@ -656,14 +652,11 @@ class QuotationController extends Controller
      * Branch-aware read scope for listings.
      *
      * Visibility matrix (per tenant — client_id always enforced first):
-     *   super_admin / client_admin / client_user        → all branches' rows
-     *   main_branch_user (branch where is_main = true) → all branches' rows
-     *   normal_branch_user                             → OWN branch + MAIN branch rows
+     *   super_admin / client_admin / client_user → all branches' rows
+     *   branch_user                              → OWN branch rows only
      *
      * Branch-level isolation prevents one branch from seeing another
-     * branch's quotations. Main-branch rows are visible to all branches
-     * so head-office templates / company-wide quotations stay reachable;
-     * write access on them is still blocked by `assertScope($row, $user, 'write')`.
+     * branch's quotations — every branch is an isolated peer.
      */
     private function applyScope($q, $user, ?int $branchFilter = null): void
     {
@@ -685,28 +678,9 @@ class QuotationController extends Controller
             return;
         }
 
-        // Main-branch users see everything — same as a client admin — and
-        // likewise honour the switcher's narrowing.
-        if ($user->branch && (bool) $user->branch->is_main) {
-            $this->applySwitcherBranchFilter($q, $user, $branchFilter);
-            \App\Support\SalesVisibility::applyToSalesDocs($q, $user);
-            return;
-        }
-
-        // Normal sub-branch user: own branch + main branch only. They can't
-        // use the switcher, so $branchFilter is ignored.
-        $mainBranchId = \DB::table('branches')
-            ->where('client_id', $user->client_id)
-            ->where('is_main', true)
-            ->whereNull('deleted_at')
-            ->value('id');
-
-        $q->where(function ($w) use ($user, $mainBranchId) {
-            $w->where('branch_id', $user->branch_id);
-            if ($mainBranchId) {
-                $w->orWhere('branch_id', $mainBranchId);
-            }
-        });
+        // Branch user: own branch only. They can't use the switcher, so
+        // $branchFilter is ignored.
+        $q->where('branch_id', $user->branch_id);
         \App\Support\SalesVisibility::applyToSalesDocs($q, $user);
     }
 
@@ -725,14 +699,11 @@ class QuotationController extends Controller
     /**
      * Single-row authorisation. The $action distinguishes:
      *   - 'read'  → list-show-PDF access (matches applyScope rules)
-     *   - 'write' → update / delete / email / reminder. Stricter: a normal
-     *              branch user CANNOT write to main-branch records even
-     *              though they CAN read them.
+     *   - 'write' → update / delete / email / reminder.
      *
-     * Aborts 404 on cross-tenant / cross-branch reads (so attackers can't
-     * probe for ID existence) and 403 on write attempts where the read
-     * was allowed but mutation is not (so the user knows it's a permission
-     * issue, not a missing record).
+     * Aborts 404 on cross-tenant / cross-branch access (so attackers can't
+     * probe for ID existence). Every branch is an isolated peer, so a branch
+     * user can only reach its own branch's rows.
      */
     private function assertScope(Quotation $row, $user, string $action = 'read'): void
     {
@@ -746,23 +717,8 @@ class QuotationController extends Controller
         // Client-level admins see + edit everything in the client.
         if ($user->user_type !== 'branch_user' || !$user->branch_id) return;
 
-        // Main-branch users have client-wide edit power.
-        if ($user->branch && (bool) $user->branch->is_main) return;
-
-        // Normal branch user: row is OWN branch's → full access.
+        // Branch user: row is OWN branch's → full access.
         if ((int) $row->branch_id === (int) $user->branch_id) return;
-
-        // Not own branch. Is it the main branch?
-        $isFromMainBranch = \DB::table('branches')
-            ->where('id', $row->branch_id)
-            ->where('client_id', $user->client_id)
-            ->value('is_main');
-
-        if ($isFromMainBranch) {
-            // Read-only — main-branch records visible to all branches.
-            if ($action === 'read') return;
-            abort(403, 'Main-branch records are view-only for branch users.');
-        }
 
         // Foreign branch — invisible to this user.
         abort(404);
@@ -771,15 +727,13 @@ class QuotationController extends Controller
     /**
      * UI hint flag — returns whether the given user can mutate this row.
      * Frontend uses it to grey out Edit / Delete / Email / Reminder buttons
-     * on rows that fall under the "read-only" rule (i.e. main-branch rows
-     * viewed by a normal branch user).
+     * on rows outside the user's own branch.
      */
     private function userCanModify(Quotation $row, $user): bool
     {
         if ($user->user_type === 'super_admin') return true;
         if (!$user->client_id || (int) $row->client_id !== (int) $user->client_id) return false;
         if ($user->user_type !== 'branch_user' || !$user->branch_id) return true;
-        if ($user->branch && (bool) $user->branch->is_main) return true;
         return (int) $row->branch_id === (int) $user->branch_id;
     }
 

@@ -37,12 +37,10 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
 
   const totalUsers = branches.reduce((s: number, b: any) => s + (b.users_count || 0), 0);
   const activeBranches = branches.filter(b => b.status === 'active').length;
-  const mainBranch = branches.find((b: any) => b.is_main);
 
   const KPI_CARDS = [
     { label: 'Total',       value: branches.length,    icon: 'ri-git-branch-line',      gradient: 'linear-gradient(135deg,#405189,#6691e7)' },
     { label: 'Active',      value: activeBranches,     icon: 'ri-checkbox-circle-fill', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
-    { label: 'Main',        value: mainBranch ? 1 : 0, icon: 'ri-star-fill',            gradient: 'linear-gradient(135deg,#f7b84b,#ffd47a)' },
     { label: 'Total Users', value: totalUsers,         icon: 'ri-user-3-line',          gradient: 'linear-gradient(135deg,#299cdb,#5fc8ff)' },
   ];
 
@@ -159,31 +157,6 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
               ))}
             </Row>
 
-            {/* ── Main branch callout ── */}
-            {mainBranch && (
-              <div
-                className="d-flex align-items-center gap-2 mb-3 px-3 py-2"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(247,184,75,0.12), rgba(255,212,122,0.06))',
-                  border: '1px solid rgba(247,184,75,0.35)',
-                  borderRadius: 12,
-                  color: 'var(--vz-heading-color, var(--vz-body-color))',
-                  fontSize: 13,
-                }}
-              >
-                <span
-                  className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
-                  style={{ width: 28, height: 28, background: 'linear-gradient(135deg,#f7b84b,#ffd47a)', boxShadow: '0 2px 6px rgba(247,184,75,0.35)' }}
-                >
-                  <i className="ri-star-fill" style={{ color: '#fff', fontSize: 13 }}></i>
-                </span>
-                <div>
-                  <strong>Main Branch</strong> — {mainBranch.name}
-                  <span className="text-muted ms-2">·  Main branch users can view all branches data</span>
-                </div>
-              </div>
-            )}
-
             {/* ── Search row ── */}
             <Row className="g-2 align-items-center mb-3">
               <Col xs={12}>
@@ -227,7 +200,7 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
                         <td>
                           <div className="d-flex align-items-center gap-2">
                             <div
-                              className={`avatar-xs rounded d-flex align-items-center justify-content-center text-white fw-bold ${b.is_main ? 'bg-warning' : 'bg-info'}`}
+                              className="avatar-xs rounded d-flex align-items-center justify-content-center text-white fw-bold bg-info"
                               style={{ fontSize: 10 }}
                             >
                               {b.code?.substring(0, 2) || b.name.charAt(0)}
@@ -235,7 +208,6 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
                             <div>
                               <div className="fw-semibold d-flex align-items-center gap-1">
                                 {b.name}
-                                {b.is_main && <i className="ri-star-fill text-warning fs-12"></i>}
                               </div>
                               {b.description && <div className="text-muted fs-12 text-truncate" style={{ maxWidth: 220 }}>{b.description}</div>}
                             </div>

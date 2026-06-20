@@ -272,10 +272,11 @@ class AttendanceController extends Controller
 
         if ($user->user_type !== 'super_admin') {
             $q->where('client_id', $user->client_id);
-            // A13: a sub-branch user is HARD-pinned to their own branch — pin
+            // A13: a branch user is HARD-pinned to their own branch — pin
             // first, so passing a sibling branch_id can't leak other branches'
-            // attendance. Only main-branch / client admins may use the filter.
-            if ($user->user_type === 'branch_user' && !optional($user->branch)->is_main) {
+            // attendance. Only client admins may use the filter (every branch
+            // is an isolated peer).
+            if ($user->user_type === 'branch_user') {
                 $q->where('branch_id', $user->branch_id);
             } else {
                 $branchFilter = $request->integer('branch_id') ?: null;
@@ -316,8 +317,8 @@ class AttendanceController extends Controller
      * compliance %), and a 30-day history log for the right-side table.
      *
      * Tenant scoping mirrors AttendanceController::index() — branch_user is
-     * pinned to their branch (unless main-branch), super_admin sees all,
-     * and a `?branch_id=` filter is honoured when it belongs to the caller's
+     * pinned to their own branch, super_admin sees all, and a `?branch_id=`
+     * filter is honoured (for client admins) when it belongs to the caller's
      * tenant.
      *
      * Shape returned is intentionally aligned with the AttendanceEmployee
@@ -358,13 +359,12 @@ class AttendanceController extends Controller
             $empQ->where('client_id', $user->client_id);
             $branchFilter = $request->integer('branch_id') ?: null;
 
-            // A non-main branch_user is always pinned to their own branch —
-            // doesn't matter what `branch_id` query param they send. A bad
+            // A branch_user is always pinned to their own branch — doesn't
+            // matter what `branch_id` query param they send. A bad
             // (cross-tenant) value used to fall through and surface every
             // employee in the client, which leaked rows across branches.
-            // Main-branch users + client admins can switch branches freely
-            // within the same tenant.
-            $isSubBranchUser = $user->user_type === 'branch_user' && !optional($user->branch)->is_main;
+            // Only client admins can switch branches within the tenant.
+            $isSubBranchUser = $user->user_type === 'branch_user';
             if ($isSubBranchUser) {
                 $empQ->where('branch_id', $user->branch_id);
             } elseif ($branchFilter !== null) {

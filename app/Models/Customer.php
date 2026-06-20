@@ -82,10 +82,9 @@ class Customer extends Model
      *
      *   - super_admin:                  sees everything
      *   - client_admin | client_user:   their client's rows
-     *   - main-branch member:           their client's rows
-     *   - sub-branch member:            client-level + main-branch + own
-     *                                   sub-branch (sibling sub-branches
-     *                                   are blocked)
+     *   - branch_user:                  client-level + their own branch's
+     *                                   rows (sibling branches are blocked —
+     *                                   every branch is an isolated peer)
      *
      * Usage:
      *   Customer::query()->forUser($user)->where(...)
@@ -93,8 +92,8 @@ class Customer extends Model
     public function scopeForUser(Builder $q, $user, ?int $branchFilter = null): Builder
     {
         // $branchFilter is the BranchSwitcher's narrowing — only honoured for
-        // switchable roles (client admin / main-branch user) inside
-        // applyReadScope; silently ignored for sub-branch users & employees.
+        // client admins inside applyReadScope; silently ignored for branch
+        // users & employees.
         \App\Support\MasterVisibility::applyReadScope($q, $user, $branchFilter);
         return $q;
     }

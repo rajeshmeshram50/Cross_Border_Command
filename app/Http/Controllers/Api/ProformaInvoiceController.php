@@ -36,14 +36,13 @@ class ProformaInvoiceController extends Controller
                 'lead:id,opp_code,lead_stage_id,won_at',
                 'sourceQuotation:id,code',
                 'salesManager:id,name',
-                // Branch name + is_main flag for the BRANCH column in
-                // the QPI list (lets multi-branch users identify the
-                // record's owning branch at a glance).
-                'branch:id,name,code,is_main',
+                // Branch name for the BRANCH column in the QPI list (lets
+                // multi-branch users identify the record's owning branch).
+                'branch:id,name,code',
                 // Creator (+ creator's branch) drives the "Created By"
                 // column. Mirrors the Master Details pattern.
                 'creator:id,name,user_type,branch_id',
-                'creator.branch:id,is_main',
+                'creator.branch:id,name',
                 // Shipment order (per opportunity) → its sequential
                 // shipment_code (SHP-NNN) populates the "Shipp ID" column.
                 'shipmentOrder:id,lead_id,shipment_code',
@@ -59,14 +58,13 @@ class ProformaInvoiceController extends Controller
 
         // Stamp per-row `can_modify` — mirrors the Quotation API. Drives
         // the frontend's edit/delete/email/reminder enable-state on rows
-        // visible-but-read-only (main-branch rows seen by normal users).
+        // visible-but-read-only (rows outside the user's own branch).
         $rows = collect($paginator->items())->map(function ($r) use ($user) {
             $r->can_modify = $this->userCanModify($r, $user);
             // Flatten creator info for the "Created By" column — same
             // shape as the Quotation list.
-            $r->creator_name           = $r->creator?->name;
-            $r->creator_user_type      = $r->creator?->user_type;
-            $r->creator_branch_is_main = (bool) ($r->creator?->branch?->is_main);
+            $r->creator_name      = $r->creator?->name;
+            $r->creator_user_type = $r->creator?->user_type;
             // Victory-stage gate — the opportunity behind this PI has
             // crossed Stage 6 (Victory Stage) when EITHER lead_stage_id
             // is at-or-past 6, OR won_at is stamped. Either signal flips
@@ -845,32 +843,17 @@ class ProformaInvoiceController extends Controller
         }
         $q->where('client_id', $user->client_id);
 
-        // Client-level admins / users + main-branch users see every branch
-        // under their client, but honour the BranchSwitcher's narrowing.
+        // Client-level admins / users see every branch under their client,
+        // but honour the BranchSwitcher's narrowing.
         if ($user->user_type !== 'branch_user' || !$user->branch_id) {
             $this->applySwitcherBranchFilter($q, $user, $branchFilter);
             \App\Support\SalesVisibility::applyToSalesDocs($q, $user);
             return;
         }
-        if ($user->branch && (bool) $user->branch->is_main) {
-            $this->applySwitcherBranchFilter($q, $user, $branchFilter);
-            \App\Support\SalesVisibility::applyToSalesDocs($q, $user);
-            return;
-        }
 
-        // Sub-branch user: own + main branch only; can't switch.
-        $mainBranchId = \DB::table('branches')
-            ->where('client_id', $user->client_id)
-            ->where('is_main', true)
-            ->whereNull('deleted_at')
-            ->value('id');
-
-        $q->where(function ($w) use ($user, $mainBranchId) {
-            $w->where('branch_id', $user->branch_id);
-            if ($mainBranchId) {
-                $w->orWhere('branch_id', $mainBranchId);
-            }
-        });
+        // Branch user: own branch only — every branch is an isolated peer;
+        // can't switch.
+        $q->where('branch_id', $user->branch_id);
         \App\Support\SalesVisibility::applyToSalesDocs($q, $user);
     }
 
@@ -893,18 +876,10 @@ class ProformaInvoiceController extends Controller
         if (!$user->client_id || (int) $row->client_id !== (int) $user->client_id) abort(404);
 
         if ($user->user_type !== 'branch_user' || !$user->branch_id) return;
-        if ($user->branch && (bool) $user->branch->is_main) return;
         if ((int) $row->branch_id === (int) $user->branch_id) return;
 
-        $isFromMainBranch = \DB::table('branches')
-            ->where('id', $row->branch_id)
-            ->where('client_id', $user->client_id)
-            ->value('is_main');
-
-        if ($isFromMainBranch) {
-            if ($action === 'read') return;
-            abort(403, 'Main-branch records are view-only for branch users.');
-        }
+        // Foreign branch — invisible to this user (every branch is an
+        // isolated peer).
         abort(404);
     }
 
@@ -915,14 +890,8 @@ class ProformaInvoiceController extends Controller
         if (!$user->client_id || (int) $row->client_id !== (int) $user->client_id) abort(404);
 
         if ($user->user_type !== 'branch_user' || !$user->branch_id) return;
-        if ($user->branch && (bool) $user->branch->is_main) return;
         if ((int) $row->branch_id === (int) $user->branch_id) return;
 
-        $isFromMainBranch = \DB::table('branches')
-            ->where('id', $row->branch_id)
-            ->where('client_id', $user->client_id)
-            ->value('is_main');
-        if ($isFromMainBranch) return;
         abort(404);
     }
 
@@ -932,7 +901,6 @@ class ProformaInvoiceController extends Controller
         if ($user->user_type === 'super_admin') return true;
         if (!$user->client_id || (int) $row->client_id !== (int) $user->client_id) return false;
         if ($user->user_type !== 'branch_user' || !$user->branch_id) return true;
-        if ($user->branch && (bool) $user->branch->is_main) return true;
         return (int) $row->branch_id === (int) $user->branch_id;
     }
 

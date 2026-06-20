@@ -26,8 +26,8 @@ return new class extends Migration
             $table->string('pincode', 10)->nullable();
             $table->string('country', 100)->nullable()->default('India');
 
-            // Hierarchy
-            $table->boolean('is_main')->nullable()->default(false); // main branch sees ALL branches data
+            // Legacy column — removed later; see drop_is_main_from_branches_table.
+            $table->boolean('is_main')->nullable()->default(false);
 
             // Status
             $table->string('status', 20)->nullable()->default('active'); // active, inactive

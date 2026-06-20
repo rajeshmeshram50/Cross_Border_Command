@@ -44,11 +44,11 @@ class PayrollController extends Controller
         return [
             'user_id'   => $user?->id,
             'client_id' => $user?->client_id,
-            // Branch resolution honours the main-branch / sub-branch tree:
-            //  - super_admin / client_admin / client_user / main-branch admin:
-            //    use the switcher's branch_id, or null = the whole client.
-            //  - sub-branch branch_user: PINNED to their own branch (the
-            //    switcher cannot widen their payroll scope — Rule 20).
+            // Branch resolution (every branch is an equal, isolated peer):
+            //  - super_admin / client_admin / client_user: use the switcher's
+            //    branch_id, or null = the whole client.
+            //  - branch_user: PINNED to their own branch (the switcher cannot
+            //    widen their payroll scope — Rule 20).
             'branch_id' => $this->effectiveBranchId($request, $user),
         ];
     }
@@ -59,23 +59,14 @@ class PayrollController extends Controller
         if (!$user) return null;
         $requested = $request->integer('branch_id') ?: null;
 
-        // Sub-branch users are confined to their own branch, full stop.
-        if ($user->user_type === 'branch_user' && $user->branch_id && !$this->isMainBranch($user->branch_id)) {
+        // Branch users are confined to their own branch, full stop — every
+        // branch is an isolated peer.
+        if ($user->user_type === 'branch_user' && $user->branch_id) {
             return (int) $user->branch_id;
         }
         // Everyone else: honour the switcher, default to their own branch (if
         // any), else the whole client (null).
         return $requested ?: ($user->branch_id ?: null);
-    }
-
-    private function isMainBranch(?int $branchId): bool
-    {
-        if (!$branchId) return false;
-        static $cache = [];
-        if (!array_key_exists($branchId, $cache)) {
-            $cache[$branchId] = (bool) DB::table('branches')->where('id', $branchId)->value('is_main');
-        }
-        return $cache[$branchId];
     }
 
     /**
