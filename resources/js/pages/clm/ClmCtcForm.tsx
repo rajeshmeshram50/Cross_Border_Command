@@ -1158,7 +1158,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
               })()}
               {/* Only the drafted agreement content — no auto-generated title / id / parties scaffold. */}
               {draft
-                ? <div className="ctc-editor" style={{ fontSize: 10, color: t.textSub, lineHeight: 1.7 }} dangerouslySetInnerHTML={{ __html: previewDraft }} />
+                ? <div className="ctc-editor" style={{ fontSize: 10, color: t.textSub, lineHeight: 1.7, overflowWrap: 'anywhere', wordBreak: 'break-word' }} dangerouslySetInnerHTML={{ __html: previewDraft }} />
                 : <div style={{ fontSize: 10, color: t.textMuted, lineHeight: 1.7, textAlign: 'center', padding: '40px 10px', fontStyle: 'italic' }}>No agreement content drafted yet.</div>}
               {/* Configured document footer (text + pagination) from Stage 1 */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', alignItems: 'center', gap: 6, marginTop: 26, paddingTop: 10, borderTop: '1.5px solid rgba(124,58,237,.18)', background: footer.background, color: footer.text_color, fontSize: 9, fontWeight: 500 }}>
@@ -2437,6 +2437,7 @@ const CTC_FORM_CSS = `
    instead of overflowing, so the scrollbar never appears. */
 .ctc-noshrink > * { flex-shrink: 0; }
 /* Default browser scrollbar — no custom colour. */
+.ctc-editor { overflow-wrap: anywhere; word-break: break-word; }
 .ctc-editor:empty:before { content: attr(data-ph); color: #94a3b8; pointer-events: none; white-space: pre-wrap; }
 .ctc-editor h1, .ctc-editor h2, .ctc-editor h3 { font-weight: 800; margin: 8px 0 4px; }
 .ctc-editor ul, .ctc-editor ol { padding-left: 22px; margin: 6px 0; }
