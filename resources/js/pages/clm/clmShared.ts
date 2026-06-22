@@ -600,6 +600,16 @@ body.clm-active[data-bs-theme="dark"] footer.footer, body.clm-active[data-bs-the
   background: rgba(7,30,50,.6); backdrop-filter: blur(8px);
   display: flex; align-items: center; justify-content: center;
   padding: 20px; animation: clmFadeIn .18s ease both;
+  /* While the modal is open, useSelectionLock sets user-select:none on <body>
+     to stop Ctrl+A / drag-select from grabbing the background. Re-enable it
+     here so the modal's own content stays selectable/copyable. */
+  -webkit-user-select: text; user-select: text;
+}
+/* Full-page drafting mode portals the editor shell OUT to <body> (a sibling of
+   .clm-modal-bd), so it doesn't inherit the re-enable above — restore selection
+   on the editor shells explicitly so the TipTap content stays selectable. */
+.agw-editor-shell, .tdw-editor-shell, .tnw-editor-shell {
+  -webkit-user-select: text; user-select: text;
 }
 /* MasterSelect portals its dropdown menu to <body> at z-index 11000.
    CLM modal backdrop is at 200000 — without this override, the

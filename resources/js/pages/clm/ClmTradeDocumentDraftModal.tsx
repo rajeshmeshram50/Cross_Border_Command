@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
+import { useSelectionLock } from '../../hooks/useSelectionLock';
 import { useAuth } from '../../contexts/AuthContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import { MasterMultiSelect } from '../master/masterFormKit';
@@ -98,6 +99,7 @@ interface Props {
 
 export default function ClmTradeDocumentDraftModal({ open, existing, names: initialNames, nextCode, knownSegments = [], onClose, onSaved }: Props) {
   const toast = useToast();
+  useSelectionLock(open);   // block selecting/copying the background while open
   const editingId = existing?.id ?? null;
 
   const [step, setStep] = useState<1 | 2>(1);
@@ -201,7 +203,10 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     syncContent();
   };
   const applyFontSize = (px: string) => {
-    editorRef.current?.focus();
+    // Restore the selection stashed before the <select> stole focus, so the
+    // size applies to the text the user had highlighted (a bare focus() would
+    // leave the caret collapsed and the command would no-op).
+    restoreCaretForInsert();
     // execCommand fontSize accepts 1-7; we tag with size="7" then rewrite
     // the resulting <font> elements into <span style="font-size:Npx">.
     document.execCommand('fontSize', false, '7');
@@ -213,7 +218,13 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     });
     syncContent();
   };
-  const applyBlock = (tag: string) => exec('formatBlock', `<${tag}>`);
+  const applyBlock = (tag: string) => {
+    // Restore the stashed selection (the <select> took focus) before applying
+    // the block format, so it targets the block the caret was actually in.
+    restoreCaretForInsert();
+    document.execCommand('formatBlock', false, `<${tag}>`);
+    syncContent();
+  };
   const insertLink = () => {
     const url = window.prompt('Enter URL', 'https://');
     if (url) exec('createLink', url);
@@ -836,7 +847,17 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                     </button>
                   </div>
                 </div>
-                <div className="tdw-toolbar" onMouseDown={e => e.preventDefault()}>
+                <div className="tdw-toolbar" onMouseDown={e => {
+                  /* preventDefault keeps the editor's text selection alive when a
+                   * toolbar BUTTON is clicked (the contentEditable would otherwise
+                   * blur and collapse the selection). But native <select> (font
+                   * size / block format) and <input type="color"> need the default
+                   * mousedown to open their dropdown / picker — preventing it stops
+                   * them from ever opening. Skip those; restoreCaretForInsert() in
+                   * applyFontSize/applyBlock re-applies the stashed selection. */
+                  if ((e.target as HTMLElement).closest('select, option, input')) return;
+                  e.preventDefault();
+                }}>
                   <select className="tdw-toolbar-sel" value={fontSize} onChange={e => { setFontSizeState(e.target.value); applyFontSize(e.target.value); }} title="Font size">
                     <option value="11">11</option><option value="12">12</option><option value="13">13</option>
                     <option value="14">14</option><option value="16">16</option><option value="18">18</option>
