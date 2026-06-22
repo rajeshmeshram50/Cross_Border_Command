@@ -1363,8 +1363,11 @@ export default function PublicOnboarding() {
         .onb-btn-ghost:hover:not(:disabled) {
           border-color: #1d4ed8;
           color: #1d4ed8;
-          background: rgba(37,99,235,0.06);
+          background: rgba(37,99,235,0.10);
+          transform: translateY(-1px);
+          box-shadow: 0 6px 16px rgba(37,99,235,0.20);
         }
+        .onb-btn-ghost:active:not(:disabled) { transform: translateY(0); }
         .onb-btn-primary {
           background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
           color: #ffffff;

@@ -238,6 +238,15 @@ const apiToRow = (e: ApiEmployee): EmployeeRow => {
     //   wizard step 1 done = 10%, step 2 = 20%, step 3 = 30%, step 4 = 40%
     //   stage 2 = 52%, stage 3 = 64%, stage 4 = 76%, stage 5 = 88%, stage 6 = 100%
     profile: ((): number => {
+      // Prefer the backend's blended `profile_completion` — it's the single
+      // source of truth (50% actual data fields filled + 50% HR onboarding
+      // stages) and, crucially, COUNTS data captured via the onboarding LINK.
+      // The wizard-step-only curve below ignored that: a candidate who
+      // self-filled the entire onboarding form still showed 0% because no HR
+      // wizard step had advanced. Only fall back to the local curve when the
+      // backend field is missing.
+      const backend = Number(e.profile_completion);
+      if (Number.isFinite(backend)) return Math.max(0, Math.min(100, Math.round(backend)));
       const STAGE1_WEIGHT = 0.40;
       const OTHER_WEIGHT  = 0.60 / 5; // 5 remaining macro stages
       const step  = Math.max(0, Math.min(4, Number(e.wizard_step_completed ?? 0)));
@@ -3406,10 +3415,11 @@ export default function HrEmployees() {
           .onb-submit-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 14px 28px rgba(124,58,237,0.38); }
           .onb-submit-btn:disabled { transform: none; box-shadow: 0 6px 14px rgba(124,58,237,0.20); }
           @keyframes onb-spin { to { transform: rotate(360deg); } }
-          .onb-close-btn { width: 32px; height: 32px; border-radius: 10px; background: transparent; border: none; color: #6b7280; transition: background .15s ease, color .15s ease; }
-          .onb-close-btn:hover { background: #f3f4f6; color: #1f2937; }
+          .onb-close-btn { width: 32px; height: 32px; border-radius: 10px; background: transparent; border: none; color: #6b7280; cursor: pointer; transition: background .15s ease, color .15s ease, transform .18s ease; }
+          .onb-close-btn:hover { background: #fee2e2; color: #dc2626; transform: rotate(90deg); }
+          .onb-close-btn:active { transform: rotate(90deg) scale(0.92); }
           [data-bs-theme="dark"] .onb-close-btn { color: var(--vz-secondary-color); }
-          [data-bs-theme="dark"] .onb-close-btn:hover { background: rgba(255,255,255,0.06); color: #fff; }
+          [data-bs-theme="dark"] .onb-close-btn:hover { background: rgba(239,68,68,0.18); color: #fca5a5; }
           .onb-header-title { font-size: 19px; letter-spacing: -0.01em; color: #1f2937; }
           .onb-header-sub   { font-size: 13.5px; color: #6b7280; }
           .onb-header-icon  { width: 52px; height: 52px; border-radius: 14px; background: #f3edff; }
@@ -3629,6 +3639,9 @@ export default function HrEmployees() {
                       value={onbDate}
                       onChange={(v) => { setOnbDate(v); clearOnbError('date'); }}
                       placeholder="dd-mm-yyyy"
+                      // Expected joining date can't be in the past — lock the
+                      // calendar to today onward so prior dates aren't selectable.
+                      minDate={isoYearsAgo(0)}
                       invalid={!!onbErrors.date}
                     />
                     {onbErrors.date && (
@@ -4436,10 +4449,9 @@ export default function HrEmployees() {
                           setEFirstName(v);
                           const composed = `${v} ${eMiddleName} ${eLastName}`.replace(/\s+/g,' ').trim();
                           if (!eDisplayNameTouched) setEDisplayName(composed);
-                          // Actual Name only mirrors the live composition
-                          // while the row is unsaved (create flow). Once
-                          // locked from an edit-hydration it stays put.
-                          if (!eActualNameLocked) setEActualName(composed);
+                          // Actual Name is read-only + always auto-generated from
+                          // First / Middle / Last, so keep it in sync on every edit.
+                          setEActualName(composed);
                           clearEErr('first_name');
                           clearEErr('display_name');
                           clearEErr('actual_name');
@@ -4454,9 +4466,9 @@ export default function HrEmployees() {
                         setEMiddleName(v);
                         const composed = `${eFirstName} ${v} ${eLastName}`.replace(/\s+/g,' ').trim();
                         if (!eDisplayNameTouched) setEDisplayName(composed);
-                        // Actual Name no longer auto-mirrors while
-                        // typing — the user fills it explicitly below.
+                        setEActualName(composed);   // read-only, always auto-generated
                         clearEErr('middle_name');
+                        clearEErr('actual_name');
                       }} />
                       {eErrors.middle_name && <small className="emp-err">{eErrors.middle_name}</small>}
                     </Col>
@@ -4472,7 +4484,7 @@ export default function HrEmployees() {
                           setELastName(v);
                           const composed = `${eFirstName} ${eMiddleName} ${v}`.replace(/\s+/g,' ').trim();
                           if (!eDisplayNameTouched) setEDisplayName(composed);
-                          if (!eActualNameLocked) setEActualName(composed);
+                          setEActualName(composed);   // read-only, always auto-generated
                           clearEErr('last_name');
                           clearEErr('display_name');
                           clearEErr('actual_name');
@@ -4496,41 +4508,20 @@ export default function HrEmployees() {
                       {eErrors.display_name && <small className="emp-err">{eErrors.display_name}</small>}
                     </Col>
                     <Col md={4}>
-                      <label className="emp-label d-flex align-items-center gap-2 flex-wrap">
-                        <span>Employee Actual Name<span className="req">*</span></span>
-                        {/* "Copy from name" — fills Actual Name from
-                            the current First/Middle/Last composition so
-                            the admin can opt-in to the old auto-mirror
-                            behaviour with one click. Hidden when the
-                            row was hydrated from server (eActualNameLocked)
-                            because that's an existing employee's real
-                            legal name, not something to overwrite. */}
-                        {!eActualNameLocked && (
-                          <button
-                            type="button"
-                            className="btn btn-link btn-sm p-0"
-                            style={{ fontSize: 11 }}
-                            onClick={() => {
-                              const composed = `${eFirstName} ${eMiddleName} ${eLastName}`.replace(/\s+/g, ' ').trim();
-                              setEActualName(composed);
-                              setEActualNameTouched(true);
-                              clearEErr('actual_name');
-                            }}
-                          >
-                            Copy from name
-                          </button>
-                        )}
+                      <label className="emp-label">
+                        Employee Actual Name<span className="req">*</span>
+                        <span className="hint">(auto-generated)</span>
                       </label>
+                      {/* Read-only — auto-filled from First / Middle / Last name
+                          (kept in sync by the name fields' onChange above). Not
+                          manually editable, same as Display Name. */}
                       <input
-                        className={`emp-input${eErrors.actual_name ? ' is-invalid' : ''}`}
+                        className={`emp-input is-readonly${eErrors.actual_name ? ' is-invalid' : ''}`}
                         type="text"
-                        placeholder="As per Aadhaar / PAN"
+                        placeholder="Auto-filled from First / Middle / Last name"
                         value={eActualName}
-                        onChange={(e) => {
-                          setEActualName(e.target.value);
-                          setEActualNameTouched(true);
-                          clearEErr('actual_name');
-                        }}
+                        readOnly
+                        tabIndex={-1}
                       />
                       {eErrors.actual_name && <small className="emp-err">{eErrors.actual_name}</small>}
                     </Col>
