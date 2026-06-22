@@ -6,6 +6,17 @@ import { useAuth } from '../../../../contexts/AuthContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 
+/* Currency code → symbol (matches the Product Directory / Stage 3 modals). Falls
+ * back to the raw code so an unmapped currency still reads sensibly. */
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$', INR: '₹', EUR: '€', GBP: '£', JPY: '¥', CNY: '¥', AUD: 'A$', SGD: 'S$', CAD: 'C$', AED: 'AED ',
+};
+const currencySymbol = (code: string | null | undefined): string => {
+  const c = (code ?? '').toUpperCase().trim();
+  if (!c) return '₹';
+  return CURRENCY_SYMBOLS[c] ?? `${c} `;
+};
+
 /* ─────────────────────────────────────────────────────────────────────────
  * Create Product Sourcing modal — Sales Matrix → Stage 3 (Required tab).
  *
@@ -504,7 +515,7 @@ export default function CreateProcurementModal({
                             return (
                               <>
                                 <div className="cps-price-wrap">
-                                  <span className="cps-price-prefix">$</span>
+                                  <span className="cps-price-prefix">{currencySymbol(sel?.currency)}</span>
                                   <input
                                     type="text" inputMode="decimal"
                                     className={`cps-row-input cps-row-price ${priceMsg ? 'cps-input-err' : ''}`}
