@@ -346,11 +346,21 @@ class OnboardingController extends Controller
         // can reach createInvite could plant a phishing host in the emailed link.
         $base = rtrim((string) config('app.frontend_url'), '/');
         if ($appOrigin) {
+            // Loopback hosts are interchangeable in local dev — the SPA may be
+            // opened at 127.0.0.1:8000 while APP_URL is http://localhost (or
+            // vice-versa). Normalise them so the browser-supplied origin (which
+            // crucially carries the correct PORT) is still trusted; otherwise we
+            // fell back to a portless APP_URL and the emitted link 404'd /
+            // refused to connect (e.g. http://localhost/onboarding/… on :80).
+            $loopback = ['localhost', '127.0.0.1', '::1'];
+            $norm = fn (?string $h) => in_array(strtolower((string) $h), $loopback, true)
+                ? 'localhost'
+                : strtolower((string) $h);
             $allowedHosts = array_filter([
-                parse_url((string) config('app.frontend_url'), PHP_URL_HOST),
-                parse_url((string) config('app.url'), PHP_URL_HOST),
+                $norm(parse_url((string) config('app.frontend_url'), PHP_URL_HOST)),
+                $norm(parse_url((string) config('app.url'), PHP_URL_HOST)),
             ]);
-            $originHost = parse_url($appOrigin, PHP_URL_HOST);
+            $originHost = $norm(parse_url($appOrigin, PHP_URL_HOST));
             if ($originHost && in_array($originHost, $allowedHosts, true)) {
                 $base = rtrim($appOrigin, '/');
             }

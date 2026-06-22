@@ -879,7 +879,9 @@ class LeaveRequestController extends Controller
      * matches approver_user_id, OR (for role-based levels) they hold the
      * named role. Admin / HR scopes bypass via the caller.
      */
-    private function canActOnLevel($user, array $chain, int $idx, ?LeaveRequest $request = null): bool
+    /** Public so cross-module inboxes (e.g. MyTeamController approvals) can
+     *  reuse the exact per-level approver resolution without duplicating it. */
+    public function canActOnLevel($user, array $chain, int $idx, ?LeaveRequest $request = null): bool
     {
         if (!isset($chain[$idx])) return false;
         $entry = $chain[$idx];
