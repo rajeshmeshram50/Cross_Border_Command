@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 /**
  * HRMS Holiday calendar — per-tenant company holidays. Manual CRUD plus a
@@ -271,6 +272,28 @@ class HolidayController extends Controller
         $data['is_recurring'] = filter_var($request->input('is_recurring', false), FILTER_VALIDATE_BOOLEAN);
         // Only honour a group id that belongs to the caller's tenant scope.
         $data['holiday_group_id'] = $this->resolveGroupId($request, $request->input('holiday_group_id'));
+
+        // Block duplicate holidays on the same date within the same tenant +
+        // group scope (the same date may legitimately exist in another group).
+        // Mirrors the bulk-import de-dupe so single-create can't bypass it.
+        // On update, the row being edited is excluded.
+        [$clientId, $branchId] = $this->resolveOwnership($request);
+        $duplicate = Holiday::query()
+            ->when($clientId === null, fn ($q) => $q->whereNull('client_id'), fn ($q) => $q->where('client_id', $clientId))
+            ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
+            ->when(
+                $data['holiday_group_id'] === null,
+                fn ($q) => $q->whereNull('holiday_group_id'),
+                fn ($q) => $q->where('holiday_group_id', $data['holiday_group_id']),
+            )
+            ->whereDate('date', $data['date'])
+            ->when($id !== null, fn ($q) => $q->where('id', '!=', $id))
+            ->exists();
+        if ($duplicate) {
+            throw ValidationException::withMessages([
+                'date' => 'Holiday already exists for the selected date.',
+            ]);
+        }
 
         return $data;
     }

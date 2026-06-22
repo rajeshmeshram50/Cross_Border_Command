@@ -27,6 +27,7 @@ import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { leaveTypesApi, leaveRequestsApi, ApiLeaveRequest } from '../hrms/leavePlansApi';
 import LeaveSummaryPanel from './LeaveSummaryPanel';
+import HolidayCalendarPanel from './HolidayCalendarPanel';
 
 // Supporting-documents upload rules — shared by the expense-claim "Proof &
 // Receipt" picker and the advance-request "Supporting Documents" picker.
@@ -128,7 +129,7 @@ interface Props {
   onBack: () => void;
 }
 
-type TabKey = 'profile' | 'job' | 'attendance' | 'vault' | 'payroll' | 'expense' | 'apply_leave' | 'hiring';
+type TabKey = 'profile' | 'job' | 'attendance' | 'vault' | 'payroll' | 'expense' | 'apply_leave' | 'holidays' | 'hiring';
 type PayrollTab = 'summary' | 'details';
 type VaultTab = 'employee' | 'organizational';
 type ExpenseFilter = 'all' | 'approved' | 'rejected' | 'pending' | 'draft';
@@ -429,8 +430,17 @@ function AttendanceTabPanel({ employeeId }: { employeeId: string }) {
             <div className="px-3 py-3 flex-grow-1">
               {today ? (
                 <>
+                  {/* Dark-mode: light-green pill (#d6f4e3/#108548) was unreadable
+                      on the dark card — swap to a translucent green + bright text. */}
+                  <style>{`
+                    [data-bs-theme="dark"] .ep-att-today-badge,
+                    [data-layout-mode="dark"] .ep-att-today-badge {
+                      background: rgba(16,185,129,0.18) !important;
+                      color: #6ee7b7 !important;
+                    }
+                  `}</style>
                   <span
-                    className="d-inline-flex align-items-center gap-1 fw-semibold mb-3"
+                    className="ep-att-today-badge d-inline-flex align-items-center gap-1 fw-semibold mb-3"
                     style={{
                       fontSize: 11, padding: '2px 8px', borderRadius: 999,
                       background: '#d6f4e3', color: '#108548',
@@ -2484,6 +2494,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     { key: 'payroll',    label: 'Payroll Details', icon: 'ri-money-dollar-circle-line', color: 'linear-gradient(135deg,#f59e0b,#fbbf24)' },
     { key: 'expense',    label: 'Expense Details', icon: 'ri-wallet-3-line',            color: 'linear-gradient(135deg,#f06548,#ff7a5c)' },
     { key: 'apply_leave',label: 'Leave',           icon: 'ri-calendar-2-line',          color: 'linear-gradient(135deg,#7c5cfc,#5a3fd1)' },
+    { key: 'holidays',   label: 'Holidays',        icon: 'ri-calendar-event-line',      color: 'linear-gradient(135deg,#ec4899,#f472b6)' },
     // Hiring Requests — visible when the profile owner is also the
     // viewer AND they either (a) manage at least one direct report
     // (employee-as-manager) or (b) have org-wide HR visibility
@@ -4085,7 +4096,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <div className="d-flex gap-1 flex-wrap justify-content-lg-end">
                     {[
                       { label: 'Total Docs', value: vaultCounts.total,    color: '#fff' },
-                      { label: 'Verified',   value: vaultCounts.verified, color: '#86efac' },
                       { label: 'Pending',    value: vaultCounts.pending,  color: '#fcd34d' },
                       { label: 'Signed',     value: vaultCounts.signed,   color: '#c4b5fd' },
                     ].map(c => (
@@ -4214,16 +4224,16 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <table className="table align-middle table-nowrap ep-att-table mb-0">
                     <thead className="table-light">
                       <tr>
-                        {['SR', 'Document', 'File Name', 'Size', 'Uploaded', 'Verified By', 'Attachment', 'Status'].map(h => (
+                        {['SR', 'Document', 'File Name', 'Size', 'Uploaded', 'Attachment', 'Status'].map(h => (
                           <th key={h}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {uploadedLoading ? (
-                        <ShimmerTableRows rows={4} cols={8} keyPrefix="uploaded-shim" />
+                        <ShimmerTableRows rows={4} cols={7} keyPrefix="uploaded-shim" />
                       ) : uploadedDocs.length === 0 ? (
-                        <tr><td colSpan={8} style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>
+                        <tr><td colSpan={7} style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>
                           <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 6 }} />
                           No uploaded documents yet. Files attached during onboarding will land here.
                         </td></tr>
@@ -4244,9 +4254,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                               <td className="font-monospace" style={{ fontSize: 11.5 }}>{formatBytes(d.size_bytes)}</td>
                               <td className="font-monospace" style={{ fontSize: 11.5 }}>
                                 {d.uploaded_at ? new Date(d.uploaded_at).toLocaleDateString() : '—'}
-                              </td>
-                              <td style={{ fontSize: 11.5 }}>
-                                {d.verifier ? d.verifier.name : <span className="text-muted">—</span>}
                               </td>
                               <td>
                                 {d.url
@@ -5347,6 +5354,16 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
            application" entry point later. */}
       {tab === 'apply_leave' && (
         <LeaveSummaryPanel employeeId={employeeId} canRequest={isOwnProfile} />
+      )}
+
+      {/* ── Holidays tab — read-only view of the employee's assigned Holiday
+           Calendar (Holiday Group). Live-fetched per year from
+           /employees/{id}/holidays, so changes to the assigned calendar reflect
+           automatically. List + Calendar views inside the panel. */}
+      {tab === 'holidays' && (
+        <div style={{ background: 'var(--vz-card-bg, #fff)', borderRadius: 14, border: '1px solid var(--vz-border-color, #eef2f7)', padding: 18, boxShadow: '0 1px 3px rgba(15,23,42,0.04)' }}>
+          <HolidayCalendarPanel employeeId={employeeId} />
+        </div>
       )}
 
       {/* ── Hiring Requests tab — manager-only. Mirrors HrRecruitment's
