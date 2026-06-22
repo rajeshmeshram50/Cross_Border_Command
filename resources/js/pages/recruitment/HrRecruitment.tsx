@@ -1900,6 +1900,14 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
       <ViewHiringRequestModal
         request={viewing}
         onClose={() => setViewing(null)}
+        // A request can still be promoted to a recruitment while it has no
+        // linked recruitment yet and hasn't been rejected — mirrors the
+        // row-icon's `tab === 'pending'` gate.
+        canCreate={!!viewing && !linkedHrIds.has(Number(viewing.id)) && viewing.status !== 'Rejected'}
+        // Reuse the exact same prefill flow as the list-row icon: close the
+        // detail view, then hand the row up so Create Recruitment opens
+        // seeded from the request's full _raw payload.
+        onCreate={(req) => { setViewing(null); onCreateRecruitment(req); }}
         onReject={async (req) => {
           try {
             const { data } = await api.put(`/hiring-requests/${req.id}`, { status: 'Rejected' });
@@ -1922,18 +1930,27 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
 // View Hiring Request — read-only detail modal
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ViewHiringRequestModal({ request, onClose, onReject }: {
+function ViewHiringRequestModal({ request, onClose, onReject, onCreate, canCreate }: {
   request: HiringRequestRow | null;
   onClose: () => void;
   /** Rejects the request (PUT status=Rejected) — handled by the parent so
    *  the list row updates in place. Resolves when the API call settles. */
   onReject?: (req: HiringRequestRow) => Promise<void>;
+  /** Promotes the request to a recruitment — handled by the parent so the
+   *  Create Recruitment modal opens prefilled (same flow as the row icon). */
+  onCreate?: (req: HiringRequestRow) => void;
+  /** Whether this request can still be promoted (no recruitment yet, not
+   *  rejected). Hides the Create button when false. */
+  canCreate?: boolean;
 }) {
   const [rejecting, setRejecting] = useState(false);
   if (!request) return null;
   const r = request;
   // Already-closed requests can't be rejected again.
   const canReject = !!onReject && !['Rejected', 'Approved'].includes(r.status);
+  // Show Create Recruitment when the parent says this row is still pending
+  // (no recruitment linked yet) and a handler was supplied.
+  const showCreate = !!onCreate && !!canCreate;
   // _raw carries the full API row including the long-text fields
   // (job_description, daily_responsibilities, required_skills, …).
   // We read everything off it so the view matches every field on the
@@ -2046,7 +2063,7 @@ function ViewHiringRequestModal({ request, onClose, onReject }: {
         </div>
 
         <div className="rec-form-footer">
-          <span className="hint">{canReject ? 'Review this request — reject it if it should not proceed' : 'Read-only view'}</span>
+          <span className="hint">{canReject ? 'Review this request — create a recruitment or reject it' : 'Read-only view'}</span>
           <div className="d-flex gap-2">
             {canReject && (
               <button
@@ -2071,6 +2088,16 @@ function ViewHiringRequestModal({ request, onClose, onReject }: {
             <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={rejecting}>
               <i className="ri-close-line" />Close
             </button>
+            {showCreate && (
+              <button
+                type="button"
+                className="rec-btn-primary"
+                disabled={rejecting}
+                onClick={() => onCreate?.(r)}
+              >
+                <i className="ri-user-search-line" />Create Recruitment
+              </button>
+            )}
           </div>
         </div>
       </ModalBody>
@@ -2439,7 +2466,14 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
 
   const validate = (): CreateErrors => {
     const e: CreateErrors = {};
-    if (!jobTitle.trim())        e.jobTitle        = 'Job title is required';
+    const jobTitleTrim = jobTitle.trim();
+    if (!jobTitleTrim) {
+      e.jobTitle = 'Job title is required';
+    } else if (!/^[A-Za-z0-9 .,\-/]+$/.test(jobTitleTrim)) {
+      // Reject special characters (@ # $ % ^ & * ( ) etc). Allow only letters,
+      // numbers, spaces and the punctuation real job titles use (- . , /).
+      e.jobTitle = 'Job title cannot contain special characters — use only letters, numbers, spaces and - . , /';
+    }
     if (!departmentId)           e.department      = 'Department is required';
     if (!designationId)          e.designation     = 'Designation is required';
     if (!primaryRoleId)          e.primaryRole     = 'Primary role is required';
@@ -2499,8 +2533,13 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
     if (deadline && startDate && deadline < startDate) {
       e.deadline = 'TAT/Deadline cannot be before the start date';
     }
-    if (!jobDescription.trim()) e.jobDescription = 'Job description is required';
-    if (!requirements.trim())   e.requirements   = 'Requirements are required';
+    // Require real content, not a single throwaway character ("1").
+    const jd = jobDescription.trim();
+    if (!jd)                  e.jobDescription = 'Job description is required';
+    else if (jd.length < 2)   e.jobDescription = 'Job description must be at least 2 characters';
+    const rq = requirements.trim();
+    if (!rq)                  e.requirements   = 'Requirements are required';
+    else if (rq.length < 2)   e.requirements   = 'Requirements must be at least 2 characters';
     return e;
   };
 

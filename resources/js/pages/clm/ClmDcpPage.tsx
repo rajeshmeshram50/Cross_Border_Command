@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import api from '../../api';
 import { ShimmerClmMaster } from '../../components/ui/Shimmer';
 import { useToast } from '../../contexts/ToastContext';
+import { useSelectionLock } from '../../hooks/useSelectionLock';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import { MasterSelect } from '../../components/ui/MasterSelect';
@@ -512,6 +513,8 @@ function SegmentRuleModal(props: {
   // Lock the background page from scrolling while the modal is open — otherwise
   // a scroll over the overlay bleeds through and scrolls the page behind it.
   useEffect(() => { document.body.style.overflow = 'hidden'; document.documentElement.style.overflow = 'hidden'; return () => { document.body.style.overflow = ''; document.documentElement.style.overflow = ''; }; }, []);
+  // Block selecting/copying the background while the modal is open (mounted only when open).
+  useSelectionLock();
 
   /* Less-Regulatory create-mode flips on multi-select. Edit mode locks to
    * single because each edit targets exactly one rule, and High keeps a

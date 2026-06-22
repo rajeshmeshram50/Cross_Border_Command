@@ -426,7 +426,9 @@ export default function HrCandidates() {
                     <thead>
                       <tr>
                         <th className="ps-3 text-center" style={{ width: 56 }}>Sr No</th>
-                        <th>Candidate</th>
+                        {/* "Name" to stay consistent with the Sample Import
+                            template + import validation, which both use "Name". */}
+                        <th>Name</th>
                         <th>Email</th>
                         <th>Mobile</th>
                         <th className="text-center">Exp (Y)</th>
@@ -1746,6 +1748,10 @@ function CandidateFormModal({
                     <span className="cand-step cand-step-4">4</span>
                     <p className="rec-form-section-title">Attachment Details</p>
                   </div>
+                  {/* Label line mirrors Source / Candidate Status so the upload
+                      box aligns with the dropdowns in the other two columns, and
+                      the required * matches the CV-required validation. */}
+                  <label className="rec-form-label">Attach CV<span className="req">*</span></label>
                   <label className="cand-cv-drop" style={errors.cv ? { borderColor: '#f06548' } : undefined}>
                     {/* Validate at file-selection time, not just submit.
                         The native `accept` attribute is a soft hint — users

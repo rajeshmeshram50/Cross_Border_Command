@@ -45,7 +45,12 @@ function nextSeqCode(codes: string[], prefix: string): string {
 
 /* Central CLM → Clause Library Master (two tabs: Types + Library). */
 
-type ClType = { id: number; code: string; name: string; description: string };
+/* Capitalize the first character as the user types so clause/document titles
+ * always start with a capital letter (looks professional). Only touches index
+ * 0 — the rest of the text is left exactly as typed. */
+const capitalizeFirst = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+type ClType = { id: number; code: string; name: string; description: string; in_use?: number };
 type ClLib = { id: number; code: string; clause_type: string; name: string; party: string; clause_status: string; content: string | null };
 
 export default function ClmClauseLibraryPage() {
@@ -207,7 +212,21 @@ function TypesPane({ rows, loading, reload }: { rows: ClType[]; loading: boolean
                     <td className="clm-td-name">{r.name}</td>
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">
-                        <button className="clm-act clm-act-edit" title="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                        {(() => {
+                          // A clause type used in the Clause Library can't be edited —
+                          // the library references it by name, so renaming would orphan
+                          // those clauses. Disable the edit button and explain why.
+                          const used = (r.in_use ?? 0) > 0;
+                          return (
+                            <button
+                              className="clm-act clm-act-edit"
+                              title={used ? `Used by ${r.in_use} clause${r.in_use === 1 ? '' : 's'} in the Clause Library — can't edit. Remove or reassign ${r.in_use === 1 ? 'that clause' : 'those clauses'} first.` : 'Edit'}
+                              disabled={used}
+                              style={used ? { opacity: .4, cursor: 'not-allowed' } : undefined}
+                              onClick={() => { if (used) return; setEditing(r); setModalOpen(true); }}
+                            ><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                          );
+                        })()}
                         <button className="clm-act clm-act-del" title="Delete" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
                       </div>
                     </td>
@@ -495,7 +514,7 @@ function ClauseLibModal(props: {
                 placeholder="e.g. Force Majeure, Payment Terms — 30 Days"
                 maxLength={255}
                 value={name}
-                onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }}
+                onChange={e => { setName(capitalizeFirst(e.target.value)); setErrors(p => ({ ...p, name: '' })); }}
               />
               {errors.name && <div className="clm-err">{errors.name}</div>}
             </div>
@@ -644,7 +663,7 @@ function ClauseTypeModal(props: {
               autoFocus
               maxLength={255}
               value={name}
-              onChange={e => { setName(e.target.value); setErr(''); }}
+              onChange={e => { setName(capitalizeFirst(e.target.value)); setErr(''); }}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void handle(); } }}
               placeholder="e.g. Core Legal, Financial, Risk"
             />

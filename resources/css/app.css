@@ -2657,3 +2657,12 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-tooltip]:disabled::before { opacity: 0; }
 [data-tooltip]:disabled:hover::after,
 [data-tooltip]:disabled:hover::before { opacity: 1; }
+
+/* ── SweetAlert2 stacking ──────────────────────────────────────────────────
+ * Swal's default container z-index is 1060, which sits BEHIND the app's
+ * modals/drawers (reactstrap modals run up to z-index 2100, some custom
+ * overlays up to ~11200). That made confirm/warning dialogs fire invisibly —
+ * e.g. the "Not enough leave balance" warning in RequestLeaveModal (z 2100):
+ * submission was blocked but the user saw no message. Force every Swal popup
+ * to the very top so alerts are always visible above whatever opened them. */
+.swal2-container { z-index: 20000 !important; }

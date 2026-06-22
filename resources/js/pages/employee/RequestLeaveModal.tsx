@@ -158,8 +158,10 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
       const remaining = selectedBalance.available ?? 0;
       if (totalDays > remaining) {
         await Swal.fire({
-          title: 'Not enough leave balance',
-          text: `${selectedBalance.name} has ${remaining} day${remaining === 1 ? '' : 's'} available but you requested ${totalDays}.`,
+          title: remaining <= 0 ? `No ${selectedBalance.name} balance available` : 'Not enough leave balance',
+          text: remaining <= 0
+            ? `You have no ${selectedBalance.name} balance left, so this request can't be submitted.`
+            : `${selectedBalance.name} has ${remaining} day${remaining === 1 ? '' : 's'} available but you requested ${totalDays}.`,
           icon: 'warning',
           confirmButtonText: 'OK',
           confirmButtonColor: '#f06548',

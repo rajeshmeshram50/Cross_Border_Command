@@ -393,7 +393,12 @@ class RecruitmentController extends Controller
         $req = fn (string $extra = '') => ($isUpdate ? 'sometimes|' : '') . 'required' . ($extra ? "|{$extra}" : '');
 
         return $request->validate([
-            'job_title'         => ($isUpdate ? 'sometimes|' : '') . 'required|string|max:191',
+            // Reject special characters (@ # $ % ^ & * ( ) …). Only letters,
+            // numbers, spaces and basic title punctuation (- . , /) allowed.
+            'job_title'         => array_values(array_filter([
+                $isUpdate ? 'sometimes' : null, 'required', 'string', 'max:191',
+                'regex:/^[A-Za-z0-9 .,\-\/]+$/',
+            ])),
             'department_id'     => ($isUpdate ? 'sometimes|' : '') . 'required|integer|exists:master_departments,id',
             'designation_id'    => ($isUpdate ? 'sometimes|' : '') . 'required|integer|exists:master_designations,id',
             'primary_role_id'   => 'nullable|integer|exists:master_roles,id',
@@ -425,6 +430,8 @@ class RecruitmentController extends Controller
             'status'        => ['nullable', Rule::in(self::STATUSES)],
             'cancel_reason' => 'nullable|string|max:100',
             'cancel_notes'  => 'nullable|string',
+        ], [
+            'job_title.regex' => 'Job title cannot contain special characters — use only letters, numbers, spaces and - . , /',
         ]);
     }
 
