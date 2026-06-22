@@ -312,7 +312,10 @@ export default function IdimsHeader() {
     if (hasGroupView('hr.')) items.push({ id: 'hr', label: 'HRMS', icon: IC.users, dd: 'hr' });
     if (hasGroupView('sales.')) items.push({ id: 'sales', label: 'Sales Matrix', icon: IC.trend, dd: 'sales' });
     if (hasGroupView('clm.')) items.push({ id: 'clm', label: 'CLM', icon: IC.file, dd: 'clm' });
-    if (can('p2p')) items.push({ id: 'p2p', label: 'Procure to Pay (P2P)', icon: IC.cart, dd: 'p2p' });
+    // P2P is a PARENT module with a real p2p.* leaf subtree, so permission rows
+    // live on the leaves — perms['p2p'] (the parent slug) is never saved. Gate on
+    // any p2p.* leaf view, mirroring HRMS/Sales/CLM above (not can('p2p')).
+    if (hasGroupView('p2p.')) items.push({ id: 'p2p', label: 'Procure to Pay (P2P)', icon: IC.cart, dd: 'p2p' });
     if (can('gts')) items.push({ id: 'gts', label: 'GTS (E-Docs)', icon: IC.globe });
     if (can('inventory')) items.push({ id: 'inventory', label: 'Inventory Management System', icon: IC.box });
     // Developers → Shipment (Business Task). Direct-link tab, gated on the
