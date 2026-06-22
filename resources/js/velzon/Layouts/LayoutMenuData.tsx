@@ -268,6 +268,17 @@ const Navdata = () => {
     );
   };
 
+  // P2P is a PARENT module with a real p2p.* leaf subtree, so permission rows
+  // live on the leaves — perms['p2p'] (the parent slug) is never saved. Gate on
+  // any p2p.* leaf view, mirroring HR/Sales/CLM above.
+  const hasAnyP2pView = () => {
+    if (isSuperAdmin) return true;
+    if (planExpiredOrMissing) return false;
+    return Object.keys(perms).some(
+      (slug) => slug.startsWith("p2p.") && !!perms[slug]?.can_view
+    );
+  };
+
   // Build the HR dropdown (3 levels): HR → categories → leaves.
   // Each category becomes a `subItem` with `isChildItem:true` so Velzon's
   // VerticalLayouts renderer expands it as a collapsible group with its own
@@ -358,9 +369,9 @@ const Navdata = () => {
   };
 
   // Procure to Pay (P2P) dropdown (3 levels): P2P → categories → leaves.
-  // Unlike Sales/CLM/HR, P2P is gated at the MODULE level (can('p2p')), so
-  // every leaf shows whenever the user has P2P access — matching the header
-  // mega-menu. Built from the shared P2P_GROUPS so both menus stay in sync.
+  // The menu surfaces when the user holds any p2p.* leaf view (hasAnyP2pView);
+  // once in, every leaf shows — matching the header mega-menu. Built from the
+  // shared P2P_GROUPS so both menus stay in sync.
   const buildP2pSubItems = () => {
     return P2P_GROUPS.map((g) => ({
       id: g.id,
@@ -516,14 +527,12 @@ const Navdata = () => {
       continue;
     }
 
-    // Procure to Pay (P2P) → 3-level nested dropdown like Sales/CLM/HR. The
-    // module is gated by can('p2p'); once in, every leaf shows (matches the
-    // header mega-menu). Clicking the parent only toggles the dropdown.
+    // Procure to Pay (P2P) → 3-level nested dropdown like Sales/CLM/HR. Gated on
+    // any p2p.* leaf view (perms['p2p'] is a parent slug and never saved); once
+    // in, every leaf shows (matches the header mega-menu). Clicking the parent
+    // only toggles the dropdown.
     if (m.id === "p2p") {
-      if (!isSuperAdmin) {
-        if (planExpiredOrMissing) continue;
-        if (!perms["p2p"]?.can_view) continue;
-      }
+      if (!hasAnyP2pView()) continue;
       const subItems = buildP2pSubItems();
       if (subItems.length === 0) {
         menuItems.push({ id: m.id, label: m.label, icon: resolveIcon(m.icon), link: slugToPath(m.id) });

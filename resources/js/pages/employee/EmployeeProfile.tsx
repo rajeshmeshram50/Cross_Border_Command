@@ -1701,15 +1701,22 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     if (claimSubmitting) return;
     const errs: Record<string, string> = {};
     const summary: string[] = [];
-    const amt = Number(String(advAmount).replace(/[^\d.]/g, ''));
+    const rawAmount = advAmount.trim();
+    const amt = Number(rawAmount);
     if (!advType)              { errs.type = 'Advance type is required'; summary.push('Advance type is required'); }
     if (advType === 'Other' && !advTypeOther.trim()) {
       errs.type_other = 'Please specify the advance type';
       summary.push('Specify the advance type');
     }
-    if (!advAmount.trim() || !Number.isFinite(amt) || amt <= 0) {
-      errs.amount = 'Amount must be greater than 0';
-      summary.push('Amount must be greater than 0');
+    // Reject letters / special characters outright — don't silently strip them
+    // to the numeric part (e.g. "1122@sss" must NOT pass as 1122).
+    if (!rawAmount) {
+      errs.amount = 'Amount is required'; summary.push('Amount is required');
+    } else if (!/^\d+(\.\d{1,2})?$/.test(rawAmount)) {
+      errs.amount = 'Amount must be a number (digits only, up to 2 decimals)';
+      summary.push('Amount must be a valid number');
+    } else if (!(amt > 0)) {
+      errs.amount = 'Amount must be greater than 0'; summary.push('Amount must be greater than 0');
     }
     if (!advRequestedDate)     { errs.requested = 'Requested date is required';   summary.push('Requested date is required'); }
     if (!advRecoveryStart)     { errs.recovery_start = 'Recovery start date is required'; summary.push('Recovery start date is required'); }
@@ -1718,13 +1725,15 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     // a plain string compare. Both dates must be today or later; recovery
     // additionally must be on/after the requested date.
     const todayIso = new Date().toISOString().slice(0, 10);
-    const oneYearIso = (() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().slice(0, 10); })();
-    if (advRequestedDate && advRequestedDate < todayIso) {
-      errs.requested = 'Requested date cannot be in the past';
-      summary.push('Requested date cannot be in the past');
-    } else if (advRequestedDate && advRequestedDate > oneYearIso) {
-      errs.requested = 'Requested date cannot be more than one year ahead';
-      summary.push('Requested date cannot be more than one year ahead');
+    const oneYearAgoIso = (() => { const d = new Date(); d.setFullYear(d.getFullYear() - 1); return d.toISOString().slice(0, 10); })();
+    // A request can only have been raised today or earlier — future dates are
+    // invalid (you can't have "requested" something that hasn't happened yet).
+    if (advRequestedDate && advRequestedDate > todayIso) {
+      errs.requested = 'Requested date cannot be in the future';
+      summary.push('Requested date cannot be in the future');
+    } else if (advRequestedDate && advRequestedDate < oneYearAgoIso) {
+      errs.requested = 'Requested date cannot be more than a year ago';
+      summary.push('Requested date cannot be more than a year ago');
     }
     if (advRecoveryStart && advRecoveryStart < todayIso) {
       errs.recovery_start = 'Recovery start cannot be in the past';
@@ -6293,8 +6302,18 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                         className={`ep-claim-input${advErrors.amount ? ' is-invalid' : ''}`}
                         style={{ paddingLeft: 28 }}
                         placeholder="0"
+                        inputMode="decimal"
                         value={advAmount}
-                        onChange={e => { setAdvAmount(e.target.value); clearAdvErr('amount'); }}
+                        // Numbers only — strip letters/symbols on the way in and
+                        // keep at most one decimal point so the field can never
+                        // hold "1122@sss". The submit validation re-checks too.
+                        onChange={e => {
+                          let v = e.target.value.replace(/[^\d.]/g, '');
+                          const i = v.indexOf('.');
+                          if (i !== -1) v = v.slice(0, i + 1) + v.slice(i + 1).replace(/\./g, '');
+                          setAdvAmount(v);
+                          clearAdvErr('amount');
+                        }}
                       />
                     </div>
                     {advErrors.amount && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.amount}</div>}
@@ -6322,9 +6341,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       value={advRequestedDate}
                       onChange={(v) => { setAdvRequestedDate(v); clearAdvErr('requested'); }}
                       invalid={!!advErrors.requested}
-                      minDate={new Date().toISOString().slice(0, 10)}
-                      // Allow scheduling up to a year out, but no further.
-                      maxDate={(() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().slice(0, 10); })()}
+                      // A request can only have been raised today or in the past —
+                      // future dates are disabled (cap at today, floor 1 year back).
+                      minDate={(() => { const d = new Date(); d.setFullYear(d.getFullYear() - 1); return d.toISOString().slice(0, 10); })()}
+                      maxDate={new Date().toISOString().slice(0, 10)}
                     />
                     {advErrors.requested && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.requested}</div>}
                   </Col>
