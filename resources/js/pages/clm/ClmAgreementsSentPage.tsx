@@ -632,11 +632,17 @@ function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; o
   return (
     <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(12,5,38,.75)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: "'Rubik', system-ui, sans-serif" }}>
       <div style={{ width: '100%', maxWidth: 500, borderRadius: 20, overflow: 'hidden', boxShadow: '0 40px 80px rgba(12,5,38,.35)', animation: 'awsSlideUp .22s cubic-bezier(.22,1,.36,1) both' }}>
-        <div style={{ background: 'linear-gradient(118deg,#5B21B6,#7C3AED,#8B5CF6)', padding: '16px 20px', position: 'relative', overflow: 'hidden' }}>
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.14),transparent)', pointerEvents: 'none' }} />
-          <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div><div style={{ fontSize: 8.5, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 2 }}>{contract.id} · {hasPending ? 'Clarification Response' : 'Clarification Conversation'}</div><div style={{ fontSize: 15, fontWeight: 900, color: '#fff', letterSpacing: '-.3px', maxWidth: 330, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contract.title}</div></div>
-            <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)', color: '#fff', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+        <div style={{ background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#5B21B6,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', padding: '18px 20px', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.16),transparent)', pointerEvents: 'none' }} />
+          <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
+              <div style={{ width: 44, height: 44, borderRadius: 13, background: 'rgba(255,255,255,.2)', border: '1.5px solid rgba(255,255,255,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0,0,0,.15)', flexShrink: 0 }}><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg></div>
+              <div>
+                <div style={{ fontSize: 8.5, fontWeight: 700, color: 'rgba(255,255,255,.62)', letterSpacing: '.14em', textTransform: 'uppercase', marginBottom: 3 }}>{contract.id} · {hasPending ? 'Clarification Response' : 'Clarification Conversation'}</div>
+                <div style={{ fontSize: 16, fontWeight: 900, color: '#fff', letterSpacing: '-.3px', maxWidth: 290, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contract.title}</div>
+              </div>
+            </div>
+            <button onClick={() => { stopTyping(); onClose(); }} style={{ width: 32, height: 32, borderRadius: 9, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)', color: '#fff', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✕</button>
           </div>
         </div>
         {/* Full conversation thread — every query + response in order, so the
@@ -649,9 +655,9 @@ function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; o
                 {/* Approver query (left) */}
                 <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                   <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(contract.approver)}</span></div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ maxWidth: '80%', minWidth: 0 }}>
                     <div style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted, marginBottom: 3 }}>{contract.approver} · Approver · {cl.date}</div>
-                    <div style={{ background: t.surface, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, borderRadius: '4px 12px 12px 12px', padding: '9px 12px', fontSize: 11.5, color: t.textSub, lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.query}</div>
+                    <div style={{ background: t.surface, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, borderRadius: '4px 12px 12px 12px', padding: '9px 12px', fontSize: 11.5, color: t.textSub, lineHeight: 1.55, wordBreak: 'break-word', display: 'inline-block' }}>{cl.query}</div>
                   </div>
                 </div>
                 {/* Sender response (right) or awaiting note */}
@@ -670,10 +676,16 @@ function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; o
           <TypingIndicator name={typingName} color={t.dark ? '#c4b5fd' : '#7C3AED'} />
         </div>
         {hasPending ? (
-          <div style={{ padding: '16px 20px', background: t.surface }}>
-            <div style={{ fontSize: 9, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 8 }}>Your Response <span style={{ color: '#EF4444' }}>*</span></div>
+          <div style={{ padding: '16px 20px', background: t.surface, borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+              <span style={{ fontSize: 9, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#7C3AED', textTransform: 'uppercase', letterSpacing: '.1em' }}>Your Response <span style={{ color: '#EF4444' }}>*</span></span>
+            </div>
             <textarea value={text} onChange={e => { setText(e.target.value); setErr(false); notifyTyping(); }} placeholder="Provide your clarification response to the approver…"
-              style={{ width: '100%', height: 90, padding: '10px 12px', border: `1.5px solid ${err ? '#EF4444' : (t.dark ? t.border : '#E2E8F0')}`, borderRadius: 10, fontFamily: 'inherit', fontSize: 12, color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', resize: 'none', outline: 'none', boxSizing: 'border-box' }} />
+              onFocus={e => { e.currentTarget.style.borderColor = '#7C3AED'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124,58,237,.12)'; }}
+              onBlur={e => { e.currentTarget.style.borderColor = err ? '#EF4444' : (t.dark ? t.border : '#E2E8F0'); e.currentTarget.style.boxShadow = 'none'; }}
+              style={{ width: '100%', height: 90, padding: '11px 13px', border: `1.5px solid ${err ? '#EF4444' : (t.dark ? t.border : '#E2E8F0')}`, borderRadius: 12, fontFamily: 'inherit', fontSize: 12, color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', resize: 'none', outline: 'none', boxSizing: 'border-box', lineHeight: 1.55, transition: 'border-color .15s, box-shadow .15s' }} />
+            {err && <div style={{ fontSize: 9, color: '#EF4444', marginTop: 5, fontWeight: 600 }}>Please enter your response before submitting.</div>}
             <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
               <button onClick={() => { stopTyping(); onClose(); }} style={{ flex: 1, padding: 10, borderRadius: 10, border: `1.5px solid ${t.dark ? t.border : '#E2E8F0'}`, background: t.dark ? 'rgba(255,255,255,.05)' : '#F8F9FA', color: t.dark ? '#cbd5e1' : '#64748B', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
               <button onClick={() => { if (!text.trim()) { setErr(true); return; } stopTyping(); onSubmit(contract.id, text.trim()); }} style={{ flex: 2, padding: 10, borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', color: '#fff', fontFamily: 'inherit', fontSize: 11, fontWeight: 800, cursor: 'pointer', boxShadow: '0 3px 10px rgba(109,40,217,.35)' }}>Submit Clarification Response</button>

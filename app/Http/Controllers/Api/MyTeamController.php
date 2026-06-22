@@ -8,6 +8,7 @@ use App\Models\Branch;
 use App\Models\Employee;
 use App\Models\ExpenseClaim;
 use App\Models\HrDocumentSignature;
+use App\Models\LeaveRequest;
 use App\Models\Module;
 use App\Models\Permission;
 use Illuminate\Http\Request;
@@ -150,6 +151,13 @@ class MyTeamController extends Controller
             $items[] = $entry;
         }
 
+        // Leave requests pending the user's approval. Previously hard-coded to
+        // 0, so a manager's My Team → Approval List never surfaced any leave
+        // requests from their reports even when they were the assigned approver.
+        foreach ($this->pendingLeaveRequests($user) as $entry) {
+            $items[] = $entry;
+        }
+
         return response()->json([
             'scope'      => $this->describeScope($user),
             'approvals'  => $items,
@@ -158,9 +166,81 @@ class MyTeamController extends Controller
                 'document_signature' => count(array_filter($items, fn ($i) => $i['module'] === 'document_signature')),
                 'expense'            => count(array_filter($items, fn ($i) => $i['module'] === 'expense')),
                 'advance'            => count(array_filter($items, fn ($i) => $i['module'] === 'advance')),
-                'leave'              => 0,  // placeholder
+                'leave'              => count(array_filter($items, fn ($i) => $i['module'] === 'leave')),
             ],
         ]);
+    }
+
+    /**
+     * Resolve pending leave-request approvals for the current user, shaped the
+     * same way the other modules are so the unified inbox can stream them.
+     *
+     * Scoping mirrors LeaveRequestController::approvals:
+     *   - Admin tiers (super_admin / client_admin / branch_user) see every
+     *     pending request in their tenant (HR can act on anyone's behalf).
+     *   - Everyone else only sees requests where they can act on the CURRENT
+     *     approval level — resolved with the controller's own canActOnLevel so
+     *     the manager/HR/role gating stays in lockstep (no logic drift).
+     */
+    private function pendingLeaveRequests($user): array
+    {
+        $isAdminScope = in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true);
+        $myEmployeeId = $user->employee_id ?: Employee::where('user_id', $user->id)->value('id');
+        if (!$isAdminScope && !$myEmployeeId) return [];
+
+        $q = LeaveRequest::query()
+            ->with([
+                'employee:id,emp_code,display_name,first_name,last_name,department_id,reporting_manager_id',
+                'employee.department:id,name',
+                'leaveType:id,name,short_code',
+            ])
+            ->where('status', 'Pending')
+            ->orderByDesc('created_at');
+
+        if ($user->user_type !== 'super_admin' && $user->client_id) {
+            $q->where('client_id', $user->client_id);
+        }
+        // Non-admins: narrow to requests from my direct reports OR where the
+        // approval chain explicitly names me, then per-level filter in PHP.
+        if (!$isAdminScope) {
+            $uid = (int) $user->id;
+            $eid = (int) $myEmployeeId;
+            $q->where(function ($w) use ($myEmployeeId, $uid, $eid) {
+                $w->whereIn('employee_id', function ($sub) use ($myEmployeeId) {
+                    $sub->select('id')->from('employees')->where('reporting_manager_id', $myEmployeeId);
+                })
+                  ->orWhere('approval_chain', 'ilike', '%"approver_user_id":' . $uid . '%')
+                  ->orWhere('approval_chain', 'ilike', '%"approver_employee_id":' . $eid . '%');
+            });
+        }
+
+        $leaveCtrl = app(LeaveRequestController::class);
+        $items = [];
+        foreach ($q->get() as $row) {
+            if (!$isAdminScope) {
+                $chain = is_array($row->approval_chain) ? $row->approval_chain : [];
+                $idx   = max(0, ((int) ($row->current_approval_level ?? 1)) - 1);
+                if (!$leaveCtrl->canActOnLevel($user, $chain, $idx, $row)) continue;
+            }
+            $emp  = $row->employee;
+            $name = $emp?->display_name
+                ?: trim(($emp->first_name ?? '') . ' ' . ($emp->last_name ?? ''));
+            $items[] = [
+                'module'       => 'leave',
+                'id'           => $row->id,
+                'code'         => "LV-{$row->id}",
+                'title'        => trim((($row->leaveType?->name ?? 'Leave') . ' · ' .
+                                  (string) $row->from_date . ' → ' . (string) $row->to_date)),
+                'subject_name' => $name ?: '—',
+                'subject_dept' => $emp?->department?->name ?? '—',
+                'action'       => 'Approve',
+                'status'       => $row->status,
+                'days_left'    => null,
+                'created_at'   => $row->created_at,
+                'raw'          => $row,
+            ];
+        }
+        return $items;
     }
 
     /**

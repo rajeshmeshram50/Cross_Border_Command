@@ -1092,6 +1092,11 @@ tbody tr:nth-child(10) {
 [data-bs-theme="dark"] .tc-wl-info,
 [data-bs-theme="dark"] .tc-wl-rows,
 [data-bs-theme="dark"] .tc-wl-btn { background: rgba(255, 255, 255, .06); border-color: rgba(167, 139, 250, .30); color: #c4b5fd; }
+/* The arrow buttons are small circles, so the white-tinted (.06) fill above
+   read as a glaring pale disc on the dark band ("not dark-mode"). Give them a
+   purple-tinted dark surface + lavender glyph so they match the rest of the
+   pager. */
+[data-bs-theme="dark"] .tc-wl-btn { background: rgba(124, 58, 237, .18); border-color: rgba(167, 139, 250, .42); color: #ddd6fe; }
 /* The base hover fills the arrow white — a glaring disc in dark mode. Use a
    translucent violet hover with light glyph so it stays on-theme. */
 [data-bs-theme="dark"] .tc-wl-btn:hover:not(:disabled) { background: rgba(124, 92, 252, .28); border-color: #a78bfa; color: #ffffff; box-shadow: 0 4px 12px rgba(124, 58, 237, .35); }
@@ -2657,3 +2662,12 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-tooltip]:disabled::before { opacity: 0; }
 [data-tooltip]:disabled:hover::after,
 [data-tooltip]:disabled:hover::before { opacity: 1; }
+
+/* ── SweetAlert2 stacking ──────────────────────────────────────────────────
+ * Swal's default container z-index is 1060, which sits BEHIND the app's
+ * modals/drawers (reactstrap modals run up to z-index 2100, some custom
+ * overlays up to ~11200). That made confirm/warning dialogs fire invisibly —
+ * e.g. the "Not enough leave balance" warning in RequestLeaveModal (z 2100):
+ * submission was blocked but the user saw no message. Force every Swal popup
+ * to the very top so alerts are always visible above whatever opened them. */
+.swal2-container { z-index: 20000 !important; }

@@ -2466,7 +2466,14 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
 
   const validate = (): CreateErrors => {
     const e: CreateErrors = {};
-    if (!jobTitle.trim())        e.jobTitle        = 'Job title is required';
+    const jobTitleTrim = jobTitle.trim();
+    if (!jobTitleTrim) {
+      e.jobTitle = 'Job title is required';
+    } else if (!/^[A-Za-z0-9 .,\-/]+$/.test(jobTitleTrim)) {
+      // Reject special characters (@ # $ % ^ & * ( ) etc). Allow only letters,
+      // numbers, spaces and the punctuation real job titles use (- . , /).
+      e.jobTitle = 'Job title cannot contain special characters — use only letters, numbers, spaces and - . , /';
+    }
     if (!departmentId)           e.department      = 'Department is required';
     if (!designationId)          e.designation     = 'Designation is required';
     if (!primaryRoleId)          e.primaryRole     = 'Primary role is required';
@@ -2526,8 +2533,13 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
     if (deadline && startDate && deadline < startDate) {
       e.deadline = 'TAT/Deadline cannot be before the start date';
     }
-    if (!jobDescription.trim()) e.jobDescription = 'Job description is required';
-    if (!requirements.trim())   e.requirements   = 'Requirements are required';
+    // Require real content, not a single throwaway character ("1").
+    const jd = jobDescription.trim();
+    if (!jd)                  e.jobDescription = 'Job description is required';
+    else if (jd.length < 2)   e.jobDescription = 'Job description must be at least 2 characters';
+    const rq = requirements.trim();
+    if (!rq)                  e.requirements   = 'Requirements are required';
+    else if (rq.length < 2)   e.requirements   = 'Requirements must be at least 2 characters';
     return e;
   };
 

@@ -294,7 +294,7 @@ const LKM_CSS = `
 }
 @keyframes lkm-fade { from { opacity: 0; } to { opacity: 1; } }
 .lkm-modal {
-  width: 1100px; max-width: 96vw; max-height: 88vh;
+  width: 1500px; max-width: 96vw; max-height: 88vh;
   background: #fffbeb;
   border-radius: 14px; border: 1px solid #fde68a;
   box-shadow: 0 24px 60px rgba(28,20,16,.35);
@@ -341,6 +341,13 @@ const LKM_CSS = `
   text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .lkm-table thead th:first-child { padding-left: 16px; }
+/* Status is the last column. Fix it wide enough for the longer "Disqualified"
+   badge AND a right gap. It holds a fixed badge (not truncatable text), so turn
+   off overflow clipping — otherwise text-overflow renders a stray "…" next to
+   the badge when it's a hair wider than the cell's content box. */
+.lkm-table thead th:last-child,
+.lkm-table tbody td:last-child  { width: 140px; overflow: visible; text-overflow: clip; }
+.lkm-table thead th:last-child  { padding-right: 16px; }
 .lkm-table tbody tr { border-bottom: 1px solid #fef9c3; transition: background .1s; }
 .lkm-table tbody tr:nth-child(even) { background: #fffdf5; }
 .lkm-table tbody tr:hover           { background: #fffbeb; }
@@ -349,6 +356,7 @@ const LKM_CSS = `
   padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .lkm-table tbody td:first-child { padding-left: 14px; }
+.lkm-table tbody td:last-child  { padding-right: 14px; }
 
 .lkm-sr {
   display: inline-flex; align-items: center; justify-content: center;

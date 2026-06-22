@@ -6,6 +6,7 @@ import { SigningTrackerModal } from './SigningTrackerModal';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useScrollLock } from '../../hooks/useScrollLock';
+import { useSelectionLock } from '../../hooks/useSelectionLock';
 import Tooltip from '../../components/ui/Tooltip';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
@@ -2478,7 +2479,8 @@ export function CreateQuotationModal(props: {
   const { editId, initialOpp, onClose, onSubmit } = props;
   const isEdit = editId != null;
   const toast = useToast();
-  useScrollLock();   // freeze background scroll while the modal is open
+  useScrollLock();      // freeze background scroll while the modal is open
+  useSelectionLock();   // block selecting/copying the background while open
   const [step, setStep] = useState<1 | 2>(1);
   /* If the modal was opened from inside a Sales Matrix lead, the parent
    * passes the opportunity context so the user doesn't have to re-pick it
@@ -2844,7 +2846,8 @@ export function CreatePIModal(props: {
   const { editId, source, initialOpp, onClose, onSubmit } = props;
   const isEdit = editId != null;
   const toast = useToast();
-  useScrollLock();   // freeze background scroll while the modal is open
+  useScrollLock();      // freeze background scroll while the modal is open
+  useSelectionLock();   // block selecting/copying the background while open
   const [step, setStep] = useState<1 | 2>(1);
   // Existing PI metadata shown in the top-right pills + used for the
   // PUT URL when in edit mode.
@@ -5381,6 +5384,10 @@ const SCOPED_CSS = `
   padding: 16px;
   overflow-y: auto;
   font-family: 'DM Sans', 'Inter', sans-serif;
+  /* While the modal is open, useSelectionLock sets user-select:none on <body>
+     to stop Ctrl+A / drag-select from grabbing the background. Re-enable it
+     here so the modal's own content stays selectable/copyable. */
+  -webkit-user-select: text; user-select: text;
 }
 .qpi-modal-backdrop *, .qpi-modal-backdrop *::before, .qpi-modal-backdrop *::after { box-sizing: border-box; }
 .qpi-modal {

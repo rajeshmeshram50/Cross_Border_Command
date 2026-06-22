@@ -151,6 +151,24 @@ export default function MyTeam() {
       return;
     }
 
+    // Leave requests route through the leave-requests controller (manager / HR
+    // chain). Remark is optional on approve, posts as `comment`.
+    if (actionItem.module === 'leave') {
+      setActionSubmitting(true);
+      try {
+        await api.post(`/leave-requests/${actionItem.id}/approve`,
+          actionNote.trim() ? { comment: actionNote.trim() } : {});
+        toast.success('Approved', `${actionItem.code || `Leave #${actionItem.id}`} approved.`);
+        setActionItem(null);
+        loadApprovals();
+      } catch (err: any) {
+        toast.error('Could not approve', err?.response?.data?.message || 'Please try again.');
+      } finally {
+        setActionSubmitting(false);
+      }
+      return;
+    }
+
     const apiAction = actionItem.action === 'Sign' ? 'Sign'
                     : actionItem.action === 'Approve' ? 'Approve'
                     : 'Acknowledge';
@@ -227,6 +245,42 @@ export default function MyTeam() {
       try {
         await api.post(`/expense-claims/${itemId}/${stage}-reject`, { comment: reason });
         toast.success('Rejected', `${claimCode} returned to the employee with your remark.`);
+        loadApprovals();
+      } catch (err: any) {
+        toast.error('Could not reject', err?.response?.data?.message || 'Please try again.');
+        setActionItem(targetItem);
+      } finally {
+        setActionSubmitting(false);
+      }
+      return;
+    }
+
+    // Leave requests — dedicated reject endpoint; remark posts as `comment`.
+    if (actionItem.module === 'leave') {
+      const targetItem = actionItem;
+      const itemId = targetItem.id;
+      const lvCode = targetItem.code || 'this leave request';
+      setActionItem(null);
+      const okLeave = await confirmDialog({
+        title: 'Reject Leave Request?',
+        message: (
+          <>
+            Reject <strong>{lvCode}</strong>? The employee will see your remark.
+          </>
+        ),
+        confirmLabel: 'Yes, Reject',
+        cancelLabel:  'Cancel',
+        tone:         'danger',
+        icon:         'close-circle-line',
+      });
+      if (!okLeave) {
+        setActionItem(targetItem);
+        return;
+      }
+      setActionSubmitting(true);
+      try {
+        await api.post(`/leave-requests/${itemId}/reject`, { comment: reason });
+        toast.success('Rejected', `${lvCode} returned to the employee with your remark.`);
         loadApprovals();
       } catch (err: any) {
         toast.error('Could not reject', err?.response?.data?.message || 'Please try again.');

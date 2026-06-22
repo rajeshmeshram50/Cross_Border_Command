@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
+import { useSelectionLock } from '../../hooks/useSelectionLock';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import { MasterMultiSelect } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
@@ -89,6 +90,7 @@ interface Props {
 
 export default function ClmAgreementWizardModal({ open, existing, types: initialTypes, knownSegments, nextCode, onClose, onSaved }: Props) {
   const toast = useToast();
+  useSelectionLock(open);   // block selecting/copying the background while open
   const editingId = existing?.id ?? null;
 
   const [step, setStep] = useState<1 | 2>(1);

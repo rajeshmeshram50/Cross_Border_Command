@@ -348,11 +348,11 @@ export default function PermissionMatrix({
                   type="button"
                   onClick={() => toggleBranch(mod.id, p.key)}
                   title={`${on} / ${total} on`}
-                  className={`btn btn-sm rounded-pill px-2 py-0 fw-semibold ${allOn ? 'btn-soft-success'
+                  className={`btn btn-sm rounded-pill px-2 py-0 fw-bold ${allOn ? 'btn-soft-success'
                       : partial ? 'btn-soft-warning'
                         : 'btn-soft-secondary'
                     }`}
-                  style={{ fontSize: 10, minWidth: 40 }}
+                  style={{ fontSize: 11.5, minWidth: 46 }}
                 >
                   {on}/{total}
                 </button>
@@ -440,7 +440,7 @@ export default function PermissionMatrix({
                     <Input
                       type="checkbox"
                       className="form-check-input"
-                      style={{ width: '0.95rem', height: '0.95rem', cursor: disabled ? 'not-allowed' : 'pointer' }}
+                      style={{ width: '1.15rem', height: '1.15rem', cursor: disabled ? 'not-allowed' : 'pointer' }}
                       checked={checked}
                       onChange={() => toggle(mod.id, p.key)}
                       disabled={disabled}
@@ -583,14 +583,14 @@ export default function PermissionMatrix({
                   <th className="text-center py-3" style={{ width: '8%' }}>
                     <div className="d-flex flex-row align-items-center gap-1">
                       <i className="ri-checkbox-multiple-line fs-14" style={{ color: 'var(--vz-primary)' }}></i>
-                      <span className="fs-10 fw-bold text-uppercase" style={{ color: 'var(--vz-primary)', letterSpacing: '0.05em' }}>All</span>
+                      <span className="fs-11 fw-bold text-uppercase" style={{ color: 'var(--vz-primary)', letterSpacing: '0.05em' }}>All</span>
                     </div>
                   </th>
                   {PERMS.map(p => (
                     <th key={p.key} className="text-center py-3" style={{ width: `${58 / PERMS.length}%` }}>
                       <div className="d-flex flex-row align-items-center gap-1">
                         <i className={`${p.icon} fs-14`} style={{ color: 'var(--vz-primary)' }}></i>
-                        <span className="fs-10 fw-bold text-uppercase" style={{ color: 'var(--vz-primary)', letterSpacing: '0.05em' }}>{p.label}</span>
+                        <span className="fs-11 fw-bold text-uppercase" style={{ color: 'var(--vz-primary)', letterSpacing: '0.05em' }}>{p.label}</span>
                       </div>
                     </th>
                   ))}

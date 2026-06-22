@@ -61,7 +61,6 @@ export default function ClmAgreementsToApprovePage() {
   const [page, setPage] = useState(1);
   const [actionId, setActionId] = useState<string | null>(null);
   const [actionChoice, setActionChoice] = useState<'clarify' | 'reject' | null>(null);
-  const [convoId, setConvoId]   = useState<string | null>(null);
   const [reviewId, setReviewId] = useState<string | null>(null);
   const [ata, setAta]   = useState<AtaRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,7 +100,6 @@ export default function ClmAgreementsToApprovePage() {
 
   const list = useMemo(() => tab === 'all' ? ata : ata.filter(c => c.status === tab), [ata, tab]);
   const actionContract = ata.find(c => c.id === actionId) || null;
-  const convoContract = ata.find(c => c.id === convoId) || null;
   const reviewContract = ata.find(c => c.id === reviewId) || null;
 
   const doApprove = async (id: string) => {
@@ -191,8 +189,8 @@ export default function ClmAgreementsToApprovePage() {
         {loading
           ? <ShimmerTable rows={6} cols={9} />
           : tab === 'clarification'
-          ? <ClarificationTable rows={list} page={page} setPage={setPage} onReview={setReviewId} onConvo={setConvoId} t={t} />
-          : <StandardTable rows={list} tab={tab} page={page} setPage={setPage} onReview={setReviewId} onConvo={setConvoId} t={t} />}
+          ? <ClarificationTable rows={list} page={page} setPage={setPage} onReview={setReviewId} t={t} />
+          : <StandardTable rows={list} tab={tab} page={page} setPage={setPage} onReview={setReviewId} t={t} />}
       </div>
 
       {reviewContract && (
@@ -208,7 +206,6 @@ export default function ClmAgreementsToApprovePage() {
         />
       )}
       {actionContract && <TakeActionModal contract={actionContract} initialChoice={actionChoice} onClose={() => { setActionId(null); setActionChoice(null); }} onSubmit={doAction} t={t} />}
-      {convoContract && <ConversationModal contract={convoContract} onClose={() => setConvoId(null)} t={t} />}
     </div>
   );
 }
@@ -254,31 +251,20 @@ function Pager({ total, page, setPage, t }: { total: number; page: number; setPa
 
 /* Opens the Review & Approve modal (read the PDF, then approve / reject /
    clarify). Named for what it does — it doesn't approve directly. */
-function ReviewBtn({ active, onClick }: { active: boolean; onClick: () => void }) {
+function ReviewBtn({ active, onClick, onBlocked }: { active: boolean; onClick: () => void; onBlocked?: () => void }) {
   return (
-    <button disabled={!active} onClick={onClick} title="Review & Approve" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, border: active ? 'none' : '1.5px solid #E2E8F0', background: active ? 'linear-gradient(135deg,#0891b2,#0e7490)' : '#F8FAFC', color: active ? '#fff' : '#CBD5E1', fontFamily: 'inherit', fontSize: 9.5, fontWeight: active ? 700 : 600, cursor: active ? 'pointer' : 'not-allowed', boxShadow: active ? '0 2px 7px rgba(8,145,178,.35)' : 'none', whiteSpace: 'nowrap', opacity: active ? 1 : .6 }}>
+    <button onClick={() => (active ? onClick() : onBlocked?.())} title={active ? 'Review & Approve' : 'Awaiting clarification response'} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, border: active ? 'none' : '1.5px solid #E2E8F0', background: active ? 'linear-gradient(135deg,#0891b2,#0e7490)' : '#F8FAFC', color: active ? '#fff' : '#CBD5E1', fontFamily: 'inherit', fontSize: 9.5, fontWeight: active ? 700 : 600, cursor: 'pointer', boxShadow: active ? '0 2px 7px rgba(8,145,178,.35)' : 'none', whiteSpace: 'nowrap', opacity: active ? 1 : .6 }}>
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : '#CBD5E1'} strokeWidth="2" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg> Review &amp; Approve
     </button>
   );
 }
 
 /* View + Take Action buttons removed — the Review & Approve modal now handles
-   viewing the PDF and all three actions (clarify / reject / approve). */
+   viewing the PDF and all three actions (clarify / reject / approve). The old
+   chat-bubble button is gone too: the full conversation history now lives inside
+   the Raise Clarification popup itself. */
 
-/* Chat-bubble button → opens the clarification conversation thread for a row.
- * Cyan tones to match the Agreements-to-Approve page theme. */
-function ConvoBtn({ onClick, t }: { onClick: () => void; t: OpsTokens }) {
-  const base = t.dark ? 'rgba(6,182,212,.12)' : '#F0FDFF';
-  const hov  = t.dark ? 'rgba(6,182,212,.22)' : '#CFFAFE';
-  return (
-    <button onClick={onClick} title="View Clarification Conversation" style={{ width: 30, height: 30, borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.3)' : '#A5F3FC'}`, background: base, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all .13s', flexShrink: 0 }}
-      onMouseEnter={e => (e.currentTarget.style.background = hov)} onMouseLeave={e => (e.currentTarget.style.background = base)}>
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
-    </button>
-  );
-}
-
-function StandardTable({ rows, tab, page, setPage, onReview, onConvo, t }: { rows: AtaContract[]; tab: AtaTab; page: number; setPage: (n: number) => void; onReview: (id: string) => void; onConvo: (id: string) => void; t: OpsTokens }) {
+function StandardTable({ rows, tab, page, setPage, onReview, t }: { rows: AtaContract[]; tab: AtaTab; page: number; setPage: (n: number) => void; onReview: (id: string) => void; t: OpsTokens }) {
   const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const safe = Math.min(page, totalPages);
   const start = (safe - 1) * PER_PAGE;
@@ -336,7 +322,6 @@ function StandardTable({ rows, tab, page, setPage, onReview, onConvo, t }: { row
                   <td style={TD_C}>
                     {actionable ? (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
-                        {c.clarifications.length > 0 && <ConvoBtn onClick={() => onConvo(c.id)} t={t} />}
                         <ReviewBtn active onClick={() => onReview(c.id)} />
                       </div>
                     ) : (
@@ -354,7 +339,8 @@ function StandardTable({ rows, tab, page, setPage, onReview, onConvo, t }: { row
   );
 }
 
-function ClarificationTable({ rows, page, setPage, onReview, onConvo, t }: { rows: AtaContract[]; page: number; setPage: (n: number) => void; onReview: (id: string) => void; onConvo: (id: string) => void; t: OpsTokens }) {
+function ClarificationTable({ rows, page, setPage, onReview, t }: { rows: AtaContract[]; page: number; setPage: (n: number) => void; onReview: (id: string) => void; t: OpsTokens }) {
+  const toast = useToast();
   const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const safe = Math.min(page, totalPages);
   const start = (safe - 1) * PER_PAGE;
@@ -402,8 +388,7 @@ function ClarificationTable({ rows, page, setPage, onReview, onConvo, t }: { row
                   <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.expDate}</span></td>
                   <td style={TD_C}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, flexWrap: 'nowrap' }}>
-                      <ConvoBtn onClick={() => onConvo(c.id)} t={t} />
-                      <ReviewBtn active={hasResp} onClick={() => onReview(c.id)} />
+                      <ReviewBtn active={hasResp} onClick={() => onReview(c.id)} onBlocked={() => toast.warning('Clarification pending', `Awaiting clarification response from ${c.createdBy}. You can review & approve once they reply.`)} />
                     </div>
                   </td>
                 </tr>
@@ -422,7 +407,7 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, t 
   const [choice, setChoice] = useState<'clarify' | 'reject' | null>(initialChoice);
   const [comment, setComment] = useState('');
   const [err, setErr] = useState(false);
-  const { notifyTyping, stopTyping } = useTyping(contract.id);
+  const { typingName, notifyTyping, stopTyping } = useTyping(contract.id);
 
   const close = () => { stopTyping(); onClose(); };
 
@@ -437,7 +422,7 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, t 
     <div onClick={e => { if (e.target === e.currentTarget) close(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(8,3,28,.82)', backdropFilter: 'blur(14px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: "'Rubik', system-ui, sans-serif" }}>
       <div style={{ width: '100%', maxWidth: 520, borderRadius: 24, overflow: 'hidden', boxShadow: '0 50px 100px rgba(8,3,28,.5),0 20px 40px rgba(6,182,212,.12)', border: '1px solid rgba(255,255,255,.1)', animation: 'ataSlideUp .24s cubic-bezier(.22,1,.36,1) both', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
         {/* Header — red for reject, cyan for clarify / default. */}
-        <div style={{ background: choice === 'reject' ? 'linear-gradient(135deg,#7f1d1d 0%,#b91c1c 42%,#dc2626 78%,#ef4444 100%)' : 'linear-gradient(135deg,#0e7490 0%,#0891b2 45%,#06b6d4 80%,#22d3ee 100%)', padding: '22px 24px 20px', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
+        <div style={{ background: choice === 'reject' ? 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(135deg,#7f1d1d 0%,#b91c1c 42%,#dc2626 78%,#ef4444 100%)' : 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(135deg,#0e7490 0%,#0891b2 45%,#06b6d4 80%,#22d3ee 100%)', backgroundSize: '14px 14px, auto', padding: '22px 24px 20px', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '55%', background: 'linear-gradient(180deg,rgba(255,255,255,.18),transparent)', pointerEvents: 'none' }} />
           <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -448,12 +433,6 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, t 
               </div>
             </div>
             <button onClick={close} style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,.15)', border: '1.5px solid rgba(255,255,255,.25)', color: '#fff', fontSize: 17, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✕</button>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, position: 'relative', zIndex: 1, flexWrap: 'wrap' }}>
-            <Chip text={contract.createdBy} />
-            <Chip text={contract.date} />
-            <Chip text={contract.approver} />
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 20, background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.25)', marginLeft: 'auto' }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#FDE68A', boxShadow: '0 0 6px rgba(253,230,138,.8)' }} /><span style={{ fontSize: 9, fontWeight: 800, color: '#FEF3C7', letterSpacing: '.06em' }}>{contract.status === 'clarification' ? 'CLARIFICATION' : 'PENDING'}</span></span>
           </div>
         </div>
 
@@ -473,7 +452,12 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, t 
               </div>
             </>
           )}
-          <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textMuted, marginBottom: 7 }}>{choice === 'reject' ? 'Rejection Reason' : choice === 'clarify' ? 'Clarification Query' : 'Comment / Reason'} <span style={{ color: '#EF4444' }}>*</span></div>
+          {choice === 'clarify' && (
+            <div style={{ marginBottom: 16 }}>
+              <ClarificationThread contract={contract} typingName={typingName} t={t} />
+            </div>
+          )}
+          <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textMuted, marginBottom: 7 }}>{choice === 'reject' ? 'Rejection Reason' : choice === 'clarify' ? (contract.clarifications.length > 0 ? 'Add New Clarification Query' : 'Clarification Query') : 'Comment / Reason'} <span style={{ color: '#EF4444' }}>*</span></div>
           <textarea value={comment} onChange={e => { setComment(e.target.value); setErr(false); if (choice === 'clarify') notifyTyping(); }} placeholder={choice === 'reject' ? 'Enter the reason for rejecting this agreement…' : choice === 'clarify' ? 'Enter your clarification query for the initiator…' : 'Enter your clarification query or rejection reason…'}
             style={{ width: '100%', height: 85, padding: '11px 13px', border: `1.5px solid ${err && !comment.trim() ? '#EF4444' : t.searchBorder}`, borderRadius: 11, fontFamily: 'inherit', fontSize: 12, color: t.text, resize: 'none', outline: 'none', lineHeight: 1.55, background: t.searchBg, boxSizing: 'border-box' }} />
           {err && !choice && <div style={{ fontSize: 9, color: '#EF4444', marginTop: 6, fontWeight: 600 }}>Please choose an action.</div>}
@@ -484,15 +468,6 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, t 
         </div>
       </div>
     </div>
-  );
-}
-
-function Chip({ text }: { text: string }) {
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 20, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.2)' }}>
-      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.8)" strokeWidth="2.5" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-      <span style={{ fontSize: 9.5, fontWeight: 600, color: 'rgba(255,255,255,.9)' }}>{text}</span>
-    </span>
   );
 }
 
@@ -508,59 +483,45 @@ function ChoiceCard({ sel, onClick, grad, selBg, selBd, baseBg, baseBd, title, t
   );
 }
 
-/* ── Clarification Conversation modal (opened from the Action-column chat icon) ── */
-function ConversationModal({ contract, onClose, t }: { contract: AtaContract; onClose: () => void; t: OpsTokens }) {
-  const { typingName } = useTyping(contract.id);
+/* ── Clarification conversation thread — embedded inside the Raise Clarification
+ *    popup so the approver reads the full back-and-forth (plus a live "typing…"
+ *    indicator) right above the box where they add their next query. ── */
+function ClarificationThread({ contract, typingName, t }: { contract: AtaContract; typingName: string | null; t: OpsTokens }) {
   return (
-    <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(12,5,38,.75)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: "'Rubik', system-ui, sans-serif" }}>
-      <div style={{ width: '100%', maxWidth: 500, borderRadius: 20, overflow: 'hidden', boxShadow: '0 40px 80px rgba(12,5,38,.4)', animation: 'ataSlideUp .22s cubic-bezier(.22,1,.36,1) both', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
-        {/* Header */}
-        <div style={{ background: 'linear-gradient(135deg,#0e7490 0%,#0891b2 45%,#06b6d4 80%,#22d3ee 100%)', padding: '16px 20px', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.16),transparent)', pointerEvents: 'none' }} />
-          <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <div style={{ fontSize: 8.5, fontWeight: 700, color: 'rgba(255,255,255,.65)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 2 }}>{contract.id} · Clarification Conversation</div>
-              <div style={{ fontSize: 15, fontWeight: 900, color: '#fff', letterSpacing: '-.3px', maxWidth: 330, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contract.title}</div>
-            </div>
-            <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)', color: '#fff', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
-          </div>
-        </div>
-        {/* Thread — your query (right) + the sender's revert (left) */}
-        <div style={{ padding: '14px 20px', background: t.dark ? '#102234' : '#F0FDFF', overflowY: 'auto' }}>
-          {contract.clarifications.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '34px 10px', fontSize: 11.5, fontWeight: 600, color: t.textMuted }}>No clarification conversation yet.</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {contract.clarifications.map((cl, i) => (
-                <div key={i}>
-                  {/* Your query (right) — filled cyan bubble */}
-                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'flex-start' }}>
-                    <div style={{ maxWidth: '82%', minWidth: 0 }}>
-                      <div style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted, marginBottom: 3, textAlign: 'right' }}>You · Approver · {cl.date}</div>
-                      <div style={{ background: t.dark ? 'rgba(8,145,178,.18)' : '#E0F7FA', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.42)' : '#A5F3FC'}`, borderRadius: '12px 4px 12px 12px', padding: '9px 12px', fontSize: 11.5, color: t.dark ? '#a5f3fc' : '#0e7490', lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.query}</div>
-                    </div>
-                    <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(contract.approver)}</span></div>
-                  </div>
-                  {/* Sender's revert (left) — white/surface bubble */}
-                  {cl.response
-                    ? <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 7 }}>
-                        <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#22d3ee,#06b6d4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0c4a6e' }}>{inits(contract.createdBy)}</span></div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted, marginBottom: 3 }}>{contract.createdBy} · Initiator</div>
-                          <div style={{ background: t.surface, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.25)' : '#CFFAFE'}`, borderRadius: '4px 12px 12px 12px', padding: '9px 12px', fontSize: 11.5, color: t.textSub, lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.response}</div>
-                        </div>
-                      </div>
-                    : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 6, marginRight: 34, fontSize: 9, fontWeight: 600, color: '#F59E0B' }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> Awaiting {contract.createdBy}&apos;s response</div>}
-                </div>
-              ))}
-            </div>
-          )}
-          <TypingIndicator name={typingName} color={t.dark ? '#67e8f9' : '#0891b2'} />
-        </div>
-        <div style={{ padding: '12px 20px', background: t.surface, display: 'flex', justifyContent: 'flex-end', flexShrink: 0 }}>
-          <button onClick={onClose} style={{ padding: '9px 22px', borderRadius: 10, border: `1.5px solid ${t.dark ? t.border : '#E2E8F0'}`, background: t.dark ? 'rgba(255,255,255,.05)' : '#F8F9FA', color: t.dark ? '#cbd5e1' : '#64748B', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Close</button>
-        </div>
+    <div style={{ background: t.dark ? '#102234' : '#F0FDFF', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.28)' : '#CFFAFE'}`, borderRadius: 14, padding: '12px 14px', maxHeight: 230, overflowY: 'auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 11 }}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+        <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.dark ? '#67e8f9' : '#0891b2' }}>Conversation History</span>
       </div>
+      {contract.clarifications.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '18px 10px', fontSize: 11, fontWeight: 600, color: t.textMuted }}>No previous clarification — this will be the first query.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {contract.clarifications.map((cl, i) => (
+            <div key={i}>
+              {/* Your query (right) — filled cyan bubble */}
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'flex-start' }}>
+                <div style={{ maxWidth: '82%', minWidth: 0 }}>
+                  <div style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted, marginBottom: 3, textAlign: 'right' }}>You · Approver · {cl.date}</div>
+                  <div style={{ background: t.dark ? 'rgba(8,145,178,.18)' : '#E0F7FA', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.42)' : '#A5F3FC'}`, borderRadius: '12px 4px 12px 12px', padding: '9px 12px', fontSize: 11.5, color: t.dark ? '#a5f3fc' : '#0e7490', lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.query}</div>
+                </div>
+                <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(contract.approver)}</span></div>
+              </div>
+              {/* Sender's revert (left) — white/surface bubble */}
+              {cl.response
+                ? <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 7 }}>
+                    <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#22d3ee,#06b6d4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0c4a6e' }}>{inits(contract.createdBy)}</span></div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted, marginBottom: 3 }}>{contract.createdBy} · Initiator</div>
+                      <div style={{ background: t.surface, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.25)' : '#CFFAFE'}`, borderRadius: '4px 12px 12px 12px', padding: '9px 12px', fontSize: 11.5, color: t.textSub, lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.response}</div>
+                    </div>
+                  </div>
+                : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 6, marginRight: 34, fontSize: 9, fontWeight: 600, color: '#F59E0B' }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> Awaiting {contract.createdBy}&apos;s response</div>}
+            </div>
+          ))}
+        </div>
+      )}
+      <TypingIndicator name={typingName} color={t.dark ? '#67e8f9' : '#0891b2'} />
     </div>
   );
 }

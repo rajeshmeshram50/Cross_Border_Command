@@ -1244,6 +1244,10 @@ const IDIMS_CSS = `
 .idims-dark .idims-nav-btn:hover, .idims-dark .idims-nav-btn.dd-open { color: #C4B5FD; }
 .idims-dark .idims-action-btn { color: #9CA3AF; }
 .idims-dark .idims-action-btn:hover { color: #C4B5FD; background: #221E36; }
+/* Keep the logout icon RED in dark mode too (the generic action-btn rule
+ * above otherwise greys it out). Brighter rose so it reads on the dark nav. */
+.idims-dark .idims-logout-btn { color: #FB7185; }
+.idims-dark .idims-logout-btn:hover { color: #FDA4AF; background: rgba(244,63,94,.16); }
 .idims-dark .idims-action-sep { background: #2C3242; }
 .idims-dark .idims-theme-switch, .idims-dark .idims-branch-btn { background: linear-gradient(180deg,#1E2230,#1A1D29); border-color: #2C3242; }
 .idims-dark .idims-branch-name { color: #E5E7EB; }
