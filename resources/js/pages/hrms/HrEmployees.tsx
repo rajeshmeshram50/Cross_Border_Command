@@ -5262,11 +5262,7 @@ export default function HrEmployees() {
                     </span>
                   </div>
                   <Row className="g-3">
-                    <Col md={4}>
-                      <label className="emp-label">Pay Group</label>
-                      <MasterSelect value={ePayGroup} onChange={setEPayGroup} options={PAY_GROUP_OPTIONS} placeholder="Select pay group" />
-                    </Col>
-                    <Col md={4}>
+                    <Col md={6}>
                       <label className="emp-label">Annual Salary{eEnablePayroll && <span className="req">*</span>}</label>
                       <div className="d-flex gap-2">
                         <input
@@ -5304,7 +5300,7 @@ export default function HrEmployees() {
                       {eErrors.annual_salary && <small className="emp-err">{eErrors.annual_salary}</small>}
                       {eErrors.salary_frequency && <small className="emp-err">{eErrors.salary_frequency}</small>}
                     </Col>
-                    <Col md={4}>
+                    <Col md={6}>
                       <label className="emp-label">Salary Effective From{eEnablePayroll && <span className="req">*</span>}</label>
                       {/* minDate locks the calendar so dates before the
                           Step-2 joining date are visually disabled —

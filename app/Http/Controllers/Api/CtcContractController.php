@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\CtcApprovalUpdated;
 use App\Http\Controllers\Concerns\HandlesDocxHtmlRoundtrip;
 use App\Http\Controllers\Controller;
 use App\Models\CtcContract;
@@ -695,6 +696,7 @@ class CtcContractController extends Controller
             ]);
         });
 
+        broadcast(new CtcApprovalUpdated($row));
         return response()->json(['status' => true, 'data' => $this->shapeList($row), 'code' => $row->code], 201);
     }
 
@@ -751,6 +753,7 @@ class CtcContractController extends Controller
             $row->rejection_reason = null;
             $this->pushVersion($row, 'Approved by ' . ($user->name ?? 'approver'), 'Approved', $user->name ?? '');
             $row->save();
+            broadcast(new CtcApprovalUpdated($row));
             return response()->json(['status' => true, 'data' => $this->shapeApprove($row->fresh(), $user->name ?? '')]);
         }
 
@@ -792,6 +795,7 @@ class CtcContractController extends Controller
             $this->pushVersion($row, ($user->name ?? 'Approver') . ' approved (' . $approved . ' of ' . $total . ') — awaiting remaining approvers', 'Approving', $user->name ?? '');
         }
         $row->save();
+        broadcast(new CtcApprovalUpdated($row));
         return response()->json(['status' => true, 'data' => $this->shapeApprove($row->fresh(), $user->name ?? '')]);
     }
 
@@ -821,6 +825,7 @@ class CtcContractController extends Controller
         $row->rejection_reason = $data['reason'];
         $this->pushVersion($row, 'Rejected by ' . ($user->name ?? 'approver') . ' — ' . $data['reason'], 'Rejected', $user->name ?? '', null, ['reason' => $data['reason']]);
         $row->save();
+        broadcast(new CtcApprovalUpdated($row));
         return response()->json(['status' => true, 'data' => $this->shapeApprove($row->fresh(), $user->name ?? '')]);
     }
 
@@ -832,6 +837,7 @@ class CtcContractController extends Controller
         $thread = $row->clarifications ?? [];
         $thread[] = ['query' => $data['query'], 'date' => now()->format('d M Y'), 'response' => '', 'resolved' => false];
         $row->update(['approval_status' => 'clarification', 'clarifications' => $thread]);
+        broadcast(new CtcApprovalUpdated($row->fresh()));
         return response()->json(['status' => true, 'data' => $this->shapeApprove($row->fresh(), $user->name ?? '')]);
     }
 
@@ -846,6 +852,7 @@ class CtcContractController extends Controller
             if (empty($thread[$i]['response'])) { $thread[$i]['response'] = $data['response']; break; }
         }
         $row->update(['clarifications' => $thread]);
+        broadcast(new CtcApprovalUpdated($row->fresh()));
         return response()->json(['status' => true, 'data' => $this->shapeSent($row->fresh())]);
     }
 
@@ -944,6 +951,7 @@ class CtcContractController extends Controller
         $this->pushVersion($row, $label, 'Under Review', $user->name ?? '');
         $row->save();
 
+        broadcast(new CtcApprovalUpdated($row));
         return response()->json(['status' => true, 'data' => $row->fresh()]);
     }
 
