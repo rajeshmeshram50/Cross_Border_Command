@@ -17,9 +17,22 @@ class ClmClauseController extends Controller
     public function typesIndex(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $rows = $user->client_id
-            ? ClmClauseType::where('client_id', $user->client_id)->orderBy('id')->get()
-            : collect();
+        if (!$user->client_id) {
+            return response()->json(['status' => true, 'data' => [], 'count' => 0]);
+        }
+        $rows = ClmClauseType::where('client_id', $user->client_id)->orderBy('id')->get();
+
+        /* Usage map: how many Clause Library entries reference each type. The
+         * library links to a type by NAME (no FK), so we match case-insensitively.
+         * Drives the "can't edit an in-use type" guard on the client. */
+        $usage = ClmClauseLibrary::where('client_id', $user->client_id)
+            ->selectRaw('LOWER(clause_type) as t, COUNT(*) as c')
+            ->groupBy(DB::raw('LOWER(clause_type)'))
+            ->pluck('c', 't');
+        $rows->each(function ($row) use ($usage) {
+            $row->in_use = (int) ($usage[mb_strtolower((string) $row->name)] ?? 0);
+        });
+
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
     }
 
@@ -56,6 +69,20 @@ class ClmClauseController extends Controller
     {
         $user = $request->user(); if (!$user) abort(401);
         $row  = ClmClauseType::where('client_id', $user->client_id)->findOrFail($id);
+
+        /* Block editing while the Clause Library still references this type — the
+         * library links to it by NAME, so renaming would orphan those clauses.
+         * The user must reassign/remove those clauses first. */
+        $inUse = ClmClauseLibrary::where('client_id', $user->client_id)
+            ->whereRaw('LOWER(clause_type) = ?', [mb_strtolower((string) $row->name)])
+            ->count();
+        if ($inUse > 0) {
+            return response()->json([
+                'status'  => false,
+                'message' => "This clause type is used by {$inUse} clause" . ($inUse === 1 ? '' : 's') . " in the Clause Library, so it can't be edited. Remove or reassign " . ($inUse === 1 ? 'that clause' : 'those clauses') . " first.",
+            ], 409);
+        }
+
         if ($request->has('name')) $request->merge(['name' => trim((string) $request->input('name'))]);
         $data = $request->validate([
             'name'        => ['sometimes', 'required', 'string', 'max:255', Rule::unique('clm_clause_types', 'name')->ignore($row->id)->where(fn ($q) => $q->where('client_id', $user->client_id))],

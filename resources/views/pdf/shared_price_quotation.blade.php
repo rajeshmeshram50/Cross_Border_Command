@@ -1,15 +1,43 @@
 @php
-    // Resolve absolute path to the tenant's logo so dompdf can embed it as
-    // base64. Falls back to a text initials block when there's no logo.
+    // Embed the tenant logo as a base64 data URI so dompdf renders it on every
+    // server config — reading the bytes through the `public` Storage disk works
+    // for BOTH local storage and the Azure Blob disk used in production (a raw
+    // public_path()/storage_path() only exists on local disks, so it silently
+    // failed on the server). Falls back to a text initials block when missing.
     $logoPath = null;
-    if (!empty($client?->logo)) {
-        $abs = public_path(ltrim((string) $client->logo, '/'));
-        if (file_exists($abs))
-            $logoPath = $abs;
-        else {
-            $storage = storage_path('app/public/' . ltrim((string) $client->logo, '/'));
-            if (file_exists($storage))
-                $logoPath = $storage;
+    $logoRaw  = $client?->logo;
+    if (!empty($logoRaw)) {
+        // Normalize the stored path to a disk-relative key (accept
+        // "clients/logos/x.png", "/storage/clients/logos/x.png", "public/…").
+        $norm = ltrim(str_replace('\\', '/', trim((string) $logoRaw)), '/');
+        foreach (['storage/', 'public/'] as $strip) {
+            if (str_starts_with($norm, $strip)) $norm = substr($norm, strlen($strip));
+        }
+        try {
+            $disk = \Illuminate\Support\Facades\Storage::disk('public');
+            if ($norm !== '' && $disk->exists($norm)) {
+                $bytes = $disk->get($norm);
+                $mime  = $disk->mimeType($norm) ?: 'image/png';
+                // Flatten any alpha channel onto white so dompdf's pure-PHP
+                // transparent-PNG handler doesn't time out on larger logos.
+                if (function_exists('imagecreatefromstring') && ($src = @imagecreatefromstring($bytes)) !== false) {
+                    $w = max(1, imagesx($src));
+                    $h = max(1, imagesy($src));
+                    $canvas = imagecreatetruecolor($w, $h);
+                    imagefilledrectangle($canvas, 0, 0, $w, $h, imagecolorallocate($canvas, 255, 255, 255));
+                    imagealphablending($canvas, true);
+                    imagecopy($canvas, $src, 0, 0, 0, 0, $w, $h);
+                    ob_start();
+                    imagepng($canvas);
+                    $bytes = ob_get_clean();
+                    $mime  = 'image/png';
+                    imagedestroy($src);
+                    imagedestroy($canvas);
+                }
+                $logoPath = 'data:' . $mime . ';base64,' . base64_encode($bytes);
+            }
+        } catch (\Throwable $e) {
+            $logoPath = null;
         }
     }
 
