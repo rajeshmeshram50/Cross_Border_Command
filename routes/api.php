@@ -611,6 +611,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // Permanently remove a soft-deleted employee. Only callable from the
     // Disabled tab — the controller refuses if the row is still trashed=false.
     Route::delete('/employees/{id}/force',        [EmployeeController::class, 'forceDestroy']);
+    // Assigned Holiday Calendar for an employee — holidays from their Holiday
+    // Group, resolved for a year (recurring-aware). Accepts numeric id / emp_code.
+    Route::get   ('/employees/{id}/holidays',     [EmployeeController::class, 'holidays']);
     Route::apiResource('employees', EmployeeController::class);
 
     // Stage 2 — Document Management. List + upload are nested under the

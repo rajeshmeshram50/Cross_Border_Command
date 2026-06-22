@@ -1263,6 +1263,7 @@ export default function Inbox() {
               <button type="button" onClick={() => submitDecision('reject')}
                 disabled={submitting || !actionNote.trim()}
                 title={actionNote.trim() ? 'Reject with this remark' : 'Add a remark first'}
+                className="inbox-btn-reject"
                 style={{ padding: '7px 14px', background: actionNote.trim() ? 'linear-gradient(135deg,#dc2626,#ef4444)' : '#fee2e2', color: actionNote.trim() ? '#fff' : '#b91c1c', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: actionNote.trim() ? 'pointer' : 'not-allowed', opacity: actionNote.trim() ? 1 : 0.7 }}>
                 <i className="ri-close-circle-line me-1" />Reject &amp; Send Back
               </button>
@@ -1423,6 +1424,13 @@ function InboxDarkStyles() {
         background: var(--vz-secondary-bg) !important;
         border-color: var(--vz-border-color) !important;
         color: var(--vz-body-color) !important;
+      }
+      /* Reject & Send Back — the enabled (red gradient) state reads fine on
+         dark, but the disabled state's light-pink fill / dark-red text looked
+         out of place against the dark footer. Tone it to the dark palette. */
+      [data-bs-theme="dark"] .inbox-btn-reject:disabled {
+        background: rgba(239,68,68,0.16) !important;
+        color: #fca5a5 !important;
       }
     `}</style>
   );

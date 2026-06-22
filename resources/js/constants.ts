@@ -240,6 +240,50 @@ export const SALES_GROUPS: MenuGroup[] = [
   },
 ];
 
+// Procure to Pay (P2P) tree — four logical clusters that drive BOTH the
+// horizontal header mega-menu (IdimsHeader) and the vertical sidebar
+// (LayoutMenuData), so the two stay in sync. Leaf ids match the seeded module
+// slugs (p2p.analytics, …) so permissions line up.
+export const P2P_GROUPS: MenuGroup[] = [
+  {
+    id: 'p2p.intelligence',
+    label: 'P2P Intelligence Hub',
+    icon: 'LayoutGrid',
+    children: [
+      { id: 'p2p.analytics', icon: 'LayoutGrid', label: 'P2P Analytics' },
+      { id: 'p2p.diagnosis', icon: 'ShieldCheck', label: 'P2P Diagnosis & Resolution Summary' },
+      { id: 'p2p.sales_summary', icon: 'BarChart4', label: 'Sales Summary' },
+    ],
+  },
+  {
+    id: 'p2p.master',
+    label: 'P2P Master Management',
+    icon: 'Database',
+    children: [
+      { id: 'p2p.product', icon: 'Tag', label: 'Product Management' },
+      { id: 'p2p.supplier', icon: 'UserPlus', label: 'Supplier Management' },
+    ],
+  },
+  {
+    id: 'p2p.procurement',
+    label: 'Procurement Management',
+    icon: 'Activity',
+    children: [
+      { id: 'p2p.bulk_sourcing', icon: 'Activity', label: 'Bulk Sourcing Management' },
+      { id: 'p2p.case_to_case', icon: 'Activity', label: 'Case to Case Procurement Management' },
+    ],
+  },
+  {
+    id: 'p2p.purchase',
+    label: 'Purchase Management',
+    icon: 'FileText',
+    children: [
+      { id: 'p2p.po', icon: 'FileText', label: 'Purchase Order (PO)' },
+      { id: 'p2p.spi', icon: 'CreditCard', label: 'Supplier Purchase Invoice (SPI)' },
+    ],
+  },
+];
+
 // Central CLM tree — mirrors the SalesMatrix_v4_9 CLM landing page.
 // The sidebar flattens the legacy two-level visual into a single nesting
 // level (one MenuGroup per logical cluster); the labels keep the legacy
@@ -406,16 +450,10 @@ export const MENU_ITEMS: MenuItem[] = [
     groups: MASTER_GROUPS,
   },
 
-  // Products catalog — branch + employee only. Amazon/Flipkart-style card
-  // grid with a 6-step Add Product wizard. No permission flag yet so the
-  // entry surfaces purely on user_type (handled in LayoutMenuData via the
-  // defaultSlugs allow-list).
-  { id: 'products', icon: 'Package', label: 'Products', roles: ['branch_user', 'employee'] },
-
-  // Vendor master — companies the branch buys product from. Sits next to
-  // Products so the purchasing trio (Products → Vendors → mappings) reads
-  // as a single section in the sidebar.
-  { id: 'vendors', icon: 'Store', label: 'Suppliers', roles: ['branch_user', 'employee'] },
+  // NOTE: standalone "Products" and "Suppliers" sidebar entries were removed —
+  // they now live under Procure to Pay (P2P) → Master Management (Product
+  // Management / Supplier Management), mirroring the header mega-menu. The
+  // /products and /suppliers routes still exist and are reached from there.
 
   // Face-driven attendance — only employees punch in. The signed-in admin /
   // branch user has no Employee row to clock in for; surfaced ONLY to the

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
-import { SALES_GROUPS, CLM_GROUPS, HR_GROUPS } from '../../constants';
+import { SALES_GROUPS, CLM_GROUPS, HR_GROUPS, P2P_GROUPS } from '../../constants';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import logoFallback from '../assets/images/igc-logo.png';
 import * as LucideIcons from 'lucide-react';
@@ -91,8 +91,15 @@ const LEAF_DESC: Record<string, string> = {
   'master.leave_type': 'Leave categories master.',
   'master.leave_plan': 'Leave plans & assignments.',
   // Procure to Pay (P2P)
-  'p2p.product': 'Manage product catalogue & onboarding.',
-  'p2p.supplier': 'Manage supplier & vendor onboarding.',
+  'p2p.analytics': 'Procurement KPIs & insights.',
+  'p2p.diagnosis': 'Identify and resolve procurement issues.',
+  'p2p.sales_summary': 'Track sourcing performance.',
+  'p2p.product': 'Manage products & sourcing readiness.',
+  'p2p.supplier': 'Manage supplier onboarding & compliance.',
+  'p2p.bulk_sourcing': 'Manage bulk sourcing requests.',
+  'p2p.case_to_case': 'Manage request-based sourcing.',
+  'p2p.po': 'Create & track purchase orders.',
+  'p2p.spi': 'Process supplier invoices & taxes.',
 };
 
 // Top-level slug → route.
@@ -161,9 +168,18 @@ function hrLeafPath(id: string): string {
 // vendor master (procurement sources from the existing vendor onboarding).
 function p2pLeafPath(id: string): string {
   switch (id) {
-    case 'p2p.product':  return '/products';
-    case 'p2p.supplier': return '/vendors';
-    default:             return '/p2p';
+    case 'p2p.product':       return '/products';
+    case 'p2p.supplier':      return '/suppliers';
+    case 'p2p.sales_summary': return '/sales/p2p-summary';
+    // Under development — each lands on its own dark-mode-aware "Coming soon"
+    // stub (ModuleStubPage) so the title is correct per leaf.
+    case 'p2p.analytics':     return '/p2p/analytics';
+    case 'p2p.diagnosis':     return '/p2p/diagnosis';
+    case 'p2p.bulk_sourcing': return '/p2p/bulk-sourcing';
+    case 'p2p.case_to_case':  return '/p2p/case-to-case';
+    case 'p2p.po':            return '/p2p/purchase-order';
+    case 'p2p.spi':           return '/p2p/supplier-purchase-invoice';
+    default:                  return '/p2p';
   }
 }
 
@@ -369,11 +385,12 @@ export default function IdimsHeader() {
   }, [hrGroups]);
 
   // P2P has no per-leaf permission slugs — the whole module is gated by
-  // can('p2p'), so both leaves show side-by-side whenever P2P is accessible.
-  const p2pCols: Group[][] = useMemo(() => [
-    [{ id: 'p2p.catalogue', label: 'Catalogue', children: [{ id: 'p2p.product', label: 'Product', icon: 'Package' }] }],
-    [{ id: 'p2p.sourcing', label: 'Sourcing', children: [{ id: 'p2p.supplier', label: 'Supplier', icon: 'Truck' }] }],
-  ], []);
+  // can('p2p'), so every leaf shows whenever P2P is accessible. Four-column
+  // layout mirrors the Figma: Intelligence Hub · Master Management ·
+  // Procurement Management · Purchase Management. Leaves without their own page
+  // yet are wired (in p2pLeafPath) to the P2P hub until those screens ship.
+  // One group per column (shared P2P_GROUPS drives the sidebar too).
+  const p2pCols: Group[][] = useMemo(() => P2P_GROUPS.map(g => [g as unknown as Group]), []);
 
   const colsFor = (dd: DD): Group[][] =>
     dd === 'sales' ? salesCols : dd === 'hr' ? hrCols : dd === 'p2p' ? p2pCols : clmCols;
@@ -749,14 +766,19 @@ export default function IdimsHeader() {
                       <span className="dd-chev">{IC.chevSm}</span>
                     </button>
                     {openDD === item.dd && (
-                      <div className={`idims-dropdown ${item.dd === 'clm' || item.dd === 'hr' ? 'idims-dd-wide' : ''}${item.dd === 'p2p' ? 'idims-dd-med' : ''}`}>
+                      <div className={`idims-dropdown ${item.dd === 'clm' || item.dd === 'hr' ? 'idims-dd-wide' : ''}${item.dd === 'p2p' ? 'idims-dd-p2p' : ''}`}>
                         <div className="idims-dd-topbar" />
                         <div className="idims-dd-inner">
                           {item.dd === 'clm' ? renderClmMega() : (
                             <div className="idims-dd-grid"
                               style={{ gridTemplateColumns: `repeat(${colsFor(item.dd!).length}, 1fr)` }}>
-                              {colsFor(item.dd!).map((groups, i) =>
-                                renderCol(groups, item.dd!, COL_ACCENT[i], COL_BG[i], i))}
+                              {colsFor(item.dd!).map((groups, i) => {
+                                // P2P carries its own Figma palette; other mega-menus
+                                // cycle the shared accent set.
+                                const acc = item.dd === 'p2p' ? P2P_ACCENT : COL_ACCENT;
+                                const bgs = item.dd === 'p2p' ? P2P_BG : COL_BG;
+                                return renderCol(groups, item.dd!, acc[i], bgs[i], i);
+                              })}
                             </div>
                           )}
                         </div>
@@ -894,6 +916,11 @@ export default function IdimsHeader() {
 
 const COL_ACCENT = ['#7C3AED', '#0EA5E9', '#0D9488', '#7C3AED', '#0EA5E9', '#0D9488'];
 const COL_BG = ['#F5F3FF', '#F0F9FF', '#F0FDFA', '#F5F3FF', '#F0F9FF', '#F0FDFA'];
+// P2P uses its own per-column palette to match the Figma: Intelligence Hub &
+// Master Management in violet, Procurement Management in amber, Purchase
+// Management in teal.
+const P2P_ACCENT = ['#7C3AED', '#7C3AED', '#F59E0B', '#0D9488'];
+const P2P_BG = ['#F5F3FF', '#F5F3FF', '#FFFBEB', '#F0FDFA'];
 
 /* ── Inline SVG icon set (named IC to avoid clashing with lucide imports) ── */
 const IC = {
@@ -1154,6 +1181,9 @@ const IDIMS_CSS = `
    horizontal scroll container (which would otherwise clip it vertically). */
 .idims-dropdown { position: fixed; top: 116px; left: 50%; transform: translateX(-50%); width: min(1060px, calc(100vw - 48px)); max-height: calc(100vh - 128px); display: flex; flex-direction: column; background: #fff; border: 1.5px solid #E8ECF5; border-radius: 18px; box-shadow: 0 24px 70px rgba(15,23,42,.28); z-index: 1050; overflow: hidden; animation: idimsDD .18s cubic-bezier(.22,1,.36,1) both; }
 .idims-dd-wide { width: min(1480px, calc(100vw - 28px)); }
+/* P2P has 4 columns but compact content — narrower than the CLM/HR wide menu,
+   yet roomy enough that the longer labels don't crowd. */
+.idims-dd-p2p { width: min(1260px, calc(100vw - 28px)); }
 .idims-dd-med { width: min(620px, calc(100vw - 28px)); }
 /* CLM mega layout — 3 sections; Operations + Master Management each split into
    two sub-columns with sub-headers; Without-Shipment nests its agreements. */
@@ -1191,6 +1221,9 @@ const IDIMS_CSS = `
 .idims-dd-col:last-child { border-right: none; }
 .idims-dd-group + .idims-dd-group { margin-top: 14px; }
 .idims-dd-section-label { font-size: 8px; font-weight: 800; letter-spacing: 1.1px; text-transform: uppercase; padding: 0 0 10px 12px; margin-bottom: 10px; border-bottom: 1px solid #F1F4FB; display: flex; align-items: center; gap: 7px; white-space: nowrap; position: relative; }
+/* Small standing color bar on the left of each section header (matches Figma).
+   currentColor = the column accent set inline on the label. */
+.idims-dd-section-label::before { content: ''; position: absolute; left: 0; top: 0; bottom: 11px; width: 3px; border-radius: 2px; background: currentColor; }
 .dd-sl-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
 .idims-dd-item { display: flex; align-items: flex-start; gap: 13px; padding: 9px 11px; cursor: pointer; border-radius: 11px; width: 100%; background: none; border: none; font-family: inherit; transition: background .13s, transform .13s; margin-bottom: 4px; text-align: left; }
 .idims-dd-item:hover { transform: translateX(2px); background: #F5F3FF; }
@@ -1199,7 +1232,7 @@ const IDIMS_CSS = `
 .idims-dd-item-ico svg { width: 16px; height: 16px; }
 .idims-dd-item:hover .idims-dd-item-ico { transform: scale(1.08); }
 .idims-dd-item-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.idims-dd-item-label { font-size: 13px; font-weight: 700; color: #1E293B; white-space: nowrap; line-height: 1.2; transition: color .13s; }
+.idims-dd-item-label { font-size: 13px; font-weight: 600; color: #1E293B; white-space: nowrap; line-height: 1.2; transition: color .13s; }
 .idims-dd-item-desc { font-size: 10.5px; font-weight: 500; color: #94A3B8; line-height: 1.4; white-space: normal; }
 
 /* Logout modal */

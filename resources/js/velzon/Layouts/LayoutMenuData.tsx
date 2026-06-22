@@ -1,6 +1,6 @@
 import React from "react";
 import { useAuth } from "../../contexts/AuthContext";
-import { MENU_ITEMS, HR_GROUPS, SALES_GROUPS, CLM_GROUPS } from "../../constants";
+import { MENU_ITEMS, HR_GROUPS, SALES_GROUPS, CLM_GROUPS, P2P_GROUPS } from "../../constants";
 import { isMenuOpen, toggleMenu } from "./menuState";
 
 /**
@@ -60,7 +60,7 @@ const slugToPath = (slug: string): string => {
     case "master":      return "/master";
     case "hr":          return "/hr";
     case "products":    return "/products";
-    case "vendors":     return "/vendors";
+    case "vendors":     return "/suppliers";
     // New top-level header modules. P2P reuses the existing Sales P2P
     // Summary page; the rest render the shared permission-gated stub.
     case "p2p":               return "/p2p";
@@ -130,6 +130,25 @@ const salesLeafLink = (leafId: string): string => {
      * removed from the menu (May-26 cleanup). Their cases are gone too
      * — any stale link falls through to the /sales default. */
     default:                          return "/sales";
+  }
+};
+
+// Procure to Pay (P2P) leaves → routes. Product/Supplier reuse the existing
+// masters; Sales Summary the P2P summary page. The rest are under development
+// and land on the P2P hub until their own pages ship (mirrors p2pLeafPath in
+// IdimsHeader).
+const p2pLeafLink = (leafId: string): string => {
+  switch (leafId) {
+    case "p2p.product":       return "/products";
+    case "p2p.supplier":      return "/suppliers";
+    case "p2p.sales_summary": return "/sales/p2p-summary";
+    case "p2p.analytics":     return "/p2p/analytics";
+    case "p2p.diagnosis":     return "/p2p/diagnosis";
+    case "p2p.bulk_sourcing": return "/p2p/bulk-sourcing";
+    case "p2p.case_to_case":  return "/p2p/case-to-case";
+    case "p2p.po":            return "/p2p/purchase-order";
+    case "p2p.spi":           return "/p2p/supplier-purchase-invoice";
+    default:                  return "/p2p";
   }
 };
 
@@ -338,6 +357,25 @@ const Navdata = () => {
       .filter(Boolean);
   };
 
+  // Procure to Pay (P2P) dropdown (3 levels): P2P → categories → leaves.
+  // Unlike Sales/CLM/HR, P2P is gated at the MODULE level (can('p2p')), so
+  // every leaf shows whenever the user has P2P access — matching the header
+  // mega-menu. Built from the shared P2P_GROUPS so both menus stay in sync.
+  const buildP2pSubItems = () => {
+    return P2P_GROUPS.map((g) => ({
+      id: g.id,
+      label: g.label,
+      isChildItem: true,
+      stateVariables: isOpen(g.id),
+      click: (e: any) => { e.preventDefault(); toggle(g.id); },
+      childItems: g.children.map((c) => ({
+        id: c.id,
+        label: c.label,
+        link: p2pLeafLink(c.id),
+      })),
+    }));
+  };
+
   const menuItems: any[] = [];
 
   for (const m of MENU_ITEMS) {
@@ -475,6 +513,31 @@ const Navdata = () => {
         icon: resolveIcon(m.icon),
         link: slugToPath(m.id),
       });
+      continue;
+    }
+
+    // Procure to Pay (P2P) → 3-level nested dropdown like Sales/CLM/HR. The
+    // module is gated by can('p2p'); once in, every leaf shows (matches the
+    // header mega-menu). Clicking the parent only toggles the dropdown.
+    if (m.id === "p2p") {
+      if (!isSuperAdmin) {
+        if (planExpiredOrMissing) continue;
+        if (!perms["p2p"]?.can_view) continue;
+      }
+      const subItems = buildP2pSubItems();
+      if (subItems.length === 0) {
+        menuItems.push({ id: m.id, label: m.label, icon: resolveIcon(m.icon), link: slugToPath(m.id) });
+      } else {
+        menuItems.push({
+          id: m.id,
+          label: m.label,
+          icon: resolveIcon(m.icon),
+          pathPrefix: slugToPath(m.id),
+          stateVariables: isOpen(m.id),
+          click: (e: any) => { e.preventDefault(); toggle(m.id); },
+          subItems,
+        });
+      }
       continue;
     }
 

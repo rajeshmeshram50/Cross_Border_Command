@@ -742,10 +742,19 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/project-navigator" element={<ModuleStubPage />} />
               <Route path="/gts" element={<ModuleStubPage />} />
               <Route path="/inventory" element={<ModuleStubPage />} />
+              {/* P2P leaves without a real page yet — dark-mode-aware "Coming soon" stub. */}
+              <Route path="/p2p/analytics" element={<ModuleStubPage />} />
+              <Route path="/p2p/diagnosis" element={<ModuleStubPage />} />
+              <Route path="/p2p/bulk-sourcing" element={<ModuleStubPage />} />
+              <Route path="/p2p/case-to-case" element={<ModuleStubPage />} />
+              <Route path="/p2p/purchase-order" element={<ModuleStubPage />} />
+              <Route path="/p2p/supplier-purchase-invoice" element={<ModuleStubPage />} />
               <Route path="/developers/shipment" element={<DeveloperShipments />} />
               <Route path="/products" element={<Products />} />
               <Route path="/products/:id" element={<ProductView />} />
-              <Route path="/vendors" element={<Vendors />} />
+              <Route path="/suppliers" element={<Vendors />} />
+              {/* Old path kept as a redirect so existing links/bookmarks survive the rename. */}
+              <Route path="/vendors" element={<Navigate to="/suppliers" replace />} />
               <Route path="/sales/diagnosis" element={<SalesDiagnosis />} />
               <Route path="/sales/resolution-center" element={<SalesResolutionCenter />} />
               <Route path="/sales/analytics" element={<SalesAnalytics />} />

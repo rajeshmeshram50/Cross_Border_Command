@@ -41,7 +41,7 @@ function pathForId(id: string): string {
         case 'profile':              return '/profile';
         case 'clock-in':             return '/clock-in';
         case 'products':             return '/products';
-        case 'vendors':              return '/vendors';
+        case 'vendors':              return '/suppliers';
         case 'hr-employees':         return '/hr/employees';
         case 'hr-recruitment':       return '/hr/recruitment';
         case 'hr-attendance':        return '/hr/attendance';

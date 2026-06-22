@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { ShimmerTableRows } from '../../components/ui/Shimmer';
+import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import WorklistPager from '../../components/ui/WorklistPager';
@@ -45,6 +46,11 @@ export default function HrDocumentTemplates() {
 
   // Lookups — used to populate the trigger filter dropdown
   const [triggerPoints, setTriggerPoints] = useState<Array<{ id: number; module_name: string }>>([]);
+
+  // Delete confirmation — uses the shared themed DeleteConfirmModal (same as
+  // HR Employees / Custom Fields) for a consistent delete UX across modules.
+  const [deleteTarget, setDeleteTarget] = useState<TemplateRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchAll = async () => {
     try {
@@ -97,14 +103,20 @@ export default function HrDocumentTemplates() {
   // Reset to page 1 whenever the filter set changes.
   useEffect(() => { setPage(1); }, [category, roleType, triggerFilter, statusFilter, search]);
 
-  const handleDelete = async (row: TemplateRow) => {
-    if (!confirm(`Delete template ${row.code}? This cannot be undone.`)) return;
+  const handleDelete = (row: TemplateRow) => setDeleteTarget(row);
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      await api.delete(`/hr-document-templates/${row.id}`);
-      toast.success('Deleted', `${row.code} removed.`);
+      await api.delete(`/hr-document-templates/${deleteTarget.id}`);
+      toast.success('Deleted', `${deleteTarget.code} removed.`);
+      setDeleteTarget(null);
       fetchAll();
     } catch (err: any) {
       toast.error('Could not delete', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -399,6 +411,16 @@ export default function HrDocumentTemplates() {
           </Card>
         </div>
       </Col>
+
+      <DeleteConfirmModal
+        open={!!deleteTarget}
+        title="Delete Template"
+        itemName={deleteTarget?.code}
+        subMessage="This action cannot be undone. The template and its configuration will be permanently removed."
+        loading={deleting}
+        onClose={() => { if (!deleting) setDeleteTarget(null); }}
+        onConfirm={confirmDelete}
+      />
     </Row>
   );
 }
