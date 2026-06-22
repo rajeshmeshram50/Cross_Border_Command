@@ -745,7 +745,9 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/developers/shipment" element={<DeveloperShipments />} />
               <Route path="/products" element={<Products />} />
               <Route path="/products/:id" element={<ProductView />} />
-              <Route path="/vendors" element={<Vendors />} />
+              <Route path="/suppliers" element={<Vendors />} />
+              {/* Old path kept as a redirect so existing links/bookmarks survive the rename. */}
+              <Route path="/vendors" element={<Navigate to="/suppliers" replace />} />
               <Route path="/sales/diagnosis" element={<SalesDiagnosis />} />
               <Route path="/sales/resolution-center" element={<SalesResolutionCenter />} />
               <Route path="/sales/analytics" element={<SalesAnalytics />} />

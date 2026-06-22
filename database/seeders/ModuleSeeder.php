@@ -387,6 +387,65 @@ class ModuleSeeder extends Seeder
             }
         }
 
+        // ─────────────────────────────────────────────────────────────
+        //  Procure to Pay (P2P) — level 2 categories + level 3 leaves.
+        //  Mirrors the four-column header mega-menu (Intelligence Hub ·
+        //  Master Management · Procurement Management · Purchase Management).
+        //  Leaf slugs match the frontend leaf ids (p2p.analytics, …) so the
+        //  Permissions screen can grant them per-leaf.
+        // ─────────────────────────────────────────────────────────────
+        $p2p = Module::where('slug', 'p2p')->first();
+
+        $p2pCategories = [
+            ['name' => 'P2P Intelligence Hub',   'slug' => 'p2p.intelligence', 'icon' => 'LayoutGrid', 'description' => 'Procurement analytics, diagnosis & sourcing performance'],
+            ['name' => 'P2P Master Management',  'slug' => 'p2p.master',       'icon' => 'Database',   'description' => 'Product & supplier masters'],
+            ['name' => 'Procurement Management', 'slug' => 'p2p.procurement',  'icon' => 'Activity',   'description' => 'Bulk & case-to-case sourcing requests'],
+            ['name' => 'Purchase Management',    'slug' => 'p2p.purchase',     'icon' => 'FileText',   'description' => 'Purchase orders & supplier invoices'],
+        ];
+
+        $p2pCatIds = [];
+        foreach ($p2pCategories as $i => $cat) {
+            $row = Module::updateOrCreate(
+                ['slug' => $cat['slug']],
+                $cat + ['parent_id' => $p2p->id, 'sort_order' => $i + 1, 'is_active' => true, 'is_default' => false]
+            );
+            $p2pCatIds[$cat['slug']] = $row->id;
+        }
+
+        $p2pLeaves = [
+            'p2p.intelligence' => [
+                ['name' => 'P2P Analytics',                      'slug' => 'p2p.analytics',     'icon' => 'LayoutGrid',  'description' => 'Procurement KPIs & insights'],
+                ['name' => 'P2P Diagnosis & Resolution Summary', 'slug' => 'p2p.diagnosis',     'icon' => 'ShieldCheck', 'description' => 'Identify and resolve procurement issues'],
+                ['name' => 'Sales Summary',                      'slug' => 'p2p.sales_summary', 'icon' => 'BarChart3',   'description' => 'Track sourcing performance'],
+            ],
+            'p2p.master' => [
+                ['name' => 'Product Management',  'slug' => 'p2p.product',  'icon' => 'Tag',      'description' => 'Manage products & sourcing readiness'],
+                ['name' => 'Supplier Management', 'slug' => 'p2p.supplier', 'icon' => 'UserPlus', 'description' => 'Manage supplier onboarding & compliance'],
+            ],
+            'p2p.procurement' => [
+                ['name' => 'Bulk Sourcing Management',           'slug' => 'p2p.bulk_sourcing', 'icon' => 'Activity', 'description' => 'Manage bulk sourcing requests'],
+                ['name' => 'Case to Case Procurement Management', 'slug' => 'p2p.case_to_case', 'icon' => 'Activity', 'description' => 'Manage request-based sourcing'],
+            ],
+            'p2p.purchase' => [
+                ['name' => 'Purchase Order (PO)',            'slug' => 'p2p.po',  'icon' => 'FileText',   'description' => 'Create & track purchase orders'],
+                ['name' => 'Supplier Purchase Invoice (SPI)', 'slug' => 'p2p.spi', 'icon' => 'CreditCard', 'description' => 'Process supplier invoices & taxes'],
+            ],
+        ];
+
+        foreach ($p2pLeaves as $catSlug => $items) {
+            foreach ($items as $i => $item) {
+                Module::updateOrCreate(
+                    ['slug' => $item['slug']],
+                    $item + [
+                        'parent_id'  => $p2pCatIds[$catSlug],
+                        'sort_order' => $i + 1,
+                        'is_active'  => true,
+                        'is_default' => false,
+                    ]
+                );
+            }
+        }
+
         // ── Developers (level 2 category + level 3 leaves) ──
         // Marked is_default so client_admins receive it on plan (re)activation
         // (SubscriptionController grants is_default modules); branch users /
