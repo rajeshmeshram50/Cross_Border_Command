@@ -3749,6 +3749,10 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   // ── Stage 4 — Payroll & Finance Setup state (lifted to modal so the
   //    sidebar progress + footer gating + Save Draft button can read it).
   const [s4Saving, setS4Saving] = useState(false);
+  // Flipped true when the user tries to advance/save Stage 4 with missing or
+  // invalid required fields — drives the red `is-invalid` highlight so they can
+  // see exactly which fields the "complete required fields" toast refers to.
+  const [s4ShowErrors, setS4ShowErrors] = useState(false);
   const [s4, setS4] = useState({
     salary_payment_mode: 'bank' as 'bank' | 'cheque' | 'cash',
     bank_name: '',
@@ -3842,6 +3846,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       if (!s4.account_holder_name.trim())  missing.push('Account Holder Name');
       if (!s4.bank_branch.trim())          missing.push('Bank Branch');
       if (missing.length > 0) {
+        setS4ShowErrors(true);   // highlight the offending bank fields
         toast.error(
           'Bank details required',
           `Fill in: ${missing.join(', ')}. Pick a non-bank payment mode if no bank account applies.`
@@ -3856,6 +3861,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     // also enforces, so the user gets a clear message instead of a raw 422.
     const panVal = s4.pan_number.trim().toUpperCase();
     if (panVal && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(panVal)) {
+      setS4ShowErrors(true);   // highlight the PAN field
       toast.error('Invalid PAN', 'PAN must be in the format AAAAA9999A — 5 letters, 4 digits, then 1 letter.');
       return false;
     }
@@ -3906,6 +3912,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     }
     try {
       await api.put(`/employees/${emp.dbId}`, payload);
+      setS4ShowErrors(false);   // saved cleanly — drop any error highlight
       onSaved?.();
       return true;
     } catch (err: any) {
@@ -4341,6 +4348,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 s4={s4}
                 setS4={setS4}
                 checks={{ bank: stage4BankOk, pan: stage4PanOk, salary: stage4SalaryOk, pf: stage4PfOk }}
+                showErrors={s4ShowErrors}
                 pass={stage4Pass}
                 total={stage4Total4}
               />
@@ -5019,6 +5027,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       // the advance unless every readiness check is green.
       if (activeStage === 4) {
         if (stage4Pass !== stage4Total4 || !stage4UanOk) {
+          setS4ShowErrors(true);   // light up the missing/invalid fields
           toast.error(
             'Compensation — complete required fields',
             'Bank details, PAN, CTC and PF deduction must all be filled before moving to policies.',
@@ -6669,11 +6678,12 @@ type S4State = {
 };
 
 function Stage4Payroll({
-  s4, setS4, checks, pass, total,
+  s4, setS4, checks, showErrors, pass, total,
 }: {
   s4: S4State;
   setS4: React.Dispatch<React.SetStateAction<S4State>>;
   checks: { bank: boolean; pan: boolean; salary: boolean; pf: boolean };
+  showErrors: boolean;
   pass: number;
   total: number;
 }) {
@@ -6685,6 +6695,20 @@ function Stage4Payroll({
   ];
   const pct = total ? Math.round((pass / total) * 100) : 0;
   const allDone = pass === total;
+
+  // Per-field invalidity — only surfaced after a failed advance/save
+  // (showErrors). Bank fields apply only in `bank` mode; PAN/CTC/PF always.
+  const bankMode = s4.salary_payment_mode === 'bank';
+  const invalid = {
+    bank_name:           showErrors && bankMode && !s4.bank_name.trim(),
+    bank_account_number: showErrors && bankMode && !/^\d{9,18}$/.test(s4.bank_account_number.trim()),
+    ifsc_code:           showErrors && bankMode && !/^[A-Z]{4}0[A-Z0-9]{6}$/i.test(s4.ifsc_code.trim()),
+    account_holder_name: showErrors && bankMode && !s4.account_holder_name.trim(),
+    bank_branch:         showErrors && bankMode && !s4.bank_branch.trim(),
+    pan_number:          showErrors && !/^[A-Z]{5}[0-9]{4}[A-Z]$/i.test(s4.pan_number.trim()),
+    pf_deduction:        showErrors && !s4.pf_deduction.trim(),
+    agreed_ctc_lpa:      showErrors && !(Number(s4.agreed_ctc_lpa) > 0),
+  };
 
   return (
     <>
@@ -6718,12 +6742,12 @@ function Stage4Payroll({
         </div>
       </div>
 
-      {/* Bank Details — only collected for `bank` mode. Cheque/cash skip
-          straight to Tax & Statutory since no account is needed. */}
-      {/* Bank Details show for Bank transfer AND Cheque — cheque issuance /
-          processing still needs the bank account + IFSC. Hidden only for Cash.
-          (BUG-031.) */}
-      {(s4.salary_payment_mode === 'bank' || s4.salary_payment_mode === 'cheque') && (
+      {/* Bank Details — only collected for `bank` mode. Cheque and Cash skip
+          straight to Tax & Statutory since no account is needed. This also
+          matches the validation + readiness checks, which require bank details
+          ONLY when the mode is `bank` (showing them for Cheque was misleading
+          since they were never validated/required — QA bug). */}
+      {s4.salary_payment_mode === 'bank' && (
       <div className="onb-pay-section">
         <div className="onb-pay-section-head">
           <span className="onb-pay-section-icon bank"><i className="ri-money-dollar-circle-line" /></span>
@@ -6733,12 +6757,12 @@ function Stage4Payroll({
           <Row className="g-3">
             <Col md={4}>
               <label className="onb-init-label">Bank Name <span className="req">*</span></label>
-              <input className="onb-init-input is-required" placeholder="e.g. HDFC Bank" value={s4.bank_name} onChange={e => setS4(p => ({ ...p, bank_name: e.target.value.replace(/[^A-Za-z0-9 .,&/'()\-]/g, '') }))} />
+              <input className={`onb-init-input is-required${invalid.bank_name ? ' is-invalid' : ''}`} placeholder="e.g. HDFC Bank" value={s4.bank_name} onChange={e => setS4(p => ({ ...p, bank_name: e.target.value.replace(/[^A-Za-z0-9 .,&/'()\-]/g, '') }))} />
             </Col>
             <Col md={4}>
               <label className="onb-init-label">Account Number <span className="req">*</span></label>
               <input
-                className="onb-init-input is-required"
+                className={`onb-init-input is-required${invalid.bank_account_number ? ' is-invalid' : ''}`}
                 placeholder="Account number"
                 inputMode="numeric"
                 maxLength={18}
@@ -6762,7 +6786,7 @@ function Stage4Payroll({
             <Col md={4}>
               <label className="onb-init-label">IFSC Code <span className="req">*</span></label>
               <input
-                className="onb-init-input is-required"
+                className={`onb-init-input is-required${invalid.ifsc_code ? ' is-invalid' : ''}`}
                 placeholder="e.g. HDFC0001234"
                 inputMode="text"
                 autoComplete="off"
@@ -6789,11 +6813,11 @@ function Stage4Payroll({
             </Col>
             <Col md={4}>
               <label className="onb-init-label">Name on the Account <span className="req">*</span></label>
-              <input className="onb-init-input is-required" placeholder="Full legal name as per bank" value={s4.account_holder_name} onChange={e => setS4(p => ({ ...p, account_holder_name: e.target.value.replace(/[^A-Za-z .'-]/g, '') }))} />
+              <input className={`onb-init-input is-required${invalid.account_holder_name ? ' is-invalid' : ''}`} placeholder="Full legal name as per bank" value={s4.account_holder_name} onChange={e => setS4(p => ({ ...p, account_holder_name: e.target.value.replace(/[^A-Za-z .'-]/g, '') }))} />
             </Col>
             <Col md={4}>
               <label className="onb-init-label">Branch <span className="req">*</span></label>
-              <input className="onb-init-input is-required" placeholder="e.g. Baner, Pune" value={s4.bank_branch} onChange={e => setS4(p => ({ ...p, bank_branch: e.target.value.replace(/[^A-Za-z0-9 .,&/'()\-]/g, '') }))} />
+              <input className={`onb-init-input is-required${invalid.bank_branch ? ' is-invalid' : ''}`} placeholder="e.g. Baner, Pune" value={s4.bank_branch} onChange={e => setS4(p => ({ ...p, bank_branch: e.target.value.replace(/[^A-Za-z0-9 .,&/'()\-]/g, '') }))} />
             </Col>
             <Col md={4}>
               <label className="onb-init-label">Account Type</label>
@@ -6828,7 +6852,7 @@ function Stage4Payroll({
             <Col md={4}>
               <label className="onb-init-label">PAN Number <span className="req">*</span></label>
               <input
-                className="onb-init-input is-required"
+                className={`onb-init-input is-required${invalid.pan_number ? ' is-invalid' : ''}`}
                 placeholder="AAAZZ9999A"
                 maxLength={10}
                 value={s4.pan_number}
@@ -6844,7 +6868,7 @@ function Stage4Payroll({
             </Col>
             <Col md={4}>
               <label className="onb-init-label">PF Deduction</label>
-              <MasterSelect options={ONB_PF_DEDUCT} value={s4.pf_deduction} onChange={(v) => setS4(p => ({ ...p, pf_deduction: v }))} />
+              <MasterSelect options={ONB_PF_DEDUCT} value={s4.pf_deduction} onChange={(v) => setS4(p => ({ ...p, pf_deduction: v }))} invalid={invalid.pf_deduction} />
             </Col>
             <Col md={4}>
               <label className="onb-init-label">ESI Applicable</label>
@@ -6857,7 +6881,7 @@ function Stage4Payroll({
             <Col md={4}>
               <label className="onb-init-label">Agreed CTC (LPA) <span className="req">*</span></label>
               <input
-                className="onb-init-input is-required"
+                className={`onb-init-input is-required${invalid.agreed_ctc_lpa ? ' is-invalid' : ''}`}
                 placeholder="e.g. 12"
                 inputMode="decimal"
                 value={s4.agreed_ctc_lpa}
@@ -6876,6 +6900,22 @@ function Stage4Payroll({
         </div>
         <div className="onb-pay-section-body">
           {checkRows.map(c => {
+            // Bank details aren't applicable for Cheque / Cash payouts. The
+            // readiness check auto-passes them in those modes — but rendering
+            // that as a green "Verified" wrongly implied bank info was entered
+            // (QA bug). Show a neutral "Not required" row instead; it still
+            // counts toward stage completion since no account is needed.
+            const bankNA = c.id === 'bank' && s4.salary_payment_mode !== 'bank';
+            if (bankNA) {
+              const modeLabel = s4.salary_payment_mode === 'cheque' ? 'Cheque' : 'Cash';
+              return (
+                <div key={c.id} className="onb-pay-check">
+                  <span className="onb-pay-check-icon"><i className="ri-subtract-line" /></span>
+                  <h6 className="onb-pay-check-name">Bank details not required ({modeLabel})</h6>
+                  <span className="onb-doc-status-pill onb-doc-status-pill--optional">N/A</span>
+                </div>
+              );
+            }
             const ok = checks[c.id];
             return (
               <div key={c.id} className="onb-pay-check">
