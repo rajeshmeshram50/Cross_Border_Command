@@ -5500,21 +5500,31 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
     let cancelled = false;
     const hydrate = async () => {
       try {
-        const r = await api.get(`/employees/${emp.dbId}/previous-employments`);
+        // Fetch the company list AND a FRESH copy of the employee in parallel.
+        // emp.raw is captured once when the modal opens and is never refreshed,
+        // so reading has_prior_experience off it returned a stale value — a
+        // "No — fresher" pick (which saves no company rows) reset to unanswered
+        // on every revisit. Pull the flag from the live record instead.
+        const [r, empFresh] = await Promise.all([
+          api.get(`/employees/${emp.dbId}/previous-employments`),
+          api.get(`/employees/${emp.dbId}`).catch(() => null),
+        ]);
         if (cancelled) return;
         const list: any[] = Array.isArray(r.data) ? r.data : [];
-        /* Prefer the explicit `has_prior_experience` flag (set when the
-         * HR picks Yes/No and Save & Next flushes). Falls back to "list
-         * length > 0 means yes" so legacy rows saved before the column
-         * existed still hydrate correctly. */
-        const raw = (emp as any)?.raw ?? {};
-        const flag = raw.has_prior_experience;
+        const freshRaw = (empFresh?.data?.data ?? empFresh?.data ?? (emp as any)?.raw ?? {});
+        const flag = freshRaw.has_prior_experience;
         if (list.length === 0) {
           setPrevCompanies([]);
           setHasExperience(flag === true ? 'yes' : flag === false ? 'no' : null);
           return;
         }
-        setHasExperience(flag === false ? 'no' : 'yes');
+        // The server returned previous-employment rows, so the answer is
+        // unambiguously "Yes" — do NOT defer to the (possibly stale) prop flag.
+        // Earlier this read `flag === false ? 'no' : 'yes'`, so when emp.raw
+        // still carried an old has_prior_experience=false, the toggle flipped
+        // back to "No" on revisit and the rows (gated on hasExperience==='yes')
+        // were hidden — making saved companies + docs look lost.
+        setHasExperience('yes');
         setPrevCompanies(list.map(p => ({
           id: p.id,
           company_name:   p.company_name   ?? '',
