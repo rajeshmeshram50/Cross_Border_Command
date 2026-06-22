@@ -3910,6 +3910,10 @@ function ProductsStep(props: {
   // the Product Directory's target_price when auto-filling the rate on pick.
   const [latestQuotedMap, setLatestQuotedMap] = useState<Map<number, number>>(new Map());
   const [loadingLeadProducts, setLoadingLeadProducts] = useState(false);
+  // The opportunity that `allowedProductIds` was actually resolved for.
+  // Lets us tell "narrowed set not ready yet" (suppress the full master so it
+  // doesn't flash) apart from "resolved, no opp / error fallback → show all".
+  const [resolvedOppId, setResolvedOppId] = useState<unknown>(undefined);
 
   useEffect(() => {
     // No opportunity → show all master products.
@@ -3917,6 +3921,7 @@ function ProductsStep(props: {
       setAllowedProductIds(null);
       setLeadPriceMap(new Map());
       setLatestQuotedMap(new Map());
+      setResolvedOppId(form.oppId);
       return;
     }
     let cancelled = false;
@@ -3966,9 +3971,16 @@ function ProductsStep(props: {
         // blocked from quoting — just lose the per-opp narrowing.
         if (!cancelled) { setAllowedProductIds(null); setLeadPriceMap(new Map()); setLatestQuotedMap(new Map()); }
       })
-      .finally(() => { if (!cancelled) setLoadingLeadProducts(false); });
+      .finally(() => { if (!cancelled) { setLoadingLeadProducts(false); setResolvedOppId(form.oppId); } });
     return () => { cancelled = true; };
   }, [form.oppId]);
+
+  /* An opportunity is selected but its narrowed product set hasn't resolved
+   * yet (initial mount or the ~2s lead-products fetch is in flight). Until it
+   * does, suppress the dropdown options so the field shows "Loading products…"
+   * instead of flashing the entire Products master and then snapping to the
+   * opportunity's list. */
+  const leadProductsPending = !!form.oppId && resolvedOppId !== form.oppId;
 
   // Narrowed dropdown — keeps the source of truth + lookup mapping in
   // sync without re-fetching the master.
@@ -3980,6 +3992,10 @@ function ProductsStep(props: {
   //      existing line, the user must remove it first — then the
   //      product reappears in the dropdown.
   const visibleProductOptions = useMemo(() => {
+    // Narrowed set for the selected opportunity isn't ready — show nothing
+    // (field reads "Loading products…") rather than flashing the full master.
+    if (leadProductsPending) return [];
+
     let opts = productOptions;
 
     /* When an opportunity is selected, restrict to its Product Directory
@@ -4012,11 +4028,11 @@ function ProductsStep(props: {
     }
 
     return opts;
-  }, [allowedProductIds, productOptions, productsRaw, products]);
+  }, [leadProductsPending, allowedProductIds, productOptions, productsRaw, products]);
 
   /* No selectable products left to add (every mapped product is already in the
    * list, or none are mapped) → the whole "add product" draft row is hidden. */
-  const noMoreProducts = !loadingProducts && !loadingLeadProducts && visibleProductOptions.length === 0;
+  const noMoreProducts = !loadingProducts && !loadingLeadProducts && !leadProductsPending && visibleProductOptions.length === 0;
 
   // On product selection, auto-fill hsn + (qty/rate/tax) from masters.
   // Priority for rate: latest QUOTED price (Stage 4) > lead-product
@@ -4150,7 +4166,7 @@ function ProductsStep(props: {
                   key={`prod-${visibleProductOptions.length}-${form.oppId ?? 'all'}`}
                   value={draft.name}
                   placeholder={
-                    loadingProducts || loadingLeadProducts
+                    loadingProducts || loadingLeadProducts || leadProductsPending
                       ? 'Loading products…'
                       : (form.oppId && visibleProductOptions.length === 0
                           ? 'No products mapped to this opportunity'

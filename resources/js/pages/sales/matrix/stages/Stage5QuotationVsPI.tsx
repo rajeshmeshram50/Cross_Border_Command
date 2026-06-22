@@ -212,6 +212,14 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
 
   useEffect(() => {
     if (!leadId) return;
+    /* New lead / doc-type tab → the previous fetch's status no longer applies.
+     * Reset the loader and drop the stale per-row map so the Send-for-Signature
+     * button shows the "Checking…" loader (not a stale "Send for Sign") until the
+     * fresh status arrives — otherwise an already-signed PI flashes "Send for Sign"
+     * for the ~10s the Zoho-sync fetch takes, then snaps to "Signed".
+     * The 20s background poll keeps sigLoaded=true, so it never re-flashes. */
+    setSigLoaded(false);
+    setSigByRow({});
     void fetchSignatures(true);
     const t = setInterval(() => void fetchSignatures(true), 20000);
     return () => clearInterval(t);
@@ -1198,11 +1206,13 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
   const variance    = totalQuoted - totalTarget;
   const variancePct = totalTarget > 0 ? ((variance / totalTarget) * 100).toFixed(1) : '0.0';
   const over        = variance > 0;
-  // Three-way price colour: quoted ABOVE target → green, BELOW → red, EQUAL → neutral.
-  const cmpClass        = (q: number, t: number) => (q > t ? 'c-green' : q < t ? 'c-red' : 'c-neutral');
+  // Price colour convention across this popup: quoted ABOVE target is unfavorable
+  // → red; quoted BELOW target is favorable → green; EQUAL → neutral. Applies to
+  // the per-row Quoted amount, Total Quoted, the Variance figure, and the ▲/▼ badge.
+  const cmpClass        = (q: number, t: number) => (q > t ? 'c-red' : q < t ? 'c-green' : 'c-neutral');
   const totalQuotedClass = cmpClass(totalQuoted, totalTarget);
-  const varTextClass    = variance > 0 ? 'c-green' : variance < 0 ? 'c-red' : 'c-neutral';
-  const varBgClass      = variance > 0 ? 's5-ps-stat-grn' : variance < 0 ? 's5-ps-stat-red' : 's5-ps-stat-neu';
+  const varTextClass    = variance > 0 ? 'c-red' : variance < 0 ? 'c-green' : 'c-neutral';
+  const varBgClass      = variance > 0 ? 's5-ps-stat-red' : variance < 0 ? 's5-ps-stat-grn' : 's5-ps-stat-neu';
 
   const today = new Date();
   const asOf = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
@@ -1348,7 +1358,11 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
                   <tr key={r.id}>
                     <td className="ta-c"><span className="s5-ps-sr">{i + 1}</span></td>
                     <td><code className="s5-ps-code">{r.product_code ?? `P-${String(r.product_id ?? 0).padStart(3, '0')}`}</code></td>
-                    <td><div className="s5-ps-name" title={r.product_name ?? ''}>{r.product_name ?? '—'}</div></td>
+                    <td>
+                      <Tooltip label={r.product_name ?? ''}>
+                        <div className="s5-ps-name">{r.product_name ?? '—'}</div>
+                      </Tooltip>
+                    </td>
                     <td><div className="s5-ps-date">{date}</div>{time && <div className="s5-ps-time">{time}</div>}</td>
                     <td className="ta-r s5-ps-qty">{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
                     <td className="ta-r"><div className="s5-ps-target">{money(tp, r.currency)}</div></td>
@@ -1656,10 +1670,10 @@ const STAGE5_CSS = `
 .s5-ps-quoted.c-red { color: #dc2626; }
 .s5-ps-quoted.c-neutral { color: #475569; }
 .s5-ps-diff { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; border-radius: 4px; font-size: 8.5px; font-weight: 800; margin-top: 2px; }
-/* Quoted ABOVE target (▲ over) = positive variance → green;
-   quoted BELOW target (▼ under) = negative variance → red. */
-.s5-ps-diff.over { background: #dcfce7; color: #16a34a; border: 1px solid #86efac; }
-.s5-ps-diff.under { background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }
+/* Quoted ABOVE target (▲ over) is unfavorable → red;
+   quoted BELOW target (▼ under) is favorable → green. */
+.s5-ps-diff.over { background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }
+.s5-ps-diff.under { background: #dcfce7; color: #16a34a; border: 1px solid #86efac; }
 .s5-ps-acts { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
 .s5-ps-act { width: 30px; height: 30px; border-radius: 8px; border: 1.5px solid #bae6fd; background: #f0f9ff; color: #0891b2; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all .15s; }
 .s5-ps-act:hover:not(:disabled) { background: #0891b2; color: #fff; border-color: transparent; transform: translateY(-1px); }
