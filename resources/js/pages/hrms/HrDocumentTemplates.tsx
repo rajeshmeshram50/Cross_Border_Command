@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card, CardBody, Col, Row, Input } from 'reactstrap';
 import { useNavigate } from 'react-router-dom';
+import Swal from 'sweetalert2';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { ShimmerTableRows } from '../../components/ui/Shimmer';
@@ -98,7 +99,18 @@ export default function HrDocumentTemplates() {
   useEffect(() => { setPage(1); }, [category, roleType, triggerFilter, statusFilter, search]);
 
   const handleDelete = async (row: TemplateRow) => {
-    if (!confirm(`Delete template ${row.code}? This cannot be undone.`)) return;
+    // App-themed SweetAlert confirm (matches the other masters) instead of the
+    // browser-native confirm() — consistent UI/UX across the app.
+    const result = await Swal.fire({
+      title: 'Delete Template?',
+      html: `Remove template <strong>"${row.code}"</strong>? This cannot be undone.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Delete',
+      confirmButtonColor: '#f06548',
+      cancelButtonColor: '#878a99',
+    });
+    if (!result.isConfirmed) return;
     try {
       await api.delete(`/hr-document-templates/${row.id}`);
       toast.success('Deleted', `${row.code} removed.`);

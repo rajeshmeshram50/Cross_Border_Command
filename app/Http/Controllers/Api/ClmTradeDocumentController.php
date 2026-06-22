@@ -35,9 +35,22 @@ class ClmTradeDocumentController extends Controller
     public function namesIndex(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $rows = $user->client_id
-            ? ClmTradeDocName::where('client_id', $user->client_id)->orderBy('id')->get()
-            : collect();
+        if (!$user->client_id) {
+            return response()->json(['status' => true, 'data' => [], 'count' => 0]);
+        }
+        $rows = ClmTradeDocName::where('client_id', $user->client_id)->orderBy('id')->get();
+
+        /* Usage map: how many Library drafts reference each name (by name string,
+         * case-insensitive — the library links to it by name, not an FK). Drives
+         * the "can't edit an in-use type" guard on the client. */
+        $usage = ClmTradeDocLibrary::where('client_id', $user->client_id)
+            ->selectRaw('LOWER(TRIM(name)) as t, COUNT(*) as c')
+            ->groupBy(DB::raw('LOWER(TRIM(name))'))
+            ->pluck('c', 't');
+        $rows->each(function ($row) use ($usage) {
+            $row->in_use = (int) ($usage[mb_strtolower(trim((string) $row->name))] ?? 0);
+        });
+
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
     }
 
@@ -65,6 +78,21 @@ class ClmTradeDocumentController extends Controller
     {
         $user = $request->user(); if (!$user) abort(401);
         $row  = ClmTradeDocName::where('client_id', $user->client_id)->findOrFail($id);
+
+        // Block edit while library drafts reference this name — the library links
+        // to it by the name STRING, so renaming would orphan those drafts. Only
+        // unused (fresh) types can be renamed. Mirrors namesDestroy's guard.
+        $usedBy = ClmTradeDocLibrary::where('client_id', $user->client_id)
+            ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim((string) $row->name))])
+            ->count();
+        if ($usedBy > 0) {
+            $noun = $usedBy === 1 ? 'draft' : 'drafts';
+            return response()->json([
+                'status'  => false,
+                'message' => "This trade document type is used by {$usedBy} {$noun} in the Trade Document Library, so it can't be edited. Remove or reassign " . ($usedBy === 1 ? 'it' : 'them') . " first.",
+            ], 409);
+        }
+
         $data = $request->validate(['name' => 'required|string|max:255']);
         $row->update(['name' => trim($data['name']), 'updated_by' => $user->id]);
         return response()->json(['status' => true, 'data' => $row->fresh()]);
