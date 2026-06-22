@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react';
 import { ToasterRoot, type ToastItemType } from '../components/ui/Toaster';
 
 type ToastType = 'success' | 'error' | 'warning' | 'info';
@@ -31,13 +31,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setTimeout(() => dismiss(id), 4000);
   }, [dismiss]);
 
-  const ctx: ToastCtx = {
+  /* Memoize the context value so its identity is stable across renders.
+   * Without this, every toast shown re-creates `ctx` (and `success`/`error`/…),
+   * which re-runs any consumer effect that lists `toast` in its deps — e.g. a
+   * modal's data-fetch effect would re-fire on every toast, refreshing the
+   * background. `toast` is already stable (useCallback), so [toast] suffices. */
+  const ctx: ToastCtx = useMemo(() => ({
     toast,
     success: (t, m) => toast('success', t, m),
     error: (t, m) => toast('error', t, m),
     warning: (t, m) => toast('warning', t, m),
     info: (t, m) => toast('info', t, m),
-  };
+  }), [toast]);
 
   return (
     <Ctx.Provider value={ctx}>

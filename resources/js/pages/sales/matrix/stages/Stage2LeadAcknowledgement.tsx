@@ -193,10 +193,9 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
       return;
     }
     if (latestBucket !== 'qualified') {
-      const currentLabel = BUCKET_META[latestBucket].label;
       toast.warning(
-        `Cannot advance — latest status is "${currentLabel}"`,
-        'Only a Qualified Lead can move to Stage 3. Click the green "● Qualified Lead" pill above, pick a reason, and submit to qualify this lead.',
+        'Qualify the lead first',
+        'You cannot proceed further without qualifying the lead.',
       );
       return;
     }
