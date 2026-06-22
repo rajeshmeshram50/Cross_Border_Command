@@ -1,13 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Card, CardBody, Col, Row, Button } from 'reactstrap';
-import Tooltip from '../../components/ui/Tooltip';
+import { Card, CardBody, Col, Row } from 'reactstrap';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
 import AddVendorModal from './AddVendorModal';
 import SupplierEvidenceVaultModal, { type SupplierVaultTarget } from './SupplierEvidenceVaultModal';
-import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 import { ShimmerTable } from '../../components/ui/Shimmer';
 import {
   readVendorMasterBundle,
@@ -40,6 +37,9 @@ export type Vendor = {
   phone: string;
   email: string;
   status: 'Active' | 'Inactive';
+  /* Number of distinct opportunities (leads) this supplier's mapped
+     products have been pulled into. 0 → Fresh, ≥1 → Recurring. */
+  opportunityCount: number;
   segment?: string;
   risk?: string;
   website?: string;
@@ -47,6 +47,10 @@ export type Vendor = {
   country?: string;
   pincode?: string;
 };
+
+/* Fresh vs Recurring tab key. Fresh = newly onboarded supplier with no
+   opportunity yet; Recurring = at least one opportunity created against it. */
+type SupplierTab = 'fresh' | 'recurring';
 
 /* Shape of an item in the paginated GET /api/vendors response. Only
  * the fields the list page actually renders are typed — anything else
@@ -61,6 +65,10 @@ type ApiVendor = {
   vendor_type?: { id: number; name: string | null } | null;
   segment?: { id: number; title: string | null } | null;
   risk_level?: { id: number; name: string | null } | null;
+  /* Correlated-subquery count from VendorController::index — drives the
+     Fresh / Recurring split. May arrive as a number or a numeric string
+     depending on the driver, so it's coerced on map. */
+  opportunity_count?: number | string | null;
   primary_address?: {
     city: string | null;
     state_id: number | null;
@@ -70,34 +78,24 @@ type ApiVendor = {
   } | null;
 };
 
-/* Per-type accent colors. Anything not listed falls back to the indigo
- * accent below — previously the fallback was a muted slate that became
- * almost invisible on the dark theme's already-dark table row. */
-const TYPE_COLORS: Record<string, string> = {
-  Genuine:           '#16a34a',
-  Verified:          '#2563eb',
-  Pending:           '#f59e0b',
-  Blacklisted:       '#dc2626',
-  'Service Provider':'#8b5cf6',
-  Manufacturer:      '#0ea5e9',
-  Distributor:       '#06b6d4',
-  Wholesaler:        '#14b8a6',
-  Trader:            '#a855f7',
-  Importer:          '#ec4899',
-  Exporter:          '#f97316',
-};
-const TYPE_FALLBACK_COLOR = '#6366f1';
-
-const AVATAR_COLORS = ['#405189', '#0ab39c', '#f7b84b', '#f06548', '#299cdb', '#9b72cf'];
+/* Map a supplier type label to one of the Figma pill colour kinds:
+ *   logistics → cyan, services → amber, everything else → purple (material).
+ * Matching is loose so variants like "Logistic" / "Service Provider" land
+ * on the right colour. */
+function typeKind(type: string): 'material' | 'logistics' | 'services' {
+  const t = (type || '').toLowerCase();
+  if (t.includes('logist')) return 'logistics';
+  if (t.includes('service')) return 'services';
+  return 'material';
+}
 
 export default function Vendors() {
   const { user } = useAuth();
   const toast = useToast();
-  const navigate = useNavigate();
 
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [search, setSearch] = useState('');
-  const [statusTab, setStatusTab] = useState<'Active' | 'Inactive'>('Active');
+  const [tab, setTab] = useState<SupplierTab>('fresh');
   const [addOpen, setAddOpen] = useState(false);
   /* Edit vs Add — same modal, just seeded with an existing vendor id.
      Reset to null on close so the next "+ Add Vendor" click opens a
@@ -114,6 +112,11 @@ export default function Vendors() {
    * the API and renders KPI cards + per-bucket tables read-only. */
   const [vaultTarget, setVaultTarget] = useState<SupplierVaultTarget | null>(null);
   const [loading, setLoading] = useState(true);
+  /* "What We Are Doing Here" stepper — collapsible, open by default to
+     mirror the Figma. Purely presentational. */
+  const [brefOpen, setBrefOpen] = useState(true);
+  /* Client-side pagination for the purple Figma table (10 rows/page). */
+  const [page, setPage] = useState(1);
 
   /* Map a paginated API row to the local list-page shape. Anything the
      backend doesn't populate yet falls back to '—' so the table never
@@ -131,6 +134,7 @@ export default function Vendors() {
     phone:       row.primary_address?.contact_no ?? '—',
     email:       row.primary_address?.email ?? row.primary_email ?? '—',
     status:      row.status === 'active' ? 'Active' : 'Inactive',
+    opportunityCount: Number(row.opportunity_count ?? 0) || 0,
     segment:     row.segment?.title ?? undefined,
     risk:        row.risk_level?.name ?? undefined,
   });
@@ -151,6 +155,9 @@ export default function Vendors() {
  const allowed = user?.user_type === 'branch_user' || user?.user_type === 'employee';
 
   useEffect(() => { void refresh(); }, [refresh]);
+  /* Reset to page 1 whenever the tab or search changes so the user never
+     lands on an out-of-range page after the result set shrinks. */
+  useEffect(() => { setPage(1); }, [tab, search]);
 useEffect(() => {
   if (!allowed) return;
 
@@ -189,52 +196,16 @@ useEffect(() => {
   };
 }, [allowed]);
  
-  // Outline icon-pill action button — matches the style used in Clients.tsx
-  // so every list page in the shell shares the same affordance.
-  const ActionBtn = ({
-    title, icon, color, onClick, disabled,
-  }: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) => (
-    <Tooltip label={title}>
-      <button
-        type="button"
-        aria-label={title}
-        disabled={disabled}
-        className="btn p- d-inline-flex align-items-center justify-content-center"
-        style={{
-          width: 30, height: 30, borderRadius: 8,
-          background: 'var(--vz-secondary-bg)',
-          border: '1px solid var(--vz-border-color)',
-          color: 'var(--vz-secondary-color)',
-          transition: 'all .15s ease',
-        }}
-        onMouseEnter={e => {
-          const el = e.currentTarget as HTMLButtonElement;
-          el.style.background = `var(--vz-${color}-bg-subtle, ${color === 'primary' ? '#40518918' : color === 'danger' ? '#f0654818' : color === 'success' ? '#0ab39c18' : color === 'info' ? '#299cdb18' : color === 'warning' ? '#f7b84b18' : 'var(--vz-secondary-bg)'})`;
-          el.style.borderColor = `var(--vz-${color})`;
-          el.style.color = `var(--vz-${color})`;
-        }}
-        onMouseLeave={e => {
-          const el = e.currentTarget as HTMLButtonElement;
-          el.style.background = 'var(--vz-secondary-bg)';
-          el.style.borderColor = 'var(--vz-border-color)';
-          el.style.color = 'var(--vz-secondary-color)';
-        }}
-        onClick={onClick}
-      >
-        <i className={`${icon} fs-14`} />
-      </button>
-    </Tooltip>
-  );
-
   const stats = useMemo(() => ({
-    active:   vendors.filter(v => v.status === 'Active').length,
-    inactive: vendors.filter(v => v.status === 'Inactive').length,
+    fresh:     vendors.filter(v => v.opportunityCount === 0).length,
+    recurring: vendors.filter(v => v.opportunityCount > 0).length,
   }), [vendors]);
 
   const filtered = useMemo(() => {
     const lo = search.trim().toLowerCase();
+    const inTab = (v: Vendor) => tab === 'fresh' ? v.opportunityCount === 0 : v.opportunityCount > 0;
     return vendors
-      .filter(v => v.status === statusTab)
+      .filter(inTab)
       .filter(v => !lo
         || v.code.toLowerCase().includes(lo)
         || v.companyName.toLowerCase().includes(lo)
@@ -243,181 +214,15 @@ useEffect(() => {
         || v.phone.toLowerCase().includes(lo)
         || v.city.toLowerCase().includes(lo)
         || v.state.toLowerCase().includes(lo));
-  }, [vendors, search, statusTab]);
+  }, [vendors, search, tab]);
 
-  /* TanStack column definitions — mirrors the Clients master list so
-     the two pages read with the same chrome (Sr No, avatar+name,
-     type pill, contact / phone / email links, status pill, action
-     buttons). Each column carries its own renderer; TableContainer
-     handles paging + sorting. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const columns: any[] = useMemo(() => [
-    {
-      header: 'Sr No',
-      accessorKey: 'index',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      cell: (info: any) => <span className="text-muted fs-13">{info.row.index + 1}</span>,
-    },
-    {
-      header: 'Supplier Code',
-      accessorKey: 'code',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      cell: (info: any) => (
-        <span className="badge bg-light text-primary border" style={{ fontFamily: 'monospace', padding: '5px 10px', fontSize: 12 }}>
-          {info.row.original.code}
-        </span>
-      ),
-    },
-    {
-      header: 'Company Name',
-      accessorKey: 'companyName',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      cell: (info: any) => {
-        const v: Vendor = info.row.original;
-        const initials = (v.companyName.split(/\s+/).slice(0, 2).map(s => s.charAt(0)).join('') || 'V').toUpperCase();
-        const color = AVATAR_COLORS[info.row.index % AVATAR_COLORS.length];
-        return (
-          <div className="d-flex align-items-center gap-2" style={{ minWidth: 0, maxWidth: 260 }}>
-            <div
-              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-              style={{
-                width: 34, height: 34, fontSize: 12,
-                background: `linear-gradient(135deg, ${color}, ${color}cc)`,
-                boxShadow: `0 2px 6px ${color}40`,
-              }}
-            >
-              {initials}
-            </div>
-            <Tooltip label={v.companyName}>
-              <div className="min-w-0">
-                <div className="fw-semibold fs-13 text-truncate" style={{ maxWidth: 200 }}>{v.companyName}</div>
-                <div className="text-muted text-truncate" style={{ fontSize: 11, maxWidth: 200 }}>{v.country || 'India'}</div>
-              </div>
-            </Tooltip>
-          </div>
-        );
-      },
-    },
-    {
-      header: 'Type',
-      accessorKey: 'type',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      cell: (info: any) => {
-        const v: Vendor = info.row.original;
-        const typeColor = TYPE_COLORS[v.type] || TYPE_FALLBACK_COLOR;
-        /* Bumped tint/border alpha from 15/40 → 28/66 so the chip stays
-         * legible against both the light and dark table rows; the
-         * previous values washed out completely on the dark theme. */
-        return (
-          <span
-            className="badge rounded-pill fw-semibold px-3 py-2 fs-13"
-            style={{ background: `${typeColor}28`, color: typeColor, border: `1px solid ${typeColor}66` }}
-          >
-            {v.type}
-          </span>
-        );
-      },
-    },
-    {
-      header: 'State',
-      accessorKey: 'state',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      cell: (info: any) => <span className="fs-13">{info.row.original.state}</span>,
-    },
-    {
-      header: 'City',
-      accessorKey: 'city',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      cell: (info: any) => (
-        <span className="d-inline-flex align-items-center gap-1 fs-13">
-          <i className="ri-map-pin-line text-muted" />
-          {info.row.original.city}
-        </span>
-      ),
-    },
-    {
-      header: 'Contact',
-      accessorKey: 'contactName',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      cell: (info: any) => (
-        <div className="min-w-0">
-          <div className="fw-semibold fs-13">{info.row.original.contactName}</div>
-          <div className="text-muted" style={{ fontSize: 11 }}>{info.row.original.designation}</div>
-        </div>
-      ),
-    },
-    {
-      header: 'Phone',
-      accessorKey: 'phone',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      cell: (info: any) => (
-        <a href={`tel:${info.row.original.phone}`} className="text-body text-decoration-none d-inline-flex align-items-center gap-1">
-          <i className="ri-phone-line text-muted fs-13" />
-          <span className="fs-13 font-monospace">{info.row.original.phone}</span>
-        </a>
-      ),
-    },
-    {
-      header: 'Email',
-      accessorKey: 'email',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      cell: (info: any) => (
-        <a href={`mailto:${info.row.original.email}`} className="text-decoration-none d-inline-flex align-items-center gap-1" style={{ color: '#405189' }}>
-          <i className="ri-mail-line text-muted fs-13" />
-          <span className="fs-13">{info.row.original.email}</span>
-        </a>
-      ),
-    },
-    {
-      header: 'Status',
-      accessorKey: 'status',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      cell: (info: any) => {
-        const isActive = info.row.original.status === 'Active';
-        const color = isActive ? 'success' : 'danger';
-        return (
-          <span className={`badge rounded-pill bg-${color}-subtle text-${color} fw-semibold px-3 py-2 fs-13`}>
-            {info.row.original.status}
-          </span>
-        );
-      },
-    },
-    {
-      /* w-100 forces the header label to span the full cell width so it
-         truly centres over the centred action buttons. Without it, when the
-         th establishes a flex/sort layout the text-center div shrinks to its
-         content width and pins left, leaving the header misaligned with the
-         buttons below (QA report). */
-      header: () => <div className="text-center w-100">Actions</div>,
-      id: 'actions',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      cell: (info: any) => {
-        const v: Vendor = info.row.original;
-        return (
-          <div className="d-flex gap-1 justify-content-center">
-            <ActionBtn title="Edit"         icon="ri-pencil-line"         color="info"      onClick={() => { setEditingId(v.id); setEditingStep(null); setAddOpen(true); }} />
-            <ActionBtn title="Map Products" icon="ri-links-line"          color="success"   onClick={() => navigate(`/products?vendor_id=${v.id}&vendor_code=${encodeURIComponent(v.code || '')}&vendor_name=${encodeURIComponent(v.companyName || '')}`)} />
-            <ActionBtn
-              title="Supplier Evidence Vault"
-              icon="ri-file-shield-line"
-              color="secondary"
-              onClick={() => setVaultTarget({
-                id: v.code,
-                db_id: v.id,
-                company: v.companyName,
-                risk: v.risk,
-                segment: v.segment,
-                country: v.country,
-                contact: v.contactName,
-                contactCity: v.city,
-              })}
-            />
-          </div>
-        );
-      },
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], []);
+  /* Client-side pagination math for the purple Figma table. */
+  const PAGE_SIZE = 10;
+  const total = filtered.length;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const curPage = Math.min(page, pages);
+  const start = (curPage - 1) * PAGE_SIZE;
+  const pageRows = filtered.slice(start, start + PAGE_SIZE);
 
   /* The wizard now persists each step to /api/vendors/* directly, so
      this handler only re-fetches and closes the modal. The payload is
@@ -448,7 +253,128 @@ useEffect(() => {
 
   return (
     <>
+      {/* ── Figma "Supplier Management" purple theme — scoped under .sup-fig ──
+         Ported verbatim from the P2P_Sourcing prototype: header strip
+         (cstrip), the collapsible 4-step "What We Are Doing Here" box
+         (bref), and (next step) the purple supplier table (sl-*). */}
       <style>{`
+        .sup-fig{font-family:'DM Sans',system-ui,sans-serif;display:flex;flex-direction:column;gap:14px;}
+
+        /* HEADER STRIP */
+        .sup-fig .cstrip{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;min-height:58px;padding:0 20px;border:1px solid #c4b5fd;border-radius:16px;background:linear-gradient(110deg,#faf5ff 0%,#f3e8ff 25%,#ede9fe 55%,#ddd6fe 85%,#c4b5fd 100%);box-shadow:0 2px 0 rgba(255,255,255,.85) inset,0 8px 28px rgba(139,92,246,.2),0 2px 8px rgba(0,0,0,.06);}
+        .sup-fig .cstrip__accent{position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(180deg,#a78bfa,#7c3aed,#5b21b6);border-radius:16px 0 0 16px;}
+        .sup-fig .cstrip__glow{position:absolute;inset:0;pointer-events:none;background-image:radial-gradient(ellipse at 10% 50%,rgba(196,181,253,.45) 0%,transparent 50%),radial-gradient(ellipse at 90% 50%,rgba(167,139,250,.25) 0%,transparent 55%);}
+        .sup-fig .cstrip__sheen{position:absolute;top:0;left:0;right:0;height:50%;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,.5),transparent);border-radius:16px 16px 0 0;}
+        .sup-fig .cstrip__left{display:flex;align-items:center;gap:13px;z-index:1;padding-left:10px;}
+        .sup-fig .cstrip__avatar-wrap{position:relative;flex-shrink:0;}
+        .sup-fig .cstrip__avatar{width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#8b5cf6 0%,#7c3aed 55%,#5b21b6 100%);box-shadow:0 0 0 3px rgba(139,92,246,.25),0 4px 14px rgba(124,58,237,.45);}
+        .sup-fig .cstrip__online-dot{position:absolute;bottom:-1px;right:-1px;width:10px;height:10px;border-radius:50%;background:linear-gradient(135deg,#4ade80,#22c55e);border:2px solid #f3e8ff;box-shadow:0 2px 4px rgba(34,197,94,.4);}
+        .sup-fig .cstrip__title{font-size:14.5px;font-weight:800;color:#3b0764;letter-spacing:-.4px;line-height:1.2;}
+        .sup-fig .cstrip__sub{font-size:10px;font-weight:500;color:#6d28d9;opacity:.85;margin-top:2px;line-height:1.3;}
+        .sup-fig .cstrip__right{display:flex;align-items:center;gap:7px;z-index:1;}
+        .sup-fig .cstrip__action-btn{position:relative;overflow:hidden;display:flex;align-items:center;gap:7px;padding:9px 18px;border:none;border-radius:12px;font-family:inherit;font-size:11.5px;font-weight:700;color:#fff;letter-spacing:.02em;white-space:nowrap;cursor:pointer;flex-shrink:0;background:linear-gradient(135deg,#8b5cf6 0%,#7c3aed 50%,#5b21b6 100%);box-shadow:0 4px 16px rgba(124,58,237,.5),0 1px 3px rgba(91,33,182,.3),0 1px 0 rgba(255,255,255,.2) inset;text-shadow:0 1px 2px rgba(0,0,0,.2);transition:background .2s,transform .2s,box-shadow .2s;}
+        .sup-fig .cstrip__action-btn:hover{background:linear-gradient(135deg,#7c3aed 0%,#5b21b6 50%,#4c1d95 100%);transform:translateY(-1.5px);box-shadow:0 8px 24px rgba(124,58,237,.6),0 2px 6px rgba(91,33,182,.35),0 1px 0 rgba(255,255,255,.2) inset;}
+        .sup-fig .cstrip__action-btn-sheen{position:absolute;top:0;left:0;right:0;height:50%;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,.18),transparent);border-radius:12px 12px 0 0;}
+
+        /* WHAT WE ARE DOING HERE — collapsible stepper */
+        .sup-fig .bref-box{background:#fff;border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;position:relative;box-shadow:0 2px 0 rgba(255,255,255,.9) inset,0 8px 28px rgba(139,92,246,.2),0 2px 8px rgba(0,0,0,.06);}
+        .sup-fig .bref-box::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(180deg,#a78bfa,#7c3aed,#5b21b6);border-radius:16px 0 0 16px;z-index:10;}
+        .sup-fig .bref-box__header{position:relative;overflow:hidden;display:flex;align-items:center;gap:12px;padding:7px 12px;background:linear-gradient(110deg,#faf5ff 0%,#f3e8ff 25%,#ede9fe 55%,#ddd6fe 85%,#c4b5fd 100%);border-bottom:1px solid #c4b5fd;cursor:pointer;user-select:none;min-height:48px;}
+        .sup-fig .bref-box.is-collapsed .bref-box__header{border-bottom-color:transparent;}
+        .sup-fig .bref-box__header::before{content:'';position:absolute;inset:0;pointer-events:none;background-image:radial-gradient(ellipse at 10% 50%,rgba(196,181,253,.45) 0%,transparent 50%),radial-gradient(ellipse at 90% 50%,rgba(167,139,250,.25) 0%,transparent 55%);}
+        .sup-fig .bref-box__header::after{content:'';position:absolute;top:0;left:0;right:0;height:50%;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,.5),transparent);}
+        .sup-fig .bref-box__header-ico{width:36px;height:36px;border-radius:11px;flex-shrink:0;background:linear-gradient(135deg,#8b5cf6 0%,#7c3aed 55%,#5b21b6 100%);display:flex;align-items:center;justify-content:center;color:#fff;position:relative;z-index:1;box-shadow:0 0 0 3px rgba(139,92,246,.25),0 4px 14px rgba(124,58,237,.45);}
+        .sup-fig .bref-box__header-mid{flex:1;display:flex;flex-direction:column;gap:3px;min-width:0;position:relative;z-index:1;}
+        .sup-fig .bref-box__header-row{display:flex;align-items:center;gap:9px;}
+        .sup-fig .bref-box__header-label{font-size:9.5px;font-weight:800;letter-spacing:-.2px;color:#7c3aed;line-height:1;white-space:nowrap;flex-shrink:0;}
+        .sup-fig .bref-box__header-sep{width:1px;height:13px;background:#C4B5FD;flex-shrink:0;}
+        .sup-fig .bref-box__header-title{font-size:11px;font-weight:800;color:#3b0764;letter-spacing:-.2px;line-height:1;white-space:nowrap;}
+        .sup-fig .bref-box__header-sub{font-size:9.5px;font-weight:500;color:#6d28d9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+        .sup-fig .bref-box__header-right{flex-shrink:0;display:flex;align-items:center;gap:6px;position:relative;z-index:1;}
+        .sup-fig .bref-box__toggle{width:26px;height:26px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.75);border:1.5px solid rgba(124,58,237,.22);color:#7c3aed;transition:transform .24s cubic-bezier(.22,1,.36,1);box-shadow:0 1px 4px rgba(124,58,237,.10),inset 0 1px 0 rgba(255,255,255,.9);}
+        .sup-fig .bref-box.is-collapsed .bref-box__toggle{transform:rotate(-90deg);}
+        .sup-fig .bref-box__body{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));background:linear-gradient(180deg,#F7F4FF 0%,#F8FAFC 100%);gap:0;overflow:hidden;max-height:320px;transition:max-height .3s cubic-bezier(.22,1,.36,1),opacity .22s;opacity:1;}
+        .sup-fig .bref-box.is-collapsed .bref-box__body{max-height:0;opacity:0;}
+        .sup-fig .bref-item{position:relative;padding:10px 11px 11px;background:#fff;margin:7px 5px;border-radius:11px;border:1.5px solid #ECE7F8;transition:box-shadow .18s,border-color .18s,transform .18s;cursor:default;display:flex;flex-direction:column;gap:0;overflow:hidden;box-shadow:0 1px 4px rgba(15,23,42,.04);}
+        .sup-fig .bref-item:first-child{margin-left:7px;}
+        .sup-fig .bref-item:last-child{margin-right:7px;}
+        .sup-fig .bref-item:hover{border-color:#C4B5FD;box-shadow:0 6px 18px rgba(124,58,237,.14),0 1px 4px rgba(15,23,42,.04);transform:translateY(-2px);}
+        .sup-fig .bref-item::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:11px 11px 0 0;background:linear-gradient(90deg,#8b5cf6,#7c3aed);}
+        .sup-fig .bref-item__top{display:flex;align-items:center;gap:6px;margin-bottom:0;}
+        .sup-fig .bref-item__ico{width:16px;height:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#7c3aed;}
+        .sup-fig .bref-item__num{font-size:8.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#94A3B8;line-height:1;}
+        .sup-fig .bref-item__title{font-size:11px;font-weight:800;color:#0F172A;letter-spacing:-.2px;line-height:1.25;margin-bottom:3px;margin-top:5px;}
+        .sup-fig .bref-item__desc{font-size:9.5px;font-weight:500;color:#94A3B8;line-height:1.4;}
+        @media(max-width:1100px){.sup-fig .bref-box__body{grid-template-columns:repeat(4,1fr)}}
+        @media(max-width:700px){.sup-fig .bref-box__body{grid-template-columns:repeat(2,1fr)}}
+
+        /* TABLE WRAP — purple-bordered card holding toolbar + table + footer */
+        .sup-fig .sl-wrap{display:flex;flex-direction:column;border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-shadow:0 2px 0 rgba(255,255,255,.85) inset,0 8px 28px rgba(139,92,246,.16),0 2px 8px rgba(0,0,0,.05);}
+
+        /* TOOLBAR — purple tabs + search (Figma sl-toolbar) */
+        .sup-fig .sl-toolbar{display:flex;align-items:center;gap:14px;padding:12px 14px;border-bottom:1px solid #e2d4fa;background:linear-gradient(110deg,#faf5ff 0%,#f3e8ff 35%,#ede9fe 70%,#ddd6fe 100%);}
+        .sup-fig .sl-tabs{display:flex;gap:8px;flex-shrink:0;background:rgba(255,255,255,.55);border:1px solid rgba(139,92,246,.22);border-radius:11px;padding:4px;}
+        .sup-fig .sl-tab{display:inline-flex;align-items:center;gap:7px;font-family:inherit;font-size:12.5px;font-weight:700;color:#6d28d9;background:linear-gradient(135deg,#f5f1fe,#ede9fe);border:1px solid rgba(139,92,246,.2);border-radius:8px;padding:8px 14px;cursor:pointer;white-space:nowrap;transition:background .16s,color .16s,box-shadow .16s,border-color .16s;}
+        .sup-fig .sl-tab:hover{color:#5b21b6;background:linear-gradient(135deg,#ede9fe,#ddd6fe);border-color:rgba(139,92,246,.35);}
+        .sup-fig .sl-tab.is-active{position:relative;overflow:hidden;color:#fff;background:linear-gradient(135deg,#a78bfa 0%,#8b5cf6 35%,#7c3aed 68%,#5b21b6 100%);border:none;box-shadow:0 5px 14px rgba(124,58,237,.5),0 1px 0 rgba(255,255,255,.4) inset,0 -2px 6px rgba(91,33,182,.3) inset;text-shadow:0 1px 2px rgba(76,29,149,.4);}
+        .sup-fig .sl-tab.is-active::before{content:'';position:absolute;top:0;left:0;right:0;height:50%;background:linear-gradient(180deg,rgba(255,255,255,.26),transparent);pointer-events:none;}
+        .sup-fig .sl-tab svg,.sup-fig .sl-tab span{position:relative;z-index:1;}
+        .sup-fig .sl-tab-count{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:18px;padding:0 7px;border-radius:99px;font-size:10px;font-weight:800;color:#7c3aed;background:#fff;border:1px solid #ddd0f7;}
+        .sup-fig .sl-tab.is-active .sl-tab-count{color:#7c3aed;background:#fff;border-color:transparent;}
+        .sup-fig .sl-search{flex:1;display:flex;align-items:center;gap:9px;min-width:0;background:rgba(255,255,255,.8);border:1.5px solid rgba(139,92,246,.28);border-radius:11px;padding:9px 12px 9px 14px;box-shadow:0 1px 0 rgba(255,255,255,.95) inset;transition:border-color .16s,box-shadow .16s;}
+        .sup-fig .sl-search:focus-within{border-color:#a78bfa;box-shadow:0 0 0 3px rgba(167,139,250,.18);}
+        .sup-fig .sl-search-ico{flex-shrink:0;}
+        .sup-fig .sl-search input{flex:1;min-width:0;border:none;outline:none;background:transparent;font-family:inherit;font-size:13px;font-weight:500;color:#3b0764;}
+        .sup-fig .sl-search input::placeholder{color:#a78bfa;font-weight:500;}
+        .sup-fig .sl-search-clear{flex-shrink:0;width:24px;height:24px;display:flex;align-items:center;justify-content:center;border:none;border-radius:6px;background:rgba(139,92,246,.12);color:#7c3aed;cursor:pointer;transition:background .14s,color .14s;}
+        .sup-fig .sl-search-clear:hover{background:#7c3aed;color:#fff;}
+
+        /* TABLE — purple gradient header + purple chrome (Figma sl-table) */
+        .sup-fig .sl-table-scroll{overflow-x:auto;}
+        .sup-fig .sl-table{width:100%;border-collapse:collapse;font-size:11.5px;white-space:nowrap;}
+        .sup-fig .sl-table thead tr{background:linear-gradient(110deg,#8b5cf6 0%,#7c3aed 45%,#6d28d9 75%,#5b21b6 100%);}
+        .sup-fig .sl-table thead th{color:#fff;font-size:9.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;text-align:left;padding:9px 13px;}
+        .sup-fig .sl-table thead th:last-child{text-align:center;}
+        .sup-fig .sl-table tbody td{padding:7px 13px;border-bottom:1px solid #F1ECFB;color:#334155;vertical-align:middle;}
+        .sup-fig .sl-table tbody tr{transition:background .14s;}
+        .sup-fig .sl-table tbody tr:hover{background:#FAF7FF;}
+        .sup-fig .sl-table tbody tr:last-child td{border-bottom:none;}
+        .sup-fig .sl-sr{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:7px;font-size:10.5px;font-weight:800;color:#fff;background:linear-gradient(135deg,#8b5cf6,#7c3aed);box-shadow:0 2px 5px rgba(124,58,237,.3);}
+        .sup-fig .sl-code{display:inline-flex;align-items:center;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:10.5px;font-weight:700;color:#5b21b6;background:#F5F1FE;border:1px solid #E2D4FA;border-radius:6px;padding:2px 8px;}
+        .sup-fig .sl-name{font-weight:800;font-size:12px;color:#1E293B;letter-spacing:-.2px;}
+        .sup-fig .sl-state,.sup-fig .sl-country,.sup-fig .sl-contact{font-weight:600;color:#475569;}
+        .sup-fig .sl-phone{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:10.5px;color:#64748B;}
+        .sup-fig .sl-email{font-weight:600;color:#7c3aed;text-decoration:none;}
+        .sup-fig .sl-email:hover{text-decoration:underline;}
+        .sup-fig .sl-pill{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;border:1px solid;}
+        .sup-fig .sl-pill-dot{width:4px;height:4px;border-radius:50%;background:currentColor;}
+        .sup-fig .sl-pill--material{color:#7c3aed;background:#F5F1FE;border-color:#DDD6FE;}
+        .sup-fig .sl-pill--logistics{color:#0891b2;background:#ECFEFF;border-color:#A5F3FC;}
+        .sup-fig .sl-pill--services{color:#D97706;background:#FFFBEB;border-color:#FDE68A;}
+        .sup-fig .sl-wa{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;border:1px solid;}
+        .sup-fig .sl-wa-dot{width:4px;height:4px;border-radius:50%;background:currentColor;}
+        .sup-fig .sl-wa--yes{color:#16a34a;background:#F0FDF4;border-color:#BBF7D0;}
+        .sup-fig .sl-wa--no{color:#dc2626;background:#FEF2F2;border-color:#FECACA;}
+        .sup-fig .sl-actions{display:flex;align-items:center;justify-content:center;gap:6px;}
+        .sup-fig .sl-act-btn{width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:8px;border:1px solid;cursor:pointer;transition:transform .14s,box-shadow .14s,background .14s;}
+        .sup-fig .sl-act-btn svg{width:13px;height:13px;}
+        .sup-fig .sl-act-btn:hover{transform:translateY(-1px);}
+        .sup-fig .sl-act-btn--edit{color:#7c3aed;background:linear-gradient(135deg,#faf8ff,#f1ebfe);border-color:#DDD6FE;box-shadow:0 1px 3px rgba(124,58,237,.12),0 1px 0 rgba(255,255,255,.7) inset;}
+        .sup-fig .sl-act-btn--edit:hover{background:linear-gradient(135deg,#8b5cf6,#7c3aed);color:#fff;border-color:transparent;box-shadow:0 5px 13px rgba(124,58,237,.45),0 1px 0 rgba(255,255,255,.3) inset;}
+        .sup-fig .sl-evault-btn{position:relative;overflow:hidden;width:auto;height:34px;gap:8px;padding:0 17px;font-family:inherit;font-size:12px;font-weight:700;letter-spacing:.012em;color:#fff;border:none;border-radius:9px;background:linear-gradient(135deg,#a78bfa 0%,#8b5cf6 38%,#7c3aed 70%,#6d28d9 100%);box-shadow:0 4px 12px rgba(124,58,237,.4),0 1px 0 rgba(255,255,255,.4) inset,0 -2px 6px rgba(91,33,182,.3) inset;text-shadow:0 1px 2px rgba(76,29,149,.4);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}
+        .sup-fig .sl-evault-btn::before{content:'';position:absolute;top:0;left:0;right:0;height:50%;background:linear-gradient(180deg,rgba(255,255,255,.28),transparent);pointer-events:none;}
+        .sup-fig .sl-evault-btn svg{width:14px;height:14px;position:relative;z-index:1;}
+        .sup-fig .sl-evault-btn span{position:relative;z-index:1;}
+        .sup-fig .sl-evault-btn:hover{background:linear-gradient(135deg,#8b5cf6 0%,#7c3aed 45%,#6d28d9 100%);box-shadow:0 7px 18px rgba(124,58,237,.52),0 1px 0 rgba(255,255,255,.45) inset,0 -2px 6px rgba(76,29,149,.35) inset;transform:translateY(-1px);}
+        .sup-fig .sl-empty{text-align:center;color:#94A3B8;font-weight:600;padding:24px 16px;}
+        .sup-fig .sl-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-top:1px solid #F1ECFB;background:#FBF9FF;}
+        .sup-fig .sl-count{font-size:11.5px;font-weight:700;color:#6d28d9;background:#F5F1FE;border:1px solid #E2D4FA;border-radius:8px;padding:5px 12px;}
+        .sup-fig .sl-pager{display:flex;align-items:center;gap:5px;}
+        .sup-fig .sl-page-num,.sup-fig .sl-page-arrow{min-width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;padding:0 8px;font-family:inherit;font-size:11.5px;font-weight:700;color:#6d28d9;background:#fff;border:1px solid #E2D4FA;border-radius:8px;cursor:pointer;transition:background .14s,color .14s,border-color .14s,box-shadow .14s;}
+        .sup-fig .sl-page-num:hover,.sup-fig .sl-page-arrow:hover:not(:disabled){background:#F5F1FE;border-color:#C4B5FD;}
+        .sup-fig .sl-page-num.is-active{color:#fff;background:linear-gradient(135deg,#8b5cf6,#7c3aed,#5b21b6);border-color:transparent;box-shadow:0 3px 9px rgba(124,58,237,.4);}
+        .sup-fig .sl-page-arrow:disabled{opacity:.4;cursor:not-allowed;}
+
         .vendors-surface { background: #fff; }
         [data-bs-theme="dark"] .vendors-surface { background: #1c2531; }
 
@@ -604,97 +530,252 @@ useEffect(() => {
 
       <Row>
         <Col xs={12}>
-          <div
-            className="vendors-surface"
-            style={{
-              borderRadius: 16,
-              border: '1px solid var(--vz-border-color)',
-              boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
-              padding: '20px',
-            }}
-          >
-            {/* Header row */}
-            {/* Header strip — same shape as the Clients / Branches headers. */}
-            <div className="frm-cstrip mb-3">
-              <span className="frm-cstrip-accent" />
-              <div className="frm-cstrip-left">
-                <div className="frm-cstrip-icon"><i className="ri-store-2-line" /></div>
-                <div className="min-w-0">
-                  <div className="frm-cstrip-title">Suppliers</div>
-                  <div className="frm-cstrip-sub">
-                    Supplier directory — companies you buy product from, with compliance and contact details
-                  </div>
+         <div className="sup-fig">
+
+          {/* HEADER STRIP — purple gradient hero (Figma "Supplier Management") */}
+          <div className="cstrip">
+            <span className="cstrip__accent" />
+            <span className="cstrip__glow" />
+            <span className="cstrip__sheen" />
+            <div className="cstrip__left">
+              <div className="cstrip__avatar-wrap">
+                <div className="cstrip__avatar">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>
                 </div>
+                <span className="cstrip__online-dot" />
               </div>
-              <div className="d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
-                <Button
-                  onClick={() => setAddOpen(true)}
-                  className="btn-label waves-effect waves-light rounded-pill v-add-btn"
-                >
-                  <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
-                  Add Supplier
-                </Button>
+              <div>
+                <div className="cstrip__title">Supplier Management</div>
+                <div className="cstrip__sub">Manage supplier onboarding, compliance verification, and product mapping for procurement readiness.</div>
               </div>
             </div>
+            <div className="cstrip__right">
+              <button type="button" className="cstrip__action-btn" onClick={() => setAddOpen(true)}>
+                <span className="cstrip__action-btn-sheen" />
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                Add Supplier
+              </button>
+            </div>
+          </div>
 
-            {/* Status pills + search row — the Active/Inactive toggle and the
-                search box sit in the same horizontal row, search immediately
-                to the right of the toggle (gap-3 for comfortable spacing). */}
-            <div className="d-flex align-items-center flex-wrap gap-3 mb-3">
-              <div className="v-status-tabs">
-                <button className={`v-status-tab ${statusTab === 'Active' ? 'on' : ''}`} onClick={() => setStatusTab('Active')}>
-                  <span className="v-status-dot is-active" /> Active
-                  <span className="v-status-count">{stats.active}</span>
+          {/* WHAT WE ARE DOING HERE — collapsible 4-step guide */}
+          <div className={`bref-box ${brefOpen ? '' : 'is-collapsed'}`}>
+            <div className="bref-box__header" onClick={() => setBrefOpen(o => !o)}>
+              <div className="bref-box__header-ico">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>
+              </div>
+              <div className="bref-box__header-mid">
+                <div className="bref-box__header-row">
+                  <div className="bref-box__header-label">Supplier Management</div>
+                  <div className="bref-box__header-sep" />
+                  <div className="bref-box__header-title">What We Are Doing Here</div>
+                </div>
+                <div className="bref-box__header-sub">Creating suppliers, verifying compliance, and mapping products for procurement.</div>
+              </div>
+              <div className="bref-box__header-right">
+                <div className="bref-box__toggle">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+                </div>
+              </div>
+            </div>
+            <div className="bref-box__body">
+              <div className="bref-item">
+                <div className="bref-item__top">
+                  <div className="bref-item__ico"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg></div>
+                  <span className="bref-item__num">Step 01</span>
+                </div>
+                <div className="bref-item__title">Create Supplier</div>
+                <div className="bref-item__desc">Create supplier profiles and business details.</div>
+              </div>
+              <div className="bref-item">
+                <div className="bref-item__top">
+                  <div className="bref-item__ico"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg></div>
+                  <span className="bref-item__num">Step 02</span>
+                </div>
+                <div className="bref-item__title">KYC / Due Diligence</div>
+                <div className="bref-item__desc">Verify supplier compliance and authenticity.</div>
+              </div>
+              <div className="bref-item">
+                <div className="bref-item__top">
+                  <div className="bref-item__ico"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg></div>
+                  <span className="bref-item__num">Step 03</span>
+                </div>
+                <div className="bref-item__title">Trade &amp; Compliance Documentation</div>
+                <div className="bref-item__desc">Manage licenses, certifications, and procurement documents.</div>
+              </div>
+              <div className="bref-item">
+                <div className="bref-item__top">
+                  <div className="bref-item__ico"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></div>
+                  <span className="bref-item__num">Step 04</span>
+                </div>
+                <div className="bref-item__title">Product Mapping</div>
+                <div className="bref-item__desc">Link suppliers with products, pricing, and procurement terms.</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="sl-wrap">
+            {/* Toolbar — purple Fresh / Recurring tabs + search (Figma sl-toolbar).
+                Fresh = supplier with no opportunity yet; Recurring = at least one
+                opportunity (lead) created against its mapped products. The split
+                is computed server-side (VendorController::index → opportunity_count). */}
+            <div className="sl-toolbar">
+              <div className="sl-tabs">
+                <button
+                  type="button"
+                  className={`sl-tab ${tab === 'fresh' ? 'is-active' : ''}`}
+                  onClick={() => setTab('fresh')}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>
+                  <span>Fresh Suppliers</span>
+                  <span className="sl-tab-count">{stats.fresh}</span>
                 </button>
-                <button className={`v-status-tab ${statusTab === 'Inactive' ? 'on' : ''}`} onClick={() => setStatusTab('Inactive')}>
-                  <span className="v-status-dot is-inactive" /> Inactive
-                  <span className="v-status-count">{stats.inactive}</span>
+                <button
+                  type="button"
+                  className={`sl-tab ${tab === 'recurring' ? 'is-active' : ''}`}
+                  onClick={() => setTab('recurring')}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
+                  <span>Recurring Suppliers</span>
+                  <span className="sl-tab-count">{stats.recurring}</span>
                 </button>
               </div>
-              <div className="search-box" style={{ width: 360 }}>
+              <div className="sl-search">
+                <svg className="sl-search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
                 <input
                   type="text"
-                  className="form-control"
-                  placeholder="Search by code, name, contact, phone…"
+                  placeholder="Search suppliers by name, code, type, state, country, contact, phone or email…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
-                <i className="ri-search-line search-icon"></i>
+                {search && (
+                  <button type="button" className="sl-search-clear" title="Clear search" onClick={() => setSearch('')}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                  </button>
+                )}
               </div>
             </div>
 
-            {/* Table — TanStack-based TableContainer with built-in
-                 pagination, mirrors the Clients master list. The
-                 shimmer placeholder renders while the initial /vendors
-                 fetch is in flight. */}
-            <Card className="border-0 shadow-none mb-0">
-              <CardBody className="p-3">
-                {loading ? (
-                  <ShimmerTable rows={6} cols={9} />
-                ) : (
-                  <>
-                    <TableContainer
-                      columns={columns}
-                      data={filtered}
-                      isGlobalFilter={false}
-                      customPageSize={10}
-                      tableClass="align-middle table-nowrap mb-0"
-                      theadClass="table-light"
-                      divClass="table-responsive table-card border rounded"
-                      SearchPlaceholder="Search suppliers..."
-                    />
-                    {filtered.length === 0 && (
-                      <div className="text-center text-muted py-5">
-                        <i className="ri-store-2-line d-block" style={{ fontSize: 36, color: '#cbd5e1' }} />
-                        <div className="mt-2 fw-semibold">No suppliers found</div>
-                        <div style={{ fontSize: 12 }}>Try clearing the search, or click "Add Supplier" to create one.</div>
-                      </div>
-                    )}
-                  </>
-                )}
-              </CardBody>
-            </Card>
+            {/* Table — purple Figma table wired to the real /vendors data.
+                Pagination is client-side (10 rows/page). */}
+            {loading ? (
+              <div className="p-3"><ShimmerTable rows={8} cols={11} /></div>
+            ) : (
+              <>
+                <div className="sl-table-scroll">
+                  <table className="sl-table">
+                    <thead>
+                      <tr>
+                        <th>Sr No</th>
+                        <th>Supplier Code</th>
+                        <th>Supplier Name</th>
+                        <th>Supplier Type</th>
+                        <th>Supplier State</th>
+                        <th>Country</th>
+                        <th>Contact Person</th>
+                        <th>Contact No</th>
+                        <th>Email</th>
+                        <th>WhatsApp</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pageRows.length === 0 ? (
+                        <tr><td colSpan={11} className="sl-empty">No suppliers found.</td></tr>
+                      ) : pageRows.map((v, i) => {
+                        const kind = typeKind(v.type);
+                        const hasWa = !!v.phone && v.phone !== '—';
+                        return (
+                          <tr key={v.id}>
+                            <td><span className="sl-sr">{start + i + 1}</span></td>
+                            <td><span className="sl-code">{v.code}</span></td>
+                            <td><span className="sl-name">{v.companyName}</span></td>
+                            <td><span className={`sl-pill sl-pill--${kind}`}><span className="sl-pill-dot" />{v.type}</span></td>
+                            <td><span className="sl-state">{v.state}</span></td>
+                            <td><span className="sl-country">{v.country || 'India'}</span></td>
+                            <td><span className="sl-contact">{v.contactName}</span></td>
+                            <td><span className="sl-phone">{v.phone}</span></td>
+                            <td><a className="sl-email" href={`mailto:${v.email}`}>{v.email}</a></td>
+                            <td>
+                              {hasWa
+                                ? <span className="sl-wa sl-wa--yes"><span className="sl-wa-dot" />Yes</span>
+                                : <span className="sl-wa sl-wa--no"><span className="sl-wa-dot" />No</span>}
+                            </td>
+                            <td>
+                              <div className="sl-actions">
+                                <button
+                                  type="button"
+                                  className="sl-act-btn sl-act-btn--edit"
+                                  title="Edit Supplier"
+                                  onClick={() => { setEditingId(v.id); setEditingStep(null); setAddOpen(true); }}
+                                >
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="sl-evault-btn"
+                                  title="Evidence Vault"
+                                  onClick={() => setVaultTarget({
+                                    id: v.code,
+                                    db_id: v.id,
+                                    company: v.companyName,
+                                    risk: v.risk,
+                                    segment: v.segment,
+                                    country: v.country,
+                                    contact: v.contactName,
+                                    contactCity: v.city,
+                                  })}
+                                >
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" /></svg>
+                                  <span>Evidence Vault</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="sl-footer">
+                  <span className="sl-count">
+                    {total ? `Showing ${start + 1}–${start + pageRows.length} of ${total}` : 'Showing 0 of 0'}
+                  </span>
+                  <div className="sl-pager">
+                    <button
+                      type="button"
+                      className="sl-page-arrow"
+                      disabled={curPage <= 1}
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      title="Previous"
+                    >
+                      <i className="ri-arrow-left-s-line" />
+                    </button>
+                    {Array.from({ length: pages }, (_, idx) => idx + 1).map(p => (
+                      <button
+                        type="button"
+                        key={p}
+                        className={`sl-page-num ${p === curPage ? 'is-active' : ''}`}
+                        onClick={() => setPage(p)}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="sl-page-arrow"
+                      disabled={curPage >= pages}
+                      onClick={() => setPage(p => Math.min(pages, p + 1))}
+                      title="Next"
+                    >
+                      <i className="ri-arrow-right-s-line" />
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
+         </div>
         </Col>
       </Row>
 

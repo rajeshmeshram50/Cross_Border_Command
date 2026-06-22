@@ -70,6 +70,21 @@ class VendorController extends Controller
                 'riskLevel:id,name',
             ])
             ->withCount('productMappings')
+            // Fresh vs Recurring split. A supplier is "Recurring" once any of
+            // its mapped products has been pulled into an opportunity (a lead);
+            // until then it is "Fresh" (just onboarded, never transacted).
+            // There is no direct vendor⇄lead FK — the link is product-scoped:
+            //   leads → lead_products.product_id → vendor_product_mappings.vendor_id.
+            // Surfaced as a single correlated subquery so the whole list is
+            // classified in one round-trip with no N+1.
+            ->addSelect(['opportunity_count' => DB::table('lead_products as lp')
+                ->selectRaw('count(distinct lp.lead_id)')
+                ->whereIn('lp.product_id', function ($sub) {
+                    $sub->select('vpm.product_id')
+                        ->from('vendor_product_mappings as vpm')
+                        ->whereColumn('vpm.vendor_id', 'vendors.id');
+                }),
+            ])
             ->orderByDesc('id');
 
         if ($search = trim((string) $request->query('q', ''))) {

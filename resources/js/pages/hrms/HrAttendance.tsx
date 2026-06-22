@@ -212,12 +212,13 @@ const fmtMinutes = (m: number) => `${Math.floor(m / 60)}h ${String(m % 60).padSt
 
 // Render a 24-h "HH:MM" time as the big tile value with a small AM/PM suffix.
 // Returns "—" for empty/null. Hour 0 displays as 12 AM, 12 displays as 12 PM.
-const renderTime = (t?: string | null): ReactNode => {
+const renderTime = (t?: string | null, hour24 = false): ReactNode => {
   if (!t) return '—';
   const m = /^(\d{1,2}):(\d{2})/.exec(t);
   if (!m) return t;
   const h = Number(m[1]);
   const mm = m[2];
+  if (hour24) return `${String(h).padStart(2,'0')}:${mm}`;
   const ampm = h >= 12 ? ' PM' : ' AM';
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return <>{`${String(h12).padStart(2,'0')}:${mm}`}<span className="att-tile-am">{ampm}</span></>;
@@ -479,6 +480,21 @@ export default function HrAttendance() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [logTab, setLogTab]       = useState<'log' | 'calendar'>('log');
   const [regOpen, setRegOpen]     = useState(false);
+  // Time-format preference, shared across the whole attendance page so the
+  // "24 hour format" toggle in the Logs card reformats EVERY clock time —
+  // the employee list, Today's Record tiles, and the log popovers — not just
+  // its own card (previously the state lived inside LogsRequestsCard, so the
+  // toggle visibly did nothing for the list/dashboard times).
+  // Persisted to localStorage so the choice survives a page refresh (it used
+  // to reset to the default 24h on every reload).
+  // Defaults to OFF (12-hour AM/PM) per requirement; persisted choice wins after.
+  const [hour24, setHour24]       = useState<boolean>(() => {
+    try { const v = localStorage.getItem('cbc-attendance-hour24'); return v === null ? false : v === '1'; }
+    catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('cbc-attendance-hour24', hour24 ? '1' : '0'); } catch { /* storage blocked */ }
+  }, [hour24]);
 
   // viewDate is the date HR is inspecting. Defaults to TODAY but can be any
   // past day (read-only) — the right pane, KPIs, and Today's Record all
@@ -748,7 +764,7 @@ export default function HrAttendance() {
                             <span className="att-status-pill" style={{ color: tone.fg, background: tone.bg }}>
                               <span className="att-status-dot" style={{ background: tone.dot }} />{tone.label}
                             </span>
-                            {e.firstIn && <div className="att-emp-time">{e.firstIn}</div>}
+                            {e.firstIn && <div className="att-emp-time">{renderTime(e.firstIn, hour24)}</div>}
                           </div>
                         </button>
                       );
@@ -814,7 +830,7 @@ export default function HrAttendance() {
                 </div>
                 <Row className="g-2 mb-2 align-items-stretch">
                   <Col xl={7} lg={12}>
-                    <TodayRecordCard employee={selected} viewDate={viewDate} isPast={isPast} />
+                    <TodayRecordCard employee={selected} viewDate={viewDate} isPast={isPast} hour24={hour24} />
                   </Col>
                   <Col xl={5} lg={12}>
                     <PunchTimelineCard employee={selected} />
@@ -832,6 +848,7 @@ export default function HrAttendance() {
                 calMonth={calMonth} setCalMonth={setCalMonth}
                 onPickDate={(iso) => setViewDate(iso)}
                 onRegularize={() => setRegOpen(true)}
+                hour24={hour24} setHour24={setHour24}
               />
             </div>
           </div>
@@ -853,11 +870,12 @@ export default function HrAttendance() {
 // Today's Record card
 // ─────────────────────────────────────────────────────────────────────────────
 function TodayRecordCard({
-  employee, viewDate, isPast,
+  employee, viewDate, isPast, hour24 = false,
 }: {
   employee: AttendanceEmployee;
   viewDate: string;
   isPast: boolean;
+  hour24?: boolean;
 }) {
   // Backend returns each employee's status FOR THE SELECTED DATE — so
   // `employee.status` is already correct whether viewDate is today or any
@@ -891,7 +909,7 @@ function TodayRecordCard({
         <div className="att-today-times-2">
           <div className="att-tile">
             <div className="att-tile-label"><i className="ri-login-circle-line" />FIRST IN</div>
-            <div className="att-tile-value">{renderTime(employee.firstIn)}</div>
+            <div className="att-tile-value">{renderTime(employee.firstIn, hour24)}</div>
             {(() => {
               const firstInPunch = employee.punches.find(p => p.type === 'in' && p.lat != null && p.lng != null);
               if (!firstInPunch || firstInPunch.lat == null || firstInPunch.lng == null) return null;
@@ -912,7 +930,7 @@ function TodayRecordCard({
           <div className="att-tile">
             <div className="att-tile-label"><i className="ri-logout-circle-r-line" />LAST OUT</div>
             <div className="att-tile-value">
-              {employee.lastOut === null ? <span className="att-in-progress">In Progress</span> : renderTime(employee.lastOut)}
+              {employee.lastOut === null ? <span className="att-in-progress">In Progress</span> : renderTime(employee.lastOut, hour24)}
             </div>
             {(() => {
               const outPunches = employee.punches.filter(p => p.type === 'out' && p.lat != null && p.lng != null);
@@ -1076,26 +1094,24 @@ function TurtleIcon({ size = 24 }: { size?: number }) {
   return <Turtle size={size} color="#fbbf24" strokeWidth={1.5} aria-hidden="true" />;
 }
 
-function ArrivalIcon({ lateMinutes }: { lateMinutes: number }) {
-  // > 0  → turtle + h:mm:ss late (slow walker metaphor, Keka-style)
-  // ≤ 0  → green tick + "On Time"
-  if (lateMinutes <= 0) {
-    return (
-      <span className="att-arrival">
-        <span className="att-arrival-icon att-arrival-icon--ok"><i className="ri-check-line" /></span>
-        <span className="att-arrival-text">On Time</span>
-      </span>
-    );
-  }
-  const h = Math.floor(lateMinutes / 60);
-  const m = lateMinutes % 60;
-  const label = `${h}:${String(m).padStart(2, '0')}:00`;
+function ArrivalIcon({ lateMinutes, arrival }: { lateMinutes: number; arrival: ReactNode }) {
+  // Shows the actual ARRIVAL clock time (formatted by the page's 24h toggle,
+  // so it flips between e.g. 13:40 ↔ 01:40 PM) with a late/on-time cue:
+  //   late  → turtle icon + time + LATE tag
+  //   on-time → green tick + time
+  const late = lateMinutes > 0;
   return (
     <span className="att-arrival">
-      <span className="att-arrival-icon att-arrival-icon--late">
-        <TurtleIcon size={20} />
+      <span className={`att-arrival-icon ${late ? 'att-arrival-icon--late' : 'att-arrival-icon--ok'}`}>
+        {late ? <TurtleIcon size={20} /> : <i className="ri-check-line" />}
       </span>
-      <span className="att-arrival-text att-arrival-text--late">{label}</span>
+      {/* The "late" pill is appended by .att-arrival-text--late::after (CSS), so
+          we DON'T render a second one here. The time sits in a fixed-width inner
+          span so switching 24h↔12h ("13:40" vs "01:40 PM") doesn't change the
+          cell width and shift the row content. */}
+      <span className={`att-arrival-text ${late ? 'att-arrival-text--late' : ''}`}>
+        <span style={{ display: 'inline-block', minWidth: 62, textAlign: 'left' }}>{arrival || '—'}</span>
+      </span>
     </span>
   );
 }
@@ -1104,7 +1120,7 @@ function ArrivalIcon({ lateMinutes }: { lateMinutes: number }) {
 // Logs & Requests card
 // ─────────────────────────────────────────────────────────────────────────────
 function LogsRequestsCard({
-  employee, tab, setTab, calMonth, setCalMonth, onPickDate, onRegularize,
+  employee, tab, setTab, calMonth, setCalMonth, onPickDate, onRegularize, hour24, setHour24,
 }: {
   employee: AttendanceEmployee;
   tab: 'log' | 'calendar';
@@ -1113,6 +1129,8 @@ function LogsRequestsCard({
   setCalMonth: (m: string) => void;
   onPickDate: (iso: string) => void;
   onRegularize: () => void;    // opens the parent's regularization modal
+  hour24: boolean;             // shared time-format preference (page-level)
+  setHour24: (v: boolean | ((p: boolean) => boolean)) => void;
 }) {
   // Pagination + display settings — default 5 rows so the table stays compact
   // and the rest of the records flow to the next page.
@@ -1139,9 +1157,9 @@ function LogsRequestsCard({
   const pageEnd    = Math.min(pageStart + pageSize, filteredLogs.length);
   const visibleLogs = filteredLogs.slice(pageStart, pageEnd);
 
-  // View toggle (list/calendar) and 24-hour switch — drive future formatting
+  // View toggle (list/calendar). The 24-hour switch is now a page-level prop
+  // (hour24/setHour24) so the toggle reformats every clock time on the page.
   const [viewMode, setViewMode] = useState<'list' | 'cal'>('list');
-  const [hour24,  setHour24]    = useState<boolean>(true);
 
   // Range-pill state — months to scroll through (THIS MONTH + last 6)
   const ranges = useMemo(() => {
@@ -1294,7 +1312,7 @@ function LogsRequestsCard({
                           {isAbsent ? '—' : <>{l.worked}{(l.grossMinutes || 0) > (l.expectedMinutes || 9 * 60) ? ' +' : ''}</>}
                         </td>
                         <td>
-                          {isAbsent ? <span className="text-muted">—</span> : <ArrivalIcon lateMinutes={l.lateMinutes ?? 0} />}
+                          {isAbsent ? <span className="text-muted">—</span> : <ArrivalIcon lateMinutes={l.lateMinutes ?? 0} arrival={fmtClock(l.firstIn)} />}
                         </td>
                         <td className="text-center">
                           <button

@@ -2056,12 +2056,12 @@ export default function AddVendorModal(props: {
         {/* ─── Stepper strip ─── */}
         <div className="avm-stepper-wrap">
           <div className="avm-stepper">
-            <StepperItem n={1} title="Supplier Legal Identity"     sub="Company, GST, PAN & contact"            current={step} tone="violet" />
+            {/* Two-stage stepper to mirror the Figma exactly: Legal Identity →
+                KYC / Due Diligence. Product mapping is the final wizard step
+                (step 3) but is not surfaced as a stepper card here. */}
+            <StepperItem n={1} title="Supplier Legal Identity"   sub="Company, GST, PAN & contact" current={step} tone="violet" icon="ri-building-2-line" />
             <div className="avm-step-arrow">›</div>
-            <StepperItem n={2} title="Supplier KYC / Due Diligence" sub="Docs, identity & compliance"            current={step} tone="teal" />
-            <div className="avm-step-arrow">›</div>
-            {/* Trade Document Management (Evidence Vault) step removed. */}
-            <StepperItem n={3} title="Map Products"               sub="Link products & pricing"                current={step} tone="green" />
+            <StepperItem n={2} title="KYC / Due Diligence"       sub="Docs, identity & compliance" current={step} tone="purple" icon="ri-shield-check-line" />
           </div>
         </div>
 
@@ -2269,12 +2269,12 @@ export default function AddVendorModal(props: {
           {step === 1 && (
             <>
               <div className="avm-tabs">
-                <button className={`avm-tab ${idTab === 'identification' ? 'on' : ''}`} onClick={() => setIdTab('identification')}>Supplier Identification</button>
-                {/* Can't jump to Address & Contact Persons until Supplier
+                <button className={`avm-tab ${idTab === 'identification' ? 'on' : ''}`} onClick={() => setIdTab('identification')}>Supplier Identification &amp; Address Details</button>
+                {/* Can't jump to Contact Person Details until Supplier
                     Identification is valid. Mirrors Save & Next: validates +
-                    persists (so the address step has a vendorId to attach to)
+                    persists (so the contact step has a vendorId to attach to)
                     and only switches when clean — else inline errors show. */}
-                <button className={`avm-tab ${idTab === 'address' ? 'on' : ''}`} disabled={saving} onClick={async () => { if (saving || idTab === 'address') return; const ok = await saveIdentity(); if (ok) setIdTab('address'); }}>Address &amp; Contact Persons</button>
+                <button className={`avm-tab ${idTab === 'address' ? 'on' : ''}`} disabled={saving} onClick={async () => { if (saving || idTab === 'address') return; const ok = await saveIdentity(); if (ok) setIdTab('address'); }}>Contact Person Details</button>
               </div>
 
               {idTab === 'identification' && (
@@ -2334,7 +2334,7 @@ export default function AddVendorModal(props: {
               )}
 
               {idTab === 'identification' && (
-                <SectionCard tone="amber" icon={<i className="ri-map-pin-line" />} title="Company Address & Contact Person Details" subtitle="Registered office and primary KYC contact">
+                <SectionCard tone="amber" icon={<i className="ri-map-pin-line" />} title="Supplier Address Details" subtitle="Registered office and location">
                   <Field label="Registered Office Address" required error={fieldErrors.registeredOffice}>
                     <input
                       className="avm-input"
@@ -2390,98 +2390,48 @@ export default function AddVendorModal(props: {
                       />
                     </Field>
                   </div>
-                  <div className="avm-grid-4">
-                    <Field label="Contact Person Name" required error={fieldErrors.contactName}>
-                      <input
-                        className="avm-input"
-                        placeholder="Rahul Sharma"
-                        value={contactName}
-                        maxLength={60}
-                        onChange={e => applySanitizer(e.target.value, 'contactName', setContactName, raw => sanitizeKycAlpha(raw, 60))}
-                      />
-                    </Field>
-                    <Field label="Designation" required error={fieldErrors.designation}>
-                      <input
-                        className="avm-input"
-                        placeholder="admin"
-                        value={designation}
-                        maxLength={60}
-                        onChange={e => applySanitizer(e.target.value, 'designation', setDesignation, raw => sanitizeKycDesignation(raw, 60))}
-                      />
-                    </Field>
-                    <Field label="Contact No" required error={fieldErrors.contactNo}>
-                      <input
-                        className="avm-input"
-                        placeholder="9876543210"
-                        inputMode="numeric"
-                        pattern="\d*"
-                        maxLength={15}
-                        value={contactNo}
-                        onChange={e => { setContactNo(digitsOnly(e.target.value)); clearFieldError('contactNo'); }}
-                      />
-                    </Field>
-                    <Field label="Email" required error={fieldErrors.email}>
-                      <input className="avm-input" placeholder="rahul@abclogistics.com" value={email} onChange={e => { setEmail(e.target.value); clearFieldError('email'); }} />
-                    </Field>
-                  </div>
-                  <div className="avm-grid-2">
-                    <Field label="WhatsApp Enabled ?">
-                      <div className="avm-radio-row">
-                        <label className="avm-radio">
-                          <input type="radio" checked={whatsappEnabled} onChange={() => setWhatsappEnabled(true)} />
-                          <span>Yes</span>
-                        </label>
-                        <label className="avm-radio">
-                          <input type="radio" checked={!whatsappEnabled} onChange={() => setWhatsappEnabled(false)} />
-                          <span>No</span>
-                        </label>
-                      </div>
-                    </Field>
-                    <Field label="Attachment (Business Card)" required>
-                      <FileChooser
-                        file={attachment}
-                        onPick={(f) => setAttachment(f)}
-                        placeholder="No files attached"
-                      />
-                    </Field>
-                  </div>
                 </SectionCard>
               )}
 
               {idTab === 'address' && (
                 <>
-                  {/* Step-1 readonly summary — surfaces everything the
-                      user captured on the Vendor Identification sub-tab
-                      so they can verify they're entering address /
-                      additional contacts under the correct vendor
-                      without flipping tabs. */}
-                  <div className="avm-id-summary">
-                    <div className="avm-id-summary-row">
-                      <span className="avm-id-pair"><span className="avm-id-k">VENDOR CODE :</span> <span className="avm-id-v">{vendorCode || '—'}</span></span>
-                      <span className="avm-id-pair"><span className="avm-id-k">COMPANY NAME :</span> <span className="avm-id-v">{companyName || '—'}</span></span>
-                      <span className="avm-id-pair"><span className="avm-id-k">COMPANY LEGAL NAME :</span> <span className="avm-id-v">{legalName || '—'}</span></span>
-                      <span className="avm-id-pair"><span className="avm-id-k">VENDOR TYPE :</span> <span className="avm-id-v">{labelFor(vendorType, SUPPLIER_TYPE_OPTS) || vendorType || '—'}</span></span>
+                  {/* Primary Contact Person Details — moved here from the
+                      Identification tab to mirror the Figma's "Contact Person
+                      Details" tab. Same component state, so saveContacts()
+                      still validates + persists it on Save & Next. */}
+                  <SectionCard tone="violet" icon={<i className="ri-user-3-line" />} title="Primary Contact Person Details" subtitle="Primary point of contact for this supplier">
+                    <div className="avm-grid-4">
+                      <Field label="Contact Person Name" required error={fieldErrors.contactName}>
+                        <input className="avm-input" placeholder="Rahul Sharma" value={contactName} maxLength={60} onChange={e => applySanitizer(e.target.value, 'contactName', setContactName, raw => sanitizeKycAlpha(raw, 60))} />
+                      </Field>
+                      <Field label="Designation" required error={fieldErrors.designation}>
+                        <input className="avm-input" placeholder="Manager" value={designation} maxLength={60} onChange={e => applySanitizer(e.target.value, 'designation', setDesignation, raw => sanitizeKycDesignation(raw, 60))} />
+                      </Field>
+                      <Field label="Contact No" required error={fieldErrors.contactNo}>
+                        <input className="avm-input" placeholder="9876543210" inputMode="numeric" pattern="\d*" maxLength={15} value={contactNo} onChange={e => { setContactNo(digitsOnly(e.target.value)); clearFieldError('contactNo'); }} />
+                      </Field>
+                      <Field label="Email" required error={fieldErrors.email}>
+                        <input className="avm-input" placeholder="rahul@abclogistics.com" value={email} onChange={e => { setEmail(e.target.value); clearFieldError('email'); }} />
+                      </Field>
                     </div>
-                    <div className="avm-id-summary-row">
-                      <span className="avm-id-pair"><span className="avm-id-k">RISK LEVEL :</span> <span className="avm-id-v">{labelFor(riskLevel, riskLevelOpts) || '—'}</span></span>
-                      <span className="avm-id-pair"><span className="avm-id-k">VENDOR BEHAVIOUR :</span> <span className="avm-id-v">{labelFor(vendorBehaviour, behaviourOpts) || '—'}</span></span>
-                      <span className="avm-id-pair"><span className="avm-id-k">SEGMENT :</span> <span className="avm-id-v">{segment.length > 0 ? segment.map(id => labelFor(id, segmentOpts)).filter(Boolean).join(', ') : '—'}</span></span>
-                      <span className="avm-id-pair"><span className="avm-id-k">COMPLIANCE BEHAVIOUR :</span> <span className="avm-id-v">{labelFor(complianceBehaviour, complianceOpts) || '—'}</span></span>
+                    <div className="avm-grid-2">
+                      <Field label="WhatsApp Enabled ?">
+                        <div className="avm-radio-row">
+                          <label className="avm-radio">
+                            <input type="radio" checked={whatsappEnabled} onChange={() => setWhatsappEnabled(true)} />
+                            <span>Yes</span>
+                          </label>
+                          <label className="avm-radio">
+                            <input type="radio" checked={!whatsappEnabled} onChange={() => setWhatsappEnabled(false)} />
+                            <span>No</span>
+                          </label>
+                        </div>
+                      </Field>
+                      <Field label="Attachment (Business Card)" required>
+                        <FileChooser file={attachment} onPick={(f) => setAttachment(f)} placeholder="No files attached" />
+                      </Field>
                     </div>
-                    <div className="avm-id-summary-row">
-                      <span className="avm-id-pair"><span className="avm-id-k">COUNTRY :</span> <span className="avm-id-v">{labelFor(country, countryOpts) || '—'}</span></span>
-                      <span className="avm-id-pair"><span className="avm-id-k">STATE :</span> <span className="avm-id-v">{labelFor(state, stateOpts) || '—'}</span></span>
-                      <span className="avm-id-pair"><span className="avm-id-k">STATE CODE :</span> <span className="avm-id-v">{stateCode || '—'}</span></span>
-                      <span className="avm-id-pair"><span className="avm-id-k">CITY :</span> <span className="avm-id-v">{city || '—'}</span></span>
-                    </div>
-                    <div className="avm-id-summary-row">
-                      <span className="avm-id-pair"><span className="avm-id-k">PRIMARY CONTACT :</span> <span className="avm-id-v">{contactName || '—'}</span></span>
-                      <span className="avm-id-pair"><span className="avm-id-k">DESIGNATION :</span> <span className="avm-id-v">{designation || '—'}</span></span>
-                      <span className="avm-id-pair"><span className="avm-id-k">CONTACT NO :</span> <span className="avm-id-v">{contactNo || '—'}</span></span>
-                      <span className="avm-id-pair"><span className="avm-id-k">EMAIL :</span> <span className="avm-id-v">{email || '—'}</span></span>
-                      <span className="avm-id-pair"><span className="avm-id-k">WHATSAPP :</span> <span className="avm-id-v">{whatsappEnabled ? 'Yes' : 'No'}</span></span>
-                    </div>
-                  </div>
+                  </SectionCard>
 
                   {/* ── Additional Contact Persons ──
                       The primary KYC contact (captured on the Vendor
@@ -2490,12 +2440,12 @@ export default function AddVendorModal(props: {
                       we know about". Marked with a "Primary" pill and
                       not deletable — the user has to go back to the
                       first sub-tab to change it. */}
-                  <SectionCard tone="violet" icon={<i className="ri-contacts-book-line" />} title="Additional Contact Persons" subtitle="Secondary contacts beyond the primary KYC contact" headerAction={
+                  <SectionCard tone="violet" icon={<i className="ri-contacts-book-line" />} title="Additional Contact Persons" subtitle="Add more points of contact for this supplier" headerAction={
                     <button className="avm-section-add-btn" onClick={openContactPopup}>+ Add More Contact Person</button>
                   }>
                     {(() => {
-                      // Merge view: primary first (when populated), then extras.
-                      const primaryHasData = !!(contactName.trim() || email.trim() || contactNo.trim());
+                      // Additional (secondary) contacts only — the primary KYC
+                      // contact now lives in its own card above (Figma layout).
                       type Row = {
                         key: string;
                         isPrimary: boolean;
@@ -2509,21 +2459,6 @@ export default function AddVendorModal(props: {
                         attachmentHref: string;
                       };
                       const rows: Row[] = [];
-                      if (primaryHasData) {
-                        const freshHref = attachment ? URL.createObjectURL(attachment) : '';
-                        const savedHref = primaryAttachmentPath ? resolveFileUrl(primaryAttachmentPath) : '';
-                        rows.push({
-                          key: 'primary',
-                          isPrimary: true,
-                          name: contactName,
-                          designation,
-                          phone: contactNo,
-                          email,
-                          whatsapp: whatsappEnabled,
-                          attachmentName: attachment?.name ?? (primaryAttachmentPath ? (primaryAttachmentPath.split('/').pop() ?? '') : ''),
-                          attachmentHref: freshHref || savedHref,
-                        });
-                      }
                       extraContacts.forEach(c => rows.push({
                         key: String(c.id),
                         isPrimary: false,
@@ -2538,7 +2473,7 @@ export default function AddVendorModal(props: {
                       }));
 
                       if (rows.length === 0) {
-                        return <div className="avm-empty">Fill in the primary KYC contact on the Vendor Identification tab to see it here, then add more if needed.</div>;
+                        return <div className="avm-empty">No contact persons added yet.</div>;
                       }
                       return (
                         <div className="table-responsive table-card border rounded">
@@ -2583,7 +2518,7 @@ export default function AddVendorModal(props: {
                                           target="_blank"
                                           rel="noopener noreferrer"
                                           className="fs-13 d-inline-flex align-items-center text-truncate"
-                                          style={{ maxWidth: 200, color: '#4338ca', textDecoration: 'underline', textUnderlineOffset: 2 }}
+                                          style={{ maxWidth: 200, color: '#6d28d9', textDecoration: 'underline', textUnderlineOffset: 2 }}
                                           title={`Open ${r.attachmentName}`}
                                         >
                                           <i className="ri-attachment-line me-1" />
@@ -3202,17 +3137,22 @@ function ContactAddPopup(props: {
 function StepperItem(props: {
   n: number; title: string; sub: string; current: number;
   tone: 'violet' | 'teal' | 'purple' | 'green';
+  icon: string;
 }) {
   const state = props.current > props.n ? 'done' : props.current === props.n ? 'active' : 'idle';
   return (
     <div className={`avm-step avm-step-${state} avm-step-${props.tone}`}>
-      <div className="avm-step-num">
-        {state === 'done' ? <i className="ri-check-line" /> : props.n}
+      <div className="avm-step-ico">
+        {state === 'done'
+          ? <i className="ri-check-line" />
+          : <><i className={props.icon} /><span className="avm-step-ico-num">{props.n}</span></>}
       </div>
       <div className="avm-step-text">
         <div className="avm-step-title">{props.title}</div>
         <div className="avm-step-sub">{props.sub}</div>
       </div>
+      {state === 'active' && <span className="avm-step-badge avm-step-badge-active">In Progress</span>}
+      {state === 'done'   && <span className="avm-step-badge avm-step-badge-done">Completed</span>}
     </div>
   );
 }
@@ -3603,7 +3543,7 @@ function AttachmentCell(props: {
           target="_blank"
           rel="noopener noreferrer"
           className="fs-13 text-truncate d-inline-flex align-items-center"
-          style={{ maxWidth: 180, color: '#4338ca', textDecoration: 'underline', textUnderlineOffset: 2 }}
+          style={{ maxWidth: 180, color: '#6d28d9', textDecoration: 'underline', textUnderlineOffset: 2 }}
           title={`Open ${fileName}`}
         >
           <i className="ri-attachment-line me-1" />
@@ -4924,24 +4864,24 @@ const SCOPED_CSS = `
 }
 .avm-modal *, .avm-modal *::before, .avm-modal *::after { box-sizing: border-box; }
 
-/* Header — Velzon primary gradient, same family the Legal Entities master uses */
+/* Header — compact purple gradient bar (matches the Figma) */
 .avm-head {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  padding: 18px 22px;
+  padding: 12px 22px;
   background:
     linear-gradient(115deg, rgba(255,255,255,0.10) 0%, transparent 35%, transparent 65%, rgba(0,0,0,0.08) 100%),
-    linear-gradient(135deg, #2b3a85 0%, #405189 28%, #5562c4 55%, #6e7eee 78%, #8b6fe8 100%);
+    linear-gradient(115deg, #4c1d95 0%, #5b21b6 28%, #6d28d9 55%, #7c3aed 80%, #8b5cf6 100%);
   color: #fff;
 }
-.avm-head-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.avm-head-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .avm-head-icon {
-  width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+  width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0;
   background: rgba(255,255,255,.18);
   border: 1px solid rgba(255,255,255,.25);
   display: flex; align-items: center; justify-content: center;
 }
-.avm-title { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
-.avm-sub   { font-size: 12px; font-weight: 400; color: rgba(255,255,255,.85); margin-top: 2px; }
+.avm-title { font-size: 15.5px; font-weight: 600; letter-spacing: -0.01em; }
+.avm-sub   { font-size: 11px; font-weight: 400; color: rgba(255,255,255,.85); margin-top: 1px; }
 .avm-head-right { display: inline-flex; align-items: center; gap: 8px; }
 .avm-map-btn {
   display: inline-flex; align-items: center; gap: 6px;
@@ -4962,47 +4902,74 @@ const SCOPED_CSS = `
 .avm-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
 
 /* Stepper */
-.avm-stepper-wrap { padding: 14px 22px; background: #faf5ff; border-bottom: 1px solid #ede9fe; }
-.avm-stepper { display: flex; align-items: stretch; gap: 6px; flex-wrap: wrap; }
+.avm-stepper-wrap { padding: 11px 18px; background: #faf5ff; border-bottom: 1px solid #ede9fe; }
+.avm-stepper { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+
+/* Step card — matches the Figma two-card stepper: icon chip with a small
+   number badge, title + sub, and a status pill pushed to the right. */
 .avm-step {
-  flex: 1; min-width: 200px;
-  display: flex; align-items: center; gap: 10px;
-  padding: 12px 14px;
-  background: #fff; border: 1.5px solid transparent; border-radius: 10px;
+  flex: 1; min-width: 240px;
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px;
+  background: #fff; border: 1.5px solid #ece7f8; border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(124,58,237,.05);
+  transition: border-color .15s, background .15s, box-shadow .15s;
 }
-.avm-step-num {
-  width: 26px; height: 26px; border-radius: 50%;
+.avm-step-ico {
+  position: relative; width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; color: #fff;
+  background: linear-gradient(135deg, #c4b5fd, #a78bfa);
+  box-shadow: 0 4px 10px rgba(124,58,237,.25);
+}
+.avm-step-ico i { font-size: 18px; line-height: 1; }
+.avm-step-ico-num {
+  position: absolute; right: -4px; bottom: -4px;
+  width: 17px; height: 17px; border-radius: 50%;
+  background: #fff; color: #7c3aed; border: 1.5px solid #ede9fe;
+  font-size: 9.5px; font-weight: 800;
   display: flex; align-items: center; justify-content: center;
-  background: #e2e8f0; color: #6b7280;
-  font-size: 12px; font-weight: 600;
 }
-.avm-step-title { font-size: 12.5px; font-weight: 600; color: #1e1b4b; letter-spacing: -0.01em; }
-.avm-step-sub   { font-size: 10.5px; font-weight: 400; color: #6b7280; }
+.avm-step-text { flex: 1; min-width: 0; }
+.avm-step-title { font-size: 13.5px; font-weight: 800; color: #1e1b4b; letter-spacing: -0.01em; }
+.avm-step-sub   { font-size: 11px; font-weight: 500; color: #94a3b8; margin-top: 2px; }
+.avm-step-badge {
+  flex-shrink: 0; padding: 4px 11px; border-radius: 99px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+}
+.avm-step-badge-active { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; box-shadow: 0 3px 8px rgba(124,58,237,.4); }
+.avm-step-badge-done   { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; box-shadow: 0 3px 8px rgba(22,163,74,.35); }
 
-.avm-step-violet.avm-step-active { border-color: #405189; }
-.avm-step-violet.avm-step-active .avm-step-num { background: linear-gradient(135deg, #405189, #6691e7); color: #fff; }
-.avm-step-teal.avm-step-active   { border-color: #0ab39c; }
-.avm-step-teal.avm-step-active   .avm-step-num { background: linear-gradient(135deg, #0ab39c, #22c8a9); color: #fff; }
-.avm-step-purple.avm-step-active { border-color: #6691e7; }
-.avm-step-purple.avm-step-active .avm-step-num { background: linear-gradient(135deg, #6691e7, #a8c0f5); color: #fff; }
-.avm-step-green.avm-step-active  { border-color: #16a34a; }
-.avm-step-green.avm-step-active  .avm-step-num { background: linear-gradient(135deg, #16a34a, #4ade80); color: #fff; }
+/* Active card — purple wash + glow (universal, regardless of tone) */
+.avm-step-active {
+  border-color: #c4b5fd;
+  background: linear-gradient(135deg, #faf5ff, #f3e8ff);
+  box-shadow: 0 6px 18px rgba(124,58,237,.14);
+}
+.avm-step-active .avm-step-ico { background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6); box-shadow: 0 4px 12px rgba(124,58,237,.45); }
 
-.avm-step-done .avm-step-num { background: #16a34a; color: #fff; }
+/* Completed card — green wash + green check chip */
+.avm-step-done {
+  border-color: #bbf7d0;
+  background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+}
+.avm-step-done .avm-step-ico { background: linear-gradient(135deg, #22c55e, #16a34a); box-shadow: 0 4px 12px rgba(22,163,74,.4); }
+.avm-step-done .avm-step-ico i { font-size: 22px; }
 .avm-step-done .avm-step-title { color: #15803d; }
+.avm-step-done .avm-step-sub   { color: #4d9e6a; }
 
-.avm-step-arrow { display: flex; align-items: center; padding: 0 4px; color: #c0cffb; font-size: 18px; font-weight: 700; }
+/* Connector — short line between cards (the › glyph is hidden via font-size:0) */
+.avm-step-arrow { flex: 0 0 26px; align-self: center; height: 2px; background: #ddd6fe; font-size: 0; border-radius: 2px; }
 
 /* Body — plain white surface like the Client / Master forms */
 .avm-body {
   flex: 1; overflow-y: auto;
-  padding: 18px 22px 22px;
+  padding: 12px 22px 14px;
   background: #fff;
-  scrollbar-width: thin; scrollbar-color: #c0cffb transparent;
+  scrollbar-width: thin; scrollbar-color: #ddd6fe transparent;
   position: relative;  /* anchor for the .avm-load-overlay during edit-load */
 }
 .avm-body::-webkit-scrollbar { width: 8px; }
-.avm-body::-webkit-scrollbar-thumb { background: #c0cffb; border-radius: 99px; }
+.avm-body::-webkit-scrollbar-thumb { background: #ddd6fe; border-radius: 99px; }
 
 /* Previous-stage summary */
 /* Step 2 / 3 / 4 carried-over summary header — restyled to match the
@@ -5087,7 +5054,7 @@ const SCOPED_CSS = `
 /* Tabs */
 .avm-tabs {
   display: flex; gap: 4px; margin-bottom: 14px;
-  border-bottom: 1.5px solid #d8e3fa;
+  border-bottom: 1.5px solid #e2d4fa;
 }
 .avm-tab {
   background: none; border: none; padding: 10px 16px;
@@ -5097,19 +5064,19 @@ const SCOPED_CSS = `
   margin-bottom: -1.5px;
   transition: color .15s, border-color .15s;
 }
-.avm-tab:hover { color: #405189; }
-.avm-tab.on { color: #405189; border-bottom-color: #405189; font-weight: 600; }
+.avm-tab:hover { color: #7c3aed; }
+.avm-tab.on { color: #7c3aed; border-bottom-color: #7c3aed; font-weight: 600; }
 
 /* Pill tabs (Step 2 sub-tabs) */
 .avm-pill-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
 .avm-pill {
-  background: #eef2ff; color: #405189;
-  border: 1px solid #d8e3fa; border-radius: 99px;
+  background: #f5f1fe; color: #7c3aed;
+  border: 1px solid #e2d4fa; border-radius: 99px;
   padding: 7px 14px; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer;
   transition: background .15s, border-color .15s;
 }
-.avm-pill:hover { background: #dbe5fc; border-color: #c0cffb; }
-.avm-pill.on { background: linear-gradient(120deg, #405189, #6691e7); color: #fff; border-color: transparent; font-weight: 600; }
+.avm-pill:hover { background: #ede9fe; border-color: #ddd6fe; }
+.avm-pill.on { background: linear-gradient(120deg, #7c3aed, #a78bfa); color: #fff; border-color: transparent; font-weight: 600; }
 .avm-sub-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
 .avm-sub-pill {
   display: inline-flex; align-items: center; gap: 6px;
@@ -5125,17 +5092,17 @@ const SCOPED_CSS = `
 .avm-section {
   background: #fff;
   border: 1.5px solid transparent; border-left-width: 4px;
-  border-radius: 14px; margin-bottom: 14px; overflow: hidden;
+  border-radius: 12px; margin-bottom: 8px; overflow: hidden;
 }
-.avm-section-violet { border-color: #c0cffb; border-left-color: #405189; }
+.avm-section-violet { border-color: #ddd6fe; border-left-color: #7c3aed; }
 .avm-section-amber  { border-color: #fde68a; border-left-color: #f59e0b; }
 .avm-section-teal   { border-color: #99f6e4; border-left-color: #14b8a6; }
 .avm-section-green  { border-color: #bbf7d0; border-left-color: #16a34a; }
-.avm-section-purple { border-color: #c0cffb; border-left-color: #6691e7; }
+.avm-section-purple { border-color: #ddd6fe; border-left-color: #a78bfa; }
 
 .avm-section-head {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 12px 16px;
+  padding: 7px 14px;
 }
 /* Subtle tinted section heads — keep the coloured left-border accent but
    use a near-white head so it doesn't fight the white form surface. */
@@ -5146,53 +5113,53 @@ const SCOPED_CSS = `
 .avm-section-purple .avm-section-head { background: #f8f9fa; }
 .avm-section-head-left { display: flex; align-items: center; gap: 10px; }
 .avm-section-icon {
-  width: 32px; height: 32px; border-radius: 9px;
+  width: 28px; height: 28px; border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
   color: #fff; font-size: 16px;
 }
-.avm-section-violet .avm-section-icon { background: linear-gradient(135deg, #405189, #2b3a85); }
+.avm-section-violet .avm-section-icon { background: linear-gradient(135deg, #7c3aed, #5b21b6); }
 .avm-section-amber  .avm-section-icon { background: linear-gradient(135deg, #f59e0b, #d97706); }
 .avm-section-teal   .avm-section-icon { background: linear-gradient(135deg, #14b8a6, #0f766e); }
 .avm-section-green  .avm-section-icon { background: linear-gradient(135deg, #16a34a, #0f8a3e); }
-.avm-section-purple .avm-section-icon { background: linear-gradient(135deg, #6691e7, #405189); }
-.avm-section-title { font-size: 13.5px; font-weight: 600; color: #1e1b4b; letter-spacing: -0.01em; }
+.avm-section-purple .avm-section-icon { background: linear-gradient(135deg, #a78bfa, #7c3aed); }
+.avm-section-title { font-size: 12.5px; font-weight: 800; color: #5b21b6; letter-spacing: 0.04em; text-transform: uppercase; }
 .avm-section-sub   { font-size: 11px; font-weight: 400; color: #6b7280; margin-top: 1px; }
 .avm-section-amber .avm-section-title { color: #92400e; }
 .avm-section-amber .avm-section-sub   { color: #b45309; }
-.avm-section-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+.avm-section-body { padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 8px; }
 
 .avm-section-add-btn {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 7px 14px; border-radius: 8px;
-  background: linear-gradient(120deg, #405189 0%, #6691e7 100%); color: #fff; border: none;
+  background: linear-gradient(120deg, #7c3aed 0%, #a78bfa 100%); color: #fff; border: none;
   font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer;
   transition: transform .12s, box-shadow .15s;
 }
-.avm-section-add-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(64,81,137,.35); }
+.avm-section-add-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(124,58,237,.35); }
 
 /* Form */
-.avm-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.avm-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.avm-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.avm-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px; }
+.avm-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 18px; }
+.avm-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 18px; }
 
-.avm-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.avm-field { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 /* Labels match the Client / Recruitment master forms: small, uppercase,
    modest letter-spacing, navy color, lighter weight (500) so the
    surrounding form chrome doesn't shout at the user. */
 .avm-field-label {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 10.5px; font-weight: 500;
-  letter-spacing: 0.06em; text-transform: uppercase;
-  color: #405189;
-  margin-bottom: 3px;
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0; text-transform: none;
+  color: #334155;
+  margin-bottom: 2px;
 }
 [data-bs-theme="dark"] .avm-field-label,
-[data-layout-mode="dark"] .avm-field-label { color: #8aa1d9; }
+[data-layout-mode="dark"] .avm-field-label { color: #c4b5fd; }
 .avm-req { color: #f06548; font-weight: 600; margin-left: 1px; }
 .avm-field-plus {
   width: 18px; height: 18px;
   border: none; border-radius: 5px;
-  background: #405189; color: #fff;
+  background: #7c3aed; color: #fff;
   font-size: 14px; font-weight: 500; line-height: 1; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
 }
@@ -5200,11 +5167,11 @@ const SCOPED_CSS = `
    wizard reads as part of the same form family as Clients / Recruitment.
    Subtle blue-tinted surface, indigo focus ring, 10px radius. */
 .avm-input {
-  height: 38px; width: 100%;
-  padding: 7px 12px;
-  border: 1px solid color-mix(in srgb, #6691e7 20%, var(--vz-border-color, #e9ebec));
+  height: 32px; width: 100%;
+  padding: 5px 11px;
+  border: 1px solid color-mix(in srgb, #a78bfa 20%, var(--vz-border-color, #e9ebec));
   border-radius: 10px;
-  background: color-mix(in srgb, #6691e7 5%, var(--vz-card-bg, #fff));
+  background: color-mix(in srgb, #a78bfa 5%, var(--vz-card-bg, #fff));
   color: var(--vz-body-color, #495057);
   font-family: inherit; font-size: 13px; font-weight: 400; outline: none;
   box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04);
@@ -5219,17 +5186,17 @@ const SCOPED_CSS = `
   font-weight: 400 !important;
 }
 .avm-input:hover:not(:disabled):not([readonly]) {
-  border-color: rgba(99,102,241,0.55);
-  box-shadow: 0 2px 6px rgba(99,102,241,0.08);
+  border-color: rgba(124,58,237,0.55);
+  box-shadow: 0 2px 6px rgba(124,58,237,0.08);
 }
 .avm-input:focus {
   background: var(--vz-card-bg, #fff);
-  border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99,102,241,0.15), 0 4px 12px rgba(99,102,241,0.12);
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124,58,237,0.15), 0 4px 12px rgba(124,58,237,0.12);
 }
 [data-bs-theme="dark"] .avm-input,
 [data-layout-mode="dark"] .avm-input {
-  background: color-mix(in srgb, #6691e7 12%, var(--vz-card-bg));
+  background: color-mix(in srgb, #a78bfa 12%, var(--vz-card-bg));
 }
 
 /* Inline per-field error — red text + warning icon under the input,
@@ -5258,7 +5225,7 @@ const SCOPED_CSS = `
 
 /* MasterSelect inside this modal — match Velzon form-select chrome */
 .avm-master-select .master-select-wrap .master-select-toggle {
-  min-height: 38px !important; height: 38px;
+  min-height: 32px !important; height: 32px;
   /* Right padding trimmed 32px -> 12px: the chevron is a flex item pushed to
      the right by the toggle's space-between, so the extra 32px right padding
      was holding it ~20px in from the edge, making it look centred. 12px sits
@@ -5271,33 +5238,33 @@ const SCOPED_CSS = `
   color: var(--vz-body-color, #495057) !important;
 }
 .avm-master-select .master-select-wrap.show .master-select-toggle {
-  border-color: #405189 !important;
-  box-shadow: 0 0 0 3px rgba(64,81,137,.15) !important;
+  border-color: #7c3aed !important;
+  box-shadow: 0 0 0 3px rgba(124,58,237,.15) !important;
 }
 
 /* Radios */
-.avm-radio-row { display: inline-flex; align-items: center; gap: 16px; height: 38px; }
+.avm-radio-row { display: inline-flex; align-items: center; gap: 16px; height: 32px; }
 .avm-radio { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #1e1b4b; cursor: pointer; }
-.avm-radio input { width: 16px; height: 16px; accent-color: #405189; }
+.avm-radio input { width: 16px; height: 16px; accent-color: #7c3aed; }
 /* Dark-theme: navy text turns invisible on the modal's dark background.
  * Lift Yes / No labels to a high-contrast off-white and tint the radio
  * accent to the indigo used elsewhere in the wizard. */
 [data-bs-theme="dark"] .avm-radio { color: #ede9fe; }
-[data-bs-theme="dark"] .avm-radio input { accent-color: #818cf8; }
+[data-bs-theme="dark"] .avm-radio input { accent-color: #a78bfa; }
 
 /* File chooser — same chrome as the inputs, dashed border to signal upload */
 .avm-filechooser {
   position: relative;
-  height: 38px; padding: 0 8px 0 12px;
+  height: 32px; padding: 0 8px 0 12px;
   border: 1px dashed var(--vz-border-color, #e9ebec); border-radius: 8px;
   background: var(--vz-card-bg, #fff); color: #6b7280;
   display: inline-flex; align-items: center; gap: 8px;
   font-size: 12.5px; font-weight: 500; cursor: pointer;
   width: 100%;
 }
-.avm-filechooser:hover { border-color: #405189; }
+.avm-filechooser:hover { border-color: #7c3aed; }
 .avm-filechooser-input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-.avm-filechooser-icon { color: #405189; font-size: 15px; flex-shrink: 0; }
+.avm-filechooser-icon { color: #7c3aed; font-size: 15px; flex-shrink: 0; }
 .avm-filechooser-text {
   flex: 1; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -5307,15 +5274,15 @@ const SCOPED_CSS = `
    view URL exists (fresh blob or hydrated server path). Clicking
    the name opens the file in a new tab, same as the 👁 button. */
 .avm-filechooser-link {
-  color: #4338ca;
+  color: #6d28d9;
   text-decoration: underline;
-  text-decoration-color: rgba(99, 102, 241, .35);
+  text-decoration-color: rgba(124, 58, 237, .35);
   text-underline-offset: 2px;
   cursor: pointer;
 }
 .avm-filechooser-link:hover {
-  color: #312e81;
-  text-decoration-color: #4338ca;
+  color: #5b21b6;
+  text-decoration-color: #6d28d9;
 }
 [data-bs-theme="dark"] .avm-filechooser-link {
   color: #c4b5fd;
@@ -5329,10 +5296,10 @@ const SCOPED_CSS = `
    the right as proper pill-style action chips. */
 .avm-filechooser.avm-filechooser-has-file {
   cursor: default;
-  border: 1px solid #c7d2fe;
-  background: #f5f7ff;
+  border: 1px solid #ddd6fe;
+  background: #faf5ff;
 }
-.avm-filechooser.avm-filechooser-has-file:hover { border-color: #818cf8; }
+.avm-filechooser.avm-filechooser-has-file:hover { border-color: #a78bfa; }
 .avm-filechooser-actions {
   display: inline-flex; align-items: center; gap: 4px;
   flex-shrink: 0;
@@ -5351,9 +5318,9 @@ const SCOPED_CSS = `
 }
 .avm-fc-action i { font-size: 14px; line-height: 1; }
 .avm-fc-view:hover {
-  background: rgba(64, 81, 137, .10);
-  border-color: #405189;
-  color: #405189;
+  background: rgba(124, 58, 237, .10);
+  border-color: #7c3aed;
+  color: #7c3aed;
 }
 .avm-fc-delete:hover {
   background: rgba(240, 101, 72, .10);
@@ -5369,7 +5336,7 @@ const SCOPED_CSS = `
   background: #2a2150; border-color: #3b2a6b; color: #cbd5e1;
 }
 [data-bs-theme="dark"] .avm-fc-view:hover {
-  background: rgba(99, 102, 241, .18); border-color: #818cf8; color: #c7d2fe;
+  background: rgba(124, 58, 237, .18); border-color: #a78bfa; color: #ddd6fe;
 }
 [data-bs-theme="dark"] .avm-fc-delete:hover {
   background: rgba(248, 113, 113, .18); border-color: #f87171; color: #fecaca;
@@ -5378,7 +5345,7 @@ const SCOPED_CSS = `
 /* Extra contact rows */
 .avm-extra-contacts { display: flex; flex-direction: column; gap: 12px; }
 .avm-extra-contact { padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; }
-.avm-extra-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 12px; color: #405189; }
+.avm-extra-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 12px; color: #7c3aed; }
 .avm-extra-remove {
   width: 28px; height: 28px; border-radius: 7px;
   border: 1px solid #fecaca; background: #fef2f2; color: #b91c1c;
@@ -5414,7 +5381,7 @@ const SCOPED_CSS = `
 }
 .avm-doctable-search i { position: absolute; left: 12px; color: #94a3b8; font-size: 14px; }
 .avm-doctable-search input { flex: 1; height: 100%; border: none; outline: none; background: transparent; font-size: 13px; }
-.avm-doctable-count { font-size: 12px; color: #405189; font-weight: 700; }
+.avm-doctable-count { font-size: 12px; color: #7c3aed; font-weight: 700; }
 
 /* Doc tables — keep the plain Velzon table-light header (same as the
    Clients master) so the chrome stays consistent across the app. */
@@ -5489,7 +5456,7 @@ const SCOPED_CSS = `
   font-size: 14px;
 }
 .avm-modal .table .btn.btn-sm.btn-soft-primary:hover {
-  background: rgba(64, 81, 137, 0.10); border-color: #405189; color: #405189;
+  background: rgba(124, 58, 237, 0.10); border-color: #7c3aed; color: #7c3aed;
 }
 .avm-modal .table .btn.btn-sm.btn-soft-danger:hover {
   background: rgba(240, 101, 72, 0.10); border-color: #f06548; color: #f06548;
@@ -5540,16 +5507,16 @@ const SCOPED_CSS = `
 }
 .avm-product-row.on { border-color: #16a34a; background: #ecfdf5; }
 .avm-product-row input { width: 18px; height: 18px; accent-color: #16a34a; }
-.avm-product-code { font-size: 11px; font-weight: 600; color: #405189; letter-spacing: .06em; }
+.avm-product-code { font-size: 11px; font-weight: 600; color: #7c3aed; letter-spacing: .06em; }
 .avm-product-name { font-size: 13px; font-weight: 500; color: #1e1b4b; }
 .avm-product-info { display: inline-flex; gap: 6px; }
-.avm-product-tag { padding: 3px 9px; border-radius: 99px; background: #eef2ff; color: #405189; font-size: 10.5px; font-weight: 500; }
+.avm-product-tag { padding: 3px 9px; border-radius: 99px; background: #f5f1fe; color: #7c3aed; font-size: 10.5px; font-weight: 500; }
 
 /* Footer */
 .avm-foot {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 22px;
-  background: #fff; border-top: 1px solid #d8e3fa;
+  background: #fff; border-top: 1px solid #e2d4fa;
 }
 .avm-foot-right { display: flex; align-items: center; gap: 8px; }
 .avm-btn-ghost, .avm-btn-outline, .avm-btn-primary {
@@ -5570,14 +5537,14 @@ const SCOPED_CSS = `
   box-shadow: 0 1px 2px rgba(15,23,42,.06);
 }
 .avm-btn-ghost:hover { background: #f1f5f9; border-color: #64748b; color: #1e293b; }
-.avm-btn-outline { background: #fff; border: 1.5px solid #c0cffb; color: #405189; }
-.avm-btn-outline:hover { background: #eef2ff; border-color: #405189; }
+.avm-btn-outline { background: #fff; border: 1.5px solid #ddd6fe; color: #7c3aed; }
+.avm-btn-outline:hover { background: #f5f1fe; border-color: #7c3aed; }
 .avm-btn-primary {
-  background: linear-gradient(120deg, #405189 0%, #6691e7 100%); color: #fff; border: none;
-  box-shadow: 0 4px 12px rgba(64,81,137,.4);
+  background: linear-gradient(120deg, #7c3aed 0%, #a78bfa 100%); color: #fff; border: none;
+  box-shadow: 0 4px 12px rgba(124,58,237,.4);
 }
-.avm-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(64,81,137,.5); }
-.avm-btn-primary:disabled { transform: none; opacity: .85; cursor: progress; box-shadow: 0 4px 12px rgba(64,81,137,.32); }
+.avm-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(124,58,237,.5); }
+.avm-btn-primary:disabled { transform: none; opacity: .85; cursor: progress; box-shadow: 0 4px 12px rgba(124,58,237,.32); }
 
 /* Inline spinner shown in Save & Next / Save Vendor while the network
  * call is in flight. Same size/curve as Bootstrap's spinner-border-sm
@@ -5595,8 +5562,8 @@ const SCOPED_CSS = `
 .avm-spinner-lg {
   width: 36px; height: 36px;
   border-width: 3px;
-  border-color: rgba(64,81,137,.20);
-  border-top-color: #405189;
+  border-color: rgba(124,58,237,.20);
+  border-top-color: #7c3aed;
 }
 
 /* Edit-mode shimmer placeholder — shown over the form while /vendors/{id}
@@ -5759,7 +5726,7 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .avm-filechooser { background: #110c25; border-color: #4c1d95; color: #a89fc7; }
 [data-bs-theme="dark"] .avm-pill { background: #221852; color: #c4b5fd; border-color: #3b2a6b; }
-[data-bs-theme="dark"] .avm-pill.on { background: linear-gradient(135deg, #6366f1, #4338ca); color: #fff; }
+[data-bs-theme="dark"] .avm-pill.on { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; }
 [data-bs-theme="dark"] .avm-sub-pill { background: #1a1430; border-color: #3b2a6b; color: #a89fc7; }
 [data-bs-theme="dark"] .avm-sub-pill.on { background: #14241a; border-color: #14532d; color: #4ade80; }
 [data-bs-theme="dark"] .avm-tabs { border-bottom-color: #3b2a6b; }
@@ -5819,7 +5786,7 @@ const SCOPED_CSS = `
 .avm-qa-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 18px;
-  background: linear-gradient(135deg, #2b3a85, #6691e7);
+  background: linear-gradient(135deg, #5b21b6, #a78bfa);
   color: #fff;
 }
 .avm-qa-title { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
@@ -5839,7 +5806,7 @@ const SCOPED_CSS = `
 }
 
 [data-bs-theme="dark"] .avm-qa-popup { background: #14102a; color: #ede9fe; }
-[data-bs-theme="dark"] .avm-qa-head  { background: linear-gradient(135deg, #2b3a85, #6691e7); }
+[data-bs-theme="dark"] .avm-qa-head  { background: linear-gradient(135deg, #5b21b6, #a78bfa); }
 [data-bs-theme="dark"] .avm-qa-foot  { border-top-color: #3b2a6b; }
 
 /* ─── Contact Person popup ─── */
@@ -5862,7 +5829,7 @@ const SCOPED_CSS = `
 .avm-cp-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 18px;
-  background: linear-gradient(135deg, #2b3a85, #6691e7);
+  background: linear-gradient(135deg, #5b21b6, #a78bfa);
   color: #fff;
 }
 .avm-cp-title { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
@@ -5934,7 +5901,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-id-v { color: #c4b5fd; }
 
 [data-bs-theme="dark"] .avm-cp-popup { background: #14102a; color: #ede9fe; }
-[data-bs-theme="dark"] .avm-cp-head  { background: linear-gradient(135deg, #2b3a85, #6691e7); }
+[data-bs-theme="dark"] .avm-cp-head  { background: linear-gradient(135deg, #5b21b6, #a78bfa); }
 [data-bs-theme="dark"] .avm-cp-foot  { border-top-color: #3b2a6b; }
 /* .avm-cp-summary moved to .avm-id-summary on the Address tab — see
    the rule block above. The dark-mode overrides used to live here. */
@@ -6067,7 +6034,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-kyc-table tbody tr { background-color: transparent !important; }
 
 /* File links inside the KYC / segment tables were hardcoded inline as teal
-   (#0d9488) or indigo (#4338ca) — both too dim against the dark surface.
+   (#0d9488) or indigo (#6d28d9) — both too dim against the dark surface.
    Substring matching on the inline colour lifts each to its lighter
    counterpart without touching any other anchor. */
 [data-bs-theme="dark"] .avm-modal a[style*="0d9488"] { color: #5eead4 !important; }
@@ -6084,14 +6051,14 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-doctable-banner-sub { color: #fbbf24; }
 
 /* Purple section tone — the only section colour left without a dark border. */
-[data-bs-theme="dark"] .avm-section-purple { border-color: #3b2a6b; border-left-color: #818cf8; }
+[data-bs-theme="dark"] .avm-section-purple { border-color: #3b2a6b; border-left-color: #a78bfa; }
 
 /* Extra-contact card: the navy heading + light-red remove button were tuned
    for the white card and disappeared / glared on the dark card surface. */
 [data-bs-theme="dark"] .avm-extra-head   { color: #c4b5fd; }
 [data-bs-theme="dark"] .avm-extra-remove { background: #3a0e0e; border-color: #b91c1c; color: #fca5a5; }
 
-/* Remaining navy (#405189) accents that dim out against the dark surface. */
+/* Remaining navy (#7c3aed) accents that dim out against the dark surface. */
 [data-bs-theme="dark"] .avm-product-code     { color: #c4b5fd; }
 [data-bs-theme="dark"] .avm-filechooser-icon { color: #c4b5fd; }
 [data-bs-theme="dark"] .avm-tab:hover        { color: #c4b5fd; }
