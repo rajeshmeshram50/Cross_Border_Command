@@ -2178,9 +2178,11 @@ class ClmSignatureController extends Controller
             $cust = $lead->customer_id  ? Customer::where('client_id', $doc->client_id)->find($lead->customer_id)   : null;
             $cons = $lead->consignee_id ? Consignee::where('client_id', $doc->client_id)->find($lead->consignee_id) : null;
             if ($cust) $allParties['Customer'] = $cust;
-            // A same-as-customer consignee mirrors the customer's data, so the
-            // Customer entry already covers it — skip to avoid blanking fields.
-            if ($cons && !$cons->same_as_customer) $allParties['Consignee'] = $cons;
+            // Include the consignee whenever the lead has one. Even a
+            // same-as-customer consignee carries mirrored data and MUST resolve
+            // its own {{consignee.*}} tokens — the Customer entry only fills
+            // {{customer.*}}, so skipping it left {{consignee.*}} raw in the PDF.
+            if ($cons) $allParties['Consignee'] = $cons;
         }
         $processedHtml = $this->replacePlaceholders($sourceHtml, $party, $modelName, $allParties);
         // Expand the {{product.*}} table into one row per opportunity product.
