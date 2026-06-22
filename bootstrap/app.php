@@ -11,6 +11,12 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    // Private broadcast channels (Reverb) — the /broadcasting/auth route is
+    // Sanctum-guarded so SPA bearer tokens authorise channel subscriptions.
+    ->withBroadcasting(
+        __DIR__.'/../routes/channels.php',
+        attributes: ['middleware' => ['auth:sanctum']],
+    )
     ->withMiddleware(function (Middleware $middleware): void {
         // Re-validate user/tenant status after Sanctum auth on every request,
         // so disabled employees / inactive tenants can't keep using a token

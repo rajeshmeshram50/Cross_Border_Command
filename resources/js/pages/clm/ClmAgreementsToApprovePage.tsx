@@ -3,6 +3,10 @@ import * as pdfjsLib from 'pdfjs-dist';
 // Vite-friendly worker URL — same setup the CTC sign-position modal uses.
 import PdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { echo } from '../../echo';
+import { useTyping } from '../../hooks/useTyping';
+import { TypingIndicator } from '../../components/TypingIndicator';
 import api from '../../api';
 import { type AtaContract, inits, pad2, PER_PAGE } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
@@ -51,6 +55,7 @@ const badgeTok = (cfg: { bg: string; border: string; color: string }, dark: bool
 
 export default function ClmAgreementsToApprovePage() {
   const toast = useToast();
+  const { user } = useAuth();
   const t = useOpsTheme('cyan');
   const [tab, setTab]   = useState<AtaTab>('pending');
   const [page, setPage] = useState(1);
@@ -68,6 +73,23 @@ export default function ClmAgreementsToApprovePage() {
       .finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
+
+  // Real-time: refetch the moment any approval event lands for this tenant
+  // (Reverb private channel) + on tab focus as a dropped-socket safety net.
+  useEffect(() => {
+    const cid = user?.client_id;
+    const onFocus = () => load();
+    window.addEventListener('focus', onFocus);
+    let name: string | null = null;
+    if (echo && cid) {
+      name = `clm.approvals.${cid}`;
+      echo.private(name).listen('.approval.updated', () => load());
+    }
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      if (echo && name) echo.leave(name);
+    };
+  }, [user?.client_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const counts = useMemo(() => ({
     all:           ata.length,
@@ -400,15 +422,19 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, t 
   const [choice, setChoice] = useState<'clarify' | 'reject' | null>(initialChoice);
   const [comment, setComment] = useState('');
   const [err, setErr] = useState(false);
+  const { notifyTyping, stopTyping } = useTyping(contract.id);
+
+  const close = () => { stopTyping(); onClose(); };
 
   const submit = () => {
     if (!choice) { setErr(true); return; }
     if (!comment.trim()) { setErr(true); return; }
+    stopTyping();
     onSubmit(contract.id, choice === 'reject' ? 'rejected' : 'clarification', comment.trim());
   };
 
   return (
-    <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(8,3,28,.82)', backdropFilter: 'blur(14px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: "'Rubik', system-ui, sans-serif" }}>
+    <div onClick={e => { if (e.target === e.currentTarget) close(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(8,3,28,.82)', backdropFilter: 'blur(14px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: "'Rubik', system-ui, sans-serif" }}>
       <div style={{ width: '100%', maxWidth: 520, borderRadius: 24, overflow: 'hidden', boxShadow: '0 50px 100px rgba(8,3,28,.5),0 20px 40px rgba(6,182,212,.12)', border: '1px solid rgba(255,255,255,.1)', animation: 'ataSlideUp .24s cubic-bezier(.22,1,.36,1) both', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
         {/* Header — red for reject, cyan for clarify / default. */}
         <div style={{ background: choice === 'reject' ? 'linear-gradient(135deg,#7f1d1d 0%,#b91c1c 42%,#dc2626 78%,#ef4444 100%)' : 'linear-gradient(135deg,#0e7490 0%,#0891b2 45%,#06b6d4 80%,#22d3ee 100%)', padding: '22px 24px 20px', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
@@ -421,7 +447,7 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, t 
                 <div style={{ fontSize: 18, fontWeight: 900, color: '#fff', letterSpacing: '-.4px', lineHeight: 1.15, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contract.title}</div>
               </div>
             </div>
-            <button onClick={onClose} style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,.15)', border: '1.5px solid rgba(255,255,255,.25)', color: '#fff', fontSize: 17, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✕</button>
+            <button onClick={close} style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,.15)', border: '1.5px solid rgba(255,255,255,.25)', color: '#fff', fontSize: 17, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✕</button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, position: 'relative', zIndex: 1, flexWrap: 'wrap' }}>
             <Chip text={contract.createdBy} />
@@ -448,7 +474,7 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, t 
             </>
           )}
           <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textMuted, marginBottom: 7 }}>{choice === 'reject' ? 'Rejection Reason' : choice === 'clarify' ? 'Clarification Query' : 'Comment / Reason'} <span style={{ color: '#EF4444' }}>*</span></div>
-          <textarea value={comment} onChange={e => { setComment(e.target.value); setErr(false); }} placeholder={choice === 'reject' ? 'Enter the reason for rejecting this agreement…' : choice === 'clarify' ? 'Enter your clarification query for the initiator…' : 'Enter your clarification query or rejection reason…'}
+          <textarea value={comment} onChange={e => { setComment(e.target.value); setErr(false); if (choice === 'clarify') notifyTyping(); }} placeholder={choice === 'reject' ? 'Enter the reason for rejecting this agreement…' : choice === 'clarify' ? 'Enter your clarification query for the initiator…' : 'Enter your clarification query or rejection reason…'}
             style={{ width: '100%', height: 85, padding: '11px 13px', border: `1.5px solid ${err && !comment.trim() ? '#EF4444' : t.searchBorder}`, borderRadius: 11, fontFamily: 'inherit', fontSize: 12, color: t.text, resize: 'none', outline: 'none', lineHeight: 1.55, background: t.searchBg, boxSizing: 'border-box' }} />
           {err && !choice && <div style={{ fontSize: 9, color: '#EF4444', marginTop: 6, fontWeight: 600 }}>Please choose an action.</div>}
           <button onClick={submit} style={{ width: '100%', marginTop: 12, padding: 13, borderRadius: 12, border: 'none', background: choice === 'reject' ? 'linear-gradient(135deg,#EF4444,#DC2626)' : 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', color: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '0 4px 16px rgba(6,182,212,.4)', letterSpacing: '-.1px' }}>
@@ -484,6 +510,7 @@ function ChoiceCard({ sel, onClick, grad, selBg, selBd, baseBg, baseBd, title, t
 
 /* ── Clarification Conversation modal (opened from the Action-column chat icon) ── */
 function ConversationModal({ contract, onClose, t }: { contract: AtaContract; onClose: () => void; t: OpsTokens }) {
+  const { typingName } = useTyping(contract.id);
   return (
     <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(12,5,38,.75)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: "'Rubik', system-ui, sans-serif" }}>
       <div style={{ width: '100%', maxWidth: 500, borderRadius: 20, overflow: 'hidden', boxShadow: '0 40px 80px rgba(12,5,38,.4)', animation: 'ataSlideUp .22s cubic-bezier(.22,1,.36,1) both', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
@@ -528,6 +555,7 @@ function ConversationModal({ contract, onClose, t }: { contract: AtaContract; on
               ))}
             </div>
           )}
+          <TypingIndicator name={typingName} color={t.dark ? '#67e8f9' : '#0891b2'} />
         </div>
         <div style={{ padding: '12px 20px', background: t.surface, display: 'flex', justifyContent: 'flex-end', flexShrink: 0 }}>
           <button onClick={onClose} style={{ padding: '9px 22px', borderRadius: 10, border: `1.5px solid ${t.dark ? t.border : '#E2E8F0'}`, background: t.dark ? 'rgba(255,255,255,.05)' : '#F8F9FA', color: t.dark ? '#cbd5e1' : '#64748B', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Close</button>

@@ -2,6 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { echo } from '../../echo';
+import { useTyping } from '../../hooks/useTyping';
+import { TypingIndicator } from '../../components/TypingIndicator';
 import api from '../../api';
 import {
   type AwsContract, type Clarification,
@@ -43,6 +47,7 @@ const AP_CFG = {
 
 export default function ClmAgreementsSentPage() {
   const toast = useToast();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const t = useOpsTheme('cyan');
   const [tab, setTab]     = useState<AwsTab>('all');
@@ -62,6 +67,22 @@ export default function ClmAgreementsSentPage() {
       .finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
+
+  // Real-time refetch on any approval event for this tenant + focus fallback.
+  useEffect(() => {
+    const cid = user?.client_id;
+    const onFocus = () => load();
+    window.addEventListener('focus', onFocus);
+    let name: string | null = null;
+    if (echo && cid) {
+      name = `clm.approvals.${cid}`;
+      echo.private(name).listen('.approval.updated', () => load());
+    }
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      if (echo && name) echo.leave(name);
+    };
+  }, [user?.client_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const counts = useMemo(() => ({
     all:      sent.length,
@@ -605,6 +626,7 @@ function ClarifyTable({ rows, onRespond, t }: { rows: SentRow[]; onRespond: (id:
 function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; onClose: () => void; onSubmit: (id: string, text: string) => void; t: OpsTokens }) {
   const [text, setText] = useState('');
   const [err, setErr] = useState(false);
+  const { typingName, notifyTyping, stopTyping } = useTyping(contract.id);
   const pending = contract.clarifications.filter(cl => !cl.response);
   const hasPending = pending.length > 0;
   return (
@@ -645,15 +667,16 @@ function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; o
               </div>
             ))}
           </div>
+          <TypingIndicator name={typingName} color={t.dark ? '#c4b5fd' : '#7C3AED'} />
         </div>
         {hasPending ? (
           <div style={{ padding: '16px 20px', background: t.surface }}>
             <div style={{ fontSize: 9, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 8 }}>Your Response <span style={{ color: '#EF4444' }}>*</span></div>
-            <textarea value={text} onChange={e => { setText(e.target.value); setErr(false); }} placeholder="Provide your clarification response to the approver…"
+            <textarea value={text} onChange={e => { setText(e.target.value); setErr(false); notifyTyping(); }} placeholder="Provide your clarification response to the approver…"
               style={{ width: '100%', height: 90, padding: '10px 12px', border: `1.5px solid ${err ? '#EF4444' : (t.dark ? t.border : '#E2E8F0')}`, borderRadius: 10, fontFamily: 'inherit', fontSize: 12, color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', resize: 'none', outline: 'none', boxSizing: 'border-box' }} />
             <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-              <button onClick={onClose} style={{ flex: 1, padding: 10, borderRadius: 10, border: `1.5px solid ${t.dark ? t.border : '#E2E8F0'}`, background: t.dark ? 'rgba(255,255,255,.05)' : '#F8F9FA', color: t.dark ? '#cbd5e1' : '#64748B', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-              <button onClick={() => { if (!text.trim()) { setErr(true); return; } onSubmit(contract.id, text.trim()); }} style={{ flex: 2, padding: 10, borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', color: '#fff', fontFamily: 'inherit', fontSize: 11, fontWeight: 800, cursor: 'pointer', boxShadow: '0 3px 10px rgba(109,40,217,.35)' }}>Submit Clarification Response</button>
+              <button onClick={() => { stopTyping(); onClose(); }} style={{ flex: 1, padding: 10, borderRadius: 10, border: `1.5px solid ${t.dark ? t.border : '#E2E8F0'}`, background: t.dark ? 'rgba(255,255,255,.05)' : '#F8F9FA', color: t.dark ? '#cbd5e1' : '#64748B', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => { if (!text.trim()) { setErr(true); return; } stopTyping(); onSubmit(contract.id, text.trim()); }} style={{ flex: 2, padding: 10, borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', color: '#fff', fontFamily: 'inherit', fontSize: 11, fontWeight: 800, cursor: 'pointer', boxShadow: '0 3px 10px rgba(109,40,217,.35)' }}>Submit Clarification Response</button>
             </div>
           </div>
         ) : (
