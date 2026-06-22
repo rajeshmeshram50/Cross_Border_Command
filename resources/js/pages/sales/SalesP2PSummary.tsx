@@ -417,4 +417,39 @@ const SCOPED_CSS = `
   .p2p-soon-title { font-size: 24px; }
   .p2p-header { flex-direction: column; align-items: flex-start; gap: 12px; }
 }
+
+/* ── Dark mode ─────────────────────────────────────────────────────────── */
+[data-bs-theme="dark"] .p2p-root {
+  background: linear-gradient(160deg, #14102a 0%, #1b1437 45%, #120f26 100%);
+  color: #e5e7eb;
+}
+[data-bs-theme="dark"] .p2p-header {
+  background: linear-gradient(110deg, #211a40 0%, #2a2150 45%, #1c1638 100%);
+  border-color: rgba(167,139,250,.28);
+  box-shadow: 0 8px 28px rgba(0,0,0,.4);
+}
+[data-bs-theme="dark"] .p2p-header-title { color: #ede9fe; }
+[data-bs-theme="dark"] .p2p-header-sub { color: #c4b5fd; }
+[data-bs-theme="dark"] .p2p-online-dot { border-color: #211a40; }
+[data-bs-theme="dark"] .p2p-soon {
+  background: linear-gradient(135deg, #1b1437 0%, #211a40 60%, #1a1535 100%);
+  border-color: rgba(167,139,250,.22);
+  box-shadow: 0 8px 32px rgba(0,0,0,.45);
+}
+[data-bs-theme="dark"] .p2p-soon-eyebrow {
+  background: rgba(124,58,237,.20); border-color: rgba(167,139,250,.35); color: #d8b4fe;
+}
+[data-bs-theme="dark"] .p2p-soon-desc { color: #c4b5fd; }
+[data-bs-theme="dark"] .p2p-soon-progress-track { background: rgba(167,139,250,.16); border-color: rgba(167,139,250,.22); }
+[data-bs-theme="dark"] .p2p-soon-progress-text { color: #c4b5fd; }
+[data-bs-theme="dark"] .p2p-soon-cta-ghost {
+  background: rgba(255,255,255,.05); color: #d8b4fe; border-color: rgba(167,139,250,.3);
+}
+[data-bs-theme="dark"] .p2p-soon-cta-ghost:hover { background: rgba(124,58,237,.18); box-shadow: 0 4px 12px rgba(0,0,0,.4); }
+[data-bs-theme="dark"] .p2p-preview-heading { color: #ede9fe; }
+[data-bs-theme="dark"] .p2p-preview-card { background: #211a40; border-color: rgba(167,139,250,.20); }
+[data-bs-theme="dark"] .p2p-preview-card:hover { border-color: rgba(167,139,250,.45); box-shadow: 0 8px 22px rgba(0,0,0,.4); }
+[data-bs-theme="dark"] .p2p-preview-title { color: #ede9fe; }
+[data-bs-theme="dark"] .p2p-preview-desc { color: #94a3b8; }
+[data-bs-theme="dark"] .p2p-preview-tag { background: rgba(124,58,237,.18); border-color: rgba(167,139,250,.3); color: #d8b4fe; }
 `;

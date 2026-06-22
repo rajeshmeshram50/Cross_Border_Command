@@ -142,6 +142,12 @@ const p2pLeafLink = (leafId: string): string => {
     case "p2p.product":       return "/products";
     case "p2p.supplier":      return "/suppliers";
     case "p2p.sales_summary": return "/sales/p2p-summary";
+    case "p2p.analytics":     return "/p2p/analytics";
+    case "p2p.diagnosis":     return "/p2p/diagnosis";
+    case "p2p.bulk_sourcing": return "/p2p/bulk-sourcing";
+    case "p2p.case_to_case":  return "/p2p/case-to-case";
+    case "p2p.po":            return "/p2p/purchase-order";
+    case "p2p.spi":           return "/p2p/supplier-purchase-invoice";
     default:                  return "/p2p";
   }
 };

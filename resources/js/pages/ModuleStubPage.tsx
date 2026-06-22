@@ -12,7 +12,11 @@ import { useLocation } from 'react-router-dom';
  * component and drop the entry here.
  * ───────────────────────────────────────────────────────────────────────── */
 
-const STUB_META: Record<string, { title: string; group: string; blurb: string }> = {
+// Keyed by the full URL path (segments joined by '/') so nested placeholders
+// like the P2P leaves resolve to their own title, while the original top-level
+// modules still match on their single segment. `slug` is the permission slug
+// shown in the badge (defaults to the first path segment when omitted).
+const STUB_META: Record<string, { title: string; group: string; blurb: string; slug?: string }> = {
   'credentials-vault': {
     title: 'Credentials Vault',
     group: 'Security & Access',
@@ -33,19 +37,47 @@ const STUB_META: Record<string, { title: string; group: string; blurb: string }>
     group: 'Warehouse & Stock',
     blurb: 'Stock, warehouse, racks and movement tracking across branches.',
   },
+  // Procure to Pay (P2P) leaves that don't have a real page yet.
+  'p2p/analytics': {
+    title: 'P2P Analytics', group: 'Procure to Pay (P2P)', slug: 'p2p.analytics',
+    blurb: 'Procurement KPIs & insights — spend, cycle time and vendor performance at a glance.',
+  },
+  'p2p/diagnosis': {
+    title: 'P2P Diagnosis & Resolution Summary', group: 'Procure to Pay (P2P)', slug: 'p2p.diagnosis',
+    blurb: 'Identify and resolve procurement issues across the purchase-to-pay cycle.',
+  },
+  'p2p/bulk-sourcing': {
+    title: 'Bulk Sourcing Management', group: 'Procure to Pay (P2P)', slug: 'p2p.bulk_sourcing',
+    blurb: 'Raise and track bulk sourcing requests across products and suppliers.',
+  },
+  'p2p/case-to-case': {
+    title: 'Case to Case Procurement Management', group: 'Procure to Pay (P2P)', slug: 'p2p.case_to_case',
+    blurb: 'Manage request-based, one-off procurement sourcing.',
+  },
+  'p2p/purchase-order': {
+    title: 'Purchase Order (PO)', group: 'Procure to Pay (P2P)', slug: 'p2p.po',
+    blurb: 'Create & track purchase orders from approval to fulfilment.',
+  },
+  'p2p/supplier-purchase-invoice': {
+    title: 'Supplier Purchase Invoice (SPI)', group: 'Procure to Pay (P2P)', slug: 'p2p.spi',
+    blurb: 'Process supplier invoices, taxes and three-way matching.',
+  },
 };
 
 export default function ModuleStubPage() {
   const { pathname } = useLocation();
-  const slug = pathname.split('/').filter(Boolean)[0] ?? '';
-  const meta = STUB_META[slug] ?? {
+  const segs = pathname.split('/').filter(Boolean);
+  const meta = STUB_META[segs.join('/')] ?? STUB_META[segs[0] ?? ''] ?? {
     title: 'Module',
     group: 'Cross Border Command',
     blurb: 'This module is reserved for an upcoming build.',
   };
+  const slug = meta.slug ?? segs[0] ?? '';
 
   return (
-    <div className="p-6">
+    // Fill the viewport height so the page background is uniform — otherwise a
+    // short card leaves an empty band below it that reads as a stray dark "row".
+    <div className="p-6" style={{ minHeight: 'calc(100vh - 120px)' }}>
       <style>{CSS}</style>
       <div className="mstub-card">
         <div className="mstub-head">
