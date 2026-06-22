@@ -132,6 +132,9 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
   const [editingId, setEditingId]     = useState<number | null>(null);
   const [pendingDelete, setPendingDelete] = useState<DirectoryRow | null>(null);
   const [deleting, setDeleting]       = useState(false);
+  // Inline per-field validation errors for the Map Product popup (red border +
+  // message under the field), cleared as each field is corrected.
+  const [errors, setErrors] = useState<{ product?: string; quantity?: string; target_price?: string; currency?: string }>({});
 
   /* Load mapped rows whenever the modal opens for a lead. */
   useEffect(() => {
@@ -263,24 +266,19 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
    * only updates pricing). ─────────────────────────────────────────── */
   const saveDraft = async () => {
     if (!leadId) return;
-    if (!draft.product_id) {
-      toast.warning('Pick a product', 'Select a product from the dropdown first');
-      return;
-    }
-    // All marked fields are required — validate Quantity, Target Price and
-    // Currency before mapping (they carry a * but weren't enforced before).
+    /* Inline field validation — flag every missing/invalid required field at
+     * once (red border + message under each), like the other forms, instead of
+     * a one-at-a-time toast. */
+    const errs: typeof errors = {};
+    if (!draft.product_id) errs.product = 'Select a product first.';
     const qty = Number(draft.quantity);
-    if (!String(draft.quantity).trim() || !Number.isFinite(qty) || qty <= 0) {
-      toast.warning('Quantity required', 'Enter a quantity greater than 0.');
-      return;
-    }
+    if (!String(draft.quantity).trim() || !Number.isFinite(qty) || qty <= 0) errs.quantity = 'Enter a quantity greater than 0.';
     const tp = Number(draft.target_price);
-    if (!String(draft.target_price).trim() || !Number.isFinite(tp) || tp <= 0) {
-      toast.warning('Target price required', 'Enter a target price greater than 0.');
-      return;
-    }
-    if (!draft.currency) {
-      toast.warning('Currency required', 'Select a currency.');
+    if (!String(draft.target_price).trim() || !Number.isFinite(tp) || tp <= 0) errs.target_price = 'Enter a target price greater than 0.';
+    if (!draft.currency) errs.currency = 'Select a currency.';
+    setErrors(errs);
+    if (Object.keys(errs).length) {
+      toast.warning('Required information is not filled', 'Please complete the highlighted fields.');
       return;
     }
     setSaving(true);
@@ -327,7 +325,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
         }, ...prev]);
         toast.success('Product mapped', 'Added to the directory');
       }
-      setDraft(EMPTY_DRAFT); setEditingId(null); setDraftOpen(false);
+      setDraft(EMPTY_DRAFT); setEditingId(null); setDraftOpen(false); setErrors({});
     } catch (e: any) {
       toast.error(editingId ? 'Update failed' : 'Save failed', e?.response?.data?.message ?? 'Could not save this product');
     } finally {
@@ -341,6 +339,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
    * mapping to a different product. */
   const startEdit = (row: DirectoryRow) => {
     setEditingId(row.id);
+    setErrors({});
     setDraft({
       product_id:   row.product_id,
       currency:     row.currency,
@@ -389,7 +388,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
           <div className="pdm-head-actions">
             <button
               className="pdm-map-btn"
-              onClick={() => { setEditingId(null); setDraft(freshDraft()); setDraftOpen(o => !o); }}
+              onClick={() => { setEditingId(null); setErrors({}); setDraft(freshDraft()); setDraftOpen(o => !o); }}
               disabled={!leadId}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
@@ -578,7 +577,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
           Product" button. Lives over the directory backdrop with a
           higher z-index so it sits on top of the directory body. */}
       {draftOpen && (
-        <div className="pdm-form-backdrop" onClick={() => { setDraft(EMPTY_DRAFT); setEditingId(null); setDraftOpen(false); }}>
+        <div className="pdm-form-backdrop" onClick={() => { setDraft(EMPTY_DRAFT); setEditingId(null); setDraftOpen(false); setErrors({}); }}>
           <div className="pdm-form-modal" onClick={e => e.stopPropagation()}>
             <div className="pdm-form-head">
               <div className="pdm-form-head-left">
@@ -598,7 +597,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
               </div>
               <button
                 className="pdm-form-close"
-                onClick={() => { setDraft(EMPTY_DRAFT); setEditingId(null); setDraftOpen(false); }}
+                onClick={() => { setDraft(EMPTY_DRAFT); setEditingId(null); setDraftOpen(false); setErrors({}); }}
                 disabled={saving}
                 aria-label="Close"
               >
@@ -613,7 +612,8 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                 <label className="pdm-form-label">SELECT PRODUCT <span className="pdm-form-req">*</span></label>
                 <MasterSelect
                   value={draft.product_id != null ? String(draft.product_id) : ''}
-                  onChange={(v) => setDraft(p => ({ ...p, product_id: v ? Number(v) : null }))}
+                  invalid={!!errors.product}
+                  onChange={(v) => { setDraft(p => ({ ...p, product_id: v ? Number(v) : null })); setErrors(e => ({ ...e, product: undefined })); }}
                   /* Each option carries the product's master status as a
                      colored badge (Active = green, Inactive = red). */
                   options={availableProducts.map(p => {
@@ -629,12 +629,13 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                      different product (only its pricing is editable). */
                   disabled={productsLoading || !!editingId}
                 />
+                {errors.product && <div className="pdm-form-err">{errors.product}</div>}
               </div>
 
               <div className="pdm-form-grid-2">
                 <div className="pdm-form-field">
                   <label className="pdm-form-label">QUANTITY <span className="pdm-form-req">*</span></label>
-                  <div className="pdm-form-input-wrap">
+                  <div className={`pdm-form-input-wrap ${errors.quantity ? 'pdm-form-input-wrap-err' : ''}`}>
                     <span className="pdm-form-input-icon" aria-hidden>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                         <rect x="3" y="3"  width="7" height="7" rx="1" />
@@ -648,24 +649,26 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                       className="pdm-form-input"
                       placeholder="Enter quantity"
                       value={draft.quantity}
-                      onChange={e => setDraft(p => ({ ...p, quantity: e.target.value }))}
+                      onChange={e => { setDraft(p => ({ ...p, quantity: e.target.value })); setErrors(er => ({ ...er, quantity: undefined })); }}
                     />
                   </div>
+                  {errors.quantity && <div className="pdm-form-err">{errors.quantity}</div>}
                 </div>
                 <div className="pdm-form-field">
                   <label className="pdm-form-label">TARGET PRICE <span className="pdm-form-req">*</span></label>
                   {/* No currency symbol prefix here — the currency is chosen
                       separately below, so a hardcoded "$" was both redundant
                       and misleading (it showed $ even for INR/EUR/etc.). */}
-                  <div className="pdm-form-input-wrap">
+                  <div className={`pdm-form-input-wrap ${errors.target_price ? 'pdm-form-input-wrap-err' : ''}`}>
                     <input
                       type="number" min="0" step="any"
                       className="pdm-form-input"
                       placeholder="Enter target price"
                       value={draft.target_price}
-                      onChange={e => setDraft(p => ({ ...p, target_price: e.target.value }))}
+                      onChange={e => { setDraft(p => ({ ...p, target_price: e.target.value })); setErrors(er => ({ ...er, target_price: undefined })); }}
                     />
                   </div>
+                  {errors.target_price && <div className="pdm-form-err">{errors.target_price}</div>}
                 </div>
               </div>
 
@@ -676,7 +679,8 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                     set we limit the picker to that one option. */}
                 <MasterSelect
                   value={draft.currency}
-                  onChange={(v) => setDraft(p => ({ ...p, currency: v }))}
+                  invalid={!!errors.currency}
+                  onChange={(v) => { setDraft(p => ({ ...p, currency: v })); setErrors(e => ({ ...e, currency: undefined })); }}
                   options={
                     lockedCurrency
                       ? [{ value: lockedCurrency, label: lockedCurrency }]
@@ -689,6 +693,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                   disabled={!!lockedCurrency}
                   loading={currenciesLoading && currencies.length === 0}
                 />
+                {errors.currency && <div className="pdm-form-err">{errors.currency}</div>}
               </div>
 
               <div className="pdm-form-note">
@@ -706,7 +711,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
             <div className="pdm-form-foot">
               <button
                 className="pdm-form-btn pdm-form-btn-ghost"
-                onClick={() => { setDraft(EMPTY_DRAFT); setEditingId(null); setDraftOpen(false); }}
+                onClick={() => { setDraft(EMPTY_DRAFT); setEditingId(null); setDraftOpen(false); setErrors({}); }}
                 disabled={saving}
               >
                 Cancel
@@ -1272,6 +1277,11 @@ const SCOPED_CSS = `
   border-color: #7c3aed;
   box-shadow: 0 0 0 3px rgba(124,58,237,.16);
 }
+/* Inline validation — red border on the field + small message beneath, matching
+   the other forms. The error border wins over the default until refocused. */
+.pdm-form-input-wrap-err { border-color: #ef4444 !important; }
+.pdm-form-input-wrap-err:focus-within { box-shadow: 0 0 0 3px rgba(239,68,68,.16); }
+.pdm-form-err { margin-top: 5px; font-size: 11px; font-weight: 600; color: #ef4444; }
 .pdm-form-input-icon {
   display: inline-flex; align-items: center; justify-content: center;
   width: 38px; height: 100%;
