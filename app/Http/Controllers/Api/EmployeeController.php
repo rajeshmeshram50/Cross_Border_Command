@@ -7,11 +7,13 @@ use App\Mail\PasswordChangedMail;
 use App\Mail\WelcomeCredentialsMail;
 use App\Models\Branch;
 use App\Models\Employee;
+use App\Models\Holiday;
 use App\Models\Masters\LeavePlans;
 use App\Models\Module;
 use App\Models\Permission;
 use App\Models\User;
 use App\Support\Settings;
+use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -119,6 +121,50 @@ class EmployeeController extends Controller
         $this->authorize($request, 'can_view');
         $row = $this->resolveRow($request, $this->resolveIdParam($id));
         return response()->json($row);
+    }
+
+    /**
+     * Holidays for THIS employee's assigned Holiday Group, resolved for a given
+     * year — recurring holidays shift onto the requested year (mirrors
+     * HolidayController::my). Gated by the employee can_view permission the
+     * profile already requires, so a manager/admin can see any employee's
+     * calendar without holding the separate hr.holiday module grant.
+     *
+     * Response: { group: {id,name}|null, year, holidays: [{name,date,type,...}] }
+     */
+    public function holidays(Request $request, $id)
+    {
+        $this->authorize($request, 'can_view');
+        $emp = $this->resolveRow($request, $this->resolveIdParam($id));
+
+        $year    = (int) ($request->query('year') ?: now()->year);
+        $groupId = $emp->holiday_group_id;
+        if (!$groupId) {
+            return response()->json(['group' => null, 'year' => $year, 'holidays' => []]);
+        }
+
+        $holidays = Holiday::where('holiday_group_id', $groupId)
+            ->orderBy('date')
+            ->get()
+            ->map(function (Holiday $h) use ($year) {
+                $arr = $h->toArray();
+                // Recurring holidays repeat yearly — surface them on the
+                // requested year regardless of the original stored year.
+                if ($h->is_recurring && $h->date) {
+                    $d = Carbon::parse($h->date);
+                    $arr['date'] = Carbon::create($year, $d->month, $d->day)->toDateString();
+                }
+                return $arr;
+            })
+            ->filter(fn ($h) => (int) substr((string) $h['date'], 0, 4) === $year)
+            ->sortBy('date')
+            ->values();
+
+        return response()->json([
+            'group'    => ['id' => $groupId, 'name' => $emp->holidayGroup?->name],
+            'year'     => $year,
+            'holidays' => $holidays,
+        ]);
     }
 
     /**

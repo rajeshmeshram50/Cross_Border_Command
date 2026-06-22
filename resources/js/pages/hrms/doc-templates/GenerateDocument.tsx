@@ -116,7 +116,10 @@ export default function GenerateDocument() {
         const [tplRes, tokensRes, empRes] = await Promise.all([
           api.get(`/hr-document-templates/${templateId}`),
           api.get('/hr-custom-fields/known-tokens').catch(() => ({ data: { employee: [], custom_fields: [] } })),
-          api.get('/employees'),
+          // onboarded_only → only Active, fully-onboarded, non-disabled staff
+          // are selectable (excludes exited / inactive / half-onboarded), the
+          // same gate Recruitment's people-pickers use.
+          api.get('/employees', { params: { onboarded_only: 1 } }),
         ]);
         if (cancelled) return;
         setTemplate(tplRes.data as TemplateRow);
