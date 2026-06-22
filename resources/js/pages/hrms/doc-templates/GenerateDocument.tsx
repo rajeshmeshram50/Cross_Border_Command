@@ -4,6 +4,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
+import { Shimmer } from '../../../components/ui/Shimmer';
+import Tooltip from '../../../components/ui/Tooltip';
 
 /**
  * Generate Document — 3-step wizard launched from a template row.
@@ -229,6 +231,32 @@ export default function GenerateDocument() {
     }
   };
 
+  /* Generate the document(s) and download them immediately — saves the user a
+     trip through the success screen when they just want the file. Reuses the
+     same generate endpoint + the existing authenticated DOCX download. */
+  const onDownload = async () => {
+    setSaving(true);
+    try {
+      const { data } = await api.post('/hr-generated-documents', {
+        template_id: templateId,
+        recipients: selectedEmployees.map(e => ({
+          employee_id: e.id,
+          custom_values: customByEmp[e.id] || {},
+        })),
+      });
+      const docs: GeneratedDoc[] = data?.documents ?? [];
+      for (const g of docs) {
+        await downloadGenerated(g);
+      }
+      setGenerated(docs);
+      toast.success('Downloaded', `${docs.length} document(s) generated and downloaded.`);
+    } catch (err: any) {
+      toast.error('Could not download', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   /* Send the customised document into the signing workflow for each selected
      employee — same custom values the user filled here are frozen into the
      signed copy (backend store() merges custom_values). One run per employee. */
@@ -259,9 +287,59 @@ export default function GenerateDocument() {
 
   // ── Render ───────────────────────────────────────────────────────────────
   if (bootstrapping || !template) {
+    // Skeleton mirrors the wizard shell (gradient header → step strip →
+    // employee-select body → footer) so the layout doesn't jump when it loads.
     return (
-      <div className="rec-page" style={{ padding: 24 }}>
-        <Card><CardBody>Loading wizard…</CardBody></Card>
+      <div className="rec-page gd-page">
+        <Card className="mb-3" style={{ borderRadius: 14, overflow: 'hidden' }}>
+          {/* Header band */}
+          <div style={headerGradient}>
+            <div className="d-flex align-items-center gap-3" style={{ padding: '16px 22px' }}>
+              <Shimmer width={44} height={44} radius={12} style={{ background: 'rgba(255,255,255,0.25)' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Shimmer width={180} height={18} style={{ background: 'rgba(255,255,255,0.30)' }} />
+                <Shimmer width={260} height={11} style={{ background: 'rgba(255,255,255,0.22)' }} />
+              </div>
+            </div>
+          </div>
+
+          {/* Step strip */}
+          <div style={{ display: 'flex', gap: 16, padding: '14px 22px', borderBottom: '1px solid #e5e7eb' }}>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                <Shimmer width={28} height={28} radius={999} />
+                <Shimmer height={12} width="55%" />
+              </div>
+            ))}
+          </div>
+
+          {/* Body — employee select list */}
+          <CardBody style={{ padding: 22 }}>
+            <Shimmer width={200} height={14} style={{ marginBottom: 16 }} />
+            <div style={{ display: 'grid', gap: 10 }}>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, border: '1px solid #eef2f7', borderRadius: 10 }}>
+                  <Shimmer width={18} height={18} radius={4} />
+                  <Shimmer width={36} height={36} radius={999} />
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <Shimmer height={12} width="40%" />
+                    <Shimmer height={10} width="60%" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardBody>
+
+          {/* Footer */}
+          <div style={{ padding: 14, borderTop: '1px solid #e5e7eb', background: '#f9fafb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Shimmer width={90} height={12} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Shimmer width={80} height={34} radius={8} />
+              <Shimmer width={80} height={34} radius={8} />
+              <Shimmer width={110} height={34} radius={8} />
+            </div>
+          </div>
+        </Card>
       </div>
     );
   }
@@ -389,15 +467,24 @@ export default function GenerateDocument() {
             ) : (
               <>
                 {/* Send the customised doc straight into the signing workflow
-                    (preserves the custom values filled in this wizard). */}
-                <button type="button" onClick={onSendForSignature} disabled={saving || sending}
-                  title="Send into the configured signing workflow for the selected employee(s)"
-                  style={{ padding: '8px 18px', background: '#fff', border: '2px solid #7c3aed', borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#7c3aed', cursor: (saving || sending) ? 'default' : 'pointer', opacity: (saving || sending) ? 0.6 : 1 }}>
-                  <i className="ri-quill-pen-line me-1" />{sending ? 'Sending…' : 'Send for Signature'}
-                </button>
+                    (preserves the custom values filled in this wizard). Styled
+                    Tooltip to match the doc-templates list action column. */}
+                <Tooltip label="Send into the configured signing workflow for the selected employee(s)">
+                  <button type="button" onClick={onSendForSignature} disabled={saving || sending}
+                    style={{ padding: '8px 18px', background: '#fff', border: '2px solid #7c3aed', borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#7c3aed', cursor: (saving || sending) ? 'default' : 'pointer', opacity: (saving || sending) ? 0.6 : 1 }}>
+                    <i className="ri-quill-pen-line me-1" />{sending ? 'Sending…' : 'Send for Signature'}
+                  </button>
+                </Tooltip>
+                {/* Generate + download the document(s) in one click. */}
+                <Tooltip label="Generate and download the document(s) right away">
+                  <button type="button" onClick={onDownload} disabled={saving || sending}
+                    style={{ padding: '8px 18px', background: '#fff', border: '2px solid #7c3aed', borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#7c3aed', cursor: (saving || sending) ? 'default' : 'pointer', opacity: (saving || sending) ? 0.6 : 1 }}>
+                    <i className="ri-download-2-line me-1" />{saving ? 'Working…' : `Download document${selectedEmployees.length === 1 ? '' : 's'}`}
+                  </button>
+                </Tooltip>
                 <button type="button" onClick={onGenerate} disabled={saving || sending}
                   style={{ padding: '8px 22px', background: PRIMARY_GRADIENT, border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: (saving || sending) ? 'default' : 'pointer', boxShadow: PRIMARY_GLOW, opacity: (saving || sending) ? 0.6 : 1 }}>
-                  <i className="ri-download-2-line me-1" />{saving ? 'Generating…' : `Generate ${selectedEmployees.length} document${selectedEmployees.length === 1 ? '' : 's'}`}
+                  <i className="ri-file-add-line me-1" />{saving ? 'Generating…' : `Generate ${selectedEmployees.length} document${selectedEmployees.length === 1 ? '' : 's'}`}
                 </button>
               </>
             )}
