@@ -383,7 +383,15 @@ class CtcContractController extends Controller
     public function index(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
+
+        // Branch-scope the list the same way as the approver picker: a branch
+        // user only ever sees their OWN branch's contracts; a tenant-level
+        // client_admin (no own branch) sees the SPA-injected active branch, or
+        // all branches when none is selected.
+        $branchFilter = ($user->branch_id ?: null) ?: ($request->integer('branch_id') ?: null);
+
         $rows = CtcContract::where('client_id', $user->client_id)
+            ->when($branchFilter, fn ($q) => $q->where('branch_id', $branchFilter))
             ->orderByDesc('id')->get()
             ->map(fn ($c) => $this->shapeList($c));
         return response()->json(['status' => true, 'data' => $rows]);
@@ -576,7 +584,13 @@ class CtcContractController extends Controller
     public function approverCandidates(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $branchFilter = $request->integer('branch_id') ?: null;
+
+        // Approvers must belong to the SAME branch as the contract. Always scope
+        // to the caller's OWN branch when they have one (branch users / employees)
+        // so the picker never lists other branches' people — even when the branch
+        // switcher is on "All". A tenant-level client_admin (no own branch) falls
+        // back to the SPA-injected active branch_id.
+        $branchFilter = ($user->branch_id ?: null) ?: ($request->integer('branch_id') ?: null);
 
         // Internal approvers are branch users and employees only — clients
         // (client_admin) are intentionally excluded from the approver list.

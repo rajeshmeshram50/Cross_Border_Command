@@ -44,7 +44,6 @@ const ONB_EXPENSE      = OPT('Standard Expense Policy', 'Manager Approval', 'No 
 const ONB_YES_NO       = OPT('No', 'Yes');
 const ONB_ACCESS_CARD  = OPT('Not Issued', 'Issued');
 
-const ONB_PAY_GROUP    = OPT('Default pay group', 'Senior Pay Group', 'Intern Pay Group', 'Contractor Pay Group');
 const ONB_PERIOD       = OPT('Per annum', 'Per month', 'Per hour', 'Per day');
 const ONB_SAL_STRUCT   = OPT('Range Based', 'Fixed', 'Component Based');
 const ONB_TAX_REGIME   = OPT('New Regime (115BAC)', 'Old Regime');
@@ -1990,7 +1989,6 @@ export function VaultModal({
                       </div>
                     </div>
                     <span
-                      className="d-inline-flex align-items-center"
                       className="vault-doc-count d-inline-flex align-items-center"
                       style={{ padding: '4px 12px', borderRadius: 999, fontSize: 11.5, fontWeight: 600 }}
                     >
@@ -4011,23 +4009,29 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         return;
       }
     }
-    // Stage-to-stage navigation persists the current stage SILENTLY — the PUT
-    // runs, but we skip the full /employees reload + toast so the next stage
-    // opens fast (that reload was the navigation-lag culprit, BUG-030).
-    if (activeStage === 1) {
-      await saveStage1(false, true, true);
-    } else if (activeStage === 2) {
+    // Switch the stage IMMEDIATELY so navigation feels instant, then persist
+    // the stage we're leaving in the BACKGROUND (fire-and-forget). Awaiting
+    // the PUT before switching was the remaining navigation-lag culprit:
+    // BUG-030 removed the /employees reload, but the blocking save round-trip
+    // still froze the UI on every stage click. Silent saves already skip the
+    // parent reload + toast; the typed data stays in `s1`/refs so nothing is
+    // lost while the request is in flight, and a failed save still surfaces
+    // its own error toast from within saveStage1 / saveStage4.
+    const from = activeStage;
+    setActiveStage(Math.max(1, Math.min(6, target)));
+    if (from === 1) {
+      void saveStage1(false, true, true);
+    } else if (from === 2) {
       // Persist any typed-but-unblurred Previous-Employment rows so
       // the user doesn't lose Company Name / Job Title / dates on
       // navigation. onBlur fires the same persistCompany under the
-      // hood — flushing here just awaits any rows that haven't been.
-      await stage2Ref.current?.flush();
-    } else if (activeStage === 3) {
-      await saveStage1(false, true, true);
-    } else if (activeStage === 4) {
-      await saveStage4(false);
+      // hood — flushing here just kicks any rows that haven't been.
+      void stage2Ref.current?.flush();
+    } else if (from === 3) {
+      void saveStage1(false, true, true);
+    } else if (from === 4) {
+      void saveStage4(false);
     }
-    setActiveStage(Math.max(1, Math.min(6, target)));
   };
 
   if (!emp) return null;
@@ -4761,10 +4765,6 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 
                 <p className="onb-init-subgroup">Payroll Configuration</p>
                 <Row className="g-3">
-                  <Col md={4}>
-                    <label className="onb-init-label">Pay Group</label>
-                    <MasterSelect options={ONB_PAY_GROUP} value={s1.pay_group} placeholder="Select pay group" onChange={(v) => setS1(p => ({ ...p, pay_group: v }))} />
-                  </Col>
                   {/* Compensation - Annual Salary.
                       Backed by Postgres numeric(14, 2) — max value
                       999,999,999,999.99 (12 whole digits + 2 decimal).
@@ -4832,52 +4832,10 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                   </Col>
                 </Row>
 
-                <p className="onb-init-subgroup">Bonus, Perks &amp; Statutory</p>
-                <div className="onb-init-check-row">
-                  <label className="onb-init-check">
-                    <input
-                      type="checkbox"
-                      checked={s1.bonus_in_annual}
-                      onChange={e => setS1(p => ({ ...p, bonus_in_annual: e.target.checked }))}
-                    />
-                    {' '}Bonus included in annual salary
-                  </label>
-                  <label className="onb-init-check">
-                    <input
-                      type="checkbox"
-                      checked={s1.pf_eligible}
-                      onChange={e => setS1(p => ({ ...p, pf_eligible: e.target.checked }))}
-                    />
-                    {' '}Provident Fund (PF) Eligible
-                  </label>
-                </div>
-                <div>
-                  <button type="button" className="onb-init-add-btn">+ Add Bonus</button>
-                  <button type="button" className="onb-init-add-btn">+ Add Perks</button>
-                </div>
-
                 <div className="onb-init-breakup">
                   <div className="onb-init-breakup-head">
                     <i className="ri-grid-line" style={{ color: '#7c3aed' }} />
                     Salary Breakup
-                    {/* Toggle is now interactive — was previously a bare
-                        decorative span with no click handler, so flipping
-                        it had no effect. Bound to s1.detailed_breakup so
-                        the state survives Save Draft + survives reload. */}
-                    <span
-                      className="onb-init-breakup-toggle"
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => setS1(p => ({ ...p, detailed_breakup: !p.detailed_breakup }))}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setS1(p => ({ ...p, detailed_breakup: !p.detailed_breakup })); } }}
-                      style={{ cursor: 'pointer', userSelect: 'none' }}
-                    >
-                      Detailed breakup
-                      <span
-                        className={`onb-init-toggle${s1.detailed_breakup ? '' : ' off'}`}
-                        aria-pressed={s1.detailed_breakup}
-                      />
-                    </span>
                   </div>
                   <div className="onb-init-breakup-body">
                     <p className="onb-init-breakup-sub">Salary Effective From</p>
@@ -7763,3 +7721,4 @@ function Stage6Verify({
     </>
   );
 }
+  
