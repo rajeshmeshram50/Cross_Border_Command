@@ -1093,6 +1093,13 @@
           background: #ffffff;
           color: #0f172a;
         }
+        /* Dark mode: the solid-white selected pill reads as light-theme against
+           the dark canvas — use a frosted translucent highlight with light text
+           so the active tab follows the dark theme. */
+        [data-bs-theme="dark"] .ep-tabbar-btn.is-active {
+          background: rgba(255,255,255,0.16);
+          color: #fff;
+        }
         .ep-tabbar-icon {
           width: 18px; height: 18px; border-radius: 5px;
           display: inline-flex; align-items: center; justify-content: center;
