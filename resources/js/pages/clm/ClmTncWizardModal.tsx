@@ -1250,7 +1250,7 @@ const TNW_CSS = `
   padding: 24px;
   overflow-y: auto;
   animation: tnwFade .18s ease both;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 @keyframes tnwFade { from { opacity: 0; } to { opacity: 1; } }
 .tnw-shell {

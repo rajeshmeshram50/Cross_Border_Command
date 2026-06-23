@@ -199,7 +199,7 @@ export default function ImageCropperModal({
           backdrop-filter: blur(8px);
           -webkit-backdrop-filter: blur(8px);
           animation: cbcCropFade .2s ease both;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+          font-family: var(--font-sans);
         }
         /* Fully dark cropper — explicit colors, no theme vars. Photo
            editors look the same in light or dark app themes (Instagram,

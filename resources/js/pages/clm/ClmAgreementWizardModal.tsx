@@ -1437,7 +1437,7 @@ const AGW_CSS = `
   display: flex; align-items: center; justify-content: center;
   padding: 24px; overflow-y: auto;
   animation: agwFade .18s ease both;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 @keyframes agwFade { from { opacity: 0; } to { opacity: 1; } }
 .agw-shell {

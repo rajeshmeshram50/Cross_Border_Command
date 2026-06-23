@@ -14,7 +14,7 @@
 
 export const SALES_MATRIX_DETAIL_CSS = `
 .smd-root {
-  font-family: 'DM Sans','Inter',system-ui,-apple-system,sans-serif;
+  font-family: var(--font-sans);
   background: linear-gradient(160deg,#faf5ff 0%,#f5f3ff 35%,#fafafa 100%);
   padding: 10px 14px 18px;
   margin: -1rem -0.75rem;

@@ -128,10 +128,10 @@ class AdvanceRequestController extends Controller
             abort(403, 'You can only file advance requests for your own employee record.');
         }
 
-        // A request can only have been raised today or in the PAST — future
-        // dates are invalid. Floor at one year ago (mirrors the client bound)
-        // so a hand-crafted request can't backdate years.
-        $minRequested = now()->subYear()->toDateString();
+        // Requested date is when the advance is needed — today up to one year
+        // ahead (mirrors the client bound). Past dates and anything beyond a
+        // year from today are rejected.
+        $maxRequested = now()->addYear()->toDateString();
 
         $data = $request->validate([
             'advance_type'        => ['required', 'string', 'in:' . implode(',', self::ADVANCE_TYPES)],
@@ -143,7 +143,7 @@ class AdvanceRequestController extends Controller
             // column — matches the expense-claim guard so the SPA's input
             // sanitiser (12 whole digits + 2 fraction) can't overflow it.
             'amount'              => ['required', 'numeric', 'min:0', 'max:9999999999999.99'],
-            'requested_date'      => ['required', 'date', 'before_or_equal:today', 'after_or_equal:' . $minRequested],
+            'requested_date'      => ['required', 'date', 'after_or_equal:today', 'before_or_equal:' . $maxRequested],
             'recovery_start'      => ['required', 'date', 'after_or_equal:requested_date'],
             'recovery_mode'       => ['required', 'string', 'in:' . implode(',', self::RECOVERY_MODES)],
             // Months + monthly EMI only required when mode='emi'. The
@@ -156,8 +156,8 @@ class AdvanceRequestController extends Controller
             'files'               => ['nullable', 'array'],
             'files.*'             => ['file', 'max:5120', 'mimes:pdf,jpg,jpeg,png'],
         ], [
-            'requested_date.before_or_equal' => 'Requested date cannot be in the future.',
-            'requested_date.after_or_equal'  => 'Requested date cannot be more than a year ago.',
+            'requested_date.after_or_equal'  => 'Requested date cannot be in the past.',
+            'requested_date.before_or_equal' => 'Requested date cannot be more than one year from today.',
         ]);
 
         if ($data['recovery_mode'] === 'emi' && empty($data['recovery_months'])) {

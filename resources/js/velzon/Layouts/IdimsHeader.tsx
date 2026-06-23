@@ -15,18 +15,6 @@ import type { LucideIcon } from 'lucide-react';
 const getLucide = (name?: string): LucideIcon =>
   (name && (LucideIcons as unknown as Record<string, LucideIcon>)[name]) || LucideIcons.Circle;
 
-/* ─────────────────────────────────────────────────────────────────────────
- * IdimsHeader — horizontal top-bar header ported from the IDIMS HTML
- * prototype (CLM_Base_file). Two rows inside one sticky white nav:
- *   Row 1: logo · search · branch switcher · Default/Brand toggle · action
- *          icons (dark mode, fullscreen, mail, notifications, logout) · profile
- *   Row 2: horizontal nav (Dashboard, Credentials Vault, Project Navigator,
- *          HRMS, Sales Matrix▾, CLM▾, Procure to Pay, GTS, Inventory, Master)
- *
- * Sales Matrix + CLM open mega-dropdowns built from SALES_GROUPS / CLM_GROUPS.
- * Everything is wired to the real contexts (auth, branch, theme, navigation).
- * Rendered only in horizontal layout mode (see velzon/Layouts/index.tsx).
- * ───────────────────────────────────────────────────────────────────────── */
 
 type Leaf = { id: string; label: string; icon?: string };
 type Group = { id: string; label: string; children: Leaf[] };
@@ -190,9 +178,7 @@ export default function IdimsHeader() {
   const navigate = useNavigate();
   const { user, logout, tenantThemeEnabled, toggleTenantTheme } = useAuth();
   const { theme, toggle: toggleTheme } = useTheme();
-  const {
-    branches, selectedBranchId, selectedBranch, canSwitch, setBranch,
-  } = useBranchSwitcher();
+  const { selectedBranch } = useBranchSwitcher();
 
   const [openDD, setOpenDD] = useState<DD | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -443,7 +429,7 @@ export default function IdimsHeader() {
     go(path);
   };
 
-  const renderLeaf = (leaf: Leaf, kind: DD, accent: string, bg: string) => {
+  const renderLeaf = (leaf: Leaf, kind: DD, accent: string, bg: string, variant = '') => {
     // Sign Document Tracker has no permission slug of its own — it's a
     // read-only view of the same sign requests, so it rides on the
     // Quotation Vs PI permission.
@@ -455,7 +441,7 @@ export default function IdimsHeader() {
     const path = leafPath(leaf.id, kind);
     const Icon = getLucide(leaf.icon);
     return (
-      <button key={leaf.id} type="button" className="idims-dd-item" style={{ '--ac': accent } as React.CSSProperties}
+      <button key={leaf.id} type="button" className={`idims-dd-item ${variant}`} style={{ '--ac': accent } as React.CSSProperties}
         onClick={() => go(path)}>
         <span className="idims-dd-item-ico" style={{ background: bg, color: accent }}>
           <Icon size={16} strokeWidth={2} />
@@ -468,18 +454,23 @@ export default function IdimsHeader() {
     );
   };
 
-  const renderCol = (groups: Group[], kind: DD, accent: string, bg: string, key?: number) => (
-    <div key={key} className="idims-dd-col" style={{ borderTop: `3px solid ${accent}` }}>
-      {groups.map(g => (
-        <div key={g.id} className="idims-dd-group">
-          <div className="idims-dd-section-label" style={{ color: accent }}>
-            <span className="dd-sl-dot" style={{ background: accent }} />{g.label}
+  const renderCol = (groups: Group[], kind: DD, accent: string, bg: string, key?: number) => {
+    // First column items render large (like the prototype's Command Center);
+    // the remaining columns render compact.
+    const variant = key === 0 ? 'idims-dd-item-lg' : 'idims-dd-item-sm';
+    return (
+      <div key={key} className="idims-dd-col" style={{ borderTop: `3px solid ${accent}` }}>
+        {groups.map(g => (
+          <div key={g.id} className="idims-dd-group">
+            <div className="idims-dd-section-label" style={{ color: accent }}>
+              <span className="dd-sl-dot" style={{ background: accent }} />{g.label}
+            </div>
+            {g.children.map(leaf => renderLeaf(leaf, kind, accent, bg, variant))}
           </div>
-          {g.children.map(leaf => renderLeaf(leaf, kind, accent, bg))}
-        </div>
-      ))}
-    </div>
-  );
+        ))}
+      </div>
+    );
+  };
 
   // Smaller nested leaf (the Agreements children under "Without Shipment ID").
   const renderClmChild = (leaf: Leaf, accent: string, bg: string) => {
@@ -490,7 +481,7 @@ export default function IdimsHeader() {
         <span className="idims-clm-child-ico" style={{ background: bg, color: accent }}><Icon size={12} strokeWidth={2} /></span>
         <span className="idims-dd-item-text">
           <span className="idims-clm-child-label">{leaf.label}</span>
-          {LEAF_DESC[leaf.id] && <span className="idims-dd-item-desc">{LEAF_DESC[leaf.id]}</span>}
+          {LEAF_DESC[leaf.id] && <span className="idims-clm-child-desc">{LEAF_DESC[leaf.id]}</span>}
         </span>
       </button>
     );
@@ -523,7 +514,7 @@ export default function IdimsHeader() {
         {/* Command Center */}
         <div className="idims-dd-col" style={{ borderTop: `3px solid ${P}` }}>
           <div className="idims-dd-section-label" style={{ color: P }}><span className="dd-sl-dot" style={{ background: P }} />CLM Command Center</div>
-          {cmd?.children.map(l => renderLeaf(l, 'clm', P, PB))}
+          {cmd?.children.map(l => renderLeaf(l, 'clm', P, PB, 'idims-dd-item-lg'))}
         </div>
         {/* Operations */}
         <div className="idims-dd-col" style={{ borderTop: `3px solid ${S}` }}>
@@ -531,11 +522,11 @@ export default function IdimsHeader() {
           <div className="idims-clm-sub">
             <div className="idims-clm-subcol">
               {visible(ow) && subHead('With Shipment ID', S)}
-              {ow?.children.map(l => renderLeaf(l, 'clm', S, SB))}
+              {ow?.children.map(l => renderLeaf(l, 'clm', S, SB, 'idims-dd-item-sm'))}
             </div>
             <div className="idims-clm-subcol">
               {visible(won) && subHead('Without Shipment ID', S)}
-              {wonParent && renderLeaf(wonParent, 'clm', S, SB)}
+              {wonParent && renderLeaf(wonParent, 'clm', S, SB, 'idims-dd-item-sm')}
               {wonKids.length > 0 && (
                 <div className="idims-clm-children">{wonKids.map(l => renderClmChild(l, S, SB))}</div>
               )}
@@ -548,11 +539,11 @@ export default function IdimsHeader() {
           <div className="idims-clm-sub">
             <div className="idims-clm-subcol">
               {visible(comp) && subHead('Compliance & Regulatory', T)}
-              {comp?.children.map(l => renderLeaf(l, 'clm', T, TB))}
+              {comp?.children.map(l => renderLeaf(l, 'clm', T, TB, 'idims-dd-item-sm'))}
             </div>
             <div className="idims-clm-subcol">
               {visible(doc) && subHead('Contract & Document Masters', T)}
-              {doc?.children.map(l => renderLeaf(l, 'clm', T, TB))}
+              {doc?.children.map(l => renderLeaf(l, 'clm', T, TB, 'idims-dd-item-sm'))}
             </div>
           </div>
         </div>
@@ -618,51 +609,6 @@ export default function IdimsHeader() {
                       </span>
                     </button>
                   ))}
-                </div>
-              )}
-            </div>
-
-            {/* Branch switcher */}
-            <div className="idims-branch-wrap">
-              <button type="button" className={`idims-branch-btn ${branchOpen ? 'dd-open' : ''}`}
-                onClick={() => canSwitch && (setOpenDD(null), setProfileOpen(false), setMoreOpen(false), setBranchOpen(o => !o))}
-                style={{ cursor: canSwitch ? 'pointer' : 'default' }}>
-                <span className="idims-branch-ico">{IC.building}</span>
-                <span className="idims-branch-meta">
-                  <span className="idims-branch-name">{branchName}</span>
-                </span>
-                {canSwitch && <span className="idims-branch-chev">{IC.chev}</span>}
-              </button>
-              {canSwitch && (
-                <div className={`idims-branch-panel ${branchOpen ? 'open' : ''}`}>
-                  <div className="idims-branch-panel-bar" />
-                  <div className="idims-branch-head">SWITCH BRANCH</div>
-                  <div className="idims-branch-list">
-                    <div className={`idims-branch-item idims-branch-all ${selectedBranchId === null ? 'active' : ''}`}
-                      onClick={() => { setBranch(null); setBranchOpen(false); }}>
-                      <div className="idims-branch-avatar">{IC.layers}</div>
-                      <div className="idims-branch-item-text">
-                        <span className="idims-branch-item-name">All Branches</span>
-                        <span className="idims-branch-item-sub">{branches.length} branches</span>
-                      </div>
-                      <span className="idims-branch-check">{IC.check}</span>
-                    </div>
-                    {branches.map(b => (
-                      <div key={b.id} className={`idims-branch-item ${selectedBranchId === b.id ? 'active' : ''}`}
-                        onClick={() => { setBranch(b.id); setBranchOpen(false); }}>
-                        <div className="idims-branch-avatar" style={{ background: 'linear-gradient(135deg,#A78BFA,#7C3AED)' }}>
-                          {(b.name || '?').slice(0, 2).toUpperCase()}
-                        </div>
-                        <div className="idims-branch-item-text">
-                          <span className="idims-branch-name-row">
-                            <span className="idims-branch-item-name">{b.name}</span>
-                          </span>
-                          <span className="idims-branch-item-sub">{[b.city, b.state].filter(Boolean).join(', ') || '—'}</span>
-                        </div>
-                        <span className="idims-branch-check">{IC.check}</span>
-                      </div>
-                    ))}
-                  </div>
                 </div>
               )}
             </div>
@@ -970,7 +916,7 @@ const IDIMS_CSS = `
    full-height #layout-wrapper, so it pins to the top across the whole page.
    Sticking the nav directly failed — its containing block (the shell) was
    only nav-height tall, so it had no travel and scrolled away. */
-.idims-shell { font-family: 'DM Sans','Inter',system-ui,sans-serif; position: sticky; top: 0; z-index: 1030; }
+.idims-shell { font-family: var(--font-sans); position: sticky; top: 0; z-index: 1030; }
 .idims-nav {
   height: 110px; background: #fff; border-bottom: 1px solid #E4E7EF;
   box-shadow: 0 1px 3px rgba(15,23,42,.06); padding: 0 14px 0 10px;
@@ -1007,7 +953,7 @@ const IDIMS_CSS = `
   max-height: 70vh; overflow-y: auto; background: #fff; border: 1px solid #E7EAF3; border-radius: 12px;
   box-shadow: 0 12px 34px rgba(15,23,42,.16); padding: 6px; }
 .idims-more-item { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: transparent;
-  padding: 9px 11px; border-radius: 9px; cursor: pointer; text-align: left; font-size: 13px; font-weight: 600; color: #0F172A; transition: background .14s; }
+  padding: 9px 11px; border-radius: 12px; cursor: pointer; text-align: left; font-size: 13px; font-weight: 400; color: #0F172A; transition: background .14s; }
 .idims-more-item:hover { background: #F5F3FF; }
 .idims-more-item.open { background: #F5F3FF; }
 .idims-more-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1039,20 +985,20 @@ const IDIMS_CSS = `
   border-radius: 8px; background: #F1F0FB; color: #7C3AED; }
 .idims-search-result-ico svg { width: 15px; height: 15px; }
 .idims-search-result-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
-.idims-search-result-label { font-size: 13px; font-weight: 600; color: #0F172A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.idims-search-result-label { font-size: 13px; font-weight: 400; color: #0F172A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .idims-search-result-sub { font-size: 11px; color: #94A0B8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .idims-search:hover { border-color: #D6DBEC; }
 .idims-search:focus-within { background: #fff; border-color: #C4B5FD; box-shadow: 0 0 0 4px rgba(139,92,246,.15); }
 .idims-search-ico { display: flex; align-items: center; color: #A0A8BD; flex-shrink: 0; transition: color .18s; }
 .idims-search:focus-within .idims-search-ico { color: #7C3AED; }
-.idims-search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-family: inherit; font-size: 13px; color: #0F172A; }
+.idims-search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-family: var(--font-sans); font-size: 13px; color: #0F172A; }
 .idims-search-input::placeholder { color: #9AA2B8; }
-.idims-search-kbd { flex-shrink: 0; font-size: 10.5px; font-weight: 600; color: #6B7280; background: linear-gradient(180deg,#FFF,#F1F3F9); border: 1px solid #E2E6F0; border-bottom-width: 2px; border-radius: 7px; padding: 3px 8px; line-height: 1; }
+.idims-search-kbd { flex-shrink: 0; font-size: 10.5px; font-weight: 400; color: #6B7280; background: linear-gradient(180deg,#FFF,#F1F3F9); border: 1px solid #E2E6F0; border-bottom-width: 2px; border-radius: 7px; padding: 3px 8px; line-height: 1; }
 
 /* Branch switcher */
 .idims-branch-wrap { position: relative; flex-shrink: 0; margin-left: auto; }
 .idims-branch-btn { display: flex; align-items: center; gap: 9px; height: 40px; padding: 0 11px 0 12px; border-radius: 12px;
-  background: linear-gradient(180deg,#FFF,#F7F8FC); border: 1.5px solid #E7EAF3; font-family: inherit;
+  background: linear-gradient(180deg,#FFF,#F7F8FC); border: 1.5px solid #E7EAF3; font-family: var(--font-sans);
   box-shadow: inset 0 1px 2px rgba(15,23,42,.03); transition: border-color .18s, box-shadow .18s; width: 300px; }
 .idims-branch-btn:hover { border-color: #DDD6FE; }
 .idims-branch-btn.dd-open { border-color: #C4B5FD; box-shadow: 0 0 0 4px rgba(139,92,246,.13); background: #fff; }
@@ -1074,7 +1020,7 @@ const IDIMS_CSS = `
 .idims-branch-avatar { width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 2px 6px rgba(15,23,42,.18); }
 .idims-branch-item-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; text-align: left; }
 .idims-branch-item-name { font-size: 12.5px; font-weight: 700; color: #6D28D9; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.idims-branch-item-sub { font-size: 10px; font-weight: 600; color: #94A3B8; }
+.idims-branch-item-sub { font-size: 10px; font-weight: 400; color: #94A3B8; }
 .idims-branch-name-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .idims-branch-main-badge { flex-shrink: 0; font-size: 8.5px; font-weight: 800; letter-spacing: .4px; color: #6D28D9; background: linear-gradient(135deg,#EDE9FE,#DDD6FE); border: 1px solid #DDD6FE; border-radius: 5px; padding: 2px 6px; line-height: 1; text-transform: uppercase; }
 .idims-branch-check { color: #7C3AED; flex-shrink: 0; opacity: 0; transition: opacity .14s; }
@@ -1084,9 +1030,9 @@ const IDIMS_CSS = `
 .idims-branch-all .idims-branch-item-name { color: #4338CA; }
 
 /* Right controls */
-.idims-nav-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.idims-nav-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; margin-left: auto; }
 .idims-theme-switch { display: flex; align-items: center; gap: 9px; flex-shrink: 0; padding: 4px 10px 4px 11px; border-radius: 999px; background: linear-gradient(180deg,#FFF,#F7F8FC); border: 1.5px solid #E7EAF3; }
-.idims-theme-switch-label { font-size: 11.5px; font-weight: 600; color: #6B7280; user-select: none; white-space: nowrap; }
+.idims-theme-switch-label { font-size: 11.5px; font-weight: 400; color: #6B7280; user-select: none; white-space: nowrap; }
 .idims-brand .idims-theme-switch-label { color: var(--bp, #7C3AED); }
 .idims-theme-toggle { position: relative; width: 42px; height: 22px; border-radius: 999px; border: none; cursor: pointer; flex-shrink: 0; padding: 0; background: linear-gradient(135deg,#CBD5E1,#94A3B8); box-shadow: inset 0 1px 3px rgba(15,23,42,.18); transition: background .25s ease; }
 .idims-theme-toggle::after { content: ''; position: absolute; top: 2.5px; left: 2.5px; width: 17px; height: 17px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(15,23,42,.3); transition: transform .28s cubic-bezier(.34,1.56,.64,1); }
@@ -1147,15 +1093,15 @@ const IDIMS_CSS = `
 .idims-profile-head-name { font-size: 15px; font-weight: 800; color: #fff; line-height: 1.2; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .idims-profile-head-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; color: #E9D5FF; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.25); border-radius: 999px; padding: 3px 9px 3px 7px; }
 .idims-profile-head-badge svg { width: 11px; height: 11px; }
-.idims-profile-head-branch { display: flex; align-items: center; gap: 5px; margin-top: 8px; font-size: 11px; font-weight: 600; color: rgba(255,255,255,.85); max-width: 165px; }
+.idims-profile-head-branch { display: flex; align-items: center; gap: 5px; margin-top: 8px; font-size: 11px; font-weight: 400; color: rgba(255,255,255,.85); max-width: 165px; }
 .idims-profile-head-branch svg { width: 12px; height: 12px; flex-shrink: 0; opacity: .85; }
 .idims-profile-head-branch span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .idims-profile-menu { padding: 8px; }
-.idims-profile-item { display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 12px; cursor: pointer; width: 100%; background: none; border: none; font-family: inherit; transition: background .14s, transform .14s; }
+.idims-profile-item { display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 12px; cursor: pointer; width: 100%; background: none; border: none; font-family: var(--font-sans); transition: background .14s, transform .14s; }
 .idims-profile-item:hover { background: #F5F3FF; transform: translateX(2px); }
 .idims-profile-item-ico { width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0; color: #fff; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(15,23,42,.18); }
 .idims-profile-item-ico svg { width: 16px; height: 16px; }
-.idims-profile-item-label { flex: 1; font-size: 13.5px; font-weight: 600; color: #1E293B; text-align: left; }
+.idims-profile-item-label { flex: 1; font-size: 13.5px; font-weight: 500; color: #1E293B; text-align: left; }
 .idims-profile-item-arrow { width: 14px; height: 14px; color: #C4C9D6; flex-shrink: 0; transition: transform .15s, color .15s; }
 .idims-profile-item:hover .idims-profile-item-arrow { transform: translateX(2px); color: #7C3AED; }
 .idims-profile-item:hover .idims-profile-item-label { color: #6D28D9; }
@@ -1166,13 +1112,13 @@ const IDIMS_CSS = `
 /* Nav buttons */
 .idims-nav-items { display: flex; align-items: center; flex: 1; min-width: 0; gap: 2px; }
 .idims-dd-wrap { position: relative; flex-shrink: 0; }
-.idims-nav-btn { position: relative; height: 36px; padding: 0 9px; border-radius: 9px; display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; color: #5B6478; background: transparent; border: none; cursor: pointer; font-family: inherit; transition: color .2s ease; white-space: nowrap; flex-shrink: 0; }
+.idims-nav-btn { position: relative; height: 36px; padding: 0 9px; border-radius: 9px; display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; color: #5B6478; background: transparent; border: none; cursor: pointer; font-family: var(--font-sans); transition: color .2s ease; white-space: nowrap; flex-shrink: 0; }
 .idims-nav-btn .idims-ico { display: flex; align-items: center; flex-shrink: 0; color: #A2ABBD; transition: color .2s ease, transform .25s cubic-bezier(.34,1.56,.64,1); }
 .idims-nav-btn::after { content: ''; position: absolute; left: 50%; bottom: 2px; width: 0; height: 2.5px; border-radius: 99px; transform: translateX(-50%); background: linear-gradient(90deg,#94A3B8 0%,#8B5CF6 55%,#7C3AED 100%); opacity: 0; transition: width .26s cubic-bezier(.22,1,.36,1), opacity .2s ease; }
 .idims-nav-btn:hover { color: #6D28D9; }
 .idims-nav-btn:hover .idims-ico { color: #8B5CF6; transform: scale(1.12); }
 .idims-nav-btn:hover::after { width: 100%; opacity: 1; }
-.idims-nav-btn.dd-open { font-weight: 600; color: #6D28D9; }
+.idims-nav-btn.dd-open { font-weight: 500; color: #6D28D9; }
 .idims-nav-btn.dd-open .idims-ico { color: #8B5CF6; }
 .idims-nav-btn.dd-open::after { width: 100%; opacity: 1; }
 .dd-chev { display: flex; align-items: center; opacity: .45; transition: transform .18s, opacity .13s; margin-left: 2px; }
@@ -1193,12 +1139,13 @@ const IDIMS_CSS = `
 .idims-clm-sub { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 2px; }
 .idims-clm-subcol { padding: 0 16px 0 0; min-width: 0; }
 .idims-clm-subcol + .idims-clm-subcol { padding: 0 0 0 16px; border-left: 1px solid #EFF2F8; }
-.idims-clm-subhead { font-size: 8px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 8px; padding: 0 0 7px 2px; border-bottom: 1.5px solid; opacity: .85; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.idims-clm-subhead { font-size: 7.5px; font-weight: 800; letter-spacing: 1.1px; text-transform: uppercase; margin: 0 0 10px 0; padding: 0 0 6px 10px; border-bottom: 1.5px solid currentColor; opacity: .75; display: flex; align-items: center; gap: 5px; white-space: nowrap; }
 .idims-clm-children { margin: 0 0 6px 12px; padding-left: 10px; border-left: 2px solid #BAE6FD; }
-.idims-clm-child { display: flex; align-items: flex-start; gap: 9px; width: 100%; padding: 6px 8px; background: none; border: none; font-family: inherit; cursor: pointer; border-radius: 8px; text-align: left; transition: background .13s, transform .13s; }
+.idims-clm-child { display: flex; align-items: flex-start; gap: 9px; width: 100%; padding: 6px 8px; background: none; border: none; font-family: var(--font-sans); cursor: pointer; border-radius: 8px; text-align: left; transition: background .13s, transform .13s; }
 .idims-clm-child:hover { background: #F5F3FF; transform: translateX(2px); }
 .idims-clm-child-ico { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
-.idims-clm-child-label { font-size: 13px; font-weight: 600; color: #1E293B; white-space: nowrap; line-height: 1.2; }
+.idims-clm-child-label { font-size: 11.5px; font-weight: 600; color: #314058; white-space: nowrap; line-height: 1.3; transition: color .13s; }
+.idims-clm-child-desc { font-size: 9px; color: #94A3B8; white-space: nowrap; line-height: 1.3; }
 .idims-clm-child:hover .idims-clm-child-label { color: #0EA5E9; }
 .idims-dark .idims-clm-subcol + .idims-clm-subcol { border-left-color: #262B38; }
 .idims-dark .idims-clm-children { border-left-color: rgba(56,189,248,.45); }
@@ -1222,12 +1169,12 @@ const IDIMS_CSS = `
 .idims-dd-col { padding: 18px 24px 22px 20px; border-right: 1px solid #E6EAF3; }
 .idims-dd-col:last-child { border-right: none; }
 .idims-dd-group + .idims-dd-group { margin-top: 14px; }
-.idims-dd-section-label { font-size: 8px; font-weight: 800; letter-spacing: 1.1px; text-transform: uppercase; padding: 0 0 10px 12px; margin-bottom: 10px; border-bottom: 1px solid #F1F4FB; display: flex; align-items: center; gap: 7px; white-space: nowrap; position: relative; }
+.idims-dd-section-label { font-size: 8px; font-weight: 800; letter-spacing: 1.1px; text-transform: uppercase; padding: 0 0 10px 12px; margin-bottom: 12px; border-bottom: 1px solid #F1F4FB; display: flex; align-items: center; gap: 7px; white-space: nowrap; position: relative; }
 /* Small standing color bar on the left of each section header (matches Figma).
    currentColor = the column accent set inline on the label. */
 .idims-dd-section-label::before { content: ''; position: absolute; left: 0; top: 0; bottom: 11px; width: 3px; border-radius: 2px; background: currentColor; }
 .dd-sl-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
-.idims-dd-item { display: flex; align-items: flex-start; gap: 13px; padding: 9px 11px; cursor: pointer; border-radius: 11px; width: 100%; background: none; border: none; font-family: inherit; transition: background .13s, transform .13s; margin-bottom: 4px; text-align: left; }
+.idims-dd-item { display: flex; align-items: flex-start; gap: 13px; padding: 9px 11px; cursor: pointer; border-radius: 11px; width: 100%; background: none; border: none; font-family: var(--font-sans); transition: background .13s, transform .13s; margin-bottom: 4px; text-align: left; }
 .idims-dd-item:hover { transform: translateX(2px); background: #F5F3FF; }
 .idims-dd-item:hover .idims-dd-item-label { color: var(--ac, #4F46E5); }
 .idims-dd-item-ico { width: 38px; height: 38px; border-radius: 11px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; transition: transform .13s; }
@@ -1235,7 +1182,15 @@ const IDIMS_CSS = `
 .idims-dd-item:hover .idims-dd-item-ico { transform: scale(1.08); }
 .idims-dd-item-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .idims-dd-item-label { font-size: 13px; font-weight: 600; color: #1E293B; white-space: nowrap; line-height: 1.2; transition: color .13s; }
-.idims-dd-item-desc { font-size: 10.5px; font-weight: 500; color: #94A3B8; line-height: 1.4; white-space: normal; }
+.idims-dd-item-desc { font-size: 10px; color: #94A3B8; line-height: 1.4; white-space: normal; }
+/* Column-size variants (match the prototype): first column large, rest compact. */
+.idims-dd-item-lg { padding: 10px 12px; gap: 13px; margin-bottom: 6px; }
+.idims-dd-item-lg .idims-dd-item-ico { width: 38px; height: 38px; border-radius: 11px; }
+.idims-dd-item-lg .idims-dd-item-label { font-size: 13.5px; }
+.idims-dd-item-lg .idims-dd-item-desc { font-size: 10.5px; }
+.idims-dd-item-sm .idims-dd-item-ico { width: 30px; height: 30px; border-radius: 8px; }
+.idims-dd-item-sm .idims-dd-item-label { font-size: 12.5px; }
+.idims-dd-item-sm .idims-dd-item-desc { font-size: 9.5px; }
 
 /* Logout modal */
 .idims-logout-overlay { position: fixed; inset: 0; z-index: 1060; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(15,23,42,.42); backdrop-filter: blur(5px); animation: idimsFade .2s ease; }
@@ -1247,7 +1202,7 @@ const IDIMS_CSS = `
 .idims-logout-title { font-size: 18px; font-weight: 800; color: #0F172A; margin-bottom: 7px; }
 .idims-logout-text { font-size: 13px; color: #64748B; line-height: 1.5; margin-bottom: 24px; }
 .idims-logout-actions { display: flex; gap: 12px; }
-.idims-logout-actions button { flex: 1; height: 46px; border-radius: 13px; font-family: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer; border: none; transition: transform .14s, box-shadow .18s, background .18s; }
+.idims-logout-actions button { flex: 1; height: 46px; border-radius: 13px; font-family: var(--font-sans); font-size: 13.5px; font-weight: 700; cursor: pointer; border: none; transition: transform .14s, box-shadow .18s, background .18s; }
 .idims-logout-actions button:active { transform: scale(.97); }
 .idims-btn-cancel { background: #F1F3F9; color: #475569; border: 1.5px solid #E7EAF3 !important; }
 .idims-btn-cancel:hover { background: #E9ECF3; color: #1E293B; }
@@ -1308,17 +1263,13 @@ const IDIMS_CSS = `
 .idims-mob-backdrop { position: fixed; inset: 0; top: 0; z-index: 1041; background: rgba(15,23,42,.35); animation: idimsFade .18s ease; }
 .idims-mobile-panel { position: absolute; left: 0; right: 0; top: 100%; z-index: 1042; background: #fff; border-bottom: 1px solid #E4E7EF; box-shadow: 0 20px 50px rgba(15,23,42,.22); padding: 10px; max-height: calc(100vh - 120px); overflow-y: auto; animation: idimsDDdown .2s cubic-bezier(.22,1,.36,1) both; }
 @keyframes idimsDDdown { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
-.idims-mob-item { display: flex; align-items: center; gap: 11px; width: 100%; padding: 12px 12px; border: none; background: none; font-family: inherit; font-size: 14px; font-weight: 600; color: #1E293B; cursor: pointer; border-radius: 11px; text-align: left; }
+.idims-mob-item { display: flex; align-items: center; gap: 11px; width: 100%; padding: 12px 12px; border: none; background: none; font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: #1E293B; cursor: pointer; border-radius: 11px; text-align: left; }
 .idims-mob-item:hover, .idims-mob-item.open { background: #F5F3FF; color: #6D28D9; }
 .idims-mob-item .idims-ico { display: flex; color: #8B5CF6; }
 .idims-mob-label { flex: 1; }
 .idims-mob-chev { display: flex; transition: transform .18s; opacity: .5; }
-.idims-mob-item.open .idims-mob-chev { transform: rotate(180deg); opacity: .9; }
-.idims-mob-sub { padding: 2px 0 8px 14px; margin-left: 14px; border-left: 2px solid #EDE9FE; }
-.idims-mob-subgroup { margin: 6px 0; }
-.idims-mob-sub-label { font-size: 8.5px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #94A3B8; padding: 6px 10px 4px; }
-.idims-mob-sub-item { display: block; width: 100%; text-align: left; padding: 8px 12px; border: none; background: none; font-family: inherit; font-size: 13px; font-weight: 500; color: #475569; cursor: pointer; border-radius: 8px; }
-.idims-mob-sub-item:hover { background: #F5F3FF; color: #6D28D9; }
+.idims-mob-item.open .idims-mob-chev { transform<|fim_middle|>
+
 .idims-dark .idims-mobile-panel { background: #171A23; border-bottom-color: #262B38; }
 .idims-dark .idims-mob-item { color: #E5E7EB; }
 .idims-dark .idims-mob-item:hover, .idims-dark .idims-mob-item.open, .idims-dark .idims-mob-sub-item:hover { background: #221E36; color: #C4B5FD; }

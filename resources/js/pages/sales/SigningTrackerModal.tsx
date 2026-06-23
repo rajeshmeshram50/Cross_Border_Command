@@ -13,7 +13,7 @@ const TRACKER_CSS = `
   position: fixed; inset: 0; z-index: 12000;
   background: rgba(6,9,28,0.66); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
   display: flex; align-items: center; justify-content: center; padding: 20px;
-  font-family: 'DM Sans','Inter',system-ui,sans-serif;
+  font-family: var(--font-sans);
   animation: qpiTrkFade .16s ease both;
 }
 @keyframes qpiTrkFade { from { opacity: 0; } to { opacity: 1; } }

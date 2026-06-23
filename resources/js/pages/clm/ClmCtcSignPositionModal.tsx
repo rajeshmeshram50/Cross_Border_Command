@@ -198,7 +198,7 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
   const navBtn = (disabled: boolean): React.CSSProperties => ({ border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.12)' : '#fff', color: t.dark ? '#c4b5fd' : '#6D28D9', borderRadius: 8, padding: '5px 12px', fontSize: 11, fontWeight: 700, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.45 : 1, fontFamily: 'inherit' });
 
   return createPortal(
-    <div onMouseDown={e => { if (e.target === e.currentTarget && !sending) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 999999999, background: 'rgba(15,7,50,.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: "'Rubik',system-ui,sans-serif" }}>
+    <div onMouseDown={e => { if (e.target === e.currentTarget && !sending) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 999999999, background: 'rgba(15,7,50,.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: 'var(--font-sans)' }}>
       <div onMouseDown={e => e.stopPropagation()} style={{ width: 'min(1080px,97vw)', height: 'min(88vh,820px)', background: t.surface, borderRadius: 18, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.25)'}`, boxShadow: '0 40px 90px rgba(109,40,217,.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* header */}
         <div style={{ padding: '14px 20px', background: 'linear-gradient(120deg,#4C1D95,#6D28D9,#7C3AED,#8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>

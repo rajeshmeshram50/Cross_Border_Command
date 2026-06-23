@@ -348,7 +348,7 @@ export default function SalesSignTracker() {
 }
 
 const SDT_CSS = `
-.sdt-root { font-family: 'DM Sans', system-ui, sans-serif; display: flex; flex-direction: column; gap: 14px; padding: 4px; }
+.sdt-root { font-family: var(--font-sans); display: flex; flex-direction: column; gap: 14px; padding: 4px; }
 
 /* Hero — Consignee green/emerald gradient ring. */
 .sdt-hero {

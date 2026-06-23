@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
-import { Button, Card, CardBody, Col, Row, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
+import { Col, Row } from 'reactstrap';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import SalaryStructureModal, { type SalaryEmployeeLite } from '../../components/SalaryStructureModal';
@@ -20,7 +20,7 @@ import {
 } from '../recruitment/HrRecruitment';
 import './EmployeeProfile.css';
 import ImageCropperModal from '../../components/ui/ImageCropperModal';
-import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
+import { Shimmer } from '../../components/ui/Shimmer';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { leaveTypesApi, leaveRequestsApi, ApiLeaveRequest } from '../hrms/leavePlansApi';
 import LeaveSummaryPanel from './LeaveSummaryPanel';
@@ -510,32 +510,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const toast = useToast();
 
   // Payslip viewer modal — opens from the "View Payslip" button in the
-  // Payroll Summary hero. Filters by year/month and shows the rendered
-  // payslip on the right with download/print/email actions in the header.
+  // Payroll Summary hero (PayslipViewerModal renders the real breakup).
   const [paySlipOpen, setPaySlipOpen] = useState(false);
-  const [paySlipYear, setPaySlipYear] = useState('2026');
-  const [paySlipMonth, setPaySlipMonth] = useState('March');
-  const PAYSLIP_RECENT = [
-    { label: 'Mar 2026', now: true },
-    { label: 'Feb 2026' },
-    { label: 'Jan 2026' },
-    { label: 'Dec 2025' },
-    { label: 'Nov 2025' },
-    { label: 'Oct 2025' },
-  ];
-  const PAYSLIP_EARNINGS = [
-    { label: 'Basic Salary',          amount: 121000 },
-    { label: 'House Rent Allowance (HRA)', amount: 60500 },
-    { label: 'Special Allowance',     amount: 120900 },
-  ];
-  const PAYSLIP_DEDUCTIONS = [
-    { label: 'Professional Tax',  amount: 200 },
-    { label: 'Provident Fund (12%)', amount: 14520 },
-    { label: 'Income Tax (TDS)',  amount: 8400 },
-  ];
-  const paySlipTotalEarnings   = PAYSLIP_EARNINGS.reduce((s, r) => s + r.amount, 0);
-  const paySlipTotalDeductions = PAYSLIP_DEDUCTIONS.reduce((s, r) => s + r.amount, 0);
-  const paySlipNetPay          = paySlipTotalEarnings - paySlipTotalDeductions;
 
   // Salary timeline + Revise Salary / View Breakdown modals (Payment Details
   // sub-tab). Timeline is defined here so both the inline list and the
@@ -566,16 +542,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       netPay,
     };
   }
-  const [reviseOpen, setReviseOpen]       = useState(false);
-  const [reviseAmount, setReviseAmount]   = useState('3,50,000');
-  const [revisePct, setRevisePct]         = useState('');
-  const [reviseStructure, setReviseStructure] = useState('Class A');
-  const [reviseDate, setReviseDate]       = useState('2026-05-01');
-  const [reviseBonusInSal, setReviseBonusInSal] = useState(false);
-  const [reviseBonusOpen, setReviseBonusOpen]   = useState(false);
-  const [reviseBonusAmount, setReviseBonusAmount] = useState('');
-  const [reviseNote, setReviseNote]       = useState('');
-  const [showBreakdownToggle, setShowBreakdownToggle] = useState(false);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [breakdownRowId, setBreakdownRowId] = useState<string>('sal-1');
   // Breakdown modal — prefer the REAL salary version's components; fall back
@@ -590,13 +556,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     totalAnnual: Math.round((Number(breakdownVersion.monthly_gross) || 0) * 12),
     netPay: Math.round((Number(breakdownVersion.monthly_gross) || 0) * 0.88),
   } : makeBreakdown(breakdownRow.annual);
-
-  // Live preview math for the Revise Salary modal.
-  const reviseAnnualNum = Number(String(reviseAmount).replace(/[^\d.]/g, '')) || 0;
-  const reviseMonthlyNum = reviseAnnualNum > 0 ? Math.round(reviseAnnualNum / 12) : 0;
-  const currentAnnual = SALARY_TIMELINE[0].annual;
-  const reviseDifference = reviseAnnualNum - currentAnnual;
-  const revisePctChange  = currentAnnual > 0 ? ((reviseDifference / currentAnnual) * 100) : 0;
 
   // Submit New Expense Claim modal — opens from "+ Raise New Claim" in the
   // Expense Details tab. Two modes: Expense Claim (orange) and Advance
@@ -629,12 +588,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       })
       .catch(() => setClaimCategories([]));
   }, [claimOpen]);
-  const categoryLabelById = (id: string | number | undefined): string => {
-    if (id === undefined || id === '' || id === null) return '';
-    const num = Number(id);
-    const hit = claimCategories.find(c => c.id === num);
-    return hit ? hit.name : String(id);
-  };
   const categoryById = (id: string | number | undefined): ClaimCategory | null => {
     if (id === undefined || id === '' || id === null) return null;
     const num = Number(id);
@@ -928,15 +881,15 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     // a plain string compare. Both dates must be today or later; recovery
     // additionally must be on/after the requested date.
     const todayIso = new Date().toISOString().slice(0, 10);
-    const oneYearAgoIso = (() => { const d = new Date(); d.setFullYear(d.getFullYear() - 1); return d.toISOString().slice(0, 10); })();
-    // A request can only have been raised today or earlier — future dates are
-    // invalid (you can't have "requested" something that hasn't happened yet).
-    if (advRequestedDate && advRequestedDate > todayIso) {
-      errs.requested = 'Requested date cannot be in the future';
-      summary.push('Requested date cannot be in the future');
-    } else if (advRequestedDate && advRequestedDate < oneYearAgoIso) {
-      errs.requested = 'Requested date cannot be more than a year ago';
-      summary.push('Requested date cannot be more than a year ago');
+    const oneYearAheadIso = (() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().slice(0, 10); })();
+    // Requested date is when the advance is needed — today up to one year out.
+    // Past dates and anything beyond a year from today are rejected.
+    if (advRequestedDate && advRequestedDate < todayIso) {
+      errs.requested = 'Requested date cannot be in the past';
+      summary.push('Requested date cannot be in the past');
+    } else if (advRequestedDate && advRequestedDate > oneYearAheadIso) {
+      errs.requested = 'Requested date cannot be more than one year from today';
+      summary.push('Requested date cannot be more than one year from today');
     }
     if (advRecoveryStart && advRecoveryStart < todayIso) {
       errs.recovery_start = 'Recovery start cannot be in the past';
@@ -1660,10 +1613,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     }
   };
   
-
-  // Audit-log popover state — `auditOpenId` holds the claim id whose 3-dot
-  // dropdown is currently open; null = nothing open.
-  const [auditOpenId, setAuditOpenId] = useState<number | null>(null);
 
   // Inline manager / HR actions used by the team-tab and HR pages.
   const actOnClaim = async (
@@ -2866,10 +2815,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       value={advRequestedDate}
                       onChange={(v) => { setAdvRequestedDate(v); clearAdvErr('requested'); }}
                       invalid={!!advErrors.requested}
-                      // A request can only have been raised today or in the past —
-                      // future dates are disabled (cap at today, floor 1 year back).
-                      minDate={(() => { const d = new Date(); d.setFullYear(d.getFullYear() - 1); return d.toISOString().slice(0, 10); })()}
-                      maxDate={new Date().toISOString().slice(0, 10)}
+                      // Requested date is when the advance is needed — today up to
+                      // one year ahead. Past dates and beyond +1yr are disabled.
+                      minDate={new Date().toISOString().slice(0, 10)}
+                      maxDate={(() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().slice(0, 10); })()}
                     />
                     {advErrors.requested && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.requested}</div>}
                   </Col>
@@ -3093,13 +3042,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           </div>
         </div>
       </EpModal>
-
-      {/* ── Change Password modal ──
-          Three inputs (current / new / confirm), per-field error display,
-          and an eye-toggle for each field so the user can verify what they
-          typed. Submit calls POST /api/change-password — the backend
-          enforces the min:8 + no-reuse-of-last-3 policy and emails a
-          confirmation via PasswordChangedMail. */}
       <EpModal open={pwOpen} onClose={() => { if (!pwSaving) { setPwOpen(false); resetPwForm(); } }} size="sm">
         {/* Header — gradient banner so the dialog reads as a distinct
             "Security" surface, not just a plain card. */}
@@ -3390,4 +3332,3 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     </EmployeeProfileProvider>
   );
 }
-

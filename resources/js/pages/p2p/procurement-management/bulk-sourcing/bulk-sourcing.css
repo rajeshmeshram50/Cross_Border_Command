@@ -1206,7 +1206,7 @@
   align-items: center;
   justify-content: center;
   padding: 22px;
-  font-family: 'DM Sans','Inter',system-ui,sans-serif;
+  font-family: var(--font-sans);
 }
 .ast-modal {
   background: #fff;
@@ -2581,7 +2581,7 @@
   backdrop-filter: blur(10px);
   padding: 20px;
   box-sizing: border-box;
-  font-family: 'DM Sans','Inter',system-ui,sans-serif;
+  font-family: var(--font-sans);
 }
 .srpt-box {
   background: #fff;
@@ -3085,7 +3085,7 @@
   backdrop-filter: blur(12px);
   padding: 20px;
   box-sizing: border-box;
-  font-family: 'DM Sans','Inter',system-ui,sans-serif;
+  font-family: var(--font-sans);
 }
 .smp-box {
   position: relative;
@@ -3778,7 +3778,7 @@
   backdrop-filter: blur(14px);
   padding: 24px;
   box-sizing: border-box;
-  font-family: 'DM Sans','Inter',system-ui,sans-serif;
+  font-family: var(--font-sans);
 }
 .sv-box {
   width: 100%;

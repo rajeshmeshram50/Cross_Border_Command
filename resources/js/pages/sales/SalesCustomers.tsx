@@ -717,7 +717,7 @@ const CSTRIP_CSS = `
     0 1px 0 rgba(255,255,255,0.70) inset,
     0 4px 18px rgba(124,58,237,0.16),
     0 1px 4px rgba(99,102,241,0.10);
-  font-family: 'DM Sans', system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 .smc-cstrip::before {
   content: '';
@@ -930,7 +930,7 @@ const STEPS: { n: number; name: string; desc: string }[] = [
 const SCOPED_CSS = `
 ${CSTRIP_CSS}
 .smc-root {
-  font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   background: transparent;
   padding: 0;
   margin: 0;
@@ -1656,7 +1656,7 @@ ${CSTRIP_CSS}
   z-index: 11200;
   display: flex; align-items: center; justify-content: center;
   padding: 20px;
-  font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
 }
 .smc-confirm-card {
   width: min(460px, 100%);

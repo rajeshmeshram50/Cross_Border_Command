@@ -5641,7 +5641,7 @@ const SCOPED_CSS = `
    * type popup-on-popup 10002 < MasterSelect 11000 < DeleteConfirm
    * 11050 < MasterDatePicker 11100. */
   z-index: 10000;
-  font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   padding: 24px;
   overflow-y: auto;
 }

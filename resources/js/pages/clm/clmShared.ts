@@ -52,7 +52,7 @@ body.clm-active[data-bs-theme="dark"] footer.footer, body.clm-active[data-bs-the
   padding: 0;
   margin-top: -8px;
   width: 100%;
-  font-family: 'Rubik', system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   letter-spacing: normal;
   color: #0F172A;

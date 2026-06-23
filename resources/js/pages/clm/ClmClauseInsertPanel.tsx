@@ -228,7 +228,7 @@ const CLP_CSS = `
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   display: flex; align-items: center; justify-content: center;
   padding: 18px;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
   animation: clpFade .16s ease both;
 }
 @keyframes clpFade { from { opacity: 0 } to { opacity: 1 } }

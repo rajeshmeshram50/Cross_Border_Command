@@ -564,7 +564,7 @@ const LEV_CSS = `
   display: flex; flex-direction: column;
   box-shadow: 0 24px 64px rgba(15,23,42,.30), 0 60px 120px rgba(124,58,237,.18);
   animation: lev-pop .22s ease-out;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: var(--font-sans);
 }
 
 /* ── Hero — violet gradient + white text, in the Price Shared family but

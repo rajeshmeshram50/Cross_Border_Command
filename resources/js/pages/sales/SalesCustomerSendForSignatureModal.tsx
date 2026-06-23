@@ -1719,7 +1719,7 @@ const SSF_EDIT_CSS = `
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   display: flex; align-items: center; justify-content: center;
   padding: 24px;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 .ssf-edit-shell {
   width: 100%; max-width: 1000px;
@@ -1895,7 +1895,7 @@ export const SSF_CSS = `
   display: flex; align-items: center; justify-content: center;
   padding: 18px;
   animation: ssfFade .18s ease both;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 @keyframes ssfFade { from { opacity: 0 } to { opacity: 1 } }
 

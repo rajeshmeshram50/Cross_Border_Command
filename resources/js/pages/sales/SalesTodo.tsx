@@ -2193,7 +2193,7 @@ const IconRevert = () => <svg width="11" height="11" viewBox="0 0 24 24" fill="n
 /* ─── Scoped CSS ─── */
 const SCOPED_CSS = `
 .td-root {
-  font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   background: linear-gradient(160deg, #f0fdfa 0%, #ecfdf5 50%, #ffffff 100%);
   padding: 16px 24px 24px;
   margin: -1rem -1.5rem;
@@ -2601,7 +2601,7 @@ const SCOPED_CSS = `
   background: rgba(15,23,42,.45);
   backdrop-filter: blur(4px);
   display: flex; align-items: center; justify-content: center;
-  font-family: 'DM Sans', 'Inter', sans-serif;
+  font-family: var(--font-sans);
 }
 .td-modal {
   background:#fff; border-radius:14px;
@@ -3192,7 +3192,7 @@ const SCOPED_CSS = `
   box-shadow: 0 24px 70px rgba(2,44,40,.28), 0 6px 24px rgba(0,0,0,.10);
   min-width:340px; max-width:380px;
   overflow:hidden; border:1px solid rgba(13,148,136,.18);
-  font-family: 'DM Sans','Inter',sans-serif;
+  font-family: var(--font-sans);
   animation: td-pop-in .16s cubic-bezier(.16,1,.3,1);
 }
 @keyframes td-pop-in {

@@ -622,6 +622,8 @@ class DashboardController extends Controller
         $rangeEnd = $today->copy()->addDays(30);
         $upcomingEvents = collect();
         $eventRows = $empBase()
+            // Only active staff — exclude inactive / exited (resigned / terminated).
+            ->whereNotIn('status', ['Inactive', 'Resigned', 'Terminated'])
             ->whereNotNull(DB::raw('COALESCE(date_of_birth, date_of_joining)'))
             ->get(['id', 'display_name', 'emp_code', 'date_of_birth', 'date_of_joining']);
         foreach ($eventRows as $row) {
@@ -1306,7 +1308,8 @@ class DashboardController extends Controller
             // 1. Direct reports of this employee.
             $reportsBase = Employee::where('reporting_manager_id', $employeeId)
                 ->where('client_id', $clientId)
-                ->where('id', '!=', $employeeId);
+                ->where('id', '!=', $employeeId)
+                ->whereNotIn('status', ['Inactive', 'Resigned', 'Terminated']);
             $reportsCount = (clone $reportsBase)->count();
 
             if ($reportsCount > 0) {
@@ -1321,7 +1324,8 @@ class DashboardController extends Controller
                 // 2. Siblings — same reporting manager.
                 $siblingsBase = Employee::where('reporting_manager_id', $emp->reporting_manager_id)
                     ->where('client_id', $clientId)
-                    ->where('id', '!=', $employeeId);
+                    ->where('id', '!=', $employeeId)
+                    ->whereNotIn('status', ['Inactive', 'Resigned', 'Terminated']);
                 $teamKind  = 'peers';
                 $teamSize  = (clone $siblingsBase)->count();
                 $teamPeers = (clone $siblingsBase)
@@ -1334,7 +1338,8 @@ class DashboardController extends Controller
                 $deptBase = Employee::where('department_id', $emp->department_id)
                     ->where('client_id', $clientId)
                     ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
-                    ->where('id', '!=', $employeeId);
+                    ->where('id', '!=', $employeeId)
+                    ->whereNotIn('status', ['Inactive', 'Resigned', 'Terminated']);
                 $teamKind  = 'department';
                 $teamSize  = (clone $deptBase)->count();
                 $teamPeers = (clone $deptBase)
@@ -1382,6 +1387,9 @@ class DashboardController extends Controller
             $rangeEnd = $today->copy()->addDays(30);
             $teamRows = Employee::where('client_id', $clientId)
                 ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+                // Only active staff — exclude inactive / exited (resigned /
+                // terminated) people from birthday / work-anniversary celebrations.
+                ->whereNotIn('status', ['Inactive', 'Resigned', 'Terminated'])
                 ->whereNotNull(DB::raw('COALESCE(date_of_birth, date_of_joining)'))
                 ->get(['id', 'display_name', 'date_of_birth', 'date_of_joining']);
             foreach ($teamRows as $row) {

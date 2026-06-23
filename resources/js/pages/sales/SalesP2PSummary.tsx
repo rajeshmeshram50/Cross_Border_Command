@@ -172,7 +172,7 @@ const PREVIEW_CARDS: { title: string; desc: string; tag: string; gradient: strin
 
 const SCOPED_CSS = `
 .p2p-root {
-  font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   background: linear-gradient(160deg, #faf5ff 0%, #f3e8ff 40%, #ede9fe 100%);
   padding: 14px 18px 24px;
   margin: -1rem -0.75rem;

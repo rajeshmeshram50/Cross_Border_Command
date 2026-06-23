@@ -961,7 +961,7 @@ function ScopedStyles() {
       }
       .gd-page .gd-preview-body {
         font-size: 14px; line-height: 1.75; color: #1f2937;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-family: var(--font-sans);
       }
       .gd-page .gd-preview-body p { margin: 0 0 12px; }
       .gd-page .gd-preview-body h1 { font-size: 22px; font-weight: 800; color: #111827; margin: 16px 0 10px; }

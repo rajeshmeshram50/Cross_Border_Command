@@ -1579,7 +1579,7 @@ const LASM_CSS = `
 .lasm-overlay { position: fixed; inset: 0; z-index: 11500;
   background: rgba(15,23,42,.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   display: flex; align-items: center; justify-content: center; padding: 24px;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif; animation: lasmFade .18s ease both; }
+  font-family: var(--font-sans); animation: lasmFade .18s ease both; }
 @keyframes lasmFade { from { opacity: 0 } to { opacity: 1 } }
 /* Fixed height so the Agreements and Trade Documents views are always the
    same size — the table region inside scrolls when rows overflow. */
