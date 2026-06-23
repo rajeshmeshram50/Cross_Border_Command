@@ -250,8 +250,16 @@ const VerticalLayout = (props : any) => {
                                                                                         <li className="nav-item">
                                                                                             <Link
                                                                                                 to={childItem.link ? childItem.link : "/#"}
-                                                                                                className="nav-link">
-                                                                                                {props.t(childItem.label)}
+                                                                                                className={childItem.icon ? "nav-link cbc-sub" : "nav-link"}>
+                                                                                                {childItem.icon ? (
+                                                                                                    <React.Fragment>
+                                                                                                        <span className="cbc-sub-ico"><i className={childItem.icon}></i></span>
+                                                                                                        <span className="cbc-sub-tx">
+                                                                                                            <span className="cbc-sub-t">{props.t(childItem.label)}</span>
+                                                                                                            {childItem.desc ? <span className="cbc-sub-d">{childItem.desc}</span> : null}
+                                                                                                        </span>
+                                                                                                    </React.Fragment>
+                                                                                                ) : props.t(childItem.label)}
                                                                                             </Link>
                                                                                         </li>
                                                                                         : <li className="nav-item">
