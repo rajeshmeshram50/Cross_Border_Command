@@ -297,7 +297,7 @@ export default function MasterDashboard() {
         border: 1px solid #c4b5fd;
         border-radius: 16px;
         box-shadow: 0 2px 12px rgba(0,0,0,0.05);
-        font-family: 'DM Sans', system-ui, sans-serif;
+        font-family: var(--font-sans);
       }
       .ms-cstrip-accent {
         position: absolute; left: 0; top: 0; bottom: 0; width: 4px;

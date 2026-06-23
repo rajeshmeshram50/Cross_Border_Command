@@ -69,7 +69,7 @@ export function VersionHistoryModal({ t, code, workingId, versions, onClose }: {
   const overall = sorted[0] ? pillOf(sorted[0]) : null;
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,23,42,.55)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 'min(560px,94vw)', maxHeight: '84vh', background: t.surface, borderRadius: 16, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#DDD6FE'}`, boxShadow: '0 24px 70px rgba(0,0,0,.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: "'Rubik',system-ui,sans-serif" }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 'min(560px,94vw)', maxHeight: '84vh', background: t.surface, borderRadius: 16, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#DDD6FE'}`, boxShadow: '0 24px 70px rgba(0,0,0,.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: 'var(--font-sans)' }}>
         {/* Header */}
         <div style={{ padding: '13px 16px', background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#4C1D95,#6D28D9,#7C3AED)', backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -194,7 +194,7 @@ export function AgreementTimelineModal({ t, code, title, stage, versions, signer
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,23,42,.55)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 'min(560px,94vw)', maxHeight: '86vh', background: t.surface, borderRadius: 18, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#DDD6FE'}`, boxShadow: '0 24px 70px rgba(0,0,0,.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: "'Rubik',system-ui,sans-serif" }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 'min(560px,94vw)', maxHeight: '86vh', background: t.surface, borderRadius: 18, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#DDD6FE'}`, boxShadow: '0 24px 70px rgba(0,0,0,.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: 'var(--font-sans)' }}>
         {/* header */}
         <div style={{ padding: '16px 18px', background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#4C1D95,#6D28D9,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>

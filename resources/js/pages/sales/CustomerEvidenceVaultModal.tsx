@@ -1597,7 +1597,7 @@ export const CEV_CSS = `
   backdrop-filter: blur(6px);
   z-index: 11200;
   display: flex; align-items: stretch; justify-content: flex-end;
-  font-family: 'DM Sans','Inter',system-ui,-apple-system,sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   animation: cevFade .18s ease both;

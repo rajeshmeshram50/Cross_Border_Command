@@ -324,7 +324,7 @@ useEffect(() => {
          (cstrip), the collapsible 4-step "What We Are Doing Here" box
          (bref), and (next step) the purple supplier table (sl-*). */}
       <style>{`
-        .sup-fig{font-family:'DM Sans',system-ui,sans-serif;display:flex;flex-direction:column;gap:6px;margin:-6px -10px 0;}
+        .sup-fig{font-family: var(--font-sans);display:flex;flex-direction:column;gap:6px;margin:-6px -10px 0;}
         @media(max-width:640px){.sup-fig{margin:-2px -4px 0;}}
 
         /* HEADER STRIP */
@@ -415,7 +415,7 @@ useEffect(() => {
         .sup-fig .sl-contact-more:hover{background:#e6d9fb;transform:translateY(-1px);}
 
         /* Contact Persons popup */
-        .sc-ov{position:fixed;inset:0;z-index:1200;background:rgba(49,22,99,.42);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px;font-family:'DM Sans',system-ui,sans-serif;}
+        .sc-ov{position:fixed;inset:0;z-index:1200;background:rgba(49,22,99,.42);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px;font-family: var(--font-sans);}
         .sc-pop{width:100%;max-width:480px;background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgba(15,23,42,.45);border:1.5px solid rgba(255,255,255,.65);}
         .sc-head{display:flex;align-items:center;gap:12px;padding:16px 18px;background:linear-gradient(115deg,#4c1d95 0%,#5b21b6 28%,#6d28d9 55%,#7c3aed 80%,#8b5cf6 100%);color:#fff;}
         .sc-head-ico{width:38px;height:38px;border-radius:11px;flex-shrink:0;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;}

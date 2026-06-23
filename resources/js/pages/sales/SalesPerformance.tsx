@@ -288,7 +288,7 @@ function TargetCard({ label, value, pct, sub, gradient }: { label: string; value
 
 const SCOPED_CSS = `
 .perf-root {
-  font-family: 'DM Sans', 'Inter', sans-serif;
+  font-family: var(--font-sans);
   background: #f8fafc;
   padding: 24px 28px 32px;
   margin: -1rem -0.75rem;

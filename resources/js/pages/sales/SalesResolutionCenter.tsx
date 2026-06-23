@@ -208,7 +208,7 @@ export default function SalesResolutionCenter() {
 
 const SCOPED_CSS = `
 .rc-root {
-  font-family: 'DM Sans', 'Inter', sans-serif;
+  font-family: var(--font-sans);
   background: #f8fafc;
   padding: 16px 22px 28px;
   margin: -1rem -0.75rem;

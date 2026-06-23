@@ -716,7 +716,7 @@ const IconVault = () => (
 /* ─── Scoped page CSS (all rules under .smcg-root) ─── */
 const SCOPED_CSS = `
 .smcg-root {
-  font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   background: transparent;
   padding: 0;
   margin: 0;

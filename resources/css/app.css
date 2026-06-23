@@ -8,7 +8,8 @@
 @source '../**/*.ts';
 
 @theme {
-  --font-sans: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  /* Single source of truth for the app font. Change here to restyle everywhere. */
+  --font-sans: 'Rubik', sans-serif;
   --font-mono: 'DM Mono', 'JetBrains Mono', monospace;
 
   --color-primary: #5A51E8;
@@ -965,7 +966,6 @@ tbody tr:nth-child(10) {
   border: 1px solid #c4b5fd;
   border-radius: 16px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
-  font-family: 'DM Sans', system-ui, sans-serif;
 }
 .pmt-cstrip-accent {
   position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
@@ -1014,7 +1014,6 @@ tbody tr:nth-child(10) {
   border: 1px solid #c4b5fd;
   border-radius: 16px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
-  font-family: 'DM Sans', system-ui, sans-serif;
 }
 .frm-cstrip-accent {
   position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
@@ -1036,7 +1035,7 @@ tbody tr:nth-child(10) {
   padding: 0 18px; height: 44px; border-radius: 14px;
   border: 1px solid color-mix(in srgb, #7c3aed 30%, var(--vz-border-color));
   background: #fff; color: #6d28d9;
-  font-family: inherit; font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; flex-shrink: 0;
+   font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; flex-shrink: 0;
   transition: background .15s, border-color .15s, transform .15s;
 }
 .frm-cstrip-back:hover { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }

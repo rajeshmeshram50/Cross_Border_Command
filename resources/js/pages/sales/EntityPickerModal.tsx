@@ -142,7 +142,7 @@ const SCOPED_CSS = `
   display: flex; align-items: center; justify-content: center;
   padding: 24px 20px;
   overflow-y: auto;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 .epm-modal {
   margin: auto;

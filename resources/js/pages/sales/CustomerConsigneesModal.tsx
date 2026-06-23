@@ -336,7 +336,7 @@ const SCOPED_CSS = `
   z-index: 1090;
   display: flex; align-items: center; justify-content: center;
   padding: 24px;
-  font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
 }
 .ccm-card {
   width: min(1460px, 97vw);

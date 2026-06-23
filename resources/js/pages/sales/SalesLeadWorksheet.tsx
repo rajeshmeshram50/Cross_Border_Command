@@ -1443,7 +1443,7 @@ const IconX = () => (
 /* ─── Scoped CSS — faithful port of prototype #lwPage block, rescoped to .lwp-root ─── */
 const SCOPED_CSS = `
 .lwp-root {
-  font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   background: linear-gradient(160deg, #f0fdfe 0%, #e8fafb 30%, #f5feff 60%, #ffffff 100%);
   padding: 12px 24px 12px;
   margin: -1rem -1.5rem;
@@ -1674,7 +1674,7 @@ const SCOPED_CSS = `
   background: #fff; border: 1px solid #cffafe; border-radius: 12px;
   box-shadow: 0 16px 40px rgba(8,47,73,.22), 0 4px 12px rgba(14,116,144,.14);
   animation: lwpExportIn .16s ease both;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 @keyframes lwpExportIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
 .lwp-export-item {
@@ -2100,7 +2100,7 @@ const SCOPED_CSS = `
   box-shadow: 0 12px 40px rgba(124,58,237,.45), 0 4px 14px rgba(0,0,0,.18);
   padding: 12px 20px;
   display: flex; align-items: center; gap: 14px; white-space: nowrap;
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   animation: lwpBulkBarIn .22s cubic-bezier(.22,1,.36,1);
 }
 @keyframes lwpBulkBarIn {
@@ -2158,7 +2158,7 @@ const SCOPED_CSS = `
   border-radius: 16px; width: min(94vw, 520px);
   box-shadow: 0 24px 60px rgba(8,145,178,.28), 0 8px 24px rgba(0,0,0,.18);
   overflow: hidden;
-  font-family: 'DM Sans', 'Inter', sans-serif;
+  font-family: var(--font-sans);
   animation: lwpCtqIn .22s cubic-bezier(.22,1,.36,1);
 }
 @keyframes lwpCtqIn {

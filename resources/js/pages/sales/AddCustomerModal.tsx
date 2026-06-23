@@ -4178,7 +4178,7 @@ const SCOPED_CSS = `
   background: rgba(15, 23, 42, 0.55);
   -webkit-backdrop-filter: blur(4px);
           backdrop-filter: blur(4px);
-  font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   animation: acmFadeIn .25s ease;
 }
 @keyframes acmFadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -4605,7 +4605,7 @@ const SCOPED_CSS = `
   background: rgba(124,58,237,.35); border-radius: 999px;
 }
 .acm-table-wrap::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,.55); }
-.acm-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; min-width: 900px; font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif; }
+.acm-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; min-width: 900px; font-family: var(--font-sans); }
 .acm-table thead tr { background: linear-gradient(180deg, #faf7ff, #f5efff); }
 /* Sticky header — position:sticky needs an OWN background on the <th>
    (the <tr>'s background doesn't follow a positioned cell), and

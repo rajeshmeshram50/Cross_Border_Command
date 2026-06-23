@@ -437,7 +437,7 @@ export function LockedConf(props: { title: string; sub: string; onClose: () => v
         style={{
           width: '100%', maxWidth: 460, background: cardBg, borderRadius: 12, overflow: 'hidden',
           boxShadow: '0 24px 60px rgba(15,23,42,.45)', border: `1px solid ${cardBorder}`,
-          fontFamily: "'DM Sans','Inter',system-ui,sans-serif",
+          fontFamily: 'var(--font-sans)',
         }}
       >
         {/* Red alert header band */}

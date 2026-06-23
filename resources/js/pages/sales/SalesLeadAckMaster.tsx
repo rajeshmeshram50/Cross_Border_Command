@@ -756,7 +756,7 @@ function ReasonCell({ text }: { text: string }) {
  *      counterpart further down. */
 const SCOPED_CSS = `
 .lam-root {
-  font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   background: linear-gradient(180deg, #faf7ff 0%, #f5f3ff 100%);
   padding: 14px 18px 22px;
   margin: -1rem -0.75rem;

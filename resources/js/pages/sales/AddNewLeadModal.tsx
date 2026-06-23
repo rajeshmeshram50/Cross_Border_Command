@@ -581,7 +581,7 @@ const SCOPED_CSS = `
   display: flex; align-items: flex-start; justify-content: center;
   padding: 36px 20px;
   overflow-y: auto;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 .anl-modal {
   width: 100%; max-width: 820px;

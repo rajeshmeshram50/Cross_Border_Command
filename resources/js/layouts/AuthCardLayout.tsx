@@ -100,7 +100,7 @@ export default function AuthCardLayout({ children, title, subtitle, icon }: Auth
                 align-items: baseline;
                 gap: 10px;
                 position: relative;
-                font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+                font-family: var(--font-sans);
                 font-size: 30px;
                 line-height: 1;
                 letter-spacing: -0.025em;

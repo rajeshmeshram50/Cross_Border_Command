@@ -7747,7 +7747,7 @@
 .att-h-geo i { font-size: 11px; flex-shrink: 0; }
 .att-h-geo-place {
   overflow: hidden; text-overflow: ellipsis;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-weight: 600;
 }
 [data-bs-theme="dark"] .att-h-geo {

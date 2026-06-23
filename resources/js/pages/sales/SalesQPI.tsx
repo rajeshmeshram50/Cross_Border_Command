@@ -4400,7 +4400,7 @@ const SCOPED_CSS = `
  * layout container already provides the page gutters, so adding our
  * own caused the extra empty rim on the left/right edges. */
 .qpi-root {
-  font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   background: transparent;
   padding: 0;
   margin: 0;
@@ -4425,7 +4425,7 @@ const SCOPED_CSS = `
     0 1px 0 rgba(255,255,255,0.70) inset,
     0 4px 18px rgba(124,58,237,0.16),
     0 1px 4px rgba(99,102,241,0.10);
-  font-family: 'DM Sans', system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 .qpi-header::before {
   content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
@@ -4755,7 +4755,7 @@ const SCOPED_CSS = `
 }
 .qpi-table-host .table {
   --bs-table-bg: transparent;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   color: var(--vz-body-color, #212529);
   margin-bottom: 0 !important;
@@ -5307,7 +5307,7 @@ const SCOPED_CSS = `
   box-shadow: 0 14px 32px rgba(15,23,42,.20), 0 4px 10px rgba(15,23,42,.08);
   padding: 6px;
   display: flex; flex-direction: column; gap: 2px;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   animation: qpi-moremenu-in .12s ease-out;
 }
 @keyframes qpi-moremenu-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
@@ -5383,7 +5383,7 @@ const SCOPED_CSS = `
   display: flex; align-items: center; justify-content: center;
   padding: 16px;
   overflow-y: auto;
-  font-family: 'DM Sans', 'Inter', sans-serif;
+  font-family: var(--font-sans);
   /* While the modal is open, useSelectionLock sets user-select:none on <body>
      to stop Ctrl+A / drag-select from grabbing the background. Re-enable it
      here so the modal's own content stays selectable/copyable. */

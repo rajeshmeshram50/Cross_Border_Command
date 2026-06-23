@@ -190,7 +190,7 @@ export default function ClmCaseToCasePage() {
   }
 
   return (
-    <div style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 8, fontFamily: "'Rubik', system-ui, sans-serif" }}>
+    <div style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 8, fontFamily: 'var(--font-sans)' }}>
       <style>{CTC_CSS}</style>
 
       {/* CARD 1 — HEADER STRIP */}
@@ -391,7 +391,7 @@ export default function ClmCaseToCasePage() {
       {cpOpen && (
         <>
           <div onClick={() => setCpOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div style={{ position: 'fixed', left: Math.min(cpOpen.x, window.innerWidth - 240), top: cpOpen.y, zIndex: 601, width: 220, maxHeight: 280, overflowY: 'auto', background: t.surface, borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#DDD6FE'}`, boxShadow: '0 16px 40px rgba(0,0,0,.28)', padding: 8, fontFamily: "'Rubik', system-ui, sans-serif" }}>
+          <div style={{ position: 'fixed', left: Math.min(cpOpen.x, window.innerWidth - 240), top: cpOpen.y, zIndex: 601, width: 220, maxHeight: 280, overflowY: 'auto', background: t.surface, borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#DDD6FE'}`, boxShadow: '0 16px 40px rgba(0,0,0,.28)', padding: 8, fontFamily: 'var(--font-sans)' }}>
             <div style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.dark ? '#c4b5fd' : '#6D28D9', padding: '4px 8px 7px' }}>Counterparties ({cpOpen.names.length})</div>
             {cpOpen.names.map((name, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', borderRadius: 8, background: i % 2 ? (t.dark ? 'rgba(255,255,255,.03)' : '#FAFBFF') : 'transparent' }}>

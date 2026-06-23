@@ -224,7 +224,7 @@ const ITM_CSS = `
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   display: flex; align-items: center; justify-content: center;
   padding: 18px;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 .itm-shell {
   width: 100%; max-width: 520px;

@@ -1371,7 +1371,7 @@ function ProductRowShimmer() {
  * ════════════════════════════════════════════════════════════════════════ */
 const SCOPED_CSS = `
 .prd-root {
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
   background: #ffffff;
   padding: 14px 18px 24px;
   margin: -1rem -0.75rem;
@@ -2072,7 +2072,7 @@ const SCOPED_CSS = `
   /* Has to sit above the overlay (1090) and Velzon's topbar (1002). */
   z-index: 1091;
   display: flex; flex-direction: column;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
   overflow: hidden;       /* hard-clip anything that tries to grow past the drawer */
   box-sizing: border-box;
 }

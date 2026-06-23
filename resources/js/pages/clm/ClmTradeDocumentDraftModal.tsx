@@ -1040,7 +1040,7 @@ const TDW_CSS = `
   padding: 24px;
   overflow-y: auto;
   animation: tdwFade .18s ease both;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 @keyframes tdwFade { from { opacity: 0; } to { opacity: 1; } }
 .tdw-shell {

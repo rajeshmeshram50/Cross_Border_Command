@@ -400,7 +400,7 @@ const IPM_CSS = `
   display: flex; align-items: center; justify-content: center;
   padding: 24px;
   animation: ipmFade .18s ease both;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 @keyframes ipmFade { from { opacity: 0 } to { opacity: 1 } }
 .ipm-shell {

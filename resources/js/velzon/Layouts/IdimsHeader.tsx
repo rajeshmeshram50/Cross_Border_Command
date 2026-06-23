@@ -970,7 +970,7 @@ const IDIMS_CSS = `
    full-height #layout-wrapper, so it pins to the top across the whole page.
    Sticking the nav directly failed — its containing block (the shell) was
    only nav-height tall, so it had no travel and scrolled away. */
-.idims-shell { font-family: 'DM Sans','Inter',system-ui,sans-serif; position: sticky; top: 0; z-index: 1030; }
+.idims-shell { font-family: var(--font-sans); position: sticky; top: 0; z-index: 1030; }
 .idims-nav {
   height: 110px; background: #fff; border-bottom: 1px solid #E4E7EF;
   box-shadow: 0 1px 3px rgba(15,23,42,.06); padding: 0 14px 0 10px;

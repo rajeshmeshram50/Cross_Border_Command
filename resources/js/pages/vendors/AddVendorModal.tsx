@@ -5058,7 +5058,7 @@ const SCOPED_CSS = `
   display: flex; align-items: flex-start; justify-content: center;
   padding: 24px 20px;
   overflow-y: auto;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 .avm-modal {
   width: 100%; max-width: 1200px;
@@ -6062,7 +6062,7 @@ const SCOPED_CSS = `
   backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center;
   padding: 24px 20px;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 .avm-qa-popup {
   width: 100%; max-width: 480px;
@@ -6103,7 +6103,7 @@ const SCOPED_CSS = `
   backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center;
   padding: 24px 20px;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 .avm-cp-popup {
   width: 100%; max-width: 880px;
