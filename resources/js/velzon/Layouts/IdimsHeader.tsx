@@ -1007,7 +1007,7 @@ const IDIMS_CSS = `
   max-height: 70vh; overflow-y: auto; background: #fff; border: 1px solid #E7EAF3; border-radius: 12px;
   box-shadow: 0 12px 34px rgba(15,23,42,.16); padding: 6px; }
 .idims-more-item { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: transparent;
-  padding: 9px 11px; border-radius: 9px; cursor: pointer; text-align: left; font-size: 13px; font-weight: 600; color: #0F172A; transition: background .14s; }
+  padding: 9px 11px; border-radius: 9px; cursor: pointer; text-align: left; font-size: 13px; font-weight: 500; color: #0F172A; transition: background .14s; }
 .idims-more-item:hover { background: #F5F3FF; }
 .idims-more-item.open { background: #F5F3FF; }
 .idims-more-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1039,7 +1039,7 @@ const IDIMS_CSS = `
   border-radius: 8px; background: #F1F0FB; color: #7C3AED; }
 .idims-search-result-ico svg { width: 15px; height: 15px; }
 .idims-search-result-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
-.idims-search-result-label { font-size: 13px; font-weight: 600; color: #0F172A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.idims-search-result-label { font-size: 13px; font-weight: 500; color: #0F172A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .idims-search-result-sub { font-size: 11px; color: #94A0B8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .idims-search:hover { border-color: #D6DBEC; }
 .idims-search:focus-within { background: #fff; border-color: #C4B5FD; box-shadow: 0 0 0 4px rgba(139,92,246,.15); }
@@ -1047,7 +1047,7 @@ const IDIMS_CSS = `
 .idims-search:focus-within .idims-search-ico { color: #7C3AED; }
 .idims-search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-family: inherit; font-size: 13px; color: #0F172A; }
 .idims-search-input::placeholder { color: #9AA2B8; }
-.idims-search-kbd { flex-shrink: 0; font-size: 10.5px; font-weight: 600; color: #6B7280; background: linear-gradient(180deg,#FFF,#F1F3F9); border: 1px solid #E2E6F0; border-bottom-width: 2px; border-radius: 7px; padding: 3px 8px; line-height: 1; }
+.idims-search-kbd { flex-shrink: 0; font-size: 10.5px; font-weight: 500; color: #6B7280; background: linear-gradient(180deg,#FFF,#F1F3F9); border: 1px solid #E2E6F0; border-bottom-width: 2px; border-radius: 7px; padding: 3px 8px; line-height: 1; }
 
 /* Branch switcher */
 .idims-branch-wrap { position: relative; flex-shrink: 0; margin-left: auto; }
@@ -1074,7 +1074,7 @@ const IDIMS_CSS = `
 .idims-branch-avatar { width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 2px 6px rgba(15,23,42,.18); }
 .idims-branch-item-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; text-align: left; }
 .idims-branch-item-name { font-size: 12.5px; font-weight: 700; color: #6D28D9; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.idims-branch-item-sub { font-size: 10px; font-weight: 600; color: #94A3B8; }
+.idims-branch-item-sub { font-size: 10px; font-weight: 500; color: #94A3B8; }
 .idims-branch-name-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .idims-branch-main-badge { flex-shrink: 0; font-size: 8.5px; font-weight: 800; letter-spacing: .4px; color: #6D28D9; background: linear-gradient(135deg,#EDE9FE,#DDD6FE); border: 1px solid #DDD6FE; border-radius: 5px; padding: 2px 6px; line-height: 1; text-transform: uppercase; }
 .idims-branch-check { color: #7C3AED; flex-shrink: 0; opacity: 0; transition: opacity .14s; }
@@ -1086,7 +1086,7 @@ const IDIMS_CSS = `
 /* Right controls */
 .idims-nav-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 .idims-theme-switch { display: flex; align-items: center; gap: 9px; flex-shrink: 0; padding: 4px 10px 4px 11px; border-radius: 999px; background: linear-gradient(180deg,#FFF,#F7F8FC); border: 1.5px solid #E7EAF3; }
-.idims-theme-switch-label { font-size: 11.5px; font-weight: 600; color: #6B7280; user-select: none; white-space: nowrap; }
+.idims-theme-switch-label { font-size: 11.5px; font-weight: 500; color: #6B7280; user-select: none; white-space: nowrap; }
 .idims-brand .idims-theme-switch-label { color: var(--bp, #7C3AED); }
 .idims-theme-toggle { position: relative; width: 42px; height: 22px; border-radius: 999px; border: none; cursor: pointer; flex-shrink: 0; padding: 0; background: linear-gradient(135deg,#CBD5E1,#94A3B8); box-shadow: inset 0 1px 3px rgba(15,23,42,.18); transition: background .25s ease; }
 .idims-theme-toggle::after { content: ''; position: absolute; top: 2.5px; left: 2.5px; width: 17px; height: 17px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(15,23,42,.3); transition: transform .28s cubic-bezier(.34,1.56,.64,1); }
@@ -1147,7 +1147,7 @@ const IDIMS_CSS = `
 .idims-profile-head-name { font-size: 15px; font-weight: 800; color: #fff; line-height: 1.2; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .idims-profile-head-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; color: #E9D5FF; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.25); border-radius: 999px; padding: 3px 9px 3px 7px; }
 .idims-profile-head-badge svg { width: 11px; height: 11px; }
-.idims-profile-head-branch { display: flex; align-items: center; gap: 5px; margin-top: 8px; font-size: 11px; font-weight: 600; color: rgba(255,255,255,.85); max-width: 165px; }
+.idims-profile-head-branch { display: flex; align-items: center; gap: 5px; margin-top: 8px; font-size: 11px; font-weight: 500; color: rgba(255,255,255,.85); max-width: 165px; }
 .idims-profile-head-branch svg { width: 12px; height: 12px; flex-shrink: 0; opacity: .85; }
 .idims-profile-head-branch span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .idims-profile-menu { padding: 8px; }
@@ -1155,7 +1155,7 @@ const IDIMS_CSS = `
 .idims-profile-item:hover { background: #F5F3FF; transform: translateX(2px); }
 .idims-profile-item-ico { width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0; color: #fff; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(15,23,42,.18); }
 .idims-profile-item-ico svg { width: 16px; height: 16px; }
-.idims-profile-item-label { flex: 1; font-size: 13.5px; font-weight: 600; color: #1E293B; text-align: left; }
+.idims-profile-item-label { flex: 1; font-size: 13.5px; font-weight: 500; color: #1E293B; text-align: left; }
 .idims-profile-item-arrow { width: 14px; height: 14px; color: #C4C9D6; flex-shrink: 0; transition: transform .15s, color .15s; }
 .idims-profile-item:hover .idims-profile-item-arrow { transform: translateX(2px); color: #7C3AED; }
 .idims-profile-item:hover .idims-profile-item-label { color: #6D28D9; }
@@ -1172,7 +1172,7 @@ const IDIMS_CSS = `
 .idims-nav-btn:hover { color: #6D28D9; }
 .idims-nav-btn:hover .idims-ico { color: #8B5CF6; transform: scale(1.12); }
 .idims-nav-btn:hover::after { width: 100%; opacity: 1; }
-.idims-nav-btn.dd-open { font-weight: 600; color: #6D28D9; }
+.idims-nav-btn.dd-open { font-weight: 500; color: #6D28D9; }
 .idims-nav-btn.dd-open .idims-ico { color: #8B5CF6; }
 .idims-nav-btn.dd-open::after { width: 100%; opacity: 1; }
 .dd-chev { display: flex; align-items: center; opacity: .45; transition: transform .18s, opacity .13s; margin-left: 2px; }
@@ -1198,7 +1198,7 @@ const IDIMS_CSS = `
 .idims-clm-child { display: flex; align-items: flex-start; gap: 9px; width: 100%; padding: 6px 8px; background: none; border: none; font-family: inherit; cursor: pointer; border-radius: 8px; text-align: left; transition: background .13s, transform .13s; }
 .idims-clm-child:hover { background: #F5F3FF; transform: translateX(2px); }
 .idims-clm-child-ico { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
-.idims-clm-child-label { font-size: 13px; font-weight: 600; color: #1E293B; white-space: nowrap; line-height: 1.2; }
+.idims-clm-child-label { font-size: 13px; font-weight: 500; color: #1E293B; white-space: nowrap; line-height: 1.2; }
 .idims-clm-child:hover .idims-clm-child-label { color: #0EA5E9; }
 .idims-dark .idims-clm-subcol + .idims-clm-subcol { border-left-color: #262B38; }
 .idims-dark .idims-clm-children { border-left-color: rgba(56,189,248,.45); }
@@ -1234,12 +1234,12 @@ const IDIMS_CSS = `
 .idims-dd-item-ico svg { width: 16px; height: 16px; }
 .idims-dd-item:hover .idims-dd-item-ico { transform: scale(1.08); }
 .idims-dd-item-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.idims-dd-item-label { font-size: 13px; font-weight: 600; color: #1E293B; white-space: nowrap; line-height: 1.2; transition: color .13s; }
-.idims-dd-item-desc { font-size: 10.5px; font-weight: 500; color: #94A3B8; line-height: 1.4; white-space: normal; }
+.idims-dd-item-label { font-size: 13px; font-weight: 500; color: #1E293B; white-space: nowrap; line-height: 1.2; transition: color .13s; }
+.idims-dd-item-desc { font-size: 10.5px; font-weight: 500; color: #94A3B8; line-height： 1.4; white-space： normal； }
 
 /* Logout modal */
-.idims-logout-overlay { position: fixed; inset: 0; z-index: 1060; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(15,23,42,.42); backdrop-filter: blur(5px); animation: idimsFade .2s ease; }
-@keyframes idimsFade { from { opacity: 0; } to { opacity: 1; } }
+.idims-logout-overlay { position: fixed; inset: 0; z-index： 1060； display： flex； align-items： center； justify-content： center； padding： 20px； background： rgba(15,23,42,.42)； backdrop-filter： blur(5px)； animation： idimsFade .2s ease； }
+@keyframes idimsFade { from { opacity： 0； } to { opacity： 1； } }
 .idims-logout-modal { width: 100%; max-width: 380px; border-radius: 22px; overflow: hidden; background: #fff; text-align: center; padding: 30px 28px 24px; box-shadow: 0 30px 80px rgba(15,23,42,.32); position: relative; animation: idimsPop .32s cubic-bezier(.34,1.56,.64,1); }
 @keyframes idimsPop { from { opacity: 0; transform: translateY(14px) scale(.94); } to { opacity: 1; transform: translateY(0) scale(1); } }
 .idims-logout-modal::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 5px; background: linear-gradient(90deg,#FB7185,#F43F5E 55%,#E11D48); }
