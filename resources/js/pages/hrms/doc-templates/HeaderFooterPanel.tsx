@@ -879,7 +879,7 @@ function HfpDarkStyles() {
         display: flex; align-items: center; justify-content: center; padding: 20px;
       }
       .tpl-popover.tpl-popover-modal {
-        width: 100%; max-width: 660px; max-height: 86vh; overflow-y: auto;
+        width: 100%; max-width: 660px; max-height: 86vh; 
         border-radius: 14px; box-shadow: 0 24px 64px rgba(8,15,40,0.45);
         animation: tpl-pop-in .16s ease-out both;
       }

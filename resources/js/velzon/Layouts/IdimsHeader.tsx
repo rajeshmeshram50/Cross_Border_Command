@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { moduleVisible } from '../../utils/menuAccess';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
 import { SALES_GROUPS, CLM_GROUPS, HR_GROUPS, P2P_GROUPS } from '../../constants';
@@ -312,7 +313,8 @@ export default function IdimsHeader() {
     if (hasGroupView('hr.')) items.push({ id: 'hr', label: 'HRMS', icon: IC.users, dd: 'hr' });
     if (hasGroupView('sales.')) items.push({ id: 'sales', label: 'Sales Matrix', icon: IC.trend, dd: 'sales' });
     if (hasGroupView('clm.')) items.push({ id: 'clm', label: 'CLM', icon: IC.file, dd: 'clm' });
-    if (can('p2p')) items.push({ id: 'p2p', label: 'Procure to Pay (P2P)', icon: IC.cart, dd: 'p2p' });
+    // Shared rule (see utils/menuAccess) — parent grant OR any p2p.* leaf.
+    if (moduleVisible(perms, 'p2p', isSuperAdmin, planExpired)) items.push({ id: 'p2p', label: 'Procure to Pay (P2P)', icon: IC.cart, dd: 'p2p' });
     if (can('gts')) items.push({ id: 'gts', label: 'GTS (E-Docs)', icon: IC.globe });
     if (can('inventory')) items.push({ id: 'inventory', label: 'Inventory Management System', icon: IC.box });
     // Developers → Shipment (Business Task). Direct-link tab, gated on the
