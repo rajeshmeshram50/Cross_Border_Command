@@ -110,7 +110,7 @@ import EmployeeProfile from '../pages/employee/EmployeeProfile';
 import PublicOnboarding from '../pages/PublicOnboarding';
 import ClockIn from '../pages/ClockIn';
 import ModuleStubPage from '../pages/ModuleStubPage';
-import P2pBulkSourcing from '../pages/p2p/P2pBulkSourcing';
+import P2pBulkSourcing from '../pages/p2p/procurement-management/bulk-sourcing/P2pBulkSourcing';
 import MyTeam from '../pages/MyTeam';
 import Inbox from '../pages/Inbox';
 import Gmail from '../pages/Gmail';

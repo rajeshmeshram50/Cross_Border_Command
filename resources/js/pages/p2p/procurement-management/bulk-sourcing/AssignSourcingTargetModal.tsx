@@ -1,0 +1,391 @@
+import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useToast } from '../../../../contexts/ToastContext';
+import api from '../../../../api';
+import { type ReportRow } from './SourcingReportModal';
+import './bulk-sourcing.css';
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Assign Sourcing Target — two-stage wizard.
+ *  Stage 1: Sourcing Details (ID auto, start today, due date).
+ *  Stage 2: Product Details — From Product Master (multiselect) OR Manual
+ *           Entry, feeding a Product List with Masters/Manual tabs.
+ * Data (products / team / edit pre-fill) comes from the backend — see API.md.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+type Product = { code: string; name: string; segment: string; hsn: string };
+type Member = { id: string; name: string; role: string };
+const tInit = (n: string) => n.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+
+type Clarity = { type: 'text' | 'link' | 'pdf'; val: string } | null;
+type MasterRow = { code: string; name: string; segment: string; hsn: string; price: string; clarity?: Clarity };
+type ManualRow = { name: string; price: string; clarity?: Clarity };
+
+function ClarityBtn({ clarity, onClick }: { clarity?: Clarity; onClick: () => void }) {
+  const set = !!clarity?.type;
+  return (
+    <button type="button" className={`ast-pl-clarity ${set ? 'is-set' : ''}`} onClick={onClick}>
+      {set
+        ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+        : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>}
+      {set ? (clarity!.type.charAt(0).toUpperCase() + clarity!.type.slice(1)) : 'Add clarity'}
+    </button>
+  );
+}
+
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const fmt = (s: string) => { if (!s) return ''; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
+const LockIco = () => <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>;
+
+export default function AssignSourcingTargetModal({ editRow = null, onClose, onSaved }: { editRow?: ReportRow | null; onClose: () => void; onSaved?: () => void }) {
+  const toast = useToast();
+  const isEdit = !!editRow;
+  const srcId = editRow?.id ?? 'Auto';
+  const start = useMemo(() => editRow?.start ?? today(), [editRow]);
+
+  const [stage, setStage] = useState(1);
+  const [due, setDue] = useState(editRow?.due ?? '');
+  const [source, setSource] = useState<'master' | 'manual'>(editRow?.source === 'Manual Entry' ? 'manual' : 'master');
+  const [masterRows, setMasterRows] = useState<MasterRow[]>([]);
+  const [manualRows, setManualRows] = useState<ManualRow[]>([]);
+  const [picks, setPicks] = useState<string[]>([]);
+  const [pickQuery, setPickQuery] = useState('');
+  const [pickOpen, setPickOpen] = useState(false);
+  const [listTab, setListTab] = useState<'master' | 'manual'>(editRow?.source === 'Manual Entry' ? 'manual' : 'master');
+  const [mName, setMName] = useState('');
+  const [mPrice, setMPrice] = useState('');
+  const [team, setTeam] = useState<string | null>(editRow?.assignee ?? null);
+  const [teamOpen, setTeamOpen] = useState(false);
+  const [teamSearch, setTeamSearch] = useState('');
+  const [teamPick, setTeamPick] = useState<string | null>(null);
+  const [clarity, setClarity] = useState<{ kind: 'master' | 'manual'; idx: number } | null>(null);
+  const [clType, setClType] = useState<'text' | 'link' | 'pdf'>('text');
+  const [clVal, setClVal] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Reference data + edit pre-fill from the backend (see API.md).
+  const [products, setProducts] = useState<Product[]>([]);
+  const [teamMembers, setTeamMembers] = useState<Member[]>([]);
+  useEffect(() => {
+    api.get<{ data: Product[] }>('/p2p/products').then(r => setProducts(r.data?.data ?? [])).catch(() => {});
+    api.get<{ data: Member[] }>('/p2p/team-members').then(r => setTeamMembers(r.data?.data ?? [])).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (!editRow) return;
+    api.get<{ data: { masterRows?: MasterRow[]; manualRows?: ManualRow[] } }>(`/p2p/sourcing-targets/${editRow.id}`)
+      .then(r => { setMasterRows(r.data?.data?.masterRows ?? []); setManualRows(r.data?.data?.manualRows ?? []); })
+      .catch(() => {});
+  }, [editRow]);
+
+  const openClarity = (kind: 'master' | 'manual', idx: number) => {
+    const row = kind === 'master' ? masterRows[idx] : manualRows[idx];
+    setClType(row?.clarity?.type ?? 'text');
+    setClVal(row?.clarity?.val ?? '');
+    setClarity({ kind, idx });
+  };
+  const saveClarity = () => {
+    if (!clarity) return;
+    const has = clType === 'pdf' ? !!clVal : !!clVal.trim();
+    const c: Clarity = has ? { type: clType, val: clVal } : null;
+    if (clarity.kind === 'master') setMasterRows(rows => rows.map((x, i) => i === clarity.idx ? { ...x, clarity: c } : x));
+    else setManualRows(rows => rows.map((x, i) => i === clarity.idx ? { ...x, clarity: c } : x));
+    setClarity(null);
+  };
+  const clarityTitle = clarity ? (clarity.kind === 'master' ? `${masterRows[clarity.idx]?.code} — ${masterRows[clarity.idx]?.name}` : manualRows[clarity.idx]?.name) : '';
+
+  const teamList = teamMembers.filter(m => { const q = teamSearch.toLowerCase(); return !q || (m.name + ' ' + m.role).toLowerCase().includes(q); });
+  const openTeam = () => { setTeamPick(teamMembers.find(m => m.name === team)?.id ?? null); setTeamSearch(''); setTeamOpen(true); };
+  const togglePick = (code: string) => setPicks(p => p.includes(code) ? p.filter(c => c !== code) : [...p, code]);
+  const addMaster = () => {
+    if (!picks.length) { toast.warning('Pick products', 'Choose one or more products first.'); return; }
+    setMasterRows(rows => {
+      const have = new Set(rows.map(r => r.code));
+      const add = picks.filter(c => !have.has(c)).map(c => { const p = products.find(x => x.code === c)!; return { code: p.code, name: p.name, segment: p.segment, hsn: p.hsn, price: '' }; });
+      return [...rows, ...add];
+    });
+    setPicks([]); setListTab('master');
+  };
+  const addManual = () => {
+    if (!mName.trim()) { toast.warning('Product name', 'Please enter a product name.'); return; }
+    if (!mPrice.trim()) { toast.warning('Target price', 'Please enter a target price.'); return; }
+    setManualRows(rows => [...rows, { name: mName.trim(), price: mPrice.trim() }]);
+    setMName(''); setMPrice(''); setListTab('manual');
+  };
+  const goAssign = () => {
+    const n = masterRows.length + manualRows.length;
+    if (!n) { toast.warning('Add products', 'Add at least one product to the list.'); return; }
+    const body = {
+      due_date: due, source,
+      assignee_id: teamMembers.find(m => m.name === team)?.id ?? null,
+      products: [
+        ...masterRows.map(r => ({ from: 'master', code: r.code, target_price: r.price, clarity: r.clarity ?? null })),
+        ...manualRows.map(r => ({ from: 'manual', name: r.name, target_price: r.price, clarity: r.clarity ?? null })),
+      ],
+    };
+    setSaving(true);
+    const req = isEdit
+      ? api.put(`/p2p/sourcing-targets/${editRow!.id}`, body)
+      : api.post('/p2p/sourcing-targets', body);
+    req
+      .then(() => { toast.success(isEdit ? 'Sourcing target updated' : 'Sourcing target assigned', `${n} product(s).`); onSaved?.(); onClose(); })
+      .catch(() => toast.error('Save failed', 'Please try again.'))
+      .finally(() => setSaving(false));
+  };
+
+  const pickList = products.filter(p => { const q = pickQuery.toLowerCase(); return !q || (p.code + ' ' + p.name).toLowerCase().includes(q); });
+
+  return createPortal(
+    <div className="ast-ov" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="ast-modal" role="dialog" aria-modal="true">
+        {/* Header */}
+        <div className="ast-head">
+          <div className="ast-head-ico" style={isEdit ? { background: 'linear-gradient(135deg,#0891b2,#0e7490)' } : undefined}>
+            {isEdit
+              ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
+              : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>}
+          </div>
+          <div style={{ flex: 1 }}><div className="ast-title">{isEdit ? `Edit Sourcing Target — ${srcId}` : 'Assign Sourcing Target'}</div><div className="ast-sub">{isEdit ? 'Update sourcing details and product list.' : 'Create a sourcing target across products.'}</div></div>
+          <button className={`ast-head-btn ${team ? 'is-set' : ''}`} onClick={openTeam}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+            <span>{team || 'Assign to Team Member'}</span>
+          </button>
+          <button className="ast-close" onClick={onClose}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+          <span className="ast-head-accent" />
+        </div>
+
+        {/* Stepper */}
+        <div className="ast-steps">
+          <div className={`ast-scard ${stage === 1 ? 'is-current' : ''} ${stage > 1 ? 'is-done' : ''}`}>
+            <span className="ast-scard-glow" />
+            <div className="ast-scard-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg></div>
+            <div className="ast-scard-txt"><div className="ast-scard-stage">Stage 1</div><div className="ast-scard-name">Sourcing Details</div><div className="ast-scard-desc">ID, dates &amp; timeline</div></div>
+            <div className="ast-scard-badge">{stage > 1 ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> : '1'}</div>
+          </div>
+          <span className={`ast-scard-link ${stage > 1 ? 'is-done' : ''}`} />
+          <div className={`ast-scard ${stage === 2 ? 'is-current' : ''}`}>
+            <span className="ast-scard-glow" />
+            <div className="ast-scard-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg></div>
+            <div className="ast-scard-txt"><div className="ast-scard-stage">Stage 2</div><div className="ast-scard-name">Product Details</div><div className="ast-scard-desc">Products, price &amp; clarity</div></div>
+            <div className="ast-scard-badge">2</div>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="ast-body">
+          {stage === 1 ? (
+            <div className="ast-srccard">
+              <div className="ast-srccard-head">
+                <span className="ast-srccard-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg></span>
+                <div className="ast-srccard-htxt"><b>Sourcing Details</b><small>Identification and timeline for this sourcing</small></div>
+                <span className="ast-srccard-tag" style={isEdit ? { background: 'linear-gradient(135deg,#0891b2,#0e7490)', color: '#fff', borderColor: 'transparent' } : undefined}><span className="ast-srccard-dot" style={isEdit ? { background: '#fff', boxShadow: 'none' } : undefined} />{isEdit ? 'Edit Mode' : 'New'}</span>
+              </div>
+              <div className="ast-srccard-body">
+                <div className="ast-srcgrid">
+                  <div className="ast-field">
+                    <label>Sourcing ID <span className="ast-lock"><LockIco /> Auto</span></label>
+                    <div className="ast-inputwrap is-frozen"><span className="ast-input-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7V4h16v3" /><path d="M9 20h6" /><path d="M12 4v16" /></svg></span><input type="text" value={srcId} readOnly tabIndex={-1} className="ast-readonly has-ico" /><span className="ast-freeze-ico"><LockIco /></span></div>
+                  </div>
+                  <div className="ast-srcgrid-sep" />
+                  <div className="ast-field">
+                    <label>Start Date <span className="ast-lock"><LockIco /> Today</span></label>
+                    <div className="ast-inputwrap is-frozen"><span className="ast-input-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg></span><input type="text" value={fmt(start)} readOnly tabIndex={-1} className="ast-readonly has-ico" /><span className="ast-freeze-ico"><LockIco /></span></div>
+                  </div>
+                  <div className="ast-srcgrid-sep" />
+                  <div className="ast-field">
+                    <label>Due Date <span className="ast-req">*</span></label>
+                    <div className="ast-inputwrap ast-inputwrap--active"><span className="ast-input-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg></span><input type="date" value={due} min={start} onChange={e => setDue(e.target.value)} className="has-ico" /></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="ast-srccard">
+                <div className="ast-srccard-head ast-srccard-head--teal">
+                  <span className="ast-srccard-ico ast-srccard-ico--teal"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg></span>
+                  <div className="ast-srccard-htxt"><b>Product Details</b><small>Choose how to add products</small></div>
+                  <span className="ast-srccard-tag ast-srccard-tag--teal"><span className="ast-srccard-dot ast-srccard-dot--teal" />Step 2</span>
+                </div>
+                <div className="ast-srccard-body">
+                  <div className="ast-field" style={{ marginBottom: 13, ...(isEdit ? { pointerEvents: 'none', opacity: 0.7 } as React.CSSProperties : {}) }}>
+                    <label>I want to source from <span className="ast-req">*</span>{isEdit && <span style={{ fontSize: 10, color: '#0891b2', fontWeight: 600, marginLeft: 6, textTransform: 'none' }}>🔒 Locked</span>}</label>
+                    <div className="ast-radios">
+                      <label className={`ast-radio ${source === 'master' ? 'is-sel' : ''}`} onClick={() => !isEdit && setSource('master')}><span className="ast-radio-dot" /><span className="ast-radio-txt"><b>From Product Master</b><small>Pick existing products</small></span></label>
+                      <label className={`ast-radio ${source === 'manual' ? 'is-sel' : ''}`} onClick={() => !isEdit && setSource('manual')}><span className="ast-radio-dot" /><span className="ast-radio-txt"><b>Manual Product Entry</b><small>Type a new product</small></span></label>
+                    </div>
+                  </div>
+
+                  {!isEdit && (source === 'master' ? (
+                    <div className="ast-field">
+                      <label>Select Products <span className="ast-hint">(choose one or more, then click Add)</span></label>
+                      <div className="asrc-picker">
+                        <div className="asrc-pick-chips">
+                          {picks.length === 0 ? <span className="asrc-pick-ph">No products chosen yet</span> : picks.map(code => {
+                            const p = PRODUCTS.find(x => x.code === code)!;
+                            return <span className="ast-ms-chip" key={code}>{p.code} — {p.name}<button type="button" onClick={() => togglePick(code)}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button></span>;
+                          })}
+                        </div>
+                        <div className="asrc-pick-search">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                          <input type="text" value={pickQuery} placeholder="Search products..." onChange={e => setPickQuery(e.target.value)} onFocus={() => setPickOpen(true)} onBlur={() => setTimeout(() => setPickOpen(false), 180)} />
+                          <button type="button" className="ast-btn ast-btn-primary asrc-pick-add" onClick={addMaster}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg> Add</button>
+                          <div className={`asrc-pick-list ${pickOpen ? 'is-open' : ''}`}>
+                            {pickList.length === 0 ? <div className="ast-plist-empty" style={{ border: 'none', background: 'none' }}>No matching products</div> : pickList.map(p => {
+                              const picked = picks.includes(p.code);
+                              const added = masterRows.some(r => r.code === p.code);
+                              return (
+                                <button type="button" key={p.code} className={`asrc-pick-opt ${picked ? 'is-sel' : ''} ${added ? 'is-added' : ''}`} onMouseDown={e => e.preventDefault()} onClick={() => { if (!added) togglePick(p.code); }}>
+                                  <span className="asrc-pick-check">{(picked || added) && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}</span>
+                                  <span className="asrc-pick-txt"><b>{p.code}</b> — {p.name}{added && <i> (added)</i>}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="ast-grid ast-grid-3">
+                      <div className="ast-field"><label>Product Name <span className="ast-req">*</span></label><input type="text" value={mName} placeholder="e.g. Office Printer A4" onChange={e => setMName(e.target.value)} /></div>
+                      <div className="ast-field"><label>Target Price (₹) <span className="ast-req">*</span></label><input type="text" value={mPrice} placeholder="Required" onChange={e => setMPrice(e.target.value)} /></div>
+                      <div className="ast-field"><label>&nbsp;</label><button type="button" className="ast-btn ast-btn-primary" style={{ height: 42, justifyContent: 'center' }} onClick={addManual}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg> Add to List</button></div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Product List */}
+              <div className="ast-srccard">
+                <div className="ast-srccard-head ast-srccard-head--teal">
+                  <span className="ast-srccard-ico ast-srccard-ico--teal"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg></span>
+                  <div className="ast-srccard-htxt"><b>Product List</b><small>Mapped products for this sourcing</small></div>
+                  <div className="asrc-listtabs">
+                    <button type="button" className={`asrc-ltab ${listTab === 'master' ? 'is-active' : ''}`} onClick={() => setListTab('master')}>Masters <span className="asrc-ltab-c">{masterRows.length}</span></button>
+                    <button type="button" className={`asrc-ltab ${listTab === 'manual' ? 'is-active' : ''}`} onClick={() => setListTab('manual')}>Manual <span className="asrc-ltab-c">{manualRows.length}</span></button>
+                  </div>
+                </div>
+                <div className="ast-srccard-body">
+                  {listTab === 'master' ? (
+                    masterRows.length === 0 ? <div className="ast-plist-empty">No master products added yet. Select from the dropdown above and click Add.</div> : (
+                      <div className="ast-plist">
+                        <div className="asrc-row asrc-row--head asrc-row--m"><span>Sr</span><span>Product Code</span><span>Product Name</span><span>Segment</span><span>HSN Code</span><span>Target Price (₹) <b className="asrc-th-req">*</b></span><span>Clarity <i className="asrc-th-opt">(optional)</i></span><span /></div>
+                        {masterRows.map((r, i) => (
+                          <div className="asrc-row asrc-row--m" key={r.code}>
+                            <span className="asrc-sr">{i + 1}</span>
+                            <span className="asrc-code">{r.code}</span>
+                            <span className="asrc-name">{r.name}</span>
+                            <span>{r.segment}</span>
+                            <span className="asrc-hsn">{r.hsn}</span>
+                            <span><input type="text" className="ast-pl-price" value={r.price} placeholder="Required" onChange={e => setMasterRows(rows => rows.map((x, xi) => xi === i ? { ...x, price: e.target.value } : x))} /></span>
+                            <span><ClarityBtn clarity={r.clarity} onClick={() => openClarity('master', i)} /></span>
+                            <span><button type="button" className="ast-pl-del" title="Delete" onClick={() => setMasterRows(rows => rows.filter((_, xi) => xi !== i))}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button></span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  ) : (
+                    manualRows.length === 0 ? <div className="ast-plist-empty">No manual products added yet. Fill the fields above and click Add to List.</div> : (
+                      <div className="ast-plist">
+                        <div className="asrc-row asrc-row--head asrc-row--n"><span>Sr</span><span>Product Name</span><span>Target Price (₹) <b className="asrc-th-req">*</b></span><span>Clarity <i className="asrc-th-opt">(optional)</i></span><span /></div>
+                        {manualRows.map((r, i) => (
+                          <div className="asrc-row asrc-row--n" key={i}>
+                            <span className="asrc-sr">{i + 1}</span>
+                            <span><input type="text" className="ast-pl-price" style={{ fontWeight: 600 }} value={r.name} onChange={e => setManualRows(rows => rows.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x))} /></span>
+                            <span><input type="text" className="ast-pl-price" value={r.price} placeholder="Required" onChange={e => setManualRows(rows => rows.map((x, xi) => xi === i ? { ...x, price: e.target.value } : x))} /></span>
+                            <span><ClarityBtn clarity={r.clarity} onClick={() => openClarity('manual', i)} /></span>
+                            <span><button type="button" className="ast-pl-del" title="Delete" onClick={() => setManualRows(rows => rows.filter((_, xi) => xi !== i))}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button></span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="ast-foot">
+          {stage === 1 ? (
+            <>
+              <button className="ast-btn ast-btn-ghost" onClick={onClose}>Cancel</button>
+              <button className="ast-btn ast-btn-primary" onClick={() => setStage(2)}>Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></button>
+            </>
+          ) : (
+            <>
+              <button className="ast-btn ast-btn-ghost" onClick={() => setStage(1)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg> Previous</button>
+              <button className="ast-btn ast-btn-primary" onClick={goAssign} disabled={saving}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg> {saving ? 'Saving…' : (isEdit ? 'Update Target' : 'Assign Target')}</button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Assign to Team Member — single-select picker */}
+      {teamOpen && (
+        <div className="astp-ov" onClick={e => { if (e.target === e.currentTarget) setTeamOpen(false); }}>
+          <div className="astp-pop" role="dialog" aria-modal="true">
+            <div className="astp-head">
+              <div className="astp-head-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg></div>
+              <div style={{ flex: 1 }}><div className="astp-title">Assign to Team Member</div><div className="astp-sub">Select one team member for this sourcing</div></div>
+              <button className="astp-close" onClick={() => setTeamOpen(false)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+            </div>
+            <div className="astp-search">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+              <input type="text" value={teamSearch} placeholder="Search by name or role..." onChange={e => setTeamSearch(e.target.value)} />
+            </div>
+            <div className="astp-body">
+              {teamList.length === 0 ? <div className="astp-empty">No team members match your search.</div> : teamList.map(m => (
+                <button type="button" key={m.id} className={`astp-row ${teamPick === m.id ? 'is-sel' : ''}`} onClick={() => setTeamPick(p => p === m.id ? null : m.id)}>
+                  <span className="astp-av">{tInit(m.name)}</span>
+                  <span className="astp-main"><span className="astp-name">{m.name}</span><span className="astp-role">{m.role}</span></span>
+                  <span className="astp-check">{teamPick === m.id ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="16 9 11 14 8.5 11.5" /></svg> : <span className="astp-radio" />}</span>
+                </button>
+              ))}
+            </div>
+            <div className="astp-foot">
+              <button className="ast-btn ast-btn-ghost" onClick={() => setTeamOpen(false)}>Cancel</button>
+              <button className="ast-btn ast-btn-primary" disabled={!teamPick} onClick={() => { const m = TEAM.find(x => x.id === teamPick); if (m) setTeam(m.name); setTeamOpen(false); }}>Assign Member</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Product Clarity popup */}
+      {clarity && (
+        <div className="astp-ov" onClick={e => { if (e.target === e.currentTarget) setClarity(null); }}>
+          <div className="astp-pop" style={{ maxWidth: 440 }}>
+            <div className="astp-head">
+              <div className="astp-head-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg></div>
+              <div><div className="astp-title">Product Clarity</div><div className="astp-sub">{clarityTitle}</div></div>
+              <button className="astp-close" onClick={() => setClarity(null)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+            </div>
+            <div style={{ padding: 14 }}>
+              <div className="ast-tabs">
+                {(['text', 'link', 'pdf'] as const).map(t => (
+                  <button key={t} type="button" className={`ast-tab ${clType === t ? 'is-active' : ''}`} onClick={() => { setClType(t); setClVal(''); }}>{t === 'pdf' ? 'PDF' : t.charAt(0).toUpperCase() + t.slice(1)}</button>
+                ))}
+              </div>
+              <div className="ast-clarity-body">
+                {clType === 'text' && <textarea value={clVal} placeholder="Add notes or specs..." onChange={e => setClVal(e.target.value)} />}
+                {clType === 'link' && <input type="text" value={clVal} placeholder="https://... reference link" onChange={e => setClVal(e.target.value)} />}
+                {clType === 'pdf' && (
+                  <label className="ast-pdf">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                    <span>{clVal || 'Click to upload a PDF specification'}</span>
+                    <input type="file" accept="application/pdf" onChange={e => setClVal(e.target.files?.[0]?.name ?? '')} />
+                  </label>
+                )}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 9, marginTop: 14 }}>
+                <button className="ast-btn ast-btn-ghost" onClick={() => setClarity(null)}>Cancel</button>
+                <button className="ast-btn ast-btn-primary" onClick={saveClarity}>Save Clarity</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>,
+    document.body,
+  );
+}

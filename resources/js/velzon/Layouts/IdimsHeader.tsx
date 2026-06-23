@@ -1198,7 +1198,7 @@ const IDIMS_CSS = `
 .idims-clm-child { display: flex; align-items: flex-start; gap: 9px; width: 100%; padding: 6px 8px; background: none; border: none; font-family: inherit; cursor: pointer; border-radius: 8px; text-align: left; transition: background .13s, transform .13s; }
 .idims-clm-child:hover { background: #F5F3FF; transform: translateX(2px); }
 .idims-clm-child-ico { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
-.idims-clm-child-label { font-size: 12px; font-weight: 700; color: #1E293B; white-space: nowrap; line-height: 1.2; }
+.idims-clm-child-label { font-size: 13px; font-weight: 600; color: #1E293B; white-space: nowrap; line-height: 1.2; }
 .idims-clm-child:hover .idims-clm-child-label { color: #0EA5E9; }
 .idims-dark .idims-clm-subcol + .idims-clm-subcol { border-left-color: #262B38; }
 .idims-dark .idims-clm-children { border-left-color: rgba(56,189,248,.45); }
