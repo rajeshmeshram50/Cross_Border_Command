@@ -126,7 +126,7 @@ export default function P2pBulkSourcing() {
       <style>{CSS}</style>
 
         {/* HEADER STRIP */}
-        <div style={{ flexShrink: 0, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 14px', minHeight: 56, border: '1px solid rgba(6,182,212,.28)', borderRadius: 12, background: 'linear-gradient(110deg,#e0f9fd 0%,#cef8ff 20%,#d4f4f9 50%,#bff0f7 80%,#a5e9f3 100%)', boxShadow: '0 2px 0 rgba(255,255,255,.85) inset,0 4px 16px rgba(6,182,212,.15)' }}>
+        <div className="bsm-headstrip" style={{ flexShrink: 0, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 14px', minHeight: 56, border: '1px solid rgba(6,182,212,.28)', borderRadius: 12, background: 'linear-gradient(110deg,#e0f9fd 0%,#cef8ff 20%,#d4f4f9 50%,#bff0f7 80%,#a5e9f3 100%)', boxShadow: '0 2px 0 rgba(255,255,255,.85) inset,0 4px 16px rgba(6,182,212,.15)' }}>
           <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'linear-gradient(180deg,#22d3ee,#0891b2,#0e7490)', borderRadius: '12px 0 0 12px' }} />
           <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.5),transparent)', pointerEvents: 'none', borderRadius: '12px 12px 0 0' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, zIndex: 1, paddingLeft: 8 }}>
@@ -137,8 +137,8 @@ export default function P2pBulkSourcing() {
               <span style={{ position: 'absolute', bottom: -1, right: -1, width: 8, height: 8, borderRadius: '50%', background: 'linear-gradient(135deg,#4ade80,#22c55e)', border: '2px solid #cef8ff' }} />
             </div>
             <div>
-              <div style={{ fontSize: 13.5, fontWeight: 600, color: '#0c4a6e', letterSpacing: '-.3px', lineHeight: 1.1 }}>Bulk Sourcing Management</div>
-              <div style={{ fontSize: 10, fontWeight: 500, color: '#0e7490', opacity: .85, marginTop: 1 }}>Create, track and manage bulk sourcing requests, RFQs and consolidated procurement across suppliers.</div>
+              <div className="bsm-head-title" style={{ fontSize: 13.5, fontWeight: 600, color: '#0c4a6e', letterSpacing: '-.3px', lineHeight: 1.1 }}>Bulk Sourcing Management</div>
+              <div className="bsm-head-sub" style={{ fontSize: 10, fontWeight: 500, color: '#0e7490', opacity: .85, marginTop: 1 }}>Create, track and manage bulk sourcing requests, RFQs and consolidated procurement across suppliers.</div>
             </div>
           </div>
           <button type="button" onClick={() => setAssignOpen(true)} style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', border: 'none', borderRadius: 9, fontFamily: 'inherit', fontSize: 11, fontWeight: 600, color: '#fff', cursor: 'pointer', zIndex: 1, background: 'linear-gradient(135deg,#06b6d4,#0891b2,#0e7490)', boxShadow: '0 3px 10px rgba(8,145,178,.45)' }}>
@@ -385,4 +385,58 @@ const CSS = `
 .bst-pg-num:hover{border-color:#a5e8f2;color:#0e7490;}
 .bst-pg-num.is-active{color:#fff;background:linear-gradient(135deg,#22d3ee,#0891b2);border-color:transparent;box-shadow:0 3px 9px -3px rgba(8,145,178,.55);}
 @media(max-width:820px){.bst-tabs{width:100%;}.bst-tab{flex:1;justify-content:center;font-size:11px;padding:9px 8px;gap:5px;}}
+
+/* ── Dark mode ─────────────────────────────────────────────────────────── */
+[data-bs-theme="dark"] .bsm-headstrip{background:linear-gradient(110deg,#0c2630 0%,#0e2e3a 30%,#103642 60%,#0c2c38 100%) !important;border-color:rgba(34,211,238,.22) !important;box-shadow:0 4px 16px rgba(0,0,0,.4) !important;}
+[data-bs-theme="dark"] .bsm-head-title{color:#cffafe !important;}
+[data-bs-theme="dark"] .bsm-head-sub{color:#67e8f9 !important;}
+[data-bs-theme="dark"] .bsm-teal .bref-box{background:#0e1b24;border-color:rgba(34,211,238,.18);box-shadow:0 6px 22px rgba(0,0,0,.4);}
+[data-bs-theme="dark"] .bsm-teal .bref-box__header{background:linear-gradient(110deg,#0c2630,#103642 60%,#0c2c38);border-bottom-color:rgba(34,211,238,.2);}
+[data-bs-theme="dark"] .bsm-teal .bref-box__header::before{background-image:radial-gradient(ellipse at 10% 50%,rgba(34,211,238,.18) 0%,transparent 55%),radial-gradient(ellipse at 90% 50%,rgba(34,211,238,.1) 0%,transparent 55%);}
+[data-bs-theme="dark"] .bsm-teal .bref-box__header::after{background:linear-gradient(180deg,rgba(255,255,255,.06),transparent);}
+[data-bs-theme="dark"] .bsm-teal .bref-box__header-label{color:#67e8f9;}
+[data-bs-theme="dark"] .bsm-teal .bref-box__header-title{color:#e2faff;}
+[data-bs-theme="dark"] .bsm-teal .bref-box__header-sub{color:#7dd3fc;}
+[data-bs-theme="dark"] .bsm-teal .bref-box__header-sep{background:rgba(34,211,238,.3);}
+[data-bs-theme="dark"] .bsm-teal .bref-box__body{background:linear-gradient(180deg,#0d1922,#0b151c);}
+[data-bs-theme="dark"] .bref-item{background:#13242e;border-color:rgba(34,211,238,.16);box-shadow:none;}
+[data-bs-theme="dark"] .bref-item:hover{border-color:rgba(34,211,238,.4);}
+[data-bs-theme="dark"] .bref-item__title{color:#e2e8f0;}
+[data-bs-theme="dark"] .bref-item__desc{color:#94a3b8;}
+[data-bs-theme="dark"] .bref-item__ico{color:#67e8f9;}
+[data-bs-theme="dark"] .bst-card{background:#0e1b24;border-color:rgba(34,211,238,.16);box-shadow:0 8px 24px -10px rgba(0,0,0,.5);}
+[data-bs-theme="dark"] .bst-toolbar{background:linear-gradient(180deg,#102530,#0d1c25);border-bottom-color:rgba(34,211,238,.14);}
+[data-bs-theme="dark"] .bst-tabs{background:#0c1922;border-color:rgba(34,211,238,.18);}
+[data-bs-theme="dark"] .bst-tab{color:#94b2bf;}
+[data-bs-theme="dark"] .bst-tab:hover{color:#67e8f9;background:rgba(34,211,238,.08);}
+[data-bs-theme="dark"] .bst-tab-c{background:rgba(34,211,238,.14);border-color:rgba(34,211,238,.3);color:#67e8f9;}
+[data-bs-theme="dark"] .bst-search{background:rgba(255,255,255,.04);border-color:rgba(34,211,238,.2);}
+[data-bs-theme="dark"] .bst-search input{color:#e2e8f0;}
+[data-bs-theme="dark"] .bst-search input::placeholder{color:#64748b;}
+[data-bs-theme="dark"] .bst-search-clear{background:rgba(255,255,255,.06);color:#94a3b8;}
+[data-bs-theme="dark"] .bst-panel{background:#0e1b24;}
+[data-bs-theme="dark"] .bst-row{border-bottom-color:rgba(255,255,255,.05);}
+[data-bs-theme="dark"] .bst-row:not(.bst-row--head):hover{background:rgba(34,211,238,.05);}
+[data-bs-theme="dark"] .bst-row--head{background:linear-gradient(180deg,#0f2530,#0d1f28);color:#6b97a6;}
+[data-bs-theme="dark"] .bst-sr{color:#7c93a3;}
+[data-bs-theme="dark"] .bst-idpill{background:rgba(34,211,238,.1);border-color:rgba(34,211,238,.3);color:#67e8f9;}
+[data-bs-theme="dark"] .bst-src--master{background:rgba(34,211,238,.12);border-color:rgba(34,211,238,.3);color:#67e8f9;}
+[data-bs-theme="dark"] .bst-src--manual{background:rgba(124,58,237,.18);border-color:rgba(167,139,250,.35);color:#c4b5fd;}
+[data-bs-theme="dark"] .bst-due{color:#cbd5e1;}
+[data-bs-theme="dark"] .bst-person-name{color:#e2e8f0;}
+[data-bs-theme="dark"] .bst-bar{background:rgba(255,255,255,.08);}
+[data-bs-theme="dark"] .bst-prog3-pct{color:#67e8f9;}
+[data-bs-theme="dark"] .bst-prog3-pct.is-done{color:#4ade80;}
+[data-bs-theme="dark"] .bst-st--prog{background:rgba(34,211,238,.14);border-color:rgba(34,211,238,.3);color:#67e8f9;}
+[data-bs-theme="dark"] .bst-st--done{background:rgba(34,197,94,.18);border-color:rgba(74,222,128,.35);color:#86efac;}
+[data-bs-theme="dark"] .bst-pager{background:linear-gradient(180deg,#0f2028,#0d1922);border-top-color:rgba(255,255,255,.05);}
+[data-bs-theme="dark"] .bst-pg-info{color:#94a3b8;}
+[data-bs-theme="dark"] .bst-pg-info b{color:#67e8f9;}
+[data-bs-theme="dark"] .bst-pg-btn{background:rgba(255,255,255,.04);border-color:rgba(34,211,238,.25);color:#67e8f9;}
+[data-bs-theme="dark"] .bst-pg-btn:hover:not(:disabled){background:rgba(34,211,238,.12);border-color:rgba(34,211,238,.45);}
+[data-bs-theme="dark"] .bst-pg-num{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.1);color:#94a3b8;}
+[data-bs-theme="dark"] .bst-pg-num:hover{border-color:rgba(34,211,238,.4);color:#67e8f9;}
+[data-bs-theme="dark"] .bst-empty-t{color:#cffafe;}
+[data-bs-theme="dark"] .bst-empty-s{color:#94a3b8;}
+[data-bs-theme="dark"] .bst-empty-ico{background:rgba(34,211,238,.1);border-color:rgba(34,211,238,.3);}
 `;

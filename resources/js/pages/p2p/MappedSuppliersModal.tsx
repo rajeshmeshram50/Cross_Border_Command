@@ -162,4 +162,23 @@ const CSS = `
 .sv-footer-btn{display:inline-flex;align-items:center;gap:7px;font-family:inherit;font-size:12.5px;font-weight:600;color:#fff;background:linear-gradient(135deg,#22d3ee 0%,#0891b2 100%);border:none;border-radius:11px;padding:10px 22px;cursor:pointer;box-shadow:0 6px 18px rgba(8,145,178,.4);transition:all .18s;}
 .sv-footer-btn:hover{filter:brightness(1.08);transform:translateY(-1px);box-shadow:0 8px 24px rgba(8,145,178,.5);}
 @media(max-width:680px){.sv-refs{grid-template-columns:repeat(2,1fr);}.sv-card-contacts{grid-template-columns:1fr;}}
+/* ── Dark mode (header is already dark; theme the body + cards) ── */
+[data-bs-theme="dark"] .sv-box{background:#0e1b24;}
+[data-bs-theme="dark"] .sv-body{background:#0d1922;}
+[data-bs-theme="dark"] .sv-sec-label{color:#7dd3fc;}
+[data-bs-theme="dark"] .sv-card{background:#13242e;border-color:rgba(34,211,238,.16);box-shadow:0 2px 12px rgba(0,0,0,.4);}
+[data-bs-theme="dark"] .sv-card:hover{border-color:rgba(34,211,238,.4);}
+[data-bs-theme="dark"] .sv-card-idx{background:rgba(34,211,238,.1);border-color:rgba(34,211,238,.3);color:#67e8f9;}
+[data-bs-theme="dark"] .sv-card-name{color:#e2faff;}
+[data-bs-theme="dark"] .sv-card-tag.id{background:rgba(34,211,238,.12);border-color:rgba(34,211,238,.3);color:#67e8f9;}
+[data-bs-theme="dark"] .sv-card-tag.seg{background:rgba(34,197,94,.16);border-color:rgba(74,222,128,.3);color:#86efac;}
+[data-bs-theme="dark"] .sv-card-tag.src{background:rgba(245,158,11,.16);border-color:rgba(253,224,71,.3);color:#fcd34d;}
+[data-bs-theme="dark"] .sv-contact-item{background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.08);}
+[data-bs-theme="dark"] .sv-contact-item:hover{background:rgba(34,211,238,.06);border-color:rgba(34,211,238,.3);}
+[data-bs-theme="dark"] .sv-contact-val{color:#e2e8f0;}
+[data-bs-theme="dark"] .sv-empty-title{color:#cbd5e1;}
+[data-bs-theme="dark"] .sv-footer{background:#0e1b24;border-top-color:rgba(255,255,255,.06);}
+[data-bs-theme="dark"] .sv-footer-note{color:#94a3b8;}
+[data-bs-theme="dark"] .sv-close-btn{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12);color:#cbd5e1;}
+[data-bs-theme="dark"] .sv-close-btn:hover{background:rgba(255,255,255,.1);}
 `;

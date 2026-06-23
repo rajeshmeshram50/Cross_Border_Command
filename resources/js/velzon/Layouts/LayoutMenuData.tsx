@@ -2,6 +2,7 @@ import React from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { MENU_ITEMS, HR_GROUPS, SALES_GROUPS, CLM_GROUPS, P2P_GROUPS } from "../../constants";
 import { isMenuOpen, toggleMenu } from "./menuState";
+import { moduleVisible } from "../../utils/menuAccess";
 
 /**
  * Velzon's vertical Layout reads `navdata().props.children` — an array of
@@ -271,13 +272,8 @@ const Navdata = () => {
   // P2P is a PARENT module with a real p2p.* leaf subtree, so permission rows
   // live on the leaves — perms['p2p'] (the parent slug) is never saved. Gate on
   // any p2p.* leaf view, mirroring HR/Sales/CLM above.
-  const hasAnyP2pView = () => {
-    if (isSuperAdmin) return true;
-    if (planExpiredOrMissing) return false;
-    return Object.keys(perms).some(
-      (slug) => slug.startsWith("p2p.") && !!perms[slug]?.can_view
-    );
-  };
+  // Shared rule (see utils/menuAccess) so the sidebar and header never drift.
+  const hasAnyP2pView = () => moduleVisible(perms, "p2p", isSuperAdmin, planExpiredOrMissing);
 
   // Build the HR dropdown (3 levels): HR → categories → leaves.
   // Each category becomes a `subItem` with `isChildItem:true` so Velzon's

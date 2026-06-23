@@ -291,4 +291,26 @@ const CSS = `
 .snf-upload-sub{font-size:10.5px;color:#94a3b8;font-weight:500;}
 .snf-foot{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:12px 22px 16px;border-top:1px solid #f1f5f9;}
 @media(max-width:680px){.smp-opt-grid{grid-template-columns:1fr;}.snf-row-3,.snf-row-4,.snf-row-2{grid-template-columns:1fr;}.smp-sc-contacts{grid-template-columns:1fr;}}
+/* ── Dark mode (header is already dark; theme the body) ── */
+[data-bs-theme="dark"] .smp-box{background:#0e1b24;}
+[data-bs-theme="dark"] .smp-choose-body{background:#0e1b24;}
+[data-bs-theme="dark"] .smp-ocard{background:#13242e;border-color:rgba(255,255,255,.1);}
+[data-bs-theme="dark"] .smp-oc-title{color:#e2e8f0;}
+[data-bs-theme="dark"] .smp-oc-desc{color:#94a3b8;}
+[data-bs-theme="dark"] .smp-oc-divider{background:rgba(255,255,255,.08);}
+[data-bs-theme="dark"] .smp-cancel-row{background:#0e1b24;}
+[data-bs-theme="dark"] .smp-body{background:#0e1b24;}
+[data-bs-theme="dark"] .smp-select,[data-bs-theme="dark"] .smp-select-lg{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.14);color:#e2e8f0;}
+[data-bs-theme="dark"] .smp-sc-wrap{background:linear-gradient(135deg,#0f2630,#102e38);border-color:rgba(34,211,238,.22);}
+[data-bs-theme="dark"] .smp-sc-contact{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.08);}
+[data-bs-theme="dark"] .smp-sc-cv{color:#e2e8f0;}
+[data-bs-theme="dark"] .smp-form-foot{border-top-color:rgba(255,255,255,.08);}
+[data-bs-theme="dark"] .smp-btn-back{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12);color:#cbd5e1;}
+[data-bs-theme="dark"] .smp-btn-back:hover{background:rgba(255,255,255,.1);}
+[data-bs-theme="dark"] .snf-section{border-bottom-color:rgba(255,255,255,.06);}
+[data-bs-theme="dark"] .snf-lbl{color:#94a3b8;}
+[data-bs-theme="dark"] .snf-inp,[data-bs-theme="dark"] .snf-sel{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.12);color:#e2e8f0;}
+[data-bs-theme="dark"] .snf-inp::placeholder{color:#64748b;}
+[data-bs-theme="dark"] .snf-upload{background:rgba(255,255,255,.03);border-color:rgba(34,211,238,.25);}
+[data-bs-theme="dark"] .snf-foot{border-top-color:rgba(255,255,255,.06);}
 `;
