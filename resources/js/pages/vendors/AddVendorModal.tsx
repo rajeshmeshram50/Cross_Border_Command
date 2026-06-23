@@ -6409,4 +6409,33 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-product-code     { color: #c4b5fd; }
 [data-bs-theme="dark"] .avm-filechooser-icon { color: #c4b5fd; }
 [data-bs-theme="dark"] .avm-tab:hover        { color: #c4b5fd; }
+
+/* ───── Dark mode for the NEW Step-2 / Figma elements ───── */
+[data-bs-theme="dark"] .avm-pill-tabs { background: rgba(255,255,255,.04); border-color: rgba(167,139,250,.18); }
+[data-bs-theme="dark"] .avm-pill-tabs .avm-pill { color: #a89fc7; }
+[data-bs-theme="dark"] .avm-pill-tabs .avm-pill:hover { background: rgba(124,58,237,.18); color: #ede9fe; }
+[data-bs-theme="dark"] .avm-doc-count { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+[data-bs-theme="dark"] .avm-sr-badge  { background: rgba(124,58,237,.2); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+[data-bs-theme="dark"] .avm-exp-pill.is-na   { background: rgba(255,255,255,.06); color: #adb5bd; border-color: rgba(255,255,255,.12); }
+[data-bs-theme="dark"] .avm-exp-pill.is-date { background: rgba(220,38,38,.18); color: #fca5a5; border-color: rgba(220,38,38,.4); }
+[data-bs-theme="dark"] .avm-req-pill.off { background: rgba(255,255,255,.05); color: #9a93b3; border-color: rgba(255,255,255,.12); }
+[data-bs-theme="dark"] .avm-kyc-act.up   { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+[data-bs-theme="dark"] .avm-kyc-act.down { background: rgba(22,163,74,.18); color: #4ade80; border-color: rgba(22,163,74,.4); }
+[data-bs-theme="dark"] .avm-kyc-search { background: rgba(255,255,255,.04); border-color: rgba(167,139,250,.22); }
+[data-bs-theme="dark"] .avm-kyc-search input { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-mapped-count { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+[data-bs-theme="dark"] .avm-empty-accent { background: rgba(124,58,237,.08); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+[data-bs-theme="dark"] .avm-section-headtext .avm-section-sub { color: #a89fc7; }
+[data-bs-theme="dark"] .avm-section-sub::before { color: rgba(167,139,250,.4); }
+[data-bs-theme="dark"] .avm-foot-note { color: #a89fc7; }
+
+/* ───── Responsive — collapse the form/table grids on narrow screens ───── */
+@media (max-width: 820px) {
+  .avm-grid-3, .avm-grid-4 { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 520px) {
+  .avm-grid-2, .avm-grid-3, .avm-grid-4 { grid-template-columns: 1fr; }
+  .avm-tabs { overflow-x: auto; }
+  .avm-pill-tabs { overflow-x: auto; flex-wrap: nowrap; }
+}
 `;
