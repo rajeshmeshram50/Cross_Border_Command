@@ -34,8 +34,8 @@ function Header({ p, step }: { p: MapProduct; step?: string }) {
         <div className="smp-ppill"><div className="smp-ppill-lbl">Product Name</div><div className="smp-ppill-val">{p.name}</div></div>
         <div className="smp-ppill-sep" />
         <div className="smp-ppill"><div className="smp-ppill-lbl">Product Code</div><div className="smp-ppill-val cyan">{p.code || '—'}</div></div>
-        {p.segment && <><div className="smp-ppill-sep" /><div className="smp-ppill"><div className="smp-ppill-lbl">Segment</div><div className="smp-ppill-val">{p.segment}</div></div></>}
-        {p.price && <><div className="smp-ppill-sep" /><div className="smp-ppill pill-price"><div className="smp-ppill-lbl">Target Price</div><div className="smp-ppill-val amber">{p.price}</div></div></>}
+        <div className="smp-ppill-sep" /><div className="smp-ppill"><div className="smp-ppill-lbl">Segment</div><div className="smp-ppill-val">{p.segment || '—'}</div></div>
+        <div className="smp-ppill-sep" /><div className="smp-ppill pill-price"><div className="smp-ppill-lbl">Target Price</div><div className="smp-ppill-val amber">{p.price || '—'}</div></div>
         <div className="smp-ppill-sep" />
         <div className="smp-ppill pill-sup"><div className="smp-ppill-lbl">Suppliers Mapped</div><div className="smp-ppill-val green">{p.supplierCount} Supplier{p.supplierCount !== 1 ? 's' : ''}</div></div>
       </div>
@@ -63,12 +63,17 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
     setSaving(true);
     api.post(mapUrl, payload)
       .then(() => onMapped(name))
-      .catch(() => toast.error('Map failed', 'Please try again.'))
+      .catch((err) => {
+        const msg = err?.response?.data?.message || (err?.response?.data?.errors && Object.values(err.response.data.errors)[0]?.[0]);
+        toast.error('Map failed', msg || 'Please try again.');
+      })
       .finally(() => setSaving(false));
   };
   const saveMaster = () => { if (!supplier) { toast.warning('Select a supplier', 'Please pick a supplier from the list.'); return; } doMap({ supplier_id: supplier.id }, supplier.name); };
   const saveNew = () => {
     if (!co.trim()) { toast.warning('Company name', 'Please enter the supplier company name.'); return; }
+    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { toast.warning('Invalid email', 'Enter a valid supplier email address.'); return; }
+    if (mobile.trim() && !/^[0-9+\-\s()]{7,15}$/.test(mobile.trim())) { toast.warning('Invalid mobile', 'Enter a valid mobile number.'); return; }
     doMap({ new_supplier: { name: co.trim(), contact, mobile, segment: seg, email, gmaps, address: addr, country: 'India', state, state_code: stateCode, city, card } }, co.trim());
   };
 

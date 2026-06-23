@@ -3,6 +3,7 @@ import { useToast } from '../../../../contexts/ToastContext';
 import api from '../../../../api';
 import AssignSourcingTargetModal from './AssignSourcingTargetModal';
 import SourcingReportModal from './SourcingReportModal';
+import ProductListModal from './ProductListModal';
 import './bulk-sourcing.css';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -65,6 +66,7 @@ export default function P2pBulkSourcing() {
   const [assignOpen, setAssignOpen] = useState(false);
   const [reportRow, setReportRow] = useState<SourcingRow | null>(null);
   const [editRow, setEditRow] = useState<SourcingRow | null>(null);
+  const [productsRow, setProductsRow] = useState<SourcingRow | null>(null);
   const [assigned, setAssigned] = useState<SourcingRow[]>([]);
   const [created, setCreated] = useState<SourcingRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -216,7 +218,7 @@ export default function P2pBulkSourcing() {
                         <span className="bst-due">{fmtDate(r.due)}</span>
                         <span><Person name={r.createdBy} /></span>
                         <span><Person name={r.assignee} /></span>
-                        <span className="bst-c-center"><span className="bst-pcount" title="View Products" style={{ cursor: 'pointer' }} onClick={() => soon('Product list')}>{r.products}</span></span>
+                        <span className="bst-c-center"><span className="bst-pcount" title="View Products" style={{ cursor: 'pointer' }} onClick={() => setProductsRow(r)}>{r.products}</span></span>
                         <span className="bst-c-center"><Progress products={r.products} completed={r.completed} /></span>
                         <span className="bst-c-center">
                           <span className="bst-actions">
@@ -246,7 +248,8 @@ export default function P2pBulkSourcing() {
         {(assignOpen || editRow) && (
           <AssignSourcingTargetModal key={editRow ? editRow.id : 'new'} editRow={editRow} onClose={() => { setAssignOpen(false); setEditRow(null); }} onSaved={load} />
         )}
-        {reportRow && <SourcingReportModal key={reportRow.id} row={reportRow} onClose={() => setReportRow(null)} />}
+        {reportRow && <SourcingReportModal key={reportRow.id} row={reportRow} onClose={() => { setReportRow(null); load(); }} />}
+        {productsRow && <ProductListModal key={productsRow.id} row={productsRow} onClose={() => setProductsRow(null)} />}
       </div>
   );
 }

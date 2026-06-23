@@ -90,10 +90,10 @@ export function ToasterRoot({ toasts, onDismiss }: { toasts: ToastItemType[]; on
              modals sit at 10000-10002, sub-modals at 10500, confirm
              dialogs at 10050-11050, dropdown portals at 11000-11200.
              CLM modals sit at 200000 and master-select menus at 250000,
-             so the toaster needs to outrank those too — 500000 keeps it
-             above all of them so users see validation feedback even when
-             a stacked modal is open. */
-          z-index: 500000;
+             and the P2P Bulk Sourcing modals sit very high (up to ~10000001),
+             so the toaster uses the max int to outrank everything and stay
+             visible above any stacked modal. */
+          z-index: 2147483647;
           display: flex;
           flex-direction: column;
           gap: 12px;

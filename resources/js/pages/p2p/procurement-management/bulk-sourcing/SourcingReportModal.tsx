@@ -52,7 +52,18 @@ export default function SourcingReportModal({ row, onClose }: { row: ReportRow; 
   const pct = total ? Math.round((done / total) * 100) : 0;
   const allDone = total > 0 && done === total;
 
-  const toggle = (gi: number) => setStatuses(s => s.map((x, i) => i === gi ? (x === 'Completed' ? 'In Progress' : 'Completed') : x));
+  // Persist the status flip via PATCH; optimistic update, revert on failure.
+  const toggle = (gi: number) => {
+    const next: 'Completed' | 'In Progress' = statuses[gi] === 'Completed' ? 'In Progress' : 'Completed';
+    setStatuses(s => s.map((x, i) => i === gi ? next : x));
+    const pid = products[gi]?.id;
+    if (pid == null) return;
+    api.patch(`/p2p/sourcing-targets/${row.id}/products/${pid}/status`, { status: next })
+      .catch(() => {
+        setStatuses(s => s.map((x, i) => i === gi ? (next === 'Completed' ? 'In Progress' : 'Completed') : x));
+        toast.error('Update failed', 'Could not change the sourcing status.');
+      });
+  };
 
   // rows for the active tab, carrying their global index (for status toggle)
   const tabRows = products.map((p, gi) => ({ p, gi })).filter(x => x.p.type === tab);
@@ -167,6 +178,7 @@ export default function SourcingReportModal({ row, onClose }: { row: ReportRow; 
           onMapped={(name) => {
             const gi = mapIdx!;
             setMapped(m => { const cur = m[gi]?.count ?? (statuses[gi] === 'Completed' ? 1 : 0); return { ...m, [gi]: { count: cur + 1, name } }; });
+            setStatuses(s => s.map((x, i) => i === gi ? 'Completed' : x)); // backend marks it Completed on first map
             setMapIdx(null);
             toast.success('Supplier mapped', name);
           }}
