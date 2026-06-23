@@ -264,6 +264,32 @@ const SUPPLIER_TYPE_OPTS: { value: string; label: string }[] = [
   { value: 'Risk Services',     label: 'Risk Services' },
 ];
 
+/* Step 2 KYC sub-tab → section-header title + subtitle (mirrors the Figma,
+ * where the heading changes to the active sub-tab's name). */
+const KYC_TAB_TITLE: Record<string, string> = {
+  company: 'Company Due Diligence',
+  owner:   'Owner KYC',
+  license: 'Trade Licence',
+  bank:    'Bank Details',
+  gst:     'GST Scrutiny',
+};
+const KYC_TAB_SUB: Record<string, string> = {
+  company: 'Licenses, statutory documents, and compliance proofs',
+  owner:   'Identity & address proofs for owners / directors',
+  license: 'Export / import licences and registrations',
+  bank:    'Bank account & verification documents',
+  gst:     'GST registration & compliance checks',
+};
+
+/* Classification & Flags — fixed vocabulary for the visual-only field that
+ * mirrors the Figma. Not persisted yet (no backing column). */
+const CLASSIFICATION_OPTS: { value: string; label: string }[] = [
+  { value: 'Standard',  label: 'Standard' },
+  { value: 'Preferred', label: 'Preferred' },
+  { value: 'Watchlist', label: 'Watchlist' },
+  { value: 'Blacklisted', label: 'Blacklisted' },
+];
+
 /* ──────────────────────────────────────────────────────────────────────────
  * Component
  * ────────────────────────────────────────────────────────────────────── */
@@ -421,6 +447,10 @@ export default function AddVendorModal(props: {
    * id as `segment_id` and the joined list as `segment_ids`. */
   const [segment,     setSegment]     = useState<string[]>([]);
   const [complianceBehaviour, setComplianceBehaviour] = useState('');
+  /* Classification & Flags — visual field to match the Figma. There is no
+   * backing vendor column yet, so it is NOT sent to the API; it defaults to
+   * "Standard" and is purely presentational until a column ships. */
+  const [classificationFlag, setClassificationFlag] = useState('Standard');
 
   /* Segment-rule template — resolved KYC/DD/TL/TD/QC master rows for the
    * currently-selected supplier segment. Renders as a reference banner
@@ -522,6 +552,10 @@ export default function AddVendorModal(props: {
   const [email,       setEmail]       = useState('');
   const [whatsappEnabled, setWhatsappEnabled] = useState(true);
   const [attachment, setAttachment] = useState<File | null>(null);
+  /* Primary contact "saved" flag — once the user clicks Save on the Primary
+     Contact card, the contact surfaces as a locked (non-edit/non-delete)
+     "Primary" row in the contacts table below. Edit-mode starts saved. */
+  const [primarySaved, setPrimarySaved] = useState(false);
   /* Server-side path for the primary contact's previously uploaded
      business card. Hydrated from primary_address.attachment_path on
      edit-mode load so the table cell can render a working View link
@@ -657,6 +691,9 @@ export default function AddVendorModal(props: {
   const [gstPctOpts,     setGstPctOpts]     = useState<Opt[]>([]);
   const [productMappings, setProductMappings] = useState<ProductMappingRow[]>([]);
   const [mapPopupOpen,   setMapPopupOpen]   = useState(false);
+  /* Header "Map Product" → opens the Mapped Products list popup (Figma flow).
+     Mappings collect in productMappings state and persist on wizard submit. */
+  const [mappedListOpen, setMappedListOpen] = useState(false);
 
   type MapDraft = {
     productId: string;         // '' = nothing picked
@@ -1528,11 +1565,29 @@ export default function AddVendorModal(props: {
     }
   };
 
+  /* Client-side validation of the address fields (which live on tab 1's
+     "Supplier Address Details" card). Run when LEAVING tab 1 so address
+     errors highlight on the tab the user is actually looking at — instead
+     of surfacing later via saveContacts() while the user is on tab 2.
+     Sets fieldErrors but does NOT toast (the caller decides). */
+  const validateAddress = (): boolean => {
+    const errs: Record<string, string> = {};
+    if (!registeredOffice.trim()) errs.registeredOffice = 'Registered Office Address is required';
+    if (!country)                 errs.country          = 'Country is required';
+    if (!state)                   errs.state            = 'State is required';
+    if (!stateCode)               errs.stateCode        = 'State Code is required (pick a State to auto-fill)';
+    if (!city.trim())             errs.city             = 'City is required';
+    if (Object.keys(errs).length) { setFieldErrors(prev => ({ ...prev, ...errs })); return false; }
+    return true;
+  };
+
   const goNext = async () => {
     if (saving) return;
     if (step === 1 && idTab === 'identification') {
-      const ok = await saveIdentity();
-      if (ok) setIdTab('address');
+      const okId = await saveIdentity();
+      const okAddr = validateAddress();
+      if (okId && okAddr) setIdTab('address');
+      else if (okId && !okAddr) toast.error('Missing required fields', 'Please fix the highlighted address fields');
     } else if (step === 1 && idTab === 'address') {
       const ok = await saveContacts();
       if (ok) setStep(2);
@@ -1971,6 +2026,27 @@ export default function AddVendorModal(props: {
    * duplicate). Lets the Edit icon on each secondary contact reuse the
    * same ContactAddPopup component. */
   const [contactEditingId, setContactEditingId] = useState<number | null>(null);
+  /* Save the primary contact — validates the four required fields, then
+     marks it saved so it surfaces as the locked "Primary" row in the
+     table below. The actual persistence still happens in saveContacts()
+     on Save & Next; this is the in-form confirmation step the user asked for. */
+  const savePrimaryContact = () => {
+    const errs: Record<string, string> = {};
+    if (!contactName.trim())  errs.contactName = 'Contact Person Name is required';
+    if (!designation.trim())  errs.designation = 'Designation is required';
+    if (!contactNo.trim())    errs.contactNo   = 'Contact No is required';
+    else { const e = validateContactNumber(contactNo, 'Contact No'); if (e) errs.contactNo = e; }
+    if (!email.trim())        errs.email       = 'Email is required';
+    else { const e = validateEmail(email); if (e) errs.email = e; }
+    if (Object.keys(errs).length) {
+      setFieldErrors(prev => ({ ...prev, ...errs }));
+      toast.error('Missing required fields', 'Please fix the highlighted fields');
+      return;
+    }
+    setPrimarySaved(true);
+    toast.success('Primary contact saved', `${contactName} added below`);
+  };
+
   const openContactPopup = () => {
     setContactEditingId(null);
     setContactDraft({ name: '', designation: '', phone: '', email: '', whatsapp: true, attachmentName: '', attachmentFile: null });
@@ -2020,6 +2096,15 @@ export default function AddVendorModal(props: {
   };
   const removeExtraContact = (id: number) => setExtraContacts(prev => prev.filter(c => c.id !== id));
 
+  /* Row count for the active KYC sub-tab — drives the Figma "N documents"
+     header badge. Falls back to the segment-rule reference rows when the user
+     hasn't uploaded their own yet. */
+  const kycDocCount =
+    kycTab === 'company' ? (ddRows.length      || segmentDocs.dd.length) :
+    kycTab === 'owner'   ? (ownerRows.length   || segmentDocs.kyc.length) :
+    kycTab === 'license' ? (licenseRows.length || segmentDocs.tl.length) :
+    kycTab === 'bank'    ? bankRows.length :
+                           gstRows.length;
 
   return createPortal((
     // Backdrop click intentionally does NOT close the wizard — the
@@ -2033,20 +2118,24 @@ export default function AddVendorModal(props: {
         <div className="avm-head">
           <div className="avm-head-left">
             <div className="avm-head-icon">
+              {/* person-with-+ (add user) — matches the Figma header icon */}
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <line x1="19" y1="8" x2="19" y2="14" />
+                <line x1="22" y1="11" x2="16" y2="11" />
               </svg>
             </div>
             <div className="min-w-0">
               <div className="avm-title">{isEdit ? 'Edit Supplier' : 'Add Supplier'}</div>
-              <div className="avm-sub">{isEdit ? 'Update supplier details, KYC, or product mappings — saved per step.' : 'Capture, verify, and onboard suppliers with complete compliance and sourcing readiness.'}</div>
+              <div className="avm-sub">{isEdit ? 'Update supplier details, KYC, or product mappings — saved per step.' : 'Capture, verify, and onboard suppliers with complete compliance and product readiness.'}</div>
             </div>
           </div>
           <div className="avm-head-right">
-            {/* "Map Products" header CTA removed — Step 4 of the wizard
-                already covers product mapping; a duplicate shortcut in
-                the header was confusing because it had no handler. */}
+            {/* Map Product — opens the Mapped Products list popup (Figma). */}
+            <button className="avm-map-btn" onClick={() => setMappedListOpen(true)}>
+              <i className="ri-price-tag-3-line" /> Map Product
+            </button>
             <button className="avm-close" onClick={onClose} aria-label="Close">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
             </button>
@@ -2228,12 +2317,15 @@ export default function AddVendorModal(props: {
             return (
               <div className="avm-prev">
                 <div className="avm-prev-head">
-                  <div className="avm-prev-title">
-                    <span className="avm-prev-check"><i className="ri-check-line" /></span>
-                    What you did in previous stages
-                    <span className="avm-prev-chip">Stage {step - 1} of 3 Complete</span>
+                  <span className="avm-prev-ico"><i className="ri-time-line" /></span>
+                  <div className="avm-prev-headtext">
+                    <div className="avm-prev-title">What you did in previous stages</div>
+                    <div className="avm-prev-subtitle">Stage {step - 1} completed — review your entry below</div>
                   </div>
-                  <button className="avm-prev-toggle" onClick={() => setPrevOpen(o => !o)}>{prevOpen ? 'Hide' : 'Show'}</button>
+                  <button className="avm-prev-toggle" onClick={() => setPrevOpen(o => !o)}>
+                    {step - 1} stage{step - 1 > 1 ? 's' : ''} completed
+                    <i className="ri-arrow-down-s-line" style={{ transform: prevOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
+                  </button>
                 </div>
                 {prevOpen && (
                   <div className="avm-prev-body">
@@ -2274,12 +2366,16 @@ export default function AddVendorModal(props: {
                     Identification is valid. Mirrors Save & Next: validates +
                     persists (so the contact step has a vendorId to attach to)
                     and only switches when clean — else inline errors show. */}
-                <button className={`avm-tab ${idTab === 'address' ? 'on' : ''}`} disabled={saving} onClick={async () => { if (saving || idTab === 'address') return; const ok = await saveIdentity(); if (ok) setIdTab('address'); }}>Contact Person Details</button>
+                <button className={`avm-tab ${idTab === 'address' ? 'on' : ''}`} disabled={saving} onClick={async () => { if (saving || idTab === 'address') return; const okId = await saveIdentity(); const okAddr = validateAddress(); if (okId && okAddr) setIdTab('address'); else if (okId && !okAddr) toast.error('Missing required fields', 'Please fix the highlighted address fields'); }}>Contact Person Details</button>
               </div>
 
               {idTab === 'identification' && (
-                <SectionCard tone="violet" icon={<i className="ri-building-line" />} title="Basic Company Details" subtitle="Identity, classification & sourcing readiness">
-                  <div className="avm-grid-2">
+                <SectionCard tone="violet" icon={<i className="ri-building-line" />} title="Basic Company Details" subtitle="Supplier identity, type, and risk classification">
+                  {/* 3×3 grid mirroring the Figma:
+                      row1: Company Name · Company Legal Name · Supplier Type
+                      row2: Company Website · Supplier Segment · Risk Level
+                      row3: Supplier Behaviour · Classification & Flags · Compliance Behaviour */}
+                  <div className="avm-grid-3">
                     <Field label="Company Name" required error={fieldErrors.companyName}>
                       <input
                         className="avm-input"
@@ -2298,13 +2394,29 @@ export default function AddVendorModal(props: {
                         onChange={e => handleCompanyNameChange(e.target.value, 'legalName', setLegalName)}
                       />
                     </Field>
-                  </div>
-                  <div className="avm-grid-3">
                     <Field label="Supplier Type" required error={fieldErrors.vendorType}>
                       <SelectInput value={vendorType} onChange={(v) => { setVendorType(v); clearFieldError('vendorType'); }} placeholder="Select" options={SUPPLIER_TYPE_OPTS} />
                     </Field>
+                  </div>
+                  <div className="avm-grid-3">
                     <Field label="Company Website">
                       <input className="avm-input" placeholder="https://abclogistics.com" value={website} onChange={e => setWebsite(e.target.value)} />
+                    </Field>
+                    <Field label="Supplier Segment" required addNew onAdd={() => setQuickAdd('segments')} error={fieldErrors.segment}>
+                      {/* masterFormKit's MasterMultiSelect renders visible violet
+                          chips with × buttons + a checkbox-marked dropdown so
+                          multi-select is obvious. `value` prop is plural despite
+                          the singular name. Wrapped in .avm-master-select so it
+                          gets the same 32px height / padding / placeholder size
+                          as every other select on the form. */}
+                      <div className="avm-master-select">
+                        <MasterMultiSelect
+                          value={segment}
+                          options={segmentOpts}
+                          placeholder="Select Segment"
+                          onChange={vs => { setSegment(vs); clearFieldError('segment'); }}
+                        />
+                      </div>
                     </Field>
                     <Field label="Risk Level" required addNew onAdd={() => setQuickAdd('risk_levels')} error={fieldErrors.riskLevel}>
                       <SelectInput value={riskLevel} onChange={(v) => { setRiskLevel(v); clearFieldError('riskLevel'); }} placeholder="Select" options={riskLevelOpts} />
@@ -2314,17 +2426,9 @@ export default function AddVendorModal(props: {
                     <Field label="Supplier Behaviour" required addNew onAdd={() => setQuickAdd('vendor_behaviour')} error={fieldErrors.vendorBehaviour}>
                       <SelectInput value={vendorBehaviour} onChange={(v) => { setVendorBehaviour(v); clearFieldError('vendorBehaviour'); }} placeholder="Select" options={behaviourOpts} />
                     </Field>
-                    <Field label="Supplier Segment" required addNew onAdd={() => setQuickAdd('segments')} error={fieldErrors.segment}>
-                      {/* masterFormKit's MasterMultiSelect renders visible violet
-                          chips with × buttons + a checkbox-marked dropdown so
-                          multi-select is obvious. `value` prop is plural despite
-                          the singular name. */}
-                      <MasterMultiSelect
-                        value={segment}
-                        options={segmentOpts}
-                        placeholder="Select Segment"
-                        onChange={vs => { setSegment(vs); clearFieldError('segment'); }}
-                      />
+                    <Field label="Classification & Flags">
+                      {/* Visual-only — see classificationFlag state note. */}
+                      <SelectInput value={classificationFlag} onChange={setClassificationFlag} placeholder="Select" options={CLASSIFICATION_OPTS} />
                     </Field>
                     <Field label="Compliance Behaviour" required addNew onAdd={() => setQuickAdd('compliance_behaviours')} error={fieldErrors.complianceBehaviour}>
                       <SelectInput value={complianceBehaviour} onChange={(v) => { setComplianceBehaviour(v); clearFieldError('complianceBehaviour'); }} placeholder="Select" options={complianceOpts} />
@@ -2335,15 +2439,31 @@ export default function AddVendorModal(props: {
 
               {idTab === 'identification' && (
                 <SectionCard tone="amber" icon={<i className="ri-map-pin-line" />} title="Supplier Address Details" subtitle="Registered office and location">
-                  <Field label="Registered Office Address" required error={fieldErrors.registeredOffice}>
-                    <input
-                      className="avm-input"
-                      placeholder="Plot 21, Industrial Area"
-                      value={registeredOffice}
-                      maxLength={200}
-                      onChange={e => applySanitizer(e.target.value, 'registeredOffice', setRegisteredOffice, sanitizeKycAddress)}
-                    />
-                  </Field>
+                  <div className="avm-grid-2">
+                    <Field label="Address Type" required>
+                      {/* Primary address type is locked to "Registered Office
+                          Address" — same as the Customer form. Other types
+                          (Warehouse, Billing, …) belong on later steps. */}
+                      <div className="avm-master-select">
+                        <MasterSelect
+                          value="Registered Office"
+                          options={[{ value: 'Registered Office', label: 'Registered Office' }]}
+                          placeholder="Select address type"
+                          disabled
+                          onChange={() => { /* locked */ }}
+                        />
+                      </div>
+                    </Field>
+                    <Field label="Registered Office Address" required error={fieldErrors.registeredOffice}>
+                      <input
+                        className="avm-input"
+                        placeholder="Plot 21, Industrial Area"
+                        value={registeredOffice}
+                        maxLength={200}
+                        onChange={e => applySanitizer(e.target.value, 'registeredOffice', setRegisteredOffice, sanitizeKycAddress)}
+                      />
+                    </Field>
+                  </div>
                   <div className="avm-grid-4">
                     <Field label="Country" required addNew onAdd={() => setQuickAdd('countries')} error={fieldErrors.country}>
                       <SelectInput
@@ -2399,7 +2519,11 @@ export default function AddVendorModal(props: {
                       Identification tab to mirror the Figma's "Contact Person
                       Details" tab. Same component state, so saveContacts()
                       still validates + persists it on Save & Next. */}
-                  <SectionCard tone="violet" icon={<i className="ri-user-3-line" />} title="Primary Contact Person Details" subtitle="Primary point of contact for this supplier">
+                  <SectionCard tone="violet" icon={<i className="ri-user-3-line" />} title="Primary Contact Person Details" subtitle="Primary point of contact for this supplier" headerAction={
+                    <button className="avm-section-add-btn" onClick={savePrimaryContact}>
+                      <i className="ri-save-line" /> Save Contact
+                    </button>
+                  }>
                     <div className="avm-grid-4">
                       <Field label="Contact Person Name" required error={fieldErrors.contactName}>
                         <input className="avm-input" placeholder="Rahul Sharma" value={contactName} maxLength={60} onChange={e => applySanitizer(e.target.value, 'contactName', setContactName, raw => sanitizeKycAlpha(raw, 60))} />
@@ -2427,7 +2551,7 @@ export default function AddVendorModal(props: {
                           </label>
                         </div>
                       </Field>
-                      <Field label="Attachment (Business Card)" required>
+                      <Field label="Attachment (Business Card)">
                         <FileChooser file={attachment} onPick={(f) => setAttachment(f)} placeholder="No files attached" />
                       </Field>
                     </div>
@@ -2459,6 +2583,25 @@ export default function AddVendorModal(props: {
                         attachmentHref: string;
                       };
                       const rows: Row[] = [];
+                      // Primary contact surfaces as the first, locked row once it
+                      // has been saved (or always, in edit mode where it already
+                      // exists). Marked "Primary" — no edit/delete actions.
+                      const primaryHasData = !!(contactName.trim() || email.trim() || contactNo.trim());
+                      if ((primarySaved || isEdit) && primaryHasData) {
+                        const freshHref = attachment ? URL.createObjectURL(attachment) : '';
+                        const savedHref = primaryAttachmentPath ? resolveFileUrl(primaryAttachmentPath) : '';
+                        rows.push({
+                          key: 'primary',
+                          isPrimary: true,
+                          name: contactName,
+                          designation,
+                          phone: contactNo,
+                          email,
+                          whatsapp: whatsappEnabled,
+                          attachmentName: attachment?.name ?? (primaryAttachmentPath ? (primaryAttachmentPath.split('/').pop() ?? '') : ''),
+                          attachmentHref: freshHref || savedHref,
+                        });
+                      }
                       extraContacts.forEach(c => rows.push({
                         key: String(c.id),
                         isPrimary: false,
@@ -2534,7 +2677,7 @@ export default function AddVendorModal(props: {
                                   <td>
                                     <div className="hstack gap-1">
                                       {r.isPrimary ? (
-                                        <span className="text-muted fs-13" title="Edit on the Vendor Identification tab">—</span>
+                                        <span className="text-muted fs-13" title="Edit in the Primary Contact Person card above">—</span>
                                       ) : (
                                         <>
                                           <button type="button" className="btn btn-sm btn-soft-info" onClick={() => r.contactId !== undefined && openContactEdit(r.contactId)} data-tooltip="Edit" aria-label="Edit">
@@ -2565,21 +2708,25 @@ export default function AddVendorModal(props: {
               (company / owner / license) — rows there are sourced from
               the segment-rule reference tables now. Bank Details and GST
               Scrutiny still need the add button for manual entries. */}
-          {step === 2 && (
-            <SectionCard tone="teal" icon={<i className="ri-shield-check-line" />} title="KYC / Due Diligence Details" subtitle="Upload statutory & identity proofs" headerAction={
-              (kycTab === 'bank' || kycTab === 'gst') ? (
-                <button className="avm-section-add-btn" onClick={kycTabAddMeta[kycTab].onClick}>
-                  {kycTabAddMeta[kycTab].label}
-                </button>
-              ) : null
-            }>
-              <div className="avm-pill-tabs">
-                <button className={`avm-pill ${kycTab === 'company' ? 'on' : ''}`} onClick={() => setKycTab('company')}>Company Due Diligence Details</button>
-                <button className={`avm-pill ${kycTab === 'owner'   ? 'on' : ''}`} onClick={() => setKycTab('owner')}>Owner KYC Details</button>
-                <button className={`avm-pill ${kycTab === 'license' ? 'on' : ''}`} onClick={() => setKycTab('license')}>Trade License Details</button>
-                <button className={`avm-pill ${kycTab === 'bank'    ? 'on' : ''}`} onClick={() => setKycTab('bank')}>Supplier Bank Details</button>
-                <button className={`avm-pill ${kycTab === 'gst'     ? 'on' : ''}`} onClick={() => setKycTab('gst')}>GST Scrutiny</button>
+          {step === 2 && (<>
+            {/* Sub-tab strip sits ABOVE the section card (Figma layout). */}
+            <div className="avm-pill-tabs">
+              <button className={`avm-pill ${kycTab === 'company' ? 'on' : ''}`} onClick={() => setKycTab('company')}>Company Due Diligence</button>
+              <button className={`avm-pill ${kycTab === 'owner'   ? 'on' : ''}`} onClick={() => setKycTab('owner')}>Owner KYC</button>
+              <button className={`avm-pill ${kycTab === 'license' ? 'on' : ''}`} onClick={() => setKycTab('license')}>Trade Licence</button>
+              <button className={`avm-pill ${kycTab === 'bank'    ? 'on' : ''}`} onClick={() => setKycTab('bank')}>Bank Details</button>
+              <button className={`avm-pill ${kycTab === 'gst'     ? 'on' : ''}`} onClick={() => setKycTab('gst')}>GST Scrutiny</button>
+            </div>
+            <SectionCard tone="teal" icon={<i className="ri-file-list-3-line" />} title={KYC_TAB_TITLE[kycTab] ?? 'KYC / Due Diligence'} subtitle={KYC_TAB_SUB[kycTab] ?? 'Upload statutory & identity proofs'} headerAction={
+              <div className="d-inline-flex align-items-center gap-2">
+                <span className="avm-doc-count">{kycDocCount} document{kycDocCount === 1 ? '' : 's'}</span>
+                {(kycTab === 'bank' || kycTab === 'gst') && (
+                  <button className={`avm-section-add-btn${kycTab === 'gst' ? ' amber' : ''}`} onClick={kycTabAddMeta[kycTab].onClick}>
+                    {kycTabAddMeta[kycTab].label}
+                  </button>
+                )}
               </div>
+            }>
 
               {kycTab === 'company' && (
                 ddRows.length === 0 && segmentDocs.dd.length > 0 ? (
@@ -2647,7 +2794,7 @@ export default function AddVendorModal(props: {
                 <GstScrutinyTable rows={gstRows} onRemove={removeGstRow} />
               )}
             </SectionCard>
-          )}
+          </>)}
 
           {/* ─── STEP 3 ─── */}
           {/* Step 3 (Trade Document Management / Evidence Vault) removed —
@@ -2667,7 +2814,9 @@ export default function AddVendorModal(props: {
 
         {/* ─── Footer ─── */}
         <div className="avm-foot">
-          <button className="avm-btn-ghost" onClick={onClose}>Cancel</button>
+          <div className="avm-foot-note">
+            <span className="avm-foot-dot" /> Fields marked with <span className="avm-req">*</span> are required
+          </div>
           <div className="avm-foot-right">
             {step > 1 && <button className="avm-btn-outline" onClick={goPrev}>← Previous</button>}
             {step < 3 ? (
@@ -2741,6 +2890,15 @@ export default function AddVendorModal(props: {
           setDraft={setGstDraft}
           onClose={() => setGstPopupOpen(false)}
           onSave={saveGstDraft}
+        />
+      )}
+      {mappedListOpen && (
+        <MappedProductsPopup
+          rows={productMappings}
+          onAdd={openMapPopup}
+          onRemove={removeMapRow}
+          onEdit={openMapEdit}
+          onClose={() => setMappedListOpen(false)}
         />
       )}
       {mapPopupOpen && (
@@ -3170,7 +3328,7 @@ function SectionCard(props: {
       <div className="avm-section-head">
         <div className="avm-section-head-left">
           <div className="avm-section-icon">{props.icon}</div>
-          <div>
+          <div className="avm-section-headtext">
             <div className="avm-section-title">{props.title}</div>
             <div className="avm-section-sub">{props.subtitle}</div>
           </div>
@@ -3451,69 +3609,73 @@ function SupplierSegmentRefTable(props: {
     });
     void persistUpload(refKey, f, docName);
   };
+  const [q, setQ] = useState('');
+  const lo = q.trim().toLowerCase();
+  const filtered = lo
+    ? rows.filter(r => `${r.code} ${r.name} ${r.authority ?? ''}`.toLowerCase().includes(lo))
+    : rows;
   return (
-    <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
-      <table className="table align-middle mb-0 avm-kyc-table">
-        <thead className="table-light">
-          <tr>
-            <th>SR NO</th>
-            <th>AUTO CODE</th>
-            <th>{title}</th>
-            <th>ISSUING AUTHORITY</th>
-            <th>EXPIRY</th>
-            <th>STATUS</th>
-            <th>FILE</th>
-            <th>ACTIONS</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => {
-            const refKey = `${tabKey}::${r.code}`;
-            const uploaded = uploads[refKey];
-            return (
-              <tr key={r.code} style={{ background: '#fafafa' }}>
-                <td>{String(i + 1).padStart(2, '0')}</td>
-                <td><span className="avm-auto-code">{r.code}</span></td>
-                <td><strong>{r.name}</strong></td>
-                <td>{r.authority || '—'}</td>
-                <td>{r.expiry || 'N/A'}</td>
-                <td>
-                  <span className={`avm-pill ${r.requirement === 'M' ? 'avm-pill-success' : 'avm-pill-muted'}`}>
-                    {r.requirement === 'M' ? '✓ Mandatory' : 'Optional'}
-                  </span>
-                </td>
-                <td>
-                  {uploaded
-                    ? <a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600 }}>{uploaded.name}</a>
-                    : <span style={{ color: '#9ca3af', fontStyle: 'italic' }}>Not uploaded</span>}
-                </td>
-                <td>
-                  {!uploaded ? (
-                    <label className="btn btn-sm btn-soft-primary mb-0" data-tooltip="Upload" aria-label="Upload" style={{ cursor: 'pointer' }}>
-                      <i className="ri-upload-2-line" />
-                      <input type="file" hidden accept={FILE_ACCEPT} onChange={e => onPick(refKey, r.name, e.target.files?.[0])} />
-                    </label>
-                  ) : (
-                    <div className="hstack gap-1">
-                      <a href={uploaded.url} target="_blank" rel="noreferrer" className="btn btn-sm btn-soft-info" data-tooltip="View" aria-label={`View ${uploaded.name}`}>
-                        <i className="ri-eye-line" />
-                      </a>
-                      <a href={uploaded.url} download={uploaded.name} className="btn btn-sm btn-soft-secondary" data-tooltip="Download" aria-label={`Download ${uploaded.name}`}>
-                        <i className="ri-download-2-line" />
-                      </a>
-                      <label className="btn btn-sm btn-soft-primary mb-0" data-tooltip="Re-upload" aria-label="Re-upload (replace file)" style={{ cursor: 'pointer' }}>
-                        <i className="ri-refresh-line" />
+    <>
+      {/* Search bar (Figma) */}
+      <div className="avm-kyc-search">
+        <i className="ri-search-line" />
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder={`Search ${title.replace(/ NAME$/i, '').toLowerCase()} name…`} />
+        {q && <button type="button" className="avm-kyc-search-clear" onClick={() => setQ('')} aria-label="Clear"><i className="ri-close-line" /></button>}
+      </div>
+      <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
+        <table className="table align-middle mb-0 avm-kyc-table">
+          <thead className="table-light">
+            <tr>
+              <th>SR NO</th>
+              <th>AUTO CODE</th>
+              <th>{title}</th>
+              <th>ISSUING AUTHORITY</th>
+              <th>EXPIRY</th>
+              <th>STATUS</th>
+              <th>ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((r, i) => {
+              const refKey = `${tabKey}::${r.code}`;
+              const uploaded = uploads[refKey];
+              const isDate = !!(r.expiry && /\d/.test(r.expiry));
+              return (
+                <tr key={r.code}>
+                  <td><span className="avm-sr-badge">{String(i + 1).padStart(2, '0')}</span></td>
+                  <td><span className="avm-auto-code">{r.code}</span></td>
+                  <td><strong>{r.name}</strong></td>
+                  <td>{r.authority || '—'}</td>
+                  <td><span className={`avm-exp-pill ${isDate ? 'is-date' : 'is-na'}`}>{r.expiry || 'N/A'}</span></td>
+                  <td>
+                    <div className="avm-req-pair">
+                      <span className={`avm-req-pill ${r.requirement === 'M' ? 'on-m' : 'off'}`}>✓ Mandatory</span>
+                      <span className={`avm-req-pill ${r.requirement === 'O' ? 'on-o' : 'off'}`}>Optional</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="avm-kyc-actions">
+                      <label className="avm-kyc-act up" data-tooltip={uploaded ? 'Re-upload' : 'Upload'} aria-label={uploaded ? 'Re-upload' : 'Upload'}>
+                        <i className="ri-upload-2-line" />
                         <input type="file" hidden accept={FILE_ACCEPT} onChange={e => onPick(refKey, r.name, e.target.files?.[0])} />
                       </label>
+                      {uploaded ? (
+                        <a href={uploaded.url} download={uploaded.name} className="avm-kyc-act down" data-tooltip={`Download ${uploaded.name}`} aria-label="Download"><i className="ri-download-2-line" /></a>
+                      ) : (
+                        <span className="avm-kyc-act down is-disabled" data-tooltip="No file uploaded yet" aria-label="No file"><i className="ri-download-2-line" /></span>
+                      )}
                     </div>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {filtered.length === 0 && (
+              <tr><td colSpan={7} style={{ textAlign: 'center', padding: '18px', color: '#94a3b8' }}>No documents match your search.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
@@ -4221,20 +4383,67 @@ function DocTable(props: {
  * ────────────────────────────────────────────────────────────────────── */
 type Setter<T> = (v: T) => void;
 
+/* Mapped Products list popup — opened from the Add Supplier header's
+ * "Map Product" button (Figma flow). Shows the supplier's current product
+ * mappings (or an empty state) and a "Map Product" CTA that opens the
+ * AddProductMappingPopup form. Reuses the shared popup chrome (avm-cp-*). */
+function MappedProductsPopup(props: {
+  rows: ProductMappingRow[];
+  onAdd: () => void;
+  onRemove: (id: string) => void;
+  onEdit: (id: string) => void;
+  onClose: () => void;
+}) {
+  const n = props.rows.length;
+  return createPortal((
+    <div className="avm-cp-backdrop">
+      <div className="avm-cp-popup avm-cp-popup-wide">
+        <div className="avm-cp-head">
+          <div className="avm-cp-title">
+            <i className="ri-box-3-line" /> Mapped Products
+            <div className="avm-cp-subtitle">Products linked to this supplier with price &amp; GST</div>
+          </div>
+          <button className="avm-close avm-cp-close" onClick={props.onClose} aria-label="Close">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </div>
+        <div className="avm-cp-body">
+          <div className="avm-mapped-toolbar">
+            <span className="avm-mapped-count">{n} product{n === 1 ? '' : 's'} mapped</span>
+            <button className="avm-section-add-btn" onClick={props.onAdd}>
+              <i className="ri-add-line" /> Map Product
+            </button>
+          </div>
+          {n === 0 ? (
+            <div className="avm-empty avm-empty-accent">No products mapped yet. Click "Map Product" to begin.</div>
+          ) : (
+            <ProductMappingTable rows={props.rows} onRemove={props.onRemove} onEdit={props.onEdit} />
+          )}
+        </div>
+        <div className="avm-cp-foot">
+          <button className="avm-btn-ghost" onClick={props.onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  ), document.body);
+}
+
 function PopupShell(props: {
   title: string;
   icon: string;
   subtitle?: string;
+  tone?: 'purple' | 'amber';
   onClose: () => void;
   onSave: () => void;
   children: ReactNode;
 }) {
+  const amber = props.tone === 'amber';
   return createPortal((
     /* Backdrop click does NOT dismiss — these popups (DD / Owner
        KYC / Trade License / Bank / GST / Product Mapping) all
        collect form input that's easy to lose on a stray click. */
     <div className="avm-cp-backdrop">
-      <div className="avm-cp-popup">
+      <div className={`avm-cp-popup${amber ? ' avm-cp-amber' : ''}`}>
         <div className="avm-cp-head">
           <div className="avm-cp-title">
             <i className={props.icon} /> {props.title}
@@ -4247,7 +4456,7 @@ function PopupShell(props: {
         <div className="avm-cp-body">{props.children}</div>
         <div className="avm-cp-foot">
           <button className="avm-btn-ghost" onClick={props.onClose}>Cancel</button>
-          <button className="avm-btn-primary" onClick={props.onSave}>
+          <button className={`avm-btn-primary${amber ? ' avm-btn-amber' : ''}`} onClick={props.onSave}>
             <i className="ri-save-line" /> Save
           </button>
         </div>
@@ -4728,7 +4937,7 @@ function GstScrutinyAddPopup(props: {
     setErrors(prev => ({ ...prev, redFlags: error }));
   };
   return (
-    <PopupShell title="Add GST Scrutiny" icon="ri-shield-check-line" onClose={onClose} onSave={onSave}>
+    <PopupShell title="Add GST Scrutiny" icon="ri-file-text-line" tone="amber" onClose={onClose} onSave={onSave}>
       <div className="avm-grid-3">
         <Field label="GST Number" required error={errors.gstNumber}>
           <input
@@ -4844,7 +5053,7 @@ function AddProductMappingPopup(props: {
 const SCOPED_CSS = `
 .avm-backdrop {
   position: fixed; inset: 0; z-index: 1090;
-  background: rgba(15, 23, 42, .55);
+  background: rgba(49, 22, 99, .42);
   backdrop-filter: blur(3px);
   display: flex; align-items: flex-start; justify-content: center;
   padding: 24px 20px;
@@ -4857,6 +5066,9 @@ const SCOPED_CSS = `
   margin: auto;
   background: #fff;
   border-radius: 18px;
+  /* Soft white frame so the modal (and the purple header's top edge) reads
+     as a bordered card — like the Add Customer modal, but no dotted texture. */
+  border: 1.5px solid rgba(255, 255, 255, .65);
   overflow: hidden;
   display: flex; flex-direction: column;
   box-shadow: 0 30px 80px rgba(15, 23, 42, .45);
@@ -4864,14 +5076,16 @@ const SCOPED_CSS = `
 }
 .avm-modal *, .avm-modal *::before, .avm-modal *::after { box-sizing: border-box; }
 
-/* Header — compact purple gradient bar (matches the Figma) */
+/* Header — purple gradient bar (.sf-head spec from the Figma) with a
+   subtle white hairline border so the bar reads as a framed strip. */
 .avm-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  padding: 12px 22px;
-  background:
-    linear-gradient(115deg, rgba(255,255,255,0.10) 0%, transparent 35%, transparent 65%, rgba(0,0,0,0.08) 100%),
-    linear-gradient(115deg, #4c1d95 0%, #5b21b6 28%, #6d28d9 55%, #7c3aed 80%, #8b5cf6 100%);
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 14px 22px;
+  position: relative; overflow: hidden;
+  background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 28%, #6d28d9 55%, #7c3aed 80%, #8b5cf6 100%);
   color: #fff;
+  border-bottom: 1px solid rgba(255, 255, 255, .22);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .35);
 }
 .avm-head-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .avm-head-icon {
@@ -4902,7 +5116,10 @@ const SCOPED_CSS = `
 .avm-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
 
 /* Stepper */
-.avm-stepper-wrap { padding: 11px 18px; background: #faf5ff; border-bottom: 1px solid #ede9fe; }
+/* Stepper, body and footer share ONE continuous light-lavender surface so
+   the modal reads as a single sheet (Figma) — the white section cards float
+   on top. No dividing band between the stepper and the form. */
+.avm-stepper-wrap { padding: 12px 18px; background: #f5f2fc; }
 .avm-stepper { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
 
 /* Step card — matches the Figma two-card stepper: icon chip with a small
@@ -4930,7 +5147,7 @@ const SCOPED_CSS = `
   display: flex; align-items: center; justify-content: center;
 }
 .avm-step-text { flex: 1; min-width: 0; }
-.avm-step-title { font-size: 13.5px; font-weight: 800; color: #1e1b4b; letter-spacing: -0.01em; }
+.avm-step-title { font-size: 13.5px; font-weight: 700; color: #1e1b4b; letter-spacing: -0.01em; }
 .avm-step-sub   { font-size: 11px; font-weight: 500; color: #94a3b8; margin-top: 2px; }
 .avm-step-badge {
   flex-shrink: 0; padding: 4px 11px; border-radius: 99px;
@@ -4964,7 +5181,7 @@ const SCOPED_CSS = `
 .avm-body {
   flex: 1; overflow-y: auto;
   padding: 12px 22px 14px;
-  background: #fff;
+  background: #f5f2fc;
   scrollbar-width: thin; scrollbar-color: #ddd6fe transparent;
   position: relative;  /* anchor for the .avm-load-overlay during edit-load */
 }
@@ -4983,17 +5200,31 @@ const SCOPED_CSS = `
   margin-bottom: 14px; overflow: hidden;
 }
 .avm-prev-head {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; gap: 12px;
   padding: 10px 14px;
   background: transparent;
-  border-bottom: 1px solid rgba(196,181,253,.45);
 }
-.avm-prev-title { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: #5b21b6; letter-spacing: -0.01em; }
-.avm-prev-check { width: 22px; height: 22px; border-radius: 50%; background: linear-gradient(135deg, #8b5cf6, #6d28d9); color: #fff; display: inline-flex; align-items: center; justify-content: center; }
-.avm-prev-chip { padding: 3px 10px; border-radius: 99px; background: #fff; color: #5b21b6; font-size: 11px; font-weight: 500; border: 1px solid #c4b5fd; }
-.avm-prev-toggle { height: 28px; padding: 0 12px; background: #fff; border: 1px solid #c4b5fd; color: #5b21b6; border-radius: 7px; font-family: inherit; font-size: 11.5px; font-weight: 500; cursor: pointer; }
-.avm-prev-toggle:hover { background: #ede9fe; border-color: #a78bfa; }
-.avm-prev-body { padding: 14px 18px 16px; display: flex; flex-direction: column; gap: 13px; }
+.avm-prev-ico {
+  width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 16px;
+  box-shadow: 0 3px 9px rgba(124,58,237,.35);
+}
+.avm-prev-headtext { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.avm-prev-title { font-size: 13px; font-weight: 700; color: #3b0764; letter-spacing: -0.01em; }
+.avm-prev-subtitle { font-size: 10.5px; font-weight: 500; color: #7c3aed; }
+.avm-prev-toggle {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 30px; padding: 0 8px 0 14px;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed); border: none; color: #fff;
+  border-radius: 99px; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
+  box-shadow: 0 3px 9px rgba(124,58,237,.4);
+  transition: filter .15s, box-shadow .15s;
+}
+.avm-prev-toggle i { font-size: 17px; }
+.avm-prev-toggle:hover { filter: brightness(1.06); box-shadow: 0 5px 13px rgba(124,58,237,.5); }
+.avm-prev-body { padding: 14px 18px 16px; display: flex; flex-direction: column; gap: 13px; border-top: 1px solid rgba(196,181,253,.4); }
 /* Step-grouped summary — each stage's label uses the same muted violet
  * tone so the header reads as a single block rather than several panels
  * fighting for attention. */
@@ -5068,15 +5299,30 @@ const SCOPED_CSS = `
 .avm-tab.on { color: #7c3aed; border-bottom-color: #7c3aed; font-weight: 600; }
 
 /* Pill tabs (Step 2 sub-tabs) */
-.avm-pill-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
-.avm-pill {
-  background: #f5f1fe; color: #7c3aed;
-  border: 1px solid #e2d4fa; border-radius: 99px;
-  padding: 7px 14px; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer;
-  transition: background .15s, border-color .15s;
+/* Sub-tab strip (Figma): a light lavender container; only the ACTIVE tab is a
+   purple gradient pill, inactive tabs are plain muted text. Scoped under
+   .avm-pill-tabs so it doesn't collide with the table status .avm-pill badges. */
+.avm-pill-tabs {
+  display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 14px;
+  padding: 5px;
+  background: #f3eefc;
+  border: 1px solid #e9e2f7;
+  border-radius: 12px;
 }
-.avm-pill:hover { background: #ede9fe; border-color: #ddd6fe; }
-.avm-pill.on { background: linear-gradient(120deg, #7c3aed, #a78bfa); color: #fff; border-color: transparent; font-weight: 600; }
+.avm-pill-tabs .avm-pill {
+  display: inline-flex; align-items: center;
+  background: transparent; color: #6b7280;
+  border: none; border-radius: 9px;
+  padding: 8px 16px; font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; line-height: 1.2;
+  transition: background .15s, color .15s, box-shadow .15s;
+}
+.avm-pill-tabs .avm-pill:hover { background: rgba(124,58,237,.08); color: #6d28d9; }
+.avm-pill-tabs .avm-pill.on {
+  color: #fff;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6);
+  border: none;
+  box-shadow: 0 4px 12px rgba(124, 58, 237, .42);
+}
 .avm-sub-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
 .avm-sub-pill {
   display: inline-flex; align-items: center; gap: 6px;
@@ -5090,42 +5336,56 @@ const SCOPED_CSS = `
 
 /* Section card */
 .avm-section {
+  position: relative;
   background: #fff;
-  border: 1.5px solid transparent; border-left-width: 4px;
+  border: 1px solid #ece4fb;
   border-radius: 12px; margin-bottom: 8px; overflow: hidden;
 }
-.avm-section-violet { border-color: #ddd6fe; border-left-color: #7c3aed; }
-.avm-section-amber  { border-color: #fde68a; border-left-color: #f59e0b; }
-.avm-section-teal   { border-color: #99f6e4; border-left-color: #14b8a6; }
-.avm-section-green  { border-color: #bbf7d0; border-left-color: #16a34a; }
-.avm-section-purple { border-color: #ddd6fe; border-left-color: #a78bfa; }
+/* Left accent strip — a vertical GRADIENT bar (Figma), not a flat border. */
+.avm-section::before {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 4px; opacity: .85;
+  background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
+}
+/* All section strips use the same purple gradient (.avm-section::before).
+   Only the outer border tint + icon/title colour vary per section. */
+.avm-section-violet { border-color: #ece4fb; }
+.avm-section-amber  { border-color: #fbeccb; }
+.avm-section-teal   { border-color: #cdf6f1; }
+.avm-section-green  { border-color: #d6f5df; }
+.avm-section-purple { border-color: #ece4fb; }
 
 .avm-section-head {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 7px 14px;
+  padding: 9px 14px;
+  background: #fff;
+  border-bottom: 1px solid #f1ecfb;
 }
 /* Subtle tinted section heads — keep the coloured left-border accent but
    use a near-white head so it doesn't fight the white form surface. */
-.avm-section-violet .avm-section-head { background: #f8f9fa; }
-.avm-section-amber  .avm-section-head { background: #f8f9fa; }
-.avm-section-teal   .avm-section-head { background: #f8f9fa; }
-.avm-section-green  .avm-section-head { background: #f8f9fa; }
-.avm-section-purple .avm-section-head { background: #f8f9fa; }
+/* Section header sits on the same white as the body (seamless card, like the
+   Figma) — separated only by the thin divider line from .avm-section-head. */
+.avm-section-amber .avm-section-head { border-bottom-color: #fef3c7; }
+.avm-section-teal  .avm-section-head { border-bottom-color: #ccfbf1; }
+.avm-section-green .avm-section-head { border-bottom-color: #dcfce7; }
 .avm-section-head-left { display: flex; align-items: center; gap: 10px; }
 .avm-section-icon {
   width: 28px; height: 28px; border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
-  color: #fff; font-size: 16px;
+  font-size: 15px; border: 1px solid transparent;
 }
-.avm-section-violet .avm-section-icon { background: linear-gradient(135deg, #7c3aed, #5b21b6); }
-.avm-section-amber  .avm-section-icon { background: linear-gradient(135deg, #f59e0b, #d97706); }
-.avm-section-teal   .avm-section-icon { background: linear-gradient(135deg, #14b8a6, #0f766e); }
-.avm-section-green  .avm-section-icon { background: linear-gradient(135deg, #16a34a, #0f8a3e); }
-.avm-section-purple .avm-section-icon { background: linear-gradient(135deg, #a78bfa, #7c3aed); }
-.avm-section-title { font-size: 12.5px; font-weight: 800; color: #5b21b6; letter-spacing: 0.04em; text-transform: uppercase; }
-.avm-section-sub   { font-size: 11px; font-weight: 400; color: #6b7280; margin-top: 1px; }
-.avm-section-amber .avm-section-title { color: #92400e; }
-.avm-section-amber .avm-section-sub   { color: #b45309; }
+.avm-section-violet .avm-section-icon { background: #f5f1fe; color: #7c3aed; border-color: #e2d4fa; }
+.avm-section-amber  .avm-section-icon { background: #fffbeb; color: #d97706; border-color: #fde68a; }
+.avm-section-teal   .avm-section-icon { background: #f0fdfa; color: #0d9488; border-color: #99f6e4; }
+.avm-section-green  .avm-section-icon { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
+.avm-section-purple .avm-section-icon { background: #f5f1fe; color: #7c3aed; border-color: #e2d4fa; }
+.avm-section-headtext { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.avm-section-title { font-size: 11px; font-weight: 600; color: #5b21b6; letter-spacing: 0.02em; text-transform: uppercase; }
+.avm-section-sub   { font-size: 10.5px; font-weight: 500; color: #a78bfa; letter-spacing: 0; }
+.avm-section-sub::before { content: '|'; margin-right: 7px; color: #c4b5fd; font-weight: 600; }
+/* Amber section keeps its amber icon, but the title + subtitle use the same
+   purple as every other section heading (user request). */
 .avm-section-body { padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 8px; }
 
 .avm-section-add-btn {
@@ -5136,6 +5396,15 @@ const SCOPED_CSS = `
   transition: transform .12s, box-shadow .15s;
 }
 .avm-section-add-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(124,58,237,.35); }
+
+/* "N documents" count badge on the KYC section header (Figma) */
+.avm-doc-count {
+  display: inline-flex; align-items: center;
+  padding: 5px 13px; border-radius: 99px;
+  background: #f5f1fe; color: #6d28d9;
+  border: 1px solid #e2d4fa;
+  font-size: 11.5px; font-weight: 700; white-space: nowrap;
+}
 
 /* Form */
 .avm-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px; }
@@ -5148,14 +5417,17 @@ const SCOPED_CSS = `
    surrounding form chrome doesn't shout at the user. */
 .avm-field-label {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 11.5px; font-weight: 600;
+  font-size: 12px; font-weight: 500;
   letter-spacing: 0; text-transform: none;
-  color: #334155;
-  margin-bottom: 2px;
+  color: #1e293b;
+  margin-bottom: 3px;
 }
 [data-bs-theme="dark"] .avm-field-label,
 [data-layout-mode="dark"] .avm-field-label { color: #c4b5fd; }
 .avm-req { color: #f06548; font-weight: 600; margin-left: 1px; }
+/* Inline quick-add (+) buttons — let the user add a new master entry
+   (Risk Level / Supplier Behaviour / Segment / Compliance / Country)
+   without leaving the form. */
 .avm-field-plus {
   width: 18px; height: 18px;
   border: none; border-radius: 5px;
@@ -5184,6 +5456,7 @@ const SCOPED_CSS = `
   color: #94a3b8 !important;
   opacity: 0.45 !important;
   font-weight: 400 !important;
+  font-size: 13px !important;   /* one uniform placeholder size everywhere */
 }
 .avm-input:hover:not(:disabled):not([readonly]) {
   border-color: rgba(124,58,237,0.55);
@@ -5516,9 +5789,12 @@ const SCOPED_CSS = `
 .avm-foot {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 22px;
-  background: #fff; border-top: 1px solid #e2d4fa;
+  background: #f5f2fc; border-top: 1px solid #e9e2f7;
 }
 .avm-foot-right { display: flex; align-items: center; gap: 8px; }
+.avm-foot-note { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 500; color: #64748b; }
+.avm-foot-dot { width: 7px; height: 7px; border-radius: 50%; background: #7c3aed; display: inline-block; flex-shrink: 0; }
+[data-bs-theme="dark"] .avm-foot-note { color: #a89fc7; }
 .avm-btn-ghost, .avm-btn-outline, .avm-btn-primary {
   display: inline-flex; align-items: center; gap: 6px;
   height: 40px; padding: 0 18px;
@@ -5540,11 +5816,14 @@ const SCOPED_CSS = `
 .avm-btn-outline { background: #fff; border: 1.5px solid #ddd6fe; color: #7c3aed; }
 .avm-btn-outline:hover { background: #f5f1fe; border-color: #7c3aed; }
 .avm-btn-primary {
-  background: linear-gradient(120deg, #7c3aed 0%, #a78bfa 100%); color: #fff; border: none;
-  box-shadow: 0 4px 12px rgba(124,58,237,.4);
+  position: relative; overflow: hidden;
+  color: #fff; border: none;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6);
+  box-shadow: 0 6px 18px rgba(124,58,237,.5), 0 1px 0 rgba(255,255,255,.2) inset;
+  text-shadow: 0 1px 2px rgba(0,0,0,.18);
 }
-.avm-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(124,58,237,.5); }
-.avm-btn-primary:disabled { transform: none; opacity: .85; cursor: progress; box-shadow: 0 4px 12px rgba(124,58,237,.32); }
+.avm-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(124,58,237,.6), 0 1px 0 rgba(255,255,255,.2) inset; }
+.avm-btn-primary:disabled { transform: none; opacity: .85; cursor: progress; box-shadow: 0 6px 18px rgba(124,58,237,.32), 0 1px 0 rgba(255,255,255,.2) inset; }
 
 /* Inline spinner shown in Save & Next / Save Vendor while the network
  * call is in flight. Same size/curve as Bootstrap's spinner-border-sm
@@ -5617,8 +5896,11 @@ const SCOPED_CSS = `
  * cells to wrap with sane per-cell limits, but keep nowrap for the
  * status badges and the action button column so they stay aligned. */
 .avm-kyc-table-wrap { overflow-x: auto; }
+/* width:auto so the table hugs its content — columns sit tight together
+   instead of stretching across the full card (no wasted gaps / no scroll). */
 .avm-kyc-table {
   table-layout: auto;
+  width: auto;
 }
 .avm-kyc-table th, .avm-kyc-table td {
   white-space: normal;
@@ -5626,7 +5908,12 @@ const SCOPED_CSS = `
   overflow-wrap: anywhere;
   vertical-align: middle;
   max-width: 280px;
+  padding: 9px 14px;
+  font-size: 12px;
 }
+/* Tighten the inter-column rhythm: first/last cells hug the card edges. */
+.avm-kyc-table th:first-child, .avm-kyc-table td:first-child { padding-left: 14px; }
+.avm-kyc-table th:last-child,  .avm-kyc-table td:last-child  { padding-right: 14px; text-align: right; }
 .avm-kyc-table th { white-space: nowrap; }  /* headers stay on one line */
 .avm-kyc-table td .badge,
 .avm-kyc-table td .avm-pill,
@@ -5826,12 +6113,30 @@ const SCOPED_CSS = `
   display: flex; flex-direction: column;
   box-shadow: 0 30px 80px rgba(15, 23, 42, .5);
 }
+/* Mapped Products list popup — wider to fit the mapping table columns. */
+.avm-cp-popup-wide { max-width: 1040px; }
+.avm-mapped-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.avm-mapped-count {
+  font-size: 12.5px; font-weight: 700; color: #6d28d9;
+  background: #f5f1fe; border: 1px solid #e2d4fa; border-radius: 8px; padding: 6px 14px;
+}
+.avm-empty-accent { color: #7c3aed; border-color: #ddd6fe; background: #faf7ff; }
 .avm-cp-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 18px;
   background: linear-gradient(135deg, #5b21b6, #a78bfa);
   color: #fff;
 }
+/* Amber-toned popup (GST Scrutiny) — orange header + orange Save button. */
+.avm-cp-amber .avm-cp-head { background: linear-gradient(115deg, #d97706 0%, #f59e0b 55%, #fbbf24 100%); }
+.avm-btn-amber {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b, #d97706) !important;
+  box-shadow: 0 4px 12px rgba(217,119,6,.4) !important;
+}
+.avm-btn-amber:hover { box-shadow: 0 6px 18px rgba(217,119,6,.5) !important; }
+/* Amber "+ Add" section button (GST tab). */
+.avm-section-add-btn.amber { background: linear-gradient(120deg, #f59e0b 0%, #fbbf24 100%); }
+.avm-section-add-btn.amber:hover { box-shadow: 0 4px 12px rgba(217,119,6,.4); }
 .avm-cp-title { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
 .avm-cp-title i { font-size: 18px; }
 .avm-cp-close {
@@ -5974,16 +6279,58 @@ const SCOPED_CSS = `
 .avm-auto-code {
   display: inline-block;
   padding: 4px 10px;
-  border-radius: 4px;
-  background: #fef3c7;
-  color: #854d0e;
-  border: 1px solid #fde68a;
+  border-radius: 6px;
+  background: #f5f1fe;
+  color: #6d28d9;
+  border: 1px solid #e2d4fa;
   font-family: 'DM Mono', 'JetBrains Mono', monospace;
   font-size: 12px;
   font-weight: 700;
   line-height: 1.2;
   letter-spacing: .02em;
 }
+
+/* KYC reference table (Figma): SR-No badge, expiry pills, Mandatory/Optional
+   pair, upload/download action buttons, and a search bar above the table. */
+.avm-sr-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 26px; height: 24px; padding: 0 6px;
+  border-radius: 7px; background: #f5f1fe; color: #6d28d9;
+  border: 1px solid #e2d4fa; font-size: 11px; font-weight: 800; font-family: 'DM Mono', monospace;
+}
+.avm-exp-pill { display: inline-block; padding: 4px 10px; border-radius: 7px; font-size: 11px; font-weight: 700; }
+.avm-exp-pill.is-na   { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
+.avm-exp-pill.is-date { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+.avm-req-pair { display: inline-flex; align-items: center; gap: 4px; }
+.avm-req-pill { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 99px; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.avm-req-pill.on-m { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; box-shadow: 0 2px 6px rgba(22,163,74,.3); }
+.avm-req-pill.on-o { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; box-shadow: 0 2px 6px rgba(124,58,237,.3); }
+.avm-req-pill.off  { background: #f5f3fb; color: #9b94b3; border: 1px solid #e9e2f7; }
+.avm-kyc-actions { display: inline-flex; align-items: center; gap: 5px; }
+.avm-kyc-act {
+  width: 27px; height: 27px; border-radius: 7px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: transform .14s, box-shadow .14s, filter .14s; text-decoration: none;
+}
+.avm-kyc-act i { font-size: 14px; }
+.avm-kyc-act.up   { background: #f5f1fe; color: #7c3aed; border: 1px solid #ddd6fe; }
+.avm-kyc-act.up:hover { background: #7c3aed; color: #fff; border-color: transparent; transform: translateY(-1px); }
+.avm-kyc-act.down { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+.avm-kyc-act.down:hover { background: #16a34a; color: #fff; border-color: transparent; transform: translateY(-1px); }
+.avm-kyc-act.is-disabled { opacity: .45; cursor: not-allowed; }
+.avm-kyc-act.is-disabled:hover { background: #f0fdf4; color: #16a34a; transform: none; }
+.avm-kyc-search {
+  position: relative; display: flex; align-items: center; gap: 9px;
+  height: 38px; margin-bottom: 12px; padding: 0 12px 0 14px;
+  background: #faf8ff; border: 1.5px solid #e9e2f7; border-radius: 11px;
+  transition: border-color .16s, box-shadow .16s;
+}
+.avm-kyc-search:focus-within { border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167,139,250,.18); }
+.avm-kyc-search > i { color: #a78bfa; font-size: 16px; flex-shrink: 0; }
+.avm-kyc-search input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-family: inherit; font-size: 13px; color: #3b0764; }
+.avm-kyc-search input::placeholder { color: #a78bfa; opacity: .7; }
+.avm-kyc-search-clear { flex-shrink: 0; width: 22px; height: 22px; border: none; border-radius: 6px; background: rgba(124,58,237,.1); color: #7c3aed; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.avm-kyc-search-clear:hover { background: #7c3aed; color: #fff; }
 [data-bs-theme="dark"] .avm-auto-code {
   background: #3a2a08;
   color: #fde68a;
