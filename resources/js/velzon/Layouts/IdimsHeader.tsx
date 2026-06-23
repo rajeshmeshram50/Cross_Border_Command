@@ -190,9 +190,7 @@ export default function IdimsHeader() {
   const navigate = useNavigate();
   const { user, logout, tenantThemeEnabled, toggleTenantTheme } = useAuth();
   const { theme, toggle: toggleTheme } = useTheme();
-  const {
-    branches, selectedBranchId, selectedBranch, canSwitch, setBranch,
-  } = useBranchSwitcher();
+  const { selectedBranch } = useBranchSwitcher();
 
   const [openDD, setOpenDD] = useState<DD | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -622,51 +620,6 @@ export default function IdimsHeader() {
               )}
             </div>
 
-            {/* Branch switcher */}
-            <div className="idims-branch-wrap">
-              <button type="button" className={`idims-branch-btn ${branchOpen ? 'dd-open' : ''}`}
-                onClick={() => canSwitch && (setOpenDD(null), setProfileOpen(false), setMoreOpen(false), setBranchOpen(o => !o))}
-                style={{ cursor: canSwitch ? 'pointer' : 'default' }}>
-                <span className="idims-branch-ico">{IC.building}</span>
-                <span className="idims-branch-meta">
-                  <span className="idims-branch-name">{branchName}</span>
-                </span>
-                {canSwitch && <span className="idims-branch-chev">{IC.chev}</span>}
-              </button>
-              {canSwitch && (
-                <div className={`idims-branch-panel ${branchOpen ? 'open' : ''}`}>
-                  <div className="idims-branch-panel-bar" />
-                  <div className="idims-branch-head">SWITCH BRANCH</div>
-                  <div className="idims-branch-list">
-                    <div className={`idims-branch-item idims-branch-all ${selectedBranchId === null ? 'active' : ''}`}
-                      onClick={() => { setBranch(null); setBranchOpen(false); }}>
-                      <div className="idims-branch-avatar">{IC.layers}</div>
-                      <div className="idims-branch-item-text">
-                        <span className="idims-branch-item-name">All Branches</span>
-                        <span className="idims-branch-item-sub">{branches.length} branches</span>
-                      </div>
-                      <span className="idims-branch-check">{IC.check}</span>
-                    </div>
-                    {branches.map(b => (
-                      <div key={b.id} className={`idims-branch-item ${selectedBranchId === b.id ? 'active' : ''}`}
-                        onClick={() => { setBranch(b.id); setBranchOpen(false); }}>
-                        <div className="idims-branch-avatar" style={{ background: 'linear-gradient(135deg,#A78BFA,#7C3AED)' }}>
-                          {(b.name || '?').slice(0, 2).toUpperCase()}
-                        </div>
-                        <div className="idims-branch-item-text">
-                          <span className="idims-branch-name-row">
-                            <span className="idims-branch-item-name">{b.name}</span>
-                          </span>
-                          <span className="idims-branch-item-sub">{[b.city, b.state].filter(Boolean).join(', ') || '—'}</span>
-                        </div>
-                        <span className="idims-branch-check">{IC.check}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
             <div className="idims-nav-right">
               {/* Default / Brand theme switch */}
               <div className="idims-theme-switch" title="Switch brand theme">
@@ -1007,7 +960,7 @@ const IDIMS_CSS = `
   max-height: 70vh; overflow-y: auto; background: #fff; border: 1px solid #E7EAF3; border-radius: 12px;
   box-shadow: 0 12px 34px rgba(15,23,42,.16); padding: 6px; }
 .idims-more-item { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: transparent;
-  padding: 9px 11px; border-radius: 9px; cursor: pointer; text-align: left; font-size: 13px; font-weight: 500; color: #0F172A; transition: background .14s; }
+  padding: 9px 11px; border-radius: 12px; cursor: pointer; text-align: left; font-size: 13px; font-weight: 400; color: #0F172A; transition: background .14s; }
 .idims-more-item:hover { background: #F5F3FF; }
 .idims-more-item.open { background: #F5F3FF; }
 .idims-more-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1039,7 +992,7 @@ const IDIMS_CSS = `
   border-radius: 8px; background: #F1F0FB; color: #7C3AED; }
 .idims-search-result-ico svg { width: 15px; height: 15px; }
 .idims-search-result-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
-.idims-search-result-label { font-size: 13px; font-weight: 500; color: #0F172A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.idims-search-result-label { font-size: 13px; font-weight: 400; color: #0F172A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .idims-search-result-sub { font-size: 11px; color: #94A0B8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .idims-search:hover { border-color: #D6DBEC; }
 .idims-search:focus-within { background: #fff; border-color: #C4B5FD; box-shadow: 0 0 0 4px rgba(139,92,246,.15); }
@@ -1047,7 +1000,7 @@ const IDIMS_CSS = `
 .idims-search:focus-within .idims-search-ico { color: #7C3AED; }
 .idims-search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-family: inherit; font-size: 13px; color: #0F172A; }
 .idims-search-input::placeholder { color: #9AA2B8; }
-.idims-search-kbd { flex-shrink: 0; font-size: 10.5px; font-weight: 500; color: #6B7280; background: linear-gradient(180deg,#FFF,#F1F3F9); border: 1px solid #E2E6F0; border-bottom-width: 2px; border-radius: 7px; padding: 3px 8px; line-height: 1; }
+.idims-search-kbd { flex-shrink: 0; font-size: 10.5px; font-weight: 400; color: #6B7280; background: linear-gradient(180deg,#FFF,#F1F3F9); border: 1px solid #E2E6F0; border-bottom-width: 2px; border-radius: 7px; padding: 3px 8px; line-height: 1; }
 
 /* Branch switcher */
 .idims-branch-wrap { position: relative; flex-shrink: 0; margin-left: auto; }
@@ -1074,7 +1027,7 @@ const IDIMS_CSS = `
 .idims-branch-avatar { width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 2px 6px rgba(15,23,42,.18); }
 .idims-branch-item-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; text-align: left; }
 .idims-branch-item-name { font-size: 12.5px; font-weight: 700; color: #6D28D9; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.idims-branch-item-sub { font-size: 10px; font-weight: 500; color: #94A3B8; }
+.idims-branch-item-sub { font-size: 10px; font-weight: 400; color: #94A3B8; }
 .idims-branch-name-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .idims-branch-main-badge { flex-shrink: 0; font-size: 8.5px; font-weight: 800; letter-spacing: .4px; color: #6D28D9; background: linear-gradient(135deg,#EDE9FE,#DDD6FE); border: 1px solid #DDD6FE; border-radius: 5px; padding: 2px 6px; line-height: 1; text-transform: uppercase; }
 .idims-branch-check { color: #7C3AED; flex-shrink: 0; opacity: 0; transition: opacity .14s; }
@@ -1084,9 +1037,9 @@ const IDIMS_CSS = `
 .idims-branch-all .idims-branch-item-name { color: #4338CA; }
 
 /* Right controls */
-.idims-nav-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.idims-nav-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; margin-left: auto; }
 .idims-theme-switch { display: flex; align-items: center; gap: 9px; flex-shrink: 0; padding: 4px 10px 4px 11px; border-radius: 999px; background: linear-gradient(180deg,#FFF,#F7F8FC); border: 1.5px solid #E7EAF3; }
-.idims-theme-switch-label { font-size: 11.5px; font-weight: 500; color: #6B7280; user-select: none; white-space: nowrap; }
+.idims-theme-switch-label { font-size: 11.5px; font-weight: 400; color: #6B7280; user-select: none; white-space: nowrap; }
 .idims-brand .idims-theme-switch-label { color: var(--bp, #7C3AED); }
 .idims-theme-toggle { position: relative; width: 42px; height: 22px; border-radius: 999px; border: none; cursor: pointer; flex-shrink: 0; padding: 0; background: linear-gradient(135deg,#CBD5E1,#94A3B8); box-shadow: inset 0 1px 3px rgba(15,23,42,.18); transition: background .25s ease; }
 .idims-theme-toggle::after { content: ''; position: absolute; top: 2.5px; left: 2.5px; width: 17px; height: 17px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(15,23,42,.3); transition: transform .28s cubic-bezier(.34,1.56,.64,1); }
@@ -1147,7 +1100,7 @@ const IDIMS_CSS = `
 .idims-profile-head-name { font-size: 15px; font-weight: 800; color: #fff; line-height: 1.2; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .idims-profile-head-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; color: #E9D5FF; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.25); border-radius: 999px; padding: 3px 9px 3px 7px; }
 .idims-profile-head-badge svg { width: 11px; height: 11px; }
-.idims-profile-head-branch { display: flex; align-items: center; gap: 5px; margin-top: 8px; font-size: 11px; font-weight: 500; color: rgba(255,255,255,.85); max-width: 165px; }
+.idims-profile-head-branch { display: flex; align-items: center; gap: 5px; margin-top: 8px; font-size: 11px; font-weight: 400; color: rgba(255,255,255,.85); max-width: 165px; }
 .idims-profile-head-branch svg { width: 12px; height: 12px; flex-shrink: 0; opacity: .85; }
 .idims-profile-head-branch span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .idims-profile-menu { padding: 8px; }

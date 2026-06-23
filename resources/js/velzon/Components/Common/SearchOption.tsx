@@ -199,12 +199,24 @@ const SearchOption = () => {
 
     return (
         <React.Fragment>
-            <form className="app-search d-none d-md-block" onSubmit={e => e.preventDefault()}>
+            <style>{`
+              .vth-search { min-width: 420px; }
+              .vth-search .form-control { height: 42px; width: 100%; border-radius: 12px; background: linear-gradient(180deg,#FFF,#F7F8FC); border: 1.5px solid #E7EAF3; box-shadow: inset 0 1px 2px rgba(15,23,42,.04); padding: 0 48px 0 42px; font-size: 13px; color: #0F172A; transition: border-color .18s, box-shadow .18s, background .18s; }
+              .vth-search .form-control::placeholder { color: #9AA2B8; }
+              .vth-search .form-control:focus { background: #fff; border-color: #C4B5FD; box-shadow: 0 0 0 4px rgba(139,92,246,.15); }
+              .vth-search span.search-widget-icon { left: 15px !important; top: 0 !important; line-height: 42px !important; transform: none !important; font-size: 18px; color: #A0A8BD; }
+              .vth-search .form-control:focus ~ span.search-widget-icon { color: #7C3AED; }
+              .vth-search span.search-widget-icon-close { right: 14px !important; left: auto !important; color: #94A3B8; cursor: pointer; }
+              .vth-search-kbd { position: absolute; top: 50%; right: 12px; transform: translateY(-50%); font-size: 10.5px; font-weight: 500; color: #6B7280; background: linear-gradient(180deg,#FFF,#F1F3F9); border: 1px solid #E2E6F0; border-bottom-width: 2px; border-radius: 7px; padding: 3px 8px; line-height: 1; pointer-events: none; z-index: 11; }
+              [data-bs-theme="dark"] .vth-search .form-control { background: linear-gradient(180deg,#1E2230,#1A1D29); border-color: #2C3242; color: #E5E7EB; }
+              [data-bs-theme="dark"] .vth-search-kbd { background: #1E2230; border-color: #2C3242; color: #9CA3AF; }
+            `}</style>
+            <form className="app-search vth-search d-none d-md-block" onSubmit={e => e.preventDefault()}>
                 <div className="position-relative">
                     <Input
                         type="text"
                         className="form-control"
-                        placeholder="Search menus..."
+                        placeholder="Search modules & sub-modules..."
                         id="search-options"
                         value={value}
                         onChange={e => setValue(e.target.value)}
@@ -214,6 +226,7 @@ const SearchOption = () => {
                         className="mdi mdi-close-circle search-widget-icon search-widget-icon-close d-none"
                         id="search-close-options"
                     ></span>
+                    {!value && <span className="vth-search-kbd">⌘K</span>}
                 </div>
                 <div className="dropdown-menu dropdown-menu-lg" id="search-dropdown">
                     <SimpleBar style={{ maxHeight: 360 }}>
