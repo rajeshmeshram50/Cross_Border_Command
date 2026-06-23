@@ -1146,12 +1146,12 @@ const IDIMS_CSS = `
 .idims-clm-sub { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 2px; }
 .idims-clm-subcol { padding: 0 16px 0 0; min-width: 0; }
 .idims-clm-subcol + .idims-clm-subcol { padding: 0 0 0 16px; border-left: 1px solid #EFF2F8; }
-.idims-clm-subhead { font-size: 8px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 8px; padding: 0 0 7px 2px; border-bottom: 1.5px solid; opacity: .85; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.idims-clm-subhead { font-size: 8px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 8px; padding: 0 0 7px 2px; border-bottom: 1.5px solid; opacity: .85; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .idims-clm-children { margin: 0 0 6px 12px; padding-left: 10px; border-left: 2px solid #BAE6FD; }
 .idims-clm-child { display: flex; align-items: flex-start; gap: 9px; width: 100%; padding: 6px 8px; background: none; border: none; font-family: inherit; cursor: pointer; border-radius: 8px; text-align: left; transition: background .13s, transform .13s; }
 .idims-clm-child:hover { background: #F5F3FF; transform: translateX(2px); }
 .idims-clm-child-ico { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
-.idims-clm-child-label { font-size: 13px; font-weight: 500; color: #1E293B; white-space: nowrap; line-height: 1.2; }
+.idims-clm-child-label { font-size: 12px; font-weight: 400; color: #1E293B; white-space: nowrap; line-height: 1.2; }
 .idims-clm-child:hover .idims-clm-child-label { color: #0EA5E9; }
 .idims-dark .idims-clm-subcol + .idims-clm-subcol { border-left-color: #262B38; }
 .idims-dark .idims-clm-children { border-left-color: rgba(56,189,248,.45); }
@@ -1175,7 +1175,7 @@ const IDIMS_CSS = `
 .idims-dd-col { padding: 18px 24px 22px 20px; border-right: 1px solid #E6EAF3; }
 .idims-dd-col:last-child { border-right: none; }
 .idims-dd-group + .idims-dd-group { margin-top: 14px; }
-.idims-dd-section-label { font-size: 8px; font-weight: 800; letter-spacing: 1.1px; text-transform: uppercase; padding: 0 0 10px 12px; margin-bottom: 10px; border-bottom: 1px solid #F1F4FB; display: flex; align-items: center; gap: 7px; white-space: nowrap; position: relative; }
+.idims-dd-section-label { font-size: 8px; font-weight: 600; letter-spacing: 1.1px; text-transform: uppercase; padding: 0 0 10px 12px; margin-bottom: 10px; border-bottom: 1px solid #F1F4FB; display: flex; align-items: center; gap: 7px; white-space: nowrap; position: relative; }
 /* Small standing color bar on the left of each section header (matches Figma).
    currentColor = the column accent set inline on the label. */
 .idims-dd-section-label::before { content: ''; position: absolute; left: 0; top: 0; bottom: 11px; width: 3px; border-radius: 2px; background: currentColor; }
@@ -1187,8 +1187,8 @@ const IDIMS_CSS = `
 .idims-dd-item-ico svg { width: 16px; height: 16px; }
 .idims-dd-item:hover .idims-dd-item-ico { transform: scale(1.08); }
 .idims-dd-item-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.idims-dd-item-label { font-size: 13px; font-weight: 500; color: #1E293B; white-space: nowrap; line-height: 1.2; transition: color .13s; }
-.idims-dd-item-desc { font-size: 10.5px; font-weight: 500; color: #94A3B8; line-height： 1.4; white-space： normal； }
+.idims-dd-item-label { font-size: 12px; font-weight: 400; color: #1E293B; white-space: nowrap; line-height: 1.2; transition: color .13s; }
+.idims-dd-item-desc { font-size: 9px;  color: #94A3B8; line-height： 1.4; white-space： normal； opacity： .85； }
 
 /* Logout modal */
 .idims-logout-overlay { position: fixed; inset: 0; z-index： 1060； display： flex； align-items： center； justify-content： center； padding： 20px； background： rgba(15,23,42,.42)； backdrop-filter： blur(5px)； animation： idimsFade .2s ease； }

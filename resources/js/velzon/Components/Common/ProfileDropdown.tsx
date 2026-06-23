@@ -165,12 +165,12 @@ const ProfileDropdown = () => {
                 backgroundImage: 'linear-gradient(135deg,#94A3B8,#8B5CF6 55%,#7C3AED)',
               }}
             >
-              <span className="rounded-circle d-inline-flex" style={{ padding: 3, background: 'var(--vz-card-bg, #fff)' }}>
+              <span className="rounded-circle d-inline-flex" style={{ padding: 1, background: 'var(--vz-card-bg, #fff)' }}>
                 <img
                   className="rounded-circle header-profile-user"
                   src={profilePhoto}
                   alt="Header Avatar"
-                  style={{ display: 'block', objectFit: 'cover', width: 32, height: 32 }}
+                  style={{ display: 'block', objectFit: 'cover', width: 36, height: 36 }}
                 />
               </span>
               <span
