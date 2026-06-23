@@ -1,10 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
 import { Button, Card, CardBody, Col, Row, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
-import ComingSoonShell from '../../components/ComingSoonShell';
 import SalaryStructureModal, { type SalaryEmployeeLite } from '../../components/SalaryStructureModal';
 import PayslipViewerModal from '../../components/PayslipViewerModal';
 import HeaderFooterPanel, {
@@ -13,8 +11,7 @@ import HeaderFooterPanel, {
 } from '../hrms/doc-templates/HeaderFooterPanel';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
-import ExpenseClaimsTable from '../../components/ExpenseClaimsTable';
-import AdvanceRequestsTable, { type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
+import { type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
 import {
   RaiseHiringRequestModal,
@@ -28,12 +25,16 @@ import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { leaveTypesApi, leaveRequestsApi, ApiLeaveRequest } from '../hrms/leavePlansApi';
 import LeaveSummaryPanel from './LeaveSummaryPanel';
 import HolidayCalendarPanel from './HolidayCalendarPanel';
+import { EpModal } from './EmployeeProfileShared';
+import { EmployeeProfileProvider, type EmployeeProfileCtx } from './EmployeeProfileContext';
+import AttendanceTab from './tabs/AttendanceTab';
+import ProfileTab from './tabs/ProfileTab';
+import JobTab from './tabs/JobTab';
+import VaultTab from './tabs/VaultTab';
+import PayrollTab from './tabs/PayrollTab';
+import ExpenseTab from './tabs/ExpenseTab';
+import HiringTab from './tabs/HiringTab';
 
-// Supporting-documents upload rules — shared by the expense-claim "Proof &
-// Receipt" picker and the advance-request "Supporting Documents" picker.
-// Only PDF / JPG / PNG up to 5 MB each. The browser `accept` attribute is a
-// soft hint only (it doesn't block drag-drop or "All files"), so we hard-
-// validate here and surface a message for anything rejected.
 const UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
 const UPLOAD_ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/png'];
 const UPLOAD_ALLOWED_EXT = /\.(pdf|jpe?g|png)$/i;
@@ -50,54 +51,6 @@ function filterValidUploads(picked: File[]): { accepted: File[]; errors: string[
   }
   return { accepted, errors };
 }
-
-// Custom portal-based modal — renders directly to document.body so it always
-// escapes the .ep-fullscreen-overlay stacking context. Reactstrap's Modal had
-// timing issues with our z-index overrides on first open; this is bulletproof.
-function EpModal({ open, onClose, size = 'md', children, dismissOnBackdrop = false, panelClassName }: {
-  open: boolean;
-  onClose: () => void;
-  size?: 'sm' | 'md' | 'lg' | 'xl';
-  children: React.ReactNode;
-  dismissOnBackdrop?: boolean;
-  panelClassName?: string;
-}) {
-  if (!open) return null;
-  const widths = { sm: 420, md: 600, lg: 900, xl: 1180 };
-  return createPortal(
-    <div
-      className="ep-modal-overlay"
-      onClick={dismissOnBackdrop ? onClose : undefined}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 5000,
-        background: 'rgba(15,23,42,0.55)',
-        backdropFilter: 'blur(2px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 16, overflowY: 'auto',
-      }}
-    >
-      <div
-        className={`ep-modal-card ${panelClassName || ''}`}
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: 'var(--vz-card-bg, #fff)',
-          borderRadius: 16,
-          boxShadow: '0 24px 60px rgba(0,0,0,0.30)',
-          width: '100%',
-          maxWidth: widths[size],
-          maxHeight: 'calc(100vh - 32px)',
-          overflow: 'hidden',
-          display: 'flex', flexDirection: 'column',
-        }}
-      >
-        {children}
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-
 export interface EmployeeProfileTarget {
   id: string;
   name: string;
@@ -122,748 +75,19 @@ export interface EmployeeProfileTarget {
   status?: 'active' | 'on_leave' | 'high_attention' | 'probation' | 'inactive';
   enabled?: boolean;
 }
-
 interface Props {
   employeeId: string;
   employee?: EmployeeProfileTarget;
   onBack: () => void;
 }
-
 type TabKey = 'profile' | 'job' | 'attendance' | 'vault' | 'payroll' | 'expense' | 'apply_leave' | 'holidays' | 'hiring';
 type PayrollTab = 'summary' | 'details';
 type VaultTab = 'employee' | 'organizational';
 type ExpenseFilter = 'all' | 'approved' | 'rejected' | 'pending' | 'draft';
-
-const GRAD_PRIMARY = 'linear-gradient(135deg, #405189 0%, #6691e7 100%)';
-const GRAD_SUCCESS = 'linear-gradient(135deg, #0ab39c 0%, #30d5b5 100%)';
-const GRAD_WARNING = 'linear-gradient(135deg, #f7b84b 0%, #ffd47a 100%)';
-const GRAD_INFO    = 'linear-gradient(135deg, #299cdb 0%, #5fc8ff 100%)';
-const GRAD_PURPLE  = 'linear-gradient(135deg, #6a5acd 0%, #a78bfa 100%)';
-const GRAD_DANGER  = 'linear-gradient(135deg, #f06548 0%, #ff9e7c 100%)';
-
-const cardStyle: React.CSSProperties = {
-  borderRadius: 18,
-  border: '1px solid var(--vz-border-color)',
-  boxShadow: '0 4px 24px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)',
-  background: 'var(--vz-card-bg)',
-  overflow: 'hidden',
-  position: 'relative',
-  transition: 'transform .25s ease, box-shadow .25s ease',
-};
-
-// Section card wrapper — adds a top gradient strip and a hover lift to any
-// content card. The gradient is the same colour family as the section header
-// icon, so each section has a distinct visual identity (Personal=indigo,
-// Contact=blue, Address=green, etc.).
-function SectionCard({ gradient, children, className }: { gradient: string; children: React.ReactNode; className?: string }) {
-  return (
-    <Card className={`ep-section-card mb-0 ${className || ''}`} style={cardStyle}>
-      <div
-        style={{
-          position: 'absolute', top: 0, left: 0, right: 0, height: 4,
-          background: gradient, zIndex: 1,
-        }}
-      />
-      {children}
-    </Card>
-  );
-}
-
-function SectionHeader({ title, gradient, icon, action, subtitle }: { title: string; gradient: string; icon: string; action?: React.ReactNode; subtitle?: string }) {
-  return (
-    <div className="d-flex align-items-center gap-3 mb-3 pb-3" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
-      <span
-        className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-        style={{ width: 40, height: 40, background: gradient, boxShadow: '0 6px 14px rgba(64,81,137,0.22)' }}
-      >
-        <i className={icon} style={{ color: '#fff', fontSize: 18 }} />
-      </span>
-      <div className="flex-grow-1 min-w-0">
-        <h5 className="card-title mb-0">{title}</h5>
-        {subtitle && <small className="text-muted">{subtitle}</small>}
-      </div>
-      {action}
-    </div>
-  );
-}
-
-// Single label / value field — rendered as a clean key/value row with a small
-// colored accent dot. The accent dot's color comes from the parent section so
-// every field nests visually under its section header.
-function Field({ label, value, span = 6, accent = '#6366f1' }: { label: string; value?: React.ReactNode; span?: number; accent?: string }) {
-  return (
-    <Col md={span as any} className="mb-3">
-      <div className="d-flex align-items-center gap-2 mb-1">
-        <span style={{ width: 6, height: 6, borderRadius: '50%', background: accent, boxShadow: `0 0 0 3px ${accent}22`, flexShrink: 0 }} />
-        <p className="mb-0 fs-11 text-uppercase fw-bold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.08em' }}>
-          {label}
-        </p>
-      </div>
-      <div className="fs-14 fw-bold ps-3" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1.4 }}>
-        {value || <span className="text-muted fw-normal">—</span>}
-      </div>
-    </Col>
-  );
-}
-
-function MiniInfo({ icon, label, value, gradient }: { icon: string; label: string; value: React.ReactNode; gradient: string }) {
-  return (
-    <div
-      className="d-flex align-items-center p-3 h-100"
-      style={{
-        borderRadius: 14,
-        background: 'linear-gradient(135deg, rgba(64,81,137,0.06), rgba(102,145,231,0.04))',
-        border: '1px solid var(--vz-border-color)',
-      }}
-    >
-      <div className="flex-shrink-0 me-3">
-        <span
-          className="d-inline-flex align-items-center justify-content-center rounded-circle"
-          style={{ width: 40, height: 40, background: gradient, boxShadow: '0 4px 10px rgba(64,81,137,0.25)' }}
-        >
-          <i className={icon} style={{ color: '#fff', fontSize: 18 }} />
-        </span>
-      </div>
-      <div className="flex-grow-1 overflow-hidden">
-        <p className="mb-1 fs-12 text-uppercase fw-semibold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.05em' }}>
-          {label}
-        </p>
-        <h6 className="text-truncate mb-0">{value || '—'}</h6>
-      </div>
-    </div>
-  );
-}
-
-// Count-up number animation — mirrors the AnimatedNumber recipe used on the
-// admin/client/branch dashboards so KPI tiles feel consistent across the app.
-function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) {
-  const [display, setDisplay] = useState(0);
-  useEffect(() => {
-    let start = 0;
-    const end = value;
-    const duration = 1200;
-    const step = Math.max(1, Math.floor(end / 60));
-    const interval = duration / (end / step || 1);
-    const timer = setInterval(() => {
-      start += step;
-      if (start >= end) { setDisplay(end); clearInterval(timer); }
-      else setDisplay(start);
-    }, interval);
-    return () => clearInterval(timer);
-  }, [value]);
-  return <>{prefix}{display.toLocaleString()}{suffix}</>;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Attendance — live panel rendered on the Employee Profile's Attendance tab.
-//
-// Replaces the old "Coming Soon" mock-data block. Calls the dedicated
-// /attendance/employee/{employeeId}/summary endpoint which returns:
-//   - today (Attendance row + punches)
-//   - month stats (present, late, missing biometric, leave)
-//   - history (every Attendance row in the selected month with its punches)
-//
-// One `employeeId` prop — the route slug (emp_code like "EMP-001"). The
-// backend resolves either numeric DB id or emp_code so we don't have to.
-// ─────────────────────────────────────────────────────────────────────────────
-interface AttendancePanelPunch {
-  id: number;
-  punched_at: string;
-  direction: 'in' | 'out';
-  label: string;
-  method: 'face' | 'manual' | 'auto';
-}
-interface AttendancePanelRecord {
-  id: number;
-  attendance_date: string;
-  check_in_at: string | null;
-  check_out_at: string | null;
-  status: string;
-  total_worked_seconds: number;
-  punches_count: number;
-  punches: AttendancePanelPunch[];
-}
-interface AttendancePanelResponse {
-  employee: { id: number; emp_code: string | null; name: string; face_registered: boolean };
-  month: string;
-  stats: { present_days: number; late_marks: number; missing_biometric: number; total_leaves: number };
-  today: AttendancePanelRecord | null;
-  history: AttendancePanelRecord[];
-}
-
-// Activity-label palette — mirrors the ClockIn page so the same Step Out /
-// Lunch In / Meeting chip looks identical across the two surfaces.
-const ATT_LABEL_TONE: Record<string, { bg: string; fg: string; dot: string; icon: string }> = {
-  'Check In':  { bg: 'rgba(16,185,129,0.12)',  fg: '#047857', dot: '#10b981', icon: 'ri-login-circle-line'  },
-  'Step Out':  { bg: 'rgba(245,158,11,0.12)',  fg: '#a16207', dot: '#f59e0b', icon: 'ri-walk-line'          },
-  'Step In':   { bg: 'rgba(20,184,166,0.12)',  fg: '#0f766e', dot: '#14b8a6', icon: 'ri-walk-line'          },
-  'Lunch Out': { bg: 'rgba(244,114,182,0.12)', fg: '#9d174d', dot: '#f472b6', icon: 'ri-restaurant-line'    },
-  'Lunch In':  { bg: 'rgba(34,197,94,0.12)',   fg: '#166534', dot: '#22c55e', icon: 'ri-restaurant-line'    },
-  'Meeting':   { bg: 'rgba(99,102,241,0.12)',  fg: '#4338ca', dot: '#6366f1', icon: 'ri-presentation-line'  },
-  'Check Out': { bg: 'rgba(244,63,94,0.12)',   fg: '#9f1239', dot: '#f43f5e', icon: 'ri-logout-circle-line' },
-};
-const attLabelTone = (label: string) => ATT_LABEL_TONE[label] || {
-  bg: 'rgba(100,116,139,0.12)', fg: '#475569', dot: '#64748b', icon: 'ri-time-line',
-};
-
-const attFmtClock = (iso: string | null) => iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
-const attFmtHM    = (secs: number) => {
-  const h = Math.floor(Math.max(0, secs) / 3600);
-  const m = Math.floor((Math.max(0, secs) % 3600) / 60);
-  return `${h}h ${String(m).padStart(2, '0')}m`;
-};
-const attFmtDate  = (iso: string) => {
-  const d = new Date(iso);
-  return d.toLocaleDateString([], { day: '2-digit', month: 'short' });
-};
-const attDayName  = (iso: string) => new Date(iso).toLocaleDateString([], { weekday: 'short' });
-
-function AttendanceTabPanel({ employeeId }: { employeeId: string }) {
-  const [data, setData] = useState<AttendancePanelResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState<string | null>(null);
-  // YYYY-MM. Defaults to the current month — admins can paginate backwards
-  // via the < > arrows next to the month label.
-  const [month, setMonth] = useState<string>(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  });
-  const [page, setPage] = useState(0);
-  const PAGE_SIZE = 8;
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    api.get(`/attendance/employee/${encodeURIComponent(employeeId)}/summary`, { params: { month } })
-      .then((r: any) => { if (!cancelled) { setData(r.data); setPage(0); } })
-      .catch((err: any) => {
-        if (cancelled) return;
-        setError(err?.response?.data?.message || err?.message || 'Failed to load attendance.');
-        setData(null);
-      })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [employeeId, month]);
-
-  const stepMonth = (delta: number) => {
-    const [y, m] = month.split('-').map(Number);
-    const d = new Date(y, m - 1 + delta, 1);
-    setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
-  };
-
-  if (loading) {
-    // Skeleton mirrors the attendance panel's real layout — a KPI strip
-    // row above a wide chart-style block — so the page doesn't reflow
-    // when data lands.
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: '12px 4px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-          {[0, 1, 2, 3, 4].map(i => (
-            <div key={i} style={{ padding: 14, borderRadius: 12, border: '1px solid var(--vz-border-color)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <Shimmer height={10} width="50%" />
-              <Shimmer height={22} width="35%" />
-              <Shimmer height={8} width="65%" />
-            </div>
-          ))}
-        </div>
-        <div style={{ padding: 18, borderRadius: 12, border: '1px solid var(--vz-border-color)', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <Shimmer height={14} width={180} />
-          <Shimmer height={220} radius={10} />
-        </div>
-      </div>
-    );
-  }
-  if (error) {
-    return (
-      <div className="p-4 text-center text-muted" style={{ fontSize: 13 }}>
-        <i className="ri-error-warning-line me-1" /> {error}
-      </div>
-    );
-  }
-  if (!data) return null;
-
-  const { stats, today, history } = data;
-  const todayPunches = today?.punches || [];
-  const pageStart = page * PAGE_SIZE;
-  const pageEnd   = pageStart + PAGE_SIZE;
-  const pageRows  = history.slice(pageStart, pageEnd);
-  const pageCount = Math.max(1, Math.ceil(history.length / PAGE_SIZE));
-
-  // Same gradient palette EmployeeProfile uses for the other KPI strips so
-  // the visual rhythm matches the rest of the page.
-  const G_SUCCESS = 'linear-gradient(135deg, #0ab39c 0%, #30d5b5 100%)';
-  const G_WARNING = 'linear-gradient(135deg, #f7b84b 0%, #ffd47a 100%)';
-  const G_DANGER  = 'linear-gradient(135deg, #f06548 0%, #ff9e7c 100%)';
-  const G_PURPLE  = 'linear-gradient(135deg, #6a5acd 0%, #a78bfa 100%)';
-  return (
-    <>
-      {/* KPI strip */}
-      <Row className="g-3 mb-3 align-items-stretch">
-        <Col xl><KpiTile label="Present Days"      value={<AnimatedNumber value={stats.present_days} />}      sub="This month"         icon="ri-checkbox-circle-line" gradient={G_SUCCESS} /></Col>
-        <Col xl><KpiTile label="Late Marks"        value={<AnimatedNumber value={stats.late_marks} />}        sub="This month"         icon="ri-time-line"            gradient={G_WARNING} /></Col>
-        <Col xl><KpiTile label="Missing Biometric" value={<AnimatedNumber value={stats.missing_biometric} />} sub="Entries this month" icon="ri-error-warning-line"   gradient={G_DANGER}  /></Col>
-        <Col xl><KpiTile label="Total Leaves"      value={<AnimatedNumber value={stats.total_leaves} />}      sub="This month"         icon="ri-calendar-todo-line"   gradient={G_PURPLE}  /></Col>
-      </Row>
-
-      {/* Today + Timeline side-by-side */}
-      <Row className="g-3 mb-3 align-items-stretch">
-        <Col xl={6}>
-          <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #0ab39c' }}>
-            <div
-              className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
-              style={{
-                borderBottom: '1px solid rgba(10,179,156,0.18)',
-                background: 'linear-gradient(135deg, rgba(10,179,156,0.14) 0%, rgba(10,179,156,0.04) 60%, rgba(10,179,156,0.01) 100%)',
-              }}
-            >
-              <div className="d-flex align-items-center gap-2">
-                <span className="ep-section-icon" style={{ background: 'rgba(10,179,156,0.18)', color: '#0a8a78' }}>
-                  <i className="ri-calendar-check-line" />
-                </span>
-                <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Today's Record</h6>
-              </div>
-              <small className="text-muted" style={{ fontSize: 11 }}>
-                {new Date().toLocaleDateString([], { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}
-              </small>
-            </div>
-            <div className="px-3 py-3 flex-grow-1">
-              {today ? (
-                <>
-                  {/* Dark-mode: light-green pill (#d6f4e3/#108548) was unreadable
-                      on the dark card — swap to a translucent green + bright text. */}
-                  <style>{`
-                    [data-bs-theme="dark"] .ep-att-today-badge,
-                    [data-layout-mode="dark"] .ep-att-today-badge {
-                      background: rgba(16,185,129,0.18) !important;
-                      color: #6ee7b7 !important;
-                    }
-                  `}</style>
-                  <span
-                    className="ep-att-today-badge d-inline-flex align-items-center gap-1 fw-semibold mb-3"
-                    style={{
-                      fontSize: 11, padding: '2px 8px', borderRadius: 999,
-                      background: '#d6f4e3', color: '#108548',
-                    }}
-                  >
-                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981' }} />
-                    {today.status}
-                  </span>
-                  <Row className="g-2 mb-2">
-                    <Col xs={6}>
-                      <div className="ep-field-label">First In</div>
-                      <div className="ep-field-value font-monospace">{attFmtClock(today.check_in_at)}</div>
-                    </Col>
-                    <Col xs={6}>
-                      <div className="ep-field-label">Last Out</div>
-                      <div className="ep-field-value font-monospace">{attFmtClock(today.check_out_at)}</div>
-                    </Col>
-                    <Col xs={4}>
-                      <div className="ep-field-label">Punches</div>
-                      <div className="ep-field-value">{today.punches_count}</div>
-                    </Col>
-                    <Col xs={4}>
-                      <div className="ep-field-label">Worked</div>
-                      <div className="ep-field-value">{attFmtHM(today.total_worked_seconds)}</div>
-                    </Col>
-                    <Col xs={4}>
-                      <div className="ep-field-label">Expected</div>
-                      <div className="ep-field-value">9h 00m</div>
-                    </Col>
-                  </Row>
-                </>
-              ) : (
-                <div className="text-center text-muted py-3" style={{ fontSize: 13 }}>
-                  No attendance record for today yet.
-                </div>
-              )}
-            </div>
-          </div>
-        </Col>
-
-        <Col xl={6}>
-          <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #6366f1' }}>
-            <div
-              className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
-              style={{
-                borderBottom: '1px solid rgba(99,102,241,0.18)',
-                background: 'linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(99,102,241,0.03) 60%, rgba(99,102,241,0.01) 100%)',
-              }}
-            >
-              <div className="d-flex align-items-center gap-2">
-                <span className="ep-section-icon" style={{ background: 'rgba(99,102,241,0.18)', color: '#4338ca' }}>
-                  <i className="ri-pulse-line" />
-                </span>
-                <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Intraday Punch Timeline</h6>
-              </div>
-              <small className="text-muted" style={{ fontSize: 11 }}>
-                {todayPunches.length} {todayPunches.length === 1 ? 'punch today' : 'punches today'}
-              </small>
-            </div>
-            <div className="px-3 py-3 flex-grow-1" style={{ overflowX: 'auto' }}>
-              {todayPunches.length === 0 ? (
-                <div className="text-center text-muted py-3" style={{ fontSize: 13 }}>
-                  No punches yet today.
-                </div>
-              ) : (
-                <div className="d-flex gap-3 align-items-stretch" style={{ minWidth: 'fit-content' }}>
-                  {todayPunches.map((p, idx) => {
-                    const t = attLabelTone(p.label);
-                    return (
-                      <div
-                        key={p.id}
-                        className="position-relative d-flex flex-column align-items-center"
-                        style={{ minWidth: 92, flex: '0 0 auto' }}
-                      >
-                        {idx < todayPunches.length - 1 && (
-                          <div
-                            aria-hidden
-                            style={{
-                              position: 'absolute', top: 20, left: '60%', right: '-50%',
-                              height: 2, background: 'rgba(148,163,184,0.35)',
-                            }}
-                          />
-                        )}
-                        <div
-                          className="d-inline-flex align-items-center justify-content-center"
-                          style={{
-                            width: 40, height: 40, borderRadius: '50%',
-                            background: t.bg, color: t.fg,
-                            border: `2px solid ${t.dot}`,
-                            fontSize: 16, zIndex: 1,
-                          }}
-                        >
-                          <i className={t.icon} />
-                        </div>
-                        <div className="text-center mt-2" style={{ fontSize: 11.5, fontWeight: 700 }}>
-                          {attFmtClock(p.punched_at)}
-                        </div>
-                        <div className="text-center" style={{ fontSize: 11, color: t.fg, fontWeight: 600 }}>
-                          {p.label}
-                        </div>
-                        <div
-                          className="text-uppercase mt-1"
-                          style={{ fontSize: 9, letterSpacing: 0.6, color: 'var(--vz-secondary-color)' }}
-                        >
-                          {p.method}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        </Col>
-      </Row>
-
-      {/* Attendance Timelog History */}
-      <Row className="g-3">
-        <Col xs={12}>
-          <div className="ep-section-card-flat ep-section-card" style={{ borderTop: '3px solid #f59e0b' }}>
-            <div
-              className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 flex-wrap"
-              style={{
-                borderBottom: '1px solid rgba(245,158,11,0.18)',
-                background: 'linear-gradient(135deg, rgba(245,158,11,0.12) 0%, rgba(245,158,11,0.03) 60%, rgba(245,158,11,0.01) 100%)',
-              }}
-            >
-              <div className="d-flex align-items-center gap-2">
-                <span className="ep-section-icon" style={{ background: 'rgba(245,158,11,0.18)', color: '#a16207' }}>
-                  <i className="ri-history-line" />
-                </span>
-                <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Attendance Timelog History</h6>
-              </div>
-              <div className="d-flex align-items-center gap-2">
-                <button type="button" className="btn btn-sm btn-light" onClick={() => stepMonth(-1)} aria-label="Previous month">
-                  <i className="ri-arrow-left-s-line" />
-                </button>
-                <span className="fw-semibold" style={{ fontSize: 12, minWidth: 80, textAlign: 'center' }}>
-                  {new Date(month + '-01').toLocaleDateString([], { month: 'long', year: 'numeric' })}
-                </span>
-                <button type="button" className="btn btn-sm btn-light" onClick={() => stepMonth(1)} aria-label="Next month">
-                  <i className="ri-arrow-right-s-line" />
-                </button>
-              </div>
-            </div>
-            <div className="px-3 py-3">
-              {history.length === 0 ? (
-                <div className="text-center text-muted py-4" style={{ fontSize: 13 }}>
-                  No attendance records for {new Date(month + '-01').toLocaleDateString([], { month: 'long', year: 'numeric' })}.
-                </div>
-              ) : (
-                <>
-                  <div className="table-responsive">
-                    <table className="table table-sm mb-0" style={{ fontSize: 12 }}>
-                      <thead>
-                        <tr style={{ background: 'rgba(15,23,42,0.04)' }}>
-                          <th>Date</th>
-                          <th>Day</th>
-                          <th>First In</th>
-                          <th>Last Out</th>
-                          <th>Punches</th>
-                          <th>Worked</th>
-                          <th>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pageRows.map(r => (
-                          <tr key={r.id}>
-                            <td className="fw-semibold">{attFmtDate(r.attendance_date)}</td>
-                            <td>{attDayName(r.attendance_date)}</td>
-                            <td className="font-monospace">{attFmtClock(r.check_in_at)}</td>
-                            <td className="font-monospace">{attFmtClock(r.check_out_at)}</td>
-                            <td>{r.punches_count}</td>
-                            <td>{attFmtHM(r.total_worked_seconds)}</td>
-                            <td>
-                              <span
-                                className="d-inline-flex align-items-center gap-1 fw-semibold"
-                                style={{
-                                  fontSize: 10.5, padding: '2px 8px', borderRadius: 999,
-                                  background: r.status === 'Present' ? '#d6f4e3' :
-                                              r.status === 'Late'    ? '#fef3c7' :
-                                              r.status === 'Leave'   ? '#e0e7ff' : '#f1f5f9',
-                                  color: r.status === 'Present' ? '#108548' :
-                                         r.status === 'Late'    ? '#92400e' :
-                                         r.status === 'Leave'   ? '#3730a3' : '#475569',
-                                }}
-                              >
-                                {r.status}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {pageCount > 1 && (
-                    <div className="d-flex align-items-center justify-content-between mt-2 pt-2 border-top">
-                      <small className="text-muted">
-                        Showing {pageStart + 1}–{Math.min(pageEnd, history.length)} of {history.length}
-                      </small>
-                      <ul className="pagination pagination-sm mb-0">
-                        <li className={page === 0 ? 'page-item disabled' : 'page-item'}>
-                          <a href="#" className="page-link" onClick={e => { e.preventDefault(); if (page > 0) setPage(p => p - 1); }}>
-                            <i className="ri-arrow-left-s-line" />
-                          </a>
-                        </li>
-                        {Array.from({ length: pageCount }, (_, i) => (
-                          <li key={i} className={page === i ? 'page-item active' : 'page-item'}>
-                            <a href="#" className="page-link" onClick={e => { e.preventDefault(); setPage(i); }}>{i + 1}</a>
-                          </li>
-                        ))}
-                        <li className={page >= pageCount - 1 ? 'page-item disabled' : 'page-item'}>
-                          <a href="#" className="page-link" onClick={e => { e.preventDefault(); if (page < pageCount - 1) setPage(p => p + 1); }}>
-                            <i className="ri-arrow-right-s-line" />
-                          </a>
-                        </li>
-                      </ul>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        </Col>
-      </Row>
-    </>
-  );
-}
-
-// Generic KPI tile — same recipe as the admin/client/branch dashboard
-// `KpiCard` so every tile across the app reads consistently. The `tint` prop
-// is accepted for backwards compatibility but ignored; the card always uses
-// var(--vz-card-bg) and the gradient lives on the top strip + icon tile.
-function KpiTile({ label, value, sub, icon, gradient }: { label: string; value: React.ReactNode; sub?: string; icon: string; gradient: string; tint?: string }) {
-  return (
-    <div
-      className="ep-kpi-tile dashboard-surface"
-      style={{
-        borderRadius: 12,
-        padding: '12px 14px 10px',
-        boxShadow: '0 2px 14px rgba(0,0,0,0.05)',
-        border: '1px solid var(--vz-border-color)',
-        position: 'relative',
-        overflow: 'hidden',
-        height: '100%',
-        background: '#ffffff',
-        transition: 'transform .25s ease, box-shadow .25s ease, border-color .25s ease',
-        cursor: 'default',
-      }}
-    >
-      {/* Gradient top strip */}
-      <div style={{
-        position: 'absolute', top: 0, left: 0, right: 0, height: 2,
-        background: gradient,
-      }} />
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>
-            {label}
-          </p>
-          <h3 style={{ fontSize: 22, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
-            {value}
-          </h3>
-          {sub && <small className="text-muted d-block" style={{ fontSize: 10.5, marginTop: 4 }}>{sub}</small>}
-        </div>
-        <div style={{
-          width: 36, height: 36, borderRadius: 10,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: gradient, flexShrink: 0,
-          boxShadow: '0 3px 8px rgba(0,0,0,0.10)',
-        }}>
-          <i className={icon} style={{ fontSize: 16, color: '#fff' }} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Mock attendance history rows used inside the Attendance tab.
-const ATTENDANCE_HISTORY = [
-  { date: '21-Apr', day: 'Mon', shift: 'EARLY',   firstIn: '07:01', lastOut: '16:02', punches: 2, worked: '9h 01m', deviation: '+0h 01m', status: 'Present' },
-  { date: '20-Apr', day: 'Sun', shift: '—',       firstIn: '—',     lastOut: '—',     punches: 0, worked: '—',     deviation: '—',        status: 'Weekly Off' },
-  { date: '19-Apr', day: 'Sat', shift: '—',       firstIn: '—',     lastOut: '—',     punches: 0, worked: '—',     deviation: '—',        status: 'Weekly Off' },
-  { date: '18-Apr', day: 'Fri', shift: 'GENERAL', firstIn: '09:15', lastOut: '18:20', punches: 4, worked: '9h 05m', deviation: '+0h 05m', status: 'Present' },
-  { date: '17-Apr', day: 'Thu', shift: 'GENERAL', firstIn: '10:02', lastOut: '19:15', punches: 4, worked: '9h 13m', deviation: '+0h 13m', status: 'Late' },
-  { date: '16-Apr', day: 'Wed', shift: 'GENERAL', firstIn: '09:00', lastOut: '18:00', punches: 4, worked: '9h 00m', deviation: '+0h 00m', status: 'Present' },
-  { date: '15-Apr', day: 'Tue', shift: 'GENERAL', firstIn: '09:10', lastOut: '18:10', punches: 4, worked: '9h 00m', deviation: '+0h 00m', status: 'Present' },
-  { date: '14-Apr', day: 'Mon', shift: 'GENERAL', firstIn: '09:05', lastOut: '18:07', punches: 4, worked: '9h 02m', deviation: '+0h 02m', status: 'Present' },
-  { date: '13-Apr', day: 'Sun', shift: '—',       firstIn: '—',     lastOut: '—',     punches: 0, worked: '—',     deviation: '—',        status: 'Weekly Off' },
-  { date: '11-Apr', day: 'Fri', shift: 'GENERAL', firstIn: '09:00', lastOut: '18:00', punches: 4, worked: '9h 00m', deviation: '+0h 00m', status: 'Present' },
-  { date: '10-Apr', day: 'Thu', shift: 'GENERAL', firstIn: '09:22', lastOut: '18:30', punches: 4, worked: '9h 08m', deviation: '+0h 08m', status: 'Present' },
-  { date: '09-Apr', day: 'Wed', shift: 'GENERAL', firstIn: '—',     lastOut: '—',     punches: 0, worked: '—',     deviation: '—',        status: 'Absent' },
-  { date: '08-Apr', day: 'Tue', shift: 'GENERAL', firstIn: '09:00', lastOut: '18:00', punches: 4, worked: '9h 00m', deviation: '+0h 00m', status: 'Present' },
-];
-
-const STATUS_TONE: Record<string, { bg: string; fg: string; dot: string }> = {
-  'Present':    { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' },
-  'Late':       { bg: '#fde8c4', fg: '#a4661c', dot: '#f59e0b' },
-  'Absent':     { bg: '#fdd9ea', fg: '#a02960', dot: '#ef4444' },
-  'Weekly Off': { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' },
-};
-
-// Evidence Vault — table-style document repository.
-// Two sub-tabs: Employee Documents (KYC + address + education + employment)
-// and Organizational Documents (legal agreements + company policies).
-type VaultStatus = 'Verified' | 'Uploaded' | 'Pending' | 'Signed' | 'Sent' | 'Not Generated';
-interface EmpDocRow {
-  name: string; idNumber?: string; authority?: string; issueDate?: string; expiryDate?: string; attachment?: string; status: VaultStatus;
-}
-interface OrgDocRow {
-  name: string; type: string; effectiveDate?: string; validUntil?: string; attachment?: string; status: VaultStatus;
-}
-interface EmpDocSection { title: string; subtitle: string; icon: string; iconTint: string; iconFg: string; docs: EmpDocRow[] }
-interface OrgDocSection { title: string; subtitle: string; icon: string; iconTint: string; iconFg: string; docs: OrgDocRow[] }
-
-const VAULT_EMPLOYEE: EmpDocSection[] = [
-  {
-    title: 'Identity (KYC)', subtitle: 'Core identity documents for employee verification',
-    icon: 'ri-shield-user-line', iconTint: '#dceefe', iconFg: '#0c63b0',
-    docs: [
-      { name: 'Aadhaar Card',              idNumber: 'XXXX-XXXX-1234', authority: 'UIDAI',           issueDate: '01-Jan-2020', attachment: 'Aadhaar.pdf', status: 'Verified' },
-      { name: 'PAN Card',                  idNumber: 'ABCDE1234F',     authority: 'Income Tax Dept', issueDate: '01-Jan-2018', attachment: 'PAN.pdf',     status: 'Verified' },
-      { name: 'Passport-size Photograph',                                                            issueDate: '01-Jan-2024', attachment: 'Photo.jpg',   status: 'Uploaded' },
-    ],
-  },
-  {
-    title: 'Address Proof', subtitle: 'Residential address verification documents',
-    icon: 'ri-map-pin-line', iconTint: '#d6f4e3', iconFg: '#108548',
-    docs: [
-      { name: 'Aadhaar Card (Reused)', idNumber: 'XXXX-XXXX-1234', authority: 'UIDAI', issueDate: '01-Jan-2020', expiryDate: '01-Jan-2030', attachment: 'Aadhaar.pdf',     status: 'Verified' },
-      { name: 'Current Address Proof',                                                  issueDate: '01-Jan-2022', expiryDate: '01-Jan-2027', attachment: 'CurrentAddr.pdf', status: 'Verified' },
-      { name: 'Permanent Address Proof',                                                                                                                                  status: 'Pending'  },
-    ],
-  },
-  {
-    title: 'Education Documents', subtitle: 'Academic qualifications and credentials',
-    icon: 'ri-graduation-cap-line', iconTint: '#ece6ff', iconFg: '#5a3fd1',
-    docs: [
-      { name: '10th Marksheet',         authority: 'State Board', issueDate: '01-May-2001', attachment: '10th.pdf',     status: 'Verified' },
-      { name: '12th Marksheet',         authority: 'State Board', issueDate: '01-May-2003', attachment: '12th.pdf',     status: 'Verified' },
-      { name: 'Graduation Marksheet',   authority: 'University',  issueDate: '01-Jun-2007', attachment: 'GradMark.pdf', status: 'Verified' },
-      { name: 'Graduation Certificate', authority: 'University',  issueDate: '01-Oct-2007', attachment: 'GradCert.pdf', status: 'Pending'  },
-    ],
-  },
-  {
-    title: 'Previous Employment Documents', subtitle: 'Employment history, documents & background verification',
-    icon: 'ri-briefcase-line', iconTint: '#fde8c4', iconFg: '#a4661c',
-    docs: [
-      { name: 'Experience Letter',      authority: 'Infotech Solutions Ltd', issueDate: '01-Nov-2023', attachment: 'ExpLetter.pdf',  status: 'Verified' },
-      { name: 'Relieving Letter',       authority: 'Infotech Solutions Ltd', issueDate: '01-Nov-2023', attachment: 'Relieving.pdf',  status: 'Verified' },
-      { name: 'Last 3 Pay Slips',       authority: 'Infotech Solutions Ltd', issueDate: '01-Oct-2023', attachment: 'PaySlips.pdf',   status: 'Verified' },
-      { name: 'Form 16 (FY 2022-23)',   authority: 'Infotech Solutions Ltd', issueDate: '01-Jun-2023', attachment: 'Form16.pdf',     status: 'Verified' },
-      { name: 'Bank Statement (3 mo.)', authority: 'Kotak Mahindra Bank',    issueDate: '01-Nov-2023', attachment: 'BankStmt.pdf',   status: 'Uploaded' },
-      { name: 'Background Verification',authority: 'BGV Supplier',             issueDate: '15-Nov-2023', attachment: 'BGV.pdf',        status: 'Verified' },
-      { name: 'Reference Check',        authority: 'BGV Supplier',             issueDate: '15-Nov-2023',                                status: 'Pending'  },
-    ],
-  },
-];
-
-const VAULT_ORG: OrgDocSection[] = [
-  {
-    title: 'Legal Agreements', subtitle: 'Binding legal documents signed between employee and organization',
-    icon: 'ri-file-shield-2-line', iconTint: '#ece6ff', iconFg: '#5a3fd1',
-    docs: [
-      { name: 'Non-Disclosure Agreement (NDA)',           type: 'AGREEMENT', effectiveDate: '01-Nov-2023', validUntil: '01-Nov-2028', attachment: 'NDA.pdf',             status: 'Signed' },
-      { name: 'Employment Agreement / Appointment Letter', type: 'AGREEMENT', effectiveDate: '03-Nov-2023',                           attachment: 'Appointment.pdf',     status: 'Signed' },
-      { name: 'Confidentiality Agreement',                 type: 'AGREEMENT', effectiveDate: '03-Nov-2023',                           attachment: 'Confidentiality.pdf', status: 'Signed' },
-    ],
-  },
-  {
-    title: 'Company Policies', subtitle: 'Internal policies acknowledged and accepted by the employee',
-    icon: 'ri-file-list-3-line', iconTint: '#d3f0ee', iconFg: '#0a716a',
-    docs: [
-      { name: 'Code of Conduct Policy',         type: 'POLICY', effectiveDate: '03-Nov-2023', attachment: 'CodeOfConduct.pdf', status: 'Signed' },
-      { name: 'IT Security & Acceptable Use Policy', type: 'POLICY', effectiveDate: '03-Nov-2023', attachment: 'ITPolicy.pdf',   status: 'Signed' },
-      { name: 'Leave & Attendance Policy',      type: 'POLICY', effectiveDate: '03-Nov-2023', attachment: 'LeavePolicy.pdf',   status: 'Signed' },
-      { name: 'Gratuity & Benefit Policy',      type: 'POLICY', effectiveDate: '03-Nov-2023', attachment: 'GratuityPolicy.pdf', status: 'Pending' },
-    ],
-  },
-];
-// Expense Details — mock claims and the per-category visual tones used on
-// the claim-row "category" pill.
-const EXPENSE_CATEGORY_TONE: Record<string, { bg: string; fg: string; icon: string }> = {
-  'Travel':         { bg: '#dceefe', fg: '#0c63b0', icon: 'ri-flight-takeoff-line' },
-  'Meals':          { bg: '#fde8c4', fg: '#a4661c', icon: 'ri-restaurant-line' },
-  'Internet':       { bg: '#d3f0ee', fg: '#0a716a', icon: 'ri-wifi-line' },
-  'Office Supplies':{ bg: '#ece6ff', fg: '#5a3fd1', icon: 'ri-folder-line' },
-  'Training':       { bg: '#d6f4e3', fg: '#108548', icon: 'ri-graduation-cap-line' },
-};
-const EXPENSE_STATUS_TONE: Record<string, { bg: string; fg: string; dot: string }> = {
-  'Approved': { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' },
-  'Pending':  { bg: '#fde8c4', fg: '#a4661c', dot: '#f59e0b' },
-  'Rejected': { bg: '#fdd9ea', fg: '#a02960', dot: '#ef4444' },
-};
-const EXPENSE_CLAIMS: { id: string; category: keyof typeof EXPENSE_CATEGORY_TONE; description: string; date: string; amount: number; receipt: string; status: 'Approved' | 'Pending' | 'Rejected' }[] = [
-  { id: 'EXP-2201', category: 'Travel',          description: 'Client visit to Mumbai — cab + train',         date: '10-Apr-2026', amount: 2800, receipt: 'Receipt_EXP2201', status: 'Approved' },
-  { id: 'EXP-2198', category: 'Meals',           description: 'Team lunch — project kickoff meeting',         date: '05-Apr-2026', amount: 850,  receipt: 'Receipt_EXP2198', status: 'Pending'  },
-  { id: 'EXP-2181', category: 'Internet',        description: 'Monthly internet reimbursement — Apr',         date: '22-Mar-2026', amount: 999,  receipt: 'Receipt_EXP2181', status: 'Approved' },
-  { id: 'EXP-2174', category: 'Travel',          description: 'Pune–Mumbai flight for quarterly review',      date: '15-Mar-2026', amount: 4500, receipt: 'Receipt_EXP2174', status: 'Rejected' },
-  { id: 'EXP-2165', category: 'Office Supplies', description: 'Stationery and printer cartridges',            date: '08-Mar-2026', amount: 1200, receipt: 'Receipt_EXP2165', status: 'Approved' },
-  { id: 'EXP-2150', category: 'Training',        description: 'Online certification course — AWS',            date: '01-Mar-2026', amount: 3500, receipt: 'Receipt_EXP2150', status: 'Pending'  },
-];
-
-const VAULT_STATUS_TONE: Record<string, { bg: string; fg: string; dot: string }> = {
-  'Verified':      { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' },
-  'Uploaded':      { bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
-  'Pending':       { bg: '#fde8c4', fg: '#a4661c', dot: '#f59e0b' },
-  'Signed':        { bg: '#ece6ff', fg: '#5b3fd1', dot: '#7c5cfc' },
-  'Sent':          { bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
-  'Not Generated': { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' },
-};
-
 export default function EmployeeProfile({ employeeId, employee, onBack }: Props) {
   const initials = employee?.initials
     || (employee?.name ? employee.name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase() : 'EM');
   const accent = employee?.accent || '#7c5cfc';
-  const profilePct = typeof employee?.profile === 'number' ? employee.profile : 83;
-  // Ancillary roles support multiple values per employee. Prefer the
-  // explicit `ancillaryRoles` array (server-resolved from
-  // `ancillary_roles_resolved`); fall back to the legacy single
-  // `ancillaryRole` for older row shapes. No hardcoded demo data —
-  // empty saved data renders as an empty list, not fake names.
   const ancillaryList: string[] = Array.isArray(employee?.ancillaryRoles) && employee.ancillaryRoles.length > 0
     ? employee.ancillaryRoles.filter(Boolean)
     : Array.isArray(employee?.ancillaryRole)
@@ -1282,29 +506,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     .toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
     .replace(/ /g, '-');
 
-  // Toast hook (used by the Export Timelogs button) and last-7-month picker
-  // for the timelog history filter.
+  // Toast hook — used by the Export Timelogs button and various save actions.
   const toast = useToast();
-  const [monthOpen, setMonthOpen] = useState(false);
-  const ATT_MONTHS = (() => {
-    const out: { key: string; label: string }[] = [];
-    const now = new Date();
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      out.push({
-        key: `${d.getFullYear()}-${d.getMonth() + 1}`,
-        label: d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
-      });
-    }
-    return out;
-  })();
-  const [attMonth, setAttMonth] = useState<string>(ATT_MONTHS[0]?.label || 'April 2026');
-  // Attendance Timelog History pagination — 6 rows per page to match the
-  // compact card height used by the Attendance tab. Reset to page 0 whenever
-  // the month filter changes so the user doesn't land on an empty page.
-  const ATT_PAGE_SIZE = 6;
-  const [attPage, setAttPage] = useState(0);
-  useEffect(() => { setAttPage(0); }, [attMonth]);
 
   // Payslip viewer modal — opens from the "View Payslip" button in the
   // Payroll Summary hero. Filters by year/month and shows the rendered
@@ -2478,9 +1681,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     }
   };
 
-  // Live counts for the Evidence Vault hero KPIs and tab badges. Used to
-  // be derived from the hardcoded VAULT_EMPLOYEE / VAULT_ORG mock arrays
-  // (which never matched the actual rows shown in the body); now read
+  // Live counts for the Evidence Vault hero KPIs and tab badges. Read
   // directly from the same `uploadedDocs` + `signedDocs` arrays the
   // tables render, so the header always agrees with the body.
   const verifiedUploadedCount = uploadedDocs.filter(d => d.status === 'verified').length;
@@ -2518,11 +1719,35 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   ];
 
   // Onboarding progress as a numeric percent for the hero ring chart.
-  const onboardingPct =
-      employee?.onboarding === 'Completed'   ? 100
-    : employee?.onboarding === 'In Progress' ? 65
-    : employee?.onboarding === 'Pending'     ? 25
-    :                                          83;
+  // Profile completion % — prefer the backend's blended `profile_completion`
+  // on the fetched record (the SAME source the HR list uses via apiToUiRow),
+  // so the employee's own /profile view matches the HR panel. The caller only
+  // passes `employee.profile` on the HR path, so without this the self-view
+  // fell back to 0. Fall back: passed prop → 0.
+  const profilePct = (() => {
+    const backend = Number(empDetail?.profile_completion);
+    if (Number.isFinite(backend)) return Math.max(0, Math.min(100, Math.round(backend)));
+    return typeof employee?.profile === 'number' ? employee.profile : 0;
+  })();
+
+  // Onboarding ring — derive the stage from the fetched record the same way
+  // the HR onboarding pill does, so it's consistent across both entry points.
+  // Fall back to the caller-passed label, then a neutral default.
+  const onboardingPct = (() => {
+    const macroRaw = empDetail?.onboarding_stage_completed;
+    const stepRaw  = empDetail?.wizard_step_completed;
+    if (macroRaw != null || stepRaw != null) {
+      const macro = Number(macroRaw) || 0;
+      const step  = Number(stepRaw) || 0;
+      if (macro >= 6) return 100;
+      if (macro > 0 || step > 0) return 65;
+      return 25;
+    }
+    return employee?.onboarding === 'Completed'   ? 100
+         : employee?.onboarding === 'In Progress' ? 65
+         : employee?.onboarding === 'Pending'     ? 25
+         :                                          83;
+  })();
 
   // Pre-compute counts and the filtered list from API rows. The list source
   // depends on the active sub-tab: "mine" → claims this employee raised,
@@ -2663,182 +1888,46 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     if (!hasDraft) setExpenseFilter('all');
   }, [expenseFilter, expenseModuleTab, expenseDrafts, advanceDrafts]);
 
-  // Inline component — renders the saved-draft list (one card per saved
-  // expense draft line item, one card per advance draft) with Resume +
-  // Discard. Defined inside the closure so it can reuse ClaimDraft typing
-  // and the parent's category-name lookup without a giant prop signature.
-  const fmtSavedAt = (iso: string | null): string => {
-    if (!iso) return 'Saved earlier';
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return 'Saved earlier';
-    const diffMs = Date.now() - d.getTime();
-    const min = Math.round(diffMs / 60000);
-    if (min < 1)   return 'Saved just now';
-    if (min < 60)  return `Saved ${min}m ago`;
-    const hrs = Math.round(min / 60);
-    if (hrs < 24)  return `Saved ${hrs}h ago`;
-    const days = Math.round(hrs / 24);
-    if (days < 30) return `Saved ${days}d ago`;
-    return `Saved ${d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}`;
-  };
-  const DraftListView = ({
-    module,
-    expenseEntries,
-    advanceEntries,
-    onResume,
-    onDiscard,
-  }: {
-    module: 'expense' | 'advance';
-    expenseEntries: ExpenseDraftEntry[];
-    advanceEntries: AdvanceDraftEntry[];
-    onResume: (draftId: string) => void;
-    onDiscard: (draftId: string) => void;
-  }) => {
-    const isAdvance = module === 'advance';
-    const entries = isAdvance ? advanceEntries : expenseEntries;
-    if (entries.length === 0) {
-      return (
-        <div className="border rounded p-4 text-center" style={{ background: 'var(--vz-card-bg)' }}>
-          <i className="ri-draft-line" style={{ fontSize: 32, color: 'var(--vz-secondary-color)', display: 'block', marginBottom: 8 }} />
-          <div className="fw-semibold" style={{ fontSize: 13 }}>No saved drafts</div>
-          <small className="text-muted" style={{ fontSize: 11.5 }}>
-            Saved drafts appear here so you can finish them later — they're stored locally on this device only.
-          </small>
-        </div>
-      );
-    }
-    const cards: React.ReactNode[] = [];
-    if (isAdvance) {
-      // One card per saved advance draft. Each card carries its own
-      // Resume / Discard, keyed by the entry's id so multiple parked
-      // drafts can be edited/dropped independently.
-      advanceEntries.forEach(entry => {
-        const d = entry.data || {};
-        cards.push(
-          <div key={entry.id} className="border rounded p-3 mb-2" style={{ background: 'var(--vz-card-bg)' }}>
-            <div className="d-flex align-items-start justify-content-between gap-3 flex-wrap">
-              <div className="d-flex align-items-start gap-2 min-w-0" style={{ flex: '1 1 280px' }}>
-                <span className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-                  style={{ width: 36, height: 36, background: 'rgba(67,56,202,0.12)', color: '#4338ca', fontSize: 16 }}>
-                  <i className="ri-money-dollar-circle-line" />
-                </span>
-                <div className="min-w-0">
-                  <div className="d-flex align-items-center gap-2 flex-wrap">
-                    <strong style={{ fontSize: 13 }}>
-                      {d.advType || 'Advance Request'}{d.advTypeOther ? ` · ${d.advTypeOther}` : ''}
-                    </strong>
-                    <span className="badge rounded-pill" style={{ background: 'rgba(14,165,233,0.16)', color: '#0369a1', fontSize: 10 }}>
-                      DRAFT
-                    </span>
-                  </div>
-                  <div className="text-muted mt-1" style={{ fontSize: 11.5 }}>
-                    {d.advAmount ? <>₹{Number(String(d.advAmount).replace(/[^\d.]/g, '') || 0).toLocaleString('en-IN')}</> : '—'}
-                    {d.advRequestedDate && <> · Requested {d.advRequestedDate}</>}
-                    {d.advRecoveryStart && <> · Recovery {d.advRecoveryStart}</>}
-                    {d.advRecoveryMode && <> · {d.advRecoveryMode.toUpperCase()}</>}
-                  </div>
-                  {d.advReason && (
-                    <div className="text-muted mt-1" style={{ fontSize: 11.5, fontStyle: 'italic' }} title={d.advReason}>
-                      <i className="ri-double-quotes-l me-1" />
-                      {String(d.advReason).length > 100 ? String(d.advReason).slice(0, 100) + '…' : d.advReason}
-                    </div>
-                  )}
-                  <small className="text-muted d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: 10.5 }}>
-                    <i className="ri-time-line" /> {fmtSavedAt(entry.savedAt)}
-                  </small>
-                </div>
-              </div>
-              <div className="d-flex gap-2 flex-shrink-0">
-                <button type="button" className="btn btn-sm" onClick={() => onResume(entry.id)}
-                  style={{ background: 'linear-gradient(135deg,#0ea5e9,#0284c7)', color: '#fff', fontSize: 11.5, fontWeight: 600, padding: '5px 12px' }}>
-                  <i className="ri-arrow-go-forward-line me-1" /> Resume
-                </button>
-                <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => onDiscard(entry.id)}
-                  style={{ fontSize: 11.5, fontWeight: 600, padding: '5px 12px' }}>
-                  <i className="ri-delete-bin-line me-1" /> Discard
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      });
-    } else {
-      // One card per saved expense draft entry. Each entry can hold one
-      // or more line items (the "Save & Add Another" stack inside the
-      // modal), so the summary surfaces the first line item plus a
-      // count badge when the entry holds more than one.
-      expenseEntries.forEach(entry => {
-        const head = entry.drafts[0] ?? null;
-        if (!head) return;
-        const catName = (() => {
-          const found = claimCategories.find(c => String(c.id) === String(head.category));
-          return found?.name || (head.category ? `Cat #${head.category}` : '—');
-        })();
-        const lineCount = entry.drafts.length;
-        cards.push(
-          <div key={entry.id} className="border rounded p-3 mb-2" style={{ background: 'var(--vz-card-bg)' }}>
-            <div className="d-flex align-items-start justify-content-between gap-3 flex-wrap">
-              <div className="d-flex align-items-start gap-2 min-w-0" style={{ flex: '1 1 280px' }}>
-                <span className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-                  style={{ width: 36, height: 36, background: 'rgba(124,58,237,0.12)', color: '#7c3aed', fontSize: 16 }}>
-                  <i className="ri-file-list-3-line" />
-                </span>
-                <div className="min-w-0">
-                  <div className="d-flex align-items-center gap-2 flex-wrap">
-                    <strong style={{ fontSize: 13 }}>
-                      {head.title || 'Untitled claim'}
-                    </strong>
-                    <span className="badge rounded-pill" style={{ background: 'rgba(14,165,233,0.16)', color: '#0369a1', fontSize: 10 }}>
-                      DRAFT{lineCount > 1 ? ` · ${lineCount} lines` : ''}
-                    </span>
-                  </div>
-                  <div className="text-muted mt-1" style={{ fontSize: 11.5 }}>
-                    {head.amount ? <>₹{Number(String(head.amount).replace(/[^\d.]/g, '') || 0).toLocaleString('en-IN')}</> : '—'}
-                    {catName && catName !== '—' && <> · {catName}</>}
-                    {head.date && <> · {head.date}</>}
-                    {head.vendor && <> · {head.vendor}</>}
-                  </div>
-                  {head.purpose && (
-                    <div className="text-muted mt-1" style={{ fontSize: 11.5, fontStyle: 'italic' }} title={head.purpose}>
-                      <i className="ri-double-quotes-l me-1" />
-                      {head.purpose.length > 100 ? head.purpose.slice(0, 100) + '…' : head.purpose}
-                    </div>
-                  )}
-                  <small className="text-muted d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: 10.5 }}>
-                    <i className="ri-time-line" /> {fmtSavedAt(entry.savedAt)}
-                  </small>
-                </div>
-              </div>
-              <div className="d-flex gap-2 flex-shrink-0">
-                <button type="button" className="btn btn-sm" onClick={() => onResume(entry.id)}
-                  style={{ background: 'linear-gradient(135deg,#0ea5e9,#0284c7)', color: '#fff', fontSize: 11.5, fontWeight: 600, padding: '5px 12px' }}>
-                  <i className="ri-arrow-go-forward-line me-1" /> Resume
-                </button>
-                <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => onDiscard(entry.id)}
-                  style={{ fontSize: 11.5, fontWeight: 600, padding: '5px 12px' }}>
-                  <i className="ri-delete-bin-line me-1" /> Discard
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      });
-    }
-    return (
-      <div>
-        <div className="d-flex align-items-center gap-2 mb-2 px-1">
-          <i className="ri-information-line" style={{ color: '#0ea5e9' }} />
-          <small className="text-muted" style={{ fontSize: 11.5 }}>
-            Drafts are stored on this device only and aren't visible to managers/HR until you submit.
-          </small>
-        </div>
-        {cards}
-      </div>
-    );
+
+  // Everything the extracted tab panels (tabs/*.tsx) read is published here and
+  // consumed via useEmployeeProfile(). The hero, tab bar and modals below keep
+  // using the locals directly. Grow this object (and EmployeeProfileCtx) when a
+  // tab needs a new field — tsc enforces both sides stay in sync.
+  const ctx: EmployeeProfileCtx = {
+    employeeId, employee, displayEmpCode, initials, accent, ancillaryList,
+    empDetail, empDetailLoading,
+    fmtDate, fmtRupee,
+    // Profile tab
+    profilePct, profilePhotoSrc, profilePhotoFile, setProfilePhotoFile, savingPhoto,
+    handleProfilePhotoChange, handleSaveProfilePhoto, restoreSavedProfilePhoto,
+    profilePhotoInputRef, setFaceRegOpen, setPwOpen,
+    // Vault tab
+    vaultTab, setVaultTab, signedDocs, uploadedDocs, signedLoading, uploadedLoading,
+    vaultCounts, prettyDocKey, formatBytes, setSignedPreview, downloadSignedPdf,
+    // Payroll tab
+    payrollTab, setPayrollTab, salaryStruct, realMonthlyGross, realAnnualCtc, realTimeline,
+    openLatestPayslip, setSalaryModalOpen, setBreakdownOpen, setBreakdownRowId,
+    // Expense tab
+    authUser, isOwnProfile,
+    expenseModuleTab, setExpenseModuleTab, expenseSubTab, setExpenseSubTab,
+    advanceSubTab, setAdvanceSubTab, expenseFilter, setExpenseFilter,
+    expenseCounts, advanceCounts, totalClaimed,
+    activeClaimsSource, filteredExpenses, activeAdvancesSource,
+    apiClaims, teamClaims, apiAdvances, teamAdvances,
+    loadingClaims, loadingAdvances, refreshClaims, refreshAdvances,
+    actOnClaim, actOnAdvance, claimCategories, expenseDrafts, advanceDrafts,
+    claimDraftKey, advanceDraftKey,
+    setClaimOpen, setClaimMode, setEditingDraftId, setResumeFromDraft,
+    exportOpen, setExportOpen,
+    // Hiring tab
+    hiringRequests, hiringLoading, setRaiseHiringOpen, setHiringEditing, teamSize,
+    // Other shared (Profile/Vault/Expense)
+    resetPwForm, employeeDocCount, organizationalDocCount,
+    runProfileExport, readSavedDrafts, filteredAdvances,
   };
 
   return (
-    <>
+    <EmployeeProfileProvider value={ctx}>
     {/* Inject the shared master form theme so MasterSelect / MasterDatePicker
         used inside the modals pick up the same look as the master forms. */}
     <MasterFormStyles />
@@ -2847,18 +1936,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       {/* ── Hero banner ── */}
       <div className="ep-hero">
         <button type="button" className="ep-close-btn" onClick={onBack} aria-label="Close">
-          <i className="ri-close-line" style={{ fontSize: 20 }} />
+          <i className="ri-close-line ep-fs-20" />
         </button>
 
-        <Row className="g-4 align-items-center" style={{ position: 'relative', zIndex: 2 }}>
+        <Row className="g-4 align-items-center ep-rel-z2">
           {/* Avatar */}
           <Col xs="auto">
             {profilePhotoSrc ? (
               <img
                 src={profilePhotoSrc}
                 alt={employee?.name || 'employee'}
-                className="ep-avatar-square"
-                style={{ objectFit: 'cover', background: '#fff' }}
+                className="ep-avatar-square ep-avatar-img-fill"
               />
             ) : (
               <div className="ep-avatar-square">{initials}</div>
@@ -2868,27 +1956,26 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           {/* Identity */}
           <Col xs={12} md className="min-w-0">
             <div className="d-flex align-items-center gap-2 mb-1">
-              <h2 className="text-white mb-0 fw-bold" style={{ fontSize: 22, lineHeight: 1.15 }}>{employee?.name || employeeId}</h2>
+              <h2 className="text-white mb-0 fw-bold ep-fs-22 ep-line-115">{employee?.name || employeeId}</h2>
               <button
                 type="button"
-                className="btn btn-sm d-inline-flex align-items-center justify-content-center"
-                style={{ width: 26, height: 26, padding: 0, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 7, color: '#fff', fontSize: 13 }}
+                className="btn btn-sm d-inline-flex align-items-center justify-content-center ep-hero-more-btn"
                 aria-label="More actions"
               >
                 <i className="ri-more-2-fill" />
               </button>
             </div>
-            <p className="mb-1" style={{ color: 'rgba(255,255,255,0.55)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em' }}>{displayEmpCode}</p>
-            <p className="mb-2" style={{ color: 'rgba(255,255,255,0.78)', fontSize: 12.5 }}>
+            <p className="mb-1 ep-hero-empcode">{displayEmpCode}</p>
+            <p className="mb-2 ep-hero-subline">
               {/* Hero meta line — prefer the freshly-fetched empDetail
                   relations so newly-edited Department / Designation / work
                   type are reflected immediately, instead of the stale
                   navigation-state row that previously fell back to
                   hardcoded "Accounts" / "Associate Engineer" / "Full-time". */}
               {empDetail?.department?.name || employee?.department || '—'}
-              <span className="mx-2" style={{ opacity: 0.5 }}>·</span>
+              <span className="mx-2 ep-opacity-50">·</span>
               {empDetail?.designation?.name || employee?.designation || '—'}
-              <span className="mx-2" style={{ opacity: 0.5 }}>·</span>
+              <span className="mx-2 ep-opacity-50">·</span>
               {empDetail?.worker_type || empDetail?.work_type || empDetail?.time_type || '—'}
             </p>
             <div className="d-flex gap-2 flex-wrap mb-3">
@@ -2901,7 +1988,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <span key={r} className="ep-hero-pill ep-hero-pill-teal">{r}</span>
               ))}
               <span className="ep-hero-pill ep-hero-pill-active">
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e' }} />
+                <span className="ep-hero-status-dot" />
                 {statusTone.label}
               </span>
             </div>
@@ -2914,7 +2001,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <div>
                   <span className="ep-hero-meta-label">Email</span>{' '}
                   {empDetailLoading
-                    ? <Shimmer height={11} width={150} style={{ background: 'rgba(255,255,255,0.18)' }} />
+                    ? <Shimmer height={11} width={150} className="ep-hero-shimmer" />
                     : <span className="ep-hero-meta-value">{empDetail?.email || employee?.email || '—'}</span>}
                 </div>
               </div>
@@ -2923,7 +2010,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <div>
                   <span className="ep-hero-meta-label">Manager</span>{' '}
                   {empDetailLoading
-                    ? <Shimmer height={11} width={120} style={{ background: 'rgba(255,255,255,0.18)' }} />
+                    ? <Shimmer height={11} width={120} className="ep-hero-shimmer" />
                     : <span className="ep-hero-meta-value">{(() => {
                         const m = empDetail?.reporting_manager;
                         if (!m) return employee?.manager || '—';
@@ -2936,7 +2023,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <div>
                   <span className="ep-hero-meta-label">Mobile</span>{' '}
                   {empDetailLoading
-                    ? <Shimmer height={11} width={100} style={{ background: 'rgba(255,255,255,0.18)' }} />
+                    ? <Shimmer height={11} width={100} className="ep-hero-shimmer" />
                     : <span className="ep-hero-meta-value">{empDetail?.mobile || '—'}</span>}
                 </div>
               </div>
@@ -2945,7 +2032,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <div>
                   <span className="ep-hero-meta-label">Joined</span>{' '}
                   {empDetailLoading
-                    ? <Shimmer height={11} width={90} style={{ background: 'rgba(255,255,255,0.18)' }} />
+                    ? <Shimmer height={11} width={90} className="ep-hero-shimmer" />
                     : <span className="ep-hero-meta-value">{empDetail?.date_of_joining ? fmtDate(empDetail.date_of_joining) : '—'}</span>}
                 </div>
               </div>
@@ -2953,7 +2040,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           </Col>
 
           {/* Ring charts — pulled in toward the centre with auto-margin */}
-          <Col xs="auto" className="ms-auto" style={{ marginRight: 80 }}>
+          <Col xs="auto" className="ms-auto ep-mr-80">
             <div className="d-flex gap-3">
               <div>
                 <div
@@ -2996,7 +2083,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   onClick={() => setTab(t.key)}
                   className={`ep-tabbar-btn${on ? ' is-active' : ''}`}
                 >
-                  <span className="ep-tabbar-icon" style={{ background: t.color }}>
+                  <span className="ep-tabbar-icon" style={{ ['--ep-tab-color' as any]: t.color }}>
                     <i className={t.icon} />
                   </span>
                   {t.label}
@@ -3011,2347 +2098,27 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       <div className="ep-content-pane px-4 pt-3">
 
       {/* ── Tab: Profile Details ── */}
-      {tab === 'profile' && (
-        <>
-          {/* Personal Information — full-width row of 7 identity fields */}
-          <div className="ep-section-card-flat ep-section-card mb-3" style={{ borderTop: '3px solid #6366f1' }}>
-  <div
-    className="d-flex align-items-center gap-3 px-3 py-2"
-    style={{
-      borderBottom: '1px solid rgba(99,102,241,0.18)',
-      background: 'linear-gradient(135deg, rgba(99,102,241,0.10) 0%, rgba(99,102,241,0.03) 60%, rgba(99,102,241,0.01) 100%)',
-    }}
-  >
-    <span className="ep-section-icon" style={{ background: 'rgba(99,102,241,0.18)', color: '#4338ca' }}>
-      <i className="ri-user-line" />
-    </span>
-    <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Personal Information</h6>
-  </div>
-  <div className="px-3 py-3">
-    {/* Row 1 — three action tiles side by side: Profile Photo · Login
-        Password · Face Biometric. Each takes 1/3 of the width on md+
-        and stacks on smaller screens. Tiles are vertically aligned (no
-        h-100 stretch) and use compact padding so the row stays low. */}
-    <Row className="g-3 mb-3 align-items-center">
-      {/* Profile Photo tile */}
-      <Col md={4} sm={12}>
-        <div
-          className="d-flex align-items-center gap-2"
-          style={{
-            border: '1px dashed rgba(99,102,241,0.35)',
-            borderRadius: 12,
-            background: 'rgba(99,102,241,0.04)',
-            padding: '8px 12px',
-          }}
-        >
-          {profilePhotoSrc ? (
-            <img
-              src={profilePhotoSrc}
-              alt="profile"
-              className="rounded-circle flex-shrink-0"
-              style={{ width: 38, height: 38, objectFit: 'cover', border: '2px solid var(--vz-card-bg)' }}
-            />
-          ) : (
-            <div
-              className="rounded-circle d-inline-flex align-items-center justify-content-center text-muted flex-shrink-0"
-              style={{ width: 38, height: 38, background: 'var(--vz-secondary-bg)', border: '2px solid var(--vz-border-color)', fontSize: 16 }}
-            >
-              <i className="ri-user-line" />
-            </div>
-          )}
-          <div className="min-w-0 flex-grow-1">
-            <div className="fw-semibold" style={{ fontSize: 12 }}>Profile Photo</div>
-            <input
-              ref={profilePhotoInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null)}
-              className="form-control form-control-sm"
-              style={{ fontSize: 11, padding: '2px 6px', height: 26 }}
-            />
-          </div>
-          {profilePhotoFile && (
-            <div className="d-flex gap-1 flex-shrink-0">
-              <button
-                type="button"
-                className="btn btn-sm btn-success"
-                style={{ fontSize: 10.5, padding: '3px 8px' }}
-                onClick={handleSaveProfilePhoto}
-                disabled={savingPhoto}
-                title="Save photo"
-              >
-                {savingPhoto ? <span className="spinner-border spinner-border-sm" style={{ width: 10, height: 10 }} /> : <i className="ri-save-line" />}
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm btn-outline-secondary"
-                style={{ fontSize: 10.5, padding: '3px 8px' }}
-                onClick={() => {
-                  setProfilePhotoFile(null);
-                  restoreSavedProfilePhoto();
-                }}
-                title="Cancel"
-              >
-                <i className="ri-close-line" />
-              </button>
-            </div>
-          )}
-        </div>
-      </Col>
-
-      {/* Change Password tile */}
-      <Col md={4} sm={12}>
-        <div
-          className="d-flex align-items-center gap-2"
-          style={{
-            border: '1px solid rgba(244,63,94,0.25)',
-            borderRadius: 12,
-            background: 'rgba(244,63,94,0.05)',
-            padding: '8px 12px',
-          }}
-        >
-          <span className="ep-section-icon flex-shrink-0" style={{ background: 'rgba(244,63,94,0.18)', color: '#be123c', width: 30, height: 30, fontSize: 14 }}>
-            <i className="ri-shield-keyhole-line" />
-          </span>
-          <div className="min-w-0 flex-grow-1">
-            <div className="fw-semibold" style={{ fontSize: 12 }}>Login Password</div>
-            <small className="text-muted" style={{ fontSize: 10, lineHeight: 1.2 }}>Rotate regularly. Email on change.</small>
-          </div>
-          <Button
-            color="danger"
-            size="sm"
-            className="d-inline-flex align-items-center gap-1 flex-shrink-0"
-            style={{ fontSize: 10.5, padding: '3px 10px' }}
-            onClick={() => { resetPwForm(); setPwOpen(true); }}
-          >
-            <i className="ri-lock-password-line" /> Change
-          </Button>
-        </div>
-      </Col>
-
-      {/* Face Biometric tile */}
-      <Col md={4} sm={12}>
-        <div
-          className="d-flex align-items-center gap-2"
-          style={{
-            border: '1px solid rgba(99,102,241,0.25)',
-            borderRadius: 12,
-            background: 'rgba(99,102,241,0.05)',
-            padding: '8px 12px',
-          }}
-        >
-          <span className="ep-section-icon flex-shrink-0" style={{ background: 'rgba(99,102,241,0.18)', color: '#4338ca', width: 30, height: 30, fontSize: 14 }}>
-            <i className="ri-user-smile-line" />
-          </span>
-          <div className="min-w-0 flex-grow-1">
-            <div className="fw-semibold" style={{ fontSize: 12 }}>Face Biometric</div>
-            <small className="text-muted" style={{ fontSize: 10, lineHeight: 1.2 }}>Register once to clock in.</small>
-          </div>
-          <Button
-            color="primary"
-            size="sm"
-            className="d-inline-flex align-items-center gap-1 flex-shrink-0"
-            style={{ fontSize: 10.5, padding: '3px 10px' }}
-            onClick={() => setFaceRegOpen(true)}
-          >
-            <i className="ri-camera-line" /> Register
-          </Button>
-        </div>
-      </Col>
-    </Row>
-
-    {/* Row 2 — seven identity fields in a single horizontal row on lg+.
-        While empDetail is loading each value cell renders a shimmer
-        placeholder so the page doesn't flash "—" before the API resolves. */}
-    <Row className="g-4">
-      {[
-        { label: 'First Name',  value: empDetail?.first_name || (employee?.name || '').split(' ')[0] },
-        { label: 'Middle Name', value: empDetail?.middle_name },
-        { label: 'Last Name',   value: empDetail?.last_name || (employee?.name || '').split(' ').slice(1).join(' ') },
-        { label: 'Display Name', value: empDetail?.display_name || employee?.name },
-        { label: 'Date of Birth', value: fmtDate(empDetail?.date_of_birth), monospace: true },
-        { label: 'Gender', value: empDetail?.gender },
-        { label: 'Nationality', value: empDetail?.nationality_country?.name },
-      ].map((f, i) => (
-        <Col key={i} lg={3} md={4} sm={6}>
-          <div className="ep-field-label">{f.label}</div>
-          {empDetailLoading
-            ? <Shimmer height={16} width="70%" />
-            : <div className={`ep-field-value${f.monospace ? ' font-monospace' : ''}`}>{(f.value && String(f.value).trim()) ? f.value : '—'}</div>}
-        </Col>
-      ))}
-    </Row>
-  </div>
-</div>
-
-          {/* Contact Information — 4 fields */}
-          <div className="ep-section-card-flat ep-section-card mb-3" style={{ borderTop: '3px solid #299cdb' }}>
-            <div
-              className="d-flex align-items-center gap-3 px-3 py-2"
-              style={{
-                borderBottom: '1px solid rgba(41,156,219,0.18)',
-                background: 'linear-gradient(135deg, rgba(41,156,219,0.12) 0%, rgba(41,156,219,0.03) 60%, rgba(41,156,219,0.01) 100%)',
-              }}
-            >
-              <span className="ep-section-icon" style={{ background: 'rgba(41,156,219,0.18)', color: '#0c63b0' }}>
-                <i className="ri-phone-line" />
-              </span>
-              <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Contact Information</h6>
-            </div>
-            <div className="px-3 py-3">
-              <Row className="g-4">
-                <Col md={3}><div className="ep-field-label">Work Email</div><div className="ep-field-value">{empDetail?.email || employee?.email || '—'}</div></Col>
-                <Col md={3}><div className="ep-field-label">Mobile</div><div className="ep-field-value font-monospace">{empDetail?.mobile || '—'}</div></Col>
-                <Col md={3}><div className="ep-field-label">Work Country</div><div className="ep-field-value">{empDetail?.work_country?.name || '—'}</div></Col>
-                <Col md={3}><div className="ep-field-label">Reporting Manager</div><div className="ep-field-value">{(() => {
-                  const mgr = empDetail?.reporting_manager;
-                  if (mgr) {
-                    return mgr.display_name
-                      || [mgr.first_name, mgr.middle_name, mgr.last_name].filter(Boolean).join(' ')
-                      || '—';
-                  }
-                  return employee?.manager || '—';
-                })()}</div></Col>
-              </Row>
-            </div>
-          </div>
-
-          {/* Address Details — Current + Permanent side-by-side. Gradient
-              tint is restricted to the header strip; the body sits on plain
-              white so the field rows stay readable. */}
-          <div className="ep-section-card-flat ep-section-card mb-3" style={{ borderTop: '3px solid #0ab39c' }}>
-            <div
-              className="d-flex align-items-center gap-3 px-3 py-2"
-              style={{
-                borderBottom: '1px solid rgba(10,179,156,0.18)',
-                background: 'linear-gradient(135deg, rgba(10,179,156,0.12) 0%, rgba(10,179,156,0.04) 60%, rgba(10,179,156,0.01) 100%)',
-              }}
-            >
-              <span className="ep-section-icon" style={{ background: 'rgba(10,179,156,0.18)', color: '#0a8a78' }}>
-                <i className="ri-map-pin-line" />
-              </span>
-              <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Address Details</h6>
-            </div>
-            <div className="px-3 py-3">
-              <Row className="g-4">
-                <Col md={6}>
-                  <div className="ep-addr-marker" style={{ color: '#0ab39c' }}>
-                    <span className="dot" style={{ background: '#0ab39c' }} /> Current Address
-                  </div>
-                  <Row className="g-3">
-                    <Col><div className="ep-field-label">Address</div><div className="ep-field-value">{[empDetail?.address_line1, empDetail?.address_line2].filter(Boolean).join(', ') || '—'}</div></Col>
-                    <Col><div className="ep-field-label">City</div><div className="ep-field-value">{empDetail?.city || '—'}</div></Col>
-                    <Col><div className="ep-field-label">State</div><div className="ep-field-value">{empDetail?.state?.name || '—'}</div></Col>
-                    <Col><div className="ep-field-label">Country</div><div className="ep-field-value">{empDetail?.country?.name || '—'}</div></Col>
-                    <Col><div className="ep-field-label">Pincode</div><div className="ep-field-value font-monospace">{empDetail?.pincode || '—'}</div></Col>
-                  </Row>
-                </Col>
-                <Col md={6}>
-                  <div className="ep-addr-marker" style={{ color: '#0ab39c' }}>
-                    <span className="dot" style={{ background: '#0ab39c' }} /> Permanent Address
-                  </div>
-                  <Row className="g-3">
-                    <Col><div className="ep-field-label">Address</div><div className="ep-field-value">{[empDetail?.perm_address_line1, empDetail?.perm_address_line2].filter(Boolean).join(', ') || '—'}</div></Col>
-                    <Col><div className="ep-field-label">City</div><div className="ep-field-value">{empDetail?.perm_city || '—'}</div></Col>
-                    <Col><div className="ep-field-label">State</div><div className="ep-field-value">{empDetail?.perm_state?.name || '—'}</div></Col>
-                    <Col><div className="ep-field-label">Country</div><div className="ep-field-value">{empDetail?.perm_country?.name || '—'}</div></Col>
-                    <Col><div className="ep-field-label">Pincode</div><div className="ep-field-value font-monospace">{empDetail?.perm_pincode || '—'}</div></Col>
-                  </Row>
-                </Col>
-              </Row>
-            </div>
-          </div>
-
-          {/* Bottom row: Work Experience | Profile Completion | KYC Documents */}
-          <Row className="g-3 mb-3 align-items-stretch">
-            <Col xl={4}>
-              <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #f59e0b' }}>
-                <div
-                  className="d-flex align-items-center gap-3 px-3 py-2"
-                  style={{
-                    borderBottom: '1px solid rgba(245,158,11,0.18)',
-                    background: 'linear-gradient(135deg, rgba(245,158,11,0.14) 0%, rgba(245,158,11,0.04) 60%, rgba(245,158,11,0.01) 100%)',
-                  }}
-                >
-                  <span className="ep-section-icon" style={{ background: 'rgba(245,158,11,0.18)', color: '#a16207' }}>
-                    <i className="ri-briefcase-line" />
-                  </span>
-                  <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Work Experience</h6>
-                </div>
-                <div className="px-3 py-3 flex-grow-1">
-                  {/* REAL work experience (was hardcoded sample data). Sourced
-                      from the employee's previous_employments + the
-                      has_prior_experience flag — shows "Fresher" / "Not
-                      Provided" when no experience was entered. */}
-                  {(() => {
-                    const prev: any[] = Array.isArray(empDetail?.previous_employments) ? empDetail.previous_employments : [];
-                    const hasExp = empDetail?.has_prior_experience === true || prev.length > 0;
-                    let months = 0;
-                    prev.forEach((p) => {
-                      if (!p?.start_date) return;
-                      const s = new Date(p.start_date);
-                      const e = p.end_date ? new Date(p.end_date) : new Date();
-                      if (!Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime()) && e >= s) {
-                        months += (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
-                      }
-                    });
-                    const totalExp = months > 0 ? `${Math.floor(months / 12)} yrs ${months % 12} mos` : (hasExp ? '—' : 'Fresher');
-                    const last = prev[0] || null;
-                    const notProvided = <span className="text-muted fst-italic">Not Provided</span>;
-                    return (
-                      <Row className="g-3">
-                        <Col xs={6}>
-                          <div className="ep-field-label">Status</div>
-                          <div className="ep-field-value">{hasExp ? 'Experienced' : 'Fresher'}</div>
-                        </Col>
-                        <Col xs={6}>
-                          <div className="ep-field-label">Total Experience</div>
-                          <div className="ep-field-value">{totalExp}</div>
-                        </Col>
-                        <Col xs={6}>
-                          <div className="ep-field-label">Last Company</div>
-                          <div className="ep-field-value">{last?.company_name || notProvided}</div>
-                        </Col>
-                        <Col xs={6}>
-                          <div className="ep-field-label">Last Designation</div>
-                          <div className="ep-field-value">{last?.job_title || notProvided}</div>
-                        </Col>
-                      </Row>
-                    );
-                  })()}
-                </div>
-              </div>
-            </Col>
-
-            <Col xl={4}>
-              <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ background: 'linear-gradient(135deg, rgba(168,85,247,0.12) 0%, rgba(99,102,241,0.06) 60%, rgba(168,85,247,0.04) 100%)', border: '1px solid rgba(168,85,247,0.18)', borderTop: '3px solid #a855f7' }}>
-                <div className="px-3 pt-3 pb-2 d-flex align-items-center gap-3">
-                  <div
-                    className="d-inline-flex align-items-center justify-content-center"
-                    style={{
-                      width: 44, height: 44, borderRadius: '50%',
-                      background: `conic-gradient(#a855f7 ${profilePct}%, rgba(168,85,247,0.18) 0)`,
-                      flexShrink: 0,
-                      position: 'relative',
-                    }}
-                  >
-                    <span
-                      style={{
-                        position: 'absolute', inset: 4, borderRadius: '50%',
-                        background: '#ffffff',
-                        display: 'flex', alignItems: 'baseline', justifyContent: 'center',
-                        fontWeight: 800, color: '#7c3aed',
-                        fontSize: 12, gap: 1, paddingTop: 4,
-                      }}
-                    >
-                      {profilePct}<span style={{ fontSize: 7.5, fontWeight: 700 }}>%</span>
-                    </span>
-                  </div>
-                  <div className="flex-grow-1">
-                    <h6 className="mb-1 fw-bold" style={{ color: '#7c3aed', fontSize: 12 }}>Profile Completion</h6>
-                    <small className="text-muted" style={{ fontSize: 12 }}>
-                      In Progress · {profilePct}% done
-                    </small>
-                  </div>
-                </div>
-                {/* Full-width striped progress bar with floating circular
-                    badge above the fill end. Locked to the card's violet
-                    theme so it reads as a continuation of the gradient
-                    background instead of a separate tier-colored band. */}
-                <div className="px-3 pb-2">
-                  {(() => {
-                    const p = profilePct;
-                    const VIOLET = { dark: '#7c3aed', light: '#a855f7' };
-                    const badgeLeft = Math.max(8, Math.min(92, p));
-                    return (
-                      <div style={{ position: 'relative', width: '100%', paddingTop: 0 }} title={`Profile ${p}% complete`}>
-                        {/* Floating badge + downward pointer */}
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: -33,
-                            left: `${badgeLeft}%`,
-                            transform: 'translateX(-50%)',
-                            textAlign: 'center',
-                          }}
-                        >
-                          <div
-                            className="d-flex align-items-center justify-content-center fw-bold"
-                            style={{
-                              width: 30, height: 30, borderRadius: '50%',
-                              background: `linear-gradient(135deg, ${VIOLET.dark}, ${VIOLET.light})`,
-                              color: '#fff', fontSize: 10.5,
-                              boxShadow: `0 6px 14px ${VIOLET.dark}55, inset 0 1px 0 rgba(255,255,255,0.20)`,
-                              border: '2px solid #fff',
-                            }}
-                          >
-                            {p}%
-                          </div>
-                          <div
-                            style={{
-                              width: 0, height: 0, margin: '0 auto',
-                              borderLeft: '5px solid transparent',
-                              borderRight: '5px solid transparent',
-                              borderTop: `6px solid ${VIOLET.dark}`,
-                            }}
-                          />
-                        </div>
-
-                        {/* Track + striped fill */}
-                        <div
-                          style={{
-                            width: '100%', height: 10,
-                            borderRadius: 999,
-                            background: 'rgba(168,85,247,0.18)',
-                            overflow: 'hidden',
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: `${p}%`, height: '100%',
-                              borderRadius: 999,
-                              background: `repeating-linear-gradient(-45deg, rgba(255,255,255,0.32) 0 6px, transparent 6px 12px), linear-gradient(90deg, ${VIOLET.dark}, ${VIOLET.light})`,
-                              transition: 'width .35s ease',
-                            }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-                {/* 4 mini-tiles */}
-                <div className="px-3 pb-3 flex-grow-1">
-                  <Row className="g-2">
-                    <Col xs={6}>
-                      <div className="px-3 py-2" style={{ borderRadius: 10, background: 'rgba(34,197,94,0.10)', border: '1px solid rgba(34,197,94,0.25)' }}>
-                        <div className="ep-field-label" style={{ color: '#108548' }}>Status</div>
-                        <div className="ep-field-value d-inline-flex align-items-center gap-1" style={{ color: '#108548', fontSize: 13 }}>
-                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
-                          {employee?.enabled === false ? 'Disabled' : 'Active'}
-                        </div>
-                      </div>
-                    </Col>
-                    <Col xs={6}>
-                      <div className="px-3 py-2" style={{ borderRadius: 10, background: 'rgba(99,102,241,0.10)', border: '1px solid rgba(99,102,241,0.22)' }}>
-                        <div className="ep-field-label" style={{ color: '#4338ca' }}>Emp Type</div>
-                        <div className="ep-field-value" style={{ color: '#4338ca', fontSize: 13 }}>Full-time</div>
-                      </div>
-                    </Col>
-                    <Col xs={6}>
-                      <div className="px-3 py-2" style={{ borderRadius: 10, background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.25)' }}>
-                        <div className="ep-field-label" style={{ color: '#a16207' }}>Joined</div>
-                        <div className="ep-field-value font-monospace" style={{ color: '#a16207', fontSize: 13 }}>03-Nov-2023</div>
-                      </div>
-                    </Col>
-                    <Col xs={6}>
-                      <div className="px-3 py-2" style={{ borderRadius: 10, background: 'rgba(20,184,166,0.10)', border: '1px solid rgba(20,184,166,0.25)' }}>
-                        <div className="ep-field-label" style={{ color: '#0a716a' }}>Department</div>
-                        <div className="ep-field-value" style={{ color: '#0a716a', fontSize: 13 }}>{employee?.department || '—'}</div>
-                      </div>
-                    </Col>
-                  </Row>
-                </div>
-              </div>
-            </Col>
-
-            <Col xl={4}>
-              <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #6366f1' }}>
-                <div
-                  className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
-                  style={{
-                    borderBottom: '1px solid rgba(99,102,241,0.18)',
-                    background: 'linear-gradient(135deg, rgba(99,102,241,0.14) 0%, rgba(99,102,241,0.04) 60%, rgba(99,102,241,0.01) 100%)',
-                  }}
-                >
-                  <div className="d-flex align-items-center gap-3">
-                    <span className="ep-section-icon" style={{ background: 'rgba(99,102,241,0.18)', color: '#4338ca' }}>
-                      <i className="ri-shield-check-line" />
-                    </span>
-                    <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>KYC Documents</h6>
-                  </div>
-                  <span className="badge rounded-pill fw-semibold px-2 py-1" style={{ background: 'rgba(99,102,241,0.16)', color: '#4338ca', fontSize: 10.5 }}>3 / 3</span>
-                </div>
-                <div className="px-3 py-3 flex-grow-1">
-                  {[
-                    { label: 'Aadhaar Card',   status: 'Uploaded' },
-                    { label: 'PAN Card',       status: 'Uploaded' },
-                    { label: 'Passport Photo', status: 'Uploaded' },
-                  ].map(d => {
-                    const uploaded = d.status === 'Uploaded';
-                    return (
-                      <div key={d.label} className="d-flex align-items-center gap-2 px-2 py-1">
-                        <span
-                          className="d-inline-flex align-items-center justify-content-center"
-                          style={{
-                            width: 18, height: 18, borderRadius: 5,
-                            background: uploaded ? '#3b82f6' : '#f59e0b',
-                            color: '#fff', fontSize: 12,
-                            flexShrink: 0,
-                          }}
-                        >
-                          <i className={uploaded ? 'ri-check-line' : 'ri-time-line'} />
-                        </span>
-                        <div className="flex-grow-1" style={{ fontSize: 12.5, fontWeight: 600 }}>{d.label}</div>
-                        <span
-                          className="d-inline-flex align-items-center fw-semibold"
-                          style={{
-                            fontSize: 10, padding: '2px 9px', borderRadius: 999,
-                            background: uploaded ? 'rgba(59,130,246,0.10)' : 'rgba(245,158,11,0.12)',
-                            color:      uploaded ? '#1d4ed8' : '#a16207',
-                            border:     `1px solid ${uploaded ? 'rgba(59,130,246,0.25)' : 'rgba(245,158,11,0.25)'}`,
-                          }}
-                        >
-                          {d.status}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </Col>
-          </Row>
-
-        </>
-      )}
+      {tab === 'profile' && <ProfileTab />}
 
       {/* ── Tab: Job Details ── */}
-      {tab === 'job' && (
-        <>
-          {/* Employment Details — single row of 7 fields */}
-          <div className="ep-section-card-flat ep-section-card mb-3" style={{ borderTop: '3px solid #6366f1' }}>
-            <div
-              className="d-flex align-items-center gap-3 px-3 py-2"
-              style={{
-                borderBottom: '1px solid rgba(99,102,241,0.18)',
-                background: 'linear-gradient(135deg, rgba(99,102,241,0.14) 0%, rgba(99,102,241,0.04) 60%, rgba(99,102,241,0.01) 100%)',
-              }}
-            >
-              <span className="ep-section-icon" style={{ background: 'rgba(99,102,241,0.18)', color: '#4338ca' }}>
-                <i className="ri-briefcase-line" />
-              </span>
-              <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Employment Details</h6>
-            </div>
-            <div className="px-3 py-3">
-              <Row className="g-4">
-                <Col>
-                  <div className="ep-field-label">Employee Number</div>
-                  <span className=" fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '4px 12px', borderRadius: 8, fontSize: 10 }}>{empDetail?.emp_code || employeeId}</span>
-                </Col>
-                <Col><div className="ep-field-label">Joining Date</div><div className="ep-field-value " style={{ fontSize: 11 }}>{fmtDate(empDetail?.date_of_joining)}</div></Col>
-                <Col><div className="ep-field-label">Job Title (Primary)</div><div className="ep-field-value">{empDetail?.designation?.name || employee?.designation || '—'}</div></Col>
-                <Col>
-                  <div className="ep-field-label">Job Title (Secondary)</div>
-                  {ancillaryList.length > 0 ? (
-                    <div className="d-flex flex-wrap gap-1">
-                      {ancillaryList.map(r => (
-                        <span
-                          key={r}
-                          className="d-inline-flex align-items-center fw-semibold"
-                          style={{
-                            fontSize: 11, padding: '2px 9px', borderRadius: 999,
-                            background: 'rgba(20,184,166,0.10)', color: '#0a716a',
-                            border: '1px solid rgba(20,184,166,0.25)',
-                          }}
-                        >
-                          {r}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="ep-field-value text-muted fw-normal">—</div>
-                  )}
-                </Col>
-                <Col><div className="ep-field-label">Employment Status</div><div className="ep-field-value">{empDetail?.status || (employee?.enabled === false ? 'Disabled' : 'Active')}</div></Col>
-                <Col><div className="ep-field-label">Worker Type</div><div className="ep-field-value">{empDetail?.worker_type || empDetail?.work_type || '—'}</div></Col>
-                <Col><div className="ep-field-label">Time Type</div><div className="ep-field-value">{empDetail?.time_type || empDetail?.work_type || '—'}</div></Col>
-              </Row>
-            </div>
-          </div>
-
-          {/* Organisational Structure — 4 fields full width */}
-          <div className="ep-section-card-flat ep-section-card mb-3" style={{ borderTop: '3px solid #299cdb' }}>
-            <div
-              className="d-flex align-items-center gap-3 px-3 py-2"
-              style={{
-                borderBottom: '1px solid rgba(41,156,219,0.20)',
-                background: 'linear-gradient(135deg, rgba(41,156,219,0.14) 0%, rgba(41,156,219,0.04) 60%, rgba(41,156,219,0.01) 100%)',
-              }}
-            >
-              <span className="ep-section-icon" style={{ background: 'rgba(41,156,219,0.18)', color: '#0c63b0' }}>
-                <i className="ri-building-2-line" />
-              </span>
-              <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Organisational Structure</h6>
-            </div>
-            <div className="px-3 py-3">
-              <Row className="g-4">
-                <Col md={3}><div className="ep-field-label">Legal Entity</div><div className="ep-field-value">{empDetail?.legal_entity?.entity_name || '—'}</div></Col>
-                <Col md={3}><div className="ep-field-label">Department</div><div className="ep-field-value">{empDetail?.department?.name || employee?.department || '—'}</div></Col>
-                <Col md={3}><div className="ep-field-label">Location</div><div className="ep-field-value">{empDetail?.location || '—'}</div></Col>
-                <Col md={3}>
-                  <div className="ep-field-label">Reporting Manager</div>
-                  <div className="ep-field-value">{(() => {
-                    const m = empDetail?.reporting_manager;
-                    if (!m) return employee?.manager || '—';
-                    return m.display_name || [m.first_name, m.middle_name, m.last_name].filter(Boolean).join(' ') || '—';
-                  })()}</div>
-                </Col>
-              </Row>
-            </div>
-          </div>
-
-          {/* Row of 3 cards: Role & Positioning | Employment Terms | Attendance & Time */}
-          <Row className="g-3 mb-3 align-items-stretch">
-            <Col xl={4}>
-              <div className="ep-section-card-flat ep-section-card h-100" style={{ borderTop: '3px solid #0ab39c' }}>
-                <div
-                  className="d-flex align-items-center gap-3 px-3 py-2"
-                  style={{
-                    borderBottom: '1px solid rgba(10,179,156,0.18)',
-                    background: 'linear-gradient(135deg, rgba(10,179,156,0.14) 0%, rgba(10,179,156,0.04) 60%, rgba(10,179,156,0.01) 100%)',
-                  }}
-                >
-                  <span className="ep-section-icon" style={{ background: 'rgba(10,179,156,0.18)', color: '#0a8a78' }}>
-                    <i className="ri-edit-line" />
-                  </span>
-                  <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Role &amp; Positioning</h6>
-                </div>
-                <div className="px-3 py-3">
-                  <Row className="g-4">
-                    <Col xs={4}><div className="ep-field-label">Primary Role</div><div className="ep-field-value">{employee?.primaryRole || 'Executive'}</div></Col>
-                    <Col xs={4}>
-                      <div className="ep-field-label">Ancillary Role</div>
-                      {ancillaryList.length > 0 ? (
-                        <div className="d-flex flex-wrap gap-1">
-                          {ancillaryList.map(r => (
-                            <span
-                              key={r}
-                              className="d-inline-flex align-items-center fw-semibold"
-                              style={{
-                                fontSize: 9, padding: '2px 8px', borderRadius: 999,
-                                background: 'rgba(20,184,166,0.10)', color: '#0a716a',
-                                border: '1px solid rgba(20,184,166,0.25)',
-                              }}
-                            >
-                              {r}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="ep-field-value text-muted fw-normal">—</div>
-                      )}
-                    </Col>
-                    <Col xs={4}><div className="ep-field-label">Employee Level</div><div className="ep-field-value">L3 — Mid</div></Col>
-                  </Row>
-                </div>
-              </div>
-            </Col>
-            <Col xl={4}>
-              <div className="ep-section-card-flat ep-section-card h-100" style={{ borderTop: '3px solid #f59e0b' }}>
-                <div
-                  className="d-flex align-items-center gap-3 px-3 py-2"
-                  style={{
-                    borderBottom: '1px solid rgba(245,158,11,0.20)',
-                    background: 'linear-gradient(135deg, rgba(245,158,11,0.14) 0%, rgba(245,158,11,0.04) 60%, rgba(245,158,11,0.01) 100%)',
-                  }}
-                >
-                  <span className="ep-section-icon" style={{ background: 'rgba(245,158,11,0.18)', color: '#a16207' }}>
-                    <i className="ri-file-list-3-line" />
-                  </span>
-                  <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Employment Terms</h6>
-                </div>
-                <div className="px-3 py-3">
-                  <Row className="g-3">
-                    <Col xs={6}><div className="ep-field-label">Probation Policy</div><div className="ep-field-value">{empDetail?.probation_policy || '—'}</div></Col>
-                    <Col xs={6}><div className="ep-field-label">Probation Duration</div><div className="ep-field-value">{empDetail?.probation_months ? `${empDetail.probation_months} Months` : '—'}</div></Col>
-                    <Col xs={6}><div className="ep-field-label">Notice Period</div><div className="ep-field-value">{empDetail?.notice_period || (empDetail?.notice_period_days ? `${empDetail.notice_period_days} Days` : '—')}</div></Col>
-                    <Col xs={6}><div className="ep-field-label">Contract Status</div><div className="ep-field-value">{empDetail?.contract_status || empDetail?.work_type || '—'}</div></Col>
-                  </Row>
-                </div>
-              </div>
-            </Col>
-            <Col xl={4}>
-              <div className="ep-section-card-flat ep-section-card h-100" style={{ borderTop: '3px solid #299cdb' }}>
-                <div
-                  className="d-flex align-items-center gap-3 px-3 py-2"
-                  style={{
-                    borderBottom: '1px solid rgba(41,156,219,0.20)',
-                    background: 'linear-gradient(135deg, rgba(41,156,219,0.14) 0%, rgba(41,156,219,0.04) 60%, rgba(41,156,219,0.01) 100%)',
-                  }}
-                >
-                  <span className="ep-section-icon" style={{ background: 'rgba(41,156,219,0.18)', color: '#0c63b0' }}>
-                    <i className="ri-time-line" />
-                  </span>
-                  <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Attendance &amp; Time</h6>
-                </div>
-                <div className="px-3 py-3">
-                  <Row className="g-3">
-                    <Col xs={4}><div className="ep-field-label">Shift</div><div className="ep-field-value">Morning Shift</div></Col>
-                    <Col xs={4}><div className="ep-field-label">Weekly Off</div><div className="ep-field-value">Sat &amp; Sun</div></Col>
-                    <Col xs={4}><div className="ep-field-label">Leave Plan</div><div className="ep-field-value">Default Leave Plan</div></Col>
-                    <Col xs={4}><div className="ep-field-label">Holiday Calendar</div><div className="ep-field-value">Maharashtra 2026</div></Col>
-                    <Col xs={4}><div className="ep-field-label">Time Tracking</div><div className="ep-field-value">Enabled</div></Col>
-                    <Col xs={4}><div className="ep-field-label">Attendance No.</div><div className="ep-field-value font-monospace">{employeeId}</div></Col>
-                    <Col xs={4}><div className="ep-field-label">Penalization</div><div className="ep-field-value">Default</div></Col>
-                    <Col xs={4}><div className="ep-field-label">Overtime Policy</div><div className="ep-field-value">Standard OT</div></Col>
-                    <Col xs={4}><div className="ep-field-label">Shift Allowance</div><div className="ep-field-value">None</div></Col>
-                  </Row>
-                </div>
-              </div>
-            </Col>
-          </Row>
-
-          {/* Asset Details */}
-          <div className="ep-section-card-flat ep-section-card mb-3" style={{ borderTop: '3px solid #f59e0b' }}>
-            <div
-              className="d-flex align-items-center gap-3 px-3 py-2"
-              style={{
-                borderBottom: '1px solid rgba(245,158,11,0.20)',
-                background: 'linear-gradient(135deg, rgba(245,158,11,0.14) 0%, rgba(245,158,11,0.04) 60%, rgba(245,158,11,0.01) 100%)',
-              }}
-            >
-              <span className="ep-section-icon" style={{ background: 'rgba(245,158,11,0.18)', color: '#a16207' }}>
-                <i className="ri-computer-line" />
-              </span>
-              <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Asset Details</h6>
-            </div>
-            <div className="px-3 py-3">
-              <Row className="g-3">
-                {(() => {
-                  const laptop = empDetail?.laptop_asset;
-                  const mobile = empDetail?.mobile_asset;
-                  // `other_assets_resolved` is an accessor on the Employee
-                  // model that joins the selected master_asset rows. Falls
-                  // back to the raw id array if the accessor wasn't loaded.
-                  const otherAssets: Array<{ asset_name?: string; code?: string }> =
-                    Array.isArray(empDetail?.other_assets_resolved)
-                      ? empDetail.other_assets_resolved
-                      : [];
-                  const otherSummary = otherAssets.length > 0
-                    ? otherAssets.map(a => a.asset_name || a.code).filter(Boolean).join(', ')
-                    : '—';
-                  return (
-                    <>
-                      <Col md={3}><div className="ep-field-label">Laptop Assigned</div><div className="ep-field-value">{empDetail?.laptop_assigned || (laptop ? 'Yes' : 'No')}</div></Col>
-                      <Col md={3}>
-                        <div className="ep-field-label">Laptop Asset ID</div>
-                        {laptop ? (
-                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '4px 12px', borderRadius: 8, fontSize: 9 }}>{laptop.code || laptop.asset_number || `LAP-${laptop.id}`}</span>
-                        ) : <div className="ep-field-value text-muted fw-normal">—</div>}
-                      </Col>
-                      <Col md={3}><div className="ep-field-label">Laptop Type</div><div className="ep-field-value">{laptop?.asset_name || '—'}</div></Col>
-                      <Col md={3}>
-                        <div className="ep-field-label">Mobile Device</div>
-                        {mobile ? (
-                          <div className="ep-field-value">{mobile.asset_name || mobile.code || '—'}</div>
-                        ) : <div className="ep-field-value text-muted fw-normal">—</div>}
-                      </Col>
-
-                      <Col md={6}><div className="ep-field-label">Other Assets</div><div className="ep-field-value">{otherSummary}</div></Col>
-                      <Col md={3}><div className="ep-field-label">Asset Issued Date</div><div className="ep-field-value font-monospace">{fmtDate(empDetail?.asset_issued_date)}</div></Col>
-                      <Col md={3}><div className="ep-field-label">Return Required</div><div className="ep-field-value">{empDetail?.return_required || '—'}</div></Col>
-                    </>
-                  );
-                })()}
-              </Row>
-            </div>
-          </div>
-        </>
-      )}
+      {tab === 'job' && <JobTab />}
 
       {/* ── Tab: Attendance — LIVE (face-driven, multi-punch). The
            ComingSoonShell wrapper was removed; the panel below renders
            real /api/attendance/employee/{id}/summary data. ── */}
       {tab === 'attendance' && (
-        <AttendanceTabPanel employeeId={employeeId} />
+        <AttendanceTab employeeId={employeeId} />
       )}
 
-      {/* Legacy mock-data block below was the "Coming Soon" placeholder.
-          Kept commented in case design wants to A/B back. Safe to delete
-          after the real panel ships. */}
-      {false && (
-        <ComingSoonShell title="Attendance" subtitle="Punch-in, biometric sync, compliance score">
-          <Row className="g-3 mb-3 align-items-stretch">
-            <Col xl><KpiTile label="Present Days"    value={<AnimatedNumber value={14} />}            sub="This month"      icon="ri-checkbox-circle-line" gradient={GRAD_SUCCESS} tint="#ecfaf3" /></Col>
-            <Col xl><KpiTile label="Late Marks"      value={<AnimatedNumber value={1} />}             sub="This month"      icon="ri-time-line"            gradient={GRAD_WARNING} tint="#fff7e6" /></Col>
-            <Col xl><KpiTile label="Missing Biometric" value={<AnimatedNumber value={1} />}           sub="Entries this month" icon="ri-error-warning-line" gradient={GRAD_DANGER}  tint="#fff1ed" /></Col>
-            <Col xl><KpiTile label="Compliance Score" value={<AnimatedNumber value={93} suffix="%" />} sub="Attendance rate" icon="ri-shield-check-line"   gradient={GRAD_INFO}    tint="#eaf6fd" /></Col>
-            <Col xl><KpiTile label="Total Leaves"    value={<AnimatedNumber value={0} />}             sub="This month"      icon="ri-calendar-todo-line"   gradient={GRAD_PURPLE}  tint="#f3eeff" /></Col>
-          </Row>
-
-          <Row className="g-3 mb-3 align-items-stretch">
-            <Col xl={6}>
-              <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #0ab39c' }}>
-                <div
-                  className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
-                  style={{
-                    borderBottom: '1px solid rgba(10,179,156,0.18)',
-                    background: 'linear-gradient(135deg, rgba(10,179,156,0.14) 0%, rgba(10,179,156,0.04) 60%, rgba(10,179,156,0.01) 100%)',
-                  }}
-                >
-                  <div className="d-flex align-items-center gap-2">
-                    <span className="ep-section-icon" style={{ background: 'rgba(10,179,156,0.18)', color: '#0a8a78' }}>
-                      <i className="ri-calendar-check-line" />
-                    </span>
-                    <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Today's Updated Record</h6>
-                  </div>
-                  <small className="text-muted" style={{ fontSize: 11 }}>Mon, 21-Apr-2026</small>
-                </div>
-                <div className="px-3 py-3 flex-grow-1">
-                  <span className="d-inline-flex align-items-center gap-1 fw-semibold mb-2" style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, background: '#d6f4e3', color: '#108548' }}>
-                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981' }} /> Present
-                  </span>
-                  <Row className="g-2 mb-2">
-                    <Col xs={6}>
-                      <div className="px-2 py-2" style={{ borderRadius: 8, background: '#ecfaf3', border: '1px solid #bce8d2' }}>
-                        <p className="mb-1 fw-semibold" style={{ fontSize: 10, color: '#0a8a78', letterSpacing: '0.06em', textTransform: 'uppercase' }}>» First In</p>
-                        <h5 className="mb-0 fw-bold" style={{ color: '#108548', fontSize: 18 }}>07:01 <small style={{ fontSize: 10 }}>AM</small></h5>
-                      </div>
-                    </Col>
-                    <Col xs={6}>
-                      <div className="px-2 py-2" style={{ borderRadius: 8, background: '#eaf6fd', border: '1px solid #b8dcef' }}>
-                        <p className="mb-1 fw-semibold" style={{ fontSize: 10, color: '#0c63b0', letterSpacing: '0.06em', textTransform: 'uppercase' }}>» Last Out</p>
-                        <h5 className="mb-0 fw-bold" style={{ color: '#0c63b0', fontSize: 18 }}>04:02 <small style={{ fontSize: 10 }}>PM</small></h5>
-                      </div>
-                    </Col>
-                  </Row>
-                  <div className="d-flex justify-content-around text-center pt-2 border-top">
-                    <div><h6 className="mb-0 fw-bold" style={{ color: '#5a3fd1', fontSize: 14 }}>2</h6><small className="text-muted text-uppercase fw-semibold" style={{ fontSize: 9.5, letterSpacing: '0.06em' }}>Punches</small></div>
-                    <div><h6 className="mb-0 fw-bold" style={{ color: '#108548', fontSize: 14 }}>9h 01m</h6><small className="text-muted text-uppercase fw-semibold" style={{ fontSize: 9.5, letterSpacing: '0.06em' }}>Worked</small></div>
-                    <div><h6 className="mb-0 fw-bold" style={{ color: '#5a3fd1', fontSize: 14 }}>9h 00m</h6><small className="text-muted text-uppercase fw-semibold" style={{ fontSize: 9.5, letterSpacing: '0.06em' }}>Expected</small></div>
-                  </div>
-                </div>
-              </div>
-            </Col>
-            <Col xl={6}>
-              <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #299cdb' }}>
-                <div
-                  className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
-                  style={{
-                    borderBottom: '1px solid rgba(41,156,219,0.18)',
-                    background: 'linear-gradient(135deg, rgba(41,156,219,0.14) 0%, rgba(41,156,219,0.04) 60%, rgba(41,156,219,0.01) 100%)',
-                  }}
-                >
-                  <div className="d-flex align-items-center gap-2">
-                    <span className="ep-section-icon" style={{ background: 'rgba(41,156,219,0.18)', color: '#0c63b0' }}>
-                      <i className="ri-pulse-line" />
-                    </span>
-                    <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Intraday Punch Timeline</h6>
-                  </div>
-                  <div className="d-flex align-items-center gap-2">
-                    {(() => {
-                      const PUNCHES = [
-                        { time: '08:02 AM', kind: 'in',  label: 'Check In',  src: 'BIOMETRIC' },
-                        { time: '10:15 AM', kind: 'out', label: 'Step Out',  src: 'WEB' },
-                        { time: '10:42 AM', kind: 'in',  label: 'Step In',   src: 'WEB' },
-                        { time: '12:30 PM', kind: 'out', label: 'Lunch Out', src: 'BIOMETRIC' },
-                        { time: '01:14 PM', kind: 'in',  label: 'Lunch In',  src: 'BIOMETRIC' },
-                        { time: '02:48 PM', kind: 'out', label: 'Meeting',   src: 'MOBILE' },
-                        { time: '04:05 PM', kind: 'in',  label: 'Back',      src: 'MOBILE' },
-                        { time: '05:20 PM', kind: 'out', label: 'Tea Break', src: 'WEB' },
-                        { time: '05:38 PM', kind: 'in',  label: 'Resumed',   src: 'WEB' },
-                        { time: '07:02 PM', kind: 'out', label: 'Step Out',  src: 'BIOMETRIC' },
-                        { time: '07:25 PM', kind: 'in',  label: 'Step In',   src: 'BIOMETRIC' },
-                        { time: '08:55 PM', kind: 'out', label: 'Check Out', src: 'BIOMETRIC' },
-                      ];
-                      return (
-                        <span className="badge rounded-pill" style={{ background: 'rgba(99,102,241,0.12)', color: '#6366f1', fontSize: 10.5, padding: '3px 9px' }}>{PUNCHES.length} punches today</span>
-                      );
-                    })()}
-                    <Button
-                      color="secondary"
-                      className="btn-label waves-effect waves-light rounded-pill btn-sm"
-                      onClick={() => setRegOpen(true)}
-                    >
-                      <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2" />
-                      Regularization
-                    </Button>
-                  </div>
-                </div>
-                <div className="px-3 py-3 flex-grow-1">
-                  {(() => {
-                    const PUNCHES = [
-                      { time: '08:02 AM', kind: 'in',  label: 'Check In',  src: 'BIOMETRIC' },
-                      { time: '10:15 AM', kind: 'out', label: 'Step Out',  src: 'WEB' },
-                      { time: '10:42 AM', kind: 'in',  label: 'Step In',   src: 'WEB' },
-                      { time: '12:30 PM', kind: 'out', label: 'Lunch Out', src: 'BIOMETRIC' },
-                      { time: '01:14 PM', kind: 'in',  label: 'Lunch In',  src: 'BIOMETRIC' },
-                      { time: '02:48 PM', kind: 'out', label: 'Meeting',   src: 'MOBILE' },
-                      { time: '04:05 PM', kind: 'in',  label: 'Back',      src: 'MOBILE' },
-                      { time: '05:20 PM', kind: 'out', label: 'Tea Break', src: 'WEB' },
-                      { time: '05:38 PM', kind: 'in',  label: 'Resumed',   src: 'WEB' },
-                      { time: '07:02 PM', kind: 'out', label: 'Step Out',  src: 'BIOMETRIC' },
-                      { time: '07:25 PM', kind: 'in',  label: 'Step In',   src: 'BIOMETRIC' },
-                      { time: '08:55 PM', kind: 'out', label: 'Check Out', src: 'BIOMETRIC' },
-                    ];
-                    return (
-                      <div className="ep-punch-rail">
-                        <div className="ep-punch-track">
-                          <div className="ep-punch-line" />
-                          {PUNCHES.map((p, i) => {
-                            const isIn = p.kind === 'in';
-                            const dotBg = isIn ? '#10b981' : '#3b82f6';
-                            const dotShadow = isIn ? 'rgba(16,185,129,0.40)' : 'rgba(59,130,246,0.40)';
-                            const fg = isIn ? '#108548' : '#0c63b0';
-                            return (
-                              <div className="ep-punch-stop" key={i}>
-                                <span
-                                  className="ep-punch-dot d-inline-flex align-items-center justify-content-center rounded-circle"
-                                  style={{ background: dotBg, color: '#fff', boxShadow: `0 3px 8px ${dotShadow}` }}
-                                >
-                                  <i className={isIn ? 'ri-checkbox-circle-fill' : 'ri-logout-circle-r-line'} style={{ fontSize: 11 }} />
-                                </span>
-                                <h6 className="mb-0 fw-bold mt-2" style={{ color: fg, fontSize: 12 }}>{p.time}</h6>
-                                <p className="mb-1 fw-semibold" style={{ fontSize: 10.5 }}>{p.label}</p>
-                                <span className="badge rounded-pill" style={{ background: '#dceefe', color: '#0c63b0', fontSize: 8.5, padding: '2px 6px', letterSpacing: '0.04em' }}>{p.src}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
-            </Col>
-          </Row>
-
-          <Row className="g-3 mb-3">
-            <Col xs={12}>
-              <div className="ep-section-card-flat ep-section-card" style={{ borderTop: '3px solid #a855f7' }}>
-                <div
-                  className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
-                  style={{
-                    borderBottom: '1px solid rgba(168,85,247,0.18)',
-                    background: 'linear-gradient(135deg, rgba(168,85,247,0.14) 0%, rgba(168,85,247,0.04) 60%, rgba(168,85,247,0.01) 100%)',
-                  }}
-                >
-                  <div className="d-flex align-items-center gap-2">
-                    <span className="ep-section-icon" style={{ background: 'rgba(168,85,247,0.18)', color: '#7c3aed' }}>
-                      <i className="ri-history-line" />
-                    </span>
-                    <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Attendance Timelog History</h6>
-                  </div>
-                  <div className="d-flex align-items-center gap-2">
-                    <Dropdown isOpen={monthOpen} toggle={() => setMonthOpen(o => !o)}>
-                      <DropdownToggle
-                        tag="button"
-                        type="button"
-                        className="btn btn-sm rounded-pill fw-semibold d-inline-flex align-items-center gap-1"
-                        style={{ background: 'var(--vz-secondary-bg)', color: 'var(--vz-body-color)', border: '1px solid var(--vz-border-color)', fontSize: 11.5, padding: '4px 12px' }}
-                      >
-                        <i className="ri-calendar-line" /> {attMonth}
-                        <i className="ri-arrow-down-s-line" />
-                      </DropdownToggle>
-                      <DropdownMenu end>
-                        {ATT_MONTHS.map(m => (
-                          <DropdownItem
-                            key={m.key}
-                            active={attMonth === m.label}
-                            onClick={() => setAttMonth(m.label)}
-                          >
-                            {m.label}
-                          </DropdownItem>
-                        ))}
-                      </DropdownMenu>
-                    </Dropdown>
-                    <Button
-                      color="secondary"
-                      className="btn-label waves-effect waves-light rounded-pill btn-sm"
-                      onClick={() => toast.info('Exporting timelogs', `Preparing ${attMonth} export…`)}
-                    >
-                      <i className="ri-download-2-line label-icon align-middle rounded-pill fs-16 me-2" />
-                      Export Timelogs
-                    </Button>
-                  </div>
-                </div>
-                <div className="px-3 pb-3 pt-2">
-                  <div className="table-responsive border rounded ep-att-scroll-wrap">
-                    <table className="table align-middle table-nowrap ep-att-table mb-0">
-                      <thead className="table-light">
-                        <tr>
-                          <th>Date</th><th>Day</th><th>Shift</th><th>First In</th><th>Last Out</th><th>Punches</th><th>Worked</th><th>Deviation</th><th>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {ATTENDANCE_HISTORY.slice(attPage * ATT_PAGE_SIZE, attPage * ATT_PAGE_SIZE + ATT_PAGE_SIZE).map(r => {
-                          const t = STATUS_TONE[r.status];
-                          const shiftTone = r.shift === 'EARLY' ? { bg: '#d6f4e3', fg: '#108548' } : r.shift === 'GENERAL' ? { bg: '#dceefe', fg: '#0c63b0' } : null;
-                          return (
-                            <tr key={r.date}>
-                              <td className="fw-semibold">{r.date}</td>
-                              <td className="text-muted">{r.day}</td>
-                              <td>{shiftTone ? <span className="ep-shift-pill" style={{ background: shiftTone.bg, color: shiftTone.fg }}>{r.shift}</span> : <span className="text-muted">—</span>}</td>
-                              <td className="font-monospace">{r.firstIn}</td>
-                              <td className="font-monospace">{r.lastOut}</td>
-                              <td className="fw-bold" style={{ color: '#5a3fd1' }}>{r.punches > 0 ? r.punches : <span className="text-muted">—</span>}</td>
-                              <td className="fw-bold" style={{ color: '#108548' }}>{r.worked}</td>
-                              <td className="fw-bold" style={{ color: '#108548' }}>{r.deviation}</td>
-                              <td>
-                                <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: t.bg, color: t.fg }}>
-                                  <span style={{ width: 5, height: 5, borderRadius: '50%', background: t.dot }} /> {r.status}
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  {(() => {
-                    const total = ATTENDANCE_HISTORY.length;
-                    const pageCount = Math.max(1, Math.ceil(total / ATT_PAGE_SIZE));
-                    const startIdx = attPage * ATT_PAGE_SIZE;
-                    const shownEnd = Math.min(startIdx + ATT_PAGE_SIZE, total);
-                    const canPrev = attPage > 0;
-                    const canNext = attPage < pageCount - 1;
-                    // Windowed paginator — same recipe as the master TableContainer:
-                    // first, last, current ± 1, ellipses for any gap. With ≤7 pages
-                    // we render every number.
-                    const siblings = 1;
-                    const items: Array<number | 'ellipsis-l' | 'ellipsis-r'> = [];
-                    if (pageCount <= 7) {
-                      for (let i = 0; i < pageCount; i++) items.push(i);
-                    } else {
-                      const left = Math.max(attPage - siblings, 1);
-                      const right = Math.min(attPage + siblings, pageCount - 2);
-                      items.push(0);
-                      if (left > 1) items.push('ellipsis-l');
-                      for (let i = left; i <= right; i++) items.push(i);
-                      if (right < pageCount - 2) items.push('ellipsis-r');
-                      items.push(pageCount - 1);
-                    }
-                    return (
-                      <Row className="align-items-center mt-3 g-3 text-center text-sm-start">
-                        <div className="col-sm">
-                          <div className="text-muted">
-                            Showing<span className="fw-semibold ms-1">{shownEnd - startIdx}</span> of <span className="fw-semibold">{total}</span> Results
-                          </div>
-                        </div>
-                        <div className="col-sm-auto">
-                          <ul className="pagination pagination-separated pagination-md justify-content-center justify-content-sm-start mb-0">
-                            <li className={!canPrev ? 'page-item disabled' : 'page-item'}>
-                              <a href="#" className="page-link" onClick={e => { e.preventDefault(); if (canPrev) setAttPage(p => p - 1); }}>
-                                <i className="ri-arrow-left-s-line" />
-                              </a>
-                            </li>
-                            {items.map((item, key) => {
-                              if (item === 'ellipsis-l' || item === 'ellipsis-r') {
-                                return (
-                                  <li key={`${item}-${key}`} className="page-item disabled">
-                                    <span className="page-link" style={{ cursor: 'default' }}>…</span>
-                                  </li>
-                                );
-                              }
-                              const isActive = attPage === item;
-                              return (
-                                <li key={item} className="page-item">
-                                  <a
-                                    href="#"
-                                    className={isActive ? 'page-link active' : 'page-link'}
-                                    style={isActive ? { backgroundColor: 'var(--vz-secondary)', borderColor: 'var(--vz-secondary)', color: '#fff' } : undefined}
-                                    onClick={e => { e.preventDefault(); setAttPage(item); }}
-                                  >
-                                    {item + 1}
-                                  </a>
-                                </li>
-                              );
-                            })}
-                            <li className={!canNext ? 'page-item disabled' : 'page-item'}>
-                              <a href="#" className="page-link" onClick={e => { e.preventDefault(); if (canNext) setAttPage(p => p + 1); }}>
-                                <i className="ri-arrow-right-s-line" />
-                              </a>
-                            </li>
-                          </ul>
-                        </div>
-                      </Row>
-                    );
-                  })()}
-                </div>
-              </div>
-            </Col>
-          </Row>
-        </ComingSoonShell>
-      )}
 
       {/* ── Tab: Evidence Vault ── */}
-      {tab === 'vault' && (
-        <>
-          {/* Hero strip — "Evidence Vault — {Name} Document Repository" + KPIs */}
-          <Card className="mb-3 border-0" style={{ borderRadius: 14, overflow: 'hidden' }}>
-            <div
-              style={{
-                background: 'linear-gradient(135deg,#0f0c29 0%,#1e1b4b 30%,#312e81 65%,#4338ca 100%)',
-                color: '#fff',
-                padding: '12px 18px',
-                position: 'relative',
-                overflow: 'hidden',
-              }}
-            >
-              <div style={{ position: 'absolute', top: -50, right: -40, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
-              <Row className="align-items-center g-2" style={{ position: 'relative' }}>
-                <Col xs="auto">
-                  <span className="d-inline-flex align-items-center justify-content-center rounded-3" style={{ width: 38, height: 38, background: 'rgba(255,255,255,0.22)', border: '1px solid rgba(255,255,255,0.30)' }}>
-                    <i className="ri-lock-2-line" style={{ fontSize: 17, color: '#fff' }} />
-                  </span>
-                </Col>
-                <Col className="min-w-0">
-                  <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.06em', fontSize: 9.5 }}>Evidence Vault</p>
-                  <div className="text-white" style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.25 }}>
-                    {employee?.name || employeeId} <span style={{ color: 'rgba(255,255,255,0.55)' }}>—</span> Document Repository
-                  </div>
-                  <small style={{ color: 'rgba(255,255,255,0.70)', fontSize: 10.5 }}>All documents are securely stored and version-controlled</small>
-                </Col>
-                <Col xs="12" lg="auto">
-                  <div className="d-flex gap-1 flex-wrap justify-content-lg-end">
-                    {[
-                      { label: 'Total Docs', value: vaultCounts.total,    color: '#fff' },
-                      { label: 'Pending',    value: vaultCounts.pending,  color: '#fcd34d' },
-                      { label: 'Signed',     value: vaultCounts.signed,   color: '#c4b5fd' },
-                    ].map(c => (
-                      <div
-                        key={c.label}
-                        className="text-center"
-                        style={{
-                          background: 'rgba(255,255,255,0.10)',
-                          border: '1px solid rgba(255,255,255,0.18)',
-                          borderRadius: 9,
-                          padding: '4px 10px',
-                          minWidth: 72,
-                        }}
-                      >
-                        <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.05em', fontSize: 8.5 }}>{c.label}</p>
-                        {(uploadedLoading || signedLoading) ? (
-                          // Translucent-white shimmer bar so the KPI tile
-                          // doesn't flash 0 before the counts resolve.
-                          <div className="d-flex justify-content-center" style={{ paddingTop: 2 }}>
-                            <Shimmer height={13} width={28} style={{ background: 'rgba(255,255,255,0.25)' }} />
-                          </div>
-                        ) : (
-                          <div className="fw-bold lh-1" style={{ color: c.color, fontSize: 13 }}>{c.value}</div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </Col>
-              </Row>
-            </div>
-          </Card>
-
-          {/* Sub-tab pill — Employee Documents | Organizational Documents */}
-          <Row className="g-2 mb-3">
-            <Col xs={12}>
-              <div
-                className="d-flex"
-                style={{
-                  background: 'var(--vz-secondary-bg)',
-                  border: '1px solid var(--vz-border-color)',
-                  borderRadius: 9,
-                  padding: 3,
-                  gap: 3,
-                }}
-              >
-                {[
-                  { key: 'employee'       as VaultTab, label: 'Employee Documents',      count: employeeDocCount,      icon: 'ri-user-line',     activeBg: 'linear-gradient(135deg,#1e1b4b,#4338ca)', shadow: 'rgba(67,56,202,0.22)' },
-                  { key: 'organizational' as VaultTab, label: 'Organizational Documents', count: organizationalDocCount, icon: 'ri-building-line', activeBg: 'linear-gradient(135deg,#064e3b,#047857)', shadow: 'rgba(4,120,87,0.22)' },
-                ].map(t => {
-                  const on = vaultTab === t.key;
-                  return (
-                    <button
-                      key={t.key}
-                      type="button"
-                      onClick={() => setVaultTab(t.key)}
-                      className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
-                      style={{
-                        borderRadius: 7,
-                        padding: '5px 12px',
-                        fontSize: 11.5,
-                        background: on ? t.activeBg : 'transparent',
-                        color: on ? '#fff' : 'var(--vz-secondary-color)',
-                        border: 'none',
-                        boxShadow: on ? `0 3px 8px ${t.shadow}` : 'none',
-                      }}
-                    >
-                      <i className={t.icon} style={{ fontSize: 12 }} />
-                      {t.label}
-                      <span
-                        className="badge rounded-pill d-inline-flex align-items-center justify-content-center"
-                        style={{
-                          fontSize: 10,
-                          padding: '2px 6px',
-                          minWidth: 24,
-                          background: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
-                          color: on ? '#fff' : 'var(--vz-secondary-color)',
-                        }}
-                      >
-                        {(t.key === 'employee' ? uploadedLoading : signedLoading)
-                          ? <Shimmer height={9} width={14} style={{ background: on ? 'rgba(255,255,255,0.35)' : 'var(--vz-secondary-color)', opacity: 0.5 }} />
-                          : t.count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </Col>
-          </Row>
-
-          {/* Employee Documents sub-tab — live list of files the employee
-              has actually uploaded (Aadhaar / PAN / photo / etc.). Drops
-              the static placeholder catalogue; rows come straight from
-              /api/employees/{id}/documents. */}
-          {vaultTab === 'employee' && (
-            <div
-              className="ep-section-card-flat ep-section-card mb-3"
-              style={{ borderTop: '3px solid #5a3fd1' }}
-            >
-              <div
-                className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
-                style={{
-                  borderBottom: '1px solid rgba(90,63,209,0.18)',
-                  background: 'linear-gradient(135deg, rgba(90,63,209,0.14) 0%, rgba(90,63,209,0.04) 60%, rgba(90,63,209,0.01) 100%)',
-                }}
-              >
-                <div className="d-flex align-items-center gap-2">
-                  <span className="ep-section-icon" style={{ background: 'rgba(90,63,209,0.18)', color: '#5a3fd1' }}>
-                    <i className="ri-upload-cloud-2-line" />
-                  </span>
-                  <div>
-                    <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Uploaded Documents</h6>
-                    <small className="text-muted" style={{ fontSize: 11 }}>
-                      Files attached by the employee or HR — view, download, and verification status.
-                    </small>
-                  </div>
-                </div>
-                <div className="text-end">
-                  {uploadedLoading
-                    ? <Shimmer height={20} width={28} style={{ marginBottom: 4 }} />
-                    : <h4 className="mb-0 fw-bold" style={{ color: '#5a3fd1', fontSize: 22, lineHeight: 1 }}>{uploadedDocs.length}</h4>}
-                  <small className="text-muted text-uppercase" style={{ fontSize: 9.5, letterSpacing: '0.06em', fontWeight: 700 }}>Documents</small>
-                </div>
-              </div>
-              <div className="px-3 pb-3 pt-2">
-                <div className="table-responsive border rounded ep-att-scroll-wrap">
-                  <table className="table align-middle table-nowrap ep-att-table mb-0">
-                    <thead className="table-light">
-                      <tr>
-                        {['SR', 'Document', 'File Name', 'Size', 'Uploaded', 'Attachment', 'Status'].map(h => (
-                          <th key={h}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {uploadedLoading ? (
-                        <ShimmerTableRows rows={4} cols={7} keyPrefix="uploaded-shim" />
-                      ) : uploadedDocs.length === 0 ? (
-                        <tr><td colSpan={7} style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>
-                          <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 6 }} />
-                          No uploaded documents yet. Files attached during onboarding will land here.
-                        </td></tr>
-                      ) : (
-                        uploadedDocs.map((d, idx) => {
-                          const statusKey = d.status === 'verified' ? 'Verified'
-                                          : d.status === 'rejected' ? 'Pending'   // surface rejected in amber
-                                          : 'Uploaded';
-                          const st = VAULT_STATUS_TONE[statusKey as keyof typeof VAULT_STATUS_TONE]
-                                  || { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' };
-                          return (
-                            <tr key={d.id}>
-                              <td className="text-muted">{idx + 1}</td>
-                              <td className="fw-semibold">{prettyDocKey(d.document_key)}</td>
-                              <td className="text-muted" style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }} title={d.original_name || ''}>
-                                {d.original_name || '—'}
-                              </td>
-                              <td className="font-monospace" style={{ fontSize: 11.5 }}>{formatBytes(d.size_bytes)}</td>
-                              <td className="font-monospace" style={{ fontSize: 11.5 }}>
-                                {d.uploaded_at ? new Date(d.uploaded_at).toLocaleDateString() : '—'}
-                              </td>
-                              <td>
-                                {d.url
-                                  ? <a href={resolveFileUrl(d.url) || d.url} target="_blank" rel="noopener noreferrer" className="d-inline-flex align-items-center gap-1 text-decoration-none"
-                                      style={{ background: 'rgba(16,185,129,0.10)', color: '#0a8a78', padding: '3px 9px', borderRadius: 999, fontSize: 11, fontWeight: 600, border: '1px solid rgba(16,185,129,0.25)' }}>
-                                      <i className="ri-file-text-line" /> Open
-                                    </a>
-                                  : <span className="text-muted">—</span>}
-                              </td>
-                              <td>
-                                <span className="d-inline-flex align-items-center gap-1 fw-semibold text-uppercase"
-                                  title={d.status === 'rejected' ? (d.rejection_reason || 'Rejected') : undefined}
-                                  style={{ fontSize: 9.5, padding: '3px 9px', borderRadius: 999,
-                                    background: d.status === 'rejected' ? '#fee2e2' : st.bg,
-                                    color: d.status === 'rejected' ? '#b91c1c' : st.fg,
-                                    letterSpacing: '0.04em' }}>
-                                  <span style={{ width: 5, height: 5, borderRadius: '50%', background: d.status === 'rejected' ? '#ef4444' : st.dot }} /> {d.status}
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* My Signed Documents — live list of completed signature
-              workflows targeting this employee. Sits above the static
-              Org Docs catalogue so the most recent signed copies are
-              top of the page. */}
-          {vaultTab === 'organizational' && (
-            <div
-              className="ep-section-card-flat ep-section-card mb-3"
-              style={{ borderTop: '3px solid #16a34a' }}
-            >
-              {/* Dark-theme-aware styling for the org-doc Code badge, Signer
-                  tags and View button (were hardcoded light → BUG-131/132/133). */}
-              <style>{`
-                .epv-code-badge { font-size: 10.5px; background: #fef3c7; color: #a16207; padding: 2px 6px; border-radius: 4px; }
-                .epv-signer-tag { font-size: 10.5px; padding: 2px 7px; border-radius: 999px; font-weight: 700; display: inline-block; }
-                .epv-signer-tag.is-done { background: #dcfce7; color: #15803d; }
-                .epv-signer-tag.is-pending { background: #f3f4f6; color: #6b7280; }
-                .epv-view-btn { padding: 4px 10px; border-radius: 6px; border: 1px solid #c7d2fe; background: #eef2ff; color: #4338ca; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: background .15s ease; }
-                .epv-view-btn:hover { background: #e0e7ff; }
-                [data-bs-theme="dark"] .epv-code-badge, [data-layout-mode="dark"] .epv-code-badge { background: rgba(251,191,36,.16); color: #fcd34d; }
-                [data-bs-theme="dark"] .epv-signer-tag.is-done, [data-layout-mode="dark"] .epv-signer-tag.is-done { background: rgba(34,197,94,.18); color: #86efac; }
-                [data-bs-theme="dark"] .epv-signer-tag.is-pending, [data-layout-mode="dark"] .epv-signer-tag.is-pending { background: rgba(148,163,184,.16); color: #cbd5e1; }
-                [data-bs-theme="dark"] .epv-view-btn, [data-layout-mode="dark"] .epv-view-btn { background: rgba(99,102,241,.16); border-color: rgba(129,140,248,.40); color: #c7d2fe; }
-                [data-bs-theme="dark"] .epv-view-btn:hover, [data-layout-mode="dark"] .epv-view-btn:hover { background: rgba(99,102,241,.26); }
-              `}</style>
-              <div
-                className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
-                style={{
-                  borderBottom: '1px solid rgba(22,163,74,0.18)',
-                  background: 'linear-gradient(135deg, rgba(22,163,74,0.14) 0%, rgba(22,163,74,0.04) 60%, rgba(22,163,74,0.01) 100%)',
-                }}
-              >
-                <div className="d-flex align-items-center gap-2">
-                  <span className="ep-section-icon" style={{ background: 'rgba(22,163,74,0.18)', color: '#16a34a' }}>
-                    <i className="ri-quill-pen-line" />
-                  </span>
-                  <div>
-                    <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>My Signed Documents</h6>
-                    <small className="text-muted" style={{ fontSize: 11 }}>
-                      Final, fully-signed copies — view in the browser or download as PDF.
-                    </small>
-                  </div>
-                </div>
-                <div className="text-end">
-                  {signedLoading
-                    ? <Shimmer height={20} width={28} style={{ marginBottom: 4 }} />
-                    : <h4 className="mb-0 fw-bold" style={{ color: '#16a34a', fontSize: 22, lineHeight: 1 }}>{signedDocs.length}</h4>}
-                  <small className="text-muted text-uppercase" style={{ fontSize: 9.5, letterSpacing: '0.06em', fontWeight: 700 }}>Documents</small>
-                </div>
-              </div>
-              <div className="px-3 pb-3 pt-2">
-                <div className="table-responsive border rounded ep-att-scroll-wrap">
-                  <table className="table align-middle table-nowrap ep-att-table mb-0">
-                    <thead className="table-light">
-                      <tr>
-                        {['SR', 'Document', 'Code', 'Signers', 'Completed', 'Actions'].map(h => (
-                          <th key={h}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {signedLoading ? (
-                        <ShimmerTableRows rows={3} cols={6} keyPrefix="signed-shim" />
-                      ) : signedDocs.length === 0 ? (
-                        <tr><td colSpan={6} style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>
-                          <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 6 }} />
-                          No signed documents yet. Completed workflows will land here automatically.
-                        </td></tr>
-                      ) : (
-                        signedDocs.map((doc, i) => (
-                          <tr key={doc.id}>
-                            <td className="text-muted">{i + 1}</td>
-                            <td className="fw-semibold">{doc.template?.name || '(template removed)'}</td>
-                            <td>
-                              <code className="epv-code-badge">{doc.code || '—'}</code>
-                            </td>
-                            <td>
-                              <div className="d-flex flex-wrap gap-1">
-                                {(doc.signers || []).slice(0, 3).map((s, j) => (
-                                  <span key={j} className={`epv-signer-tag ${s.status === 'Done' ? 'is-done' : 'is-pending'}`}>
-                                    {s.name}
-                                  </span>
-                                ))}
-                                {doc.signers && doc.signers.length > 3 && (
-                                  <span style={{ fontSize: 10.5, color: '#6b7280' }}>+{doc.signers.length - 3} more</span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="font-monospace" style={{ fontSize: 11.5 }}>
-                              {new Date(doc.updated_at).toLocaleDateString()}
-                            </td>
-                            <td>
-                              <div className="d-flex gap-1">
-                                <button type="button" className="epv-view-btn" onClick={() => setSignedPreview(doc)}>
-                                  <i className="ri-eye-line me-1" />View
-                                </button>
-                                <button type="button" onClick={() => downloadSignedPdf(doc.id, doc.code)}
-                                  style={{ padding: '4px 10px', borderRadius: 6, border: 0, background: 'linear-gradient(135deg,#dc2626,#ef4444)', color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
-                                  <i className="ri-file-pdf-2-line me-1" />Download PDF
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
-        </>
-      )}
+      {tab === 'vault' && <VaultTab />}
 
       {/* ── Tab: Payroll Details (live — backend wired) ── */}
-      {tab === 'payroll' && (
-        <>
-          {/* Sub-tab pill — Payroll Summary (indigo) | Payment Details (green).
-              Same compact strap shape as the Evidence Vault subtabs. */}
-          <Row className="g-2 mb-3">
-            <Col xs={12}>
-              <div
-                className="d-flex"
-                style={{
-                  background: 'var(--vz-secondary-bg)',
-                  border: '1px solid var(--vz-border-color)',
-                  borderRadius: 9,
-                  padding: 3,
-                  gap: 3,
-                }}
-              >
-                {[
-                  { key: 'summary' as PayrollTab, label: 'Payroll Summary',  icon: 'ri-calendar-line',            activeBg: 'linear-gradient(135deg,#1e1b4b,#4338ca)', shadow: 'rgba(67,56,202,0.22)' },
-                  { key: 'details' as PayrollTab, label: 'Payment Details',  icon: 'ri-money-dollar-circle-line', activeBg: 'linear-gradient(135deg,#064e3b,#047857)', shadow: 'rgba(4,120,87,0.22)' },
-                ].map(t => {
-                  const on = payrollTab === t.key;
-                  return (
-                    <button
-                      key={t.key}
-                      type="button"
-                      onClick={() => setPayrollTab(t.key)}
-                      className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
-                      style={{
-                        borderRadius: 7,
-                        padding: '5px 12px',
-                        fontSize: 11.5,
-                        background: on ? t.activeBg : 'transparent',
-                        color: on ? '#fff' : 'var(--vz-secondary-color)',
-                        border: 'none',
-                        boxShadow: on ? `0 3px 8px ${t.shadow}` : 'none',
-                      }}
-                    >
-                      <i className={t.icon} style={{ fontSize: 12 }} />
-                      {t.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </Col>
-          </Row>
-
-          {payrollTab === 'summary' && (
-            <>
-              {/* Hero strip — only on the Payroll Summary tab. */}
-              <Card className="mb-3 border-0" style={{ borderRadius: 14, overflow: 'hidden' }}>
-                <div
-                  style={{
-                    background: 'linear-gradient(135deg,#0f0c29 0%,#1e1b4b 30%,#312e81 65%,#4338ca 100%)',
-                    color: '#fff',
-                    padding: '12px 18px',
-                    position: 'relative',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div style={{ position: 'absolute', top: -50, right: -40, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
-                  <Row className="align-items-center g-2" style={{ position: 'relative' }}>
-                    <Col xs="auto">
-                      <span className="d-inline-flex align-items-center justify-content-center rounded-3" style={{ width: 38, height: 38, background: 'rgba(255,255,255,0.22)', border: '1px solid rgba(255,255,255,0.30)' }}>
-                        <i className="ri-money-dollar-circle-line" style={{ fontSize: 17, color: '#fff' }} />
-                      </span>
-                    </Col>
-                    <Col className="min-w-0">
-                      <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.06em', fontSize: 9.5 }}>Payroll Summary</p>
-                      <div className="text-white" style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.25 }}>
-                        Last Processed: <span style={{ color: '#bce8ff' }}>Mar 2026</span> (01 Mar – 31 Mar)
-                      </div>
-                      <small style={{ color: 'rgba(255,255,255,0.70)', fontSize: 10.5 }}>Next cycle: Apr 2026 · Monthly payroll</small>
-                    </Col>
-                    <Col xs="12" lg="auto">
-                      <div className="d-flex gap-1 flex-wrap justify-content-lg-end align-items-center">
-                        {[
-                          { label: 'Working Days', value: '31',     color: '#fff' },
-                          { label: 'Loss of Pay',  value: '0',      color: '#fcd34d' },
-                          { label: 'Status',       value: 'Active', color: '#86efac' },
-                        ].map(c => (
-                          <div
-                            key={c.label}
-                            className="text-center"
-                            style={{
-                              background: 'rgba(255,255,255,0.10)',
-                              border: '1px solid rgba(255,255,255,0.18)',
-                              borderRadius: 9,
-                              padding: '4px 10px',
-                              minWidth: 72,
-                            }}
-                          >
-                            <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.05em', fontSize: 8.5 }}>{c.label}</p>
-                            <div className="fw-bold lh-1" style={{ color: c.color, fontSize: 13 }}>{c.value}</div>
-                          </div>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={openLatestPayslip}
-                          className="d-inline-flex align-items-center gap-1 fw-semibold lh-1"
-                          style={{
-                            background: 'rgba(255,255,255,0.10)',
-                            border: '1px solid rgba(255,255,255,0.18)',
-                            borderRadius: 9,
-                            padding: '4px 10px',
-                            minWidth: 72,
-                            height: 36,
-                            color: '#fff',
-                            fontSize: 11,
-                            cursor: 'pointer',
-                            transition: 'background .15s ease',
-                          }}
-                          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.18)'; }}
-                          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.10)'; }}
-                        >
-                          <i className="ri-download-2-line" style={{ fontSize: 13 }} /> View Payslip
-                        </button>
-                      </div>
-                    </Col>
-                  </Row>
-                </div>
-              </Card>
-
-              <Row className="g-3 mb-3 align-items-stretch">
-                <Col xl={6}>
-                  <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #299cdb' }}>
-                    <div
-                      className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
-                      style={{
-                        borderBottom: '1px solid rgba(41,156,219,0.18)',
-                        background: 'linear-gradient(135deg, rgba(41,156,219,0.14) 0%, rgba(41,156,219,0.04) 60%, rgba(41,156,219,0.01) 100%)',
-                      }}
-                    >
-                      <div className="d-flex align-items-center gap-2">
-                        <span className="ep-section-icon" style={{ background: 'rgba(41,156,219,0.18)', color: '#0c63b0' }}>
-                          <i className="ri-bank-card-line" />
-                        </span>
-                        <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Payment Information</h6>
-                      </div>
-                      <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 10, padding: '3px 9px', borderRadius: 999, background: 'rgba(245,158,11,0.12)', color: '#a16207', border: '1px solid rgba(245,158,11,0.30)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#f59e0b' }} /> Not Initiated
-                      </span>
-                    </div>
-                    <div className="px-3 py-3 flex-grow-1">
-                      <p className="mb-3" style={{ fontSize: 12.5 }}>
-                        Salary Payment Mode: <strong style={{ color: 'var(--vz-heading-color, var(--vz-body-color))' }}>Bank Transfer</strong>
-                      </p>
-                      <Row className="g-3">
-                        <Col md={6}><div className="ep-field-label">Bank Name</div><div className="ep-field-value">Kotak Mahindra Bank</div></Col>
-                        <Col md={6}>
-                          <div className="ep-field-label">Account Number</div>
-                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '3px 10px', borderRadius: 8, fontSize: 9 }}>XXXXXXXX36</span>
-                        </Col>
-                        <Col md={6}>
-                          <div className="ep-field-label">IFSC Code</div>
-                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '3px 10px', borderRadius: 8, fontSize: 9 }}>KKBK0000823</span>
-                        </Col>
-                        <Col md={6}><div className="ep-field-label">Name on Account</div><div className="ep-field-value">{employee?.name || 'Aarav Kale'}</div></Col>
-                        <Col md={6}><div className="ep-field-label">Branch</div><div className="ep-field-value">Silvaasa</div></Col>
-                        <Col md={6}><div className="ep-field-label">Account Type</div><div className="ep-field-value">Salary</div></Col>
-                      </Row>
-                    </div>
-                  </div>
-                </Col>
-                <Col xl={6}>
-                  <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #a855f7' }}>
-                    <div
-                      className="d-flex align-items-center gap-3 px-3 py-2"
-                      style={{
-                        borderBottom: '1px solid rgba(168,85,247,0.18)',
-                        background: 'linear-gradient(135deg, rgba(168,85,247,0.14) 0%, rgba(168,85,247,0.04) 60%, rgba(168,85,247,0.01) 100%)',
-                      }}
-                    >
-                      <span className="ep-section-icon" style={{ background: 'rgba(168,85,247,0.18)', color: '#7c3aed' }}>
-                        <i className="ri-user-2-line" />
-                      </span>
-                      <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Identity Information</h6>
-                    </div>
-                    <div className="px-3 py-3 flex-grow-1">
-                      {/* PAN Card sub-header */}
-                      <div className="d-flex align-items-center justify-content-between gap-2 px-3 py-2 mb-2" style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.20)', borderRadius: 8 }}>
-                        <span className="fw-bold" style={{ color: '#7c3aed', fontSize: 12.5 }}>PAN Card</span>
-                        <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 10, padding: '2px 8px', borderRadius: 999, background: 'rgba(16,185,129,0.12)', color: '#0a8a78', border: '1px solid rgba(16,185,129,0.30)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981' }} /> Verified
-                        </span>
-                      </div>
-                      <Row className="g-3 mb-3">
-                        <Col md={3}>
-                          <div className="ep-field-label">PAN Number</div>
-                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '3px 10px', borderRadius: 8, fontSize: 9 }}>XXXXXX89K</span>
-                        </Col>
-                        <Col md={3}><div className="ep-field-label">Name</div><div className="ep-field-value">{employee?.name || 'Aarav Kale'}</div></Col>
-                        <Col md={3}><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">02-Nov-1985</div></Col>
-                        <Col md={3}><div className="ep-field-label">Parent Name</div><div className="ep-field-value">Kiran Kale</div></Col>
-                      </Row>
-
-                      {/* Aadhaar Card sub-header */}
-                      <div className="d-flex align-items-center justify-content-between gap-2 px-3 py-2 mb-2" style={{ background: 'rgba(10,179,156,0.08)', border: '1px solid rgba(10,179,156,0.20)', borderRadius: 8 }}>
-                        <span className="fw-bold" style={{ color: '#0a8a78', fontSize: 12.5 }}>Aadhaar Card</span>
-                        <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 10, padding: '2px 8px', borderRadius: 999, background: 'rgba(16,185,129,0.12)', color: '#0a8a78', border: '1px solid rgba(16,185,129,0.30)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981' }} /> Verified
-                        </span>
-                      </div>
-                      <Row className="g-3">
-                        <Col md={3}>
-                          <div className="ep-field-label">Aadhaar Number</div>
-                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '3px 10px', borderRadius: 8, fontSize: 9 }}>XXXX-XXXX-2821</span>
-                        </Col>
-                        <Col md={3}><div className="ep-field-label">Enrollment No</div><div className="ep-field-value">147</div></Col>
-                        <Col md={3}><div className="ep-field-label">Address</div><div className="ep-field-value">21 Jay Mahalar…</div></Col>
-                        <Col md={3}><div className="ep-field-label">Gender</div><div className="ep-field-value">Male</div></Col>
-                      </Row>
-                    </div>
-                  </div>
-                </Col>
-              </Row>
-
-              <Row className="g-3 mb-3 align-items-stretch">
-                <Col xl={6}>
-                  <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #0ab39c' }}>
-                    <div
-                      className="d-flex align-items-center gap-3 px-3 py-2"
-                      style={{
-                        borderBottom: '1px solid rgba(10,179,156,0.18)',
-                        background: 'linear-gradient(135deg, rgba(10,179,156,0.14) 0%, rgba(10,179,156,0.04) 60%, rgba(10,179,156,0.01) 100%)',
-                      }}
-                    >
-                      <span className="ep-section-icon" style={{ background: 'rgba(10,179,156,0.18)', color: '#0a8a78' }}>
-                        <i className="ri-map-pin-line" />
-                      </span>
-                      <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Address Proof</h6>
-                    </div>
-                    <div className="px-3 py-3 flex-grow-1">
-                      <div className="d-flex align-items-center justify-content-between gap-2 px-3 py-2 mb-3" style={{ background: 'rgba(10,179,156,0.08)', border: '1px solid rgba(10,179,156,0.20)', borderRadius: 8 }}>
-                        <span className="fw-bold" style={{ color: '#0a8a78', fontSize: 12.5 }}>Aadhaar Card (Address Proof)</span>
-                        <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 10, padding: '2px 8px', borderRadius: 999, background: 'rgba(16,185,129,0.12)', color: '#0a8a78', border: '1px solid rgba(16,185,129,0.30)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981' }} /> Verified
-                        </span>
-                      </div>
-                      <Row className="g-3">
-                        <Col md={6}>
-                          <div className="ep-field-label">Aadhaar Number</div>
-                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '3px 10px', borderRadius: 8, fontSize: 9 }}>XXXX-XXXX-2821</span>
-                        </Col>
-                        <Col md={6}><div className="ep-field-label">Enrollment No</div><div className="ep-field-value">147</div></Col>
-                        <Col md={6}><div className="ep-field-label">Address</div><div className="ep-field-value">21 Jay Mahalar, Pune</div></Col>
-                        <Col md={6}><div className="ep-field-label">Verification</div><div className="ep-field-value font-monospace">01-Jan-2024</div></Col>
-                      </Row>
-                    </div>
-                  </div>
-                </Col>
-                <Col xl={6}>
-                  <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #f59e0b' }}>
-                    <div
-                      className="d-flex align-items-center gap-3 px-3 py-2"
-                      style={{
-                        borderBottom: '1px solid rgba(245,158,11,0.20)',
-                        background: 'linear-gradient(135deg, rgba(245,158,11,0.14) 0%, rgba(245,158,11,0.04) 60%, rgba(245,158,11,0.01) 100%)',
-                      }}
-                    >
-                      <span className="ep-section-icon" style={{ background: 'rgba(245,158,11,0.18)', color: '#a16207' }}>
-                        <i className="ri-shield-line" />
-                      </span>
-                      <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Statutory Information</h6>
-                    </div>
-                    <div className="px-3 py-3 flex-grow-1">
-                      <span className="d-inline-flex align-items-center fw-semibold mb-3" style={{ fontSize: 10.5, padding: '3px 10px', borderRadius: 999, background: 'rgba(245,158,11,0.12)', color: '#a16207', border: '1px solid rgba(245,158,11,0.30)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        PT Details
-                      </span>
-                      <Row className="g-3">
-                        <Col md={6}><div className="ep-field-label">State</div><div className="ep-field-value">Maharashtra</div></Col>
-                        <Col md={6}><div className="ep-field-label">Registered Location</div><div className="ep-field-value">Maharashtra</div></Col>
-                        <Col md={6}><div className="ep-field-label">PT Applicable</div><div className="ep-field-value">Yes</div></Col>
-                        <Col md={6}><div className="ep-field-label">Professional Tax</div><div className="ep-field-value">₹200/month</div></Col>
-                      </Row>
-                    </div>
-                  </div>
-                </Col>
-              </Row>
-            </>
-          )}
-
-          {payrollTab === 'details' && (
-            <>
-              <Row className="g-3 mb-3 align-items-stretch">
-                <Col xl={5}>
-                  <div
-                    className="ep-section-card-flat ep-section-card h-100 d-flex flex-column"
-                    style={{
-                      background: 'linear-gradient(135deg, #064e3b, #065f46, #059669)',
-                      color: '#fff', padding: '14px 18px',
-                      position: 'relative', overflow: 'hidden',
-                      border: 'none',
-                    }}
-                  >
-                    <div style={{ position: 'absolute', top: -30, right: -20, width: 130, height: 130, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', pointerEvents: 'none' }} />
-                    <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                      <div>
-                        <p className="mb-1" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.78)' }}>Current Compensation</p>
-                        <h2 className="mb-0 fw-bold text-white" style={{ fontSize: 28, lineHeight: 1.1 }}>
-                          {realAnnualCtc > 0 ? `₹${fmtRupee(realAnnualCtc)}` : '— Not set'}
-                        </h2>
-                        <p className="mb-0 mt-1" style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.80)' }}>
-                          Per Annum{salaryStruct ? '' : (realAnnualCtc > 0 ? ' (from annual salary)' : '')}
-                        </p>
-                      </div>
-                      <div className="d-flex gap-3 mt-3 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.18)' }}>
-                        <div>
-                          <p className="mb-1" style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.72)' }}>Monthly</p>
-                          <h6 className="mb-0 text-white fw-bold" style={{ fontSize: 12 }}>₹{fmtRupee(realMonthlyGross)}</h6>
-                        </div>
-                        <div className="ps-3" style={{ borderLeft: '1px solid rgba(255,255,255,0.18)' }}>
-                          <p className="mb-1" style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.72)' }}>{salaryStruct ? `Structure v${salaryStruct.version ?? 1}` : 'Source'}</p>
-                          <h6 className="mb-0 text-white fw-bold" style={{ fontSize: 12 }}>{salaryStruct ? 'Active' : (realAnnualCtc > 0 ? 'Annual' : 'None')}</h6>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </Col>
-                <Col xl={7}>
-                  <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #6366f1' }}>
-                    <div
-                      className="d-flex align-items-center gap-3 px-3 py-2"
-                      style={{
-                        borderBottom: '1px solid rgba(99,102,241,0.18)',
-                        background: 'linear-gradient(135deg, rgba(99,102,241,0.14) 0%, rgba(99,102,241,0.04) 60%, rgba(99,102,241,0.01) 100%)',
-                      }}
-                    >
-                      <span className="ep-section-icon" style={{ background: 'rgba(99,102,241,0.18)', color: '#4338ca' }}>
-                        <i className="ri-briefcase-line" />
-                      </span>
-                      <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Payroll Info</h6>
-                    </div>
-                    <div className="px-3 py-3 flex-grow-1">
-                      <Row className="g-3">
-                        <Col md={4}><div className="ep-field-label">Legal Entity</div><div className="ep-field-value">INORBVICT Healthcare India Pvt. Ltd.</div></Col>
-                        <Col md={4}><div className="ep-field-label">Remuneration Type</div><div className="ep-field-value">Annual</div></Col>
-                        <Col md={4}><div className="ep-field-label">Pay Cycle</div><div className="ep-field-value">Monthly</div></Col>
-                        <Col md={4}><div className="ep-field-label">Payroll Status</div><div className="ep-field-value">Active</div></Col>
-                        <Col md={4}><div className="ep-field-label">Tax Regime</div><div className="ep-field-value">New Regime (115BAC)</div></Col>
-                        <Col md={4}><div className="ep-field-label">Pay Group</div><div className="ep-field-value">Default</div></Col>
-                      </Row>
-                    </div>
-                  </div>
-                </Col>
-              </Row>
-
-              <div
-                className="d-flex align-items-center gap-2 mb-3"
-                style={{ padding: '12px 16px', borderRadius: 12, background: '#fff7e6', border: '1px solid #fbcf8a', color: '#a4661c', fontSize: 13 }}
-              >
-                <i className="ri-information-line" style={{ fontSize: 16 }} />
-                <span>Income and tax liability is being computed as per <strong>New Tax Regime</strong>. To switch to Old Tax Regime, contact your HR admin.</span>
-              </div>
-
-              <div
-                className="ep-section-card-flat ep-section-card mb-3"
-                style={{ borderTop: '3px solid #0ab39c' }}
-              >
-                <div
-                  className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
-                  style={{
-                    borderBottom: '1px solid rgba(10,179,156,0.18)',
-                    background: 'linear-gradient(135deg, rgba(10,179,156,0.14) 0%, rgba(10,179,156,0.04) 60%, rgba(10,179,156,0.01) 100%)',
-                  }}
-                >
-                  <div className="d-flex align-items-center gap-2">
-                    <span className="ep-section-icon" style={{ background: 'rgba(10,179,156,0.18)', color: '#0a8a78' }}>
-                      <i className="ri-line-chart-line" />
-                    </span>
-                    <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Salary Timeline</h6>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setSalaryModalOpen(true)}
-                    className="d-inline-flex align-items-center gap-1 fw-semibold"
-                    style={{
-                      background: 'linear-gradient(135deg,#0a8a78,#0ab39c)',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: 999,
-                      padding: '6px 16px',
-                      fontSize: 12,
-                      cursor: 'pointer',
-                      boxShadow: '0 4px 12px rgba(10,138,120,0.32)',
-                    }}
-                  >
-                    <i className="ri-edit-line" style={{ fontSize: 13 }} /> Revise Salary
-                  </button>
-                </div>
-                <div className="px-3 py-2 position-relative">
-                  {/* Vertical guide line connecting the timeline dots */}
-                  <span style={{
-                    position: 'absolute',
-                    left: 25, top: 22, bottom: 22,
-                    width: 2,
-                    background: 'var(--vz-border-color)',
-                    pointerEvents: 'none',
-                  }} />
-                  {realTimeline.length === 0 && (
-                    <div className="text-muted text-center py-3" style={{ fontSize: 12.5 }}>
-                      No salary revisions recorded yet — use <strong>Revise Salary</strong> to set one.
-                    </div>
-                  )}
-                  {realTimeline.map((row, idx) => (
-                    <div
-                      key={row.id}
-                      className="d-flex align-items-center gap-3 py-2 flex-wrap position-relative"
-                    >
-                      {/* Timeline dot */}
-                      <span
-                        className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
-                        style={{
-                          width: 18, height: 18,
-                          background: row.current ? '#0ab39c' : 'var(--vz-card-bg)',
-                          border: row.current ? '3px solid #fff' : '2px solid var(--vz-border-color)',
-                          boxShadow: row.current ? '0 0 0 3px #0ab39c, 0 0 0 6px rgba(10,179,156,0.18)' : 'none',
-                          position: 'relative', zIndex: 1,
-                        }}
-                      >
-                        {!row.current && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--vz-border-color)' }} />}
-                      </span>
-
-                      {/* Row body — current row gets the soft green → white gradient */}
-                      <div
-                        className="d-flex align-items-center gap-3 flex-grow-1 flex-wrap"
-                        style={{
-                          background: row.current
-                            ? 'linear-gradient(90deg, rgba(10,179,156,0.10) 0%, rgba(10,179,156,0.02) 60%, transparent 100%)'
-                            : 'transparent',
-                          border: row.current ? '1px solid rgba(10,179,156,0.30)' : '1px solid transparent',
-                          borderRadius: 10,
-                          padding: '8px 12px',
-                        }}
-                      >
-                        <div className="flex-grow-1 min-w-0">
-                          <div className="d-flex align-items-center gap-2 flex-wrap">
-                            <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', fontSize: 10.5 }}>SALARY REVISION</p>
-                            {row.current && (
-                              <span
-                                className="d-inline-flex align-items-center fw-bold text-uppercase"
-                                style={{
-                                  background: 'linear-gradient(135deg,#0a8a78,#0ab39c)',
-                                  color: '#fff',
-                                  fontSize: 9,
-                                  letterSpacing: '0.08em',
-                                  padding: '2px 8px',
-                                  borderRadius: 999,
-                                  boxShadow: '0 2px 6px rgba(10,138,120,0.32)',
-                                }}
-                              >
-                                CURRENT
-                              </span>
-                            )}
-                          </div>
-                          <small style={{ color: 'var(--vz-secondary-color)', fontSize: 11.5 }}>
-                            Effective <span className="fw-semibold" style={{ color: 'var(--vz-body-color)' }}>{row.dateShort}</span>
-                          </small>
-                        </div>
-                        <div className="text-end">
-                          <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', fontSize: 9.5 }}>Regular Salary</p>
-                          <div className="fw-bold" style={{ fontSize: 13, color: 'var(--vz-body-color)' }}>₹{row.annual.toLocaleString('en-IN')}</div>
-                        </div>
-                        <span style={{ color: 'var(--vz-secondary-color)', fontSize: 14 }}>=</span>
-                        <div className="text-end">
-                          <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', fontSize: 9.5 }}>Total</p>
-                          <div className="fw-bold" style={{ fontSize: 13, color: '#0a8a78' }}>₹{row.annual.toLocaleString('en-IN')}</div>
-                        </div>
-                        <button
-                          type="button"
-                          className="d-inline-flex align-items-center fw-semibold"
-                          style={{
-                            background: '#fff',
-                            color: '#374151',
-                            border: '1px solid var(--vz-border-color)',
-                            borderRadius: 999,
-                            padding: '5px 14px',
-                            fontSize: 11.5,
-                            cursor: 'pointer',
-                          }}
-                          onClick={() => { setBreakdownRowId(row.id); setBreakdownOpen(true); }}
-                        >
-                          View Breakdown
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-        </>
-      )}
+      {tab === 'payroll' && <PayrollTab />}
 
       {/* ── Tab: Expense Details ── */}
-      {tab === 'expense' && (
-        <>
-          {/* Expense Overview hero — same shape as Evidence Vault / Payroll Summary. */}
-          <Card className="mb-3 border-0" style={{ borderRadius: 14, overflow: 'hidden' }}>
-            <div
-              style={{
-                background: 'linear-gradient(135deg,#0f0c29 0%,#1e1b4b 30%,#312e81 65%,#4338ca 100%)',
-                color: '#fff',
-                padding: '12px 18px',
-                position: 'relative',
-                overflow: 'hidden',
-              }}
-            >
-              <div style={{ position: 'absolute', top: -50, right: -40, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
-              <Row className="align-items-center g-2" style={{ position: 'relative' }}>
-                <Col xs="auto">
-                  <span className="d-inline-flex align-items-center justify-content-center rounded-3" style={{ width: 38, height: 38, background: 'rgba(255,255,255,0.22)', border: '1px solid rgba(255,255,255,0.30)' }}>
-                    <i className="ri-wallet-3-line" style={{ fontSize: 17, color: '#fff' }} />
-                  </span>
-                </Col>
-                <Col className="min-w-0">
-                  <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.06em', fontSize: 9.5 }}>
-                    {expenseModuleTab === 'advance' ? 'Advance Overview' : 'Expense Overview'}
-                  </p>
-                  <div className="text-white" style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.25 }}>
-                    {expenseModuleTab === 'advance' ? 'Total Requested' : 'Total Claimed'}:{' '}
-                    <span style={{ color: '#bce8ff' }}>
-                      ₹{(expenseModuleTab === 'advance'
-                          ? activeAdvancesSource.reduce((s, a) => s + Number(a.amount || 0), 0)
-                          : totalClaimed
-                        ).toLocaleString('en-IN')}
-                    </span>
-                  </div>
-                  <small style={{ color: 'rgba(255,255,255,0.70)', fontSize: 10.5 }}>
-                    {expenseModuleTab === 'advance'
-                      ? `${advanceCounts.all} advances · ${advanceCounts.approved} approved · ${advanceCounts.pending} pending`
-                      : `${expenseCounts.all} claims · ${expenseCounts.approved} approved · ${expenseCounts.pending} pending`}
-                  </small>
-                </Col>
-                <Col xs="12" lg="auto">
-                  <div className="d-flex gap-1 flex-wrap justify-content-lg-end">
-                    {(() => {
-                      // Counts switch with the active module so the KPI strip
-                      // reflects whatever the user is currently viewing
-                      // (expense claims vs advance requests).
-                      const c = expenseModuleTab === 'advance' ? advanceCounts : expenseCounts;
-                      return [
-                        { key: 'all'      as ExpenseFilter, label: 'Total',    value: c.all,      color: '#fff'    },
-                        { key: 'approved' as ExpenseFilter, label: 'Approved', value: c.approved, color: '#86efac' },
-                        { key: 'pending'  as ExpenseFilter, label: 'Pending',  value: c.pending,  color: '#fcd34d' },
-                        { key: 'rejected' as ExpenseFilter, label: 'Rejected', value: c.rejected, color: '#fca5a5' },
-                      ];
-                    })().map(c => {
-                      // Tiles double as filter toggles — clicking "Approved"
-                      // narrows the table to approved rows; clicking the
-                      // already-active tile (or Total) restores All.
-                      const on = expenseFilter === c.key;
-                      return (
-                        <button
-                          key={c.label}
-                          type="button"
-                          onClick={() => setExpenseFilter(on && c.key !== 'all' ? 'all' : c.key)}
-                          className="text-center border-0"
-                          style={{
-                            background: on ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.10)',
-                            outline: on ? '1px solid rgba(255,255,255,0.45)' : '1px solid rgba(255,255,255,0.18)',
-                            borderRadius: 9,
-                            padding: '4px 10px',
-                            minWidth: 72,
-                            cursor: 'pointer',
-                            transition: 'background .15s ease',
-                          }}
-                        >
-                          <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.05em', fontSize: 8.5 }}>{c.label}</p>
-                          <div className="fw-bold lh-1" style={{ color: c.color, fontSize: 13 }}>{c.value}</div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </Col>
-              </Row>
-            </div>
-          </Card>
-
-          {/* Expense / Advance module switcher — sits between the hero
-              overview and the section card so the user can flip between
-              Expense Claims and Advance Requests without leaving the
-              Expense Details tab. */}
-          <Row className="g-2 mb-3">
-            <Col xs={12}>
-              <div
-                className="d-flex"
-                style={{
-                  background: 'var(--vz-secondary-bg)',
-                  border: '1px solid var(--vz-border-color)',
-                  borderRadius: 9,
-                  padding: 3,
-                  gap: 3,
-                }}
-              >
-                {[
-                  { key: 'expense' as const, label: 'Expense Claims',    icon: 'ri-file-list-3-line',         activeBg: 'linear-gradient(135deg,#a855f7,#c084fc)', shadow: 'rgba(168,85,247,0.22)' },
-                  { key: 'advance' as const, label: 'Advance Requests',  icon: 'ri-money-dollar-circle-line', activeBg: 'linear-gradient(135deg,#1e1b4b,#4338ca)', shadow: 'rgba(67,56,202,0.22)' },
-                ].map(t => {
-                  const on = expenseModuleTab === t.key;
-                  return (
-                    <button
-                      key={t.key}
-                      type="button"
-                      onClick={() => setExpenseModuleTab(t.key)}
-                      className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
-                      style={{
-                        borderRadius: 7,
-                        padding: '5px 12px',
-                        fontSize: 11.5,
-                        background: on ? t.activeBg : 'transparent',
-                        color: on ? '#fff' : 'var(--vz-secondary-color)',
-                        border: 'none',
-                        boxShadow: on ? `0 3px 8px ${t.shadow}` : 'none',
-                      }}
-                    >
-                      <i className={t.icon} style={{ fontSize: 12 }} />
-                      {t.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </Col>
-          </Row>
-
-          {/* Section card — header copy + counts swap based on the
-              active module so the rest of the layout (search, Export,
-              Raise New Claim, table) stays consistent. */}
-          <div
-            className="ep-section-card-flat ep-section-card mb-3"
-            style={{ borderTop: expenseModuleTab === 'expense' ? '3px solid #a855f7' : '3px solid #4338ca' }}
-          >
-            <div
-              className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 flex-wrap"
-              style={{
-                borderBottom: expenseModuleTab === 'expense'
-                  ? '1px solid rgba(168,85,247,0.18)'
-                  : '1px solid rgba(67,56,202,0.18)',
-                background: expenseModuleTab === 'expense'
-                  ? 'linear-gradient(135deg, rgba(168,85,247,0.14) 0%, rgba(168,85,247,0.04) 60%, rgba(168,85,247,0.01) 100%)'
-                  : 'linear-gradient(135deg, rgba(67,56,202,0.14) 0%, rgba(67,56,202,0.04) 60%, rgba(67,56,202,0.01) 100%)',
-              }}
-            >
-              <div className="d-flex align-items-center gap-2">
-                <span className="ep-section-icon" style={{
-                  background: expenseModuleTab === 'expense' ? 'rgba(168,85,247,0.18)' : 'rgba(67,56,202,0.18)',
-                  color: expenseModuleTab === 'expense' ? '#7c3aed' : '#4338ca',
-                }}>
-                  <i className={expenseModuleTab === 'expense' ? 'ri-file-list-3-line' : 'ri-money-dollar-circle-line'} />
-                </span>
-                <div>
-                  <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>
-                    {expenseModuleTab === 'expense' ? 'Expense Claims' : 'Advance Requests'}
-                  </h6>
-                  <small className="text-muted" style={{ fontSize: 11 }}>
-                    {expenseModuleTab === 'expense'
-                      ? `${expenseCounts.all} total · ${expenseCounts.approved} approved · ${expenseCounts.pending} pending`
-                      : `${apiAdvances.length} total · ${apiAdvances.filter(a => a.status === 'approved').length} approved · ${apiAdvances.filter(a => a.status === 'pending').length} pending`}
-                  </small>
-                </div>
-              </div>
-              <div className="d-flex align-items-center gap-2 flex-wrap">
-                <div className="search-box ep-exp-search" style={{ minWidth: 200 }}>
-                  <input type="text" className="form-control form-control-sm" placeholder="Search…" style={{ fontSize: 12, height: 30 }} />
-                  <i className="ri-search-line search-icon" style={{ fontSize: 12 }} />
-                </div>
-                {/* Export — opens a format picker (Excel / PDF / CSV) and
-                    exports the active module's filtered rows. Was previously
-                    a dead button with no handler. */}
-                <Dropdown isOpen={exportOpen} toggle={() => setExportOpen(o => !o)}>
-                  <DropdownToggle
-                    tag="button"
-                    type="button"
-                    caret={false}
-                    className="btn btn-sm rounded-pill fw-semibold d-inline-flex align-items-center gap-1"
-                    style={{
-                      background: 'var(--vz-card-bg)',
-                      color: 'var(--vz-body-color)',
-                      border: '1px solid var(--vz-border-color)',
-                      fontSize: 11.5, padding: '4px 12px',
-                    }}
-                  >
-                    <i className="ri-download-2-line" /> Export
-                    <i className="ri-arrow-down-s-line" />
-                  </DropdownToggle>
-                  <DropdownMenu end>
-                    <DropdownItem header>Download as</DropdownItem>
-                    <DropdownItem onClick={() => runProfileExport('xlsx')}>
-                      <i className="ri-file-excel-2-line me-2 text-success" />Excel (.xlsx)
-                    </DropdownItem>
-                    <DropdownItem onClick={() => runProfileExport('pdf')}>
-                      <i className="ri-file-pdf-2-line me-2 text-danger" />PDF (.pdf)
-                    </DropdownItem>
-                    <DropdownItem onClick={() => runProfileExport('csv')}>
-                      <i className="ri-file-text-line me-2 text-primary" />CSV (.csv)
-                    </DropdownItem>
-                  </DropdownMenu>
-                </Dropdown>
-                {/* Raise New Claim — inline styles can't carry :hover, so
-                    we drive the brightening + lift via mouse handlers. */}
-                <button
-                  type="button"
-                  className="btn btn-sm rounded-pill fw-semibold d-inline-flex align-items-center gap-1"
-                  style={{
-                    background: 'linear-gradient(135deg,#f97316,#fb923c)',
-                    color: '#fff',
-                    border: 'none',
-                    boxShadow: '0 4px 10px rgba(249,115,22,0.28)',
-                    fontSize: 11.5, padding: '4px 12px',
-                    transition: 'transform .15s ease, box-shadow .15s ease, filter .15s ease',
-                  }}
-                  onMouseEnter={e => {
-                    const t = e.currentTarget;
-                    t.style.transform = 'translateY(-1px)';
-                    t.style.boxShadow = '0 6px 14px rgba(249,115,22,0.45)';
-                    t.style.filter = 'brightness(1.06)';
-                  }}
-                  onMouseLeave={e => {
-                    const t = e.currentTarget;
-                    t.style.transform = 'translateY(0)';
-                    t.style.boxShadow = '0 4px 10px rgba(249,115,22,0.28)';
-                    t.style.filter = 'none';
-                  }}
-                  onClick={() => {
-                    // Open the unified modal in the right mode based on
-                    // which list is currently visible.
-                    setClaimMode(expenseModuleTab === 'advance' ? 'advance' : 'expense');
-                    setClaimOpen(true);
-                  }}
-                >
-                  <i className="ri-add-line" /> {expenseModuleTab === 'advance' ? 'New Advance Request' : 'Raise New Claim'}
-                </button>
-              </div>
-            </div>
-            <div className="px-3 pb-3 pt-2">
-              {/* My / Team sub-tabs — only render when the current user is
-                  viewing their own profile AND has a team (i.e. is someone's
-                  reporting manager). For everyone else the table behaves as
-                  a single-list view (the user's own claims/advances). The
-                  labels, counts and active-state mirror whichever module
-                  (Expense Claims vs Advance Requests) is currently open. */}
-              {/* Visible whenever the user is a manager in *either* module —
-                  approved/rejected rows stay in teamClaims/teamAdvances
-                  (backend returns every row where manager_id = current user
-                  regardless of status), so this toggle keeps the historic
-                  track visible after the manager has acted. */}
-              {isOwnProfile && (teamClaims.length > 0 || teamAdvances.length > 0) && (
-                <div className="d-flex gap-1 mb-3" style={{
-                  background: 'var(--vz-secondary-bg)', padding: 4, borderRadius: 10,
-                  border: '1px solid var(--vz-border-color)', width: 'fit-content',
-                }}>
-                  {(expenseModuleTab === 'advance'
-                    ? [
-                        { key: 'mine' as const, label: 'My Advances',   icon: 'ri-user-line', count: apiAdvances.length },
-                        { key: 'team' as const, label: 'Team Advances', icon: 'ri-team-line', count: teamAdvances.length },
-                      ]
-                    : [
-                        { key: 'mine' as const, label: 'My Expenses',   icon: 'ri-user-line', count: apiClaims.length },
-                        { key: 'team' as const, label: 'Team Expenses', icon: 'ri-team-line', count: teamClaims.length },
-                      ]
-                  ).map(t => {
-                    const currentSub = expenseModuleTab === 'advance' ? advanceSubTab : expenseSubTab;
-                    const on = currentSub === t.key;
-                    const activeAccent = expenseModuleTab === 'advance' ? '#4338ca' : '#7c3aed';
-                    const activeWash   = expenseModuleTab === 'advance' ? 'rgba(67,56,202,0.12)' : 'rgba(124,58,237,0.12)';
-                    return (
-                      <button
-                        key={t.key}
-                        type="button"
-                        onClick={() => {
-                          if (expenseModuleTab === 'advance') setAdvanceSubTab(t.key);
-                          else                                setExpenseSubTab(t.key);
-                        }}
-                        className="d-inline-flex align-items-center gap-2 fw-semibold"
-                        style={{
-                          fontSize: 12,
-                          padding: '5px 14px',
-                          borderRadius: 8,
-                          border: 'none',
-                          background: on ? 'var(--vz-card-bg)' : 'transparent',
-                          color: on ? activeAccent : 'var(--vz-secondary-color)',
-                          boxShadow: on ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <i className={t.icon} />
-                        {t.label}
-                        <span
-                          className="d-inline-flex align-items-center justify-content-center rounded-pill"
-                          style={{
-                            minWidth: 18, height: 16, padding: '0 6px',
-                            background: on ? activeWash : 'var(--vz-secondary-bg)',
-                            color: on ? activeAccent : 'var(--vz-secondary-color)',
-                            fontSize: 10, fontWeight: 700,
-                          }}
-                        >
-                          {t.count}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Filter pills — active = solid filled with colored shadow for
-                  strong visibility; inactive = subtle white with border. When
-                  the Advance Requests module is active the same pills drive
-                  filtering against `advanceCounts` instead of `expenseCounts`.
-                  The Drafts pill is appended only when a saved-draft exists
-                  in localStorage for the active module — clicking it swaps
-                  the table area for a list of resumable drafts. */}
-              <div className="d-flex gap-2 flex-wrap mb-3">
-                {(() => {
-                  const c = expenseModuleTab === 'advance' ? advanceCounts : expenseCounts;
-                  const draftCount = expenseModuleTab === 'advance'
-                    ? advanceDrafts.length
-                    : expenseDrafts.length;
-                  const base = [
-                    { key: 'all'      as ExpenseFilter, label: 'All',      count: c.all,      active: '#6366f1', shadow: 'rgba(99,102,241,0.32)' },
-                    { key: 'approved' as ExpenseFilter, label: 'Approved', count: c.approved, active: '#10b981', shadow: 'rgba(16,185,129,0.32)' },
-                    { key: 'rejected' as ExpenseFilter, label: 'Rejected', count: c.rejected, active: '#ef4444', shadow: 'rgba(239,68,68,0.32)'  },
-                    { key: 'pending'  as ExpenseFilter, label: 'Pending',  count: c.pending,  active: '#f59e0b', shadow: 'rgba(245,158,11,0.32)' },
-                  ];
-                  if (draftCount > 0) {
-                    base.push({ key: 'draft' as ExpenseFilter, label: 'Drafts', count: draftCount, active: '#0ea5e9', shadow: 'rgba(14,165,233,0.32)' });
-                  }
-                  return base;
-                })().map(f => {
-                  const on = expenseFilter === f.key;
-                  return (
-                    <button
-                      key={f.key}
-                      type="button"
-                      onClick={() => setExpenseFilter(f.key)}
-                      className="btn d-inline-flex align-items-center gap-2 rounded-pill fw-semibold"
-                      style={{
-                        fontSize: 11.5,
-                        padding: '4px 12px',
-                        background: on ? f.active : 'var(--vz-card-bg)',
-                        color: on ? '#fff' : 'var(--vz-secondary-color)',
-                        border: `1px solid ${on ? f.active : 'var(--vz-border-color)'}`,
-                        boxShadow: on ? `0 4px 10px ${f.shadow}` : 'none',
-                        transition: 'all .15s ease',
-                      }}
-                    >
-                      {f.label}
-                      <span
-                        className="d-inline-flex align-items-center justify-content-center rounded-pill"
-                        style={{
-                          minWidth: 20, height: 16,
-                          padding: '0 6px',
-                          background: on ? 'rgba(255,255,255,0.28)' : 'var(--vz-secondary-bg)',
-                          color: on ? '#fff' : 'var(--vz-secondary-color)',
-                          fontSize: 10, fontWeight: 700,
-                        }}
-                      >
-                        {f.count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Claims / Advances table — API-backed. Status pill replaces
-                  the old Payment Action column; the 3-dot Action menu opens
-                  the audit log popover (Created → Manager → HR/Finance).
-                  When viewing Team rows as the assigned manager, inline
-                  Approve/Reject buttons appear next to the menu. The
-                  AdvanceRequestsTable mirror is rendered when the user
-                  switches the module pill to "Advance Requests".
-
-                  When the Drafts filter is active the table area is replaced
-                  by a list of resumable drafts pulled from localStorage —
-                  drafts aren't real rows so they can't share the same table
-                  component. Each row offers Resume (reopens the modal with
-                  the saved fields hydrated) and Discard (removes from
-                  storage and refreshes the meta state). */}
-              {expenseFilter === 'draft' ? (
-                <DraftListView
-                  module={expenseModuleTab}
-                  expenseEntries={expenseDrafts}
-                  advanceEntries={advanceDrafts}
-                  onResume={(draftId) => {
-                    setClaimMode(expenseModuleTab === 'advance' ? 'advance' : 'expense');
-                    setEditingDraftId(draftId);
-                    setResumeFromDraft(true);
-                    setClaimOpen(true);
-                  }}
-                  onDiscard={(draftId) => {
-                    try {
-                      if (expenseModuleTab === 'advance') {
-                        const next = advanceDrafts.filter(e => e.id !== draftId);
-                        if (next.length) localStorage.setItem(advanceDraftKey, JSON.stringify(next));
-                        else             localStorage.removeItem(advanceDraftKey);
-                      } else {
-                        const next = expenseDrafts.filter(e => e.id !== draftId);
-                        if (next.length) localStorage.setItem(claimDraftKey, JSON.stringify(next));
-                        else             localStorage.removeItem(claimDraftKey);
-                      }
-                    } catch { /* ignore */ }
-                    readSavedDrafts();
-                    toast.success('Draft discarded', 'The saved draft has been removed.');
-                  }}
-                />
-              ) : expenseModuleTab === 'advance' ? (
-                <AdvanceRequestsTable
-                  rows={filteredAdvances}
-                  loading={loadingAdvances}
-                  accent={accent}
-                  fallbackInitials={initials}
-                  fallbackName={employee?.name || employeeId}
-                  mode={advanceSubTab === 'team' ? 'team' : 'mine'}
-                  currentEmployeeId={authUser?.employee_id ?? null}
-                  onAct={actOnAdvance}
-                />
-              ) : (
-                <ExpenseClaimsTable
-                  rows={filteredExpenses}
-                  loading={loadingClaims}
-                  accent={accent}
-                  fallbackInitials={initials}
-                  fallbackName={employee?.name || employeeId}
-                  mode={expenseSubTab === 'team' ? 'team' : 'mine'}
-                  currentEmployeeId={authUser?.employee_id ?? null}
-                  onAct={actOnClaim}
-                />
-              )}
-
-              <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3 pt-2 border-top">
-                <small className="text-muted">
-                  {expenseModuleTab === 'advance' ? (
-                    <>Showing <strong className="text-body">{filteredAdvances.length}</strong> advance{filteredAdvances.length === 1 ? '' : 's'}</>
-                  ) : (
-                    <>Showing <strong className="text-body">{filteredExpenses.length}</strong> claim{filteredExpenses.length === 1 ? '' : 's'}</>
-                  )}
-                </small>
-                <small className="text-muted d-inline-flex align-items-center gap-1">
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
-                  Last updated: Apr 2026
-                </small>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
+      {tab === 'expense' && <ExpenseTab />}
 
       {/* ── Tab: Leave (clean Keka-style flow) ──
            LeaveSummaryPanel owns the whole experience now: the "Request
@@ -5370,8 +2137,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
            /employees/{id}/holidays, so changes to the assigned calendar reflect
            automatically. List + Calendar views inside the panel. */}
       {tab === 'holidays' && (
-        <div style={{ background: 'var(--vz-card-bg, #fff)', borderRadius: 14, border: '1px solid var(--vz-border-color, #eef2f7)', padding: 18, boxShadow: '0 1px 3px rgba(15,23,42,0.04)' }}>
-          <HolidayCalendarPanel employeeId={employeeId} />
+        <div className="ep-section-card-flat ep-section-card mb-3">
+          <div className="px-3 py-3">
+            <HolidayCalendarPanel employeeId={employeeId} />
+          </div>
         </div>
       )}
 
@@ -5381,241 +2150,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
            existing RaiseHiringRequestModal + HiringRequestsListModal
            components so the create form, validation and list filters
            stay in one place. */}
-      {tab === 'hiring' && isOwnProfile && (isManager || ['branch_user', 'client_admin', 'super_admin'].includes(String(authUser?.user_type || ''))) && (() => {
-        const stats = {
-          total:     hiringRequests.length,
-          draft:     hiringRequests.filter((r: any) => r.status === 'Draft').length,
-          submitted: hiringRequests.filter((r: any) => r.status === 'Submitted').length,
-          critical:  hiringRequests.filter((r: any) => r.urgency === 'Critical').length,
-        };
-        const fmtDate = (raw: any): string => {
-          if (!raw) return '—';
-          const d = new Date(String(raw));
-          if (Number.isNaN(d.getTime())) return '—';
-          return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-        };
-        const urgencyTone = (u?: string) => {
-          switch ((u || '').toLowerCase()) {
-            case 'critical': return { bg: 'rgba(239,68,68,0.14)',  fg: '#b91c1c' };
-            case 'high':     return { bg: 'rgba(249,115,22,0.14)', fg: '#c2410c' };
-            case 'medium':   return { bg: 'rgba(245,158,11,0.14)', fg: '#92400e' };
-            default:         return { bg: 'rgba(16,185,129,0.14)', fg: '#047857' };
-          }
-        };
-        const statusTone = (s?: string) => {
-          switch ((s || '').toLowerCase()) {
-            case 'draft':     return { bg: 'rgba(115,115,115,0.14)', fg: '#525252' };
-            case 'submitted': return { bg: 'rgba(124,58,237,0.14)',  fg: '#6d28d9' };
-            case 'approved':  return { bg: 'rgba(16,185,129,0.14)',  fg: '#047857' };
-            case 'rejected':  return { bg: 'rgba(239,68,68,0.14)',   fg: '#b91c1c' };
-            default:          return { bg: 'rgba(99,102,241,0.14)',  fg: '#4338ca' };
-          }
-        };
-        return (
-          <Card className="mb-3 border-0" style={{ borderRadius: 14 }}>
-            <CardBody>
-              {/* Header — title + Raise CTA + View All */}
-              <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
-                <div className="d-flex align-items-center gap-2">
-                  <span className="d-inline-flex align-items-center justify-content-center rounded-3"
-                    style={{ width: 38, height: 38, background: 'linear-gradient(135deg,#0ea5e9,#6366f1)', color: '#fff' }}>
-                    <i className="ri-user-add-line" style={{ fontSize: 18 }} />
-                  </span>
-                  <div>
-                    <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Hiring Requests</h6>
-                    <small className="text-muted" style={{ fontSize: 11.5 }}>
-                      {(() => {
-                        const seesAll = ['branch_user', 'client_admin', 'super_admin']
-                          .includes(String(authUser?.user_type || ''));
-                        if (seesAll) return `All hiring requests across the organisation · ${hiringRequests.length} total`;
-                        return `Raise hires for your team · ${teamSize} direct report${teamSize === 1 ? '' : 's'}`;
-                      })()}
-                    </small>
-                  </div>
-                </div>
-                <div className="d-flex align-items-center gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    className="btn d-inline-flex align-items-center gap-2 fw-semibold"
-                    onClick={() => { setHiringEditing(null); setRaiseHiringOpen(true); }}
-                    style={{
-                      background: 'linear-gradient(135deg,#0ea5e9,#6366f1)', color: '#fff',
-                      border: 'none', fontSize: 12, padding: '7px 14px', borderRadius: 999,
-                      boxShadow: '0 4px 12px rgba(99,102,241,0.28)',
-                    }}
-                  >
-                    <i className="ri-file-add-line" /> Raise Hiring Request
-                  </button>
-                </div>
-              </div>
-
-              {/* KPI strip — matches the recruitment KPI shape (top accent
-                  strip + label/number + iconTile). Scoped to this manager's
-                  own raised requests. */}
-              <Row className="g-3 mb-3 align-items-stretch">
-                {[
-                  { label: 'Total',     value: stats.total,     icon: 'ri-file-list-3-line', accent: 'linear-gradient(135deg,#4338ca 0%,#6366f1 60%,#818cf8 100%)', deep: '#4338ca' },
-                  { label: 'Draft',     value: stats.draft,     icon: 'ri-draft-line',       accent: 'linear-gradient(135deg,#525252 0%,#737373 60%,#a3a3a3 100%)', deep: '#525252' },
-                  { label: 'Submitted', value: stats.submitted, icon: 'ri-send-plane-line',  accent: 'linear-gradient(135deg,#7c3aed 0%,#9333ea 60%,#a855f7 100%)', deep: '#7c3aed' },
-                  { label: 'Critical',  value: stats.critical,  icon: 'ri-flashlight-line',  accent: 'linear-gradient(135deg,#be123c 0%,#ef4444 60%,#fb7185 100%)', deep: '#be123c' },
-                ].map(k => (
-                  <Col key={k.label} xl={3} md={6} sm={6} xs={12}>
-                    <div
-                      className="ep-hr-kpi"
-                      style={{
-                        position: 'relative', overflow: 'hidden',
-                        border: '1px solid var(--vz-border-color)', borderRadius: 12,
-                        background: 'var(--vz-card-bg)', padding: '14px 16px',
-                        height: '100%',
-                        transition: 'transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease',
-                        cursor: 'default',
-                      }}
-                    >
-                      <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.accent }} />
-                      <div className="d-flex align-items-start justify-content-between gap-2">
-                        <div className="min-w-0">
-                          <p className="mb-1 text-uppercase fw-semibold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', fontSize: 10.5 }}>
-                            {k.label}
-                          </p>
-                          {hiringLoading
-                            ? <Shimmer height={26} width={48} />
-                            : <h3 className="mb-0 fw-bold" style={{ fontSize: 24, color: k.deep, fontVariantNumeric: 'tabular-nums' }}>{k.value}</h3>}
-                        </div>
-                        <span className="ep-hr-kpi-icon d-inline-flex align-items-center justify-content-center rounded-3"
-                          style={{ width: 40, height: 40, background: k.accent, color: '#fff', transition: 'transform 180ms ease' }}>
-                          <i className={k.icon} style={{ fontSize: 18 }} />
-                        </span>
-                      </div>
-                    </div>
-                  </Col>
-                ))}
-              </Row>
-              {/* Hover polish for the four KPI tiles — lift + shadow halo
-                  matched to the tile's accent. Reads "interactive" without
-                  actually clicking through; the figures themselves are the
-                  source of truth, so a click target would be misleading. */}
-              <style>{`
-                .ep-hr-kpi:hover {
-                  transform: translateY(-2px);
-                  box-shadow: 0 12px 26px rgba(99,102,241,0.16), 0 4px 10px rgba(15,23,42,0.08);
-                  border-color: rgba(99,102,241,0.40) !important;
-                }
-                .ep-hr-kpi:hover .ep-hr-kpi-icon {
-                  transform: scale(1.06) rotate(-2deg);
-                }
-                [data-bs-theme="dark"] .ep-hr-kpi:hover {
-                  box-shadow: 0 12px 26px rgba(124,92,252,0.22), 0 4px 10px rgba(0,0,0,0.40);
-                  border-color: rgba(124,92,252,0.50) !important;
-                }
-              `}</style>
-
-              {/* Inline list — compact 5-row preview of recent requests.
-                  Full filtering / pagination lives behind View All Requests. */}
-              <div className="table-responsive border rounded">
-                <table className="table align-middle table-nowrap mb-0">
-                  <thead className="table-light">
-                    <tr>
-                      <th className="ps-3">Code</th>
-                      <th>Position</th>
-                      <th>Department</th>
-                      <th>Urgency</th>
-                      <th>Status</th>
-                      <th>Submitted</th>
-                      <th className="text-center">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {hiringLoading ? (
-                      <ShimmerTableRows rows={4} cols={7} keyPrefix="hr-req-shim" />
-                    ) : hiringRequests.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="text-center py-4 text-muted" style={{ fontSize: 12.5 }}>
-                          <i className="ri-inbox-line" style={{ fontSize: 26, display: 'block', marginBottom: 6 }} />
-                          You haven't raised any hiring requests yet.
-                        </td>
-                      </tr>
-                    ) : hiringRequests.map((r: any) => {
-                      const uTone = urgencyTone(r.urgency);
-                      // Once HR has converted this hiring request into a
-                      // recruitment row, surface that as the status (it's
-                      // the "next" step in the pipeline and carries more
-                      // information than the original Submitted/Draft
-                      // value). Falls back to the row's own status for
-                      // requests still sitting in the queue.
-                      const displayStatus = r._hasRecruitment ? 'Recruitment Created' : (r.status || '—');
-                      const sTone = r._hasRecruitment
-                        ? { bg: 'rgba(16,185,129,0.16)', fg: '#047857' }
-                        : statusTone(r.status);
-                      return (
-                        <tr key={r.id}>
-                          <td className="ps-3 fw-semibold" style={{ fontSize: 12 }}>
-                            <span style={{
-                              background: 'rgba(99,102,241,0.10)', color: '#4338ca',
-                              padding: '2px 8px', borderRadius: 6, fontFamily: 'monospace',
-                            }}>{r.code || `HR-${r.id}`}</span>
-                          </td>
-                          <td style={{ fontSize: 12.5 }}>{r.position || r.job_role || r.role_name || '—'}</td>
-                          <td style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)' }}>{r.department?.name || r.department_name || '—'}</td>
-                          <td>
-                            <span style={{
-                              padding: '2px 10px', borderRadius: 999, fontWeight: 600,
-                              background: uTone.bg, color: uTone.fg, fontSize: 10.5,
-                            }}>{r.urgency || '—'}</span>
-                          </td>
-                          <td>
-                            <span style={{
-                              padding: '2px 10px', borderRadius: 999, fontWeight: 600,
-                              background: sTone.bg, color: sTone.fg, fontSize: 10.5,
-                              display: 'inline-flex', alignItems: 'center', gap: 4,
-                            }}>
-                              {r._hasRecruitment && <i className="ri-checkbox-circle-fill" style={{ fontSize: 11 }} />}
-                              {displayStatus}
-                            </span>
-                          </td>
-                          <td style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', fontVariantNumeric: 'tabular-nums' }}>
-                            {fmtDate(r.submittedAt || r.created_at)}
-                          </td>
-                          <td className="text-center">
-                            {/* Draft rows can be reopened + edited before
-                                submitting to HR. Once submitted / converted
-                                there's nothing to edit, so show a dash. */}
-                            {r.status === 'Draft' && !r._hasRecruitment ? (
-                              <button
-                                type="button"
-                                className="btn btn-sm d-inline-flex align-items-center justify-content-center"
-                                data-tooltip="Edit Draft"
-                                aria-label="Edit Draft"
-                                onClick={() => { setHiringEditing({ ...r, _raw: r }); setRaiseHiringOpen(true); }}
-                                style={{
-                                  width: 30, height: 30, padding: 0, borderRadius: 8,
-                                  background: 'rgba(99,102,241,0.10)', color: '#4338ca',
-                                  border: '1px solid rgba(99,102,241,0.25)',
-                                }}
-                              >
-                                <i className="ri-pencil-line" />
-                              </button>
-                            ) : (
-                              <span className="text-muted">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {!hiringLoading && hiringRequests.length > 0 && (
-                <div className="d-flex justify-content-between align-items-center mt-2 pt-2 border-top">
-                  <small className="text-muted" style={{ fontSize: 11.5 }}>
-                    Showing <strong>{hiringRequests.length}</strong> request{hiringRequests.length === 1 ? '' : 's'}
-                  </small>
-                </div>
-              )}
-            </CardBody>
-          </Card>
-        );
-      })()}
+      {tab === 'hiring' && isOwnProfile && (isManager || ['branch_user', 'client_admin', 'super_admin'].includes(String(authUser?.user_type || ''))) && <HiringTab />}
 
       </div>
     </div>
@@ -5628,7 +2163,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           {/* No top-right X — footer has Cancel; one dismiss path. */}
         </div>
 
-        <div style={{ padding: '20px 22px', overflowY: 'auto', flex: '1 1 auto' }}>
+        <div className="ep-reg-body">
           {/* Selected Date */}
           <div className="mb-3">
             <div className="ep-reg-label">Selected Date</div>
@@ -5643,7 +2178,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 type="radio"
                 checked={regOption === 'adjust'}
                 onChange={() => setRegOption('adjust')}
-                style={{ display: 'none' }}
+                className="d-none"
               />
               <span>Add/update time entries to adjust attendance logs.</span>
             </label>
@@ -5653,12 +2188,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 type="radio"
                 checked={regOption === 'exempt'}
                 onChange={() => setRegOption('exempt')}
-                style={{ display: 'none' }}
+                className="d-none"
               />
               <span>Raise regularization request to exempt this day from penalization policy.</span>
             </label>
           </div>
-          <small className="text-muted d-block mb-3" style={{ fontSize: 12 }}>
+          <small className="text-muted d-block mb-3 ep-fs-12">
             Click and select time stamp box that you would like to adjust and make changes to the time
           </small>
 
@@ -5666,7 +2201,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             <>
               {/* Attendance Adjustment header + Add Log */}
               <div className="d-flex align-items-center justify-content-between mb-2">
-                <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Attendance Adjustment</h6>
+                <h6 className="mb-0 fw-bold ep-fs-12">Attendance Adjustment</h6>
                 <button
                   type="button"
                   className="ep-reg-add-btn"
@@ -5678,16 +2213,16 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
               {/* Work Location */}
               <div className="d-flex align-items-center justify-content-between mb-1">
-                <div className="ep-reg-label" style={{ marginBottom: 0 }}>
-                  Work Location <span style={{ color: '#ef4444' }}>*</span>
+                <div className="ep-reg-label ep-mb-0i">
+                  Work Location <span className="ep-reg-req">*</span>
                 </div>
-                <small className="text-muted" style={{ fontSize: 11 }}>Select all that apply</small>
+                <small className="text-muted ep-fs-11">Select all that apply</small>
               </div>
               {regLocations.length > 0 && (
                 <div className="d-flex flex-wrap gap-2 mb-2">
                   {regLocations.map(loc => (
                     <span key={loc} className="ep-reg-chip">
-                      <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#6366f1' }} />
+                      <span className="ep-reg-chip-dot" />
                       {loc}
                       <i
                         className="ri-close-line ep-reg-chip-x"
@@ -5710,7 +2245,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   }}
                 />
               </div>
-              <small className="text-muted d-block mb-3" style={{ fontSize: 11 }}>
+              <small className="text-muted d-block mb-3 ep-fs-11">
                 Select your work location(s) for this correction request
               </small>
 
@@ -5718,7 +2253,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               <div className="d-flex flex-column gap-2 mb-3">
                 {regLogs.map(log => (
                   <div className="ep-reg-log-row" key={log.id}>
-                    <i className="ri-checkbox-circle-fill" style={{ color: '#10b981', fontSize: 18 }} />
+                    <i className="ri-checkbox-circle-fill ep-reg-log-check" />
                     <input
                       type="text"
                       className="ep-reg-time-input"
@@ -5754,7 +2289,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
           {/* Note */}
           <div>
-            <h6 className="fw-bold mb-2" style={{ fontSize: 14 }}>Note</h6>
+            <h6 className="fw-bold mb-2 ep-fs-14">Note</h6>
             <textarea
               className="ep-reg-textarea"
               placeholder="Enter note"
@@ -5817,17 +2352,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         <div className="ep-bd-hero">
           <div className="d-flex align-items-start justify-content-between gap-3">
             <div>
-              <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.62)' }}>SALARY DETAILS</div>
-              <h4 className="text-white fw-bold mb-1" style={{ fontSize: 20 }}>
+              <div className="ep-bd-eyebrow">SALARY DETAILS</div>
+              <h4 className="text-white fw-bold mb-1 ep-fs-20">
                 Salary Breakdown for{' '}
-                <span style={{ color: '#86efac' }}>₹{breakdownRow.annual.toLocaleString('en-IN')} / Annum</span>
+                <span className="ep-bd-annum">₹{breakdownRow.annual.toLocaleString('en-IN')} / Annum</span>
               </h4>
-              <small style={{ color: 'rgba(255,255,255,0.78)', fontSize: 12 }}>
+              <small className="ep-bd-subhead">
                 Pay Group: <strong>Default</strong> · Structure: <strong>Class A</strong> · Effective: <strong>{breakdownRow.dateShort}</strong>
               </small>
             </div>
             <button type="button" className="ep-bd-close" onClick={() => setBreakdownOpen(false)} aria-label="Close">
-              <i className="ri-close-line" style={{ fontSize: 18 }} />
+              <i className="ri-close-line ep-fs-18" />
             </button>
           </div>
         </div>
@@ -5835,11 +2370,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         <div className="ep-bd-body">
           <div className="ep-bd-main">
             <div className="ep-bd-card">
-              <div className="d-flex align-items-center gap-2 px-3 py-2" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
-                <span className="ep-rev-icon" style={{ background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', width: 32, height: 32, fontSize: 16 }}>
+              <div className="d-flex align-items-center gap-2 px-3 py-2 ep-bd-card-head">
+                <span className="ep-rev-icon ep-bd-icon-emerald">
                   <i className="ri-line-chart-line" />
                 </span>
-                <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Earnings Breakdown</h6>
+                <h6 className="mb-0 fw-bold ep-fs-13">Earnings Breakdown</h6>
               </div>
               <table className="ep-bd-table">
                 <thead>
@@ -5850,7 +2385,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </tr>
                 </thead>
                 <tbody>
-                  {breakdownData.rows.map(r => (
+                  {breakdownData.rows.map((r: any) => (
                     <tr key={r.label}>
                       <td>{r.label}</td>
                       <td className="text-end font-monospace fw-semibold">₹{r.monthly.toLocaleString('en-IN')}</td>
@@ -5859,28 +2394,28 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   ))}
                 </tbody>
                 <tfoot>
-                  <tr style={{ background: 'rgba(16,185,129,0.06)' }}>
-                    <td className="fw-bold" style={{ color: '#108548' }}>Total Earnings</td>
-                    <td className="text-end fw-bold font-monospace" style={{ color: '#108548' }}>₹{breakdownData.totalMonthly.toLocaleString('en-IN')}</td>
-                    <td className="text-end fw-bold font-monospace" style={{ color: '#108548' }}>₹{breakdownData.totalAnnual.toLocaleString('en-IN')}</td>
+                  <tr className="ep-bd-total-row">
+                    <td className="fw-bold ep-bd-total-cell">Total Earnings</td>
+                    <td className="text-end fw-bold font-monospace ep-bd-total-cell">₹{breakdownData.totalMonthly.toLocaleString('en-IN')}</td>
+                    <td className="text-end fw-bold font-monospace ep-bd-total-cell">₹{breakdownData.totalAnnual.toLocaleString('en-IN')}</td>
                   </tr>
                 </tfoot>
               </table>
 
               <div className="ep-bd-net">
                 <div>
-                  <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.78)' }}>AFTER TAX & DEDUCTIONS</div>
-                  <h5 className="text-white fw-bold mb-0" style={{ fontSize: 16 }}>NET PAY</h5>
+                  <div className="ep-bd-eyebrow-net">AFTER TAX & DEDUCTIONS</div>
+                  <h5 className="text-white fw-bold mb-0 ep-fs-16">NET PAY</h5>
                 </div>
                 <div className="text-end">
-                  <h2 className="text-white fw-bold mb-0" style={{ fontSize: 32 }}>₹{breakdownData.netPay.toLocaleString('en-IN')}</h2>
-                  <small style={{ color: 'rgba(255,255,255,0.78)' }}>per month (estimated)</small>
+                  <h2 className="text-white fw-bold mb-0 ep-fs-32">₹{breakdownData.netPay.toLocaleString('en-IN')}</h2>
+                  <small className="ep-bd-white78">per month (estimated)</small>
                 </div>
               </div>
             </div>
 
             <div className="ep-bd-note">
-              <i className="ri-information-line" style={{ fontSize: 16, color: '#a16207', flexShrink: 0 }} />
+              <i className="ri-information-line ep-bd-note-icon" />
               <div>
                 <strong>Note:</strong> Net Pay excludes applicable taxes (TDS) and statutory deductions (PF, PT). Actual disbursement may vary based on declarations and investments.
               </div>
@@ -5890,11 +2425,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           {/* Version history */}
           <aside className="ep-bd-history">
             <div className="d-flex align-items-center gap-2 mb-3">
-              <i className="ri-history-line" style={{ color: '#0ab39c' }} />
+              <i className="ri-history-line ep-bd-history-icon" />
               <h6 className="mb-0 fw-bold">Version History</h6>
             </div>
-            <div className="position-relative" style={{ paddingLeft: 22 }}>
-              <div style={{ position: 'absolute', top: 12, bottom: 12, left: 8, width: 2, background: 'var(--vz-border-color)' }} />
+            <div className="position-relative ep-pl-22">
+              <div className="ep-bd-history-line" />
               {(realTimeline.length ? realTimeline : SALARY_TIMELINE).map(s => {
                 const active = s.id === breakdownRow.id;
                 return (
@@ -5904,15 +2439,15 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     className={`ep-bd-version${active ? ' is-current' : ''}`}
                     onClick={() => setBreakdownRowId(s.id)}
                   >
-                    <span className="ep-bd-dot" style={{ background: active ? '#0ab39c' : 'transparent', border: active ? 'none' : '2px solid var(--vz-border-color)' }}>
-                      {active && <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#fff' }} />}
+                    <span className={`ep-bd-dot ${active ? 'ep-bd-dot-active' : 'ep-bd-dot-inactive'}`}>
+                      {active && <span className="ep-bd-dot-pip" />}
                     </span>
                     <div className="flex-grow-1 min-w-0 text-start">
                       <div className="d-flex align-items-center gap-2 mb-1">
                         <small className="fw-semibold">{s.dateShort}</small>
                         {s.current && <span className="ep-bd-now">CURRENT</span>}
                       </div>
-                      <div className="fw-bold" style={{ color: active ? '#0a8a78' : 'var(--vz-body-color)' }}>
+                      <div className={`fw-bold ${active ? 'ep-bd-amount-active' : 'ep-bd-amount-inactive'}`}>
                         ₹{s.annual.toLocaleString('en-IN')}
                       </div>
                       <small className="text-muted">Per Annum</small>
@@ -5935,10 +2470,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <i className="ri-file-text-line" />
               </span>
               <div>
-                <h5 className="text-white fw-bold mb-0" style={{ fontSize: 14 }}>
+                <h5 className="text-white fw-bold mb-0 ep-fs-14">
                   {claimMode === 'expense' ? 'Submit New Expense Claim' : 'Advance Request — Recoverable Payout'}
                 </h5>
-                <small style={{ color: 'rgba(255,255,255,0.78)', fontSize: 10.5 }}>
+                <small className="ep-claim-hero-sub">
                   All required fields must be completed · Receipt required above ₹500 · Changes take effect after approval flow completes
                 </small>
               </div>
@@ -5948,7 +2483,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 {claimMode === 'expense' ? 'EXPENSE MODE' : 'ADVANCE MODE'}
               </span>
               <button type="button" className="ep-claim-x" onClick={() => setClaimOpen(false)} aria-label="Close">
-                <i className="ri-close-line" style={{ fontSize: 14 }} />
+                <i className="ri-close-line ep-fs-14" />
               </button>
             </div>
           </div>
@@ -5957,7 +2492,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               Advance module pill (which decides which form opens), so the
               in-modal tab row was redundant and has been removed. */}
           <div className="d-flex align-items-center justify-content-end flex-wrap gap-2 mt-2">
-            <small style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10 }}>
+            <small className="ep-claim-hero-hint">
               {claimMode === 'expense'
                 ? <>Expense → <strong>Reimbursement</strong></>
                 : <>Advance → <strong>Payroll Recovery</strong></>}
@@ -6086,10 +2621,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <Col md={6}>
                     <div className="ep-claim-label">Amount (₹) <span className="ep-claim-req">*</span></div>
                     <div className="position-relative">
-                      <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', fontSize: 13, fontWeight: 600 }}>₹</span>
+                      <span className="ep-claim-amount-prefix">₹</span>
                       <input
-                        className={`ep-claim-input${claimErrors.amount ? ' is-invalid' : ''}`}
-                        style={{ paddingLeft: 28 }}
+                        className={`ep-claim-input ep-pl-28${claimErrors.amount ? ' is-invalid' : ''}`}
                         placeholder="0.00"
                         value={claimAmount}
                         inputMode="decimal"
@@ -6152,14 +2686,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <span className="text-danger ms-1">*</span>
                 </div>
                 <label
-                  className={`ep-claim-upload mb-2 d-block${claimErrors.files ? ' is-invalid' : ''}`}
-                  style={{ cursor: 'pointer' }}
+                  className={`ep-claim-upload mb-2 d-block ep-claim-upload-cursor${claimErrors.files ? ' is-invalid' : ''}`}
                 >
                   <input
                     type="file"
                     multiple
                     accept=".pdf,.jpg,.jpeg,.png"
-                    style={{ display: 'none' }}
+                    className="d-none"
                     onChange={(e) => {
                       const picked = Array.from(e.target.files || []);
                       const { accepted, errors } = filterValidUploads(picked);
@@ -6171,8 +2704,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <span className="ep-claim-upload-icon">
                     <i className="ri-upload-2-line" />
                   </span>
-                  <div className="fw-semibold" style={{ fontSize: 13 }}>Click to upload or drag &amp; drop</div>
-                  <small className="text-muted" style={{ fontSize: 11.5 }}>PDF, JPG, PNG · Multiple files allowed · Max 5 MB each</small>
+                  <div className="fw-semibold ep-fs-13">Click to upload or drag &amp; drop</div>
+                  <small className="text-muted ep-fs-115">PDF, JPG, PNG · Multiple files allowed · Max 5 MB each</small>
                 </label>
                 {claimErrors.files && (
                   <div className="ep-claim-err mb-2"><i className="ri-error-warning-line" />{claimErrors.files}</div>
@@ -6226,7 +2759,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 </div>
                 <div className="ep-claim-flow mb-4">
                   <div className="ep-claim-flow-step">
-                    <span className="ep-claim-flow-icon" style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
+                    <span className="ep-claim-flow-icon ep-claim-flow-icon-indigo">
                       <i className="ri-user-line" />
                     </span>
                     <div>
@@ -6236,7 +2769,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </div>
                   <i className="ri-arrow-right-line ep-claim-flow-arrow" />
                   <div className="ep-claim-flow-step">
-                    <span className="ep-claim-flow-icon" style={{ background: 'linear-gradient(135deg,#0ab39c,#30d5b5)' }}>
+                    <span className="ep-claim-flow-icon ep-claim-flow-icon-emerald">
                       <i className="ri-user-star-line" />
                     </span>
                     <div>
@@ -6246,7 +2779,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </div>
                   <i className="ri-arrow-right-line ep-claim-flow-arrow" />
                   <div className="ep-claim-flow-step">
-                    <span className="ep-claim-flow-icon" style={{ background: 'linear-gradient(135deg,#f59e0b,#fbbf24)' }}>
+                    <span className="ep-claim-flow-icon ep-claim-flow-icon-amber">
                       <i className="ri-shield-check-line" />
                     </span>
                     <div>
@@ -6266,8 +2799,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <i className="ri-money-dollar-circle-line" />
                   </span>
                   <div className="flex-grow-1">
-                    <h6 className="mb-1 fw-bold" style={{ color: '#4338ca', fontSize: 14 }}>Advance Request — Recoverable Payout</h6>
-                    <small style={{ color: '#6366f1', fontSize: 11.5 }}>Amount will be recovered through payroll deduction · Approval flow required</small>
+                    <h6 className="mb-1 fw-bold ep-claim-banner-title">Advance Request — Recoverable Payout</h6>
+                    <small className="ep-claim-banner-sub">Amount will be recovered through payroll deduction · Approval flow required</small>
                   </div>
                   <span className="ep-claim-flow-pill">APPROVAL FLOW</span>
                 </div>
@@ -6297,10 +2830,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <Col md={6}>
                     <div className="ep-claim-label">Amount (₹) <span className="ep-claim-req">*</span></div>
                     <div className="position-relative">
-                      <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', fontSize: 13, fontWeight: 600 }}>₹</span>
+                      <span className="ep-claim-amount-prefix">₹</span>
                       <input
-                        className={`ep-claim-input${advErrors.amount ? ' is-invalid' : ''}`}
-                        style={{ paddingLeft: 28 }}
+                        className={`ep-claim-input ep-pl-28${advErrors.amount ? ' is-invalid' : ''}`}
                         placeholder="0"
                         inputMode="decimal"
                         value={advAmount}
@@ -6391,10 +2923,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <Col md={6}>
                       <div className="ep-claim-label">Monthly EMI</div>
                       <div className="position-relative">
-                        <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', fontSize: 13, fontWeight: 600 }}>₹</span>
+                        <span className="ep-claim-amount-prefix">₹</span>
                         <input
-                          className="ep-claim-input"
-                          style={{ paddingLeft: 28 }}
+                          className="ep-claim-input ep-pl-28"
                           placeholder="Auto from amount ÷ months"
                           value={advMonthlyEmi}
                           onChange={(e) => {
@@ -6426,12 +2957,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <div className="ep-claim-section-head">
                   <span className="ep-claim-dot is-faded" /> Supporting Documents
                 </div>
-                <label className="ep-claim-upload mb-2 d-block" style={{ background: 'rgba(99,102,241,0.04)', borderColor: 'rgba(99,102,241,0.25)', cursor: 'pointer' }}>
+                <label className="ep-claim-upload mb-2 d-block ep-claim-upload-indigo">
                   <input
                     type="file"
                     multiple
                     accept=".pdf,.jpg,.jpeg,.png"
-                    style={{ display: 'none' }}
+                    className="d-none"
                     onChange={(e) => {
                       const picked = Array.from(e.target.files || []);
                       const { accepted, errors } = filterValidUploads(picked);
@@ -6440,11 +2971,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       e.target.value = '';
                     }}
                   />
-                  <span className="ep-claim-upload-icon" style={{ background: 'rgba(99,102,241,0.10)', color: '#6366f1' }}>
+                  <span className="ep-claim-upload-icon ep-claim-upload-icon-indigo">
                     <i className="ri-attachment-line" />
                   </span>
-                  <div className="fw-semibold" style={{ fontSize: 13, color: '#4338ca' }}>Attach documents (bank letter, itinerary…)</div>
-                  <small className="text-muted" style={{ fontSize: 11.5 }}>PDF, JPG, PNG · Multiple files allowed · Max 5 MB each</small>
+                  <div className="fw-semibold ep-claim-upload-title-indigo">Attach documents (bank letter, itinerary…)</div>
+                  <small className="text-muted ep-fs-115">PDF, JPG, PNG · Multiple files allowed · Max 5 MB each</small>
                 </label>
                 {advFiles.length > 0 && (
                   <div className="ep-claim-file-list mb-4">
@@ -6490,7 +3021,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 </div>
                 <div className="ep-claim-flow mb-3">
                   <div className="ep-claim-flow-step">
-                    <span className="ep-claim-flow-icon" style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
+                    <span className="ep-claim-flow-icon ep-claim-flow-icon-indigo">
                       <i className="ri-user-line" />
                     </span>
                     <div>
@@ -6500,7 +3031,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </div>
                   <i className="ri-arrow-right-line ep-claim-flow-arrow" />
                   <div className="ep-claim-flow-step">
-                    <span className="ep-claim-flow-icon" style={{ background: 'linear-gradient(135deg,#0ab39c,#30d5b5)' }}>
+                    <span className="ep-claim-flow-icon ep-claim-flow-icon-emerald">
                       <i className="ri-user-star-line" />
                     </span>
                     <div>
@@ -6510,7 +3041,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </div>
                   <i className="ri-arrow-right-line ep-claim-flow-arrow" />
                   <div className="ep-claim-flow-step">
-                    <span className="ep-claim-flow-icon" style={{ background: 'linear-gradient(135deg,#f59e0b,#fbbf24)' }}>
+                    <span className="ep-claim-flow-icon ep-claim-flow-icon-amber">
                       <i className="ri-shield-check-line" />
                     </span>
                     <div>
@@ -6548,14 +3079,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             )}
             <button
               type="button"
-              className="ep-claim-submit"
+              className={`ep-claim-submit${claimSubmitting ? ' ep-claim-submit-busy' : ''}`}
               onClick={claimMode === 'expense' ? submitAllDrafts : submitAdvanceRequest}
               disabled={claimSubmitting}
-              style={claimSubmitting ? { opacity: 0.7, cursor: 'wait' } : undefined}
             >
               {claimSubmitting ? (
                 <>
-                  <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" style={{ width: 12, height: 12 }} />
+                  <span className="spinner-border spinner-border-sm me-1 ep-claim-spinner-sm" role="status" aria-hidden="true" />
                   Submitting…
                 </>
               ) : (
@@ -6581,33 +3111,22 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         {/* Header — gradient banner so the dialog reads as a distinct
             "Security" surface, not just a plain card. */}
         <div
-          className="d-flex align-items-center justify-content-between px-3 py-3"
-          style={{
-            background: 'linear-gradient(135deg, rgba(244,63,94,0.10) 0%, rgba(244,63,94,0.02) 100%)',
-            borderBottom: '1px solid rgba(244,63,94,0.18)',
-          }}
+          className="d-flex align-items-center justify-content-between px-3 py-3 ep-pw-header"
         >
           <div className="d-flex align-items-center gap-2">
             <span
-              className="d-inline-flex align-items-center justify-content-center rounded-3"
-              style={{
-                width: 38, height: 38,
-                background: 'linear-gradient(135deg, #f43f5e, #fb7185)',
-                color: '#fff',
-                boxShadow: '0 6px 16px rgba(244,63,94,0.35)',
-              }}
+              className="d-inline-flex align-items-center justify-content-center rounded-3 ep-pw-badge"
             >
-              <i className="ri-lock-password-line" style={{ fontSize: 18 }} />
+              <i className="ri-lock-password-line ep-fs-18" />
             </span>
             <div>
-              <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Change Password</h6>
-              <small className="text-muted" style={{ fontSize: 11 }}>Pick a strong, unique password</small>
+              <h6 className="mb-0 fw-bold ep-fs-14">Change Password</h6>
+              <small className="text-muted ep-fs-11">Pick a strong, unique password</small>
             </div>
           </div>
           <button
             type="button"
-            className="btn btn-light btn-sm rounded-circle d-inline-flex align-items-center justify-content-center"
-            style={{ width: 30, height: 30 }}
+            className="btn btn-light btn-sm rounded-circle d-inline-flex align-items-center justify-content-center ep-pw-close"
             onClick={() => { if (!pwSaving) { setPwOpen(false); resetPwForm(); } }}
             disabled={pwSaving}
             aria-label="Close"
@@ -6618,22 +3137,20 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         <div className="px-3 py-3">
           {/* Current Password */}
           <div className="mb-3">
-            <label className="emp-label fw-semibold" style={{ fontSize: 12 }}>Current Password<span className="text-danger">*</span></label>
+            <label className="emp-label fw-semibold ep-fs-12">Current Password<span className="text-danger">*</span></label>
             <div className="position-relative">
               <input
                 type={pwShow.cur ? 'text' : 'password'}
-                className={`form-control${pwErrors.current_password ? ' is-invalid' : ''}`}
+                className={`form-control ep-pw-input${pwErrors.current_password ? ' is-invalid' : ''}`}
                 value={pwCurrent}
                 onChange={e => { setPwCurrent(e.target.value); if (pwErrors.current_password) setPwErrors(p => ({ ...p, current_password: '' })); }}
                 placeholder="Enter your current password"
                 autoComplete="current-password"
                 disabled={pwSaving}
-                style={{ paddingRight: 38, borderRadius: 10 }}
               />
               <button
                 type="button"
-                className="btn btn-link p-0 position-absolute"
-                style={{ right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)' }}
+                className="btn btn-link p-0 position-absolute ep-pw-eye"
                 onClick={() => setPwShow(s => ({ ...s, cur: !s.cur }))}
                 tabIndex={-1}
                 aria-label={pwShow.cur ? 'Hide password' : 'Show password'}
@@ -6641,27 +3158,25 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <i className={pwShow.cur ? 'ri-eye-off-line' : 'ri-eye-line'} />
               </button>
             </div>
-            {pwErrors.current_password && <small className="text-danger d-block mt-1" style={{ fontSize: 11 }}>{pwErrors.current_password}</small>}
+            {pwErrors.current_password && <small className="text-danger d-block mt-1 ep-fs-11">{pwErrors.current_password}</small>}
           </div>
 
           {/* New Password */}
           <div className="mb-3">
-            <label className="emp-label fw-semibold" style={{ fontSize: 12 }}>New Password<span className="text-danger">*</span></label>
+            <label className="emp-label fw-semibold ep-fs-12">New Password<span className="text-danger">*</span></label>
             <div className="position-relative">
               <input
                 type={pwShow.nw ? 'text' : 'password'}
-                className={`form-control${pwErrors.password ? ' is-invalid' : ''}`}
+                className={`form-control ep-pw-input${pwErrors.password ? ' is-invalid' : ''}`}
                 value={pwNew}
                 onChange={e => { setPwNew(e.target.value); if (pwErrors.password) setPwErrors(p => ({ ...p, password: '' })); }}
                 placeholder="Minimum 8 characters"
                 autoComplete="new-password"
                 disabled={pwSaving}
-                style={{ paddingRight: 38, borderRadius: 10 }}
               />
               <button
                 type="button"
-                className="btn btn-link p-0 position-absolute"
-                style={{ right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)' }}
+                className="btn btn-link p-0 position-absolute ep-pw-eye"
                 onClick={() => setPwShow(s => ({ ...s, nw: !s.nw }))}
                 tabIndex={-1}
                 aria-label={pwShow.nw ? 'Hide password' : 'Show password'}
@@ -6669,7 +3184,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <i className={pwShow.nw ? 'ri-eye-off-line' : 'ri-eye-line'} />
               </button>
             </div>
-            {pwErrors.password && <small className="text-danger d-block mt-1" style={{ fontSize: 11 }}>{pwErrors.password}</small>}
+            {pwErrors.password && <small className="text-danger d-block mt-1 ep-fs-11">{pwErrors.password}</small>}
             {/* Strength meter + rule checklist. The bar + label only show
                 once the user starts typing (no point grading an empty
                 field), but the checklist below stays visible upfront so
@@ -6678,25 +3193,26 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             <div className="mt-2">
               {pwNew && (
                 <div className="d-flex align-items-center gap-2 mb-1">
-                  <div style={{ flex: 1, height: 6, background: 'var(--vz-secondary-bg)', borderRadius: 999, overflow: 'hidden' }}>
-                    <div style={{
-                      width: `${(pwStrength.level / 5) * 100}%`,
-                      height: '100%',
-                      background: pwStrength.barColor,
-                      transition: 'width .25s ease, background .25s ease',
-                    }} />
+                  <div className="ep-pw-strength-track">
+                    <div
+                      className="ep-pw-strength-fill"
+                      style={{
+                        ['--ep-pw-fill' as any]: `${(pwStrength.level / 5) * 100}%`,
+                        ['--ep-pw-bar' as any]: pwStrength.barColor,
+                      }}
+                    />
                   </div>
-                  <span className={`fw-bold ${pwStrength.barTextClass}`} style={{ fontSize: 11, minWidth: 44, textAlign: 'right' }}>
+                  <span className={`fw-bold ep-pw-strength-label ${pwStrength.barTextClass}`}>
                     {pwStrength.text}
                   </span>
                 </div>
               )}
-              <ul className="list-unstyled mb-0 mt-1" style={{ fontSize: 11 }}>
+              <ul className="list-unstyled mb-0 mt-1 ep-fs-11">
                 {PW_RULES.map(rule => {
                   const passed = !!pwNew && !validatePwRules(pwNew).includes(rule);
                   return (
                     <li key={rule} className={`d-inline-flex align-items-center gap-1 me-3 ${passed ? 'text-success fw-semibold' : 'text-muted'}`}>
-                      <i className={passed ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'} style={{ fontSize: 12 }} />
+                      <i className={`${passed ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'} ep-fs-12`} />
                       {rule}
                     </li>
                   );
@@ -6707,23 +3223,21 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
           {/* Confirm New Password */}
           <div className="mb-2">
-            <label className="emp-label fw-semibold" style={{ fontSize: 12 }}>Confirm New Password<span className="text-danger">*</span></label>
+            <label className="emp-label fw-semibold ep-fs-12">Confirm New Password<span className="text-danger">*</span></label>
             <div className="position-relative">
               <input
                 type={pwShow.cf ? 'text' : 'password'}
-                className={`form-control${pwErrors.password_confirmation ? ' is-invalid' : ''}`}
+                className={`form-control ep-pw-input${pwErrors.password_confirmation ? ' is-invalid' : ''}`}
                 value={pwConfirm}
                 onChange={e => { setPwConfirm(e.target.value); if (pwErrors.password_confirmation) setPwErrors(p => ({ ...p, password_confirmation: '' })); }}
                 placeholder="Re-enter the new password"
                 autoComplete="new-password"
                 disabled={pwSaving}
-                style={{ paddingRight: 38, borderRadius: 10 }}
                 onKeyDown={e => { if (e.key === 'Enter' && !pwSaving) handleChangePassword(); }}
               />
               <button
                 type="button"
-                className="btn btn-link p-0 position-absolute"
-                style={{ right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)' }}
+                className="btn btn-link p-0 position-absolute ep-pw-eye"
                 onClick={() => setPwShow(s => ({ ...s, cf: !s.cf }))}
                 tabIndex={-1}
                 aria-label={pwShow.cf ? 'Hide password' : 'Show password'}
@@ -6731,18 +3245,18 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <i className={pwShow.cf ? 'ri-eye-off-line' : 'ri-eye-line'} />
               </button>
             </div>
-            {pwErrors.password_confirmation && <small className="text-danger d-block mt-1" style={{ fontSize: 11 }}>{pwErrors.password_confirmation}</small>}
+            {pwErrors.password_confirmation && <small className="text-danger d-block mt-1 ep-fs-11">{pwErrors.password_confirmation}</small>}
             {/* Live match indicator — keeps users from racing each other to
                 Submit before realising they typo'd the confirmation. */}
             {pwConfirm && (
-              <div className="mt-2 d-inline-flex align-items-center gap-1" style={{ fontSize: 11 }}>
+              <div className="mt-2 d-inline-flex align-items-center gap-1 ep-fs-11">
                 {pwNew === pwConfirm ? (
                   <span className="text-success d-inline-flex align-items-center gap-1 fw-semibold">
-                    <i className="ri-checkbox-circle-fill" style={{ fontSize: 12 }} /> Passwords match
+                    <i className="ri-checkbox-circle-fill ep-fs-12" /> Passwords match
                   </span>
                 ) : (
                   <span className="text-danger d-inline-flex align-items-center gap-1 fw-semibold">
-                    <i className="ri-close-circle-fill" style={{ fontSize: 12 }} /> Passwords do not match
+                    <i className="ri-close-circle-fill ep-fs-12" /> Passwords do not match
                   </span>
                 )}
               </div>
@@ -6750,37 +3264,21 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           </div>
         </div>
         <div
-          className="d-flex justify-content-end gap-2 px-3 py-3"
-          style={{ borderTop: '1px solid var(--vz-border-color)', background: 'var(--vz-secondary-bg)' }}
+          className="d-flex justify-content-end gap-2 px-3 py-3 ep-pw-footer"
         >
           <button
             type="button"
-            className="btn fw-semibold rounded-pill"
+            className="btn fw-semibold rounded-pill ep-pw-cancel"
             onClick={() => { setPwOpen(false); resetPwForm(); }}
             disabled={pwSaving}
-            style={{
-              padding: '7px 18px', fontSize: 13,
-              background: '#fff', color: '#374151',
-              border: '1px solid #e5e7eb',
-              opacity: pwSaving ? 0.6 : 1,
-              cursor: pwSaving ? 'not-allowed' : 'pointer',
-            }}
           >
             Cancel
           </button>
           <button
             type="button"
-            className="btn d-inline-flex align-items-center justify-content-center gap-2 fw-semibold rounded-pill"
+            className="btn d-inline-flex align-items-center justify-content-center gap-2 fw-semibold rounded-pill ep-pw-submit"
             onClick={handleChangePassword}
             disabled={pwSaving}
-            style={{
-              padding: '7px 18px', fontSize: 13, minWidth: 150,
-              color: '#fff', border: 'none',
-              background: 'linear-gradient(135deg, #f43f5e, #fb7185)',
-              boxShadow: '0 6px 16px rgba(244,63,94,0.35)',
-              opacity: pwSaving ? 0.85 : 1,
-              cursor: pwSaving ? 'wait' : 'pointer',
-            }}
           >
             {pwSaving ? (
               <>
@@ -6789,7 +3287,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               </>
             ) : (
               <>
-                <i className="ri-shield-check-line" style={{ fontSize: 14 }} />
+                <i className="ri-shield-check-line ep-fs-14" />
                 Update Password
               </>
             )}
@@ -6821,11 +3319,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         onClose={() => setSalaryModalOpen(false)}
         onSaved={reloadSalaryStruct}
       />
-
-      {/* Hiring Requests — Raise form + read-only list. Both modals come
-          from HrRecruitment so the create/validate logic, KPI strip, and
-          filters all stay in one place. Only mounted when the user has
-          opened the Hiring Requests tab at least once (and is a manager). */}
       {isOwnProfile && (isManager || ['branch_user', 'client_admin', 'super_admin'].includes(String(authUser?.user_type || ''))) && (
         <>
           <RaiseHiringRequestModal
@@ -6856,31 +3349,26 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           />
         </>
       )}
-
-      {/* Signed-document preview — opens from the Vault > My Signed
-          Documents table. Renders the frozen content_html inside the
-          locked header/footer chrome so the employee can read the full
-          letter before downloading the PDF. */}
       {signedPreview && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+        <div className="ep-signed-overlay"
           onClick={() => setSignedPreview(null)}>
-          <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 900, maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+          <div className="ep-signed-dialog"
             onClick={(e) => e.stopPropagation()}>
-            <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,#16a34a,#22c55e)', color: '#fff' }}>
+            <div className="ep-signed-head">
               <div className="d-flex align-items-center justify-content-between">
                 <div className="min-w-0">
-                  <strong style={{ fontSize: 15 }}><i className="ri-file-shield-2-line me-2" />{signedPreview.template?.name || 'Signed Document'}</strong>
-                  <div style={{ fontSize: 11.5, opacity: 0.9, marginTop: 2 }}>
+                  <strong className="ep-fs-15"><i className="ri-file-shield-2-line me-2" />{signedPreview.template?.name || 'Signed Document'}</strong>
+                  <div className="ep-signed-head-sub">
                     {signedPreview.code ? `${signedPreview.code} · ` : ''}Status: <strong>{signedPreview.status}</strong>
                   </div>
                 </div>
                 <button type="button" onClick={() => setSignedPreview(null)} aria-label="Close"
-                  style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 28, height: 28 }}>
+                  className="ep-signed-head-x">
                   <i className="ri-close-line" />
                 </button>
               </div>
             </div>
-            <div style={{ padding: 16, background: '#f9fafb', overflowY: 'auto', flex: 1 }}>
+            <div className="ep-signed-body">
               <HeaderFooterPanel
                 header={{ ...DEFAULT_HEADER, ...(signedPreview.header_config || {}) } as HeaderConfig}
                 setHeader={() => {}}
@@ -6888,26 +3376,25 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 setFooter={() => {}}
                 readOnly
               >
-                <div className="tpl-readonly-preview"
-                  style={{ fontSize: 13.5, lineHeight: 1.65, color: '#374151', minHeight: 260 }}
+                <div className="tpl-readonly-preview ep-signed-preview-content"
                   dangerouslySetInnerHTML={{ __html: signedPreview.content_html || '<p>(empty)</p>' }}
                 />
               </HeaderFooterPanel>
             </div>
-            <div style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <div className="ep-signed-footer">
               <button type="button" onClick={() => setSignedPreview(null)}
-                style={{ padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
+                className="ep-signed-close-btn">
                 Close
               </button>
               <button type="button" onClick={() => downloadSignedPdf(signedPreview.id, signedPreview.code)}
-                style={{ padding: '7px 16px', background: 'linear-gradient(135deg,#dc2626,#ef4444)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
+                className="ep-signed-download-btn">
                 <i className="ri-file-pdf-2-line me-1" />Download PDF
               </button>
             </div>
           </div>
         </div>
       )}
-    </>
+    </EmployeeProfileProvider>
   );
 }
 
