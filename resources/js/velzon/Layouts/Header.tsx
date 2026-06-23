@@ -102,8 +102,10 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
               [data-bs-theme="dark"] .vth-switch { background: linear-gradient(180deg,#1E2230,#1A1D29); border-color: #2C3242; }
               .vth-sep { width: 1px; height: 20px; flex-shrink: 0; background: #E7EAF3; align-self: center; margin: 0 10px; }
               [data-bs-theme="dark"] .vth-sep { background: #2C3242; }
-              /* Tighten the gap between the right-side action icons (horizontal uses ~2px). */
-              .vth-topbar-actions .header-item { margin-left: 2px !important; }
+              /* Smaller, tighter action icons in the vertical top bar. */
+              .vth-topbar-actions .header-item { margin-left: 0 !important; }
+              .vth-topbar-actions .btn-topbar { height: 35px !important; width: 35px !important; line-height: 30px !important; }
+              .vth-topbar-actions .btn-topbar i { font-size: 17px !important; }
               /* Red logout button, matching the horizontal header. */
               .vth-logout-btn { color: #E11D48 !important; }
               .vth-logout-btn:hover, .vth-logout-btn:focus { background-color: #FFF1F2 !important; color: #E11D48 !important; }
