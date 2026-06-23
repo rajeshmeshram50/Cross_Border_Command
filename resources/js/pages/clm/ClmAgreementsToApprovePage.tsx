@@ -189,7 +189,7 @@ export default function ClmAgreementsToApprovePage() {
         {loading
           ? <ShimmerTable rows={6} cols={9} />
           : tab === 'clarification'
-          ? <ClarificationTable rows={list} page={page} setPage={setPage} onReview={setReviewId} t={t} />
+          ? <ClarificationTable rows={list} page={page} setPage={setPage} onReview={setReviewId} onChat={(id) => { setActionChoice('clarify'); setActionId(id); }} t={t} />
           : <StandardTable rows={list} tab={tab} page={page} setPage={setPage} onReview={setReviewId} t={t} />}
       </div>
 
@@ -255,6 +255,18 @@ function ReviewBtn({ active, onClick, onBlocked }: { active: boolean; onClick: (
   return (
     <button onClick={() => (active ? onClick() : onBlocked?.())} title={active ? 'Review & Approve' : 'Awaiting clarification response'} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, border: active ? 'none' : '1.5px solid #E2E8F0', background: active ? 'linear-gradient(135deg,#0891b2,#0e7490)' : '#F8FAFC', color: active ? '#fff' : '#CBD5E1', fontFamily: 'inherit', fontSize: 9.5, fontWeight: active ? 700 : 600, cursor: 'pointer', boxShadow: active ? '0 2px 7px rgba(8,145,178,.35)' : 'none', whiteSpace: 'nowrap', opacity: active ? 1 : .6 }}>
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : '#CBD5E1'} strokeWidth="2" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg> Review &amp; Approve
+    </button>
+  );
+}
+
+/* Respond / chat button — opens the shared clarification thread so ANY approver
+   on the contract can read the conversation and add their own remark. Always
+   active (unlike Review & Approve, which waits for the initiator's reply). */
+function RespondBtn({ onClick, t }: { onClick: () => void; t: OpsTokens }) {
+  const fg = t.dark ? '#67e8f9' : '#0e7490';
+  return (
+    <button onClick={onClick} title="View conversation & add your remark" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.45)' : '#A5F3FC'}`, background: t.dark ? 'rgba(6,182,212,.14)' : '#ECFEFF', color: fg, fontFamily: 'inherit', fontSize: 9.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={fg} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg> Respond
     </button>
   );
 }
@@ -339,7 +351,7 @@ function StandardTable({ rows, tab, page, setPage, onReview, t }: { rows: AtaCon
   );
 }
 
-function ClarificationTable({ rows, page, setPage, onReview, t }: { rows: AtaContract[]; page: number; setPage: (n: number) => void; onReview: (id: string) => void; t: OpsTokens }) {
+function ClarificationTable({ rows, page, setPage, onReview, onChat, t }: { rows: AtaContract[]; page: number; setPage: (n: number) => void; onReview: (id: string) => void; onChat: (id: string) => void; t: OpsTokens }) {
   const toast = useToast();
   const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const safe = Math.min(page, totalPages);
@@ -388,6 +400,10 @@ function ClarificationTable({ rows, page, setPage, onReview, t }: { rows: AtaCon
                   <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.expDate}</span></td>
                   <td style={TD_C}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, flexWrap: 'nowrap' }}>
+                      {/* Open the shared clarification thread — available to EVERY
+                          approver (not just the one who raised it) so any of them
+                          can read the conversation and add their own remark. */}
+                      <RespondBtn onClick={() => onChat(c.id)} t={t} />
                       <ReviewBtn active={hasResp} onClick={() => onReview(c.id)} onBlocked={() => toast.warning('Clarification pending', `Awaiting clarification response from ${c.createdBy}. You can review & approve once they reply.`)} />
                     </div>
                   </td>
@@ -502,10 +518,10 @@ function ClarificationThread({ contract, typingName, t }: { contract: AtaContrac
               {/* Your query (right) — filled cyan bubble */}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'flex-start' }}>
                 <div style={{ maxWidth: '82%', minWidth: 0 }}>
-                  <div style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted, marginBottom: 3, textAlign: 'right' }}>You · Approver · {cl.date}</div>
+                  <div style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted, marginBottom: 3, textAlign: 'right' }}>{cl.by || contract.approver} · Approver · {cl.date}</div>
                   <div style={{ background: t.dark ? 'rgba(8,145,178,.18)' : '#E0F7FA', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.42)' : '#A5F3FC'}`, borderRadius: '12px 4px 12px 12px', padding: '9px 12px', fontSize: 11.5, color: t.dark ? '#a5f3fc' : '#0e7490', lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.query}</div>
                 </div>
-                <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(contract.approver)}</span></div>
+                <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(cl.by || contract.approver)}</span></div>
               </div>
               {/* Sender's revert (left) — white/surface bubble */}
               {cl.response

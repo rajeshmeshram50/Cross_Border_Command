@@ -892,7 +892,9 @@ class CtcContractController extends Controller
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
         $data = $request->validate(['query' => 'required|string|max:2000']);
         $thread = $row->clarifications ?? [];
-        $thread[] = ['query' => $data['query'], 'date' => now()->format('d M Y'), 'response' => '', 'resolved' => false];
+        // Stamp the raising approver so the shared thread can attribute each
+        // remark — any of the contract's approvers may add to the same thread.
+        $thread[] = ['query' => $data['query'], 'by' => $user->name ?: 'Approver', 'date' => now()->format('d M Y H:i'), 'response' => '', 'resolved' => false];
         $row->update(['approval_status' => 'clarification', 'clarifications' => $thread]);
         broadcast(new CtcApprovalUpdated($row->fresh()));
         return response()->json(['status' => true, 'data' => $this->shapeApprove($row->fresh(), $user->name ?? '')]);
