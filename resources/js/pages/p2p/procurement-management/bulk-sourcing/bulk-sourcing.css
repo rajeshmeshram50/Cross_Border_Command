@@ -224,7 +224,6 @@
 .ast-radio.is-sel .ast-radio-txt b {
   color: #0c4a6e;
 }
-.ast-grid-3,
 .snf-row-3 {
   grid-template-columns: 1fr 1fr 1fr;
 }
@@ -1545,6 +1544,11 @@
   grid-template-columns: 1fr 1fr;
   gap: 13px;
 }
+/* 3-column variant — must follow .ast-grid so it wins when both classes are
+   applied (.ast-grid.ast-grid-3); the @media below collapses it on mobile. */
+.ast-grid-3 {
+  grid-template-columns: 1fr 1fr 1fr;
+}
 .ast-field {
   display: flex;
   flex-direction: column;
@@ -2075,8 +2079,16 @@
   border: 1px solid #e6edf2;
   border-radius: 12px;
   overflow-x: auto;
+  /* Show ~5 rows then scroll the rest (header stays pinned). */
+  max-height: 274px;
+  overflow-y: auto;
   background: #fff;
   box-shadow: 0 2px 8px -3px rgba(15,40,60,.08);
+}
+.ast-plist .asrc-row--head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
 }
 [data-bs-theme="dark"] .ast-plist {
   background: #0f1c25;
@@ -4247,4 +4259,310 @@
   .sv-card-contacts {
     grid-template-columns: 1fr;
   }
+}
+
+/* ============================================================================
+   ProductListModal — footer summary chips (read-only product list popup)
+   ============================================================================ */
+.pl-foot {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 24px;
+  background: #f0fdff;
+  border-top: 1px solid #cdeef5;
+  flex-shrink: 0;
+}
+[data-bs-theme="dark"] .pl-foot {
+  background: #0c1922;
+  border-top-color: rgba(34,211,238,.18);
+}
+.pl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 4px 12px;
+  border: 1px solid;
+}
+.pl-chip--total {
+  color: #0e7490;
+  background: #e0fbff;
+  border-color: #bdf0f7;
+}
+[data-bs-theme="dark"] .pl-chip--total {
+  color: #67e8f9;
+  background: rgba(34,211,238,.12);
+  border-color: rgba(34,211,238,.3);
+}
+.pl-chip--done {
+  color: #15803d;
+  background: #dcfce7;
+  border-color: #bbf7d0;
+}
+[data-bs-theme="dark"] .pl-chip--done {
+  color: #86efac;
+  background: rgba(34,197,94,.18);
+  border-color: rgba(74,222,128,.35);
+}
+.pl-chip--pend {
+  color: #b45309;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+[data-bs-theme="dark"] .pl-chip--pend {
+  color: #fcd34d;
+  background: rgba(245,158,11,.16);
+  border-color: rgba(253,224,71,.3);
+}
+
+/* ProductListModal — narrower shell + loading shimmer */
+.pl-box {
+  width: min(900px, calc(100vw - 24px));
+}
+.pl-skel {
+  position: relative;
+  overflow: hidden;
+  background: #e6f1f6;
+  border-radius: 6px;
+}
+[data-bs-theme="dark"] .pl-skel {
+  background: rgba(255,255,255,.06);
+}
+.pl-skel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.6), transparent);
+  animation: pl-shimmer 1.25s infinite;
+}
+[data-bs-theme="dark"] .pl-skel::after {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.12), transparent);
+}
+@keyframes pl-shimmer {
+  100% { transform: translateX(100%); }
+}
+.pl-skel-num {
+  display: inline-block;
+  width: 32px;
+  height: 22px;
+  vertical-align: middle;
+}
+.pl-skel-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 24px;
+}
+.pl-skel-bar {
+  height: 40px;
+  border-radius: 9px;
+}
+
+/* ProductListModal — stat cards (match Figma: bordered boxes, not flat bar) */
+.pl-stats {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  padding: 4px 24px 16px;
+}
+.pl-stat {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-width: 118px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.07);
+  border: 1px solid rgba(255,255,255,.13);
+}
+.pl-stat--prog {
+  flex: 1;
+}
+.pl-stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.pl-stat-lbl {
+  font-size: 8.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .09em;
+  color: rgba(160,220,255,.62);
+  white-space: nowrap;
+}
+.pl-stat-val {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+.pl-stat-val.white { color: #fff; }
+.pl-stat-val.green { color: #6ee7b7; }
+.pl-stat-val.amber { color: #fcd34d; }
+
+/* Product Clarity — uploaded PDF row (delete to replace) */
+.ast-pdf-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 13px;
+  border: 1.5px solid #b2ebf2;
+  border-radius: 11px;
+  background: linear-gradient(180deg, #f7fcfd, #f0fdff);
+}
+[data-bs-theme="dark"] .ast-pdf-file {
+  background: rgba(255,255,255,.03);
+  border-color: rgba(34,211,238,.25);
+}
+.ast-pdf-file-ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #e0f7fa, #b2ebf2);
+  color: #0891b2;
+}
+[data-bs-theme="dark"] .ast-pdf-file-ico {
+  background: rgba(34,211,238,.14);
+  color: #67e8f9;
+}
+.ast-pdf-file-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-bs-theme="dark"] .ast-pdf-file-name {
+  color: #e2e8f0;
+}
+.ast-pdf-del {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #ef4444;
+  cursor: pointer;
+  transition: all .14s;
+}
+.ast-pdf-del:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+[data-bs-theme="dark"] .ast-pdf-del {
+  background: rgba(239,68,68,.14);
+  border-color: rgba(239,68,68,.3);
+}
+
+/* ============================================================================
+   Responsive — phones & small tablets
+   ============================================================================ */
+@media (max-width: 768px) {
+  /* List header strip: let title + button wrap instead of overflowing */
+  .bsm-headstrip {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 12px !important;
+    min-height: 0 !important;
+  }
+
+  /* Main list table — the 10 columns can't shrink; scroll horizontally */
+  .bst-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .bst-panel { overflow-x: hidden; }
+  .bst-toolbar { gap: 8px; padding: 11px 12px; }
+  .bst-search { flex: 1 1 100%; max-width: none; }
+  .bst-pager { justify-content: center; gap: 8px; }
+
+  /* Sourcing Report & Product List tables — scroll horizontally */
+  .srpt-body { overflow-x: auto; }
+  .srpt-table { min-width: 820px; }
+  .srpt-hrow { padding: 16px 18px 12px; }
+  .srpt-refcards { padding: 0 18px 14px; }
+  .srpt-statsbar { padding: 11px 18px 14px; }
+
+  /* Product List stat cards wrap to 2-up, progress full width */
+  .pl-stats { flex-wrap: wrap; padding: 4px 18px 14px; }
+  .pl-stat { flex: 1 1 calc(50% - 5px); min-width: 0; }
+  .pl-stat--prog { flex: 1 1 100%; }
+  .pl-foot { padding: 12px 18px; flex-wrap: wrap; }
+
+  /* Map Supplier header pills wrap */
+  .smp-prod-strip { gap: 6px 0; }
+  .smp-hrow { padding: 16px 18px 10px; }
+}
+
+@media (max-width: 480px) {
+  /* One stat card per row on narrow phones */
+  .pl-stat { flex: 1 1 100%; }
+  /* Tighter modal chrome */
+  .srpt-title { font-size: 15px; }
+  .pl-box, .srpt-box { border-radius: 16px; }
+}
+
+/* ============================================================================
+   Phones — make every Bulk Sourcing modal near full-screen (no overflow/cramp)
+   ============================================================================ */
+@media (max-width: 600px) {
+  .ast-ov, #smp-overlay, #srpt-overlay, .sv-overlay {
+    padding: 8px !important;
+  }
+  .ast-modal, .smp-box, .srpt-box, .pl-box, .sv-box {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 94vh !important;
+    border-radius: 14px !important;
+  }
+  /* Report / Product List ref + stat cards go 2-up so they don't shrink */
+  .srpt-refcards { grid-template-columns: repeat(2, 1fr); }
+  .sv-refs { grid-template-columns: repeat(2, 1fr) !important; }
+  /* Assign wizard footer buttons fill the row for easy tapping */
+  .ast-foot .ast-btn { flex: 1; justify-content: center; }
+  /* Map supplier product strip pills wrap */
+  .smp-prod-strip { gap: 6px 0; }
+}
+
+/* ============================================================================
+   Assign New Sourcing — product list table → stacked labelled cards on phones
+   ============================================================================ */
+@media (max-width: 600px) {
+  .ast-plist { max-height: none; overflow: visible; }
+  .asrc-row--head { display: none; }              /* labels move into each cell */
+  .asrc-row--m, .asrc-row--n {
+    display: block; min-width: 0; padding: 10px 14px;
+  }
+  .asrc-row--m > span, .asrc-row--n > span {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 5px 0; min-width: 0;
+  }
+  .asrc-row--m > span::before, .asrc-row--n > span::before {
+    content: attr(data-label);
+    font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+    color: #64748b; flex-shrink: 0;
+  }
+  /* delete cell: no label, button to the right */
+  .asrc-row--m > span[data-label=""]::before,
+  .asrc-row--n > span[data-label=""]::before { content: none; }
+  .asrc-row--m > span[data-label=""],
+  .asrc-row--n > span[data-label=""] { justify-content: flex-end; padding-top: 8px; }
+  /* value side: right-aligned, inputs take a sensible width */
+  .asrc-name, .asrc-code, .asrc-hsn { text-align: right; }
+  .asrc-row--m .ast-pl-price, .asrc-row--n .ast-pl-price { width: 62%; }
+  .ast-pl-clarity { width: 62%; justify-content: center; }
 }

@@ -343,6 +343,24 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/clm/ctc-contracts/{id}/move-to-repository',[\App\Http\Controllers\Api\CtcContractController::class, 'moveToRepository'])->whereNumber('id');
     Route::get   ('/clm/ctc-contracts/{id}/versions',          [\App\Http\Controllers\Api\CtcContractController::class, 'versions'])->whereNumber('id');
     Route::get   ('/clm/ctc-contracts/{id}/versions/{v}/download', [\App\Http\Controllers\Api\CtcContractController::class, 'downloadVersion'])->whereNumber('id')->whereNumber('v');
+
+    /* ── Procure to Pay (P2P) · Procurement Management → Bulk Sourcing ──────
+     * Targets are addressed by their per-client code (SRC-001), so {target} is
+     * a string. Reference lists (/products, /team-members, /suppliers) are
+     * separate top-level paths and don't collide with the {target} routes.
+     * See resources/js/pages/p2p/procurement-management/bulk-sourcing/API.md. */
+    Route::get   ('/p2p/products',      [\App\Http\Controllers\Api\P2p\SourcingController::class, 'products']);
+    Route::get   ('/p2p/team-members',  [\App\Http\Controllers\Api\P2p\SourcingController::class, 'teamMembers']);
+    Route::get   ('/p2p/suppliers',     [\App\Http\Controllers\Api\P2p\SourcingController::class, 'suppliers']);
+    Route::get   ('/p2p/sourcing-targets',          [\App\Http\Controllers\Api\P2p\SourcingController::class, 'index']);
+    Route::get   ('/p2p/sourcing-targets/next-code',[\App\Http\Controllers\Api\P2p\SourcingController::class, 'nextCode']);
+    Route::post  ('/p2p/sourcing-targets',          [\App\Http\Controllers\Api\P2p\SourcingController::class, 'store']);
+    Route::get   ('/p2p/sourcing-targets/{target}', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'show']);
+    Route::put   ('/p2p/sourcing-targets/{target}', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'update']);
+    Route::get   ('/p2p/sourcing-targets/{target}/report', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'report']);
+    Route::patch ('/p2p/sourcing-targets/{target}/products/{product}/status',    [\App\Http\Controllers\Api\P2p\SourcingController::class, 'setProductStatus'])->whereNumber('product');
+    Route::get   ('/p2p/sourcing-targets/{target}/products/{product}/suppliers', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'mappedSuppliers'])->whereNumber('product');
+    Route::post  ('/p2p/sourcing-targets/{target}/products/{product}/suppliers', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'mapSupplier'])->whereNumber('product');
     Route::get   ('/clm/leads/{leadId}/agreement-applicable',    [ClmAgreementController::class, 'applicableForLead'])->whereNumber('leadId');
     Route::get   ('/clm/buyer-profile',                          [ClmBuyerProfileController::class, 'index']);
     Route::get   ('/clm/supplier-profile',                       [ClmSupplierProfileController::class, 'index']);
