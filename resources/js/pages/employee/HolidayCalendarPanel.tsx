@@ -250,7 +250,7 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
                       {h.is_recurring && <span className="hcp-recur">RECURRING</span>}
                       {h.description && <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 2 }}>{h.description}</div>}
                     </td>
-                    <td style={{ fontWeight: 600, color: '#334155' }}>{fmtDate(h.date)}</td>
+                    <td style={{ fontWeight: 600 }}>{fmtDate(h.date)}</td>
                     <td><span className="hcp-badge" style={{ background: c.bg, color: c.fg, borderColor: c.bd }}><span className="dot" />{h.type}</span></td>
                   </tr>
                 );

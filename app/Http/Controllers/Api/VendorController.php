@@ -65,6 +65,9 @@ class VendorController extends Controller
             ->forUser($user, $request->integer('branch_id') ?: null)
             ->with([
                 'primaryAddress:id,vendor_id,city,state_id,contact_name,email,contact_no,designation',
+                // All address-contacts (primary + extras) so the list page can
+                // render the "+N" contact badge + Contact Persons popup.
+                'addresses:id,vendor_id,is_primary,contact_name,designation,contact_no,email',
                 'vendorType:id,name',
                 'segment:id,name',
                 'riskLevel:id,name',

@@ -30,11 +30,48 @@ class CtcContractController extends Controller
 
     /* ── shared helpers ── */
 
+    /** Display timezone — timestamps are stored UTC and converted on read
+     *  (same convention as AttendanceController::DISPLAY_TZ). */
+    private const DISPLAY_TZ = 'Asia/Kolkata';
+
     private function fmt($d): string
     {
         if (!$d) return '—';
-        try { return \Illuminate\Support\Carbon::parse($d)->format('d M Y'); }
+        try { return \Illuminate\Support\Carbon::parse($d)->setTimezone(self::DISPLAY_TZ)->format('d M Y'); }
         catch (\Throwable $e) { return '—'; }
+    }
+
+    /**
+     * Convert a stored UTC date string (already formatted as "d M Y" or
+     * "d M Y H:i" by now()->format() at write time) to the display timezone.
+     * Date-only strings stay date-only; strings carrying a time get the time
+     * shifted into IST. Returns the original on any parse failure.
+     */
+    private function istStr(?string $s): string
+    {
+        if ($s === null || $s === '' || $s === '—') return $s ?? '—';
+        try {
+            $hasTime = (bool) preg_match('/\d{1,2}:\d{2}/', $s);
+            $c = \Illuminate\Support\Carbon::parse($s, 'UTC')->setTimezone(self::DISPLAY_TZ);
+            return $hasTime ? $c->format('d M Y H:i') : $c->format('d M Y');
+        } catch (\Throwable $e) {
+            return $s;
+        }
+    }
+
+    /**
+     * Convert the `date` / `acted_at` fields inside a list of audit entries
+     * (versions, clarifications, approvers) from stored UTC to display TZ.
+     */
+    private function istEntries($arr): array
+    {
+        return array_map(function ($e) {
+            if (is_array($e)) {
+                if (!empty($e['date']))     $e['date']     = $this->istStr($e['date']);
+                if (!empty($e['acted_at'])) $e['acted_at'] = $this->istStr($e['acted_at']);
+            }
+            return $e;
+        }, array_values($arr ?? []));
     }
 
     /** Append a content-snapshot version entry (append-only audit). */
@@ -130,11 +167,11 @@ class CtcContractController extends Controller
             'id'             => $c->code,
             'dbId'           => $c->id,
             'title'          => $c->title,
-            'date'           => $r['date'] ?: $this->fmt($c->submitted_at ?: $c->created_at),
+            'date'           => $r['date'] ? $this->istStr($r['date']) : $this->fmt($c->submitted_at ?: $c->created_at),
             'createdBy'      => $c->created_by_name ?: '—',
             'approver'       => $c->primary_approver_name ?: $approverName,
             'status'         => $r['status'],
-            'clarifications' => ($r['status'] === 'clarification') ? array_values($c->clarifications ?? []) : [],
+            'clarifications' => ($r['status'] === 'clarification') ? $this->istEntries($c->clarifications ?? []) : [],
             'expDate'        => $this->fmt($c->end_date),
             'rejReason'      => $r['reason'] ?? null,
         ])->all();
@@ -353,10 +390,10 @@ class CtcContractController extends Controller
             'approver'  => $c->primary_approver_name ?: '—',
             'approval'  => $approval,
             'status'    => $statusMap[$c->approval_status] ?? 'pending',
-            'approvers'     => array_values($c->approvers ?? []),
+            'approvers'     => $this->istEntries($c->approvers ?? []),
             'approvedCount' => $approvedCount,
             'approverCount' => $approverCount,
-            'clarifications' => array_values($c->clarifications ?? []),
+            'clarifications' => $this->istEntries($c->clarifications ?? []),
             'rejReason' => $c->rejection_reason,
             'expDate'   => $this->fmt($c->end_date),
         ];
@@ -373,7 +410,7 @@ class CtcContractController extends Controller
             'createdBy'      => $c->created_by_name ?: '—',
             'approver'       => $c->primary_approver_name ?: $approverName,
             'status'         => $c->approval_status ?: 'pending',
-            'clarifications' => array_values($c->clarifications ?? []),
+            'clarifications' => $this->istEntries($c->clarifications ?? []),
             'expDate'        => $this->fmt($c->end_date),
             'rejReason'      => $c->rejection_reason,
         ];
@@ -517,6 +554,12 @@ class CtcContractController extends Controller
         // resolved to real data so the preview shows actual values, not raw
         // {{consignee.gst}} placeholders. Raw `content` is kept for editing.
         $row->content_preview = $this->previewContent($row);
+        // Audit-trail timestamps (versions / clarifications / approver decisions)
+        // are stored UTC; convert to display TZ for the timeline view. In-memory
+        // only — show() never persists, so storage stays UTC.
+        $row->versions       = $this->istEntries($row->versions ?? []);
+        $row->clarifications = $this->istEntries($row->clarifications ?? []);
+        $row->approvers      = $this->istEntries($row->approvers ?? []);
         return response()->json(['status' => true, 'data' => $row]);
     }
 
@@ -849,7 +892,9 @@ class CtcContractController extends Controller
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
         $data = $request->validate(['query' => 'required|string|max:2000']);
         $thread = $row->clarifications ?? [];
-        $thread[] = ['query' => $data['query'], 'date' => now()->format('d M Y'), 'response' => '', 'resolved' => false];
+        // Stamp the raising approver so the shared thread can attribute each
+        // remark — any of the contract's approvers may add to the same thread.
+        $thread[] = ['query' => $data['query'], 'by' => $user->name ?: 'Approver', 'date' => now()->format('d M Y H:i'), 'response' => '', 'resolved' => false];
         $row->update(['approval_status' => 'clarification', 'clarifications' => $thread]);
         broadcast(new CtcApprovalUpdated($row->fresh()));
         return response()->json(['status' => true, 'data' => $this->shapeApprove($row->fresh(), $user->name ?? '')]);
@@ -1086,7 +1131,7 @@ class CtcContractController extends Controller
     {
         $user = $request->user(); if (!$user) abort(401);
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
-        return response()->json(['status' => true, 'data' => array_values($row->versions ?? [])]);
+        return response()->json(['status' => true, 'data' => $this->istEntries($row->versions ?? [])]);
     }
 
     /**

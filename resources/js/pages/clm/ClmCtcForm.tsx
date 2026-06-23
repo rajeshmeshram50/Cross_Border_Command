@@ -1373,25 +1373,38 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                 {/* Full audit trail from the contract's version history — every
                     submission, approval, rejection, send, sign & decline, each
                     with its stored date & time (oldest first). */}
-                {versions.length === 0 ? (
-                  <TimelineItem t={t} tone="active" title="Draft Submitted" badge="Pending" sub="Agreement drafted & submitted for internal review" last />
-                ) : versions.map((v, i) => {
-                  const meta = ctcTimelineMeta(v.status);
-                  const reason = (v as { reason?: string }).reason;
-                  return (
-                    <TimelineItem
-                      key={i}
-                      t={t}
-                      tone={meta.tone}
-                      title={meta.title}
-                      badge={v.status || meta.title}
-                      sub={reason && !v.label.includes(reason) ? `${v.label} — ${reason}` : v.label}
-                      date={v.date}
-                      by={v.by}
-                      last={i === versions.length - 1}
-                    />
-                  );
-                })}
+                {(() => {
+                  // Combined timeline = the contract's version history PLUS the
+                  // approver's clarification thread (each query + the sender's
+                  // reply). The clarification log lives in record.clarifications
+                  // but was previously only shown in the live banner, so it
+                  // vanished from the audit trail once the contract moved on.
+                  type TL = { tone: 'done' | 'active' | 'bad'; title: string; badge: string; sub: string; date?: string; by?: string };
+                  const base: TL[] = versions.length === 0
+                    ? [{ tone: 'active', title: 'Draft Submitted', badge: 'Pending', sub: 'Agreement drafted & submitted for internal review' }]
+                    : versions.map(v => {
+                        const meta = ctcTimelineMeta(v.status);
+                        const reason = (v as { reason?: string }).reason;
+                        return { tone: meta.tone, title: meta.title, badge: v.status || meta.title, sub: reason && !v.label.includes(reason) ? `${v.label} — ${reason}` : v.label, date: v.date, by: v.by };
+                      });
+                  // One "Requested" item per query + a "Answered" item when the
+                  // sender has replied. (Stored clarifications carry a date only,
+                  // no time, so they can't be reliably interleaved by timestamp.)
+                  const clarItems: TL[] = clarifications.flatMap(c => {
+                    const items: TL[] = [{ tone: 'active', title: 'Clarification Requested', badge: 'Clarification', sub: c.query || 'The approver requested clarification before deciding.', date: c.date, by: apprName }];
+                    if (c.response) items.push({ tone: 'done', title: 'Clarification Answered', badge: 'Responded', sub: c.response, date: c.date });
+                    return items;
+                  });
+                  // Clarifications happen during review, between submission and the
+                  // final approve/reject outcome — slot them in just before the
+                  // last (terminal) version item.
+                  const tl: TL[] = clarItems.length === 0 || base.length <= 1
+                    ? [...base, ...clarItems]
+                    : [...base.slice(0, base.length - 1), ...clarItems, base[base.length - 1]];
+                  return tl.map((it, i) => (
+                    <TimelineItem key={i} t={t} tone={it.tone} title={it.title} badge={it.badge} sub={it.sub} date={it.date} by={it.by} last={i === tl.length - 1} />
+                  ));
+                })()}
               </div>
             </div>
             </>)}

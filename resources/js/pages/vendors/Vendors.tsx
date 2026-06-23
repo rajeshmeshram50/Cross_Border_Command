@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, Col, Row } from 'reactstrap';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -6,6 +6,7 @@ import api from '../../api';
 import AddVendorModal from './AddVendorModal';
 import SupplierEvidenceVaultModal, { type SupplierVaultTarget } from './SupplierEvidenceVaultModal';
 import { ShimmerTable } from '../../components/ui/Shimmer';
+import WorklistPager from '../../components/ui/WorklistPager';
 import {
   readVendorMasterBundle,
   writeVendorMasterBundle,
@@ -46,6 +47,17 @@ export type Vendor = {
   address?: string;
   country?: string;
   pincode?: string;
+  /* All contact persons (primary first). Drives the "+N" badge + the
+     Contact Persons popup on the list. */
+  contacts: SupplierContact[];
+};
+
+export type SupplierContact = {
+  name: string;
+  role: string;   // "Primary" for the primary address, else the designation
+  phone: string;
+  email: string;
+  isPrimary: boolean;
 };
 
 /* Fresh vs Recurring tab key. Fresh = newly onboarded supplier with no
@@ -76,6 +88,14 @@ type ApiVendor = {
     email: string | null;
     contact_no: string | null;
   } | null;
+  /* All address-contacts (primary + extras) for the "+N" badge / popup. */
+  addresses?: Array<{
+    is_primary?: boolean | number | null;
+    contact_name: string | null;
+    designation: string | null;
+    contact_no: string | null;
+    email: string | null;
+  }> | null;
 };
 
 /* Map a supplier type label to one of the Figma pill colour kinds:
@@ -111,33 +131,59 @@ export default function Vendors() {
    * on a row sets this; the modal pulls a fresh /vault payload from
    * the API and renders KPI cards + per-bucket tables read-only. */
   const [vaultTarget, setVaultTarget] = useState<SupplierVaultTarget | null>(null);
+  /* When set, the Contact Persons popup lists all of this supplier's contacts. */
+  const [contactsTarget, setContactsTarget] = useState<Vendor | null>(null);
   const [loading, setLoading] = useState(true);
   /* "What We Are Doing Here" stepper — collapsible, open by default to
      mirror the Figma. Purely presentational. */
   const [brefOpen, setBrefOpen] = useState(true);
-  /* Client-side pagination for the purple Figma table (10 rows/page). */
+  /* Client-side pagination — rows-per-page auto-fits the viewport height
+     (same dynamic behaviour as the CLM Segment Master). */
   const [page, setPage] = useState(1);
+  const [rpp, setRpp] = useState(10);
+  const [fillH, setFillH] = useState<number | undefined>(undefined);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   /* Map a paginated API row to the local list-page shape. Anything the
      backend doesn't populate yet falls back to '—' so the table never
      renders raw `null` cells. */
-  const apiToVendor = (row: ApiVendor): Vendor => ({
-    id:          row.id,
-    code:        row.vendor_code ?? `V-${row.id}`,
-    companyName: row.company_name ?? 'Untitled Supplier',
-    legalName:   row.legal_name ?? row.company_name ?? '—',
-    type:        row.vendor_type?.name ?? 'Pending',
-    state:       String(row.primary_address?.state_id ?? '—'),
-    city:        row.primary_address?.city ?? '—',
-    contactName: row.primary_address?.contact_name ?? '—',
-    designation: '—',
-    phone:       row.primary_address?.contact_no ?? '—',
-    email:       row.primary_address?.email ?? row.primary_email ?? '—',
-    status:      row.status === 'active' ? 'Active' : 'Inactive',
-    opportunityCount: Number(row.opportunity_count ?? 0) || 0,
-    segment:     row.segment?.title ?? undefined,
-    risk:        row.risk_level?.name ?? undefined,
-  });
+  const apiToVendor = (row: ApiVendor): Vendor => {
+    /* Build the contact list — primary address first, then extras. Each
+       address row carries one contact person. */
+    const addrs = Array.isArray(row.addresses) ? row.addresses : [];
+    const contacts: SupplierContact[] = addrs
+      .filter(a => (a.contact_name ?? '').trim())
+      .map(a => {
+        const isPrimary = a.is_primary === true || a.is_primary === 1;
+        return {
+          name:  (a.contact_name ?? '').trim(),
+          role:  isPrimary ? 'Primary' : ((a.designation ?? '').trim() || 'Contact'),
+          phone: (a.contact_no ?? '').trim(),
+          email: (a.email ?? '').trim(),
+          isPrimary,
+        };
+      })
+      .sort((x, y) => Number(y.isPrimary) - Number(x.isPrimary));
+    return {
+      id:          row.id,
+      code:        row.vendor_code ?? `V-${row.id}`,
+      companyName: row.company_name ?? 'Untitled Supplier',
+      legalName:   row.legal_name ?? row.company_name ?? '—',
+      type:        row.vendor_type?.name ?? 'Pending',
+      state:       String(row.primary_address?.state_id ?? '—'),
+      city:        row.primary_address?.city ?? '—',
+      contactName: contacts[0]?.name || row.primary_address?.contact_name || '—',
+      designation: '—',
+      phone:       row.primary_address?.contact_no ?? '—',
+      email:       row.primary_address?.email ?? row.primary_email ?? '—',
+      status:      row.status === 'active' ? 'Active' : 'Inactive',
+      opportunityCount: Number(row.opportunity_count ?? 0) || 0,
+      segment:     row.segment?.title ?? undefined,
+      risk:        row.risk_level?.name ?? undefined,
+      contacts,
+    };
+  };
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -158,6 +204,31 @@ export default function Vendors() {
   /* Reset to page 1 whenever the tab or search changes so the user never
      lands on an out-of-range page after the result set shrinks. */
   useEffect(() => { setPage(1); }, [tab, search]);
+
+  /* Dynamic rows-per-page — pick the count that fits between the table's top
+     and the bottom of the viewport, so the page fills the screen and the rest
+     spills onto further pages (mirrors the CLM Segment Master). The table card
+     is also stretched (fillH) so it covers the page when rows are few. */
+  useEffect(() => {
+    const recompute = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const THEAD = 42, ROW = 56, FOOTER = 96;
+      const avail = window.innerHeight - top - THEAD - FOOTER;
+      const fit = Math.max(4, Math.floor(avail / ROW));
+      setRpp(prev => (prev === fit ? prev : fit));
+      const fh = Math.max(0, window.innerHeight - top - 64);
+      setFillH(prev => (prev === fh ? prev : fh));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    const ro = new ResizeObserver(recompute);
+    if (rootRef.current) ro.observe(rootRef.current);
+    window.addEventListener('resize', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, search, loading, brefOpen]);
 useEffect(() => {
   if (!allowed) return;
 
@@ -196,10 +267,6 @@ useEffect(() => {
   };
 }, [allowed]);
  
-  const stats = useMemo(() => ({
-    fresh:     vendors.filter(v => v.opportunityCount === 0).length,
-    recurring: vendors.filter(v => v.opportunityCount > 0).length,
-  }), [vendors]);
 
   const filtered = useMemo(() => {
     const lo = search.trim().toLowerCase();
@@ -216,13 +283,12 @@ useEffect(() => {
         || v.state.toLowerCase().includes(lo));
   }, [vendors, search, tab]);
 
-  /* Client-side pagination math for the purple Figma table. */
-  const PAGE_SIZE = 10;
+  /* Client-side pagination math — page size is the dynamic `rpp`. */
   const total = filtered.length;
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pages = Math.max(1, Math.ceil(total / rpp));
   const curPage = Math.min(page, pages);
-  const start = (curPage - 1) * PAGE_SIZE;
-  const pageRows = filtered.slice(start, start + PAGE_SIZE);
+  const start = (curPage - 1) * rpp;
+  const pageRows = filtered.slice(start, start + rpp);
 
   /* The wizard now persists each step to /api/vendors/* directly, so
      this handler only re-fetches and closes the modal. The payload is
@@ -258,7 +324,8 @@ useEffect(() => {
          (cstrip), the collapsible 4-step "What We Are Doing Here" box
          (bref), and (next step) the purple supplier table (sl-*). */}
       <style>{`
-        .sup-fig{font-family:'DM Sans',system-ui,sans-serif;display:flex;flex-direction:column;gap:14px;}
+        .sup-fig{font-family:'DM Sans',system-ui,sans-serif;display:flex;flex-direction:column;gap:6px;margin:-6px -10px 0;}
+        @media(max-width:640px){.sup-fig{margin:-2px -4px 0;}}
 
         /* HEADER STRIP */
         .sup-fig .cstrip{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;min-height:58px;padding:0 20px;border:1px solid #c4b5fd;border-radius:16px;background:linear-gradient(110deg,#faf5ff 0%,#f3e8ff 25%,#ede9fe 55%,#ddd6fe 85%,#c4b5fd 100%);box-shadow:0 2px 0 rgba(255,255,255,.85) inset,0 8px 28px rgba(139,92,246,.2),0 2px 8px rgba(0,0,0,.06);}
@@ -269,7 +336,7 @@ useEffect(() => {
         .sup-fig .cstrip__avatar-wrap{position:relative;flex-shrink:0;}
         .sup-fig .cstrip__avatar{width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#8b5cf6 0%,#7c3aed 55%,#5b21b6 100%);box-shadow:0 0 0 3px rgba(139,92,246,.25),0 4px 14px rgba(124,58,237,.45);}
         .sup-fig .cstrip__online-dot{position:absolute;bottom:-1px;right:-1px;width:10px;height:10px;border-radius:50%;background:linear-gradient(135deg,#4ade80,#22c55e);border:2px solid #f3e8ff;box-shadow:0 2px 4px rgba(34,197,94,.4);}
-        .sup-fig .cstrip__title{font-size:14.5px;font-weight:800;color:#3b0764;letter-spacing:-.4px;line-height:1.2;}
+        .sup-fig .cstrip__title{font-size:14.5px;font-weight:700;color:#3b0764;letter-spacing:-.3px;line-height:1.2;}
         .sup-fig .cstrip__sub{font-size:10px;font-weight:500;color:#6d28d9;opacity:.85;margin-top:2px;line-height:1.3;}
         .sup-fig .cstrip__right{display:flex;align-items:center;gap:7px;z-index:1;}
         .sup-fig .cstrip__action-btn{position:relative;overflow:hidden;display:flex;align-items:center;gap:7px;padding:9px 18px;border:none;border-radius:12px;font-family:inherit;font-size:11.5px;font-weight:700;color:#fff;letter-spacing:.02em;white-space:nowrap;cursor:pointer;flex-shrink:0;background:linear-gradient(135deg,#8b5cf6 0%,#7c3aed 50%,#5b21b6 100%);box-shadow:0 4px 16px rgba(124,58,237,.5),0 1px 3px rgba(91,33,182,.3),0 1px 0 rgba(255,255,255,.2) inset;text-shadow:0 1px 2px rgba(0,0,0,.2);transition:background .2s,transform .2s,box-shadow .2s;}
@@ -286,9 +353,9 @@ useEffect(() => {
         .sup-fig .bref-box__header-ico{width:36px;height:36px;border-radius:11px;flex-shrink:0;background:linear-gradient(135deg,#8b5cf6 0%,#7c3aed 55%,#5b21b6 100%);display:flex;align-items:center;justify-content:center;color:#fff;position:relative;z-index:1;box-shadow:0 0 0 3px rgba(139,92,246,.25),0 4px 14px rgba(124,58,237,.45);}
         .sup-fig .bref-box__header-mid{flex:1;display:flex;flex-direction:column;gap:3px;min-width:0;position:relative;z-index:1;}
         .sup-fig .bref-box__header-row{display:flex;align-items:center;gap:9px;}
-        .sup-fig .bref-box__header-label{font-size:9.5px;font-weight:800;letter-spacing:-.2px;color:#7c3aed;line-height:1;white-space:nowrap;flex-shrink:0;}
+        .sup-fig .bref-box__header-label{font-size:9.5px;font-weight:600;letter-spacing:-.2px;color:#7c3aed;line-height:1;white-space:nowrap;flex-shrink:0;}
         .sup-fig .bref-box__header-sep{width:1px;height:13px;background:#C4B5FD;flex-shrink:0;}
-        .sup-fig .bref-box__header-title{font-size:11px;font-weight:800;color:#3b0764;letter-spacing:-.2px;line-height:1;white-space:nowrap;}
+        .sup-fig .bref-box__header-title{font-size:11px;font-weight:600;color:#3b0764;letter-spacing:-.2px;line-height:1;white-space:nowrap;}
         .sup-fig .bref-box__header-sub{font-size:9.5px;font-weight:500;color:#6d28d9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
         .sup-fig .bref-box__header-right{flex-shrink:0;display:flex;align-items:center;gap:6px;position:relative;z-index:1;}
         .sup-fig .bref-box__toggle{width:26px;height:26px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.75);border:1.5px solid rgba(124,58,237,.22);color:#7c3aed;transition:transform .24s cubic-bezier(.22,1,.36,1);box-shadow:0 1px 4px rgba(124,58,237,.10),inset 0 1px 0 rgba(255,255,255,.9);}
@@ -302,14 +369,14 @@ useEffect(() => {
         .sup-fig .bref-item::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:11px 11px 0 0;background:linear-gradient(90deg,#8b5cf6,#7c3aed);}
         .sup-fig .bref-item__top{display:flex;align-items:center;gap:6px;margin-bottom:0;}
         .sup-fig .bref-item__ico{width:16px;height:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#7c3aed;}
-        .sup-fig .bref-item__num{font-size:8.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#94A3B8;line-height:1;}
-        .sup-fig .bref-item__title{font-size:11px;font-weight:800;color:#0F172A;letter-spacing:-.2px;line-height:1.25;margin-bottom:3px;margin-top:5px;}
+        .sup-fig .bref-item__num{font-size:8.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#94A3B8;line-height:1;}
+        .sup-fig .bref-item__title{font-size:11px;font-weight:600;color:#1e293b;letter-spacing:-.2px;line-height:1.25;margin-bottom:3px;margin-top:5px;}
         .sup-fig .bref-item__desc{font-size:9.5px;font-weight:500;color:#94A3B8;line-height:1.4;}
         @media(max-width:1100px){.sup-fig .bref-box__body{grid-template-columns:repeat(4,1fr)}}
         @media(max-width:700px){.sup-fig .bref-box__body{grid-template-columns:repeat(2,1fr)}}
 
         /* TABLE WRAP — purple-bordered card holding toolbar + table + footer */
-        .sup-fig .sl-wrap{display:flex;flex-direction:column;border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-shadow:0 2px 0 rgba(255,255,255,.85) inset,0 8px 28px rgba(139,92,246,.16),0 2px 8px rgba(0,0,0,.05);}
+        .sup-fig .sl-wrap{display:flex;flex-direction:column;margin-top:4px;border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-shadow:0 2px 0 rgba(255,255,255,.85) inset,0 8px 28px rgba(139,92,246,.16),0 2px 8px rgba(0,0,0,.05);}
 
         /* TOOLBAR — purple tabs + search (Figma sl-toolbar) */
         .sup-fig .sl-toolbar{display:flex;align-items:center;gap:14px;padding:12px 14px;border-bottom:1px solid #e2d4fa;background:linear-gradient(110deg,#faf5ff 0%,#f3e8ff 35%,#ede9fe 70%,#ddd6fe 100%);}
@@ -340,10 +407,34 @@ useEffect(() => {
         .sup-fig .sl-table tbody tr:hover{background:#FAF7FF;}
         .sup-fig .sl-table tbody tr:last-child td{border-bottom:none;}
         .sup-fig .sl-sr{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:7px;font-size:10.5px;font-weight:800;color:#fff;background:linear-gradient(135deg,#8b5cf6,#7c3aed);box-shadow:0 2px 5px rgba(124,58,237,.3);}
-        .sup-fig .sl-code{display:inline-flex;align-items:center;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:10.5px;font-weight:700;color:#5b21b6;background:#F5F1FE;border:1px solid #E2D4FA;border-radius:6px;padding:2px 8px;}
-        .sup-fig .sl-name{font-weight:800;font-size:12px;color:#1E293B;letter-spacing:-.2px;}
+        .sup-fig .sl-code{display:inline-flex;align-items:center;font-family:inherit;font-feature-settings:"tnum";font-size:10.5px;font-weight:700;letter-spacing:.01em;color:#5b21b6;background:#F5F1FE;border:1px solid #E2D4FA;border-radius:6px;padding:2px 8px;}
+        .sup-fig .sl-name{font-weight:700;font-size:12px;color:#1E293B;letter-spacing:-.1px;}
         .sup-fig .sl-state,.sup-fig .sl-country,.sup-fig .sl-contact{font-weight:600;color:#475569;}
-        .sup-fig .sl-phone{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:10.5px;color:#64748B;}
+        .sup-fig .sl-contact-wrap{display:inline-flex;align-items:center;gap:6px;}
+        .sup-fig .sl-contact-more{font-family:inherit;font-size:10px;font-weight:800;color:#7c3aed;background:#f1eafe;border:1px solid #ddd0f7;border-radius:999px;padding:2px 7px;cursor:pointer;line-height:1;transition:all .15s;}
+        .sup-fig .sl-contact-more:hover{background:#e6d9fb;transform:translateY(-1px);}
+
+        /* Contact Persons popup */
+        .sc-ov{position:fixed;inset:0;z-index:1200;background:rgba(49,22,99,.42);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px;font-family:'DM Sans',system-ui,sans-serif;}
+        .sc-pop{width:100%;max-width:480px;background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgba(15,23,42,.45);border:1.5px solid rgba(255,255,255,.65);}
+        .sc-head{display:flex;align-items:center;gap:12px;padding:16px 18px;background:linear-gradient(115deg,#4c1d95 0%,#5b21b6 28%,#6d28d9 55%,#7c3aed 80%,#8b5cf6 100%);color:#fff;}
+        .sc-head-ico{width:38px;height:38px;border-radius:11px;flex-shrink:0;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;}
+        .sc-title{font-size:15.5px;font-weight:700;}
+        .sc-sub{font-size:11px;color:rgba(255,255,255,.85);margin-top:1px;}
+        .sc-close{margin-left:auto;width:30px;height:30px;border-radius:9px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.12);color:#fff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;}
+        .sc-close:hover{background:rgba(255,255,255,.22);}
+        .sc-body{padding:8px 14px 14px;max-height:60vh;overflow-y:auto;}
+        .sc-row{display:flex;align-items:flex-start;gap:12px;padding:12px 6px;border-bottom:1px solid #f1ecfb;}
+        .sc-row:last-child{border-bottom:none;}
+        .sc-avatar{width:38px;height:38px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:14px;background:linear-gradient(135deg,#8b5cf6,#7c3aed);}
+        .sc-name{font-size:13px;font-weight:700;color:#1e293b;display:flex;align-items:center;gap:8px;}
+        .sc-role{font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:99px;}
+        .sc-role.is-primary{background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;}
+        .sc-role.is-other{background:#f1eafe;color:#7c3aed;border:1px solid #ddd0f7;}
+        .sc-meta{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:5px;}
+        .sc-meta span{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:#64748b;}
+        .sc-meta i{color:#a78bfa;}
+        .sup-fig .sl-phone{font-family:inherit;font-feature-settings:"tnum";font-size:11.5px;font-weight:500;color:#64748B;}
         .sup-fig .sl-email{font-weight:600;color:#7c3aed;text-decoration:none;}
         .sup-fig .sl-email:hover{text-decoration:underline;}
         .sup-fig .sl-pill{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;border:1px solid;}
@@ -374,6 +465,7 @@ useEffect(() => {
         .sup-fig .sl-page-num:hover,.sup-fig .sl-page-arrow:hover:not(:disabled){background:#F5F1FE;border-color:#C4B5FD;}
         .sup-fig .sl-page-num.is-active{color:#fff;background:linear-gradient(135deg,#8b5cf6,#7c3aed,#5b21b6);border-color:transparent;box-shadow:0 3px 9px rgba(124,58,237,.4);}
         .sup-fig .sl-page-arrow:disabled{opacity:.4;cursor:not-allowed;}
+        .sup-fig .sl-page-dots{min-width:22px;height:28px;display:inline-flex;align-items:flex-end;justify-content:center;padding-bottom:4px;color:#a78bfa;font-weight:800;font-size:13px;}
 
         .vendors-surface { background: #fff; }
         [data-bs-theme="dark"] .vendors-surface { background: #1c2531; }
@@ -526,11 +618,63 @@ useEffect(() => {
           border-color: #7c3aed;
           box-shadow: 0 0 0 3px rgba(124,58,237,.25);
         }
+
+        /* Responsive — stack the toolbar (tabs + search) on narrow screens;
+           the table itself already scrolls horizontally via .sl-table-scroll. */
+        @media (max-width: 640px) {
+          .sup-fig .sl-toolbar { flex-direction: column; align-items: stretch; }
+          .sup-fig .sl-tabs { justify-content: center; }
+          .sup-fig .cstrip { flex-direction: column; align-items: flex-start; gap: 10px; }
+        }
+
+        /* ───── Dark mode for the purple Figma supplier list ─────
+           Translucent purple accents on a deep surface (matches the app's
+           dark-mode recipe). Light-mode values above are untouched. */
+        [data-bs-theme="dark"] .sup-fig .cstrip{background:linear-gradient(110deg,#2a1d54 0%,#34216b 45%,#3b2178 80%,#4c1d95 100%);border-color:rgba(167,139,250,.3);box-shadow:0 8px 28px rgba(0,0,0,.4);}
+        [data-bs-theme="dark"] .sup-fig .cstrip__title{color:#f3e8ff;}
+        [data-bs-theme="dark"] .sup-fig .cstrip__sub{color:#c4b5fd;}
+
+        [data-bs-theme="dark"] .sup-fig .bref-box{background:#1c1633;border-color:rgba(167,139,250,.22);box-shadow:0 8px 28px rgba(0,0,0,.35);}
+        [data-bs-theme="dark"] .sup-fig .bref-box__header{background:linear-gradient(110deg,#241a47 0%,#2c1f58 60%,#34216b 100%);border-bottom-color:rgba(167,139,250,.2);}
+        [data-bs-theme="dark"] .sup-fig .bref-box__header-title{color:#f3e8ff;}
+        [data-bs-theme="dark"] .sup-fig .bref-box__header-sub,
+        [data-bs-theme="dark"] .sup-fig .bref-box__header-label{color:#c4b5fd;}
+        [data-bs-theme="dark"] .sup-fig .bref-box__body{background:linear-gradient(180deg,#1c1633 0%,#171029 100%);}
+        [data-bs-theme="dark"] .sup-fig .bref-item{background:#221a40;border-color:rgba(167,139,250,.16);box-shadow:none;}
+        [data-bs-theme="dark"] .sup-fig .bref-item__title{color:#ede9fe;}
+        [data-bs-theme="dark"] .sup-fig .bref-item__desc,
+        [data-bs-theme="dark"] .sup-fig .bref-item__num{color:#a89fc7;}
+        [data-bs-theme="dark"] .sup-fig .bref-box__toggle{background:rgba(255,255,255,.08);border-color:rgba(167,139,250,.25);color:#c4b5fd;}
+
+        [data-bs-theme="dark"] .sup-fig .sl-wrap{background:#1c2531;border-color:rgba(167,139,250,.22);box-shadow:0 8px 28px rgba(0,0,0,.4);}
+        [data-bs-theme="dark"] .sup-fig .sl-toolbar{background:rgba(124,58,237,.12);border-bottom-color:rgba(167,139,250,.2);}
+        [data-bs-theme="dark"] .sup-fig .sl-tabs{background:rgba(255,255,255,.04);border-color:rgba(167,139,250,.18);}
+        [data-bs-theme="dark"] .sup-fig .sl-tab{color:#c4b5fd;background:rgba(255,255,255,.04);border-color:rgba(167,139,250,.15);}
+        [data-bs-theme="dark"] .sup-fig .sl-search{background:rgba(255,255,255,.05);border-color:rgba(167,139,250,.22);}
+        [data-bs-theme="dark"] .sup-fig .sl-search input{color:#ede9fe;}
+        [data-bs-theme="dark"] .sup-fig .sl-tab-count{background:rgba(255,255,255,.1);color:#c4b5fd;border-color:transparent;}
+
+        [data-bs-theme="dark"] .sup-fig .sl-table tbody td{color:#ced4da;border-bottom-color:rgba(255,255,255,.06);}
+        [data-bs-theme="dark"] .sup-fig .sl-table tbody tr:hover{background:rgba(124,58,237,.12);}
+        [data-bs-theme="dark"] .sup-fig .sl-name{color:#f3e8ff;}
+        [data-bs-theme="dark"] .sup-fig .sl-state,
+        [data-bs-theme="dark"] .sup-fig .sl-country,
+        [data-bs-theme="dark"] .sup-fig .sl-contact{color:#adb5bd;}
+        [data-bs-theme="dark"] .sup-fig .sl-phone{color:#9a93b3;}
+        [data-bs-theme="dark"] .sup-fig .sl-code{background:rgba(124,58,237,.18);color:#c4b5fd;border-color:rgba(167,139,250,.3);}
+        [data-bs-theme="dark"] .sup-fig .sl-contact-more{background:rgba(124,58,237,.2);color:#c4b5fd;border-color:rgba(167,139,250,.3);}
+        [data-bs-theme="dark"] .sup-fig .sl-footer{background:rgba(255,255,255,.03);border-top-color:rgba(255,255,255,.07);}
+
+        /* Contact Persons popup — dark surface */
+        [data-bs-theme="dark"] .sup-fig .sc-pop{background:#1c2531;border-color:rgba(167,139,250,.25);}
+        [data-bs-theme="dark"] .sup-fig .sc-row{border-bottom-color:rgba(255,255,255,.06);}
+        [data-bs-theme="dark"] .sup-fig .sc-name{color:#f3e8ff;}
+        [data-bs-theme="dark"] .sup-fig .sc-meta span{color:#adb5bd;}
       `}</style>
 
       <Row>
         <Col xs={12}>
-         <div className="sup-fig">
+         <div className="sup-fig" ref={rootRef}>
 
           {/* HEADER STRIP — purple gradient hero (Figma "Supplier Management") */}
           <div className="cstrip">
@@ -628,7 +772,6 @@ useEffect(() => {
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>
                   <span>Fresh Suppliers</span>
-                  <span className="sl-tab-count">{stats.fresh}</span>
                 </button>
                 <button
                   type="button"
@@ -637,7 +780,6 @@ useEffect(() => {
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
                   <span>Recurring Suppliers</span>
-                  <span className="sl-tab-count">{stats.recurring}</span>
                 </button>
               </div>
               <div className="sl-search">
@@ -662,7 +804,7 @@ useEffect(() => {
               <div className="p-3"><ShimmerTable rows={8} cols={11} /></div>
             ) : (
               <>
-                <div className="sl-table-scroll">
+                <div className="sl-table-scroll" ref={scrollRef} style={fillH ? { minHeight: fillH } : undefined}>
                   <table className="sl-table">
                     <thead>
                       <tr>
@@ -693,7 +835,21 @@ useEffect(() => {
                             <td><span className={`sl-pill sl-pill--${kind}`}><span className="sl-pill-dot" />{v.type}</span></td>
                             <td><span className="sl-state">{v.state}</span></td>
                             <td><span className="sl-country">{v.country || 'India'}</span></td>
-                            <td><span className="sl-contact">{v.contactName}</span></td>
+                            <td>
+                              <span className="sl-contact-wrap">
+                                <span className="sl-contact">{v.contactName}</span>
+                                {v.contacts.length > 1 && (
+                                  <button
+                                    type="button"
+                                    className="sl-contact-more"
+                                    title={`View all ${v.contacts.length} contacts`}
+                                    onClick={() => setContactsTarget(v)}
+                                  >
+                                    +{v.contacts.length - 1}
+                                  </button>
+                                )}
+                              </span>
+                            </td>
                             <td><span className="sl-phone">{v.phone}</span></td>
                             <td><a className="sl-email" href={`mailto:${v.email}`}>{v.email}</a></td>
                             <td>
@@ -737,41 +893,9 @@ useEffect(() => {
                     </tbody>
                   </table>
                 </div>
-                <div className="sl-footer">
-                  <span className="sl-count">
-                    {total ? `Showing ${start + 1}–${start + pageRows.length} of ${total}` : 'Showing 0 of 0'}
-                  </span>
-                  <div className="sl-pager">
-                    <button
-                      type="button"
-                      className="sl-page-arrow"
-                      disabled={curPage <= 1}
-                      onClick={() => setPage(p => Math.max(1, p - 1))}
-                      title="Previous"
-                    >
-                      <i className="ri-arrow-left-s-line" />
-                    </button>
-                    {Array.from({ length: pages }, (_, idx) => idx + 1).map(p => (
-                      <button
-                        type="button"
-                        key={p}
-                        className={`sl-page-num ${p === curPage ? 'is-active' : ''}`}
-                        onClick={() => setPage(p)}
-                      >
-                        {p}
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      className="sl-page-arrow"
-                      disabled={curPage >= pages}
-                      onClick={() => setPage(p => Math.min(pages, p + 1))}
-                      title="Next"
-                    >
-                      <i className="ri-arrow-right-s-line" />
-                    </button>
-                  </div>
-                </div>
+                {/* Shared dynamic pager — same "Showing X–Y of Z · page/pages · ‹ ›"
+                    component the CLM Segment Master uses. */}
+                <WorklistPager total={total} page={curPage} pageSize={rpp} onPage={setPage} />
               </>
             )}
           </div>
@@ -786,6 +910,46 @@ useEffect(() => {
           onClose={() => { setAddOpen(false); setEditingId(null); setEditingStep(null); }}
           onSubmit={handleSave}
         />
+      )}
+
+      {/* Contact Persons popup — lists every contact for the chosen supplier
+          (primary first), with role badge, phone and email (Figma). */}
+      {contactsTarget && (
+        <div className="sup-fig">
+          <div className="sc-ov" onClick={(e) => { if (e.target === e.currentTarget) setContactsTarget(null); }}>
+            <div className="sc-pop" role="dialog" aria-modal="true">
+              <div className="sc-head">
+                <div className="sc-head-ico">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+                </div>
+                <div className="min-w-0">
+                  <div className="sc-title">Contact Persons</div>
+                  <div className="sc-sub">{contactsTarget.companyName} — {contactsTarget.contacts.length} contact{contactsTarget.contacts.length !== 1 ? 's' : ''}</div>
+                </div>
+                <button type="button" className="sc-close" onClick={() => setContactsTarget(null)} aria-label="Close">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                </button>
+              </div>
+              <div className="sc-body">
+                {contactsTarget.contacts.map((c, i) => (
+                  <div className="sc-row" key={i}>
+                    <div className="sc-avatar">{(c.name || '?').trim().charAt(0).toUpperCase()}</div>
+                    <div className="min-w-0" style={{ flex: 1 }}>
+                      <div className="sc-name">
+                        {c.name || '—'}
+                        <span className={`sc-role ${c.isPrimary ? 'is-primary' : 'is-other'}`}>{c.role}</span>
+                      </div>
+                      <div className="sc-meta">
+                        {c.phone && <span><i className="ri-phone-line" />{c.phone}</span>}
+                        {c.email && <span><i className="ri-mail-line" />{c.email}</span>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Read-only Supplier Evidence Vault popup — pulls
