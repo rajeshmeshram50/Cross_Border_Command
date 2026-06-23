@@ -1957,13 +1957,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           <Col xs={12} md className="min-w-0">
             <div className="d-flex align-items-center gap-2 mb-1">
               <h2 className="text-white mb-0 fw-bold ep-fs-22 ep-line-115">{employee?.name || employeeId}</h2>
-              <button
-                type="button"
-                className="btn btn-sm d-inline-flex align-items-center justify-content-center ep-hero-more-btn"
-                aria-label="More actions"
-              >
-                <i className="ri-more-2-fill" />
-              </button>
             </div>
             <p className="mb-1 ep-hero-empcode">{displayEmpCode}</p>
             <p className="mb-2 ep-hero-subline">
