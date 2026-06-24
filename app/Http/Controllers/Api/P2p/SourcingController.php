@@ -17,20 +17,10 @@ use App\Models\Vendor;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Procure to Pay (P2P) · Procurement Management → Bulk Sourcing.
- *
- * Backs the whole Bulk Sourcing screen (list + Assign/Edit wizard + Sourcing
- * Report + Map/Mapped suppliers). The contract these methods satisfy lives in
- * resources/js/pages/p2p/procurement-management/bulk-sourcing/API.md.
- *
- * Multi-tenant: every query is scoped by the authenticated user's client_id;
- * the public identifier of a target is its per-client `code` (SRC-001), never
- * the numeric id, so all {target} route params are codes.
- */
+
 class SourcingController extends Controller
 {
-    /* ── helpers ─────────────────────────────────────────────────────────── */
+    
 
     private function ok($data)
     {
@@ -50,7 +40,7 @@ class SourcingController extends Controller
         return $s === 'manual' ? 'Manual Entry' : 'Product Master';
     }
 
-    /** Shape one target into the list/report header row the SPA expects. */
+  
     private function row(SourcingTarget $t): array
     {
         $total = $t->products->count();
@@ -107,10 +97,7 @@ class SourcingController extends Controller
         return $this->ok($rows);
     }
 
-    /* ── 3. team members (logged-in user's branch only) ──────────────────── */
-    // GET /p2p/team-members — people in the current user's branch. Branch users
-    // are pinned to their own branch_id; client admins (no branch_id) get the
-    // active branch the SPA injects as ?branch_id.
+   
     public function teamMembers(Request $request)
     {
         $user   = $request->user();
@@ -130,9 +117,6 @@ class SourcingController extends Controller
         return $this->ok($rows);
     }
 
-    /* ── form masters (segment / country / state / state-code) ───────────── */
-    // GET /p2p/form-masters — dropdown data for the New Supplier form. Scoped
-    // like every other master read (global rows + this tenant's), active only.
     public function formMasters(Request $request)
     {
         $user   = $request->user();
@@ -147,10 +131,7 @@ class SourcingController extends Controller
         ]);
     }
 
-    /* ── file upload (clarity PDF / supplier business card) ───────────────── */
-    // POST /p2p/upload — stores one file on the public disk and returns its
-    // /storage/... path. Used by the clarity-PDF picker and the New Supplier
-    // business-card upload so the actual file is persisted (not just its name).
+
     public function upload(Request $request)
     {
         $request->validate([
@@ -167,9 +148,7 @@ class SourcingController extends Controller
         ]);
     }
 
-    /* ── next code preview ───────────────────────────────────────────────── */
-    // GET /p2p/sourcing-targets/next-code — shows the ID the next create will get
-    // (the real code is still allocated under a row lock at store() time).
+   
     public function nextCode(Request $request)
     {
         $user = $request->user();
@@ -177,8 +156,7 @@ class SourcingController extends Controller
         return $this->ok(['code' => sprintf('SRC-%03d', $seq)]);
     }
 
-    /* ── 4 & 6. create / update ──────────────────────────────────────────── */
-    // POST /p2p/sourcing-targets
+  
     public function store(Request $request)
     {
         $user = $request->user();
@@ -216,7 +194,7 @@ class SourcingController extends Controller
         return $this->ok(['id' => $target->code]);
     }
 
-    // PUT /p2p/sourcing-targets/{target}
+   
     public function update(Request $request, string $target)
     {
         $user = $request->user();
@@ -298,8 +276,6 @@ class SourcingController extends Controller
         return $this->ok(['id' => $t->code]);
     }
 
-    /* ── 5. edit pre-fill ────────────────────────────────────────────────── */
-    // GET /p2p/sourcing-targets/{target}
     public function show(Request $request, string $target)
     {
         $t = $this->target($request, $target);
@@ -341,8 +317,7 @@ class SourcingController extends Controller
         ]);
     }
 
-    /* ── 7. report ───────────────────────────────────────────────────────── */
-    // GET /p2p/sourcing-targets/{target}/report
+ 
     public function report(Request $request, string $target)
     {
         $t = $this->target($request, $target);
@@ -371,8 +346,7 @@ class SourcingController extends Controller
         ]);
     }
 
-    /* ── 8. toggle product status ────────────────────────────────────────── */
-    // PATCH /p2p/sourcing-targets/{target}/products/{product}/status
+
     public function setProductStatus(Request $request, string $target, int $product)
     {
         $t = $this->target($request, $target);
@@ -387,8 +361,7 @@ class SourcingController extends Controller
         ]);
     }
 
-    /* ── 9. supplier master ──────────────────────────────────────────────── */
-    // GET /p2p/suppliers
+
     public function suppliers(Request $request)
     {
         $user = $request->user();
@@ -408,8 +381,7 @@ class SourcingController extends Controller
         return $this->ok($rows);
     }
 
-    /* ── 10. map a supplier to a product ─────────────────────────────────── */
-    // POST /p2p/sourcing-targets/{target}/products/{product}/suppliers
+    
     public function mapSupplier(Request $request, string $target, int $product)
     {
         $user = $request->user();
@@ -499,8 +471,7 @@ class SourcingController extends Controller
         return $this->ok(['supplierCount' => $p->suppliers()->count()]);
     }
 
-    /* ── 11. mapped suppliers for a product ──────────────────────────────── */
-    // GET /p2p/sourcing-targets/{target}/products/{product}/suppliers
+    
     public function mappedSuppliers(Request $request, string $target, int $product)
     {
         $t = $this->target($request, $target);
@@ -520,7 +491,7 @@ class SourcingController extends Controller
         return $this->ok($rows);
     }
 
-    /* ── shared write helpers ────────────────────────────────────────────── */
+    
 
     private function validatePayload(Request $request): array
     {
@@ -540,7 +511,7 @@ class SourcingController extends Controller
         ]);
     }
 
-    /** Resolve an assignee id to {id, name} within the client, or nulls. */
+
     private function resolveAssignee($clientId, $assigneeId): array
     {
         if (!$assigneeId) return ['id' => null, 'name' => null];
@@ -548,8 +519,6 @@ class SourcingController extends Controller
         return ['id' => $u?->id, 'name' => $u?->name];
     }
 
-    /** Create sourcing_products from the request payload (master rows resolve
-     *  their name/segment/hsn from the Product Master by code). */
     private function syncProducts(SourcingTarget $target, $clientId, array $products): void
     {
         foreach ($products as $p) {

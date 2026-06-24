@@ -11,37 +11,14 @@ use App\Models\Permission;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Two-stage approval workflow controller for employee Advance Requests
- * (Travel / Salary / Medical / Other recoverable payouts).
- *
- * Mirrors ExpenseClaimController one-to-one — same scope rules (mine /
- * team / all), same tenant gate, same numbering pattern (ADV-0001), same
- * manager → HR/Finance verdict pair. Only the form payload differs
- * (advance type, recovery schedule, monthly EMI, reason).
- *
- * Endpoints (registered in routes/api.php under auth:sanctum):
- *   GET    /api/advance-requests?scope=mine|team|all
- *   POST   /api/advance-requests
- *   GET    /api/advance-requests/{id}
- *   POST   /api/advance-requests/{id}/manager-approve
- *   POST   /api/advance-requests/{id}/manager-reject
- *   POST   /api/advance-requests/{id}/hr-approve
- *   POST   /api/advance-requests/{id}/hr-reject
- *
- * Attachment streaming lives at /api/advance-requests/{id}/attachments/{i}
- * outside the sanctum group (query-token auth) so plain <a target="_blank">
- * clicks work — same pattern as expense-claim attachments and candidate CVs.
- */
+
 class AdvanceRequestController extends Controller
 {
     private const STATUSES         = ['pending', 'approved', 'rejected'];
     private const ADVANCE_TYPES    = ['Travel Advance', 'Salary Advance', 'Medical Advance', 'Other'];
     private const RECOVERY_MODES   = ['emi', 'lumpsum', 'bimonthly'];
 
-    /* ============================================================ */
-    /*  LIST                                                        */
-    /* ============================================================ */
+
 
     public function index(Request $request)
     {
@@ -103,9 +80,7 @@ class AdvanceRequestController extends Controller
         return response()->json($q->get()->map(fn ($r) => $this->serialize($r)));
     }
 
-    /* ============================================================ */
-    /*  STORE                                                       */
-    /* ============================================================ */
+   
 
     public function store(Request $request)
     {
@@ -225,9 +200,7 @@ class AdvanceRequestController extends Controller
         return response()->json($this->serialize($row), 201);
     }
 
-    /* ============================================================ */
-    /*  SHOW                                                        */
-    /* ============================================================ */
+ 
 
     public function show(Request $request, $id)
     {
@@ -238,11 +211,7 @@ class AdvanceRequestController extends Controller
         return response()->json($this->serialize($row));
     }
 
-    /**
-     * Stream one attachment by its index in the attachments array.
-     * Query-token auth so plain <a target="_blank"> works — mirrors the
-     * expense-claim attachment endpoint exactly.
-     */
+   
     public function downloadAttachment(Request $request, $id, $index)
     {
         $this->authenticateFromQueryToken($request);
