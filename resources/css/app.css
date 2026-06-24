@@ -2736,6 +2736,42 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55) !important;
   padding: 8px !important;
 }
+/* ── Collapsed flyout HEADER (the hovered top-level row that titles the popup) ──
+   On hover Velzon widens the top-level menu-link into a labelled bar that sits
+   above the dropdown. When that item is the ACTIVE page, our violet active
+   gradient bled across the whole bar — and it landed right over the page's
+   purple table header, so "Sales Matrix" was unreadable. Force the header to
+   the same dark surface as the dropdown panel below it (even when active), and
+   pull the label in so the heading starts next to the icon instead of 25px
+   away. Scoped to sm (collapsed) only — the expanded sidebar keeps its
+   gradient active pill untouched. */
+[data-layout="vertical"][data-sidebar-size="sm"] .app-menu .navbar-nav > .nav-item:hover > .nav-link.menu-link,
+[data-layout="vertical"][data-sidebar-size="sm"] .app-menu .navbar-nav > .nav-item:hover > .nav-link.menu-link.active {
+  background: #131B2C !important;
+  border: 1px solid #2A3650 !important;
+  /* the dropdown panel butts directly underneath — drop the facing (bottom)
+     edge so the two don't read as two separate rounded cards with the page
+     showing through the seam */
+  border-bottom: none !important;
+  border-radius: 12px 12px 0 0 !important;
+  box-shadow: none !important;
+  margin-bottom: 0 !important;
+}
+[data-layout="vertical"][data-sidebar-size="sm"] .app-menu .navbar-nav > .nav-item:hover > .nav-link.menu-link span {
+  padding-left: 12px !important;
+  color: #E5E7EB !important;
+  font-weight: 600 !important;
+}
+/* the level-1 dropdown sitting directly under that header: drop its top cap
+   (border + radius) and any offset so it merges flush into the header above —
+   this is what removes the gap. Deeper (nested) dropdowns keep their full
+   rounded card via the base rule above. */
+[data-layout="vertical"][data-sidebar-size="sm"] .app-menu .navbar-nav > .nav-item:hover > .menu-dropdown {
+  margin-top: 0 !important;
+  border-top: none !important;
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+}
 
 /* breathing room above the first menu item (no section header anymore) */
 [data-layout="vertical"] .app-menu .navbar-nav {
@@ -2848,7 +2884,14 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 }
 [data-layout="vertical"] .app-menu .simplebar-scrollbar:before { background: #3A4763 !important; }
 
-/* ───────────────── Two-column = BOLD ICON STRIP ───────────────── */
+/* ═══════════════════════════════════════════════════════════════════════
+   Two-column = BOLD ICON STRIP
+   Violet icon rail (left) + WHITE panel that lists the FULL top-level menu
+   (icon tile + label + caret), expandable in place. The panel renders the
+   complete VerticalLayout menu (see TwoColumnLayout/index.tsx) — it used to
+   only show the active icon's sub-items, leaving the panel empty.
+   ═══════════════════════════════════════════════════════════════════════ */
+/* ── Left violet icon rail ── */
 [data-layout="twocolumn"] .twocolumn-iconview {
   background: linear-gradient(180deg, #7c3aed 0%, #6d28d9 100%) !important;
   box-shadow: 2px 0 16px rgba(76, 29, 149, 0.25) !important;
@@ -2869,13 +2912,13 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-layout="twocolumn"] .twocolumn-iconview .logo {
   padding: 14px 0 10px !important;
 }
-/* second (label) panel stays light; violet highlight on the active sub-link */
-[data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-link.active {
-  color: #6d28d9 !important;
-  font-weight: 600;
-}
+/* one logo at a time: while the white panel is EXPANDED its brand-box logo
+   stands in for the app, so hide the icon-rail logo; show the rail logo only
+   when the panel is COLLAPSED (twocolumn-panel) and the brand box is gone. */
+[data-layout="twocolumn"] .twocolumn-iconview .logo { display: none !important; }
+[data-layout="twocolumn"] .twocolumn-panel .twocolumn-iconview .logo { display: block !important; }
 
-/* ── Bold Icon Strip — WHITE label panel beside the violet rail (image 2) ── */
+/* ── Right WHITE label panel ── */
 [data-layout="twocolumn"] .app-menu,
 [data-layout="twocolumn"] .app-menu .navbar-nav,
 [data-layout="twocolumn"] .app-menu .sidebar-background {
@@ -2884,30 +2927,186 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-layout="twocolumn"] .app-menu {
   border-right: 1px solid #E7EAF3 !important;
 }
-[data-layout="twocolumn"] .app-menu .navbar-nav .nav-link {
+[data-layout="twocolumn"] .app-menu .navbar-nav { padding: 0 0 14px !important; }
+[data-layout="twocolumn"] .navbar-nav-list { list-style: none; margin: 0; padding: 4px 10px; }
+/* taller IGC logo / brand header at the top of the panel */
+[data-layout="twocolumn"] .app-menu .navbar-brand-box {
+  min-height: 69px !important;
+  display: flex !important;
+  align-items: center;
+  padding: 0 18px !important;
+}
+[data-layout="twocolumn"] .app-menu .navbar-brand-box .logo img { height: 42px !important; width: auto !important; }
+/* when the panel is collapsed (twocolumn-panel), re-hide the brand box — our
+   display:flex above would otherwise override Velzon's non-!important
+   display:none and leave a stray dark box at the top-left */
+[data-layout="twocolumn"] .twocolumn-panel .app-menu .navbar-brand-box { display: none !important; }
+/* section title (e.g. "Menu") — hidden to match the clean Bold Icon Strip look */
+[data-layout="twocolumn"] .app-menu .navbar-nav .menu-title { display: none !important; }
+
+/* top-level rows: lavender icon tile + dark label + caret */
+[data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link {
+  display: flex !important;
+  align-items: center;
+  gap: 12px;
+  position: relative;
+  padding: 9px 34px 9px 10px !important;
+  margin: 2px 0 !important;
+  border-radius: 10px !important;
   color: #475569 !important;
-  border-radius: 8px;
-  margin: 1px 8px;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  cursor: pointer !important;
 }
-[data-layout="twocolumn"] .app-menu .navbar-nav .nav-link:hover {
-  background: #F5F3FF !important;
-  color: #6D28D9 !important;
+[data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link > i {
+  width: 36px; height: 36px; flex-shrink: 0;
+  display: inline-flex !important; align-items: center; justify-content: center;
+  border-radius: 10px; font-size: 18px;
+  background: #F2EEFE; color: #7C3AED !important;
+  transition: background .14s, color .14s;
 }
-[data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.active {
-  background: #F5F3FF !important;
-  color: #6D28D9 !important;
+[data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link > span { flex: 1 1 auto; }
+[data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link:hover {
+  background: #F7F5FF !important; color: #6D28D9 !important;
 }
-/* group header inside the panel → violet UPPERCASE label */
-[data-layout="twocolumn"] .app-menu .navbar-nav .nav-link[aria-expanded] {
+[data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link:hover > i {
+  background: #E9E2FD; color: #6D28D9 !important;
+}
+[data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link.active,
+[data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link[aria-expanded="true"] {
+  background: #F3EFFE !important; color: #6D28D9 !important; font-weight: 600 !important;
+}
+[data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link.active > i {
+  background: linear-gradient(135deg, #8b5cf6, #6d28d9) !important; color: #ffffff !important;
+}
+/* caret for expandable top-level rows only (marked with .cbc-has-sub — NOT
+   aria-expanded, which the activation JS also stamps on flat active items like
+   Dashboard). VerticalLayout uses aria-expanded not data-bs-toggle, so Velzon's
+   own caret never fires here — draw our own. */
+[data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link.cbc-has-sub::after {
+  /* Velzon's two-column rule does `.menu-link:after { display:none !important }`
+     — override with display:block !important so our caret actually renders. */
+  display: block !important;
+  content: "\F0140";
+  font-family: 'Material Design Icons';
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  font-size: 1rem; color: #9AA6BD; transition: transform .2s, color .14s;
+}
+[data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link.cbc-has-sub[aria-expanded="true"]::after {
+  transform: translateY(-50%) rotate(180deg); color: #6D28D9;
+}
+
+/* ── Expanded sub-levels inside the white panel ── */
+/* level-2 group headers (e.g. "HRMS Command Center") → small violet label */
+[data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded] {
   color: #6D28D9 !important;
   font-weight: 700 !important;
   text-transform: uppercase;
   letter-spacing: .4px;
-  font-size: 11px !important;
+  font-size: 10.5px !important;
 }
-[data-layout="twocolumn"] .app-menu .navbar-nav .menu-title {
-  color: #94A0B8 !important;
+/* plain sub-links */
+[data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-link {
+  color: #64748B !important;
+  border-radius: 8px;
+  font-size: 12.5px;
+  text-transform: none;
 }
+[data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-link:hover {
+  background: #F7F5FF !important; color: #6D28D9 !important;
+}
+[data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-link.active {
+  background: #F3EFFE !important; color: #6D28D9 !important; font-weight: 600 !important;
+}
+/* leaf TILES (cbc-sub) on the white panel — re-declare structure (the base
+   rules are scoped to [data-layout="vertical"]) and use light-panel colours */
+[data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-link.cbc-sub {
+  display: flex !important; align-items: center !important; gap: 11px !important;
+  padding: 7px 10px !important; text-transform: none !important;
+}
+[data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-link.cbc-sub::before { content: none !important; }
+[data-layout="twocolumn"] .app-menu .cbc-sub-ico {
+  width: 32px; height: 32px; flex-shrink: 0;
+  display: flex !important; align-items: center !important; justify-content: center !important;
+  border-radius: 9px; font-size: 15px;
+  background: #F2EEFE; color: #7C3AED;
+}
+[data-layout="twocolumn"] .app-menu .cbc-sub-ico i {
+  /* the base reset is scoped to [data-layout="vertical"]; re-declare it here or
+     Velzon's default icon-column min-width/margin pushes the glyph out of the
+     tile in two-column too */
+  min-width: 0 !important;
+  width: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  font-size: 15px !important;
+  line-height: 1 !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  font-style: normal !important;
+}
+[data-layout="twocolumn"] .app-menu .cbc-sub-tx { display: flex !important; flex-direction: column; min-width: 0; }
+[data-layout="twocolumn"] .app-menu .cbc-sub-t { font-size: 12.5px; font-weight: 600; color: #334155; }
+[data-layout="twocolumn"] .app-menu .cbc-sub-d { display: none !important; }
+[data-layout="twocolumn"] .app-menu .nav-link.cbc-sub:hover .cbc-sub-ico { background: #E9E2FD; }
+[data-layout="twocolumn"] .app-menu .nav-link.cbc-sub:hover .cbc-sub-t { color: #6D28D9; }
+[data-layout="twocolumn"] .app-menu .nav-link.cbc-sub.active .cbc-sub-ico { background: linear-gradient(135deg, #8b5cf6, #6d28d9); color: #fff; }
+[data-layout="twocolumn"] .app-menu .nav-link.cbc-sub.active .cbc-sub-t { color: #6D28D9; }
+
+/* ── Two-column DARK MODE ──
+   The label panel is forced white above; in dark mode flip it to the same deep
+   navy surface the vertical Dark Modern sidebar uses, and recolour text, icon
+   tiles, hovers and leaf tiles for the dark panel. The violet icon rail already
+   reads on both themes, so it's left as-is. */
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu,
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav,
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .sidebar-background {
+  background: #0F1729 !important;
+}
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu { border-right: 1px solid #1E293B !important; }
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-brand-box {
+  background: #0F1729 !important;
+  border-bottom: 1px solid #1C2638 !important;
+}
+/* top-level rows */
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link { color: #9AA6BD !important; }
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link > i {
+  background: rgba(167, 139, 250, 0.16); color: #A78BFA !important;
+}
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link:hover {
+  background: rgba(148, 163, 184, 0.08) !important; color: #ffffff !important;
+}
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link:hover > i {
+  background: rgba(167, 139, 250, 0.24); color: #C4B5FD !important;
+}
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link.active,
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link[aria-expanded="true"] {
+  background: rgba(167, 139, 250, 0.12) !important; color: #C4B5FD !important;
+}
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link.active > i {
+  background: linear-gradient(135deg, #8b5cf6, #6d28d9) !important; color: #ffffff !important;
+}
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link.cbc-has-sub::after { color: #5C6985; }
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link.cbc-has-sub[aria-expanded="true"]::after { color: #C4B5FD; }
+/* expanded sub-levels */
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-link { color: #9AA6BD !important; }
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded] { color: #A78BFA !important; }
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-link:hover {
+  background: rgba(148, 163, 184, 0.08) !important; color: #ffffff !important;
+}
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-link.active {
+  background: rgba(167, 139, 250, 0.12) !important; color: #C4B5FD !important;
+}
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-sm { border-left-color: #27324A !important; }
+/* leaf tiles on the dark panel */
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .cbc-sub-ico { background: rgba(167, 139, 250, 0.16); color: #A78BFA; }
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .cbc-sub-t { color: #E5E7EB; }
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .nav-link.cbc-sub:hover .cbc-sub-ico { background: rgba(167, 139, 250, 0.24); }
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .nav-link.cbc-sub:hover .cbc-sub-t { color: #C4B5FD; }
+[data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .nav-link.cbc-sub.active .cbc-sub-t { color: #C4B5FD; }
 
 /* ───────────────── Vertical sub-item TILES (icon + title + description) ─────────────────
    Matches the mega-menu leaf style: lavender/translucent icon tile, bold title,
@@ -2927,7 +3126,10 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 }
 [data-layout="vertical"] .app-menu .cbc-sub-ico {
   width: 34px; height: 34px; flex-shrink: 0; margin-top: 1px;
-  display: flex; align-items: center; justify-content: center;
+  /* !important: in the collapsed (sm) flyout Velzon forces every span inside a
+     hovered item to display:inline-block — that beat our flex box and dropped
+     the glyph to the top-left corner of the tile. Force the flex centring. */
+  display: flex !important; align-items: center !important; justify-content: center !important;
   border-radius: 9px; font-size: 16px;
   background: rgba(167, 139, 250, 0.16); color: #A78BFA;
   transition: background .14s, color .14s, transform .14s;
@@ -2940,13 +3142,16 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   width: auto !important;
   margin: 0 !important;
   padding: 0 !important;
+  /* Velzon's collapsed (sm) rule blows the leaf glyph up to 22px, which then
+     spilled out of this 34px tile — pin it back to the tile's design size. */
+  font-size: 16px !important;
+  line-height: 1 !important;
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
-  line-height: 1 !important;
   font-style: normal !important;
 }
-[data-layout="vertical"] .app-menu .cbc-sub-tx { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+[data-layout="vertical"] .app-menu .cbc-sub-tx { display: flex !important; flex-direction: column; min-width: 0; line-height: 1.25; }
 [data-layout="vertical"] .app-menu .cbc-sub-t { font-size: 12.5px; font-weight: 600; color: #E5E7EB; transition: color .14s; }
 /* descriptions removed from sub-items — keep only the icon + title */
 [data-layout="vertical"] .app-menu .cbc-sub-d { display: none !important; }
