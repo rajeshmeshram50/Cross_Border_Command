@@ -40,6 +40,13 @@ interface TooltipProps {
   offset?: number;
   /** Optional max width in px. Default no cap. */
   maxWidth?: number;
+  /**
+   * Follow the active app theme instead of the always-dark pill: a
+   * white/light pill with dark text in light mode, dark pill with light
+   * text in dark mode. Opt-in so existing (always-dark) usages are
+   * unaffected; the dark mode appearance is identical to the default.
+   */
+  themed?: boolean;
   /** Stacking layer. Default 260000 — above every overlay in this
    *  project. The CLM modules raised their stack sharply: the CLM
    *  modal backdrop is 200000 and their portalled dropdowns sit at
@@ -57,6 +64,7 @@ export default function Tooltip({
   disabled = false,
   offset = 8,
   maxWidth,
+  themed = false,
   zIndex = 260000,
 }: TooltipProps) {
   const [open, setOpen] = useState(false);
@@ -169,9 +177,36 @@ export default function Tooltip({
     'aria-label': childProps['aria-label'] ?? (typeof label === 'string' ? label : undefined),
   } as any);
 
+  // Theme-aware palette. Default (themed=false) stays the always-dark pill.
+  // When themed, follow the live app theme — read from the <html> attribute
+  // the ThemeContext maintains (data-bs-theme / data-theme), so the tooltip
+  // matches whatever is active even though it's portalled to <body>.
+  const isDark = !themed
+    ? true
+    : (typeof document !== 'undefined'
+        && (document.documentElement.getAttribute('data-bs-theme') === 'dark'
+          || document.documentElement.getAttribute('data-theme') === 'dark'));
+  const palette = isDark
+    ? {
+        background: 'linear-gradient(180deg, #2a3444 0%, #1f2937 100%)',
+        color: '#fff',
+        border: '1px solid rgba(255,255,255,0.06)',
+        boxShadow: '0 12px 26px -6px rgba(15,23,42,0.45), 0 4px 10px rgba(15,23,42,0.22), 0 0 0 1px rgba(0,0,0,0.10)',
+        arrow: '#1f2937',
+        sheen: 'linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0))',
+      }
+    : {
+        background: 'linear-gradient(180deg, #ffffff 0%, #f3f4f6 100%)',
+        color: '#1f2937',
+        border: '1px solid #e5e7eb',
+        boxShadow: '0 12px 26px -6px rgba(15,23,42,0.18), 0 4px 10px rgba(15,23,42,0.10), 0 0 0 1px rgba(15,23,42,0.04)',
+        arrow: '#f3f4f6',
+        sheen: 'linear-gradient(180deg, rgba(255,255,255,0.65), rgba(255,255,255,0))',
+      };
+
   // Arrow positioning per side — sits flush against the tooltip body.
   const arrowStyle: React.CSSProperties = (() => {
-    const C = '#1f2937';
+    const C = palette.arrow;
     if (position === 'top') {
       return { top: '100%', left: '50%', marginLeft: -5, borderWidth: '5px 5px 0 5px', borderColor: `${C} transparent transparent transparent` };
     }
@@ -203,17 +238,16 @@ export default function Tooltip({
             position: 'fixed',
             top: coords?.top ?? -9999,
             left: coords?.left ?? -9999,
-            background: 'linear-gradient(180deg, #2a3444 0%, #1f2937 100%)',
-            color: '#fff',
+            background: palette.background,
+            color: palette.color,
             fontSize: 12,
             fontWeight: 600,
             letterSpacing: '0.015em',
             lineHeight: 1.35,
             padding: '7px 14px',
             borderRadius: 9,
-            border: '1px solid rgba(255,255,255,0.06)',
-            boxShadow:
-              '0 12px 26px -6px rgba(15,23,42,0.45), 0 4px 10px rgba(15,23,42,0.22), 0 0 0 1px rgba(0,0,0,0.10)',
+            border: palette.border,
+            boxShadow: palette.boxShadow,
             // Inner highlight — a subtle white sheen at the top so the
             // pill reads as a glossy surface, not a flat rectangle.
             backgroundClip: 'padding-box',
@@ -247,7 +281,7 @@ export default function Tooltip({
             style={{
               position: 'absolute', top: 0, left: 0, right: 0, height: '50%',
               borderRadius: '9px 9px 0 0',
-              background: 'linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0))',
+              background: palette.sheen,
               pointerEvents: 'none',
             }}
           />

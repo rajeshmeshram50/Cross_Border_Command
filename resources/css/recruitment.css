@@ -9418,3 +9418,18 @@
 .rec-form-modal-navy .rec-input.has-leading-icon {
   padding-left: 11px !important;
 }
+
+/* Template / document code badge (e.g. "IT-INT-012") — amber pill used in
+   the Send-for-Signing confirmation popup. The light values are the original
+   inline ones; the dark override keeps the amber identity but on a dark-mode
+   compatible translucent fill + readable light text so the badge no longer
+   shows a light-theme background inside the Dark Mode popup. */
+.ep-tpl-code-badge {
+  background: #fef3c7;
+  color: #a16207;
+}
+[data-bs-theme="dark"] .ep-tpl-code-badge,
+[data-layout-mode="dark"] .ep-tpl-code-badge {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fcd34d;
+}

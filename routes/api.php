@@ -556,6 +556,11 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::apiResource('candidates', CandidateController::class);
 
     Route::get   ('/expense-claims',                          [ExpenseClaimController::class, 'index']);
+    // Active expense categories for the raise-claim form — branch-scoped so an
+    // employee sees their branch's categories (the generic /master endpoint
+    // peer-isolates employees to globals + client-level + own rows). Declared
+    // before the {id} route so "categories" isn't captured as an id.
+    Route::get   ('/expense-claims/categories',               [ExpenseClaimController::class, 'categories']);
     Route::post  ('/expense-claims',                          [ExpenseClaimController::class, 'store']);
     Route::get   ('/expense-claims/{id}',                     [ExpenseClaimController::class, 'show']);
     Route::post  ('/expense-claims/{id}/manager-approve',     [ExpenseClaimController::class, 'managerApprove']);
@@ -663,6 +668,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
         ->parameters(['hr-custom-fields' => 'id']);
 
 
+    Route::get ('/hr-generated-documents',               [HrGeneratedDocumentController::class, 'index']);
     Route::post('/hr-generated-documents/preview',       [HrGeneratedDocumentController::class, 'preview']);
     Route::get ('/hr-generated-documents/{id}/download', [HrGeneratedDocumentController::class, 'downloadDocx']);
     Route::post('/hr-generated-documents',               [HrGeneratedDocumentController::class, 'store']);
