@@ -60,10 +60,14 @@ class OnboardingController extends Controller
 
         // Fail fast if the email is already on a real user account — no
         // point inviting someone whose login already exists.
-        $existingUser = User::where('email', $data['invitee_email'])->whereNull('deleted_at')->first();
+        // Case-insensitive so "RD@x.com" and "rd@x.com" are treated as the
+        // same login. Email is the system-wide login ID, so a match anywhere
+        // means there's no point issuing an invite for it.
+        $existingUser = User::whereRaw('LOWER(email) = ?', [mb_strtolower($data['invitee_email'])])
+            ->whereNull('deleted_at')->first();
         if ($existingUser) {
             throw ValidationException::withMessages([
-                'invitee_email' => ['This email already has an account. Use the regular Add Employee flow.'],
+                'invitee_email' => ['This email is already linked to an account in the system. Use the regular Add Employee flow instead.'],
             ]);
         }
 
@@ -305,7 +309,7 @@ class OnboardingController extends Controller
         } catch (QueryException $e) {
             if ($e->getCode() === '23505') {
                 throw ValidationException::withMessages([
-                    'email' => ['This email already has an account.'],
+                    'email' => ['This email is already linked to another account in the system. Email is the login ID, so it must be unique across all branches — use a different email.'],
                 ]);
             }
             throw $e;
@@ -463,7 +467,7 @@ class OnboardingController extends Controller
         });
 
         return $request->validate([
-            'first_name'   => array_merge(['required', 'string', 'max:100'], $nameRule),
+            'first_name'   => array_merge(['required', 'string', 'min:3', 'max:100'], $nameRule),
             'middle_name'  => array_merge(['nullable', 'string', 'max:100'], $nameRule),
             'last_name'    => array_merge(['nullable', 'string', 'max:100'], $nameRule),
             'gender'       => 'nullable|in:Male,Female,Other',
@@ -477,7 +481,7 @@ class OnboardingController extends Controller
             // Current address
             'country_id'   => ['nullable', 'integer', $tenantFk('master_countries')],
             'state_id'     => ['nullable', 'integer', $tenantFk('master_states')],
-            'city'         => array_merge(['nullable', 'string', 'max:100'], $noTags),
+            'city'         => array_merge(['nullable', 'string', 'max:100'], $nameRule),
             'address_line1' => array_merge(['nullable', 'string', 'max:255'], $noTags),
             'address_line2' => array_merge(['nullable', 'string', 'max:255'], $noTags),
             'pincode'      => array_merge(['nullable', 'string', 'max:20'], $pincodeRule),
@@ -485,7 +489,7 @@ class OnboardingController extends Controller
             // Permanent address
             'perm_country_id'    => ['nullable', 'integer', $tenantFk('master_countries')],
             'perm_state_id'      => ['nullable', 'integer', $tenantFk('master_states')],
-            'perm_city'          => array_merge(['nullable', 'string', 'max:100'], $noTags),
+            'perm_city'          => array_merge(['nullable', 'string', 'max:100'], $nameRule),
             'perm_address_line1' => array_merge(['nullable', 'string', 'max:255'], $noTags),
             'perm_address_line2' => array_merge(['nullable', 'string', 'max:255'], $noTags),
             'perm_pincode'       => array_merge(['nullable', 'string', 'max:20'], $pincodeRule),
@@ -503,13 +507,14 @@ class OnboardingController extends Controller
             // ahead (covers scheduled future starts).
             'date_of_joining' => 'nullable|date|after_or_equal:' . now()->subYear()->toDateString() . '|before_or_equal:' . now()->addYears(2)->toDateString(),
         ], [
-            'city.not_regex'               => 'City cannot contain < or > characters.',
+            'city.regex'                   => 'Enter a valid city name (letters only — no numbers or special characters).',
             'address_line1.not_regex'      => 'Address cannot contain < or > characters.',
             'address_line2.not_regex'      => 'Address cannot contain < or > characters.',
-            'perm_city.not_regex'          => 'City cannot contain < or > characters.',
+            'perm_city.regex'              => 'Enter a valid city name (letters only — no numbers or special characters).',
             'perm_address_line1.not_regex' => 'Address cannot contain < or > characters.',
             'perm_address_line2.not_regex' => 'Address cannot contain < or > characters.',
             'location.not_regex'           => 'Location cannot contain < or > characters.',
+            'first_name.min'     => 'First name must be at least 3 characters.',
             'first_name.regex'   => 'First name cannot contain numbers.',
             'middle_name.regex'  => 'Middle name cannot contain numbers.',
             'last_name.regex'    => 'Last name cannot contain numbers.',

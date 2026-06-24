@@ -100,6 +100,15 @@ class AuthController extends Controller
             ]);
         }
 
+        // Forced-reset gate — after an email change the old password must not
+        // grant access. The user has to set a new password via Forgot Password
+        // (OTP is sent to their current email) before they can sign in again.
+        if ($user->must_reset_password) {
+            throw ValidationException::withMessages([
+                'email' => ['Your sign-in email was changed, so your password must be reset for security. Use "Forgot Password" to set a new one before logging in.'],
+            ]);
+        }
+
         // Onboarding gate — an employee whose onboarding isn't fully complete
         // cannot enter the app yet (logs the blocked attempt for audit).
         // NOTE: onboarding-incomplete employees may now sign in. The SPA
@@ -207,6 +216,14 @@ class AuthController extends Controller
             ]);
         }
 
+        // Forced-reset gate (mirrors password login) — a face match must not
+        // bypass the post-email-change password reset requirement.
+        if ($user->must_reset_password) {
+            throw ValidationException::withMessages([
+                'email' => ['Your sign-in email was changed, so your password must be reset for security. Use "Forgot Password" to set a new one before logging in.'],
+            ]);
+        }
+
         // Same onboarding gate as password login — can't bypass via face.
         // NOTE: onboarding-incomplete employees may now sign in. The SPA
         // restricts them to the Inbox (via the onboarding_pending flag on the
@@ -304,6 +321,15 @@ class AuthController extends Controller
             ], 403);
         }
 
+        // Forced-reset gate (mirrors password / face login) — a Google sign-in
+        // must not bypass the post-email-change password reset requirement.
+        if ($user->must_reset_password) {
+            $this->bruteForceRecordFailure($lockKey);
+            return response()->json([
+                'message' => 'Your sign-in email was changed, so your password must be reset for security. Use "Forgot Password" to set a new one before logging in.',
+            ], 403);
+        }
+
         // Same onboarding gate as password / face login — can't bypass via Google.
         // NOTE: onboarding-incomplete employees may now sign in. The SPA
         // restricts them to the Inbox (via the onboarding_pending flag on the
@@ -371,6 +397,8 @@ class AuthController extends Controller
 
         $user->update([
             'password' => Hash::make($newPassword),
+            // Any forced-reset flag is satisfied once a new password is set.
+            'must_reset_password' => false,
         ]);
 
         // Confirmation mail — non-fatal so SMTP issues never roll back the

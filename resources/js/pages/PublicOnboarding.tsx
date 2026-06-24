@@ -271,6 +271,7 @@ export default function PublicOnboarding() {
   const validateStep1 = (): Record<string, string> => {
     const e: Record<string, string> = {};
     if (!firstName.trim())             e.first_name  = 'First name is required';
+    else if (firstName.trim().length < 3) e.first_name = 'First name must be at least 3 characters';
     else if (firstName.trim().length > 15) e.first_name = 'First name must be 15 characters or fewer';
     else if (!nameRe.test(firstName.trim())) e.first_name = 'First name cannot contain numbers';
     if (middleName.trim()) {
@@ -309,16 +310,23 @@ export default function PublicOnboarding() {
   const validateStep2 = (): Record<string, string> => {
     const e: Record<string, string> = {};
     if (!curAddr1.trim())   e.address_line1 = 'Address Line 1 is required';
+    // City must be a real place name — letters, spaces and basic name
+    // punctuation (- . ') only. Reuses the same pattern as the name fields so
+    // "Pune123", "12345", "Pune@" and "-----" are all rejected.
     if (!curCity.trim())    e.city          = 'City is required';
+    else if (!nameRe.test(curCity.trim())) e.city = 'Enter a valid city name (letters only — no numbers or special characters)';
     if (!curCountry)        e.country_id    = 'Country is required';
     if (!curState)          e.state_id      = 'State is required';
     if (!curPin.trim())     e.pincode       = 'Pincode is required';
     else if (!isValidPincode(curPin)) e.pincode = 'Pincode must be 6 digits';
-    // Permanent pincode is optional UNLESS the candidate explicitly typed
-    // one. Only validate the format when present, since the field is
-    // hidden (and treated as null) when "Same as current" is checked.
-    if (!sameAsCurrent && permPin.trim() && !isValidPincode(permPin))
-      e.perm_pincode = 'Pincode must be 6 digits';
+    // Permanent address (only when NOT mirroring current). City, if provided,
+    // follows the same name rule; pincode format is checked when present.
+    if (!sameAsCurrent) {
+      if (permCity.trim() && !nameRe.test(permCity.trim()))
+        e.perm_city = 'Enter a valid city name (letters only — no numbers or special characters)';
+      if (permPin.trim() && !isValidPincode(permPin))
+        e.perm_pincode = 'Pincode must be 6 digits';
+    }
     return e;
   };
 
@@ -1806,7 +1814,8 @@ export default function PublicOnboarding() {
                 <div className="onb-hrow">
                   <label className="emp-label">City</label>
                   <div className="onb-hrow-input">
-                    <input className="emp-input" value={permCity} onChange={e => setPermCity(e.target.value)} disabled={sameAsCurrent} />
+                    <input className={`emp-input${errs.perm_city ? ' is-invalid' : ''}`} value={permCity} onChange={e => { setPermCity(e.target.value); clearErr('perm_city'); }} disabled={sameAsCurrent} />
+                    {errs.perm_city && <small className="emp-err">{errs.perm_city}</small>}
                   </div>
                 </div>
                 <div className="onb-hrow">

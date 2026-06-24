@@ -61,6 +61,12 @@ class FaceBiometricController extends Controller
         ]);
 
         $employee = $this->resolveTarget($request);
+        // A disabled employee (soft-deleted or terminal status) has no active
+        // login — don't let their face biometric be (re-)enrolled until they
+        // are restored/re-activated. Mirrors the EmployeeController edit guard.
+        if ($employee->isDisabled()) {
+            abort(422, 'This employee is disabled — restore/re-activate them before changing face biometrics.');
+        }
         $captured = array_map(static fn ($v) => (float) $v, $data['descriptor']);
 
         // Uniqueness check — block the enrolment if this face is already

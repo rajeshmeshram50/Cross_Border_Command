@@ -3305,7 +3305,14 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
       {/* Face-biometric enrolment — opens from the Security card and posts
           the 128-d descriptor (with consent) to /api/face/register. */}
-      <FaceRegistrationModal open={faceRegOpen} onClose={() => setFaceRegOpen(false)} />
+      {/* Always target the profile being VIEWED (empDetail.id is the numeric
+          Employee id the backend resolves). Without this the modal sent no
+          employee_id, so the server fell back to the logged-in user's own row
+          and an admin enrolling another employee got a misleading "face
+          already registered for <that employee>" conflict. For the user's own
+          profile this id equals their own row, so the self-enrol path is
+          unaffected. */}
+      <FaceRegistrationModal open={faceRegOpen} employeeId={empDetail?.id ?? undefined} onClose={() => setFaceRegOpen(false)} />
 
       {/* Real salary structure editor — replaces the old mock "Revise Salary"
           flow. Saving creates a new version and propagates to payroll. */}

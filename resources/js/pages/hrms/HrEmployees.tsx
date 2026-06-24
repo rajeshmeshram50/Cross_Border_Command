@@ -449,9 +449,15 @@ export default function HrEmployees() {
   const [mStates, setMStates] = useState<any[]>([]);
   const [mHolidayGroups, setMHolidayGroups] = useState<any[]>([]);
 
-  // Pre-built options derived from the masters above.
+  // Pre-built options derived from the masters above. Only ACTIVE holiday
+  // groups are offered when assigning one to an employee — inactive groups
+  // stay in mHolidayGroups (so the saved name still resolves on edit) but are
+  // filtered out of the selectable list. Anything not explicitly 'Inactive'
+  // (incl. legacy rows with no status) is treated as active.
   const holidayGroupOptions = useMemo(
-    () => mHolidayGroups.map(g => ({ value: String(g.id), label: g.name })),
+    () => mHolidayGroups
+      .filter(g => String(g.status ?? '').toLowerCase() !== 'inactive')
+      .map(g => ({ value: String(g.id), label: g.name })),
     [mHolidayGroups],
   );
   const departmentOptions = useMemo(
@@ -2612,23 +2618,18 @@ export default function HrEmployees() {
   const [exporting, setExporting] = useState(false);
   const handleExportEmployees = () => {
     if (exporting) return;
-    // Active-only source, independent of the current tab/status dropdown.
-    const s  = q.trim().toLowerCase();
-    const df = deptFilter.trim().toLowerCase();
-    const activeRows = apiRows.filter(e => {
-      if (!e.enabled) return false; // never export disabled employees
-      if (df && df !== 'all depts' && String(e.department || '').trim().toLowerCase() !== df) return false;
-      if (!s) return true;
-      return [e.name, e.id, e.department, e.designation, e.primaryRole, e.email]
-        .some(v => (v || '').toLowerCase().includes(s));
-    });
-    if (activeRows.length === 0) {
-      toast.info('Nothing to export', 'No active employees match the current filters.');
+    // Export exactly what the list currently shows — honours the Active /
+    // Disabled tab, the Status dropdown, the department filter and the search
+    // box. Previously this was hard-coded to active-only, so Disabled
+    // employees could never be exported even while viewing the Disabled tab.
+    const exportRows = filtered;
+    if (exportRows.length === 0) {
+      toast.info('Nothing to export', 'No employees match the current filters.');
       return;
     }
     setExporting(true);
     try {
-      const sheetRows = activeRows.map((e, i) => ({
+      const sheetRows = exportRows.map((e, i) => ({
         'Sr No':          i + 1,
         'Employee':       e.name,
         'Email':          e.email || '',

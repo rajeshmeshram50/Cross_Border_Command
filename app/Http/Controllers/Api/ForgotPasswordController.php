@@ -242,6 +242,9 @@ class ForgotPasswordController extends Controller
 
         $user->update([
             'password' => Hash::make($newPassword),
+            // Clear any forced-reset flag (e.g. set after an email change) so
+            // the user can sign in again now that they've set a new password.
+            'must_reset_password' => false,
         ]);
 
         // Delete all OTPs for this email
