@@ -869,7 +869,7 @@ export default function ClmBuyerProfilePage() {
               <span style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '10px', height: '10px', borderRadius: '50%', background: 'linear-gradient(135deg,#4ade80,#22c55e)', border: '2px solid #cef8ff', boxShadow: '0 0 5px rgba(34,197,94,.45)' }} />
             </div>
             <div>
-              <div style={{ fontSize: '16px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.4px', lineHeight: 1.15 }}>Customer Profile</div>
+              <div style={{ fontSize: '16px', fontWeight: 500, color: '#0c4a6e', letterSpacing: '-.4px', lineHeight: 1.15 }}>Customer Profile</div>
               <div style={{ fontSize: '11px', fontWeight: 500, color: '#0e7490', opacity: .9, marginTop: '3px' }}>Track customer onboarding, compliance verification, agreements, and overall CLM readiness.</div>
             </div>
           </div>

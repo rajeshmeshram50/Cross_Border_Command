@@ -240,8 +240,8 @@ export default function ClmCaseToCasePage() {
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', background: t.dark ? '#161226' : 'linear-gradient(180deg,#FAF8FF 0%,#F8FAFC 100%)', overflow: 'hidden', maxHeight: infoOpen ? 320 : 0, opacity: infoOpen ? 1 : 0, transition: 'max-height .3s cubic-bezier(.22,1,.36,1),opacity .22s' }}>
-            {STAGE_CARDS.map(c => (
-              <div key={c.n} style={{ position: 'relative', padding: '10px 11px 11px', background: t.dark ? 'rgba(255,255,255,.03)' : '#fff', margin: '7px 5px', borderRadius: 11, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.22)' : '#EDE9FE'}`, transition: 'all .18s', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 1px 4px rgba(15,23,42,.04)' }}
+            {STAGE_CARDS.map((c, i) => (
+              <div key={c.n} style={{ position: 'relative', padding: '10px 11px 11px', background: t.dark ? 'rgba(255,255,255,.03)' : '#fff', margin: '7px 5px', marginLeft: i === 0 ? 14 : 5, borderRadius: 11, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.22)' : '#EDE9FE'}`, transition: 'all .18s', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 1px 4px rgba(15,23,42,.04)' }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = '#C4B5FD'; e.currentTarget.style.boxShadow = '0 6px 18px rgba(124,58,237,.13)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = t.dark ? 'rgba(124,58,237,.22)' : '#EDE9FE'; e.currentTarget.style.boxShadow = '0 1px 4px rgba(15,23,42,.04)'; e.currentTarget.style.transform = ''; }}>
                 <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, borderRadius: '11px 11px 0 0', background: 'linear-gradient(90deg,#A78BFA,#7C3AED)' }} />

@@ -114,6 +114,26 @@ class CtcContractController extends Controller
     }
 
     /**
+     * Every approver on this contract with their individual decision — so the
+     * UI can list all of them (Parth: approved, Vedant: approved) instead of
+     * only the static primary approver. Falls back to the primary slot for
+     * legacy rows that never stored an approver list.
+     */
+    private function approverList(CtcContract $c): array
+    {
+        $approvers = array_values($c->approvers ?? []);
+        if (empty($approvers)) {
+            return $c->primary_approver_name
+                ? [['name' => $c->primary_approver_name, 'status' => $c->approval_status ?: 'pending']]
+                : [];
+        }
+        return array_map(fn ($a) => [
+            'name'   => $a['name'] ?? '—',
+            'status' => $a['status'] ?? 'pending',
+        ], $approvers);
+    }
+
+    /**
      * Each approval round derived from the version audit, newest first. A
      * round opens on every "Under Review" submission (initial draft +
      * resubmissions) and closes on the approver's Rejected / Approved
@@ -170,8 +190,12 @@ class CtcContractController extends Controller
             'date'           => $r['date'] ? $this->istStr($r['date']) : $this->fmt($c->submitted_at ?: $c->created_at),
             'createdBy'      => $c->created_by_name ?: '—',
             'approver'       => $c->primary_approver_name ?: $approverName,
+            'approvers'      => $this->approverList($c),
             'status'         => $r['status'],
-            'clarifications' => ($r['status'] === 'clarification') ? $this->istEntries($c->clarifications ?? []) : [],
+            // Keep the full clarification history visible across rounds (it was
+            // only surfaced while the round itself sat in 'clarification', so it
+            // looked deleted once the agreement moved on — the data was never lost).
+            'clarifications' => $this->istEntries($c->clarifications ?? []),
             'expDate'        => $this->fmt($c->end_date),
             'rejReason'      => $r['reason'] ?? null,
         ])->all();
@@ -678,7 +702,6 @@ class CtcContractController extends Controller
             'counterparties'     => 'nullable|array',
             'eff_date'           => 'nullable|date',
             'end_date'           => 'nullable|date',
-            'termination_notice' => 'nullable|integer',
             'auto_renewal'       => 'nullable|boolean',
             'renewal_type'       => 'nullable|string|max:16',
             'content'            => 'nullable|string',
@@ -730,7 +753,6 @@ class CtcContractController extends Controller
                 'counterparties'     => $data['counterparties'] ?? [],
                 'eff_date'           => $data['eff_date'] ?? null,
                 'end_date'           => $data['end_date'] ?? null,
-                'termination_notice' => $data['termination_notice'] ?? null,
                 'auto_renewal'       => $data['auto_renewal'] ?? false,
                 'renewal_type'       => $data['renewal_type'] ?? null,
                 'content'            => $data['content'] ?? null,
