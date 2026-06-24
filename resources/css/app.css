@@ -2912,6 +2912,11 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-layout="twocolumn"] .twocolumn-iconview .logo {
   padding: 14px 0 10px !important;
 }
+/* one logo at a time: while the white panel is EXPANDED its brand-box logo
+   stands in for the app, so hide the icon-rail logo; show the rail logo only
+   when the panel is COLLAPSED (twocolumn-panel) and the brand box is gone. */
+[data-layout="twocolumn"] .twocolumn-iconview .logo { display: none !important; }
+[data-layout="twocolumn"] .twocolumn-panel .twocolumn-iconview .logo { display: block !important; }
 
 /* ── Right WHITE label panel ── */
 [data-layout="twocolumn"] .app-menu,
