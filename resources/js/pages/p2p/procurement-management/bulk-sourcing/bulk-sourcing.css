@@ -743,7 +743,10 @@
 .bst-table {
   display: flex;
   flex-direction: column;
-  overflow-x: hidden;
+  /* Scroll horizontally whenever the columns are wider than the card (instead
+     of clipping the Action column) — applies at every width, not just mobile. */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .bst-row {
   display: grid;
@@ -1548,27 +1551,8 @@
   color: #cbd5e1 !important;
   border-color: rgba(255,255,255,.1) !important;
 }
-@media (max-width: 600px) {
-  .ast-scard-desc {
-    display: none;
-  }
-  .ast-scard-link {
-    flex-basis: 14px;
-  }
-  .ast-srcgrid {
-    grid-template-columns: 1fr;
-    gap: 12px;
-  }
-  .ast-srcgrid-sep {
-    display: none;
-  }
-  .ast-grid-3 {
-    grid-template-columns: 1fr;
-  }
-  .ast-radios {
-    flex-direction: column;
-  }
-}
+/* (Assign-form ≤600px overrides moved to end of file so they win over the
+   base .ast-srcgrid / .ast-grid-3 rules defined later — see file tail.) */
 .ast-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -4656,6 +4640,9 @@
   .bst-toolbar { gap: 8px; padding: 11px 12px; }
   .bst-search { flex: 1 1 100%; max-width: none; }
   .bst-pager { justify-content: center; gap: 8px; }
+  /* Tabs: stack full-width so the long labels aren't clipped (was nowrap) */
+  .bst-tabs { flex-direction: column; width: 100%; }
+  .bst-tab { width: 100%; flex: none; justify-content: space-between; white-space: normal; }
 
   /* Sourcing Report & Product List tables — scroll horizontally */
   .srpt-body { overflow-x: auto; }
@@ -4709,30 +4696,83 @@
 }
 
 /* ============================================================================
-   Assign New Sourcing — product list table → stacked labelled cards on phones
+   Assign New Sourcing — keep the product list as a TABLE on phones and scroll
+   it horizontally (rows keep their min-width); do NOT stack into cards.
    ============================================================================ */
 @media (max-width: 600px) {
-  .ast-plist { max-height: none; overflow: visible; }
-  .asrc-row--head { display: none; }              /* labels move into each cell */
-  .asrc-row--m, .asrc-row--n {
-    display: block; min-width: 0; padding: 10px 14px;
+  .ast-plist {
+    max-height: 320px;
+    overflow-x: auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
-  .asrc-row--m > span, .asrc-row--n > span {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 12px; padding: 5px 0; min-width: 0;
+}
+
+/* ============================================================================
+   Assign New Sourcing — Stage 1 grid + Stage 2 collapse on phones.
+   Placed at file end so these win over the base .ast-srcgrid / .ast-grid-3
+   rules (equal specificity → later source wins).
+   ============================================================================ */
+@media (max-width: 600px) {
+  .ast-scard-desc { display: none; }
+  .ast-scard-link { flex-basis: 14px; }
+  .ast-srcgrid { grid-template-columns: 1fr; gap: 12px; }
+  .ast-srcgrid-sep { display: none; }
+  .ast-grid-3 { grid-template-columns: 1fr; }
+  .ast-radios { flex-direction: column; }
+}
+
+/* ============================================================================
+   Assign New Sourcing — phone header + single-line stepper (end-of-file so it
+   overrides the earlier ≤760 bottom-sheet rules).
+   ============================================================================ */
+@media (max-width: 600px) {
+  /* Centered modal (not a clipped bottom sheet) so the full header shows */
+  .ast-ov { align-items: center; padding: 8px; }
+  .ast-modal { max-height: 94vh; border-radius: 14px; }
+  /* Header: title row + full-width "Assign to Team Member" button, fully visible.
+     overflow:visible so the wrapped button isn't clipped by the header's
+     decorative overflow:hidden. */
+  .ast-head { flex-wrap: wrap; padding: 14px 16px; row-gap: 8px; overflow: visible; }
+  .ast-head-btn { order: 3; width: 100%; margin: 4px 0 0; justify-content: center; }
+  /* Stepper stays a single horizontal line, compact */
+  .ast-steps { flex-direction: row; gap: 8px; padding: 10px 12px; }
+  .ast-scard { padding: 8px 10px; gap: 8px; }
+  .ast-scard-stage { font-size: 8px; }
+  .ast-scard-name { font-size: 11px; line-height: 1.15; }
+  .ast-scard-ico { width: 30px; height: 30px; }
+  .ast-scard-link { display: none; }
+}
+
+/* ============================================================================
+   Sourcing Report — phone header section: ref cards 2-up + a clean stats grid
+   (Total / Completed / Pending in one row, Overall Progress full-width below).
+   End-of-file so it overrides the earlier ≤760 flex-wrap rules.
+   ============================================================================ */
+@media (max-width: 600px) {
+  .srpt-refcards { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .srpt-statsbar {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px 10px;
+    align-items: start;
   }
-  .asrc-row--m > span::before, .asrc-row--n > span::before {
-    content: attr(data-label);
-    font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
-    color: #64748b; flex-shrink: 0;
-  }
-  /* delete cell: no label, button to the right */
-  .asrc-row--m > span[data-label=""]::before,
-  .asrc-row--n > span[data-label=""]::before { content: none; }
-  .asrc-row--m > span[data-label=""],
-  .asrc-row--n > span[data-label=""] { justify-content: flex-end; padding-top: 8px; }
-  /* value side: right-aligned, inputs take a sensible width */
-  .asrc-name, .asrc-code, .asrc-hsn { text-align: right; }
-  .asrc-row--m .ast-pl-price, .asrc-row--n .ast-pl-price { width: 62%; }
-  .ast-pl-clarity { width: 62%; justify-content: center; }
+  .srpt-sbardiv { display: none; }              /* drop the vertical separators */
+  .srpt-sbaritem { padding: 0; }
+  .srpt-sbaritem--prog { grid-column: 1 / -1; }  /* progress bar on its own full row */
+}
+
+/* ============================================================================
+   Product List — phones: the 3 KPI cards stay on ONE line (the .pl-stats-left
+   group as a row of 3), with the Overall Progress card on the NEXT line.
+   End-of-file so it beats the earlier ≤480 "flex-direction: column" rule that
+   was stacking the three cards.
+   ============================================================================ */
+@media (max-width: 600px) {
+  .pl-stats { flex-direction: column; gap: 10px; padding: 0 16px 12px; }
+  .pl-stats-left { flex: none; width: 100%; flex-direction: row; gap: 8px; }
+  .pl-stats-left .pl-stat { flex: 1; min-width: 0; padding: 8px 8px; }
+  .pl-stat--prog { flex: none; width: 100%; }
+  .pl-stat-lbl { font-size: 8px; }
+  .pl-stat-val { font-size: 19px; }
 }
