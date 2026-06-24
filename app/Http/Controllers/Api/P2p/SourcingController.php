@@ -6,7 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\P2p\SourcingProduct;
 use App\Models\P2p\SourcingProductSupplier;
 use App\Models\P2p\SourcingTarget;
+use App\Models\Masters\Countries;
 use App\Models\Masters\Segments;
+use App\Models\P2p\Supplier as P2pSupplier;
+use App\Models\Masters\StateCodes;
+use App\Models\Masters\States;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Vendor;
@@ -126,6 +130,43 @@ class SourcingController extends Controller
         return $this->ok($rows);
     }
 
+    /* ── form masters (segment / country / state / state-code) ───────────── */
+    // GET /p2p/form-masters — dropdown data for the New Supplier form. Scoped
+    // like every other master read (global rows + this tenant's), active only.
+    public function formMasters(Request $request)
+    {
+        $user   = $request->user();
+        $scope  = fn ($q) => \App\Support\MasterVisibility::applyReadScope($q, $user);
+        $active = fn ($q) => $q->whereRaw('LOWER(status) = ?', ['active']);
+
+        return $this->ok([
+            'segments'   => Segments::query()->tap($scope)->tap($active)->orderBy('name')->get(['id', 'name']),
+            'countries'  => Countries::query()->tap($scope)->tap($active)->orderBy('name')->get(['id', 'name']),
+            'states'     => States::query()->tap($scope)->tap($active)->orderBy('name')->get(['id', 'country_id', 'name']),
+            'stateCodes' => StateCodes::query()->tap($scope)->tap($active)->get(['id', 'state_id', 'state_code']),
+        ]);
+    }
+
+    /* ── file upload (clarity PDF / supplier business card) ───────────────── */
+    // POST /p2p/upload — stores one file on the public disk and returns its
+    // /storage/... path. Used by the clarity-PDF picker and the New Supplier
+    // business-card upload so the actual file is persisted (not just its name).
+    public function upload(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|max:5120|mimes:pdf,jpg,jpeg,png,webp',
+            'kind' => 'nullable|in:clarity,card',
+        ]);
+
+        $dir  = 'p2p/' . ($request->input('kind') === 'card' ? 'supplier-cards' : 'clarity');
+        $path = $request->file('file')->store($dir, 'public');
+
+        return $this->ok([
+            'path' => '/storage/' . $path,
+            'name' => $request->file('file')->getClientOriginalName(),
+        ]);
+    }
+
     /* ── next code preview ───────────────────────────────────────────────── */
     // GET /p2p/sourcing-targets/next-code — shows the ID the next create will get
     // (the real code is still allocated under a row lock at store() time).
@@ -180,22 +221,78 @@ class SourcingController extends Controller
     {
         $user = $request->user();
         $t    = $this->target($request, $target);
+
+        // Owner-only: a user merely assigned to a target can't re-edit it (they
+        // work it via the Sourcing Report). Mirrors the frontend hiding Edit on
+        // the "Assigned to Me" tab — enforced here so the API can't be bypassed.
+        if ((int) $t->created_by !== (int) $user->id) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Only the creator can edit this sourcing target.',
+            ], 403);
+        }
+
         $data = $this->validatePayload($request);
 
-        DB::transaction(function () use ($t, $user, $data) {
-            $assignee = $this->resolveAssignee($user->client_id, $data['assignee_id'] ?? null);
+        // Reconcile the product list instead of wiping it. A product already
+        // mapped to a supplier in the Sourcing Report is LOCKED — it can't be
+        // removed via edit (the UI hides its delete button; this is the
+        // server-side guard). Unmapped products may be removed, retained
+        // products keep their suppliers, and new rows are appended.
+        $existing    = $t->products()->withCount('suppliers')->get();
+        $incomingIds = collect($data['products'])
+            ->pluck('id')->filter()->map(fn ($x) => (int) $x)->all();
 
+        $blocked = $existing->first(
+            fn ($p) => $p->suppliers_count > 0 && !in_array((int) $p->id, $incomingIds, true)
+        );
+        if ($blocked) {
+            return response()->json([
+                'status'  => false,
+                'message' => "“{$blocked->name}” has suppliers mapped in the Sourcing Report and can't be removed. Unmap its suppliers first.",
+            ], 422);
+        }
+
+        DB::transaction(function () use ($t, $user, $data, $existing) {
+            // Assignee is fixed once the target is created — edit never reassigns
+            // it (the frontend also locks the "Assign to Team Member" control).
             $t->update([
-                'source'        => $data['source'],
-                'due_date'      => $data['due_date'] ?? null,
-                'assignee_id'   => $assignee['id'],
-                'assignee_name' => $assignee['name'],
+                'source'   => $data['source'],
+                'due_date' => $data['due_date'] ?? null,
             ]);
 
-            // Replace the product list wholesale (suppliers cascade on delete).
-            $t->products()->each(fn ($p) => $p->suppliers()->delete());
-            $t->products()->delete();
-            $this->syncProducts($t, $user->client_id, $data['products']);
+            $existingById = $existing->keyBy('id');
+            $keptIds = [];
+
+            foreach ($data['products'] as $p) {
+                $pid = isset($p['id']) ? (int) $p['id'] : 0;
+
+                if ($pid && $existingById->has($pid)) {
+                    // Retained row — update editable fields, keep its suppliers.
+                    $clarity = $p['clarity'] ?? null;
+                    $update  = [
+                        'target_price'  => $p['target_price'] ?? null,
+                        'clarity_type'  => $clarity['type'] ?? null,
+                        'clarity_value' => $clarity['val'] ?? ($clarity['value'] ?? null),
+                    ];
+                    // Manual rows allow inline name edits; master names are fixed.
+                    if (($p['from'] ?? null) === 'manual' && array_key_exists('name', $p)) {
+                        $update['name'] = $p['name'] ?? '—';
+                    }
+                    $existingById->get($pid)->update($update);
+                    $keptIds[] = $pid;
+                } else {
+                    // Brand-new product line.
+                    $this->syncProducts($t, $user->client_id, [$p]);
+                }
+            }
+
+            // Drop the (unmapped) products the user removed from the list.
+            $existing->reject(fn ($p) => in_array((int) $p->id, $keptIds, true))
+                ->each(function ($p) {
+                    $p->suppliers()->delete();
+                    $p->delete();
+                });
         });
 
         return $this->ok(['id' => $t->code]);
@@ -206,13 +303,17 @@ class SourcingController extends Controller
     public function show(Request $request, string $target)
     {
         $t = $this->target($request, $target);
-        $t->load('products');
+        // suppliers_count drives the edit form's per-row lock: a product already
+        // mapped to a supplier can't be removed (only its price/clarity edited).
+        $t->load(['products' => fn ($q) => $q->withCount('suppliers')]);
 
         $clarity = fn ($p) => $p->clarity_type
             ? ['type' => $p->clarity_type, 'val' => $p->clarity_value]
             : null;
 
         $master = $t->products->where('source', 'master')->values()->map(fn ($p) => [
+            'id'      => $p->id,
+            'mapped'  => $p->suppliers_count > 0,
             'code'    => $p->code,
             'name'    => $p->name,
             'segment' => $p->segment,
@@ -222,6 +323,8 @@ class SourcingController extends Controller
         ]);
 
         $manual = $t->products->where('source', 'manual')->values()->map(fn ($p) => [
+            'id'      => $p->id,
+            'mapped'  => $p->suppliers_count > 0,
             'name'    => $p->name,
             'price'   => $p->target_price ?? '',
             'clarity' => $clarity($p),
@@ -318,6 +421,7 @@ class SourcingController extends Controller
             'new_supplier'       => 'nullable|array',
             'new_supplier.name'  => 'required_with:new_supplier|string|max:255',
             'new_supplier.email' => 'nullable|email',
+            'new_supplier.card'  => 'nullable|string|max:512',
         ], [
             'new_supplier.name.required_with' => 'Enter the supplier company name.',
             'new_supplier.email.email'        => 'Enter a valid supplier email address.',
@@ -344,30 +448,46 @@ class SourcingController extends Controller
             $n    = $request->input('new_supplier');
             $name = trim($n['name'] ?? '') ?: '—';
 
-            // Also register the supplier in the Vendor master so it's reusable
-            // in the Supplier Master dropdown next time. Reuse an existing
-            // vendor with the same name (case-insensitive) to avoid duplicates.
-            $vendorId = $this->upsertVendor($user, $name, $n['email'] ?? null, $n['segment'] ?? null);
+            $fields = [
+                'segment'    => $n['segment'] ?? null,
+                'contact'    => $n['contact'] ?? null,
+                'mobile'     => $n['mobile'] ?? null,
+                'email'      => $n['email'] ?? null,
+                'gmaps'      => $n['gmaps'] ?? null,
+                'address'    => $n['address'] ?? null,
+                'country'    => $n['country'] ?? null,
+                'state'      => $n['state'] ?? null,
+                'state_code' => $n['state_code'] ?? null,
+                'city'       => $n['city'] ?? null,
+                'card_path'  => $n['card'] ?? null,
+            ];
 
-            // Same vendor (by name → same master id) can't be mapped twice.
-            if ($p->suppliers()->where('supplier_id', $vendorId)->exists()) {
+            // Store in the dedicated P2P supplier directory (p2p_suppliers) — NOT
+            // the company Vendor master. Reuse an existing directory entry with
+            // the same name (per client) so one supplier keeps a single id and
+            // can be re-mapped to other products by that id.
+            $directory = P2pSupplier::where('client_id', $user->client_id)
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+                ->first();
+            if (!$directory) {
+                $directory = P2pSupplier::create($fields + [
+                    'client_id'  => $user->client_id,
+                    'branch_id'  => $user->branch_id ?? null,
+                    'name'       => $name,
+                    'created_by' => $user->id,
+                ]);
+            }
+
+            // A product can't have the same directory supplier mapped twice.
+            if ($p->suppliers()->where('source', 'new')->where('supplier_id', $directory->id)->exists()) {
                 return response()->json(['status' => false, 'message' => "“{$name}” is already mapped to this product."], 422);
             }
 
-            $p->suppliers()->create([
-                'supplier_id' => $vendorId,
+            // Mapping row snapshots the details; supplier_id → p2p_suppliers.id.
+            $p->suppliers()->create($fields + [
+                'supplier_id' => $directory->id,
                 'source'      => 'new',
                 'name'        => $name,
-                'segment'     => $n['segment'] ?? null,
-                'contact'     => $n['contact'] ?? null,
-                'mobile'      => $n['mobile'] ?? null,
-                'email'       => $n['email'] ?? null,
-                'gmaps'       => $n['gmaps'] ?? null,
-                'address'     => $n['address'] ?? null,
-                'country'     => $n['country'] ?? null,
-                'state'       => $n['state'] ?? null,
-                'state_code'  => $n['state_code'] ?? null,
-                'city'        => $n['city'] ?? null,
             ]);
         } else {
             return response()->json(['status' => false, 'message' => 'Provide supplier_id or new_supplier'], 422);
@@ -393,6 +513,7 @@ class SourcingController extends Controller
             'contact' => $s->contact ?? '',
             'mobile'  => $s->mobile ?? '',
             'email'   => $s->email ?? '',
+            'card'    => $s->card_path ?? '',
             'source'  => $s->source === 'new' ? 'New Supplier' : 'Master',
         ]);
 
@@ -408,6 +529,7 @@ class SourcingController extends Controller
             'source'                  => 'required|in:master,manual',
             'assignee_id'             => 'required',                 // must be assigned to someone
             'products'                => 'required|array|min:1',
+            'products.*.id'           => 'nullable|integer',   // existing row (edit); absent = new
             'products.*.from'         => 'required|in:master,manual',
             'products.*.code'         => 'nullable|string|max:64',
             'products.*.name'         => 'nullable|string|max:255',
@@ -416,51 +538,6 @@ class SourcingController extends Controller
         ], [
             'assignee_id.required'    => 'Assign this sourcing target to a team member before saving.',
         ]);
-    }
-
-    /**
-     * Find-or-create a Vendor master record for an inline "New Supplier" so it
-     * becomes reusable in the Supplier Master list. Dedupes on company name
-     * (case-insensitive) per client. Vendor codes are V-01, V-02 … (max+1),
-     * allocated under a clients row lock (same convention as VendorController).
-     */
-    private function upsertVendor($user, string $name, ?string $email, ?string $segmentName): int
-    {
-        return DB::transaction(function () use ($user, $name, $email, $segmentName) {
-            $existing = Vendor::where('client_id', $user->client_id)
-                ->whereRaw('LOWER(company_name) = ?', [mb_strtolower($name)])
-                ->first();
-            if ($existing) return (int) $existing->id;
-
-            $segmentId = null;
-            if ($segmentName) {
-                $segmentId = Segments::where('client_id', $user->client_id)
-                    ->whereRaw('LOWER(name) = ?', [mb_strtolower(trim($segmentName))])
-                    ->value('id');
-            }
-
-            DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $codes = Vendor::withTrashed()->where('client_id', $user->client_id)->pluck('vendor_code');
-            $max = 0;
-            foreach ($codes as $c) {
-                if ($c && preg_match('/(\d+)$/', (string) $c, $m)) $max = max($max, (int) $m[1]);
-            }
-            $code = 'V-' . str_pad((string) ($max + 1), 2, '0', STR_PAD_LEFT);
-
-            $vendor = Vendor::create([
-                'client_id'      => $user->client_id,
-                'branch_id'      => $user->branch_id ?? null,
-                'created_by'     => $user->id,
-                'vendor_code'    => $code,
-                'company_name'   => $name,
-                'segment_id'     => $segmentId,
-                'primary_email'  => $email ?: null,
-                'status'         => 'Active',
-                'step_completed' => 1,
-            ]);
-
-            return (int) $vendor->id;
-        });
     }
 
     /** Resolve an assignee id to {id, name} within the client, or nulls. */

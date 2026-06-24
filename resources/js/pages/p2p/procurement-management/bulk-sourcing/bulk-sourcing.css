@@ -1201,7 +1201,10 @@
   background: rgba(8,30,45,.58);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  z-index: 2200000;
+  /* Kept below the shared MasterDatePicker popup (z-index 11100, portalled to
+     <body> so it's a sibling of this overlay) — otherwise the Due Date calendar
+     opens BEHIND the modal. Still far above all page chrome. */
+  z-index: 11000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2573,7 +2576,10 @@
 #srpt-overlay {
   position: fixed;
   inset: 0;
-  z-index: 9999999;
+  /* Sane modal band so shared portalled dropdowns (MasterSelect 11000,
+     MasterDatePicker 11100) render ABOVE this modal instead of behind it.
+     #smp-overlay (Map Supplier) sits just above this one. */
+  z-index: 1080;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3077,7 +3083,9 @@
 #smp-overlay {
   position: fixed;
   inset: 0;
-  z-index: 10000000;
+  /* Above the Sourcing Report (#srpt-overlay 1080) it opens from, but BELOW the
+     MasterSelect dropdown (11000) so the Segment/Country/State pickers show. */
+  z-index: 1085;
   display: flex;
   align-items: center;
   justify-content: center;

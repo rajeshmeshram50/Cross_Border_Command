@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../../../contexts/ToastContext';
 import api from '../../../../api';
+import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import './bulk-sourcing.css';
 
 /* Map Supplier Directory — 2-step.
@@ -12,8 +13,13 @@ import './bulk-sourcing.css';
  * then onMapped(name). Static supplier data removed (see API.md). */
 
 export type SupplierMaster = { id: string; name: string; segment: string; contact: string; mobile: string; email: string };
-// Indian states — reference data for the New Supplier address dropdown.
-const STATES = ['Andhra Pradesh', 'Assam', 'Bihar', 'Delhi', 'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'];
+// Master-backed dropdowns for the New Supplier form, from GET /p2p/form-masters.
+type FormMasters = {
+  segments: { id: number; name: string }[];
+  countries: { id: number; name: string }[];
+  states: { id: number; country_id: number; name: string }[];
+  stateCodes: { id: number; state_id: number; state_code: string }[];
+};
 
 export type MapProduct = { name: string; code?: string; segment?: string; price?: string; supplierCount: number };
 const tInit = (n: string) => n.split(' ').map(w => w[0] || '').join('').slice(0, 2).toUpperCase();
@@ -49,12 +55,43 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
   const [sel, setSel] = useState('');
   const [co, setCo] = useState(''); const [contact, setContact] = useState(''); const [mobile, setMobile] = useState('');
   const [seg, setSeg] = useState(''); const [email, setEmail] = useState(''); const [gmaps, setGmaps] = useState('');
-  const [addr, setAddr] = useState(''); const [state, setState] = useState(''); const [stateCode, setStateCode] = useState(''); const [city, setCity] = useState('');
-  const [card, setCard] = useState('');
+  const [addr, setAddr] = useState(''); const [stateCode, setStateCode] = useState(''); const [city, setCity] = useState('');
+  const [card, setCard] = useState(''); const [cardName, setCardName] = useState(''); const [cardUploading, setCardUploading] = useState(false);
+  // Master-backed dropdowns + the selected country/state ids (names go to the API).
+  const [masters, setMasters] = useState<FormMasters>({ segments: [], countries: [], states: [], stateCodes: [] });
+  const [countryId, setCountryId] = useState<number | ''>(''); const [stateId, setStateId] = useState<number | ''>('');
   const [suppliers, setSuppliers] = useState<SupplierMaster[]>([]);
   const [saving, setSaving] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => { api.get<{ data: SupplierMaster[] }>('/p2p/suppliers').then(r => setSuppliers(r.data?.data ?? [])).catch(() => {}); }, []);
+  useEffect(() => {
+    api.get<{ data: FormMasters }>('/p2p/form-masters').then(r => {
+      const d = r.data?.data; if (!d) return;
+      setMasters(d);
+      // No default country — the user must pick one (which then enables the
+      // State dropdown and drives the auto State Code). Avoids a misleading
+      // pre-selected India with an empty/irrelevant state code.
+    }).catch(() => {});
+  }, []);
+
+  // country_id / state_id come back from the API as strings (FK columns aren't
+  // auto-cast like the primary `id`), so coerce before comparing to the numeric
+  // selected id — otherwise "104" === 104 is false and the list looks empty.
+  const statesForCountry = masters.states.filter(s => Number(s.country_id) === countryId);
+  // Selecting a state auto-fills its GST state code from the state-codes master.
+  const pickState = (id: number | '') => {
+    setStateId(id);
+    setStateCode(id === '' ? '' : (masters.stateCodes.find(c => Number(c.state_id) === id)?.state_code ?? ''));
+  };
+  const uploadCard = (f: File) => {
+    const fd = new FormData(); fd.append('file', f); fd.append('kind', 'card');
+    setCardUploading(true);
+    api.post<{ data: { path: string; name: string } }>('/p2p/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      .then(r => { setCard(r.data?.data?.path ?? ''); setCardName(r.data?.data?.name ?? f.name); })
+      .catch((err) => toast.error('Upload failed', err?.response?.data?.message || 'Could not upload the file.'))
+      .finally(() => setCardUploading(false));
+  };
 
   const supplier = suppliers.find(s => s.id === sel);
   const mapUrl = `/p2p/sourcing-targets/${targetId}/products/${productId}/suppliers`;
@@ -70,11 +107,34 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
       .finally(() => setSaving(false));
   };
   const saveMaster = () => { if (!supplier) { toast.warning('Select a supplier', 'Please pick a supplier from the list.'); return; } doMap({ supplier_id: supplier.id }, supplier.name); };
+  // Inline required-field validation. Errors appear after the first save
+  // attempt (`submitted`) and clear live as the user fills each field.
+  const newSupplierErrors = (): Record<string, string> => {
+    const e: Record<string, string> = {};
+    if (!co.trim()) e.co = 'Supplier company name is required.';
+    if (!contact.trim()) e.contact = 'Contact person is required.';
+    if (!mobile.trim()) e.mobile = 'Mobile number is required.';
+    else if (!/^[0-9+\-\s()]{7,15}$/.test(mobile.trim())) e.mobile = 'Enter a valid mobile number.';
+    if (!seg) e.seg = 'Segment is required.';
+    if (!email.trim()) e.email = 'Email ID is required.';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) e.email = 'Enter a valid email address.';
+    if (!addr.trim()) e.addr = 'Street address is required.';
+    if (countryId === '') e.country = 'Country is required.';
+    if (stateId === '') e.state = 'State is required.';
+    if (!city.trim()) e.city = 'City is required.';
+    return e;
+  };
+  const errs: Record<string, string> = submitted ? newSupplierErrors() : {};
+  const invStyle = (m?: string) => m ? { borderColor: '#ef4444', boxShadow: '0 0 0 3px rgba(239,68,68,.12)' } : undefined;
+  const errMsg = (m?: string) => m ? <div style={{ color: '#ef4444', fontSize: 11, fontWeight: 600, marginTop: 4 }}>{m}</div> : null;
+
   const saveNew = () => {
-    if (!co.trim()) { toast.warning('Company name', 'Please enter the supplier company name.'); return; }
-    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { toast.warning('Invalid email', 'Enter a valid supplier email address.'); return; }
-    if (mobile.trim() && !/^[0-9+\-\s()]{7,15}$/.test(mobile.trim())) { toast.warning('Invalid mobile', 'Enter a valid mobile number.'); return; }
-    doMap({ new_supplier: { name: co.trim(), contact, mobile, segment: seg, email, gmaps, address: addr, country: 'India', state, state_code: stateCode, city, card } }, co.trim());
+    setSubmitted(true);
+    const e = newSupplierErrors();
+    if (Object.keys(e).length) { toast.warning('Missing details', 'Please fill all the required fields highlighted in red.'); return; }
+    const countryName = masters.countries.find(c => c.id === countryId)?.name ?? '';
+    const stateName = masters.states.find(s => s.id === stateId)?.name ?? '';
+    doMap({ new_supplier: { name: co.trim(), contact, mobile, segment: seg, email, gmaps, address: addr, country: countryName, state: stateName, state_code: stateCode, city, card } }, co.trim());
   };
 
   return createPortal(
@@ -116,10 +176,12 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
         {step === 'master' && (
           <div className="smp-body" style={{ padding: '20px 22px 16px' }}>
             <div className="smp-field" style={{ marginBottom: 14 }}>
-              <select className="smp-select smp-select-lg" value={sel} onChange={e => setSel(e.target.value)}>
-                <option value="">Select supplier...</option>
-                {suppliers.map(s => <option key={s.id} value={s.id}>{s.id} — {s.name} ({s.segment})</option>)}
-              </select>
+              <MasterSelect
+                value={sel}
+                placeholder="Select supplier..."
+                options={suppliers.map(s => ({ value: s.id, label: `${s.id} — ${s.name} (${s.segment})` }))}
+                onChange={setSel}
+              />
             </div>
             {supplier && (
               <div className="smp-sc-wrap">
@@ -151,33 +213,33 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
           <div className="smp-body snf-body">
             <div className="snf-section">
               <div className="snf-sec-hdr"><div className="snf-sec-icon teal-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg></div><span>Supplier Information</span></div>
-              <div className="snf-row snf-row-1"><div className="snf-field"><label className="snf-lbl">Supplier Company Name <span className="snf-req">*</span></label><input className="snf-inp" value={co} onChange={e => setCo(e.target.value)} placeholder="e.g. TechParts India Pvt Ltd" /></div></div>
+              <div className="snf-row snf-row-1"><div className="snf-field"><label className="snf-lbl">Supplier Company Name <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.co)} value={co} onChange={e => setCo(e.target.value)} placeholder="e.g. TechParts India Pvt Ltd" />{errMsg(errs.co)}</div></div>
               <div className="snf-row snf-row-3">
-                <div className="snf-field"><label className="snf-lbl">Contact Person <span className="snf-req">*</span></label><input className="snf-inp" value={contact} onChange={e => setContact(e.target.value)} placeholder="Full name" /></div>
-                <div className="snf-field"><label className="snf-lbl">Mobile Number <span className="snf-req">*</span></label><input className="snf-inp" value={mobile} onChange={e => setMobile(e.target.value)} placeholder="10-digit mobile" /></div>
-                <div className="snf-field"><label className="snf-lbl">Segment <span className="snf-req">*</span></label><select className="snf-sel" value={seg} onChange={e => setSeg(e.target.value)}><option value="">Select segment...</option>{['Mechanical', 'Electrical', 'Instrumentation', 'Pneumatics', 'Hydraulics', 'Automation', 'Valves', 'Raw Material', 'Fasteners', 'Piping'].map(s => <option key={s}>{s}</option>)}</select></div>
+                <div className="snf-field"><label className="snf-lbl">Contact Person <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.contact)} value={contact} onChange={e => setContact(e.target.value)} placeholder="Full name" />{errMsg(errs.contact)}</div>
+                <div className="snf-field"><label className="snf-lbl">Mobile Number <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.mobile)} value={mobile} onChange={e => setMobile(e.target.value)} placeholder="10-digit mobile" />{errMsg(errs.mobile)}</div>
+                <div className="snf-field"><label className="snf-lbl">Segment <span className="snf-req">*</span></label><MasterSelect value={seg} invalid={!!errs.seg} placeholder="Select segment..." options={masters.segments.map(s => ({ value: s.name, label: s.name }))} onChange={setSeg} />{errMsg(errs.seg)}</div>
               </div>
               <div className="snf-row snf-row-2">
-                <div className="snf-field"><label className="snf-lbl">Email ID <span className="snf-req">*</span></label><input className="snf-inp" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="supplier@company.com" /></div>
+                <div className="snf-field"><label className="snf-lbl">Email ID <span className="snf-req">*</span></label><input className="snf-inp" type="email" style={invStyle(errs.email)} value={email} onChange={e => setEmail(e.target.value)} placeholder="supplier@company.com" />{errMsg(errs.email)}</div>
                 <div className="snf-field"><label className="snf-lbl">Google Location Link</label><input className="snf-inp" value={gmaps} onChange={e => setGmaps(e.target.value)} placeholder="https://maps.google.com/..." /></div>
               </div>
             </div>
             <div className="snf-section">
               <div className="snf-sec-hdr"><div className="snf-sec-icon blue-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg></div><span>Address</span></div>
-              <div className="snf-row snf-row-1"><div className="snf-field"><label className="snf-lbl">Street Address <span className="snf-req">*</span></label><input className="snf-inp" value={addr} onChange={e => setAddr(e.target.value)} placeholder="e.g. 101, Business Park, MG Road" /></div></div>
+              <div className="snf-row snf-row-1"><div className="snf-field"><label className="snf-lbl">Street Address <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.addr)} value={addr} onChange={e => setAddr(e.target.value)} placeholder="e.g. 101, Business Park, MG Road" />{errMsg(errs.addr)}</div></div>
               <div className="snf-row snf-row-4">
-                <div className="snf-field"><label className="snf-lbl">Country <span className="snf-req">*</span></label><input className="snf-inp" defaultValue="India" /></div>
-                <div className="snf-field"><label className="snf-lbl">State <span className="snf-req">*</span></label><select className="snf-sel" value={state} onChange={e => setState(e.target.value)}><option value="">Select state...</option>{STATES.map(s => <option key={s}>{s}</option>)}</select></div>
-                <div className="snf-field"><label className="snf-lbl">State Code</label><input className="snf-inp" value={stateCode} onChange={e => setStateCode(e.target.value)} placeholder="MH" style={{ textTransform: 'uppercase' }} /></div>
-                <div className="snf-field"><label className="snf-lbl">City <span className="snf-req">*</span></label><input className="snf-inp" value={city} onChange={e => setCity(e.target.value)} placeholder="City name" /></div>
+                <div className="snf-field"><label className="snf-lbl">Country <span className="snf-req">*</span></label><MasterSelect value={countryId === '' ? '' : String(countryId)} invalid={!!errs.country} placeholder="Select country..." options={masters.countries.map(c => ({ value: String(c.id), label: c.name }))} onChange={v => { setCountryId(v ? Number(v) : ''); pickState(''); }} />{errMsg(errs.country)}</div>
+                <div className="snf-field"><label className="snf-lbl">State <span className="snf-req">*</span></label><MasterSelect value={stateId === '' ? '' : String(stateId)} invalid={!!errs.state} placeholder={countryId === '' ? 'Select country first' : 'Select state...'} disabled={countryId === ''} options={statesForCountry.map(s => ({ value: String(s.id), label: s.name }))} onChange={v => pickState(v ? Number(v) : '')} />{errMsg(errs.state)}</div>
+                <div className="snf-field"><label className="snf-lbl">State Code <span style={{ fontSize: 10, color: '#94a3b8' }}>(auto)</span></label><input className="snf-inp" value={stateCode} readOnly placeholder="—" style={{ textTransform: 'uppercase', background: '#f8fafc' }} /></div>
+                <div className="snf-field"><label className="snf-lbl">City <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.city)} value={city} onChange={e => setCity(e.target.value)} placeholder="City name" />{errMsg(errs.city)}</div>
               </div>
             </div>
             <div className="snf-section snf-last">
               <div className="snf-sec-hdr"><div className="snf-sec-icon amber-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></div><span>Documents</span></div>
               <label className="snf-upload">
-                <input type="file" style={{ display: 'none' }} accept="image/*,.pdf" onChange={e => setCard(e.target.files?.[0]?.name ?? '')} />
+                <input type="file" style={{ display: 'none' }} accept="image/*,.pdf" onChange={e => { const f = e.target.files?.[0]; if (f) uploadCard(f); }} />
                 <div className="snf-upload-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg></div>
-                <div className="snf-upload-text"><span className="snf-upload-main" style={card ? { color: '#0891b2' } : undefined}>{card ? `✓ ${card}` : 'Click to upload Business Card'}</span><span className="snf-upload-sub">PDF, JPG, PNG &nbsp;·&nbsp; Max 5 MB</span></div>
+                <div className="snf-upload-text"><span className="snf-upload-main" style={card ? { color: '#0891b2' } : undefined}>{cardUploading ? 'Uploading…' : (card ? `✓ ${cardName || 'Business Card uploaded'}` : 'Click to upload Business Card')}</span><span className="snf-upload-sub">PDF, JPG, PNG &nbsp;·&nbsp; Max 5 MB</span></div>
               </label>
             </div>
             <div className="snf-foot">

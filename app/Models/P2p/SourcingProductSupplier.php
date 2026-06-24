@@ -18,7 +18,7 @@ class SourcingProductSupplier extends Model
     protected $fillable = [
         'sourcing_product_id', 'supplier_id', 'source',
         'name', 'segment', 'contact', 'mobile', 'email',
-        'gmaps', 'address', 'country', 'state', 'state_code', 'city',
+        'gmaps', 'address', 'country', 'state', 'state_code', 'city', 'card_path',
     ];
 
     public function product(): BelongsTo

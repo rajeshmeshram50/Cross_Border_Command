@@ -19,8 +19,10 @@ type Member = { id: string; name: string; role: string };
 const tInit = (n: string) => n.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
 
 type Clarity = { type: 'text' | 'link' | 'pdf'; val: string } | null;
-type MasterRow = { code: string; name: string; segment: string; hsn: string; price: string; clarity?: Clarity };
-type ManualRow = { name: string; price: string; clarity?: Clarity };
+// id + mapped come from the edit pre-fill: `mapped` = the product already has a
+// supplier mapped in the Sourcing Report, so it's locked (can't be removed).
+type MasterRow = { id?: number; mapped?: boolean; code: string; name: string; segment: string; hsn: string; price: string; clarity?: Clarity };
+type ManualRow = { id?: number; mapped?: boolean; name: string; price: string; clarity?: Clarity };
 
 function ClarityBtn({ clarity, onClick }: { clarity?: Clarity; onClick: () => void }) {
   const set = !!clarity?.type;
@@ -36,6 +38,10 @@ function ClarityBtn({ clarity, onClick }: { clarity?: Clarity; onClick: () => vo
 
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const fmt = (s: string) => { if (!s) return ''; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
+// Clarity PDFs store a /storage/... path; show just the filename to the user.
+const baseName = (p: string) => (p || '').split('/').pop() || p;
+// A target price is invalid when blank, non-numeric, or ≤ 0.
+const isBadPrice = (v: string) => { const num = parseFloat(String(v).replace(/,/g, '')); return !String(v).trim() || isNaN(num) || num <= 0; };
 const LockIco = () => <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>;
 
 export default function AssignSourcingTargetModal({ editRow = null, onClose, onSaved }: { editRow?: ReportRow | null; onClose: () => void; onSaved?: () => void }) {
@@ -63,7 +69,12 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
   const [clarity, setClarity] = useState<{ kind: 'master' | 'manual'; idx: number } | null>(null);
   const [clType, setClType] = useState<'text' | 'link' | 'pdf'>('text');
   const [clVal, setClVal] = useState('');
+  const [clUploading, setClUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Inline-validation triggers: show red borders/messages only after the user
+  // tries to advance (Next) / save (Assign), then live-clear as they fix fields.
+  const [dueTried, setDueTried] = useState(false);
+  const [priceTried, setPriceTried] = useState(false);
 
   // Reference data + edit pre-fill from the backend (see API.md).
   const [products, setProducts] = useState<Product[]>([]);
@@ -98,6 +109,17 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
     else setManualRows(rows => rows.map((x, i) => i === clarity.idx ? { ...x, clarity: c } : x));
     setClarity(null);
   };
+  // Upload a clarity PDF and keep its /storage/... path in clVal (saveClarity
+  // then stores it on the row). Previously only the filename was kept, so the
+  // file was never persisted.
+  const uploadClarity = (f: File) => {
+    const fd = new FormData(); fd.append('file', f); fd.append('kind', 'clarity');
+    setClUploading(true);
+    api.post<{ data: { path: string } }>('/p2p/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      .then(r => setClVal(r.data?.data?.path ?? ''))
+      .catch((err) => toast.error('Upload failed', err?.response?.data?.message || 'Could not upload the PDF.'))
+      .finally(() => setClUploading(false));
+  };
   const clarityTitle = clarity ? (clarity.kind === 'master' ? `${masterRows[clarity.idx]?.code} — ${masterRows[clarity.idx]?.name}` : manualRows[clarity.idx]?.name) : '';
 
   const teamList = teamMembers.filter(m => { const q = teamSearch.toLowerCase(); return !q || (m.name + ' ' + m.role).toLowerCase().includes(q); });
@@ -123,6 +145,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
     setMName(''); setMPrice(''); setListTab('manual');
   };
   const goAssign = () => {
+    setPriceTried(true);
     const n = masterRows.length + manualRows.length;
     if (!n) { toast.warning('Add products', 'Add at least one product to the list.'); return; }
     if (masterRows.some(r => !String(r.price).trim()) || manualRows.some(r => !String(r.price).trim())) {
@@ -140,8 +163,8 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
       due_date: due, source,
       assignee_id: assigneeId,
       products: [
-        ...masterRows.map(r => ({ from: 'master', code: r.code, target_price: r.price, clarity: r.clarity ?? null })),
-        ...manualRows.map(r => ({ from: 'manual', name: r.name, target_price: r.price, clarity: r.clarity ?? null })),
+        ...masterRows.map(r => ({ id: r.id ?? null, from: 'master', code: r.code, target_price: r.price, clarity: r.clarity ?? null })),
+        ...manualRows.map(r => ({ id: r.id ?? null, from: 'manual', name: r.name, target_price: r.price, clarity: r.clarity ?? null })),
       ],
     };
     setSaving(true);
@@ -170,7 +193,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
               : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>}
           </div>
           <div style={{ flex: 1 }}><div className="ast-title">{isEdit ? `Edit Sourcing Target — ${srcId}` : 'Assign Sourcing Target'}</div><div className="ast-sub">{isEdit ? 'Update sourcing details and product list.' : 'Create a sourcing target across products.'}</div></div>
-          <button className={`ast-head-btn ${team ? 'is-set' : ''}`} onClick={openTeam}>
+          <button className={`ast-head-btn ${team ? 'is-set' : ''}`} title={isEdit ? 'Assignee is locked once the target is created' : undefined} style={isEdit ? { cursor: 'not-allowed' } : undefined} onClick={() => { if (isEdit) { toast.info('Assignee locked', 'The assignee is fixed once a sourcing target is created — it can’t be changed while editing.'); return; } openTeam(); }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
             <span>{team || 'Assign to Team Member'}</span>
           </button>
@@ -218,7 +241,8 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                   <div className="ast-srcgrid-sep" />
                   <div className="ast-field">
                     <label>Due Date <span className="ast-req">*</span></label>
-                    <MasterDatePicker value={due} onChange={setDue} minDate={start} placeholder="Select due date" />
+                    <MasterDatePicker value={due} onChange={setDue} minDate={start} placeholder="Select due date" invalid={dueTried && !due} />
+                    {dueTried && !due && <div style={{ color: '#ef4444', fontSize: 11, fontWeight: 600, marginTop: 5 }}>Due date is required.</div>}
                   </div>
                 </div>
               </div>
@@ -232,15 +256,17 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                   <span className="ast-srccard-tag ast-srccard-tag--teal"><span className="ast-srccard-dot ast-srccard-dot--teal" />Step 2</span>
                 </div>
                 <div className="ast-srccard-body">
-                  <div className="ast-field" style={{ marginBottom: 13, ...(isEdit ? { pointerEvents: 'none', opacity: 0.7 } as React.CSSProperties : {}) }}>
-                    <label>I want to source from <span className="ast-req">*</span>{isEdit && <span style={{ fontSize: 10, color: '#0891b2', fontWeight: 600, marginLeft: 6, textTransform: 'none' }}>🔒 Locked</span>}</label>
+                  {/* Source is switchable in edit too, so the user can append
+                      products from either Product Master or Manual Entry. */}
+                  <div className="ast-field" style={{ marginBottom: 13 }}>
+                    <label>I want to source from <span className="ast-req">*</span></label>
                     <div className="ast-radios">
-                      <label className={`ast-radio ${source === 'master' ? 'is-sel' : ''}`} onClick={() => !isEdit && setSource('master')}><span className="ast-radio-dot" /><span className="ast-radio-txt"><b>From Product Master</b><small>Pick existing products</small></span></label>
-                      <label className={`ast-radio ${source === 'manual' ? 'is-sel' : ''}`} onClick={() => !isEdit && setSource('manual')}><span className="ast-radio-dot" /><span className="ast-radio-txt"><b>Manual Product Entry</b><small>Type a new product</small></span></label>
+                      <label className={`ast-radio ${source === 'master' ? 'is-sel' : ''}`} onClick={() => setSource('master')}><span className="ast-radio-dot" /><span className="ast-radio-txt"><b>From Product Master</b><small>Pick existing products</small></span></label>
+                      <label className={`ast-radio ${source === 'manual' ? 'is-sel' : ''}`} onClick={() => setSource('manual')}><span className="ast-radio-dot" /><span className="ast-radio-txt"><b>Manual Product Entry</b><small>Type a new product</small></span></label>
                     </div>
                   </div>
 
-                  {!isEdit && (source === 'master' ? (
+                  {source === 'master' ? (
                     <div className="ast-field">
                       <label>Select Products <span className="ast-hint">(choose one or more, then click Add)</span></label>
                       <div className="asrc-picker">
@@ -275,7 +301,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                       <div className="ast-field"><label>Target Price (₹) <span className="ast-req">*</span></label><input type="text" value={mPrice} placeholder="Required" onChange={e => setMPrice(e.target.value)} /></div>
                       <div className="ast-field"><label>&nbsp;</label><button type="button" className="ast-btn ast-btn-primary" style={{ height: 42, justifyContent: 'center' }} onClick={addManual}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg> Add to List</button></div>
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
 
@@ -301,9 +327,9 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                             <span className="asrc-name" data-label="Product Name">{r.name}</span>
                             <span data-label="Segment">{r.segment}</span>
                             <span className="asrc-hsn" data-label="HSN Code">{r.hsn}</span>
-                            <span data-label="Target Price (₹)"><input type="text" className="ast-pl-price" value={r.price} placeholder="Required" onChange={e => setMasterRows(rows => rows.map((x, xi) => xi === i ? { ...x, price: e.target.value } : x))} /></span>
+                            <span data-label="Target Price (₹)"><input type="text" className="ast-pl-price" style={priceTried && isBadPrice(r.price) ? { borderColor: '#ef4444', background: 'rgba(239,68,68,.06)' } : undefined} value={r.price} placeholder="Required" onChange={e => setMasterRows(rows => rows.map((x, xi) => xi === i ? { ...x, price: e.target.value } : x))} /></span>
                             <span data-label="Clarity"><ClarityBtn clarity={r.clarity} onClick={() => openClarity('master', i)} /></span>
-                            <span data-label=""><button type="button" className="ast-pl-del" title="Delete" onClick={() => setMasterRows(rows => rows.filter((_, xi) => xi !== i))}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button></span>
+                            <span data-label=""><button type="button" className="ast-pl-del" title={r.mapped ? 'Mapped to a supplier — can’t be removed' : 'Delete'} style={r.mapped ? { opacity: 0.4, cursor: 'not-allowed' } : undefined} onClick={() => r.mapped ? toast.info('Can’t remove product', `“${r.name}” is mapped to a supplier in the Sourcing Report. Unmap its suppliers there first.`) : setMasterRows(rows => rows.filter((_, xi) => xi !== i))}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button></span>
                           </div>
                         ))}
                       </div>
@@ -316,9 +342,9 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                           <div className="asrc-row asrc-row--n" key={i}>
                             <span className="asrc-sr" data-label="Sr">{i + 1}</span>
                             <span data-label="Product Name"><input type="text" className="ast-pl-price" style={{ fontWeight: 600 }} value={r.name} onChange={e => setManualRows(rows => rows.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x))} /></span>
-                            <span data-label="Target Price (₹)"><input type="text" className="ast-pl-price" value={r.price} placeholder="Required" onChange={e => setManualRows(rows => rows.map((x, xi) => xi === i ? { ...x, price: e.target.value } : x))} /></span>
+                            <span data-label="Target Price (₹)"><input type="text" className="ast-pl-price" style={priceTried && isBadPrice(r.price) ? { borderColor: '#ef4444', background: 'rgba(239,68,68,.06)' } : undefined} value={r.price} placeholder="Required" onChange={e => setManualRows(rows => rows.map((x, xi) => xi === i ? { ...x, price: e.target.value } : x))} /></span>
                             <span data-label="Clarity"><ClarityBtn clarity={r.clarity} onClick={() => openClarity('manual', i)} /></span>
-                            <span data-label=""><button type="button" className="ast-pl-del" title="Delete" onClick={() => setManualRows(rows => rows.filter((_, xi) => xi !== i))}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button></span>
+                            <span data-label=""><button type="button" className="ast-pl-del" title={r.mapped ? 'Mapped to a supplier — can’t be removed' : 'Delete'} style={r.mapped ? { opacity: 0.4, cursor: 'not-allowed' } : undefined} onClick={() => r.mapped ? toast.info('Can’t remove product', `“${r.name}” is mapped to a supplier in the Sourcing Report. Unmap its suppliers there first.`) : setManualRows(rows => rows.filter((_, xi) => xi !== i))}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button></span>
                           </div>
                         ))}
                       </div>
@@ -335,7 +361,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
           {stage === 1 ? (
             <>
               <button className="ast-btn ast-btn-ghost" onClick={onClose}>Cancel</button>
-              <button className="ast-btn ast-btn-primary" onClick={() => { if (!due) { toast.warning('Due date required', 'Select a due date to continue.'); return; } setStage(2); }}>Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></button>
+              <button className="ast-btn ast-btn-primary" onClick={() => { setDueTried(true); if (!due) { toast.warning('Due date required', 'Select a due date to continue.'); return; } setStage(2); }}>Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></button>
             </>
           ) : (
             <>
@@ -398,14 +424,14 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                   clVal ? (
                     <div className="ast-pdf-file">
                       <span className="ast-pdf-file-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></span>
-                      <span className="ast-pdf-file-name" title={clVal}>{clVal}</span>
+                      <span className="ast-pdf-file-name" title={baseName(clVal)}>{baseName(clVal)}</span>
                       <button type="button" className="ast-pdf-del" title="Remove file (delete to upload a new one)" onClick={() => setClVal('')}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
                     </div>
                   ) : (
                     <label className="ast-pdf">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-                      <span>Click to upload a PDF specification</span>
-                      <input type="file" accept="application/pdf" onChange={e => setClVal(e.target.files?.[0]?.name ?? '')} />
+                      <span>{clUploading ? 'Uploading…' : 'Click to upload a PDF specification'}</span>
+                      <input type="file" accept="application/pdf" disabled={clUploading} onChange={e => { const f = e.target.files?.[0]; if (f) uploadClarity(f); }} />
                     </label>
                   )
                 )}

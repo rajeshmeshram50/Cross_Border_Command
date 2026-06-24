@@ -222,7 +222,12 @@ export default function P2pBulkSourcing() {
                         <span className="bst-c-center"><Progress products={r.products} completed={r.completed} /></span>
                         <span className="bst-c-center">
                           <span className="bst-actions">
-                            <button type="button" className="bst-act bst-act--edit" title="Edit Sourcing Target" onClick={() => setEditRow(r)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg></button>
+                            {/* Edit is owner-only: shown on the "Created by Me" tab.
+                                A target merely assigned to you isn't yours to re-edit
+                                — you work it through the Sourcing Report instead. */}
+                            {tab === 'created' && (
+                              <button type="button" className="bst-act bst-act--edit" title="Edit Sourcing Target" onClick={() => setEditRow(r)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg></button>
+                            )}
                             <button type="button" className="bst-report-btn" onClick={() => setReportRow(r)}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M18 20V10" /><path d="M12 20V4" /><path d="M6 20v-6" /><path d="M3 20h18" /></svg>Sourcing Report</button>
                           </span>
                         </span>
