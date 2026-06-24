@@ -276,6 +276,35 @@ function RespondBtn({ onClick, t }: { onClick: () => void; t: OpsTokens }) {
    chat-bubble button is gone too: the full conversation history now lives inside
    the Raise Clarification popup itself. */
 
+/* Lists every approver on a contract with their individual decision (✓/✕/?/•),
+   so a multi-approver / multi-round agreement shows who actually decided rather
+   than just the static primary approver. Falls back to the single `approver`. */
+const APPR_ST: Record<string, { ic: string; color: string }> = {
+  approved:      { ic: '✓', color: '#059669' },
+  rejected:      { ic: '✕', color: '#DC2626' },
+  clarification: { ic: '?', color: '#7C3AED' },
+  pending:       { ic: '•', color: '#94A3B8' },
+};
+function ApproverList({ c, t }: { c: AtaContract; t: OpsTokens }) {
+  const list = (c.approvers && c.approvers.length)
+    ? c.approvers
+    : (c.approver ? [{ name: c.approver, status: c.status }] : []);
+  if (!list.length) return <span style={{ fontSize: 11, color: t.textSub }}>—</span>;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {list.map((a, i) => {
+        const si = APPR_ST[a.status] || APPR_ST.pending;
+        return (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span title={a.status} style={{ width: 15, height: 15, borderRadius: '50%', background: si.color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 8.5, fontWeight: 900, color: '#fff', flexShrink: 0 }}>{si.ic}</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{a.name}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function StandardTable({ rows, tab, page, setPage, onReview, t }: { rows: AtaContract[]; tab: AtaTab; page: number; setPage: (n: number) => void; onReview: (id: string) => void; t: OpsTokens }) {
   const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const safe = Math.min(page, totalPages);
@@ -327,7 +356,7 @@ function StandardTable({ rows, tab, page, setPage, onReview, t }: { rows: AtaCon
                   <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub }}>{c.date}</span></td>
                   <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
                   <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A5F3FC,#67E8F9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #CFFAFE' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0e7490' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
-                  <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(c.approver)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.approver}</span></div></td>
+                  <td style={TD_L}><ApproverList c={c} t={t} /></td>
                   <td style={TD_C}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 20, background: sb.bg, border: `1.5px solid ${sb.border}`, whiteSpace: 'nowrap' }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: s.dot, flexShrink: 0 }} /><span style={{ fontSize: 10.5, fontWeight: 700, color: sb.text }}>{s.label}</span></span></td>
                   {isRej && <td style={{ ...TD_L, maxWidth: 180 }}><Tooltip label={c.rejReason ?? ''}><div style={{ fontSize: 10.5, color: '#DC2626', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 175 }}>{c.rejReason}</div></Tooltip></td>}
                   <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.expDate}</span></td>
@@ -392,7 +421,7 @@ function ClarificationTable({ rows, page, setPage, onReview, onChat, t }: { rows
                   <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub }}>{c.date}</span></td>
                   <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
                   <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 24, height: 24, borderRadius: '50%', background: 'linear-gradient(135deg,#22d3ee,#06b6d4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8, fontWeight: 900, color: '#fff' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
-                  <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 24, height: 24, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8, fontWeight: 900, color: '#fff' }}>{inits(c.approver)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.approver}</span></div></td>
+                  <td style={TD_L}><ApproverList c={c} t={t} /></td>
                   <td style={{ ...TD_L, maxWidth: 220 }}>
                     <Tooltip label={latest?.query ?? ''}><div style={{ fontSize: 11, color: t.textSub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}>{latest?.query ?? '—'}</div></Tooltip>
                     {hasResp && <div style={{ fontSize: 9.5, color: '#059669', fontWeight: 600, marginTop: 2 }}>✓ Response provided</div>}

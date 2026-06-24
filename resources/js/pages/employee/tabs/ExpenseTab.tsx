@@ -4,6 +4,7 @@ import AdvanceRequestsTable from '../../../components/AdvanceRequestsTable';
 import DraftListView from './DraftListView';
 import { useToast } from '../../../contexts/ToastContext';
 import { useEmployeeProfile } from '../EmployeeProfileContext';
+import { draftFilesKey, deleteDraftFiles } from '../../../utils/draftFileStore';
 
 type ExpenseFilter = 'all' | 'approved' | 'rejected' | 'pending' | 'draft';
 
@@ -349,10 +350,12 @@ export default function ExpenseTab() {
                         const next = advanceDrafts.filter(e => e.id !== draftId);
                         if (next.length) localStorage.setItem(advanceDraftKey, JSON.stringify(next));
                         else             localStorage.removeItem(advanceDraftKey);
+                        void deleteDraftFiles(draftFilesKey(advanceDraftKey, draftId));
                       } else {
                         const next = expenseDrafts.filter(e => e.id !== draftId);
                         if (next.length) localStorage.setItem(claimDraftKey, JSON.stringify(next));
                         else             localStorage.removeItem(claimDraftKey);
+                        void deleteDraftFiles(draftFilesKey(claimDraftKey, draftId));
                       }
                     } catch { /* ignore */ }
                     readSavedDrafts();

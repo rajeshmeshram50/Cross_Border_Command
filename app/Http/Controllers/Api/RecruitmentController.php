@@ -34,7 +34,7 @@ class RecruitmentController extends Controller
     private const EMPLOYMENT_TYPES = ['Full Time', 'Part Time', 'Contract', 'Internship'];
     private const WORK_MODES       = ['On-site', 'Remote', 'Hybrid', 'Flexible'];
     private const PRIORITIES       = ['Critical', 'High', 'Medium', 'Low'];
-    private const STATUSES         = ['In Progress', 'Completed', 'Cancelled'];
+    private const STATUSES         = ['In Progress', 'Completed', 'Cancelled', 'Expired'];
 
     /* ─────────────────────────────────────────────────────────────────
      *  LIST / SHOW / NEXT-CODE
@@ -44,8 +44,14 @@ class RecruitmentController extends Controller
     {
         $this->authorize($request, 'can_view');
 
+        // No scheduler runs in this app, so expiry is applied lazily on read:
+        // any overdue 'In Progress' recruitment is flipped to 'Expired' before
+        // the list is built, so it stops counting/behaving as an active opening.
+        $branchFilter = $request->integer('branch_id') ?: null;
+        $this->expireOverdue($request->user(), $branchFilter);
+
         $q = Recruitment::query()->with(self::WITH);
-        $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
+        $this->applyScope($q, $request->user(), $branchFilter);
 
         if ($search = $request->query('search')) {
             $q->where(function ($w) use ($search) {
@@ -137,6 +143,10 @@ class RecruitmentController extends Controller
         // candidate — otherwise the recruitment's promise to fill N seats
         // is silently broken.
         $this->guardStatusTransition($row, $data);
+        // Keep In Progress <-> Expired aligned with the (possibly edited)
+        // deadline so extending it reopens an expired recruitment and a past
+        // deadline expires it. Leaves explicit Completed/Cancelled untouched.
+        $this->reconcileExpiryStatus($data, $row);
 
         $row->update($data);
 
@@ -178,13 +188,16 @@ class RecruitmentController extends Controller
     }
 
     /**
-     * Reject duplicates within the same tenant. A recruitment only counts as
-     * a duplicate when the job title AND every other key criterion match an
-     * existing row: department, experience, employment type, CTC range and
-     * hiring requirements. Differing any one of those makes it a distinct
-     * opening (e.g. a "Software Engineer" role at 2-4 yrs vs 5-8 yrs), so
-     * the same title can legitimately be posted more than once. This still
-     * catches accidental double-submits, where every field is identical.
+     * Reject duplicates within the same tenant. A recruitment counts as a
+     * duplicate when EVERY substantive field matches an existing row — job
+     * title, department, designation, role, employment type, openings,
+     * experience, work mode, CTC range, priority, hiring manager, assigned
+     * HR, job description and requirements. The only fields deliberately
+     * left OUT of the signature are the dates (start_date / deadline): a
+     * re-post of the same opening with new dates is a legitimately distinct
+     * record, so changing a date is the supported way to post it again.
+     * Differing any non-date field makes it a distinct opening; matching all
+     * of them means it's an accidental double-submit and is blocked.
      *
      * Skips when job title or department is missing so partial PATCH updates
      * that don't touch those columns aren't blocked. For updates, any field
@@ -207,13 +220,24 @@ class RecruitmentController extends Controller
         // Normalise free-text criteria for a forgiving, case-/whitespace-
         // insensitive compare. NULL and '' are treated the same via COALESCE.
         $norm = fn ($v) => mb_strtolower(trim((string) ($v ?? '')));
+        // Numeric/FK criteria: NULL is treated as 0 so an unset FK on both
+        // rows still compares equal.
+        $numNorm = fn ($v) => ($v === null || $v === '') ? 0 : (int) $v;
 
         $q = Recruitment::query()
             ->whereRaw('LOWER(job_title) = ?', [mb_strtolower($title)])
             ->where('department_id', $deptId)
+            ->whereRaw('COALESCE(designation_id, 0) = ?',  [$numNorm($val('designation_id'))])
+            ->whereRaw('COALESCE(primary_role_id, 0) = ?', [$numNorm($val('primary_role_id'))])
+            ->whereRaw('COALESCE(openings, 0) = ?',        [$numNorm($val('openings'))])
+            ->whereRaw('COALESCE(hiring_manager_id, 0) = ?', [$numNorm($val('hiring_manager_id'))])
+            ->whereRaw('COALESCE(assigned_hr_id, 0) = ?',  [$numNorm($val('assigned_hr_id'))])
             ->whereRaw("LOWER(COALESCE(employment_type, '')) = ?", [$norm($val('employment_type'))])
             ->whereRaw("LOWER(COALESCE(experience, '')) = ?",      [$norm($val('experience'))])
+            ->whereRaw("LOWER(COALESCE(work_mode, '')) = ?",       [$norm($val('work_mode'))])
             ->whereRaw("LOWER(COALESCE(ctc_range, '')) = ?",       [$norm($val('ctc_range'))])
+            ->whereRaw("LOWER(COALESCE(priority, '')) = ?",        [$norm($val('priority'))])
+            ->whereRaw("LOWER(COALESCE(job_description, '')) = ?", [$norm($val('job_description'))])
             ->whereRaw("LOWER(COALESCE(requirements, '')) = ?",    [$norm($val('requirements'))]);
 
         $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
@@ -224,7 +248,7 @@ class RecruitmentController extends Controller
         if ($dupe) {
             throw ValidationException::withMessages([
                 'job_title' => [sprintf(
-                    'An identical recruitment already exists (%s) — same job title, department, experience, employment type, CTC range and requirements. Change any of these to post a separate opening.',
+                    'This recruitment already exists (%s) — every detail matches an existing entry. Change a date (start date / deadline) or any other field to post a separate opening.',
                     $dupe->code ?: ('#' . $dupe->id),
                 )],
             ]);
@@ -359,7 +383,54 @@ class RecruitmentController extends Controller
     {
         $q = Recruitment::query()->with(self::WITH);
         $this->applyScope($q, $request->user());
-        return $q->findOrFail($id);
+        $row = $q->findOrFail($id);
+        return $this->maybeExpire($row);
+    }
+
+    /**
+     * Lazily expire overdue recruitments for the current tenant scope. Any
+     * 'In Progress' row whose deadline has already passed (deadline < today)
+     * is moved to 'Expired'. Idempotent — 'Expired'/'Completed'/'Cancelled'
+     * rows and rows with no deadline (or a deadline still in the future) are
+     * never touched. Runs as a single bulk UPDATE so listing stays cheap.
+     */
+    private function expireOverdue($user, ?int $branchFilter = null): void
+    {
+        $q = Recruitment::query();
+        $this->applyScope($q, $user, $branchFilter);
+        $q->where('status', 'In Progress')
+          ->whereNotNull('deadline')
+          ->whereDate('deadline', '<', today())
+          ->update(['status' => 'Expired']);
+    }
+
+    /** Expire a single loaded row if it is overdue (mirrors expireOverdue). */
+    private function maybeExpire(Recruitment $row): Recruitment
+    {
+        if ($row->status === 'In Progress' && $row->deadline && $row->deadline->lt(today())) {
+            $row->status = 'Expired';
+            $row->save();
+        }
+        return $row;
+    }
+
+    /**
+     * Keep the In Progress <-> Expired status in sync with the deadline when a
+     * recruitment is edited. Extending the deadline into the future reopens an
+     * Expired recruitment; a past (or unchanged-and-past) deadline expires it.
+     * Only toggles between those two states — an explicit move to Completed /
+     * Cancelled, or a row already in those states, is left untouched.
+     */
+    private function reconcileExpiryStatus(array &$data, Recruitment $row): void
+    {
+        $effectiveStatus = $data['status'] ?? $row->status;
+        if (!in_array($effectiveStatus, ['In Progress', 'Expired'], true)) return;
+
+        $deadline = array_key_exists('deadline', $data) ? $data['deadline'] : $row->deadline;
+        $overdue  = $deadline !== null
+            && \Illuminate\Support\Carbon::parse($deadline)->lt(today());
+
+        $data['status'] = $overdue ? 'Expired' : 'In Progress';
     }
 
     private function guardHierarchicalAction($user, Recruitment $row, string $verb): void
@@ -412,13 +483,20 @@ class RecruitmentController extends Controller
             'openings'          => 'nullable|integer|min:1|max:9999',
             'experience'        => 'nullable|string|max:30',
             'work_mode'         => ['nullable', Rule::in(self::WORK_MODES)],
-            'ctc_range'         => 'nullable|string|max:50',
+            // A single value or a proper "min-max" range — exactly one
+            // hyphen, numbers/decimals only. Rejects multiple hyphens
+            // ("10---20") and stray separators even if a payload bypasses
+            // the SPA. Optional spaces around the hyphen are tolerated.
+            'ctc_range'         => ['nullable', 'string', 'max:50', 'regex:/^\d+(\.\d+)?(\s*-\s*\d+(\.\d+)?)?$/'],
             'priority'          => ['nullable', Rule::in(self::PRIORITIES)],
 
             'hiring_manager_id' => 'nullable|integer|exists:employees,id',
             'assigned_hr_id'    => 'nullable|integer|exists:employees,id',
             'start_date'        => 'nullable|date',
-            'deadline'          => 'nullable|date|after_or_equal:start_date',
+            // TAT/Deadline must be strictly later than the start date — the
+            // same day is not a valid turnaround window, so 'after' (not
+            // 'after_or_equal') is enforced here and on the SPA.
+            'deadline'          => 'nullable|date|after:start_date',
 
             'job_description'   => 'nullable|string',
             'requirements'      => 'nullable|string',
@@ -432,6 +510,7 @@ class RecruitmentController extends Controller
             'cancel_notes'  => 'nullable|string',
         ], [
             'job_title.regex' => 'Job title cannot contain special characters — use only letters, numbers, spaces and - . , /',
+            'ctc_range.regex' => 'Enter a valid CTC range — a number or min-max, e.g. 8 or 8-12 (no multiple hyphens).',
         ]);
     }
 

@@ -67,8 +67,10 @@ export const AWS_CONTRACTS: AwsContract[] = [
 
 export type AtaStatus = 'pending' | 'clarification' | 'approved' | 'rejected';
 export type Clarification = { query: string; date: string; response: string; resolved: boolean; by?: string };
+export type ApproverEntry = { name: string; status: AtaStatus | string };
 export type AtaContract = {
   id: string; title: string; date: string; createdBy: string; approver: string;
+  approvers?: ApproverEntry[];
   status: AtaStatus; clarifications: Clarification[]; expDate: string; rejReason?: string;
 };
 

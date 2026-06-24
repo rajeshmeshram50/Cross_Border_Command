@@ -205,6 +205,7 @@ class CandidateController extends Controller
             // Tenant is inherited from the parent recruitment so candidates
             // never escape the recruitment's own scope.
             $parent = $this->loadParentRecruitment($request, (int) $data['recruitment_id']);
+            $this->guardRecruitmentOpen($parent);
 
             // Reject duplicates (same email under the same recruitment).
             // Mirrors the recruitment / hiring-request guard pattern — surfaces
@@ -512,6 +513,7 @@ class CandidateController extends Controller
         ]);
 
         $parent = $this->loadParentRecruitment($request, (int) $request->input('recruitment_id'));
+        $this->guardRecruitmentOpen($parent);
 
         $rows = $this->parseCsv($request->file('file'));
         if ($rows === null) {
@@ -715,22 +717,55 @@ class CandidateController extends Controller
             $contents = substr($contents, 3);
         }
 
+        // Detect the delimiter from the first line. Excel saves CSVs with a
+        // semicolon (and sometimes a tab) in many non-US locales; defaulting
+        // to a comma turns the whole header into one cell and makes column
+        // matching fail with a misleading "column not found" (HRMS-BUG).
+        $delimiter = $this->detectDelimiter($contents);
+
         $rows = [];
         $fh = fopen('php://memory', 'r+');
         if ($fh === false) return null;
         fwrite($fh, $contents);
         rewind($fh);
-        while (($row = fgetcsv($fh)) !== false) {
+        while (($row = fgetcsv($fh, 0, $delimiter)) !== false) {
             $rows[] = $row;
         }
         fclose($fh);
         return $rows;
     }
 
+    /**
+     * Pick the delimiter that best splits the header line. Checks comma,
+     * semicolon and tab and returns whichever yields the most columns, so a
+     * file saved by a non-US Excel still parses. Falls back to comma.
+     */
+    private function detectDelimiter(string $contents): string
+    {
+        $firstLine = strtok($contents, "\r\n");
+        if ($firstLine === false) return ',';
+
+        $best = ',';
+        $bestCount = 0;
+        foreach ([',', ';', "\t"] as $candidate) {
+            $count = count(str_getcsv($firstLine, $candidate));
+            if ($count > $bestCount) {
+                $bestCount = $count;
+                $best = $candidate;
+            }
+        }
+        return $best;
+    }
+
     /** Normalise a header name for case/whitespace-insensitive matching. */
     private function normaliseHeader($v): string
     {
-        return strtolower(trim((string) $v));
+        // Lower-case, strip a stray BOM/quotes, then collapse all whitespace
+        // runs to a single space so "Current  Salary", quoted headers and a
+        // BOM-prefixed first cell all match their expected label.
+        $v = strtolower(trim((string) $v));
+        $v = trim($v, "\xEF\xBB\xBF\"' ");
+        return preg_replace('/\s+/', ' ', $v);
     }
 
     /** Map a CSV row to the controller's create payload shape. */
@@ -847,6 +882,28 @@ class CandidateController extends Controller
         return $q->findOrFail($recruitmentId);
     }
 
+    /**
+     * Freeze candidate intake once the recruitment is no longer open: an
+     * explicitly closed (Completed / Cancelled) recruitment, an already
+     * 'Expired' one, or an 'In Progress' one whose deadline has slipped by
+     * (mirrors RecruitmentController's lazy-expiry rule so a just-passed
+     * deadline freezes intake even before the recruitment row is re-read).
+     * Reopening (extending the deadline) lifts the freeze.
+     */
+    private function guardRecruitmentOpen(Recruitment $parent): void
+    {
+        $overdue = $parent->deadline && $parent->deadline->lt(today());
+        $closed  = in_array($parent->status, ['Completed', 'Cancelled', 'Expired'], true);
+
+        if ($closed || ($parent->status === 'In Progress' && $overdue)) {
+            throw ValidationException::withMessages([
+                'recruitment_id' => [
+                    'This recruitment is closed or past its deadline — reopen it (extend the deadline) before adding candidates.',
+                ],
+            ]);
+        }
+    }
+
     private function guardHierarchicalAction($user, Candidate $row, string $verb): void
     {
         if (!$user || $user->user_type === 'super_admin' || !$row->created_by) return;
@@ -943,7 +1000,11 @@ class CandidateController extends Controller
                 if ($len < 7 || $len > 15) $fail('Mobile must be 7–15 digits.');
             }],
             'current_address'     => 'nullable|string|max:500',
-            'qualification'       => 'nullable|string|max:191',
+            // Qualification: letters/digits/spaces plus the punctuation real
+            // qualifications use (e.g. "B.Sc (Hons)", "B.E. / M.E."). Must hold
+            // at least one letter so junk like "!@#$%^TGBFv67" is rejected even
+            // if it slips past the SPA validator (HRMS-BUG).
+            'qualification'       => ['nullable', 'string', 'max:191', 'regex:/^[A-Za-z0-9 .,\/&()+\-]*$/', 'regex:/[A-Za-z]/'],
             'experience_years'    => 'nullable|numeric|min:0|max:99.99',
             'mode_of_transport'   => ['nullable', Rule::in(self::TRANSPORT_MODES)],
             'distance_km'         => 'nullable|numeric|min:0|max:99999.99',

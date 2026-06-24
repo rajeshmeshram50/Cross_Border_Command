@@ -17,10 +17,54 @@ use Illuminate\Validation\Rule;
 class ExpenseClaimController extends Controller
 {
     private const STATUSES = ['pending', 'approved', 'rejected'];
+    public function categories(Request $request)
+    {
+        $user = $request->user();
+        $q = \App\Models\Masters\ExpenseCategories::query()
+            ->where('status', 'Active')
+            ->orderBy('name');
 
-    /* ============================================================ */
-    /*  LIST                                                        */
-    /* ============================================================ */
+        $this->applyCategoryScope($q, $user, $request->integer('branch_id') ?: null);
+
+        return response()->json(
+            $q->get(['id', 'name', 'code', 'monthly_limit', 'yearly_limit'])
+        );
+    }
+    private function applyCategoryScope($q, $user, ?int $branchFilter): void
+    {
+        if (!$user) { $q->whereRaw('1 = 0'); return; }
+
+        if ($user->user_type === 'super_admin') {
+            if ($branchFilter !== null) $q->where('branch_id', $branchFilter);
+            return;
+        }
+
+        $clientId = $user->client_id;
+
+        if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
+            $q->where(function ($w) use ($clientId) {
+                $w->whereNull('client_id')->orWhere('client_id', $clientId);
+            });
+            $this->applySwitcherBranchFilter($q, $user, $branchFilter);
+            return;
+        }
+
+        if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
+            $branchId = $user->branch_id;
+            $q->where(function ($w) use ($clientId, $branchId) {
+                $w->whereNull('client_id')
+                  ->orWhere(function ($ww) use ($clientId, $branchId) {
+                      $ww->where('client_id', $clientId)
+                         ->where(function ($wb) use ($branchId) {
+                             $wb->whereNull('branch_id')->orWhere('branch_id', $branchId);
+                         });
+                  });
+            });
+            return;
+        }
+
+        $q->whereRaw('1 = 0');
+    }
 
     public function index(Request $request)
     {
@@ -30,9 +74,7 @@ class ExpenseClaimController extends Controller
             $scope = 'mine';
         }
 
-        // Frontend sometimes sends the EMP- code in the employee_id query
-        // (because that's what's in the URL). Resolve to a numeric id up
-        // front so downstream filters work uniformly.
+
         $employeeIdFilter = $this->resolveEmployeeId(
             $request->query('employee_id'),
             $request->query('employee_code')
@@ -53,10 +95,7 @@ class ExpenseClaimController extends Controller
         $this->applyTenantScope($q, $user, $request->integer('branch_id') ?: null);
 
         if ($scope === 'mine') {
-            // EmployeeProfile passes the profile owner's id explicitly so HR /
-            // super-admin viewing someone else's profile sees that employee's
-            // claims. When no override is supplied, fall back to the current
-            // user's own Employee.id.
+           
             $targetEmployeeId = $employeeIdFilter ?: $this->currentEmployeeId($user);
             $q->where('employee_id', $targetEmployeeId ?? -1);
         } elseif ($scope === 'team') {
