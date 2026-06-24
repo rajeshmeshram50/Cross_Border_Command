@@ -6,8 +6,8 @@ import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
-import { SegmentModal, type SegmentForm } from '../clm/ClmSegmentPage';
-import { CLM_CSS } from '../clm/clmShared';
+import { SegmentModal, type SegmentForm } from '../clm/compliance/ClmSegmentPage';
+import { CLM_CSS } from '../clm/shared/clmShared';
 import {
   readProductMasterBundle,
   writeProductMasterBundle,

@@ -10,73 +10,27 @@ use App\Models\Employee;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Attendance — face-driven punch ledger for the signed-in employee plus the
- * tenant-scoped read endpoint for HR.
- *
- * Multi-punch model:
- *   - Each tap of the camera writes a row to `attendance_punches`.
- *   - Direction strictly alternates (system-enforced, not client-trusted):
- *     first punch is always 'in', subsequent punches flip on every tap.
- *   - The parent `attendances` row holds first-in / last-out as a denormalised
- *     summary for cheap list reads; the actual timeline is the punches.
- *
- * Labels — the SPA passes one of:
- *   Check In, Step Out, Step In, Lunch Out, Lunch In, Meeting, Check Out
- * Free-text is accepted (varchar in DB) so a custom label like "Site visit"
- * still records without a schema change.
- *
- * Match threshold is 0.55 (face-api default 0.6, tightened slightly for
- * attendance) and lives server-side so a malicious client can't skip the
- * compare by sending a hand-crafted "always-match" body.
- */
+
 class AttendanceController extends Controller
 {
     private const MATCH_THRESHOLD = 0.55;
     private const DESCRIPTOR_LEN  = 128;
 
-    /**
-     * Timezone used when surfacing punch times to the SPA. The app stores
-     * UTC (Laravel default) so a face-punch at 10:48 AM IST lands in the
-     * DB as 05:18 UTC. Formatting with Carbon's default tz then echoes
-     * 05:18 back to HR, which looks like a 5h-30m time-travel bug. We
-     * convert every displayed time to this tz before formatting so the
-     * branch dashboard matches the wall-clock the employee saw.
-     *
-     * Single-region SaaS today; if you ever sell across tz boundaries,
-     * promote this to a per-client setting.
-     */
+   
     private const DISPLAY_TZ = 'Asia/Kolkata';
 
-    /**
-     * "Today" as a YYYY-MM-DD string in the display timezone — used as the
-     * business date for attendance_date columns and as the default value for
-     * /today, /daily-view, etc. Without this, a 1 AM IST punch (= 19:30 UTC
-     * previous day) lands on the wrong calendar day because Laravel's
-     * config('app.timezone') is UTC.
-     */
+   
     private static function todayLocal(): string
     {
         return now(self::DISPLAY_TZ)->toDateString();
     }
 
-    /** Whitelist of well-known activity labels. Anything not in this list is
-     *  still allowed (saved verbatim) so HR can record one-off activities,
-     *  but the SPA picks from this set so the colour mapping stays stable. */
+    
     private const KNOWN_LABELS = [
         'Check In', 'Step Out', 'Step In', 'Lunch Out', 'Lunch In',
         'Meeting', 'Check Out',
     ];
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  EMPLOYEE-FACING ENDPOINTS
-     * ───────────────────────────────────────────────────────────────── */
-
-    /**
-     * Today's attendance row for the signed-in employee, with the full punch
-     * timeline. Used by the SPA's /clock-in page to render the timeline +
-     * decide whether the next action is Clock In or Clock Out.
-     */
     public function today(Request $request)
     {
         $employee = $this->callerEmployee($request);
@@ -99,10 +53,7 @@ class AttendanceController extends Controller
         ]);
     }
 
-    /**
-     * Employee's own attendance history. Eager-loads punches so the
-     * day-by-day list can render the full timeline without N+1 queries.
-     */
+   
     public function my(Request $request)
     {
         $employee = $this->callerEmployee($request);
@@ -124,19 +75,7 @@ class AttendanceController extends Controller
         return $this->facePunch($request, expected: 'out');
     }
 
-    /**
-     * Summary view for a specific employee's profile page. Aggregates:
-     *   - today's row + punches (so the Today card renders immediately)
-     *   - month stats (present, late, missing, leave)
-     *   - paginated history for the selected month (?month=YYYY-MM)
-     *
-     * Authorisation:
-     *   - the employee viewing their OWN profile is allowed
-     *   - super_admin can see anyone
-     *   - client_admin / client_user / branch_user can see anyone in the same
-     *     tenant (mirrors the rules used by FaceBiometricController and the
-     *     EmployeeController scope helpers)
-     */
+  
     public function employeeSummary(Request $request, string $employeeId)
     {
         $user = $request->user();
@@ -251,9 +190,7 @@ class AttendanceController extends Controller
         ]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  HR / ADMIN-FACING ENDPOINT
-     * ───────────────────────────────────────────────────────────────── */
+   
 
     public function index(Request $request)
     {
@@ -308,23 +245,7 @@ class AttendanceController extends Controller
         return response()->json($q->paginate((int) $request->query('per_page', 50)));
     }
 
-    /**
-     * Daily View endpoint for the HR Attendance page.
-     *
-     * Returns every attendance-tracked employee under the current user's
-     * scope, hydrated with: today's status (or any past day via `?date=`),
-     * today's punch timeline, month-to-date KPIs (present / late / missing /
-     * compliance %), and a 30-day history log for the right-side table.
-     *
-     * Tenant scoping mirrors AttendanceController::index() — branch_user is
-     * pinned to their own branch, super_admin sees all, and a `?branch_id=`
-     * filter is honoured (for client admins) when it belongs to the caller's
-     * tenant.
-     *
-     * Shape returned is intentionally aligned with the AttendanceEmployee
-     * type in resources/js/pages/hrms/HrAttendance.tsx so the SPA can
-     * consume the payload directly without a translation layer.
-     */
+    
     public function dailyView(Request $request)
     {
         $user = $request->user();
@@ -513,15 +434,6 @@ class AttendanceController extends Controller
         return response()->json($out);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  DAILY-VIEW HELPERS
-     * ───────────────────────────────────────────────────────────────── */
-
-    /**
-     * Parse a shift string like "General (09:00 – 18:00)" or "Night (21:00 -
-     * 06:00)" into ["09:00", "18:00"]. Returns [null, null] when no parse.
-     * Accepts both en-dash and hyphen separators.
-     */
     private function parseShiftWindow(string $shift): array
     {
         if ($shift === '') return [null, null];
@@ -548,13 +460,7 @@ class AttendanceController extends Controller
         return ($th * 60 + $tm) - ($fh * 60 + $fm);
     }
 
-    /**
-     * Decompose a weekly-off label like "Sun" or "Sat, Sun" into a set of
-     * Carbon dayOfWeek integers (Sun = 0 .. Sat = 6). When the label is
-     * unparseable (empty, "Week Off Policy", "—", etc.) we default to
-     * **Sunday only** — that's the most common Indian work-week and keeps
-     * the calendar from showing every weekend as Absent.
-     */
+   
     private function parseWeeklyOff(string $label): array
     {
         $map = ['sun' => 0, 'mon' => 1, 'tue' => 2, 'wed' => 3, 'thu' => 4, 'fri' => 5, 'sat' => 6];
@@ -569,16 +475,7 @@ class AttendanceController extends Controller
         return $set;
     }
 
-    /**
-     * Resolve the day-level status string surfaced to the SPA.
-     *
-     * The face-clock flow always writes status='Present' on the first punch
-     * (it doesn't know the shift schedule), so we have to promote it to
-     * 'Late' here when the actual first-in is significantly after the
-     * employee's shift start. Without this every late arriver still showed
-     * a green Present pill — the late minutes were known but the label
-     * was lying.
-     */
+   
     private function resolveDayStatus(?Attendance $row, bool $weeklyOff, ?string $shiftStart, string $date): string
     {
         if ($row && !empty($row->status)) {
@@ -600,7 +497,7 @@ class AttendanceController extends Controller
         return 'Absent';
     }
 
-    /** Two-letter initials from a display name. */
+   
     private function initials(string $name): string
     {
         $name = trim($name);
@@ -611,7 +508,7 @@ class AttendanceController extends Controller
         return strtoupper($first . $second);
     }
 
-    /** Map AttendancePunch rows to the PunchEvent shape the SPA renders. */
+    
     private function renderPunches($punches): array
     {
         $out = [];
@@ -655,17 +552,7 @@ class AttendanceController extends Controller
         return $out;
     }
 
-    /**
-     * Build the Logs & Requests history rows for the entire [from, to]
-     * window (inclusive), one row per day. Days with an Attendance row use
-     * its real status/punches; days WITHOUT a row are synthesised as
-     * "Weekly Off" (if the day matches the weekly_off set) or "Absent".
-     *
-     * Filling in every day is what makes the month range pills (APR / MAR
-     * / FEB / …) and the Calendar tab actually useful — without it the
-     * table only shows the handful of days the employee happened to
-     * punch, and absences look identical to "no data".
-     */
+  
     private function buildHistoryLogs($rows, Employee $emp, ?string $shiftStart, int $expectedMinutes, array $weeklyOffSet, string $from, string $to): array
     {
         // Index real Attendance rows by ISO date for O(1) lookup as we
@@ -768,17 +655,7 @@ class AttendanceController extends Controller
         return $out;
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  CORE — face punch
-     * ───────────────────────────────────────────────────────────────── */
-
-    /**
-     * Verify the face, then write a single punch and recompute the daily
-     * summary. `expected` is the direction the SPA SAYS this is — we don't
-     * blindly trust it; we look at the last punch and verify the expected
-     * direction matches the next valid one. Mismatch = 422 so the user can't
-     * accidentally clock in twice in a row.
-     */
+  
     private function facePunch(Request $request, string $expected)
     {
         $data = $request->validate([
@@ -887,11 +764,7 @@ class AttendanceController extends Controller
         });
     }
 
-    /**
-     * Refresh `check_in_at` / `check_out_at` on the parent Attendance row
-     * from the punch ledger. Keeps the cheap "first in / last out" denorm
-     * accurate even after edits / deletions on punches.
-     */
+ 
     private function recomputeSummary(Attendance $attendance): void
     {
         $firstIn  = AttendancePunch::where('attendance_id', $attendance->id)
@@ -917,9 +790,7 @@ class AttendanceController extends Controller
         ]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  HELPERS
-     * ───────────────────────────────────────────────────────────────── */
+    
 
     private function callerEmployee(Request $request): Employee
     {

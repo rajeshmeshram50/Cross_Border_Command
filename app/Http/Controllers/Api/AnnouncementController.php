@@ -21,14 +21,14 @@ class AnnouncementController extends Controller
 {
     public function __construct(private AnnouncementMailer $announcementMailer) {}
 
-    /** Eager-loads used by every read endpoint. */
+    
     private const WITH = [
         'client:id,org_name',
         'branch:id,name',
         'creator:id,name,user_type',
     ];
 
-    /** Module slug used for permission checks — matches ModuleSeeder. */
+   
     private const MODULE_SLUG = 'hr.broadcast';
 
     private const TYPES        = ['General', 'Policy', 'Urgent'];
@@ -48,9 +48,7 @@ class AnnouncementController extends Controller
     {
         $this->authorize($request, 'can_view');
 
-        // Re-classify Active → Expired (and Scheduled → Active when due) on
-        // the fly so the list reflects the right lifecycle status without a
-        // background scheduler. Runs against tenant-scoped rows only.
+       
         $this->refreshLifecycleStatuses($request->user());
 
         $q = Announcement::query()->with(self::WITH);
@@ -86,10 +84,7 @@ class AnnouncementController extends Controller
         ]);
     }
 
-    /**
-     * Aggregate counts driving the KPI strip on the list page (Total /
-     * Active / Scheduled / Draft / Expired). Single grouped query.
-     */
+  
     public function stats(Request $request)
     {
         $this->authorize($request, 'can_view');
@@ -114,9 +109,7 @@ class AnnouncementController extends Controller
         ]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  STORE / UPDATE / DESTROY
-     * ───────────────────────────────────────────────────────────────── */
+   
 
     public function store(Request $request)
     {
@@ -127,8 +120,7 @@ class AnnouncementController extends Controller
             $auth = $request->user();
             [$clientId, $branchId] = $this->resolveOwnership($request);
 
-            // Cache the recipient count so the list view can render it
-            // without re-counting on every read.
+           
             $data['audience_count'] = $this->computeAudienceCount(
                 $data['audience_type'] ?? 'all_employees',
                 $data['audience_role_ids'] ?? [],
@@ -147,8 +139,6 @@ class AnnouncementController extends Controller
                 'status'     => $this->resolveLifecycleStatus($data),
             ]);
 
-            // Persist optional attachment AFTER the row is created so we have
-            // an id to scope the file under (announcements/c{client}/{id}/...).
             $row = Announcement::create($payload);
             if ($request->hasFile('attachment')) {
                 [$path, $orig] = $this->storeAttachment($request->file('attachment'), $clientId, $row->id);
@@ -157,9 +147,7 @@ class AnnouncementController extends Controller
 
             $row->load(self::WITH);
 
-            // Fire the email blast once the row is live. Scheduled / Draft
-            // never mail here — they'll be re-evaluated on the publish action
-            // that promotes them to Active.
+         
             if ($row->status === 'Active') {
                 $this->announcementMailer->sendForAnnouncement($row, $auth);
             }
@@ -175,7 +163,7 @@ class AnnouncementController extends Controller
 
         $data = $this->validatePayload($request, $row->id);
 
-        // Re-evaluate audience count if any audience field changed.
+       
         if (
             array_key_exists('audience_type', $data) ||
             array_key_exists('audience_role_ids', $data) ||
@@ -192,7 +180,7 @@ class AnnouncementController extends Controller
             );
         }
 
-        // Replace the attachment if a new file came in.
+       
         $oldPath = $row->attachment_path;
         if ($request->hasFile('attachment')) {
             [$path, $orig] = $this->storeAttachment($request->file('attachment'), $row->client_id, $row->id);
@@ -200,14 +188,12 @@ class AnnouncementController extends Controller
             $data['attachment_original_name'] = $orig;
         }
 
-        // Recompute lifecycle status after applying the diff.
+    
         $merged = array_merge($row->toArray(), $data);
         $data['status'] = $this->resolveLifecycleStatus($merged);
         $data['updated_by'] = $request->user()?->id;
 
-        // Guard the Draft → Active transition: publishing requires the
-        // mandatory content. Drafts may be saved blank, but a one-click
-        // "Publish Now" must not push an empty announcement live.
+
         if ($row->status !== 'Active' && $data['status'] === 'Active') {
             $errors = [];
             if (trim((string) ($merged['title'] ?? '')) === '')       $errors['title'] = ['The title is required to publish.'];
@@ -226,10 +212,6 @@ class AnnouncementController extends Controller
 
         $row->load(self::WITH);
 
-        // Fire the email only when this update actually publishes the
-        // announcement (Draft/Scheduled → Active). Editing an already-Active
-        // row must NOT re-blast every recipient, otherwise a typo fix would
-        // spam everyone again.
         if ($previousStatus !== 'Active' && $row->status === 'Active') {
             $this->announcementMailer->sendForAnnouncement($row, $request->user());
         }
@@ -248,10 +230,7 @@ class AnnouncementController extends Controller
         return response()->json(['message' => 'Announcement removed.']);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  HELPERS
-     * ───────────────────────────────────────────────────────────────── */
-
+  
     private function authorize(Request $request, string $perm): void
     {
         $user = $request->user();

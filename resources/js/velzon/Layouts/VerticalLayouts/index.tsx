@@ -195,7 +195,11 @@ const VerticalLayout = (props : any) => {
                                     <li className="nav-item">
                                         <Link
                                             onClick={item.click}
-                                            className="nav-link menu-link"
+                                            // cbc-has-sub: explicit marker for items that actually have a
+                                            // dropdown. The two-column caret keys off this class instead of
+                                            // aria-expanded, which the activation JS stamps onto flat active
+                                            // items too (causing stray carets on Dashboard etc.).
+                                            className="nav-link menu-link cbc-has-sub"
                                             to={item.link ? item.link : "/#"}
                                             aria-expanded={item.stateVariables}
                                             data-path-prefix={item.pathPrefix}

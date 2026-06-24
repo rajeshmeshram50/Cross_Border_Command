@@ -129,19 +129,19 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
                             <div className="navbar-brand-box horizontal-logo align-self-center">
                                 <Link to="/" className="logo logo-dark">
                                     <span className="logo-sm">
-                                        <img src={headerLogoSm} alt="" style={{ height: '50px', width: 'auto', objectFit: 'contain' }} />
+                                        <img src={headerLogoSm} alt="" style={{ height: '50px', maxWidth: '100%', width: 'auto', objectFit: 'contain' }} />
                                     </span>
                                     <span className="logo-lg">
-                                        <img src={headerLogoDark} alt="" style={{ height: '50px', width: 'auto', objectFit: 'contain' }} />
+                                        <img src={headerLogoDark} alt="" style={{ height: '50px', maxWidth: '100%', width: 'auto', objectFit: 'contain' }} />
                                     </span>
                                 </Link>
 
                                 <Link to="/" className="logo logo-light">
                                     <span className="logo-sm">
-                                        <img src={headerLogoSm} alt="" style={{ height: '50px', width: 'auto', objectFit: 'contain' }} />
+                                        <img src={headerLogoSm} alt="" style={{ height: '50px', maxWidth: '100%', width: 'auto', objectFit: 'contain' }} />
                                     </span>
                                     <span className="logo-lg">
-                                        <img src={headerLogoLight} alt="" style={{ height: '50px', width: 'auto', objectFit: 'contain' }} />
+                                        <img src={headerLogoLight} alt="" style={{ height: '50px', maxWidth: '100%', width: 'auto', objectFit: 'contain' }} />
                                     </span>
                                 </Link>
                             </div>
