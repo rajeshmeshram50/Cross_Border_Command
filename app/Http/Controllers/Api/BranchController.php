@@ -44,12 +44,7 @@ class BranchController extends Controller
             $query->where('client_id', $request->query('client_id'));
         }
 
-        // Hide the auto-created "Head Office" placeholder branch that
-        // ClientController stamps on signup so the client_admin user has a
-        // branch_id FK target. It's an internal record, not a real branch the
-        // user manages — so it should not appear in the branches list.
-        // Match BOTH the auto code ('HO') and the auto name pattern so a
-        // legitimate user-created branch with code 'HO' isn't filtered.
+        
         if (!$request->boolean('include_head_office')) {
             $query->where(function ($q) {
                 $q->where('code', '!=', 'HO')
@@ -74,10 +69,7 @@ class BranchController extends Controller
             $query->where('branch_type', $request->query('type'));
         }
 
-        // BranchSwitcher narrowing — when user picks a specific branch from
-        // the dropdown, scope the list to that one branch. Validates the id
-        // belongs to the user's own client so a stale localStorage value
-        // from a previous login can't leak across tenants.
+
         if ($branchFilter = $request->integer('branch_id') ?: null) {
             $belongsToClient = $clientId
                 ? Branch::where('id', $branchFilter)->where('client_id', $clientId)->exists()
@@ -624,11 +616,7 @@ class BranchController extends Controller
             && str_contains($e->getMessage(), 'users_email_unique');
     }
 
-    /**
-     * Indian GSTIN and PAN are uppercase by spec. Canonicalize them on the
-     * way in so the unique check, the regex format check, and the stored
-     * value all see the same string regardless of how the user typed it.
-     */
+ 
     private function normalizeGstPanInput(Request $request): void
     {
         $patch = [];
@@ -687,10 +675,7 @@ class BranchController extends Controller
             ->delete();
     }
 
-    /**
-     * Normalize a stored value (legacy "/storage/..." URL or already-relative
-     * path) to a disk-relative path suitable for Storage::delete().
-     */
+    
     private function relativePath(string $stored): string
     {
         if (preg_match('#^https?://#i', $stored)) {
@@ -704,17 +689,7 @@ class BranchController extends Controller
         return $stored;
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  AUTO-CODE — BR-### sequential, per tenant
-     *
-     *  Two endpoints share the same generator: a read-only `nextCode`
-     *  used by the SPA to pre-fill the Branch Code field, and the
-     *  row-locked `allocateCode` used inside store() so two concurrent
-     *  creates can't both grab BR-005.
-     *
-     *  Format intentionally mirrors HiringRequest's HRQ-### so codes
-     *  across the platform read with the same visual rhythm.
-     * ───────────────────────────────────────────────────────────────── */
+
 
     public function nextCode(Request $request)
     {
@@ -756,28 +731,13 @@ class BranchController extends Controller
         return 'BR-' . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
     }
 
-    /* ──────────────────────────────────────────────────────────────────
-     * GET /branches/form-bundle
-     *
-     * Bundle every master dropdown the BranchForm needs into ONE response.
-     * Replaces 3 separate round-trips on every modal open:
-     *   /master/countries, /master/states, /branches/next-code
-     *
-     * `next_code` is computed per-tenant (uses the caller's client_id) so
-     * it CANNOT be cached server-side across users — but countries/states
-     * are static and safe to cache for 5 min. We split the response: the
-     * cacheable masters go through Cache::remember; next_code is computed
-     * fresh on every request and merged in afterwards.
-     * ────────────────────────────────────────────────────────────── */
+    
     public function formBundle(Request $request)
     {
         $user = $request->user();
         $cacheKey = \App\Support\MasterBundleCache::key('branch:form-bundle:masters', $user?->id);
 
-        // Masters portion — cached. Countries + states are global lookups
-        // but MasterVisibility::applyReadScope is still applied so any
-        // tenant-tagged rows (client_id != null) are filtered correctly,
-        // matching the canonical /master/{slug} gate in MasterController.
+       
         $masters = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user) {
             $scope = fn ($q) => \App\Support\MasterVisibility::applyReadScope($q, $user);
             return [
@@ -794,8 +754,7 @@ class BranchController extends Controller
             ];
         });
 
-        // next_code — must be computed fresh per request because branch
-        // codes increment as new branches are created. Not cacheable.
+       
         $clientId = $user?->client_id;
         $nextCode = $clientId
             ? $this->peekNextBranchCode($clientId)
