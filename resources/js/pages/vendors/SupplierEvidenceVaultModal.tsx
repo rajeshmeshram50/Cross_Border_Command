@@ -554,7 +554,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           </div>
         </div>
 
-        {showSkeleton ? <VaultSkeleton /> : (<>
+        {showSkeleton ? <VaultSkeleton /> : (<div className="cev-scroll">
         {/* ─── KPI STRIP — full-width static stat row (flat columns split by
              thin dividers, animated top accent line; no horizontal scroll). */}
         <div className="cev-kpi-outer">
@@ -682,7 +682,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                            onSendTradeDoc={(d) => { if (d.db_id) { setSendKind('trade'); setSendDocIds([d.db_id]); } }}
                            onRemindTradeDoc={handleRemind} />}
         </div>
-        </>)}
+        </div>)}
 
         {/* ─── FOOTER ─── */}
         <div className="cev-footer">

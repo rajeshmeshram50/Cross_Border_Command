@@ -2065,6 +2065,22 @@ export const CEV_CSS = `
 .cev-body::-webkit-scrollbar { width: 8px; }
 .cev-body::-webkit-scrollbar-thumb { background: #67e8f9; border-radius: 99px; }
 .cev-body::-webkit-scrollbar-thumb:hover { background: #06b6d4; }
+/* Unified scroller — KPIs + group cards + toggle + tabs + table scroll together
+   between the fixed header and footer, so a short/zoomed viewport (or a long
+   table) can reach ALL the content instead of clipping the strip above the
+   table. Only present in the Supplier vault; the customer modal has no
+   .cev-scroll element so its layout is unchanged. */
+.cev-scroll {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column;
+  scrollbar-width: thin; scrollbar-color: #67e8f9 transparent;
+}
+.cev-scroll::-webkit-scrollbar { width: 8px; }
+.cev-scroll::-webkit-scrollbar-thumb { background: #67e8f9; border-radius: 99px; }
+.cev-scroll::-webkit-scrollbar-thumb:hover { background: #06b6d4; }
+/* Inside the unified scroller the table area flows naturally (the scroller owns
+   the overflow) but still grows to fill when the content is short. */
+.cev-scroll .cev-body { flex: 1 0 auto; overflow: visible; }
 /* Shipment tabs: ONE combined card like Standard Docs — section header fused to
    a Customer=/≠Consignee toggle band, fused to the table (no gaps). */
 .cev-body-ship { gap: 0; }
