@@ -53,7 +53,11 @@ class ClmSignatureController extends Controller
         if (!$user) abort(401);
 
         $data = $request->validate([
-            'trade_doc_id' => 'required|integer|exists:clm_trade_doc_library,id',
+            'trade_doc_id' => 'required_without:agreement_id|integer|exists:clm_trade_doc_library,id',
+            // Supplier (Vendor) agreement preview — clm_agreement_library id,
+            // mutually exclusive with trade_doc_id. Renders through the same
+            // renderPdf path so the modal preview matches what gets sent.
+            'agreement_id' => 'required_without:trade_doc_id|integer|exists:clm_agreement_library,id',
             'party_id'     => 'required|integer',
             'model_name'   => 'nullable|string|in:Customer,Consignee,Vendor',
             // Per-render overrides for the page-shell zones. When the
@@ -73,7 +77,12 @@ class ClmSignatureController extends Controller
         ]);
         $modelName = $data['model_name'] ?? 'Customer';
 
-        $doc   = ClmTradeDocLibrary::where('client_id', $user->client_id)->findOrFail($data['trade_doc_id']);
+        $doc   = !empty($data['agreement_id'])
+            ? tap(
+                ClmAgreementLibrary::where('client_id', $user->client_id)->findOrFail($data['agreement_id']),
+                fn ($a) => $a->name = $a->title,   // alias title→name for the shared renderer
+              )
+            : ClmTradeDocLibrary::where('client_id', $user->client_id)->findOrFail($data['trade_doc_id']);
         $party = $this->loadParty($modelName, (int) $data['party_id'], $user);
         $lead  = !empty($data['lead_id'])
             ? Lead::where('client_id', $user->client_id)->find($data['lead_id'])
@@ -125,8 +134,15 @@ class ClmSignatureController extends Controller
         }
 
         $data = $request->validate([
-            'trade_doc_ids'        => 'required|array|min:1|max:10',
+            'trade_doc_ids'        => 'required_without:agreement_ids|array|max:10',
             'trade_doc_ids.*'      => 'integer|exists:clm_trade_doc_library,id',
+            // Supplier (Vendor) agreement send — clm_agreement_library ids in
+            // place of trade-doc ids. Mutually exclusive with trade_doc_ids;
+            // runs through the SAME render → Zoho → persist flow, just tagged
+            // document_type=agreement so the vault overlays it on the
+            // Agreements drill-down instead of Trade Documents.
+            'agreement_ids'        => 'required_without:trade_doc_ids|array|max:10',
+            'agreement_ids.*'      => 'integer|exists:clm_agreement_library,id',
             'party_id'             => 'required|integer',
             'model_name'           => 'nullable|string|in:Customer,Consignee,Vendor',
             // Optional lead scope. Sent from the Sales-Matrix Trade Documents
@@ -165,17 +181,27 @@ class ClmSignatureController extends Controller
             ? Lead::where('client_id', $user->client_id)->find($data['lead_id'])
             : null;
 
-        $docs = ClmTradeDocLibrary::where('client_id', $user->client_id)
-            ->whereIn('id', $data['trade_doc_ids'])
+        // Agreement send (supplier vault) vs trade-doc send. Both libraries
+        // expose the columns renderPdf needs (content, code, header/footer
+        // config); agreements just name their title `title`, so alias it to
+        // `name` for the shared render/naming code below.
+        $isAgreement = !empty($data['agreement_ids']);
+        $idList      = $isAgreement ? $data['agreement_ids'] : ($data['trade_doc_ids'] ?? []);
+        $docs = ($isAgreement ? ClmAgreementLibrary::query() : ClmTradeDocLibrary::query())
+            ->where('client_id', $user->client_id)
+            ->whereIn('id', $idList)
             ->get()
             ->keyBy('id');
+        if ($isAgreement) {
+            $docs->each(function ($a) { $a->name = $a->title; });
+        }
 
         if ($docs->isEmpty()) {
             return response()->json(['status' => false, 'message' => 'No accessible documents in the selection.'], 422);
         }
 
         // Preserve the user's chosen order, not whatever DB order we got back.
-        $orderedDocs = collect($data['trade_doc_ids'])
+        $orderedDocs = collect($idList)
             ->map(fn($id) => $docs->get($id))
             ->filter()
             ->values();
@@ -335,7 +361,7 @@ class ClmSignatureController extends Controller
             // Explicit trade-doc discriminator + optional lead scope so the
             // Sales-Matrix popup can resolve this request lead-side (mirrors
             // the agreement-send path).
-            $sigReq->document_type       = ClmSignatureRequest::DOC_TRADE;
+            $sigReq->document_type       = $isAgreement ? ClmSignatureRequest::DOC_AGREEMENT : ClmSignatureRequest::DOC_TRADE;
             $sigReq->lead_id             = $data['lead_id'] ?? null;
             $sigReq->trade_doc_id        = $orderedDocs->first()->id;
             $sigReq->trade_doc_ids       = $orderedDocs->pluck('id')->values()->all();
@@ -2154,7 +2180,7 @@ class ClmSignatureController extends Controller
      * preview + send go through identical rendering.
      */
     private function renderPdf(
-        ClmTradeDocLibrary $doc,
+        ClmTradeDocLibrary|ClmAgreementLibrary $doc,
         Model $party,
         string $modelName,
         string $requestUuid,

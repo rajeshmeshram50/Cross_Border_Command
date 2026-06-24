@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\DB;
 
 class SourcingController extends Controller
 {
-    
+
 
     private function ok($data)
     {
@@ -40,7 +40,7 @@ class SourcingController extends Controller
         return $s === 'manual' ? 'Manual Entry' : 'Product Master';
     }
 
-  
+
     private function row(SourcingTarget $t): array
     {
         $total = $t->products->count();
@@ -71,10 +71,10 @@ class SourcingController extends Controller
             ->get();
 
         return $this->ok([
-            'assigned' => $targets->filter(fn ($t) => (int) $t->assignee_id === (int) $user->id)
-                ->map(fn ($t) => $this->row($t))->values(),
-            'created'  => $targets->filter(fn ($t) => (int) $t->created_by === (int) $user->id)
-                ->map(fn ($t) => $this->row($t))->values(),
+            'assigned' => $targets->filter(fn($t) => (int) $t->assignee_id === (int) $user->id)
+                ->map(fn($t) => $this->row($t))->values(),
+            'created'  => $targets->filter(fn($t) => (int) $t->created_by === (int) $user->id)
+                ->map(fn($t) => $this->row($t))->values(),
         ]);
     }
 
@@ -87,7 +87,7 @@ class SourcingController extends Controller
             ->with(['segment:id,name', 'hsn:id,hsn_code'])
             ->orderBy('name')
             ->get()
-            ->map(fn ($p) => [
+            ->map(fn($p) => [
                 'code'    => $p->product_code,
                 'name'    => $p->name,
                 'segment' => $p->segment->name ?? '',
@@ -97,18 +97,18 @@ class SourcingController extends Controller
         return $this->ok($rows);
     }
 
-   
+
     public function teamMembers(Request $request)
     {
         $user   = $request->user();
         $branch = ($user->branch_id ?: null) ?: ($request->integer('branch_id') ?: null);
 
         $rows = User::where('client_id', $user->client_id)
-            ->when($branch, fn ($q) => $q->where('branch_id', $branch))
+            ->when($branch, fn($q) => $q->where('branch_id', $branch))
             ->where('user_type', '!=', 'super_admin')
             ->orderBy('name')
             ->get(['id', 'name', 'user_type', 'designation'])
-            ->map(fn ($u) => [
+            ->map(fn($u) => [
                 'id'   => (string) $u->id,
                 'name' => $u->name,
                 'role' => $u->designation ?: ucwords(str_replace('_', ' ', (string) $u->user_type)),
@@ -120,8 +120,8 @@ class SourcingController extends Controller
     public function formMasters(Request $request)
     {
         $user   = $request->user();
-        $scope  = fn ($q) => \App\Support\MasterVisibility::applyReadScope($q, $user);
-        $active = fn ($q) => $q->whereRaw('LOWER(status) = ?', ['active']);
+        $scope  = fn($q) => \App\Support\MasterVisibility::applyReadScope($q, $user);
+        $active = fn($q) => $q->whereRaw('LOWER(status) = ?', ['active']);
 
         return $this->ok([
             'segments'   => Segments::query()->tap($scope)->tap($active)->orderBy('name')->get(['id', 'name']),
@@ -148,7 +148,7 @@ class SourcingController extends Controller
         ]);
     }
 
-   
+
     public function nextCode(Request $request)
     {
         $user = $request->user();
@@ -156,7 +156,7 @@ class SourcingController extends Controller
         return $this->ok(['code' => sprintf('SRC-%03d', $seq)]);
     }
 
-  
+
     public function store(Request $request)
     {
         $user = $request->user();
@@ -194,7 +194,7 @@ class SourcingController extends Controller
         return $this->ok(['id' => $target->code]);
     }
 
-   
+
     public function update(Request $request, string $target)
     {
         $user = $request->user();
@@ -219,10 +219,10 @@ class SourcingController extends Controller
         // products keep their suppliers, and new rows are appended.
         $existing    = $t->products()->withCount('suppliers')->get();
         $incomingIds = collect($data['products'])
-            ->pluck('id')->filter()->map(fn ($x) => (int) $x)->all();
+            ->pluck('id')->filter()->map(fn($x) => (int) $x)->all();
 
         $blocked = $existing->first(
-            fn ($p) => $p->suppliers_count > 0 && !in_array((int) $p->id, $incomingIds, true)
+            fn($p) => $p->suppliers_count > 0 && !in_array((int) $p->id, $incomingIds, true)
         );
         if ($blocked) {
             return response()->json([
@@ -266,7 +266,7 @@ class SourcingController extends Controller
             }
 
             // Drop the (unmapped) products the user removed from the list.
-            $existing->reject(fn ($p) => in_array((int) $p->id, $keptIds, true))
+            $existing->reject(fn($p) => in_array((int) $p->id, $keptIds, true))
                 ->each(function ($p) {
                     $p->suppliers()->delete();
                     $p->delete();
@@ -281,13 +281,13 @@ class SourcingController extends Controller
         $t = $this->target($request, $target);
         // suppliers_count drives the edit form's per-row lock: a product already
         // mapped to a supplier can't be removed (only its price/clarity edited).
-        $t->load(['products' => fn ($q) => $q->withCount('suppliers')]);
+        $t->load(['products' => fn($q) => $q->withCount('suppliers')]);
 
-        $clarity = fn ($p) => $p->clarity_type
+        $clarity = fn($p) => $p->clarity_type
             ? ['type' => $p->clarity_type, 'val' => $p->clarity_value]
             : null;
 
-        $master = $t->products->where('source', 'master')->values()->map(fn ($p) => [
+        $master = $t->products->where('source', 'master')->values()->map(fn($p) => [
             'id'      => $p->id,
             'mapped'  => $p->suppliers_count > 0,
             'code'    => $p->code,
@@ -298,7 +298,7 @@ class SourcingController extends Controller
             'clarity' => $clarity($p),
         ]);
 
-        $manual = $t->products->where('source', 'manual')->values()->map(fn ($p) => [
+        $manual = $t->products->where('source', 'manual')->values()->map(fn($p) => [
             'id'      => $p->id,
             'mapped'  => $p->suppliers_count > 0,
             'name'    => $p->name,
@@ -317,13 +317,13 @@ class SourcingController extends Controller
         ]);
     }
 
- 
+
     public function report(Request $request, string $target)
     {
         $t = $this->target($request, $target);
-        $t->load(['products' => fn ($q) => $q->withCount('suppliers')]);
+        $t->load(['products' => fn($q) => $q->withCount('suppliers')]);
 
-        $products = $t->products->map(fn ($p) => [
+        $products = $t->products->map(fn($p) => [
             'id'            => $p->id,
             'type'          => $p->source,
             'code'          => $p->code ?? '',
@@ -369,7 +369,7 @@ class SourcingController extends Controller
             ->with('segment:id,name')
             ->orderBy('company_name')
             ->get()
-            ->map(fn ($v) => [
+            ->map(fn($v) => [
                 'id'      => (string) $v->id,
                 'name'    => $v->company_name,
                 'segment' => $v->segment->name ?? '',
@@ -381,7 +381,86 @@ class SourcingController extends Controller
         return $this->ok($rows);
     }
 
-    
+    /* ── list the P2P "New Supplier" directory (Dev Tools tab) ───────────── */
+    // GET /p2p/new-suppliers — every inline-created supplier (p2p_suppliers),
+    // i.e. those registered via the Map Supplier Directory "New Supplier" flow,
+    // NOT the Vendor master. Tenant-scoped.
+    public function newSuppliers(Request $request)
+    {
+        $user = $request->user();
+        if (!$user || !$user->client_id) return $this->ok([]);
+
+        $suppliers = P2pSupplier::where('client_id', $user->client_id)
+            ->orderByDesc('id')
+            ->get();
+
+        // How many DISTINCT sourcing targets each supplier is mapped into.
+        $counts = DB::table('p2p_sourcing_product_suppliers as sps')
+            ->join('p2p_sourcing_products as sp', 'sp.id', '=', 'sps.sourcing_product_id')
+            ->where('sps.source', 'new')
+            ->whereNull('sps.deleted_at')
+            ->whereNull('sp.deleted_at')
+            ->whereIn('sps.supplier_id', $suppliers->pluck('id'))
+            ->groupBy('sps.supplier_id')
+            ->selectRaw('sps.supplier_id, COUNT(DISTINCT sp.sourcing_target_id) as cnt')
+            ->pluck('cnt', 'sps.supplier_id');
+
+        $rows = $suppliers->map(fn($s) => [
+            'id'             => $s->id,
+            'name'           => $s->name,
+            'segment'        => $s->segment,
+            'contact'        => $s->contact,
+            'mobile'         => $s->mobile,
+            'email'          => $s->email,
+            'address'        => $s->address,
+            'country'        => $s->country,
+            'state'          => $s->state,
+            'state_code'     => $s->state_code,
+            'city'           => $s->city,
+            'gmaps'          => $s->gmaps,
+            'sourcing_count' => (int) ($counts[$s->id] ?? 0),
+            'created_at'     => optional($s->created_at)->toIso8601String(),
+        ]);
+
+        return $this->ok($rows);
+    }
+
+    /* ── sourcings that use a given New Supplier (Dev Tools drill-down) ───── */
+    // GET /p2p/new-suppliers/{supplier}/sourcings — each distinct sourcing
+    // target this supplier is mapped into, with the product(s) it was mapped on.
+    public function supplierSourcings(Request $request, int $supplier)
+    {
+        $user = $request->user();
+        if (!$user || !$user->client_id) return $this->ok([]);
+
+        // Tenant guard: the supplier must belong to this client.
+        $sup = P2pSupplier::where('client_id', $user->client_id)->find($supplier);
+        if (!$sup) return $this->ok([]);
+
+        $rows = DB::table('p2p_sourcing_product_suppliers as sps')
+            ->join('p2p_sourcing_products as sp', 'sp.id', '=', 'sps.sourcing_product_id')
+            ->join('p2p_sourcing_targets as t', 't.id', '=', 'sp.sourcing_target_id')
+            ->where('sps.source', 'new')
+            ->where('sps.supplier_id', $supplier)
+            ->where('t.client_id', $user->client_id)
+            ->whereNull('sps.deleted_at')
+            ->whereNull('sp.deleted_at')
+            ->whereNull('t.deleted_at')
+            ->orderByDesc('t.id')
+            ->get(['t.id as target_id', 't.code as code', 't.due_date as due_date', 'sp.name as product']);
+
+        // One entry per sourcing target, with the product names mapped under it.
+        $grouped = $rows->groupBy('target_id')->map(fn($g) => [
+            'code'     => $g->first()->code,
+            'due_date' => $g->first()->due_date,
+            'products' => $g->pluck('product')->filter()->unique()->values(),
+        ])->values();
+
+        return $this->ok($grouped);
+    }
+
+    /* ── 10. map a supplier to a product ─────────────────────────────────── */
+    // POST /p2p/sourcing-targets/{target}/products/{product}/suppliers
     public function mapSupplier(Request $request, string $target, int $product)
     {
         $user = $request->user();
@@ -471,13 +550,13 @@ class SourcingController extends Controller
         return $this->ok(['supplierCount' => $p->suppliers()->count()]);
     }
 
-    
+
     public function mappedSuppliers(Request $request, string $target, int $product)
     {
         $t = $this->target($request, $target);
         $p = $t->products()->where('id', $product)->firstOrFail();
 
-        $rows = $p->suppliers()->latest()->get()->map(fn ($s) => [
+        $rows = $p->suppliers()->latest()->get()->map(fn($s) => [
             'id'      => (string) $s->id,
             'name'    => $s->name,
             'segment' => $s->segment ?? '',
@@ -491,7 +570,7 @@ class SourcingController extends Controller
         return $this->ok($rows);
     }
 
-    
+
 
     private function validatePayload(Request $request): array
     {

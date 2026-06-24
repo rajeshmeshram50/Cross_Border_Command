@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useToast } from '../../../../contexts/ToastContext';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../../../api';
+import WorklistPager from '../../../../components/ui/WorklistPager';
 import AssignSourcingTargetModal from './AssignSourcingTargetModal';
 import SourcingReportModal from './SourcingReportModal';
 import ProductListModal from './ProductListModal';
@@ -58,10 +58,14 @@ function Progress({ products, completed }: { products: number; completed: number
 }
 
 export default function P2pBulkSourcing() {
-  const toast = useToast();
   const [tab, setTab] = useState<'assigned' | 'created'>('assigned');
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState('');
+  // Dynamic pagination: rows-per-page auto-fits the visible table height.
+  const [rpp, setRpp] = useState(PER_PAGE);
+  const [fillH, setFillH] = useState<number | undefined>(undefined);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const [stepsOpen, setStepsOpen] = useState(true);
   const [assignOpen, setAssignOpen] = useState(false);
   const [reportRow, setReportRow] = useState<SourcingRow | null>(null);
@@ -92,17 +96,38 @@ export default function P2pBulkSourcing() {
   }, [allRows, query]);
 
   const total = rows.length;
-  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
-  const safePage = Math.min(page, totalPages);
-  const startIdx = (safePage - 1) * PER_PAGE;
-  const pageRows = rows.slice(startIdx, startIdx + PER_PAGE);
-  const showingTo = Math.min(startIdx + PER_PAGE, total);
+  const pageCount = Math.max(1, Math.ceil(total / rpp));
+  const safePage = Math.min(Math.max(1, page), pageCount);
+  const startIdx = (safePage - 1) * rpp;
+  const pageRows = rows.slice(startIdx, startIdx + rpp);
 
-  const soon = (what: string) => toast.info('Coming soon', `${what} will be available once the backend is wired.`);
+  // Dynamic pagination: pick the rows-per-page that fits between the table's top
+  // and the bottom of the viewport, so the page fills the screen and spills the
+  // rest onto further pages (same behaviour as the Segment master list).
+  useEffect(() => {
+    const recompute = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;       // viewport-relative top of table
+      const THEAD = 38, ROW = 54, FOOTER = 96;           // header row + pager/footer reserve
+      const avail = window.innerHeight - top - THEAD - FOOTER;
+      const fit = Math.max(4, Math.floor(avail / ROW));
+      setRpp(prev => (prev === fit ? prev : fit));
+      const fh = Math.max(0, window.innerHeight - top - 64);
+      setFillH(prev => (prev === fh ? prev : fh));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    const ro = new ResizeObserver(recompute);
+    if (rootRef.current) ro.observe(rootRef.current);
+    window.addEventListener('resize', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+  }, [rows.length, tab]);
+
   const switchTab = (t: 'assigned' | 'created') => { setTab(t); setPage(1); setQuery(''); };
 
   return (
-    <div className="bsm-teal" style={{ padding: '0 4px 8px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div className="bsm-teal" ref={rootRef} style={{ padding: '0 4px 8px', display: 'flex', flexDirection: 'column', gap: 6 }}>
 
         {/* HEADER STRIP */}
         <div className="bsm-headstrip" style={{ flexShrink: 0, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 14px', minHeight: 56, border: '1px solid rgba(6,182,212,.28)', borderRadius: 12, background: 'linear-gradient(110deg,#e0f9fd 0%,#cef8ff 20%,#d4f4f9 50%,#bff0f7 80%,#a5e9f3 100%)', boxShadow: '0 2px 0 rgba(255,255,255,.85) inset,0 4px 16px rgba(6,182,212,.15)' }}>
@@ -186,7 +211,29 @@ export default function P2pBulkSourcing() {
 
             <div className="bst-panel">
               {loading ? (
-                <div className="bst-empty"><div className="bst-empty-t">Loading sourcing targets…</div></div>
+                <div className="bst-table">
+                  <div className="bst-row bst-row--head">
+                    <span>Sr No</span><span>Sourcing ID</span><span>I Want to Source To</span>
+                    <span>Start Date</span><span>Due Date</span><span>Created By</span><span>Assigned To</span>
+                    <span className="bst-c-center">Total Products</span>
+                    <span className="bst-c-center">Sourcing Progress Status</span>
+                    <span className="bst-c-center">Action</span>
+                  </div>
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div className="bst-row" key={i}>
+                      <span><span className="bsm-sk" style={{ width: 18, height: 14 }} /></span>
+                      <span><span className="bsm-sk" style={{ width: 64, height: 18, borderRadius: 7 }} /></span>
+                      <span><span className="bsm-sk" style={{ width: 90, height: 16, borderRadius: 999 }} /></span>
+                      <span><span className="bsm-sk" style={{ width: 58, height: 12 }} /></span>
+                      <span><span className="bsm-sk" style={{ width: 58, height: 12 }} /></span>
+                      <span style={{ gap: 6 }}><span className="bsm-sk bsm-sk-circle" style={{ width: 24, height: 24 }} /><span className="bsm-sk" style={{ width: 56, height: 12 }} /></span>
+                      <span style={{ gap: 6 }}><span className="bsm-sk bsm-sk-circle" style={{ width: 24, height: 24 }} /><span className="bsm-sk" style={{ width: 56, height: 12 }} /></span>
+                      <span className="bst-c-center"><span className="bsm-sk" style={{ width: 34, height: 34, borderRadius: 10 }} /></span>
+                      <span className="bst-c-center"><span className="bsm-sk" style={{ width: 150, height: 30, borderRadius: 8 }} /></span>
+                      <span className="bst-c-center"><span className="bsm-sk" style={{ width: 120, height: 32, borderRadius: 9 }} /></span>
+                    </div>
+                  ))}
+                </div>
               ) : error ? (
                 <div className="bst-empty">
                   <div className="bst-empty-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg></div>
@@ -201,7 +248,7 @@ export default function P2pBulkSourcing() {
                 </div>
               ) : (
                 <>
-                  <div className="bst-table">
+                  <div className="bst-table" ref={scrollRef} style={{ minHeight: fillH }}>
                     <div className="bst-row bst-row--head">
                       <span>Sr No</span><span>Sourcing ID</span><span>I Want to Source To</span>
                       <span>Start Date</span><span>Due Date</span><span>Created By</span><span>Assigned To</span>
@@ -234,16 +281,7 @@ export default function P2pBulkSourcing() {
                       </div>
                     ))}
                   </div>
-                  <div className="bst-pager">
-                    <span className="bst-pg-info">Showing <b>{startIdx + 1}–{showingTo}</b> of <b>{total}</b></span>
-                    <div className="bst-pg-ctrls">
-                      <button type="button" className="bst-pg-btn" disabled={safePage === 1} onClick={() => setPage(safePage - 1)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg> Prev</button>
-                      {Array.from({ length: totalPages }, (_, idx) => idx + 1).map(p => (
-                        <button type="button" key={p} className={`bst-pg-num ${p === safePage ? 'is-active' : ''}`} onClick={() => setPage(p)}>{p}</button>
-                      ))}
-                      <button type="button" className="bst-pg-btn" disabled={safePage === totalPages} onClick={() => setPage(safePage + 1)}>Next <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></button>
-                    </div>
-                  </div>
+                  <WorklistPager total={total} page={safePage} pageSize={rpp} onPage={setPage} />
                 </>
               )}
             </div>

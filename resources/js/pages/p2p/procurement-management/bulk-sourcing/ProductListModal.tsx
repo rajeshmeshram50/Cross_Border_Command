@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
+import { useModalGuard } from './useModalGuard';
 import './bulk-sourcing.css';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -18,11 +19,20 @@ type PLProduct = {
 export type PLRow = { id: string; source: string; due: string };
 
 const fmt = (s: string) => { if (!s) return '—'; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
+/* Always show Target Price in INR. Product Master rows already carry the ₹; manual
+   entries come through as plain numbers, so prefix + thousands-format those. */
+const fmtPrice = (p: string) => {
+  if (!p && p !== '0') return '—';
+  if (String(p).trim().startsWith('₹')) return p;
+  const n = Number(String(p).replace(/,/g, ''));
+  return isNaN(n) ? p : `₹${n.toLocaleString('en-IN')}`;
+};
 
 export default function ProductListModal({ row, onClose }: { row: PLRow; onClose: () => void }) {
   const [products, setProducts] = useState<PLProduct[]>([]);
   const [tab, setTab] = useState<'master' | 'manual'>('master');
   const [loading, setLoading] = useState(true);
+  const { pulse, guardOverlay } = useModalGuard();
 
   useEffect(() => {
     setLoading(true);
@@ -42,15 +52,15 @@ export default function ProductListModal({ row, onClose }: { row: PLRow; onClose
   const rows = products.filter(p => p.type === tab);
 
   return createPortal(
-    <div id="srpt-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="srpt-box pl-box">
+    <div id="srpt-overlay" onMouseDown={guardOverlay}>
+      <div className={`srpt-box pl-box${pulse ? ' bsm-pulse' : ''}`}>
         <div className="srpt-header">
           <div className="srpt-hrow">
             <div className="srpt-title-wrap">
               <div className="srpt-hicon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg></div>
               <div className="srpt-title-block">
                 <div className="srpt-title-line">
-                  <h3 className="srpt-title">Product List</h3>
+                  <h3 className="srpt-title">Product List —</h3>
                   <span className="srpt-id-pill">{row.id}</span>
                   <span className={`srpt-badge ${allDone ? 'done' : 'prog'}`}><span className="srpt-bdot" />{allDone ? 'Completed' : 'In Progress'}</span>
                 </div>
@@ -61,9 +71,11 @@ export default function ProductListModal({ row, onClose }: { row: PLRow; onClose
           </div>
 
           <div className="pl-stats">
-            <div className="pl-stat"><div className="pl-stat-lbl">Total Products</div><div className="pl-stat-val white">{loading ? <span className="pl-skel pl-skel-num" /> : total}</div></div>
-            <div className="pl-stat"><div className="pl-stat-lbl">Completed</div><div className="pl-stat-val green">{loading ? <span className="pl-skel pl-skel-num" /> : done}</div></div>
-            <div className="pl-stat"><div className="pl-stat-lbl">Pending</div><div className="pl-stat-val amber">{loading ? <span className="pl-skel pl-skel-num" /> : pending}</div></div>
+            <div className="pl-stats-left">
+              <div className="pl-stat"><div className="pl-stat-lbl">Total Products</div><div className="pl-stat-val white">{loading ? <span className="pl-skel pl-skel-num" /> : total}</div></div>
+              <div className="pl-stat"><div className="pl-stat-lbl">Completed</div><div className="pl-stat-val green">{loading ? <span className="pl-skel pl-skel-num" /> : done}</div></div>
+              <div className="pl-stat"><div className="pl-stat-lbl">Pending</div><div className="pl-stat-val amber">{loading ? <span className="pl-skel pl-skel-num" /> : pending}</div></div>
+            </div>
             <div className="pl-stat pl-stat--prog">
               <div className="pl-stat-row">
                 <div className="pl-stat-lbl">Overall Progress</div>
@@ -95,7 +107,7 @@ export default function ProductListModal({ row, onClose }: { row: PLRow; onClose
           ) : (
             <table className="srpt-table">
               <thead><tr>
-                <th style={{ width: 40 }}>#</th>
+                <th style={{ width: 64 }}>Sr No</th>
                 {tab === 'master' && <th>Product Code</th>}
                 <th style={{ textAlign: 'left' }}>Product Name</th>
                 {tab === 'master' && <th>Segment</th>}
@@ -109,8 +121,8 @@ export default function ProductListModal({ row, onClose }: { row: PLRow; onClose
                     {tab === 'master' && <td style={{ textAlign: 'center' }}><span className="srpt-code">{p.code}</span></td>}
                     <td style={{ textAlign: 'left' }}><div className="srpt-pname">{p.name}</div></td>
                     {tab === 'master' && <td style={{ textAlign: 'center' }}><span className={`srpt-seg ${(p.segment || 'General').replace(/ /g, '-')}`}>{p.segment}</span></td>}
-                    {tab === 'master' && <td style={{ textAlign: 'center', fontFamily: 'monospace', fontSize: 11, color: '#475569' }}>{p.hsn}</td>}
-                    <td style={{ textAlign: 'center' }} className="srpt-price">{p.price}</td>
+                    {tab === 'master' && <td style={{ textAlign: 'center' }}><span className="srpt-hsn">{p.hsn}</span></td>}
+                    <td style={{ textAlign: 'center' }} className="srpt-price">{fmtPrice(p.price)}</td>
                     <td style={{ textAlign: 'center' }}><span className={`srpt-status ${p.status === 'Completed' ? 'done' : 'prog'}`} style={{ cursor: 'default' }}><span className="srpt-sdot" />{p.status}</span></td>
                   </tr>
                 ))}
@@ -120,9 +132,9 @@ export default function ProductListModal({ row, onClose }: { row: PLRow; onClose
         </div>
 
         <div className="pl-foot">
-          <span className="pl-chip pl-chip--total">{total} Total</span>
-          <span className="pl-chip pl-chip--done">{done} Completed</span>
-          <span className="pl-chip pl-chip--pend">{pending} Pending</span>
+          <span className="pl-chip pl-chip--total"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /></svg>{total} Total</span>
+          <span className="pl-chip pl-chip--done"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>{done} Completed</span>
+          <span className="pl-chip pl-chip--pend"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>{pending} Pending</span>
         </div>
       </div>
     </div>,

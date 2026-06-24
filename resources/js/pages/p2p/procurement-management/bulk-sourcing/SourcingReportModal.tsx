@@ -4,6 +4,7 @@ import { useToast } from '../../../../contexts/ToastContext';
 import api from '../../../../api';
 import MapSupplierModal from './MapSupplierModal';
 import MappedSuppliersModal from './MappedSuppliersModal';
+import { useModalGuard } from './useModalGuard';
 import './bulk-sourcing.css';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -16,6 +17,14 @@ export type ReportRow = { id: string; source: string; start: string; due: string
 type ReportProduct = { id?: number | string; type: 'master' | 'manual'; code: string; name: string; segment?: string; hsn?: string; price: string; status: 'Completed' | 'In Progress'; supplierCount?: number };
 
 const fmt = (s: string) => { if (!s) return '—'; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
+/* Always show Target Price in INR. Product Master rows already carry the ₹;
+   manual entries come as plain numbers, so prefix + thousands-format those. */
+const fmtPrice = (p: string) => {
+  if (!p && p !== '0') return '—';
+  if (String(p).trim().startsWith('₹')) return p;
+  const n = Number(String(p).replace(/,/g, ''));
+  return isNaN(n) ? p : `₹${n.toLocaleString('en-IN')}`;
+};
 const genDate = () => { const d = new Date(); return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); };
 
 const I = (children: React.ReactNode) => <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">{children}</svg>;
@@ -32,16 +41,20 @@ export default function SourcingReportModal({ row, onClose }: { row: ReportRow; 
   const toast = useToast();
   const [products, setProducts] = useState<ReportProduct[]>([]);
   const [statuses, setStatuses] = useState<('Completed' | 'In Progress')[]>([]);
+  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'master' | 'manual'>('master');
   // Per-product supplier mapping override (index → { count, name }).
   const [mapped, setMapped] = useState<Record<number, { count: number; name: string }>>({});
   const [mapIdx, setMapIdx] = useState<number | null>(null);
   const [viewIdx, setViewIdx] = useState<number | null>(null);
+  const { pulse, guardOverlay } = useModalGuard();
 
   useEffect(() => {
+    setLoading(true);
     api.get<{ data: { products: ReportProduct[] } }>(`/p2p/sourcing-targets/${row.id}/report`)
       .then(r => { const ps = r.data?.data?.products ?? []; setProducts(ps); setStatuses(ps.map(p => p.status)); })
-      .catch(() => { setProducts([]); setStatuses([]); });
+      .catch(() => { setProducts([]); setStatuses([]); })
+      .finally(() => setLoading(false));
   }, [row]);
 
   const masterCount = products.filter(p => p.type === 'master').length;
@@ -69,8 +82,8 @@ export default function SourcingReportModal({ row, onClose }: { row: ReportRow; 
   const tabRows = products.map((p, gi) => ({ p, gi })).filter(x => x.p.type === tab);
 
   return createPortal(
-    <div id="srpt-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="srpt-box">
+    <div id="srpt-overlay" onMouseDown={guardOverlay}>
+      <div className={`srpt-box${pulse ? ' bsm-pulse' : ''}`}>
         <div className="srpt-header">
           <div className="srpt-hrow">
             <div className="srpt-title-wrap">
@@ -128,12 +141,36 @@ export default function SourcingReportModal({ row, onClose }: { row: ReportRow; 
         </div>
 
         <div className="srpt-body">
-          {tabRows.length === 0 ? (
+          {loading ? (
+            <table className="srpt-table">
+              <thead><tr>
+                <th style={{ width: 64 }}>Sr No</th>{tab === 'master' && <th>Product Code</th>}<th style={{ textAlign: 'left' }}>Product Name</th>
+                {tab === 'master' && <th>Segment</th>}{tab === 'master' && <th>HSN Code</th>}
+                <th>Target Price</th><th>Product Clarity</th><th>Sourcing Status</th><th>Supplier Count</th><th style={{ textAlign: 'center' }}>Action</th>
+              </tr></thead>
+              <tbody>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <tr className="srpt-row" key={i}>
+                    <td style={{ textAlign: 'center' }}><span className="bsm-sk" style={{ width: 22, height: 22, borderRadius: 7 }} /></td>
+                    {tab === 'master' && <td style={{ textAlign: 'center' }}><span className="bsm-sk" style={{ width: 46, height: 12 }} /></td>}
+                    <td><span className="bsm-sk" style={{ width: 130, height: 13 }} /></td>
+                    {tab === 'master' && <td style={{ textAlign: 'center' }}><span className="bsm-sk" style={{ width: 72, height: 16, borderRadius: 999 }} /></td>}
+                    {tab === 'master' && <td style={{ textAlign: 'center' }}><span className="bsm-sk" style={{ width: 62, height: 16, borderRadius: 6 }} /></td>}
+                    <td style={{ textAlign: 'center' }}><span className="bsm-sk" style={{ width: 50, height: 12 }} /></td>
+                    <td style={{ textAlign: 'center' }}><span className="bsm-sk" style={{ width: 16, height: 12 }} /></td>
+                    <td style={{ textAlign: 'center' }}><span className="bsm-sk" style={{ width: 82, height: 20, borderRadius: 999 }} /></td>
+                    <td style={{ textAlign: 'center' }}><span className="bsm-sk" style={{ width: 24, height: 22, borderRadius: 7 }} /></td>
+                    <td style={{ textAlign: 'center' }}><span className="bsm-sk" style={{ width: 130, height: 28, borderRadius: 8 }} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : tabRows.length === 0 ? (
             <div className="srpt-empty-tab"><svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" /></svg><p>No {tab === 'master' ? 'Product Master' : 'Manual Entry'} products</p></div>
           ) : (
             <table className="srpt-table">
               <thead><tr>
-                <th style={{ width: 40 }}>#</th>
+                <th style={{ width: 64 }}>Sr No</th>
                 {tab === 'master' && <th>Product Code</th>}
                 <th style={{ textAlign: 'left' }}>Product Name</th>
                 {tab === 'master' && <th>Segment</th>}
@@ -153,7 +190,7 @@ export default function SourcingReportModal({ row, onClose }: { row: ReportRow; 
                       <td style={{ textAlign: 'left' }}><div className="srpt-pname">{p.name}</div></td>
                       {tab === 'master' && <td style={{ textAlign: 'center' }}><span className={`srpt-seg ${(p.segment || 'General').replace(/ /g, '-')}`}>{p.segment}</span></td>}
                       {tab === 'master' && <td style={{ textAlign: 'center', fontFamily: 'monospace', fontSize: 11, color: '#475569' }}>{p.hsn}</td>}
-                      <td style={{ textAlign: 'center' }} className="srpt-price">{p.price}</td>
+                      <td style={{ textAlign: 'center' }} className="srpt-price">{fmtPrice(p.price)}</td>
                       <td style={{ textAlign: 'center' }}><span className="srpt-attach-dash">—</span></td>
                       <td style={{ textAlign: 'center' }}><span className={`srpt-status ${doneP ? 'done' : 'prog'}`} onClick={() => toggle(gi)} title="Click to toggle status" style={{ cursor: 'pointer' }}><span className="srpt-sdot" />{doneP ? 'Completed' : 'In Progress'}</span></td>
                       <td style={{ textAlign: 'center' }}>{supCount > 0

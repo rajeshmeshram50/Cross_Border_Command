@@ -139,6 +139,18 @@ interface Props {
    * for single-party buckets and standalone vault sends, which keep the
    * original single-signer behaviour. Mirrors AgreementContext.signers. */
   tradeSigners?: AgreementSigner[] | null;
+  /** Single-signer trade-doc mode only — let the ONE signer be asked to sign
+   * the same document in several places (e.g. a doc that needs 2–3 signatures
+   * by the same person). Adds a "Signature boxes" picker; each box positions
+   * via the existing drag/panel and is sent as document_settings[docId].boxes.
+   * Off by default so every other caller is unchanged. */
+  multiBox?: boolean;
+  /** Supplier (Vendor) case-to-case Agreement send. Routes the SAME vendor
+   *  send (model_name='Vendor', signers, document_settings) through
+   *  ClmSignatureController::send but posts `agreement_ids` instead of
+   *  `trade_doc_ids`, so the request is tagged document_type=agreement and the
+   *  vault overlays it on the Agreements drill-down. Off by default. */
+  sendAsAgreement?: boolean;
 }
 
 export default function SalesCustomerSendForSignatureModal({
@@ -152,6 +164,8 @@ export default function SalesCustomerSendForSignatureModal({
   agreementContext = null,
   leadId = null,
   tradeSigners = null,
+  multiBox = false,
+  sendAsAgreement = false,
 }: Props) {
   const isAgreement = mode === 'agreement';
   const toast = useToast();
@@ -179,6 +193,10 @@ export default function SalesCustomerSendForSignatureModal({
   const [notes, setNotes] = useState('Please review and sign these documents.');
 
   const [settings, setSettings] = useState<Record<number, DocSettings>>({});
+  /* multiBox mode (single signer, several signature boxes on one doc): the
+   * active doc's box list + which box the drag/panel currently controls. */
+  const [multiBoxes, setMultiBoxes] = useState<Record<number, DocSettings[]>>({});
+  const [activeBoxIdx, setActiveBoxIdx] = useState(0);
   /* Agreement mode only — per-doc-per-signer coord map. Trade-doc mode
    * keeps using the flat `settings` map above so its existing single-
    * signer behaviour is unchanged. Active role decides which slice
@@ -368,7 +386,7 @@ export default function SalesCustomerSendForSignatureModal({
       setIsSequential(false);
       setExpiryDays(30);
       setNotes('Please review and sign these agreements.');
-      setSettings({});
+      setSettings({}); setMultiBoxes({}); setActiveBoxIdx(0);
       // Seed per-doc-per-signer coords from SIGNER_DEFAULTS so the
       // preview opens with non-overlapping boxes for each role. Each
       // signer gets their own slot; user drags adjust the slot tied
@@ -408,7 +426,7 @@ export default function SalesCustomerSendForSignatureModal({
     setIsSequential(false);
     setExpiryDays(30);
     setNotes('Please review and sign these documents.');
-    setSettings({});
+    setSettings({}); setMultiBoxes({}); setActiveBoxIdx(0);
     // Per-role coord seeding (Buyer+Consignee trade doc) — one non-
     // overlapping box per signer, mirroring agreement mode. Empty for the
     // single-signer path, which keeps using the flat `settings` map.
@@ -553,7 +571,7 @@ export default function SalesCustomerSendForSignatureModal({
         )
       : api.post('/clm/signature-requests/preview',
           {
-            trade_doc_id: docId,
+            ...(sendAsAgreement ? { agreement_id: docId } : { trade_doc_id: docId }),
             party_id: customer!.db_id,
             model_name: modelName,
             ...(leadId ? { lead_id: leadId } : {}),
@@ -766,12 +784,24 @@ export default function SalesCustomerSendForSignatureModal({
           perRole[id] = filled;
         });
         documentSettings = perRole;
+      } else if (multiBox) {
+        payloadSigners = signers.map((s, i) => ({ ...s, name: s.name.trim(), email: s.email.trim(), order: s.order ?? i + 1 }));
+        // One signer, several boxes per doc → document_settings[docId] carries a
+        // `boxes` array; the backend drops one signature field per box.
+        const ms: Record<number, DocSettings & { boxes: DocSettings[] }> = {};
+        selectedIds.forEach(id => {
+          const arr = multiBoxes[id] ?? [settings[id] ?? { ...DEFAULTS }];
+          ms[id] = { ...(arr[0] ?? DEFAULTS), boxes: arr };
+        });
+        documentSettings = ms as unknown as typeof documentSettings;
       } else {
         payloadSigners = signers.map((s, i) => ({ ...s, name: s.name.trim(), email: s.email.trim(), order: s.order ?? i + 1 }));
         documentSettings = settings;
       }
       const payload = {
-        trade_doc_ids: selectedIds,
+        // Supplier agreements post agreement_ids (document_type=agreement);
+        // everything else posts trade_doc_ids. Same endpoint + render flow.
+        ...(sendAsAgreement ? { agreement_ids: selectedIds } : { trade_doc_ids: selectedIds }),
         party_id: customer.db_id,
         model_name: modelName,
         // Lead scope (Sales-Matrix Trade Documents popup) — omitted for the
@@ -819,6 +849,10 @@ export default function SalesCustomerSendForSignatureModal({
       const roleSeed = SIGNER_DEFAULTS[activeSignerRole] ?? DEFAULTS;
       return signerSettings[activeDocId]?.[activeSignerRole] ?? { ...roleSeed };
     }
+    if (multiBox) {
+      const arr = multiBoxes[activeDocId] ?? [{ ...DEFAULTS }];
+      return arr[activeBoxIdx] ?? arr[0] ?? { ...DEFAULTS };
+    }
     return settings[activeDocId] ?? { ...DEFAULTS };
   })();
   const updateActiveSettings = (patch: Partial<DocSettings>) => {
@@ -837,8 +871,41 @@ export default function SalesCustomerSendForSignatureModal({
       });
       return;
     }
+    if (multiBox) {
+      setMultiBoxes(prev => {
+        const arr = (prev[activeDocId] ?? [{ ...DEFAULTS }]).slice();
+        const idx = Math.min(activeBoxIdx, arr.length - 1);
+        arr[idx] = { ...DEFAULTS, ...arr[idx], ...patch };
+        return { ...prev, [activeDocId]: arr };
+      });
+      return;
+    }
     setSettings(prev => ({ ...prev, [activeDocId]: { ...DEFAULTS, ...prev[activeDocId], ...patch } }));
   };
+
+  /* multiBox helpers — add / remove / select a signature box for the active doc. */
+  const addBox = () => {
+    if (!activeDocId) return;
+    setMultiBoxes(prev => {
+      const arr = (prev[activeDocId] ?? [{ ...DEFAULTS }]).slice();
+      if (arr.length >= 3) return prev;                       // cap at 3
+      const last = arr[arr.length - 1] ?? DEFAULTS;
+      arr.push({ ...DEFAULTS, ...last, y: Math.max(0, (last.y ?? DEFAULTS.y) - 80) });  // offset above so it's visible
+      setActiveBoxIdx(arr.length - 1);
+      return { ...prev, [activeDocId]: arr };
+    });
+  };
+  const removeBox = (idx: number) => {
+    if (!activeDocId) return;
+    setMultiBoxes(prev => {
+      const arr = (prev[activeDocId] ?? [{ ...DEFAULTS }]).slice();
+      if (arr.length <= 1) return prev;                       // keep at least one
+      arr.splice(idx, 1);
+      setActiveBoxIdx(i => Math.max(0, Math.min(i, arr.length - 1)));
+      return { ...prev, [activeDocId]: arr };
+    });
+  };
+  const boxCount = (activeDocId ? multiBoxes[activeDocId]?.length : 0) || 1;
 
   /* Flip the active signer's signature box (and the rendered preview page)
    * to the previous/next page — mirrors the Quotation/PI modal's Prev/Next. */
@@ -1362,7 +1429,7 @@ export default function SalesCustomerSendForSignatureModal({
                           );
                         });
                       })()}
-                      {!roleMode && activeSettings && wrapWidthPx > 0 && (() => {
+                      {!roleMode && !multiBox && activeSettings && wrapWidthPx > 0 && (() => {
                         // Trade-doc single-overlay path — unchanged from
                         // before, kept inside its own IIFE so the agreement
                         // branch above can grow independently.
@@ -1396,6 +1463,45 @@ export default function SalesCustomerSendForSignatureModal({
                           </div>
                         );
                       })()}
+                      {/* multiBox: ONE signer signs in several places — render
+                          EVERY box on the page at once (Signature 1/2/3), the
+                          active one draggable, the rest clickable to select. */}
+                      {multiBox && activeDocId && wrapWidthPx > 0 && (() => {
+                        const pxPerPt = wrapWidthPx / A4_W;
+                        const visiblePage = activeSettings?.page ?? 0;
+                        const arr = multiBoxes[activeDocId] ?? [{ ...DEFAULTS }];
+                        return arr.map((ds, i) => {
+                          if ((ds.page ?? 0) !== visiblePage) return null;
+                          const isActive = i === activeBoxIdx;
+                          return (
+                            <div
+                              key={i}
+                              className={`ssf-sig-overlay ${isActive ? 'is-active' : 'is-dim'}`}
+                              style={{ left: ds.x * pxPerPt, top: ds.y * pxPerPt, width: ds.width * pxPerPt, height: ds.height * pxPerPt }}
+                              onPointerDown={(e) => {
+                                if (!isActive) { e.stopPropagation(); setActiveBoxIdx(i); return; }
+                                onSigPointerDown(e, 'move');
+                              }}
+                              tabIndex={isActive ? 0 : -1}
+                              onKeyDown={e => {
+                                if (!isActive) return;
+                                const step = e.altKey ? 10 : e.shiftKey ? 5 : 1;
+                                if (e.key === 'ArrowUp')    { e.preventDefault(); updateActiveSettings({ y: Math.max(0, ds.y - step) }); }
+                                if (e.key === 'ArrowDown')  { e.preventDefault(); updateActiveSettings({ y: Math.max(0, ds.y + step) }); }
+                                if (e.key === 'ArrowLeft')  { e.preventDefault(); updateActiveSettings({ x: Math.max(0, ds.x - step) }); }
+                                if (e.key === 'ArrowRight') { e.preventDefault(); updateActiveSettings({ x: Math.max(0, ds.x + step) }); }
+                              }}
+                              title={isActive ? 'Drag to move' : `Click to select Signature ${i + 1}`}
+                            >
+                              <div className="ssf-sig-label">Signature {i + 1}</div>
+                              <div className="ssf-sig-page">page {(ds.page ?? 0) + 1}</div>
+                              {isActive && (
+                                <div className="ssf-sig-resize" onPointerDown={(e) => onSigPointerDown(e, 'resize')} aria-label="Resize signature" />
+                              )}
+                            </div>
+                          );
+                        });
+                      })()}
                     </div>
                   </div>
                 )}
@@ -1408,6 +1514,34 @@ export default function SalesCustomerSendForSignatureModal({
                   The corner handle resizes it. The preview jumps to the
                   page you're positioning on — change <strong>Page</strong>
                   to switch.
+                </div>
+
+                {/* Recipient FIRST — so it's clear WHO signs before you set
+                    where they sign. */}
+                <div className="ssf-recipient-card" style={{ marginTop: 6 }}>
+                  <div className="ssf-recipient-h">{roleMode ? 'Signers' : 'Recipient'}</div>
+                  {roleMode ? (
+                    <>
+                      {roleSigners.length === 0 && (
+                        <div className="ssf-recipient-email">No signers resolved — check the lead's customer/consignee mapping against the {isAgreement ? 'agreement' : 'document'}'s applicable party.</div>
+                      )}
+                      {roleSigners.map((s, i) => (
+                        <div key={s.role} style={{ marginBottom: i < roleSigners.length - 1 ? 6 : 0 }}>
+                          <div className="ssf-recipient-name">
+                            <span className={`ssf-signer-dot ssf-signer-dot-${s.role}`} style={{ marginRight: 6 }} />
+                            {s.role === 'buyer' ? 'Customer · ' : s.role === 'consignee' ? 'Consignee · ' : 'Supplier · '}
+                            {s.name}
+                          </div>
+                          <div className="ssf-recipient-email">{s.email || '—'}</div>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      <div className="ssf-recipient-name">{customer?.contact || customer?.company || '—'}</div>
+                      <div className="ssf-recipient-email">{customer?.email || '—'}</div>
+                    </>
+                  )}
                 </div>
 
                 {/* Opens the full-screen Edit Layout popup so the user
@@ -1431,6 +1565,36 @@ export default function SalesCustomerSendForSignatureModal({
                 >
                   Edit Header / Footer / Body
                 </button>
+
+                {multiBox && (
+                  <div className="ssf-coord-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 6, marginTop: 8 }}>
+                    <span style={{ fontWeight: 700, fontSize: 11 }}>{customer?.contact || customer?.company || 'The signer'} signs in <small style={{ color: '#94a3b8', fontWeight: 400 }}>· {boxCount} place{boxCount > 1 ? 's' : ''} on the doc</small></span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                      {Array.from({ length: boxCount }).map((_, i) => (
+                        <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                          <button type="button" onClick={() => setActiveBoxIdx(i)}
+                            style={{ padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                              border: i === activeBoxIdx ? '1.5px solid #7c3aed' : '1.5px solid #e2e8f0',
+                              background: i === activeBoxIdx ? 'linear-gradient(135deg,#ede9fe,#ddd6fe)' : '#fff',
+                              color: i === activeBoxIdx ? '#5b21b6' : '#475569' }}>
+                            Sign {i + 1}
+                          </button>
+                          {boxCount > 1 && (
+                            <button type="button" onClick={() => removeBox(i)} aria-label={`Remove box ${i + 1}`}
+                              style={{ border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: 0 }}>×</button>
+                          )}
+                        </span>
+                      ))}
+                      {boxCount < 3 && (
+                        <button type="button" onClick={addBox}
+                          style={{ padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: '1.5px dashed #a78bfa', background: '#faf5ff', color: '#7c3aed' }}>
+                          + Add box
+                        </button>
+                      )}
+                    </div>
+                    <small style={{ color: '#94a3b8' }}>It's the <strong>same person</strong> signing each spot — "Sign 1 / Sign 2 / Sign 3" are just the different places on the page. Pick one, then drag it on the preview.</small>
+                  </div>
+                )}
 
                 {activeSettings && (
                   <>
@@ -1509,31 +1673,6 @@ export default function SalesCustomerSendForSignatureModal({
                   </>
                 )}
 
-                <div className="ssf-recipient-card">
-                  <div className="ssf-recipient-h">{roleMode ? 'Signers' : 'Recipient'}</div>
-                  {roleMode ? (
-                    <>
-                      {roleSigners.length === 0 && (
-                        <div className="ssf-recipient-email">No signers resolved — check the lead's customer/consignee mapping against the {isAgreement ? 'agreement' : 'document'}'s applicable party.</div>
-                      )}
-                      {roleSigners.map((s, i) => (
-                        <div key={s.role} style={{ marginBottom: i < roleSigners.length - 1 ? 6 : 0 }}>
-                          <div className="ssf-recipient-name">
-                            <span className={`ssf-signer-dot ssf-signer-dot-${s.role}`} style={{ marginRight: 6 }} />
-                            {s.role === 'buyer' ? 'Customer · ' : s.role === 'consignee' ? 'Consignee · ' : 'Supplier · '}
-                            {s.name}
-                          </div>
-                          <div className="ssf-recipient-email">{s.email || '—'}</div>
-                        </div>
-                      ))}
-                    </>
-                  ) : (
-                    <>
-                      <div className="ssf-recipient-name">{customer?.company || '—'}</div>
-                      <div className="ssf-recipient-email">{customer?.email || '—'}</div>
-                    </>
-                  )}
-                </div>
               </aside>
             </div>
           )}

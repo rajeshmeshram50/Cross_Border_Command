@@ -131,6 +131,18 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/vendors/{id}',                     [\App\Http\Controllers\Api\VendorController::class, 'show'])->whereNumber('id');
     Route::post  ('/vendors/step/identity',            [\App\Http\Controllers\Api\VendorController::class, 'storeIdentity']);
     Route::put   ('/vendors/{id}/step/contacts',       [\App\Http\Controllers\Api\VendorController::class, 'storeContacts'])->whereNumber('id');
+    // Additional contact persons — independent CRUD (primary row excluded).
+    Route::post  ('/vendors/{id}/contacts',            [\App\Http\Controllers\Api\VendorController::class, 'storeContact'])->whereNumber('id');
+    Route::put   ('/vendors/{id}/contacts/{contact}',  [\App\Http\Controllers\Api\VendorController::class, 'updateContact'])->whereNumber('id')->whereNumber('contact');
+    Route::delete('/vendors/{id}/contacts/{contact}',  [\App\Http\Controllers\Api\VendorController::class, 'destroyContact'])->whereNumber('id')->whereNumber('contact');
+    // Bank Accounts — independent CRUD (KYC sub-tab).
+    Route::post  ('/vendors/{id}/bank-accounts',           [\App\Http\Controllers\Api\VendorController::class, 'storeBankAccount'])->whereNumber('id');
+    Route::put   ('/vendors/{id}/bank-accounts/{bank}',    [\App\Http\Controllers\Api\VendorController::class, 'updateBankAccount'])->whereNumber('id')->whereNumber('bank');
+    Route::delete('/vendors/{id}/bank-accounts/{bank}',    [\App\Http\Controllers\Api\VendorController::class, 'destroyBankAccount'])->whereNumber('id')->whereNumber('bank');
+    // GST Scrutiny — independent CRUD (KYC sub-tab).
+    Route::post  ('/vendors/{id}/gst-scrutiny',            [\App\Http\Controllers\Api\VendorController::class, 'storeGstScrutiny'])->whereNumber('id');
+    Route::put   ('/vendors/{id}/gst-scrutiny/{gst}',      [\App\Http\Controllers\Api\VendorController::class, 'updateGstScrutiny'])->whereNumber('id')->whereNumber('gst');
+    Route::delete('/vendors/{id}/gst-scrutiny/{gst}',      [\App\Http\Controllers\Api\VendorController::class, 'destroyGstScrutiny'])->whereNumber('id')->whereNumber('gst');
     Route::post  ('/vendors/{id}/step/kyc',            [\App\Http\Controllers\Api\VendorController::class, 'storeKyc'])->whereNumber('id');
     Route::post  ('/vendors/{id}/step/products',       [\App\Http\Controllers\Api\VendorController::class, 'storeProducts'])->whereNumber('id');
     Route::delete('/vendors/{id}',                     [\App\Http\Controllers\Api\VendorController::class, 'destroy'])->whereNumber('id');
@@ -298,6 +310,8 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/p2p/products',      [\App\Http\Controllers\Api\P2p\SourcingController::class, 'products']);
     Route::get   ('/p2p/team-members',  [\App\Http\Controllers\Api\P2p\SourcingController::class, 'teamMembers']);
     Route::get   ('/p2p/suppliers',     [\App\Http\Controllers\Api\P2p\SourcingController::class, 'suppliers']);
+    Route::get   ('/p2p/new-suppliers', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'newSuppliers']);
+    Route::get   ('/p2p/new-suppliers/{supplier}/sourcings', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'supplierSourcings'])->whereNumber('supplier');
     Route::get   ('/p2p/form-masters',  [\App\Http\Controllers\Api\P2p\SourcingController::class, 'formMasters']);
     Route::post  ('/p2p/upload',        [\App\Http\Controllers\Api\P2p\SourcingController::class, 'upload']);
     Route::get   ('/p2p/sourcing-targets',          [\App\Http\Controllers\Api\P2p\SourcingController::class, 'index']);

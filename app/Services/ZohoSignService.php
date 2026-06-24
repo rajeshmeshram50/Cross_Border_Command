@@ -297,25 +297,40 @@ class ZohoSignService
                     // LOW — and the old -4 X nudge put it ~4pt too far LEFT —
                     // so the height term is gone and the nudges default to 0.
                     // The SIG_*_NUDGE_PT knobs survive for per-tenant tweaks.)
-                    $xPt = (float) ($c['x']      ?? self::DEFAULT_FIELD_X);
-                    $yPt = (float) ($c['y']      ?? self::DEFAULT_FIELD_Y);
-                    $wPt = (float) ($c['width']  ?? self::DEFAULT_FIELD_WIDTH);
-                    $hPt = (float) ($c['height'] ?? self::DEFAULT_FIELD_HEIGHT);
-                    $xPtAdj = $xPt + self::SIG_X_NUDGE_PT;
-                    $yPtAdj = $yPt + self::SIG_Y_NUDGE_PT;
-                    $fields[] = [
-                        'document_id'     => $docId,
-                        'field_name'      => 'Signature_' . ($aIdx + 1) . '_' . ($dIdx + 1),
-                        'field_label'     => 'Signature',
-                        'field_type_name' => 'Signature',
-                        'field_category'  => 'image',
-                        'x_coord'         => (int) round(max(0.0, $xPtAdj)),
-                        'y_coord'         => (int) round(max(0.0, $yPtAdj)),
-                        'abs_width'       => (int) round($wPt),
-                        'abs_height'      => (int) round($hPt),
-                        'page_no'         => (int) ($c['page'] ?? self::DEFAULT_FIELD_PAGE),
-                        'is_mandatory'    => true,
-                    ];
+                    // One signer can be asked to sign the SAME document in
+                    // multiple places: when the coords carry a `boxes` array, drop
+                    // one signature field per box. Otherwise fall back to the
+                    // single flat box — the existing behaviour for every other
+                    // flow, so customer / agreement / Buyer+Consignee sends are
+                    // completely unchanged.
+                    $boxes = (isset($c['boxes']) && is_array($c['boxes']) && $c['boxes'])
+                        ? array_values(array_filter($c['boxes'], 'is_array'))
+                        : [$c];
+                    if (empty($boxes)) $boxes = [$c];
+                    $multi = count($boxes) > 1;
+                    foreach ($boxes as $bIdx => $b) {
+                        $xPt = (float) ($b['x']      ?? self::DEFAULT_FIELD_X);
+                        $yPt = (float) ($b['y']      ?? self::DEFAULT_FIELD_Y);
+                        $wPt = (float) ($b['width']  ?? self::DEFAULT_FIELD_WIDTH);
+                        $hPt = (float) ($b['height'] ?? self::DEFAULT_FIELD_HEIGHT);
+                        $xPtAdj = $xPt + self::SIG_X_NUDGE_PT;
+                        $yPtAdj = $yPt + self::SIG_Y_NUDGE_PT;
+                        $fields[] = [
+                            'document_id'     => $docId,
+                            // Suffix only when there's more than one box so the
+                            // single-box field name stays exactly as before.
+                            'field_name'      => 'Signature_' . ($aIdx + 1) . '_' . ($dIdx + 1) . ($multi ? '_' . ($bIdx + 1) : ''),
+                            'field_label'     => 'Signature',
+                            'field_type_name' => 'Signature',
+                            'field_category'  => 'image',
+                            'x_coord'         => (int) round(max(0.0, $xPtAdj)),
+                            'y_coord'         => (int) round(max(0.0, $yPtAdj)),
+                            'abs_width'       => (int) round($wPt),
+                            'abs_height'      => (int) round($hPt),
+                            'page_no'         => (int) ($b['page'] ?? self::DEFAULT_FIELD_PAGE),
+                            'is_mandatory'    => true,
+                        ];
+                    }
                 }
                 $submitAction['fields'] = $fields;
             }
@@ -323,7 +338,12 @@ class ZohoSignService
             $submitActions[] = $submitAction;
         }
 
-        return $this->makeRequest('POST', "requests/{$requestId}/submit", [
+        // Carry the sandbox flag onto the SUBMIT (the actual send) too, not just
+        // create — otherwise a free-tier org's submit trips error 12000
+        // ("Upgrade Zoho Sign license to send documents via API") even though the
+        // request was created in testing mode.
+        $submitEndpoint = "requests/{$requestId}/submit" . ($this->testingMode ? '?testing=true' : '');
+        return $this->makeRequest('POST', $submitEndpoint, [
             'data' => ['requests' => ['actions' => $submitActions]],
         ]);
     }

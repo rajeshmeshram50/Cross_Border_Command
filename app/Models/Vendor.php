@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Masters\ComplianceBehaviours;
+use App\Models\Masters\CustomerClassifications;
 use App\Models\Masters\RiskLevels;
 use App\Models\Masters\Segments;
 use App\Models\Masters\VendorBehaviour;
@@ -10,6 +11,7 @@ use App\Models\Masters\VendorTypes;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -24,7 +26,7 @@ class Vendor extends Model
         'vendor_code',
         'company_name', 'legal_name', 'website',
         'vendor_type_id', 'risk_level_id', 'vendor_behaviour_id',
-        'segment_id', 'compliance_behaviour_id',
+        'segment_id', 'compliance_behaviour_id', 'classification_id',
         'primary_email', 'status', 'step_completed',
     ];
 
@@ -72,6 +74,21 @@ class Vendor extends Model
     public function complianceBehaviour(): BelongsTo
     {
         return $this->belongsTo(ComplianceBehaviours::class, 'compliance_behaviour_id');
+    }
+
+    /** "Classification & Flags" — FK to the shared classification master. */
+    public function classification(): BelongsTo
+    {
+        return $this->belongsTo(CustomerClassifications::class, 'classification_id');
+    }
+
+    /**
+     * Supplier Segment is multi-select. The full set lives in the
+     * vendor_segments pivot; the scalar segment_id keeps the first one.
+     */
+    public function segments(): BelongsToMany
+    {
+        return $this->belongsToMany(Segments::class, 'vendor_segments', 'vendor_id', 'segment_id');
     }
 
     /* ── Child rows ───────────────────────────────────────────────── */

@@ -25,6 +25,7 @@ use App\Models\Vendor;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -374,9 +375,18 @@ class SegmentDocUploadController extends Controller
         // Customer above, so $owner->id can't be trusted for the lead filter.
         $shipments = $this->buildShipmentAgreements($owner, $type, $cid, $company_dd, $owner_kyc, $trade_licenses, $id);
 
+        // Supplier Case-to-Case deals — split the vendor's procurements by
+        // whether their lead carries a shipment (With / Without Shipment ID).
+        $vendorDeals = in_array($type, ['supplier', 'vendor'], true) && $cid
+            ? $this->buildVendorDeals($owner, $cid, $company_dd, $owner_kyc, $trade_licenses, $trade_documents)
+            : ['with_shipment' => [], 'without_shipment' => [], 'ratios' => null];
+
         return response()->json([
             'data' => [
                 'same_as_customer'       => $sameAsCustomer,
+                'vendor_with_shipment'    => $vendorDeals['with_shipment'],
+                'vendor_without_shipment' => $vendorDeals['without_shipment'],
+                'vendor_deal_ratios'      => $vendorDeals['ratios'],
                 'total_documents'        => count($allRows),
                 'verified_signed'        => $verified,
                 'core_total_documents'   => $coreMandatory->count(),
@@ -395,6 +405,151 @@ class SegmentDocUploadController extends Controller
                 'last_updated'           => optional($uploads->max('updated_at'))->format('d/m/Y'),
             ],
         ]);
+    }
+
+    /**
+     * Supplier Case-to-Case deals for the Evidence Vault. Walks the procurements
+     * where THIS vendor is the recorded supplier (procurement_products.vendor_id),
+     * then surfaces two views over those deals:
+     *   - with_shipment    → one row per shipment on those leads (SHP-xxx) +
+     *                        customer / consignee
+     *   - without_shipment → one row per procurement (PROC-xxx) — ALL of them,
+     *                        the procurement-stage view (a deal can appear in
+     *                        both views; "Without Shipment ID" is the procurement
+     *                        lens, not "procurements lacking a shipment").
+     * Compliance ratios (KYC/DD/TL/TD) are the vendor's overall verified-vs-total
+     * (no per-shipment document tracking exists in the schema), so the same
+     * ratios ride on every row.
+     */
+    private function buildVendorDeals(Model $owner, int $cid, array $companyDd, array $ownerKyc, array $tradeLicenses, array $tradeDocuments): array
+    {
+        $r = fn (array $rows) => [
+            'd' => collect($rows)->where('status', 'Verified')->count(),
+            't' => count($rows),
+        ];
+        $ratios = ['kyc' => $r($ownerKyc), 'dd' => $r($companyDd), 'tl' => $r($tradeLicenses), 'td' => $r($tradeDocuments)];
+        $empty  = ['with_shipment' => [], 'without_shipment' => [], 'ratios' => $ratios];
+        $supplierName = (string) ($owner->company_name ?? '');
+
+        // Procurements where THIS vendor is the recorded supplier on a product
+        // line (procurement_products.vendor_id). Real vendor⇄procurement link —
+        // a shared product no longer pulls in someone else's procurement.
+        $procs = DB::table('procurements as pr')
+            ->where('pr.client_id', $cid)
+            ->whereExists(function ($q) use ($owner) {
+                $q->selectRaw('1')->from('procurement_products as pp')
+                    ->whereColumn('pp.procurement_id', 'pr.id')
+                    ->where('pp.vendor_id', $owner->id);
+            })
+            ->get(['pr.id', 'pr.lead_id']);
+
+        // Doc LISTS are driven by the VENDOR's own SEGMENTS — resolved once and
+        // identical for every deal AND for a fresh vendor with no deal yet.
+        // Segment (not procurement) is what decides which docs apply, so compute
+        // these up-front, before the procurement check.
+        $vendorSegIds = $this->resolveSegmentIds($owner, 'vendor', $cid);
+        $tdLib  = $this->vendorSupplierLibrary($cid, $vendorSegIds, ClmTradeDocLibrary::class, 'status');
+        $agrLib = $this->vendorSupplierLibrary($cid, $vendorSegIds, ClmAgreementLibrary::class, 'agr_status');
+        // Trade-Docs column ratio = signed-vs-total of the per-deal docs shown in
+        // the drill-down (not the DCP bucket, which is empty here).
+        $tdRatio = fn (array $docs) => [
+            'd' => collect($docs)->where('status', 'Signed')->count(),
+            't' => count($docs),
+        ];
+
+        // Fresh vendor — no procurement/shipment yet. The docs STILL come from
+        // the vendor's segment, so surface one "Without Shipment ID" row with the
+        // segment-based Trade Docs + Agreements (status overlaid client-side by
+        // db_id). Without this a freshly-added supplier showed an empty matrix
+        // even though its segment defines applicable documents.
+        if ($procs->isEmpty()) {
+            $docs = $this->overlaySupplierDocs($tdLib,  collect(), ClmSignatureRequest::DOC_TRADE);
+            $agrs = $this->overlaySupplierDocs($agrLib, collect(), ClmSignatureRequest::DOC_AGREEMENT);
+            if (empty($docs) && empty($agrs)) return $empty;   // segment has no supplier docs at all
+            return [
+                'with_shipment'    => [],
+                'without_shipment' => [[
+                    'sr'             => 1,
+                    'procurement_id' => '—',
+                    'supplier'       => $supplierName,
+                    'ratios'         => array_merge($ratios, ['td' => $tdRatio($docs)]),
+                    'docs'           => $docs,
+                    'agreements'     => $agrs,
+                ]],
+                'ratios' => $ratios,
+            ];
+        }
+
+        $leadIds = $procs->pluck('lead_id')->filter()->unique()->values();
+
+        // Shipments for those leads (With Shipment ID view).
+        $shipByLead = DB::table('shipment_orders')->whereIn('lead_id', $leadIds->all() ?: [0])
+            ->where('client_id', $cid)->get(['id', 'lead_id', 'shipment_code'])->keyBy('lead_id');
+
+        $leads = DB::table('leads')->whereIn('id', $leadIds->all() ?: [0])->get(['id', 'customer_id', 'consignee_id'])->keyBy('id');
+        $custNames = DB::table('customers')->whereIn('id', $leads->pluck('customer_id')->filter()->unique()->all() ?: [0])->pluck('company_name', 'id');
+        $consNames = DB::table('consignees')->whereIn('id', $leads->pluck('consignee_id')->filter()->unique()->all() ?: [0])->pluck('company_name', 'id');
+
+        // Per-deal STATUS is overlaid from this vendor's signature requests; the
+        // doc LISTS ($tdLib / $agrLib) were resolved up-front from the vendor's
+        // own segments since they're identical for every deal.
+        $reqsByLead = ClmSignatureRequest::where('client_id', $cid)
+            ->whereIn('lead_id', $leadIds->all() ?: [0])
+            ->where('model_name', 'Vendor')
+            ->get()
+            ->groupBy('lead_id');
+        $docCache = []; $agrCache = [];
+        $reqsFor  = fn (?int $leadId) => $leadId ? ($reqsByLead[$leadId] ?? collect()) : collect();
+        $dealDocs = function (?int $leadId) use (&$docCache, $tdLib, $reqsFor) {
+            $key = $leadId ?? 0;
+            if (!array_key_exists($key, $docCache)) {
+                $docCache[$key] = $this->overlaySupplierDocs($tdLib, $reqsFor($leadId), ClmSignatureRequest::DOC_TRADE);
+            }
+            return $docCache[$key];
+        };
+        $dealAgrs = function (?int $leadId) use (&$agrCache, $agrLib, $reqsFor) {
+            $key = $leadId ?? 0;
+            if (!array_key_exists($key, $agrCache)) {
+                $agrCache[$key] = $this->overlaySupplierDocs($agrLib, $reqsFor($leadId), ClmSignatureRequest::DOC_AGREEMENT);
+            }
+            return $agrCache[$key];
+        };
+        $withShip = [];
+        $sr = 0;
+        foreach ($shipByLead as $leadId => $so) {
+            $lead = $leads[$leadId] ?? null;
+            $docs = $dealDocs((int) $leadId);
+            $withShip[] = [
+                'sr'          => ++$sr,
+                'shipment_id' => $so->shipment_code ?: ('SHP-' . str_pad((string) $so->id, 3, '0', STR_PAD_LEFT)),
+                'customer'    => $lead && $lead->customer_id ? ($custNames[$lead->customer_id] ?? '—') : '—',
+                'consignee'   => $lead && $lead->consignee_id ? ($consNames[$lead->consignee_id] ?? '—') : '—',
+                'supplier'    => $supplierName,
+                'ratios'      => array_merge($ratios, ['td' => $tdRatio($docs)]),
+                'docs'        => $docs,
+                'agreements'  => $dealAgrs((int) $leadId),
+            ];
+        }
+
+        // Without Shipment ID = the procurement-stage view: every procurement
+        // created for this supplier (whether or not its lead later got a
+        // shipment). With Shipment ID is the shipment-stage view above.
+        $withoutShip = [];
+        $sr = 0;
+        foreach ($procs as $p) {
+            $leadId = $p->lead_id ? (int) $p->lead_id : null;
+            $docs   = $dealDocs($leadId);
+            $withoutShip[] = [
+                'sr'             => ++$sr,
+                'procurement_id' => 'PROC-' . str_pad((string) $p->id, 3, '0', STR_PAD_LEFT),
+                'supplier'       => $supplierName,
+                'ratios'         => array_merge($ratios, ['td' => $tdRatio($docs)]),
+                'docs'           => $docs,
+                'agreements'     => $dealAgrs($leadId),
+            ];
+        }
+
+        return ['with_shipment' => $withShip, 'without_shipment' => $withoutShip, 'ratios' => $ratios];
     }
 
     /**
@@ -816,6 +971,119 @@ class SegmentDocUploadController extends Controller
     }
 
     /**
+     * True when a library doc's applicable-party CSV targets a SUPPLIER (any
+     * Supplier-* sub-type), or names no party at all (applies to everyone).
+     * Mirrors the /clm/trade-doc-library/for-party/supplier filter the supplier
+     * form uses, so the deal drill-down shows the same docs the form would.
+     */
+    private function supplierApplicable(?string $party): bool
+    {
+        $tokens = array_filter(array_map(fn ($t) => strtolower(trim($t)), explode(',', (string) $party)));
+        if (empty($tokens)) return true;                    // no party → all parties
+        foreach ($tokens as $t) {
+            if ($t === 'supplier' || str_starts_with($t, 'supplier')) return true;
+        }
+        return false;
+    }
+
+    /**
+     * The Supplier Trade Documents OR Agreements applicable to a vendor —
+     * resolved from the vendor's OWN segments (the segments it's onboarded for,
+     * via resolveSegmentIds) → Supplier-party library rows. Segment-driven, NOT
+     * product- or customer-PI-driven: the vendor's products are validated to its
+     * segment anyway, and a stale product mapping must not drive the vault. Same
+     * set for every one of the vendor's deals; per-deal signature status is
+     * overlaid separately (see overlaySupplierDocs). Returns deduped library rows
+     * (empty ⇒ no segment, or no Supplier-applicable library row).
+     *
+     * @param  array   $segIds     the vendor's segment ids (resolveSegmentIds)
+     * @param  string  $libClass   ClmTradeDocLibrary::class | ClmAgreementLibrary::class
+     * @param  string  $statusCol  'status' (trade docs) | 'agr_status' (agreements)
+     */
+    private function vendorSupplierLibrary(int $cid, array $segIds, string $libClass, string $statusCol): \Illuminate\Support\Collection
+    {
+        if (empty($segIds)) return collect();
+
+        $segments = ClmSegment::where('client_id', $cid)->whereIn('id', $segIds)->get();
+        if ($segments->isEmpty()) return collect();
+
+        $docs = collect(); $seen = [];
+        foreach ($segments as $seg) {
+            foreach ($this->matchSegmentLibrary($libClass::query(), $cid, $seg, $statusCol) as $m) {
+                if (isset($seen[$m->id]) || !$this->supplierApplicable($m->party)) continue;
+                $seen[$m->id] = true;
+                $docs->push($m);
+            }
+        }
+        return $docs;
+    }
+
+    /**
+     * Overlay this vendor's live Zoho trade-doc signature status (its requests on
+     * ONE deal's lead) onto the vendor's applicable trade-doc library rows,
+     * producing VaultDoc-shaped rows for the deal drill-down. A doc not yet sent
+     * on this deal reads "Pending" with a Send action; once sent/signed the row
+     * tracks the request. So the doc LIST is the vendor's (same per deal) while
+     * the STATUS is per-deal. Shape matches VaultDoc so the existing
+     * DealDocsSubTable + VaultRowActions render it unchanged.
+     *
+     * @param  \Illuminate\Support\Collection  $libDocs  library rows (from vendorSupplierLibrary)
+     * @param  \Illuminate\Support\Collection  $reqs     this vendor's sig-requests on this lead
+     * @param  string  $docType  DOC_TRADE | DOC_AGREEMENT — which signature kind to overlay
+     */
+    private function overlaySupplierDocs(\Illuminate\Support\Collection $libDocs, $reqs, string $docType = ClmSignatureRequest::DOC_TRADE): array
+    {
+        if ($libDocs->isEmpty()) return [];
+
+        // library id => latest Vendor signature request (of this doc type) on this lead.
+        $sigIndex = [];
+        foreach ($reqs->sortByDesc('id') as $r) {
+            if ($r->model_name !== 'Vendor' || $r->document_type !== $docType) continue;
+            $ids = is_array($r->trade_doc_ids) && $r->trade_doc_ids ? $r->trade_doc_ids : [$r->trade_doc_id];
+            foreach ((array) $ids as $id) { $id = (int) $id; if ($id && !isset($sigIndex[$id])) $sigIndex[$id] = $r; }
+        }
+
+        $rows = [];
+        foreach ($libDocs as $m) {
+            $sig = $sigIndex[$m->id] ?? null;
+            $status = $sig ? (match ($sig->status) {
+                'completed'  => 'Signed',
+                'inprogress' => 'Pending',
+                'declined'   => 'Declined',
+                'recalled'   => 'Recalled',
+                'expired'    => 'Expired',
+                default      => 'Pending',
+            }) : 'Pending';
+            $signedOn = ($sig && $sig->status === 'completed' && $sig->completed_at)
+                ? \Illuminate\Support\Carbon::parse($sig->completed_at)->format('d/m/Y') : null;
+            $paths = $sig && is_array($sig->signed_document_paths) ? $sig->signed_document_paths : [];
+            $signedUrl = $paths[0]['file_url'] ?? $paths[0]['url'] ?? null;
+            if (!$signedUrl && $sig && $sig->signed_document_path) {
+                $signedUrl = Storage::disk('public')->url($sig->signed_document_path);
+            }
+            $rows[] = [
+                'id'                   => $sig ? (int) $sig->id : (int) $m->id,
+                'db_id'                => (int) $m->id,                 // library id → Send-for-Signature
+                'party'                => $m->party,
+                'signature_request_id' => $sig ? (int) $sig->id : null,
+                'sig_state'            => $sig?->status,
+                'name'                 => $m->title ?: ($m->name ?: $m->code),
+                'reference'            => $m->code,
+                'authority'            => null,
+                'issue_date'           => $signedOn,
+                'expiry'               => $sig && $sig->expiry_date ? $sig->expiry_date->format('d/m/Y') : '—',
+                'attachment'           => null,
+                'attachment_url'       => $signedUrl,
+                'status'               => $status,
+                'doc_code'             => $m->code,
+                'requirement'          => 'M',
+                'certificate_url'      => $sig && $sig->certificate_path ? Storage::disk('public')->url($sig->certificate_path) : null,
+            ];
+        }
+        return $rows;
+    }
+
+    /**
      * Returns the MANDATORY documents (per the owner's DCP segment rules)
      * that have NOT yet been uploaded. Reuses the same segment-rule → upload
      * matching the Vault uses, so it stays in lock-step with what the user
@@ -976,7 +1244,16 @@ class SegmentDocUploadController extends Controller
      */
     private function resolveSegmentIds(Model $owner, string $type, int $cid): array
     {
-        if (in_array($type, ['supplier', 'vendor', 'product'], true)) {
+        if (in_array($type, ['supplier', 'vendor'], true)) {
+            // Vendors can carry MULTIPLE segments (vendor_segments pivot) since
+            // the Supplier form's multi-select. Union them so the vault counts
+            // the docs for every selected segment; fall back to the legacy
+            // scalar segment_id when the pivot is empty.
+            $ids = $owner->segments()->pluck('clm_segments.id')->map(fn ($x) => (int) $x)->unique()->values()->all();
+            if (!empty($ids)) return $ids;
+            return $owner->segment_id ? [(int) $owner->segment_id] : [];
+        }
+        if ($type === 'product') {
             return $owner->segment_id ? [(int) $owner->segment_id] : [];
         }
         // customer / consignee — comma-joined name string. Empty

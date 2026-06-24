@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Masters\AddressTypes;
 use App\Models\Masters\ComplianceBehaviours;
 use App\Models\Masters\Countries;
+use App\Models\Masters\CustomerClassifications;
 use App\Models\Masters\GstPercentage;
 use App\Models\Masters\LicenseName;
 use App\Models\Masters\RiskLevels;
@@ -46,7 +48,9 @@ class VendorController extends Controller
         'riskLevel:id,name',
         'vendorBehaviour:id,name',
         'segment:id,name',
+        'segments:id,name',
         'complianceBehaviour:id,name',
+        'classification:id,name',
         'client:id,org_name',
         'branch:id,name',
         'creator:id,name,user_type',
@@ -73,19 +77,23 @@ class VendorController extends Controller
                 'riskLevel:id,name',
             ])
             ->withCount('productMappings')
-            // Fresh vs Recurring split. A supplier is "Recurring" once any of
-            // its mapped products has been pulled into an opportunity (a lead);
-            // until then it is "Fresh" (just onboarded, never transacted).
-            // There is no direct vendor⇄lead FK — the link is product-scoped:
-            //   leads → lead_products.product_id → vendor_product_mappings.vendor_id.
-            // Surfaced as a single correlated subquery so the whole list is
-            // classified in one round-trip with no N+1.
-            ->addSelect(['opportunity_count' => DB::table('lead_products as lp')
-                ->selectRaw('count(distinct lp.lead_id)')
-                ->whereIn('lp.product_id', function ($sub) {
-                    $sub->select('vpm.product_id')
-                        ->from('vendor_product_mappings as vpm')
-                        ->whereColumn('vpm.vendor_id', 'vendors.id');
+            // Fresh vs Recurring split. A supplier is "Recurring" once it is the
+            // ACTUAL supplier on a procurement — i.e. a procurement_products row
+            // pins vendor_id to it (set at procurement time: explicit pick, or
+            // auto when the product has a single mapped vendor). Until then it is
+            // "Fresh" (just onboarded, never procured from). This is a real
+            // vendor⇄procurement link, so merely sharing a product with someone
+            // else's procurement no longer flips a supplier to Recurring.
+            // Single correlated subquery → whole list classified in one round-
+            // trip, no N+1. Field name kept as opportunity_count for the frontend.
+            ->addSelect(['opportunity_count' => DB::table('procurements as pr')
+                ->selectRaw('count(distinct pr.id)')
+                ->whereColumn('pr.client_id', 'vendors.client_id')
+                ->whereExists(function ($q) {
+                    $q->selectRaw('1')
+                        ->from('procurement_products as pp')
+                        ->whereColumn('pp.procurement_id', 'pr.id')
+                        ->whereColumn('pp.vendor_id', 'vendors.id');
                 }),
             ])
             ->orderByDesc('id');
@@ -201,6 +209,10 @@ class VendorController extends Controller
             'risk_level_id'            => 'nullable|integer|exists:master_risk_levels,id',
             'vendor_behaviour_id'      => 'nullable|integer|exists:master_vendor_behaviour,id',
             'segment_id'               => 'nullable|integer|exists:clm_segments,id',
+            // Supplier Segment is multi-select. Accepts an array of ids or a
+            // comma-joined string; normalised + synced into vendor_segments.
+            'segment_ids'              => 'nullable',
+            'classification_id'        => 'nullable|integer|exists:master_customer_classifications,id',
             'compliance_behaviour_id'  => 'nullable|integer|exists:master_compliance_behaviours,id',
         ]);
 
@@ -214,30 +226,79 @@ class VendorController extends Controller
         }
         unset($data['vendor_type']);   // not a column on vendors
 
-        if (isset($data['id'])) {
+        // Normalise the multi-segment selection to a clean, ordered list of
+        // existing clm_segments ids; the scalar segment_id keeps the first.
+        // Scoped to the caller's client so a foreign segment id can't be synced.
+        $segIds = $this->normalizeSegmentIds($request->input('segment_ids'), $data['segment_id'] ?? null, (int) $user->client_id);
+        $data['segment_id'] = $segIds[0] ?? null;
+        unset($data['segment_ids']);   // synced separately, not a vendors column
+
+        // Resolve + authorise the target row up-front so the 403 short-circuit
+        // stays outside the write transaction.
+        $isEdit = isset($data['id']);
+        $vendor = null;
+        if ($isEdit) {
             $vendor = Vendor::query()->forUser($user)->findOrFail($data['id']);
             if ($denial = MasterVisibility::hierarchicalDenial($user, $vendor, 'edit')) {
                 return response()->json(['message' => $denial], 403);
             }
-            $vendor->fill($data);
-            $vendor->step_completed = max((int) $vendor->step_completed, 1);
-            $vendor->save();
-        } else {
-            $vendor = new Vendor($data);
-            $vendor->client_id  = $user->client_id;
-            $vendor->branch_id  = $user->branch_id;
-            $vendor->created_by = $user->id;
-            $vendor->status     = 'draft';
-            $vendor->step_completed = 1;
-            $vendor->save();
-            // V-01, V-02 … computed after insert so a soft-deleted vendor
-            // doesn't release its code back into the pool.
-            $vendor->vendor_code = $this->nextVendorCode($user->client_id);
-            $vendor->save();
         }
+
+        DB::transaction(function () use (&$vendor, $isEdit, $user, $data, $segIds) {
+            if ($isEdit) {
+                $vendor->fill($data);
+                $vendor->step_completed = max((int) $vendor->step_completed, 1);
+                $vendor->save();
+            } else {
+                $vendor = new Vendor($data);
+                $vendor->client_id  = $user->client_id;
+                $vendor->branch_id  = $user->branch_id;
+                $vendor->created_by = $user->id;
+                $vendor->status     = 'draft';
+                $vendor->step_completed = 1;
+                $vendor->save();
+                // V-01, V-02 … computed after insert so a soft-deleted vendor
+                // doesn't release its code back into the pool.
+                $vendor->vendor_code = $this->nextVendorCode($user->client_id);
+                $vendor->save();
+            }
+
+            // Replace the segment pivot rows with the new selection.
+            $vendor->segments()->sync($segIds);
+        });
 
         $vendor->load(self::SHOW_WITH);
         return response()->json(['data' => $this->shape($vendor)]);
+    }
+
+    /**
+     * Normalise a multi-segment payload (array of ids OR comma-joined string)
+     * into a clean, de-duplicated list of clm_segments ids that actually
+     * exist — input order preserved so the first stays the primary segment.
+     * Falls back to the scalar segment_id when no list is supplied.
+     *
+     * @return int[]
+     */
+    private function normalizeSegmentIds($raw, $fallbackId = null, ?int $clientId = null): array
+    {
+        $ids = collect(is_array($raw) ? $raw : (is_string($raw) ? explode(',', $raw) : []))
+            ->map(fn ($v) => (int) trim((string) $v))
+            ->filter(fn ($v) => $v > 0);
+
+        if ($ids->isEmpty() && $fallbackId) {
+            $ids = collect([(int) $fallbackId]);
+        }
+
+        $ids = $ids->unique()->values();
+        if ($ids->isEmpty()) return [];
+
+        // Keep only ids that exist (and belong to this client — clm_segments is
+        // per-tenant); preserve the caller's order.
+        $existing = DB::table('clm_segments')
+            ->whereIn('id', $ids->all())
+            ->when($clientId, fn ($q) => $q->where('client_id', $clientId))
+            ->pluck('id')->flip();
+        return $ids->filter(fn ($id) => $existing->has($id))->values()->all();
     }
 
     /* ──────────────────────────────────────────────────────────────────
@@ -258,6 +319,7 @@ class VendorController extends Controller
 
         $data = $request->validate([
             'primary_address'                          => 'required|array',
+            'primary_address.address_type'             => 'nullable|string|max:64',
             'primary_address.address_line'             => 'nullable|string|max:1000',
             'primary_address.country_id'               => 'nullable|integer|exists:master_countries,id',
             'primary_address.state_id'                 => 'nullable|integer|exists:master_states,id',
@@ -269,43 +331,357 @@ class VendorController extends Controller
             'primary_address.contact_no'               => 'nullable|string|max:32',
             'primary_address.email'                    => 'nullable|email|max:255',
             'primary_address.whatsapp_enabled'         => 'nullable|boolean',
-
-            'extra_contacts'                           => 'nullable|array',
-            'extra_contacts.*.contact_name'            => 'required|string|max:255',
-            'extra_contacts.*.designation'             => 'nullable|string|max:128',
-            'extra_contacts.*.contact_no'              => 'nullable|string|max:32',
-            'extra_contacts.*.email'                   => 'nullable|email|max:255',
-            'extra_contacts.*.whatsapp_enabled'        => 'nullable|boolean',
-            'extra_contacts.*.attachment_path'         => 'nullable|string|max:500',
+            // Primary contact business card: a new upload, or the existing
+            // path echoed back on edit when the file is unchanged.
+            'primary_address.attachment_path'          => 'nullable|string|max:500',
+            'primary_attachment'                       => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:' . self::MAX_UPLOAD_KB,
         ]);
+        // NB: additional contacts are NOT handled here — they have their own
+        // CRUD endpoints (storeContact / updateContact / destroyContact) so
+        // each persists independently and can be edited/deleted on its own.
 
-        DB::transaction(function () use ($vendor, $data) {
-            // Wipe + re-insert. Vendor addresses don't have hard FK
-            // dependents (uploads live alongside the row), so plain
-            // delete is safe.
-            $vendor->addresses()->delete();
+        // Snapshot the current primary business-card file so we can drop it
+        // from disk if this save replaces or removes it.
+        $oldPrimaryAttachment = optional($vendor->addresses()->where('is_primary', true)->first())->attachment_path;
+
+        DB::transaction(function () use ($request, $vendor, $data, $oldPrimaryAttachment) {
+            // Replace ONLY the primary row. Additional contacts (is_primary
+            // = false) are owned by the /contacts CRUD endpoints and must be
+            // left untouched here.
+            $vendor->addresses()->where('is_primary', true)->delete();
+
+            // Primary contact business card: store the new upload, else keep
+            // the existing path the frontend echoed back on edit.
+            $primaryAttachment = $this->absorbFile(
+                $request,
+                'primary_attachment',
+                $vendor->id,
+                'contact',
+                $data['primary_address']['attachment_path'] ?? null,
+            );
 
             $primary = new VendorAddress(array_merge($data['primary_address'], [
-                'vendor_id'  => $vendor->id,
-                'is_primary' => true,
+                'vendor_id'       => $vendor->id,
+                'is_primary'      => true,
+                'attachment_path' => $primaryAttachment,
             ]));
             $primary->save();
-
-            foreach ($data['extra_contacts'] ?? [] as $row) {
-                VendorAddress::create(array_merge($row, [
-                    'vendor_id'  => $vendor->id,
-                    'is_primary' => false,
-                ]));
-            }
 
             // Mirror the primary contact's email onto the vendor row.
             $vendor->primary_email  = $data['primary_address']['email'] ?? null;
             $vendor->step_completed = max((int) $vendor->step_completed, 1);
             $vendor->save();
+
+            // Best-effort: drop the replaced business card from disk.
+            if ($oldPrimaryAttachment && $oldPrimaryAttachment !== $primaryAttachment) {
+                try { Storage::disk('public')->delete($oldPrimaryAttachment); } catch (\Throwable $e) { /* swallow */ }
+            }
         });
 
         $vendor->load(self::SHOW_WITH);
         return response()->json(['data' => $this->shape($vendor)]);
+    }
+
+    /* ──────────────────────────────────────────────────────────────────
+     * Additional contact persons — independent CRUD (is_primary = false).
+     *
+     * Each row persists on its own the moment the user adds/edits/deletes
+     * it, so nothing depends on "Save & Next". The primary contact row
+     * (is_primary = true) is never reachable through these — it is managed
+     * by storeContacts and stays non-deletable / non-editable here.
+     * ────────────────────────────────────────────────────────────── */
+    public function storeContact(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        $vendor = Vendor::query()->forUser($user)->findOrFail($id);
+        if ($denial = MasterVisibility::hierarchicalDenial($user, $vendor, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
+        $data = $this->validateContact($request);
+        $path = $this->absorbFile($request, 'attachment', $vendor->id, 'contact', $data['attachment_path'] ?? null);
+
+        $row = VendorAddress::create([
+            'vendor_id'        => $vendor->id,
+            'is_primary'       => false,
+            'contact_name'     => $data['contact_name'],
+            'designation'      => $data['designation'] ?? null,
+            'contact_no'       => $data['contact_no'] ?? null,
+            'email'            => $data['email'] ?? null,
+            'whatsapp_enabled' => $data['whatsapp_enabled'] ?? false,
+            'attachment_path'  => $path,
+        ]);
+
+        return response()->json(['data' => $this->shapeContact($row)], 201);
+    }
+
+    public function updateContact(Request $request, int $id, int $contactId): JsonResponse
+    {
+        $user = $request->user();
+        $vendor = Vendor::query()->forUser($user)->findOrFail($id);
+        if ($denial = MasterVisibility::hierarchicalDenial($user, $vendor, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
+        // is_primary = false guard makes the primary row unreachable → 404.
+        $row = VendorAddress::where('vendor_id', $vendor->id)
+            ->where('is_primary', false)
+            ->findOrFail($contactId);
+
+        $data = $this->validateContact($request);
+        $old = $row->attachment_path;
+        $path = $this->absorbFile($request, 'attachment', $vendor->id, 'contact', $data['attachment_path'] ?? $old);
+
+        $row->update([
+            'contact_name'     => $data['contact_name'],
+            'designation'      => $data['designation'] ?? null,
+            'contact_no'       => $data['contact_no'] ?? null,
+            'email'            => $data['email'] ?? null,
+            'whatsapp_enabled' => $data['whatsapp_enabled'] ?? false,
+            'attachment_path'  => $path,
+        ]);
+
+        if ($old && $old !== $path) {
+            try { Storage::disk('public')->delete($old); } catch (\Throwable $e) { /* swallow */ }
+        }
+
+        return response()->json(['data' => $this->shapeContact($row->fresh())]);
+    }
+
+    public function destroyContact(Request $request, int $id, int $contactId): JsonResponse
+    {
+        $user = $request->user();
+        $vendor = Vendor::query()->forUser($user)->findOrFail($id);
+        if ($denial = MasterVisibility::hierarchicalDenial($user, $vendor, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
+        $row = VendorAddress::where('vendor_id', $vendor->id)
+            ->where('is_primary', false)
+            ->findOrFail($contactId);
+
+        $old = $row->attachment_path;
+        $row->delete();
+        if ($old) {
+            try { Storage::disk('public')->delete($old); } catch (\Throwable $e) { /* swallow */ }
+        }
+
+        return response()->json(['message' => 'Contact deleted']);
+    }
+
+    /** Shared validation for a single additional contact (add + edit). */
+    private function validateContact(Request $request): array
+    {
+        return $request->validate([
+            'contact_name'     => 'required|string|max:255',
+            'designation'      => 'nullable|string|max:128',
+            'contact_no'       => 'nullable|string|max:32',
+            'email'            => 'nullable|email|max:255',
+            'whatsapp_enabled' => 'nullable|boolean',
+            'attachment'       => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:' . self::MAX_UPLOAD_KB,
+            // Existing stored path echoed back on edit when the file is unchanged.
+            'attachment_path'  => 'nullable|string|max:500',
+        ]);
+    }
+
+    /** Shape one additional contact for the SPA. */
+    private function shapeContact(VendorAddress $a): array
+    {
+        return [
+            'id'               => $a->id,
+            'contact_name'     => $a->contact_name,
+            'designation'      => $a->designation,
+            'contact_no'       => $a->contact_no,
+            'email'            => $a->email,
+            'whatsapp_enabled' => (bool) $a->whatsapp_enabled,
+            'attachment_path'  => $a->attachment_path,
+            'attachment_url'   => file_url($a->attachment_path),
+        ];
+    }
+
+    /* ──────────────────────────────────────────────────────────────────
+     * Bank Accounts — independent CRUD (KYC sub-tab "Bank Details").
+     * Each row persists on add/edit/delete; the cancelled-cheque upload is
+     * stored via absorbFile, same as the rest of the module.
+     * ────────────────────────────────────────────────────────────── */
+    public function storeBankAccount(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        $vendor = Vendor::query()->forUser($user)->findOrFail($id);
+        if ($denial = MasterVisibility::hierarchicalDenial($user, $vendor, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
+        $data = $this->validateBank($request);
+        $path = $this->absorbFile($request, 'cheque', $vendor->id, 'cheque', $data['cheque_path'] ?? null);
+
+        $row = VendorBankAccount::create([
+            'vendor_id'      => $vendor->id,
+            'bank_name'      => $data['bank_name'],
+            'branch_name'    => $data['branch_name'],
+            'account_number' => $data['account_number'],
+            'ifsc'           => strtoupper($data['ifsc']),
+            'branch_address' => $data['branch_address'] ?? null,
+            'cheque_path'    => $path,
+            'created_by'     => $user->id,
+        ]);
+
+        return response()->json(['data' => $this->shapeBank($row)], 201);
+    }
+
+    public function updateBankAccount(Request $request, int $id, int $bankId): JsonResponse
+    {
+        $user = $request->user();
+        $vendor = Vendor::query()->forUser($user)->findOrFail($id);
+        if ($denial = MasterVisibility::hierarchicalDenial($user, $vendor, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
+        $row = VendorBankAccount::where('vendor_id', $vendor->id)->findOrFail($bankId);
+        $data = $this->validateBank($request);
+        $old = $row->cheque_path;
+        $path = $this->absorbFile($request, 'cheque', $vendor->id, 'cheque', $data['cheque_path'] ?? $old);
+
+        $row->update([
+            'bank_name'      => $data['bank_name'],
+            'branch_name'    => $data['branch_name'],
+            'account_number' => $data['account_number'],
+            'ifsc'           => strtoupper($data['ifsc']),
+            'branch_address' => $data['branch_address'] ?? null,
+            'cheque_path'    => $path,
+        ]);
+
+        if ($old && $old !== $path) {
+            try { Storage::disk('public')->delete($old); } catch (\Throwable $e) { /* swallow */ }
+        }
+
+        return response()->json(['data' => $this->shapeBank($row->fresh())]);
+    }
+
+    public function destroyBankAccount(Request $request, int $id, int $bankId): JsonResponse
+    {
+        $user = $request->user();
+        $vendor = Vendor::query()->forUser($user)->findOrFail($id);
+        if ($denial = MasterVisibility::hierarchicalDenial($user, $vendor, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
+        $row = VendorBankAccount::where('vendor_id', $vendor->id)->findOrFail($bankId);
+        $old = $row->cheque_path;
+        $row->forceDelete();
+        if ($old) {
+            try { Storage::disk('public')->delete($old); } catch (\Throwable $e) { /* swallow */ }
+        }
+
+        return response()->json(['message' => 'Bank account deleted']);
+    }
+
+    private function validateBank(Request $request): array
+    {
+        return $request->validate([
+            'bank_name'      => 'required|string|max:255',
+            'branch_name'    => 'required|string|max:255',
+            'account_number' => 'required|string|max:64',
+            'ifsc'           => 'required|string|max:16',
+            'branch_address' => 'nullable|string|max:500',
+            'cheque'         => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:' . self::MAX_UPLOAD_KB,
+            'cheque_path'    => 'nullable|string|max:500',
+        ]);
+    }
+
+    private function shapeBank(VendorBankAccount $b): array
+    {
+        return [
+            'id'             => $b->id,
+            'bank_name'      => $b->bank_name,
+            'branch_name'    => $b->branch_name,
+            'account_number' => $b->account_number,
+            'ifsc'           => $b->ifsc,
+            'branch_address' => $b->branch_address,
+            'cheque_path'    => $b->cheque_path,
+            'cheque_url'     => file_url($b->cheque_path),
+        ];
+    }
+
+    /* ──────────────────────────────────────────────────────────────────
+     * GST Scrutiny — independent CRUD (KYC sub-tab "GST Scrutiny").
+     * ────────────────────────────────────────────────────────────── */
+    public function storeGstScrutiny(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        $vendor = Vendor::query()->forUser($user)->findOrFail($id);
+        if ($denial = MasterVisibility::hierarchicalDenial($user, $vendor, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
+        $data = $this->validateGst($request);
+        $row = VendorGstScrutiny::create([
+            'vendor_id'               => $vendor->id,
+            'gst_number'              => strtoupper($data['gst_number']),
+            'status'                  => $data['status'] ?? 'Active',
+            'last_filing_date'        => $data['last_filing_date'] ?? null,
+            'prev_non_gst_2a_invoice' => $data['prev_non_gst_2a_invoice'] ?? null,
+            'red_flags'               => $data['red_flags'] ?? null,
+            'created_by'              => $user->id,
+        ]);
+
+        return response()->json(['data' => $this->shapeGst($row)], 201);
+    }
+
+    public function updateGstScrutiny(Request $request, int $id, int $gstId): JsonResponse
+    {
+        $user = $request->user();
+        $vendor = Vendor::query()->forUser($user)->findOrFail($id);
+        if ($denial = MasterVisibility::hierarchicalDenial($user, $vendor, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
+        $row = VendorGstScrutiny::where('vendor_id', $vendor->id)->findOrFail($gstId);
+        $data = $this->validateGst($request);
+        $row->update([
+            'gst_number'              => strtoupper($data['gst_number']),
+            'status'                  => $data['status'] ?? 'Active',
+            'last_filing_date'        => $data['last_filing_date'] ?? null,
+            'prev_non_gst_2a_invoice' => $data['prev_non_gst_2a_invoice'] ?? null,
+            'red_flags'               => $data['red_flags'] ?? null,
+        ]);
+
+        return response()->json(['data' => $this->shapeGst($row->fresh())]);
+    }
+
+    public function destroyGstScrutiny(Request $request, int $id, int $gstId): JsonResponse
+    {
+        $user = $request->user();
+        $vendor = Vendor::query()->forUser($user)->findOrFail($id);
+        if ($denial = MasterVisibility::hierarchicalDenial($user, $vendor, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
+        VendorGstScrutiny::where('vendor_id', $vendor->id)->findOrFail($gstId)->forceDelete();
+        return response()->json(['message' => 'GST scrutiny deleted']);
+    }
+
+    private function validateGst(Request $request): array
+    {
+        return $request->validate([
+            'gst_number'              => 'required|string|max:16',
+            'status'                  => ['nullable', Rule::in(['Active', 'Suspended', 'Cancelled'])],
+            'last_filing_date'        => 'nullable|date',
+            'prev_non_gst_2a_invoice' => 'nullable|string|max:255',
+            'red_flags'               => 'nullable|string|max:2000',
+        ]);
+    }
+
+    private function shapeGst(VendorGstScrutiny $g): array
+    {
+        return [
+            'id'                       => $g->id,
+            'gst_number'               => $g->gst_number,
+            'status'                   => $g->status,
+            'last_filing_date'         => optional($g->last_filing_date)->toDateString(),
+            'prev_non_gst_2a_invoice'  => $g->prev_non_gst_2a_invoice,
+            'red_flags'                => $g->red_flags,
+        ];
     }
 
     /* ──────────────────────────────────────────────────────────────────
@@ -364,26 +740,10 @@ class VendorController extends Controller
             'trade_licenses.*.existing_path'          => 'nullable|string|max:500',
             'tl_files'                                => 'nullable|array',
             'tl_files.*'                              => 'file|mimes:jpg,jpeg,png,webp,pdf|max:' . self::MAX_UPLOAD_KB,
-
-            // Bank Accounts
-            'bank_accounts'                        => 'nullable|array',
-            'bank_accounts.*.bank_name'            => 'required|string|max:255',
-            'bank_accounts.*.branch_name'          => 'required|string|max:255',
-            'bank_accounts.*.account_number'       => 'required|string|max:64',
-            'bank_accounts.*.ifsc'                 => 'required|string|max:16',
-            'bank_accounts.*.branch_address'       => 'nullable|string|max:500',
-            'bank_accounts.*.existing_path'        => 'nullable|string|max:500',
-            'cheque_files'                         => 'nullable|array',
-            'cheque_files.*'                       => 'file|mimes:jpg,jpeg,png,webp,pdf|max:' . self::MAX_UPLOAD_KB,
-
-            // GST Scrutiny
-            'gst_scrutiny'                                 => 'nullable|array',
-            'gst_scrutiny.*.gst_number'                    => 'required|string|max:16',
-            'gst_scrutiny.*.status'                        => ['nullable', Rule::in(['Active', 'Suspended', 'Cancelled'])],
-            'gst_scrutiny.*.last_filing_date'              => 'nullable|date',
-            'gst_scrutiny.*.prev_non_gst_2a_invoice'       => 'nullable|string|max:255',
-            'gst_scrutiny.*.red_flags'                     => 'nullable|string|max:2000',
         ]);
+        // NB: Bank Accounts + GST Scrutiny are NOT handled here — they have
+        // their own CRUD endpoints so each row persists the moment it's added
+        // (no dependency on "Save & Next").
 
         DB::transaction(function () use ($vendor, $data, $request, $user) {
             $userId = $user?->id;
@@ -394,12 +754,10 @@ class VendorController extends Controller
             foreach (($data['due_diligence'] ?? [])  as $r) $keptPaths->push($r['existing_path'] ?? null);
             foreach (($data['owner_kyc'] ?? [])      as $r) $keptPaths->push($r['existing_path'] ?? null);
             foreach (($data['trade_licenses'] ?? []) as $r) $keptPaths->push($r['existing_path'] ?? null);
-            foreach (($data['bank_accounts'] ?? [])  as $r) $keptPaths->push($r['existing_path'] ?? null);
 
             $oldPaths = collect()
                 ->merge($vendor->documents()->pluck('attachment_path'))
-                ->merge($vendor->owners()->pluck('attachment_path'))
-                ->merge($vendor->bankAccounts()->pluck('cheque_path'));
+                ->merge($vendor->owners()->pluck('attachment_path'));
             foreach ($oldPaths as $p) {
                 if ($p && !$keptPaths->contains($p)) {
                     Storage::disk('public')->delete($p);
@@ -407,10 +765,10 @@ class VendorController extends Controller
             }
 
             // Hard delete so soft-deleted rows don't accumulate per save.
+            // Bank Accounts + GST Scrutiny are owned by their CRUD endpoints
+            // and are intentionally left untouched here.
             $vendor->documents()->forceDelete();
             $vendor->owners()->forceDelete();
-            $vendor->bankAccounts()->forceDelete();
-            $vendor->gstScrutiny()->forceDelete();
 
             // ── Company Due Diligence ──
             foreach (($data['due_diligence'] ?? []) as $i => $row) {
@@ -462,34 +820,6 @@ class VendorController extends Controller
                 ]);
             }
 
-            // ── Bank Accounts ──
-            foreach (($data['bank_accounts'] ?? []) as $i => $row) {
-                $path = $this->absorbFile($request, "cheque_files.$i", $vendor->id, 'cheque', $row['existing_path'] ?? null);
-                VendorBankAccount::create([
-                    'vendor_id'      => $vendor->id,
-                    'bank_name'      => $row['bank_name'],
-                    'branch_name'    => $row['branch_name'],
-                    'account_number' => $row['account_number'],
-                    'ifsc'           => strtoupper($row['ifsc']),
-                    'branch_address' => $row['branch_address'] ?? null,
-                    'cheque_path'    => $path,
-                    'created_by'     => $userId,
-                ]);
-            }
-
-            // ── GST Scrutiny ──
-            foreach (($data['gst_scrutiny'] ?? []) as $row) {
-                VendorGstScrutiny::create([
-                    'vendor_id'               => $vendor->id,
-                    'gst_number'              => strtoupper($row['gst_number']),
-                    'status'                  => $row['status'] ?? 'Active',
-                    'last_filing_date'        => $row['last_filing_date'] ?? null,
-                    'prev_non_gst_2a_invoice' => $row['prev_non_gst_2a_invoice'] ?? null,
-                    'red_flags'               => $row['red_flags'] ?? null,
-                    'created_by'              => $userId,
-                ]);
-            }
-
             $vendor->step_completed = max((int) $vendor->step_completed, 2);
             if ($vendor->status === 'draft') $vendor->status = 'inactive';
             $vendor->save();
@@ -513,7 +843,9 @@ class VendorController extends Controller
         }
 
         $data = $request->validate([
-            'mappings'                    => 'required|array|min:1',
+            // Allow an empty array so the per-row "Map Product" popup can persist
+            // a delete-to-empty immediately (replace-all → drops every mapping).
+            'mappings'                    => 'present|array',
             'mappings.*.product_id'       => 'required|integer|exists:products,id',
             'mappings.*.batch_serial_lot' => 'nullable|string|max:128',
             'mappings.*.purchase_price'   => 'required|numeric|min:0',
@@ -583,17 +915,16 @@ class VendorController extends Controller
                     ])
                 );
 
-                // Flip the product to Active once it has a vendor
-                // mapped. Mirrors the end-state the product wizard
-                // reaches after Step 4.
-                $product = \App\Models\Product::find($productId);
-                if ($product) {
-                    $product->step_completed = max((int) $product->step_completed, 4);
-                    if ($product->status !== 'active') {
-                        $product->status = 'active';
-                    }
-                    $product->save();
-                }
+            }
+
+            // Flip every mapped product to Active / step 4 in ONE query —
+            // previously a per-row Product::find + save inside the loop (N+1).
+            if (!empty($nowMappedProductIds)) {
+                \App\Models\Product::whereIn('id', array_unique($nowMappedProductIds))
+                    ->update([
+                        'status'         => 'active',
+                        'step_completed' => DB::raw('GREATEST(step_completed, 4)'),
+                    ]);
             }
 
             // Drop any product_vendor_maps that USED to mirror this
@@ -603,9 +934,14 @@ class VendorController extends Controller
                 ->when(!empty($nowMappedProductIds), fn ($q) => $q->whereNotIn('product_id', $nowMappedProductIds))
                 ->delete();
 
-            $vendor->step_completed = 4;
-            $vendor->status         = 'active';
-            $vendor->save();
+            // Only mark the vendor fully onboarded when it actually has at least
+            // one product mapped. A delete-to-empty (mappings: []) must NOT leave
+            // a product-less vendor looking Active/step-4.
+            if (!empty($nowMappedProductIds)) {
+                $vendor->step_completed = 4;
+                $vendor->status         = 'active';
+                $vendor->save();
+            }
         });
 
         $vendor->load(self::SHOW_WITH);
@@ -711,11 +1047,17 @@ class VendorController extends Controller
             'vendor_behaviour_name'    => optional($v->vendorBehaviour)->name,
             'segment_id'               => $v->segment_id,
             'segment_name'             => optional($v->segment)->title,
+            // Full multi-select set (ids + labels) from the vendor_segments pivot.
+            'segment_ids'              => $v->segments->pluck('id')->all(),
+            'segments'                 => $v->segments->map(fn ($s) => ['id' => $s->id, 'name' => $s->name])->all(),
             'compliance_behaviour_id'  => $v->compliance_behaviour_id,
             'compliance_behaviour_name'=> optional($v->complianceBehaviour)->name,
+            'classification_id'        => $v->classification_id,
+            'classification_name'      => optional($v->classification)->name,
 
             'primary_address' => $primary ? [
                 'id'                => $primary->id,
+                'address_type'      => $primary->address_type,
                 'address_line'      => $primary->address_line,
                 'country_id'        => $primary->country_id,
                 'state_id'          => $primary->state_id,
@@ -727,6 +1069,8 @@ class VendorController extends Controller
                 'contact_no'        => $primary->contact_no,
                 'email'             => $primary->email,
                 'whatsapp_enabled'  => (bool) $primary->whatsapp_enabled,
+                'attachment_path'   => $primary->attachment_path,
+                'attachment_url'    => file_url($primary->attachment_path),
             ] : null,
 
             'extra_contacts' => $v->addresses->reject(fn ($a) => $a->is_primary)->values()->map(fn ($a) => [
@@ -851,6 +1195,8 @@ class VendorController extends Controller
                 'vendor_behaviour'      => $active(VendorBehaviour::class,      ['id', 'name']),
                 'segments'              => $active(Segments::class,             ['id', 'name']),
                 'compliance_behaviours' => $active(ComplianceBehaviours::class, ['id', 'name']),
+                'classifications'       => $active(CustomerClassifications::class, ['id', 'name']),
+                'address_types'         => $active(AddressTypes::class,           ['id', 'name']),
                 'countries'             => $active(Countries::class,            ['id', 'name']),
                 'state_codes'           => $stateCodes,
                 'states'                => $active(States::class,               ['id', 'name', 'country_id']),

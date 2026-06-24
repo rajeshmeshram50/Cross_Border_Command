@@ -5,7 +5,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
 import AddVendorModal from './AddVendorModal';
 import SupplierEvidenceVaultModal, { type SupplierVaultTarget } from './SupplierEvidenceVaultModal';
-import { ShimmerTable } from '../../components/ui/Shimmer';
+import { ShimmerTable, ShimmerClmMaster } from '../../components/ui/Shimmer';
+import Tooltip from '../../components/ui/Tooltip';
 import WorklistPager from '../../components/ui/WorklistPager';
 import {
   readVendorMasterBundle,
@@ -133,6 +134,10 @@ export default function Vendors() {
   const [vaultTarget, setVaultTarget] = useState<SupplierVaultTarget | null>(null);
   /* When set, the Contact Persons popup lists all of this supplier's contacts. */
   const [contactsTarget, setContactsTarget] = useState<Vendor | null>(null);
+  /* Contact Persons popup paginates 5 per page. Resets whenever it opens. */
+  const CONTACTS_PER_PAGE = 5;
+  const [contactsPage, setContactsPage] = useState(1);
+  useEffect(() => { setContactsPage(1); }, [contactsTarget]);
   const [loading, setLoading] = useState(true);
   /* "What We Are Doing Here" stepper — collapsible, open by default to
      mirror the Figma. Purely presentational. */
@@ -397,18 +402,35 @@ useEffect(() => {
         .sup-fig .sl-search-clear:hover{background:#7c3aed;color:#fff;}
 
         /* TABLE — purple gradient header + purple chrome (Figma sl-table) */
-        .sup-fig .sl-table-scroll{overflow-x:auto;}
+        /* Soft purple glow at the top + faint gradient so the table area
+           never reads as flat white, even with only a couple of rows. */
+        .sup-fig .sl-table-scroll{overflow-x:auto;background:radial-gradient(130% 360px at 50% -50px,rgba(167,139,250,.12),transparent 70%),linear-gradient(180deg,#ffffff 0%,#fdfbff 100%);}
         .sup-fig .sl-table{width:100%;border-collapse:collapse;font-size:11.5px;white-space:nowrap;}
         .sup-fig .sl-table thead tr{background:linear-gradient(110deg,#8b5cf6 0%,#7c3aed 45%,#6d28d9 75%,#5b21b6 100%);}
         .sup-fig .sl-table thead th{color:#fff;font-size:9.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;text-align:left;padding:9px 13px;}
         .sup-fig .sl-table thead th:last-child{text-align:center;}
         .sup-fig .sl-table tbody td{padding:7px 13px;border-bottom:1px solid #F1ECFB;color:#334155;vertical-align:middle;}
-        .sup-fig .sl-table tbody tr{transition:background .14s;}
-        .sup-fig .sl-table tbody tr:hover{background:#FAF7FF;}
+        .sup-fig .sl-table tbody tr{transition:background .18s ease,box-shadow .18s ease;}
+        /* Gentle zebra so rows are easier to scan. */
+        .sup-fig .sl-table tbody tr:nth-child(even){background:rgba(139,92,246,.035);}
+        /* Hover = soft purple sweep + a sliding left accent + lifted SR chip. */
+        .sup-fig .sl-table tbody tr:hover{background:linear-gradient(90deg,rgba(124,58,237,.11),rgba(167,139,250,.05) 55%,transparent);box-shadow:inset 3px 0 0 #7c3aed,0 1px 0 rgba(124,58,237,.06);}
+        .sup-fig .sl-table tbody tr:hover .sl-sr{transform:scale(1.08) rotate(-3deg);box-shadow:0 5px 12px rgba(124,58,237,.5);}
+        .sup-fig .sl-table tbody tr:hover .sl-code{border-color:#c4b5fd;background:#efe7fe;}
+        .sup-fig .sl-table tbody tr:hover .sl-name{color:#5b21b6;}
+        .sup-fig .sl-sr{transition:transform .2s cubic-bezier(.34,1.56,.64,1),box-shadow .2s ease;}
+        .sup-fig .sl-code{transition:background .18s ease,border-color .18s ease;}
+        .sup-fig .sl-name{transition:color .18s ease;}
         .sup-fig .sl-table tbody tr:last-child td{border-bottom:none;}
         .sup-fig .sl-sr{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:7px;font-size:10.5px;font-weight:800;color:#fff;background:linear-gradient(135deg,#8b5cf6,#7c3aed);box-shadow:0 2px 5px rgba(124,58,237,.3);}
         .sup-fig .sl-code{display:inline-flex;align-items:center;font-family:inherit;font-feature-settings:"tnum";font-size:10.5px;font-weight:700;letter-spacing:.01em;color:#5b21b6;background:#F5F1FE;border:1px solid #E2D4FA;border-radius:6px;padding:2px 8px;}
         .sup-fig .sl-name{font-weight:700;font-size:12px;color:#1E293B;letter-spacing:-.1px;}
+        /* Truncate long values so they never stretch the column / break the row.
+           Explicit per-field caps because table cells auto-size to content. */
+        .sup-fig .sl-trunc{display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;}
+        .sup-fig .sl-name.sl-trunc{max-width:200px;}
+        .sup-fig .sl-contact.sl-trunc{max-width:140px;}
+        .sup-fig .sl-email.sl-trunc{max-width:210px;}
         .sup-fig .sl-state,.sup-fig .sl-country,.sup-fig .sl-contact{font-weight:600;color:#475569;}
         .sup-fig .sl-contact-wrap{display:inline-flex;align-items:center;gap:6px;}
         .sup-fig .sl-contact-more{font-family:inherit;font-size:10px;font-weight:800;color:#7c3aed;background:#f1eafe;border:1px solid #ddd0f7;border-radius:999px;padding:2px 7px;cursor:pointer;line-height:1;transition:all .15s;}
@@ -424,6 +446,15 @@ useEffect(() => {
         .sc-close{margin-left:auto;width:30px;height:30px;border-radius:9px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.12);color:#fff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;}
         .sc-close:hover{background:rgba(255,255,255,.22);}
         .sc-body{padding:8px 14px 14px;max-height:60vh;overflow-y:auto;}
+        /* Contact Persons pager — 5 per page */
+        .sc-pager{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 16px;border-top:1px solid #f1ecfb;background:#FBF9FF;}
+        .sc-pg-info{font-size:11.5px;font-weight:600;color:#6d28d9;}
+        .sc-pg-info b{color:#5b21b6;}
+        .sc-pg-ctrls{display:inline-flex;align-items:center;gap:7px;}
+        .sc-pg-count{font-size:11.5px;font-weight:700;color:#fff;background:linear-gradient(135deg,#8b5cf6,#7c3aed,#5b21b6);border-radius:8px;padding:4px 11px;box-shadow:0 3px 9px rgba(124,58,237,.4);}
+        .sc-pg-arrow{width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #E2D4FA;border-radius:8px;background:#fff;color:#6d28d9;cursor:pointer;transition:background .14s,color .14s,border-color .14s;}
+        .sc-pg-arrow:hover:not(:disabled){background:#7c3aed;color:#fff;border-color:transparent;}
+        .sc-pg-arrow:disabled{opacity:.4;cursor:not-allowed;}
         .sc-row{display:flex;align-items:flex-start;gap:12px;padding:12px 6px;border-bottom:1px solid #f1ecfb;}
         .sc-row:last-child{border-bottom:none;}
         .sc-avatar{width:38px;height:38px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:14px;background:linear-gradient(135deg,#8b5cf6,#7c3aed);}
@@ -446,7 +477,7 @@ useEffect(() => {
         .sup-fig .sl-wa-dot{width:4px;height:4px;border-radius:50%;background:currentColor;}
         .sup-fig .sl-wa--yes{color:#16a34a;background:#F0FDF4;border-color:#BBF7D0;}
         .sup-fig .sl-wa--no{color:#dc2626;background:#FEF2F2;border-color:#FECACA;}
-        .sup-fig .sl-actions{display:flex;align-items:center;justify-content:center;gap:6px;}
+        .sup-fig .sl-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;padding-right:18px;}
         .sup-fig .sl-act-btn{width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:8px;border:1px solid;cursor:pointer;transition:transform .14s,box-shadow .14s,background .14s;}
         .sup-fig .sl-act-btn svg{width:13px;height:13px;}
         .sup-fig .sl-act-btn:hover{transform:translateY(-1px);}
@@ -457,6 +488,9 @@ useEffect(() => {
         .sup-fig .sl-evault-btn svg{width:14px;height:14px;position:relative;z-index:1;}
         .sup-fig .sl-evault-btn span{position:relative;z-index:1;}
         .sup-fig .sl-evault-btn:hover{background:linear-gradient(135deg,#8b5cf6 0%,#7c3aed 45%,#6d28d9 100%);box-shadow:0 7px 18px rgba(124,58,237,.52),0 1px 0 rgba(255,255,255,.45) inset,0 -2px 6px rgba(76,29,149,.35) inset;transform:translateY(-1px);}
+        /* Book Entry — teal icon button (name shown via tooltip), same size as the edit icon button. */
+        .sup-fig .sl-act-btn--book{color:#0d9488;background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border-color:#99f6e4;box-shadow:0 1px 3px rgba(13,148,136,.12),0 1px 0 rgba(255,255,255,.7) inset;}
+        .sup-fig .sl-act-btn--book:hover{background:linear-gradient(135deg,#2dd4bf,#0d9488);color:#fff;border-color:transparent;box-shadow:0 5px 13px rgba(13,148,136,.45),0 1px 0 rgba(255,255,255,.3) inset;}
         .sup-fig .sl-empty{text-align:center;color:#94A3B8;font-weight:600;padding:24px 16px;}
         .sup-fig .sl-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-top:1px solid #F1ECFB;background:#FBF9FF;}
         .sup-fig .sl-count{font-size:11.5px;font-weight:700;color:#6d28d9;background:#F5F1FE;border:1px solid #E2D4FA;border-radius:8px;padding:5px 12px;}
@@ -630,32 +664,51 @@ useEffect(() => {
         /* ───── Dark mode for the purple Figma supplier list ─────
            Translucent purple accents on a deep surface (matches the app's
            dark-mode recipe). Light-mode values above are untouched. */
-        [data-bs-theme="dark"] .sup-fig .cstrip{background:linear-gradient(110deg,#2a1d54 0%,#34216b 45%,#3b2178 80%,#4c1d95 100%);border-color:rgba(167,139,250,.3);box-shadow:0 8px 28px rgba(0,0,0,.4);}
+        /* Flat solid panels in dark — no gradient sweeps; clean + clear. */
+        [data-bs-theme="dark"] .sup-fig .cstrip{background:#34216b;border-color:rgba(167,139,250,.28);box-shadow:0 8px 28px rgba(0,0,0,.4);}
+        [data-bs-theme="dark"] .sup-fig .cstrip__glow,
+        [data-bs-theme="dark"] .sup-fig .cstrip__sheen{display:none;}
         [data-bs-theme="dark"] .sup-fig .cstrip__title{color:#f3e8ff;}
         [data-bs-theme="dark"] .sup-fig .cstrip__sub{color:#c4b5fd;}
 
         [data-bs-theme="dark"] .sup-fig .bref-box{background:#1c1633;border-color:rgba(167,139,250,.22);box-shadow:0 8px 28px rgba(0,0,0,.35);}
-        [data-bs-theme="dark"] .sup-fig .bref-box__header{background:linear-gradient(110deg,#241a47 0%,#2c1f58 60%,#34216b 100%);border-bottom-color:rgba(167,139,250,.2);}
+        [data-bs-theme="dark"] .sup-fig .bref-box__header{background:#241a47;border-bottom-color:rgba(167,139,250,.2);}
+        [data-bs-theme="dark"] .sup-fig .bref-box__header::before,
+        [data-bs-theme="dark"] .sup-fig .bref-box__header::after{display:none;}
         [data-bs-theme="dark"] .sup-fig .bref-box__header-title{color:#f3e8ff;}
         [data-bs-theme="dark"] .sup-fig .bref-box__header-sub,
         [data-bs-theme="dark"] .sup-fig .bref-box__header-label{color:#c4b5fd;}
-        [data-bs-theme="dark"] .sup-fig .bref-box__body{background:linear-gradient(180deg,#1c1633 0%,#171029 100%);}
+        [data-bs-theme="dark"] .sup-fig .bref-box__body{background:#171029;}
         [data-bs-theme="dark"] .sup-fig .bref-item{background:#221a40;border-color:rgba(167,139,250,.16);box-shadow:none;}
         [data-bs-theme="dark"] .sup-fig .bref-item__title{color:#ede9fe;}
         [data-bs-theme="dark"] .sup-fig .bref-item__desc,
         [data-bs-theme="dark"] .sup-fig .bref-item__num{color:#a89fc7;}
         [data-bs-theme="dark"] .sup-fig .bref-box__toggle{background:rgba(255,255,255,.08);border-color:rgba(167,139,250,.25);color:#c4b5fd;}
 
-        [data-bs-theme="dark"] .sup-fig .sl-wrap{background:#1c2531;border-color:rgba(167,139,250,.22);box-shadow:0 8px 28px rgba(0,0,0,.4);}
-        [data-bs-theme="dark"] .sup-fig .sl-toolbar{background:rgba(124,58,237,.12);border-bottom-color:rgba(167,139,250,.2);}
-        [data-bs-theme="dark"] .sup-fig .sl-tabs{background:rgba(255,255,255,.04);border-color:rgba(167,139,250,.18);}
-        [data-bs-theme="dark"] .sup-fig .sl-tab{color:#c4b5fd;background:rgba(255,255,255,.04);border-color:rgba(167,139,250,.15);}
-        [data-bs-theme="dark"] .sup-fig .sl-search{background:rgba(255,255,255,.05);border-color:rgba(167,139,250,.22);}
-        [data-bs-theme="dark"] .sup-fig .sl-search input{color:#ede9fe;}
-        [data-bs-theme="dark"] .sup-fig .sl-tab-count{background:rgba(255,255,255,.1);color:#c4b5fd;border-color:transparent;}
+        [data-bs-theme="dark"] .sup-fig .sl-wrap{background:#141a2b;border-color:rgba(167,139,250,.2);box-shadow:0 8px 28px rgba(0,0,0,.45);}
+        [data-bs-theme="dark"] .sup-fig .sl-toolbar{background:#1f1838;border-bottom-color:rgba(167,139,250,.22);}
+        [data-bs-theme="dark"] .sup-fig .sl-tabs{background:rgba(124,58,237,.14);border-color:rgba(167,139,250,.3);}
+        [data-bs-theme="dark"] .sup-fig .sl-tab{color:#e2d6fb;background:rgba(255,255,255,.06);border-color:rgba(167,139,250,.24);}
+        [data-bs-theme="dark"] .sup-fig .sl-tab:hover{color:#fff;background:rgba(124,58,237,.32);border-color:rgba(167,139,250,.5);}
+        [data-bs-theme="dark"] .sup-fig .sl-tab svg{opacity:.95;}
+        [data-bs-theme="dark"] .sup-fig .sl-search{background:rgba(255,255,255,.07);border-color:rgba(167,139,250,.32);}
+        [data-bs-theme="dark"] .sup-fig .sl-search input{color:#f3effe;}
+        [data-bs-theme="dark"] .sup-fig .sl-search input::placeholder{color:#a89ad8;}
+        [data-bs-theme="dark"] .sup-fig .sl-search-clear{background:rgba(167,139,250,.22);color:#d6c9f5;}
+        [data-bs-theme="dark"] .sup-fig .sl-tab-count{background:rgba(255,255,255,.14);color:#e2d6fb;border-color:transparent;}
 
-        [data-bs-theme="dark"] .sup-fig .sl-table tbody td{color:#ced4da;border-bottom-color:rgba(255,255,255,.06);}
-        [data-bs-theme="dark"] .sup-fig .sl-table tbody tr:hover{background:rgba(124,58,237,.12);}
+        [data-bs-theme="dark"] .sup-fig .sl-table tbody td{color:#cbd5e1;border-bottom-color:rgba(167,139,250,.10);}
+        /* Clean flat surface in dark — no glow/gradient; the premium feel comes
+           from the crisp zebra + interactive hover, not a hazy background. */
+        [data-bs-theme="dark"] .sup-fig .sl-table-scroll{background:#141a2b;}
+        [data-bs-theme="dark"] .sup-fig .sl-table thead tr{background:#4c1d95;}
+        [data-bs-theme="dark"] .sup-fig .sl-table tbody tr:nth-child(even){background:rgba(124,58,237,.055);}
+        /* Clean flat hover — CLM gold-standard recipe. No gradient sweep, no
+           accent bar, no chip bounce; just a calm translucent purple fill. */
+        [data-bs-theme="dark"] .sup-fig .sl-table tbody tr:hover{background:rgba(124,58,237,.16);box-shadow:none;}
+        [data-bs-theme="dark"] .sup-fig .sl-table tbody tr:hover .sl-sr{transform:none;box-shadow:0 2px 5px rgba(124,58,237,.35);}
+        [data-bs-theme="dark"] .sup-fig .sl-table tbody tr:hover .sl-code{background:rgba(124,58,237,.24);border-color:rgba(167,139,250,.4);}
+        [data-bs-theme="dark"] .sup-fig .sl-table tbody tr:hover .sl-name{color:#f3e8ff;}
         [data-bs-theme="dark"] .sup-fig .sl-name{color:#f3e8ff;}
         [data-bs-theme="dark"] .sup-fig .sl-state,
         [data-bs-theme="dark"] .sup-fig .sl-country,
@@ -663,11 +716,30 @@ useEffect(() => {
         [data-bs-theme="dark"] .sup-fig .sl-phone{color:#9a93b3;}
         [data-bs-theme="dark"] .sup-fig .sl-code{background:rgba(124,58,237,.18);color:#c4b5fd;border-color:rgba(167,139,250,.3);}
         [data-bs-theme="dark"] .sup-fig .sl-contact-more{background:rgba(124,58,237,.2);color:#c4b5fd;border-color:rgba(167,139,250,.3);}
+        /* Type + WhatsApp pills — translucent dark-tinted variants so they read
+           crisp on the dark surface instead of washing out in their light bg. */
+        [data-bs-theme="dark"] .sup-fig .sl-pill--material{color:#c4b5fd;background:rgba(124,58,237,.20);border-color:rgba(167,139,250,.38);}
+        [data-bs-theme="dark"] .sup-fig .sl-pill--logistics{color:#67e8f9;background:rgba(8,145,178,.20);border-color:rgba(34,211,238,.38);}
+        [data-bs-theme="dark"] .sup-fig .sl-pill--services{color:#fcd34d;background:rgba(217,119,6,.22);border-color:rgba(251,191,36,.38);}
+        [data-bs-theme="dark"] .sup-fig .sl-wa--yes{color:#86efac;background:rgba(22,163,74,.20);border-color:rgba(74,222,128,.38);}
+        [data-bs-theme="dark"] .sup-fig .sl-wa--no{color:#fca5a5;background:rgba(220,38,38,.20);border-color:rgba(248,113,113,.38);}
+        [data-bs-theme="dark"] .sup-fig .sl-email{color:#c4b5fd;}
+        /* Edit action button — was a bright white square in dark; make it a
+           translucent purple chip that fills on hover (like the Evidence btn). */
+        [data-bs-theme="dark"] .sup-fig .sl-act-btn--edit{color:#c4b5fd;background:rgba(124,58,237,.18);border-color:rgba(167,139,250,.38);box-shadow:none;}
+        [data-bs-theme="dark"] .sup-fig .sl-act-btn--edit:hover{background:linear-gradient(135deg,#8b5cf6,#7c3aed);color:#fff;border-color:transparent;box-shadow:0 5px 13px rgba(124,58,237,.5);}
+        [data-bs-theme="dark"] .sup-fig .sl-act-btn--book{color:#5eead4;background:rgba(13,148,136,.20);border-color:rgba(45,212,191,.4);box-shadow:none;}
+        [data-bs-theme="dark"] .sup-fig .sl-act-btn--book:hover{background:linear-gradient(135deg,#2dd4bf,#0d9488);color:#fff;border-color:transparent;box-shadow:0 5px 13px rgba(13,148,136,.5);}
         [data-bs-theme="dark"] .sup-fig .sl-footer{background:rgba(255,255,255,.03);border-top-color:rgba(255,255,255,.07);}
 
         /* Contact Persons popup — dark surface */
         [data-bs-theme="dark"] .sup-fig .sc-pop{background:#1c2531;border-color:rgba(167,139,250,.25);}
         [data-bs-theme="dark"] .sup-fig .sc-row{border-bottom-color:rgba(255,255,255,.06);}
+        [data-bs-theme="dark"] .sup-fig .sc-pager{background:rgba(255,255,255,.03);border-top-color:rgba(255,255,255,.07);}
+        [data-bs-theme="dark"] .sup-fig .sc-pg-info{color:#c4b5fd;}
+        [data-bs-theme="dark"] .sup-fig .sc-pg-info b{color:#ede9fe;}
+        [data-bs-theme="dark"] .sup-fig .sc-pg-arrow{background:rgba(255,255,255,.05);border-color:rgba(167,139,250,.25);color:#c4b5fd;}
+        [data-bs-theme="dark"] .sup-fig .sc-pg-arrow:hover:not(:disabled){background:#7c3aed;color:#fff;border-color:transparent;}
         [data-bs-theme="dark"] .sup-fig .sc-name{color:#f3e8ff;}
         [data-bs-theme="dark"] .sup-fig .sc-meta span{color:#adb5bd;}
       `}</style>
@@ -675,6 +747,10 @@ useEffect(() => {
       <Row>
         <Col xs={12}>
          <div className="sup-fig" ref={rootRef}>
+          {/* Whole-page shimmer while the supplier list loads — header strip,
+              4-step brief, toolbar tabs and table all resolve into shape at
+              once (reuses the shared full-page skeleton). */}
+          {loading ? <ShimmerClmMaster cols={7} rows={8} twoTab /> : (<>
 
           {/* HEADER STRIP — purple gradient hero (Figma "Supplier Management") */}
           <div className="cstrip">
@@ -831,27 +907,28 @@ useEffect(() => {
                           <tr key={v.id}>
                             <td><span className="sl-sr">{start + i + 1}</span></td>
                             <td><span className="sl-code">{v.code}</span></td>
-                            <td><span className="sl-name">{v.companyName}</span></td>
+                            <td><Tooltip label={v.companyName}><span className="sl-name sl-trunc">{v.companyName}</span></Tooltip></td>
                             <td><span className={`sl-pill sl-pill--${kind}`}><span className="sl-pill-dot" />{v.type}</span></td>
                             <td><span className="sl-state">{v.state}</span></td>
                             <td><span className="sl-country">{v.country || 'India'}</span></td>
                             <td>
                               <span className="sl-contact-wrap">
-                                <span className="sl-contact">{v.contactName}</span>
+                                <Tooltip label={v.contactName}><span className="sl-contact sl-trunc">{v.contactName}</span></Tooltip>
                                 {v.contacts.length > 1 && (
+                                  <Tooltip label={`View all ${v.contacts.length} contacts`}>
                                   <button
                                     type="button"
                                     className="sl-contact-more"
-                                    title={`View all ${v.contacts.length} contacts`}
                                     onClick={() => setContactsTarget(v)}
                                   >
                                     +{v.contacts.length - 1}
                                   </button>
+                                  </Tooltip>
                                 )}
                               </span>
                             </td>
                             <td><span className="sl-phone">{v.phone}</span></td>
-                            <td><a className="sl-email" href={`mailto:${v.email}`}>{v.email}</a></td>
+                            <td><Tooltip label={v.email}><a className="sl-email sl-trunc" href={`mailto:${v.email}`}>{v.email}</a></Tooltip></td>
                             <td>
                               {hasWa
                                 ? <span className="sl-wa sl-wa--yes"><span className="sl-wa-dot" />Yes</span>
@@ -859,18 +936,28 @@ useEffect(() => {
                             </td>
                             <td>
                               <div className="sl-actions">
+                                <Tooltip label="Edit Supplier">
                                 <button
                                   type="button"
                                   className="sl-act-btn sl-act-btn--edit"
-                                  title="Edit Supplier"
                                   onClick={() => { setEditingId(v.id); setEditingStep(null); setAddOpen(true); }}
                                 >
                                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
                                 </button>
+                                </Tooltip>
+                                {/* Zoho Entry — UI only for now; ledger-style entry wiring comes later. */}
+                                <Tooltip label="Zoho Entry">
+                                <button
+                                  type="button"
+                                  className="sl-act-btn sl-act-btn--book"
+                                  onClick={() => toast.info('Coming soon', 'Zoho Entry will be available once it is wired up.')}
+                                >
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /><path d="M9 7h7" /><path d="M9 11h7" /></svg>
+                                </button>
+                                </Tooltip>
                                 <button
                                   type="button"
                                   className="sl-evault-btn"
-                                  title="Evidence Vault"
                                   onClick={() => setVaultTarget({
                                     id: v.code,
                                     db_id: v.id,
@@ -880,6 +967,7 @@ useEffect(() => {
                                     country: v.country,
                                     contact: v.contactName,
                                     contactCity: v.city,
+                                    email: v.email && v.email !== '—' ? v.email : undefined,
                                   })}
                                 >
                                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" /></svg>
@@ -899,6 +987,7 @@ useEffect(() => {
               </>
             )}
           </div>
+          </>)}
          </div>
         </Col>
       </Row>
@@ -930,23 +1019,48 @@ useEffect(() => {
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                 </button>
               </div>
-              <div className="sc-body">
-                {contactsTarget.contacts.map((c, i) => (
-                  <div className="sc-row" key={i}>
-                    <div className="sc-avatar">{(c.name || '?').trim().charAt(0).toUpperCase()}</div>
-                    <div className="min-w-0" style={{ flex: 1 }}>
-                      <div className="sc-name">
-                        {c.name || '—'}
-                        <span className={`sc-role ${c.isPrimary ? 'is-primary' : 'is-other'}`}>{c.role}</span>
-                      </div>
-                      <div className="sc-meta">
-                        {c.phone && <span><i className="ri-phone-line" />{c.phone}</span>}
-                        {c.email && <span><i className="ri-mail-line" />{c.email}</span>}
-                      </div>
+              {(() => {
+                const all = contactsTarget.contacts;
+                const totalPages = Math.max(1, Math.ceil(all.length / CONTACTS_PER_PAGE));
+                const page = Math.min(contactsPage, totalPages);
+                const start = (page - 1) * CONTACTS_PER_PAGE;
+                const slice = all.slice(start, start + CONTACTS_PER_PAGE);
+                return (
+                  <>
+                    <div className="sc-body">
+                      {slice.map((c, i) => (
+                        <div className="sc-row" key={start + i}>
+                          <div className="sc-avatar">{(c.name || '?').trim().charAt(0).toUpperCase()}</div>
+                          <div className="min-w-0" style={{ flex: 1 }}>
+                            <div className="sc-name">
+                              {c.name || '—'}
+                              <span className={`sc-role ${c.isPrimary ? 'is-primary' : 'is-other'}`}>{c.role}</span>
+                            </div>
+                            <div className="sc-meta">
+                              {c.phone && <span><i className="ri-phone-line" />{c.phone}</span>}
+                              {c.email && <span><i className="ri-mail-line" />{c.email}</span>}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  </div>
-                ))}
-              </div>
+                    {all.length > CONTACTS_PER_PAGE && (
+                      <div className="sc-pager">
+                        <span className="sc-pg-info">Showing <b>{start + 1}–{Math.min(start + CONTACTS_PER_PAGE, all.length)}</b> of <b>{all.length}</b></span>
+                        <div className="sc-pg-ctrls">
+                          <button type="button" className="sc-pg-arrow" disabled={page === 1} onClick={() => setContactsPage(page - 1)} aria-label="Previous">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                          </button>
+                          <span className="sc-pg-count">{page} / {totalPages}</span>
+                          <button type="button" className="sc-pg-arrow" disabled={page === totalPages} onClick={() => setContactsPage(page + 1)} aria-label="Next">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>
