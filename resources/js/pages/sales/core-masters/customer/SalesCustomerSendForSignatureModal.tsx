@@ -8,11 +8,11 @@ import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
 } from '../../../hrms/doc-templates/HeaderFooterPanel';
-import ClmInsertTableModal from '../../../clm/ClmInsertTableModal';
-import ClmInsertHrModal from '../../../clm/ClmInsertHrModal';
-import ClmInsertPlaceholderModal from '../../../clm/ClmInsertPlaceholderModal';
-import ClmClauseInsertPanel from '../../../clm/ClmClauseInsertPanel';
-import ClmRichTextToolbar from '../../../clm/ClmRichTextToolbar';
+import ClmInsertTableModal from '../../../clm/document-masters/ClmInsertTableModal';
+import ClmInsertHrModal from '../../../clm/document-masters/ClmInsertHrModal';
+import ClmInsertPlaceholderModal from '../../../clm/document-masters/ClmInsertPlaceholderModal';
+import ClmClauseInsertPanel from '../../../clm/document-masters/ClmClauseInsertPanel';
+import ClmRichTextToolbar from '../../../clm/document-masters/ClmRichTextToolbar';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PdfjsWorker as unknown as string;
 
