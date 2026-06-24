@@ -516,6 +516,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::delete('/employees/{id}/force',        [EmployeeController::class, 'forceDestroy']);
 
     Route::get   ('/employees/{id}/holidays',     [EmployeeController::class, 'holidays']);
+    Route::post  ('/employees/{id}/set-password', [EmployeeController::class, 'setPassword']);
     Route::apiResource('employees', EmployeeController::class);
 
 

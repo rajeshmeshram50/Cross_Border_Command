@@ -232,6 +232,21 @@ class ClmSignatureController extends Controller
             ], 422);
         }
 
+        // A single person (same email) must appear only ONCE. Collapse any
+        // duplicate signers so Zoho isn't sent the same recipient multiple
+        // times (which created multiple signature actions for one person).
+        // Keep the first occurrence, preserving order/signing position.
+        $seenSignerEmails = [];
+        $data['signers'] = collect($data['signers'])
+            ->filter(function ($s) use (&$seenSignerEmails) {
+                $key = strtolower(trim((string) ($s['email'] ?? '')));
+                if ($key === '' || in_array($key, $seenSignerEmails, true)) return false;
+                $seenSignerEmails[] = $key;
+                return true;
+            })
+            ->values()
+            ->all();
+
         $tempPaths    = [];
         $localDocMeta = [];   // parallel meta we'll use after Zoho returns
         $requestUuid  = (string) Str::uuid();
@@ -591,6 +606,20 @@ class ClmSignatureController extends Controller
                 'message' => 'No signer could be resolved — the agreement\'s applicable party (' . $headAgreement->party . ') does not match a customer/consignee on this lead.',
             ], 422);
         }
+
+        // Collapse duplicate signers (same email) so one person isn't sent to
+        // Zoho as multiple signature actions — e.g. when the customer and
+        // consignee resolve to the same email. Keep the first occurrence.
+        $seenAgreementEmails = [];
+        $signers = collect($signers)
+            ->filter(function ($s) use (&$seenAgreementEmails) {
+                $key = strtolower(trim((string) ($s['email'] ?? '')));
+                if ($key === '' || in_array($key, $seenAgreementEmails, true)) return false;
+                $seenAgreementEmails[] = $key;
+                return true;
+            })
+            ->values()
+            ->all();
 
         $requestUuid  = (string) Str::uuid();
         $tempPaths    = [];

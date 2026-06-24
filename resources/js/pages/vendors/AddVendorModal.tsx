@@ -4429,32 +4429,30 @@ function TradeDocsTable(props: {
 function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: string) => void; onEdit?: (id: string) => void }) {
   if (props.rows.length === 0) return <EmptyTable label="No products mapped yet. Use “+ Add More Products” to link this vendor to one or more products." />;
   return (
-    <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
-      <table className="table align-middle mb-0 avm-kyc-table">
+    <div className="table-responsive border rounded avm-kyc-table-wrap avm-mapped-wrap">
+      <table className="table align-middle mb-0 avm-kyc-table avm-mapped-table">
         <thead className="table-light">
           <tr>
             <th>SR NO</th>
-            <th>PRODUCT CODE</th>
-            <th>PRODUCT NAME</th>
-            <th>HSN / SAC</th>
+            <th>PRODUCT</th>
+            <th>CODE</th>
+            <th>HSN/SAC</th>
             <th>SEGMENT</th>
-            <th>BATCH / LOT</th>
             <th className="text-end">PRICE (₹)</th>
             <th className="text-end">GST %</th>
-            <th className="text-end">GST AMT (₹)</th>
+            <th className="text-end">GST (₹)</th>
             <th className="text-end">TOTAL (₹)</th>
-            <th>ACTIONS</th>
+            <th aria-label="Actions"></th>
           </tr>
         </thead>
         <tbody>
           {props.rows.map((r, i) => (
             <tr key={r.id}>
-              <td>{String(i + 1).padStart(2, '0')}</td>
-              <td><span className="avm-auto-code">{r.productCode}</span></td>
+              <td><span className="avm-sr-pill">{String(i + 1).padStart(2, '0')}</span></td>
               <td><strong>{r.productName}</strong></td>
+              <td><span className="avm-auto-code">{r.productCode}</span></td>
               <td><span className="font-monospace fs-13">{r.hsnSacCode || '—'}</span></td>
               <td>{r.segment || '—'}</td>
-              <td>{r.batchSerialLot || '—'}</td>
               <td className="text-end font-monospace fs-13">{r.purchasePrice.toFixed(2)}</td>
               <td className="text-end font-monospace fs-13">{r.gstPercentage ? `${r.gstPercentage.toFixed(2)}%` : '—'}</td>
               <td className="text-end font-monospace fs-13">{r.gstAmount.toFixed(2)}</td>
@@ -4587,8 +4585,11 @@ function MappedProductsPopup(props: {
       <div className="avm-cp-popup avm-cp-popup-wide">
         <div className="avm-cp-head">
           <div className="avm-cp-title">
-            <i className="ri-box-3-line" /> Mapped Products
-            <div className="avm-cp-subtitle">Products linked to this supplier with price &amp; GST</div>
+            <i className="ri-box-3-line" />
+            <div className="avm-cp-htext">
+              <div className="avm-cp-htitle">Mapped Products</div>
+              <div className="avm-cp-subtitle">Products linked to this supplier with price &amp; GST</div>
+            </div>
           </div>
           <button className="avm-close avm-cp-close" onClick={props.onClose} aria-label="Close">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -4633,8 +4634,11 @@ function PopupShell(props: {
       <div className={`avm-cp-popup${amber ? ' avm-cp-amber' : ''}`}>
         <div className="avm-cp-head">
           <div className="avm-cp-title">
-            <i className={props.icon} /> {props.title}
-            {props.subtitle && <div className="avm-cp-subtitle">{props.subtitle}</div>}
+            <i className={props.icon} />
+            <div className="avm-cp-htext">
+              <div className="avm-cp-htitle">{props.title}</div>
+              {props.subtitle && <div className="avm-cp-subtitle">{props.subtitle}</div>}
+            </div>
           </div>
           <button className="avm-close avm-cp-close" onClick={props.onClose} aria-label="Close">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -4644,7 +4648,7 @@ function PopupShell(props: {
         <div className="avm-cp-foot">
           <button className="avm-btn-ghost" onClick={props.onClose}>Cancel</button>
           <button className={`avm-btn-primary${amber ? ' avm-btn-amber' : ''}`} onClick={props.onSave}>
-            <i className="ri-save-line" /> Save
+            Save
           </button>
         </div>
       </div>
@@ -5204,7 +5208,7 @@ function AddProductMappingPopup(props: {
   const { draft, setDraft, productOpts, onProductChange, recompute, onClose, onSave } = props;
   const set = <K extends keyof ProductMappingDraft>(k: K, v: ProductMappingDraft[K]) => setDraft({ ...draft, [k]: v });
   return (
-    <PopupShell title="Add Product Mapping" icon="ri-box-3-line" subtitle="Link a product with purchase price & GST for this vendor" onClose={onClose} onSave={onSave}>
+    <PopupShell title="Map Product" icon="ri-box-3-line" subtitle="Link a product with purchase price & GST for this supplier" onClose={onClose} onSave={onSave}>
       <div className="avm-grid-2">
         <Field label="Product Name" required>
           {productOpts.length > 0
@@ -5237,8 +5241,9 @@ function AddProductMappingPopup(props: {
         <Field label="GST %">
           <input
             className="avm-input"
-            value={draft.gstPercentage ? `${draft.gstPercentage}%` : '—'}
+            value={draft.gstPercentage ? `${draft.gstPercentage}%` : ''}
             readOnly
+            placeholder="Auto-fills from product"
             title="GST % comes from the product's Sales Config — not editable here"
           />
         </Field>
@@ -5981,6 +5986,10 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .avm-modal .table tbody td strong { color: #ede9fe; }
 [data-bs-theme="dark"] .avm-modal .table tbody tr:hover td { background: #1a1538; }
+/* Table wrapper outer border — Bootstrap .border uses a light --bs-border-color
+   in dark mode, which reads as a stark white box around the table. Mute it to a
+   subtle dark purple so the table blends (Contact Persons, KYC, DD, etc.). */
+[data-bs-theme="dark"] .avm-modal .table-responsive { border-color: rgba(167,139,250,.16) !important; }
 
 /* Bank grid */
 .avm-bank-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
@@ -6151,6 +6160,55 @@ const SCOPED_CSS = `
   max-width: none;
   width: 1%;
 }
+/* Mapped Products table — match the Figma .sf-doc-table typography: small
+   uppercase muted-purple headers on a soft gradient, compact cells, and a
+   rounded "01" SR pill. Scoped to this table so the KYC/DD tables are untouched. */
+/* Full-width + all-left-aligned headers/cells to mirror the Figma .sf-doc-table
+   (it left-aligns every column, including the numeric ones). */
+.avm-mapped-table { width: 100%; }
+/* The row fits the body, so kill the spurious table-responsive scrollbar — the
+   table then spans the full body width (aligned with the toolbar: pill left →
+   +Map Product right) and the action icons sit INSIDE as the last column. */
+.avm-mapped-wrap { overflow-x: visible !important; border-color: #f1ecfb !important; border-radius: 12px !important; }
+.avm-mapped-table th.text-end, .avm-mapped-table td.text-end { text-align: left !important; }
+.avm-mapped-table thead tr { background: linear-gradient(135deg, #faf8ff, #f3eefe); }
+.avm-mapped-table thead th {
+  background: transparent;
+  font-size: 9px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase;
+  color: #8b7bb8; padding: 10px 13px; border-bottom: 1.5px solid #ece7f8;
+}
+.avm-mapped-table tbody td { padding: 9px 13px; font-size: 12px; color: #475569; }
+.avm-mapped-table tbody td strong { font-weight: 800; color: #1e293b; }
+.avm-sr-pill {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 7px;
+  font-size: 10.5px; font-weight: 800; color: #7c3aed;
+  background: #f5f1fe; border: 1px solid #e7defb;
+}
+/* CODE pill — match Figma .sf-doc-code--company (mono 10px, radius 7px). */
+.avm-mapped-table .avm-auto-code { font-size: 10px; padding: 3px 9px; border-radius: 7px; color: #7c3aed; border-color: #ddd6fe; }
+/* Compact 29px action buttons (Figma .sf-doc-act) so the row fits — no scroll. */
+.avm-mapped-table tbody td .btn { width: 29px; height: 29px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+/* + Map Product — match Figma .sf-add-mini (11px/700, radius 9px, 3-stop gradient). */
+.avm-mapped-toolbar .avm-section-add-btn {
+  padding: 7px 12px; border-radius: 9px; font-size: 11px; font-weight: 700;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6);
+  box-shadow: 0 3px 9px rgba(124,58,237,.42);
+}
+/* Popup Close/Cancel — match Figma .sf-btn-cancel (light slate border, radius 12px). */
+.avm-cp-foot .avm-btn-ghost { color: #475569; border: 1.5px solid #e2e8f0; border-radius: 12px; font-weight: 700; }
+.avm-cp-foot .avm-btn-ghost:hover { background: #f8fafc; border-color: #cbd5e1; color: #334155; }
+[data-bs-theme="dark"] .avm-mapped-table thead tr { background: rgba(124,58,237,.12); }
+[data-bs-theme="dark"] .avm-mapped-table thead th { color: #c4b5fd; border-bottom-color: rgba(167,139,250,.2); }
+[data-bs-theme="dark"] .avm-mapped-table tbody td { color: #cbd5e1; }
+[data-bs-theme="dark"] .avm-mapped-table tbody td strong { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-sr-pill { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+/* Dark mode: the light #f1ecfb wrapper border + any inner table borders read as
+   a stark white outline — swap to a muted dark-purple so the table blends. */
+[data-bs-theme="dark"] .avm-mapped-wrap { border-color: rgba(167,139,250,.18) !important; }
+[data-bs-theme="dark"] .avm-mapped-table,
+[data-bs-theme="dark"] .avm-mapped-table td,
+[data-bs-theme="dark"] .avm-mapped-table th { border-color: rgba(167,139,250,.12); }
 /* Dark-mode KYC tables — cell text + row hover. The DD document name and
    plain cells rendered too dim on the modal's dark surface, and the inherited
    (Velzon/Bootstrap) row-hover background washed them out to near-invisible.
@@ -6208,9 +6266,21 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-step-title { color: #ede9fe; }
 [data-bs-theme="dark"] .avm-step-sub   { color: #a89fc7; }
 [data-bs-theme="dark"] .avm-step-num   { background: #2a1d5c; color: #a89fc7; }
-[data-bs-theme="dark"] .avm-body { background: #110c25; scrollbar-color: #4c1d95 transparent; }
+/* Attractive dark mode — soft purple glow gives the flat form depth (mirrors
+   the CLM Segment Master recipe, in purple instead of teal). */
+[data-bs-theme="dark"] .avm-body {
+  background:
+    radial-gradient(ellipse 78% 46% at 50% -6%, rgba(124,58,237,.17), transparent 60%),
+    radial-gradient(ellipse 55% 42% at 100% 106%, rgba(167,139,250,.09), transparent 55%),
+    #0e0a20;
+  scrollbar-color: #4c1d95 transparent;
+}
 [data-bs-theme="dark"] .avm-body::-webkit-scrollbar-thumb { background: #4c1d95; }
-[data-bs-theme="dark"] .avm-section { background: #1a1430; }
+[data-bs-theme="dark"] .avm-section {
+  background: linear-gradient(180deg, rgba(124,58,237,.10), rgba(124,58,237,.035));
+  border: 1px solid rgba(167,139,250,.14);
+  box-shadow: 0 6px 20px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.05);
+}
 [data-bs-theme="dark"] .avm-section-violet { border-color: #3b2a6b; border-left-color: #a78bfa; }
 [data-bs-theme="dark"] .avm-section-amber  { border-color: #78350f; border-left-color: #f59e0b; }
 [data-bs-theme="dark"] .avm-section-teal   { border-color: #0f766e; border-left-color: #14b8a6; }
@@ -6338,17 +6408,31 @@ const SCOPED_CSS = `
 }
 /* Mapped Products list popup — wider to fit the mapping table columns. */
 .avm-cp-popup-wide { max-width: 1040px; }
-.avm-mapped-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.avm-mapped-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 0; }
 .avm-mapped-count {
-  font-size: 12.5px; font-weight: 700; color: #6d28d9;
-  background: #f5f1fe; border: 1px solid #e2d4fa; border-radius: 8px; padding: 6px 14px;
+  font-size: 12px; font-weight: 700; color: #6d28d9;
+  background: #f5f1fe; border: 1px solid #e2d4fa; border-radius: 20px; padding: 5px 13px;
 }
 .avm-empty-accent { color: #7c3aed; border-color: #ddd6fe; background: #faf7ff; }
 .avm-cp-head {
+  position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 18px;
-  background: linear-gradient(135deg, #5b21b6, #a78bfa);
+  padding: 17px 22px;
+  background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 30%, #6d28d9 60%, #7c3aed 82%, #8b5cf6 100%);
   color: #fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,.18);
+  /* Crisp white highlight line along the top edge — same as the Add Supplier
+     header (.avm-head). Sits above the ::after gloss. */
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .35);
+}
+/* Figma .sf-pop-head sheen — soft radial highlights + a top gloss band. */
+.avm-cp-head::before {
+  content: ''; position: absolute; inset: 0; opacity: .55; pointer-events: none;
+  background-image: radial-gradient(circle at 16% 130%, rgba(255,255,255,.2), transparent 42%), radial-gradient(circle at 90% -40%, rgba(216,180,254,.45), transparent 46%);
+}
+.avm-cp-head::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.16), transparent);
 }
 /* Amber-toned popup (GST Scrutiny) — orange header + orange Save button. */
 .avm-cp-amber .avm-cp-head { background: linear-gradient(115deg, #d97706 0%, #f59e0b 55%, #fbbf24 100%); }
@@ -6360,21 +6444,43 @@ const SCOPED_CSS = `
 /* Amber "+ Add" section button (GST tab). */
 .avm-section-add-btn.amber { background: linear-gradient(120deg, #f59e0b 0%, #fbbf24 100%); }
 .avm-section-add-btn.amber:hover { box-shadow: 0 4px 12px rgba(217,119,6,.4); }
-.avm-cp-title { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
-.avm-cp-title i { font-size: 18px; }
+/* Figma .sf-pop-head layout — icon chip beside a tight title/subtitle column,
+   vertically centred. Keeps the header compact (no taller than the icon). */
+.avm-cp-title { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 12px; }
+.avm-cp-title i {
+  width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0; font-size: 18px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, rgba(255,255,255,.3), rgba(255,255,255,.12));
+  border: 1px solid rgba(255,255,255,.38);
+  box-shadow: 0 5px 14px rgba(0,0,0,.18), 0 1px 0 rgba(255,255,255,.4) inset;
+}
+.avm-cp-htext { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.avm-cp-htitle { font-size: 16px; font-weight: 800; letter-spacing: -0.2px; line-height: 1.1; }
+.avm-cp-subtitle { font-size: 11px; font-weight: 500; color: rgba(255,255,255,.82); text-shadow: none; line-height: 1.2; }
 .avm-cp-close {
-  width: 30px; height: 30px; border-radius: 8px;
-  border: 1px solid rgba(255,255,255,.25);
-  background: rgba(255,255,255,.12); color: #fff;
+  position: relative; z-index: 1;
+  width: 32px; height: 32px; border-radius: 9px;
+  border: 1px solid rgba(255,255,255,.32);
+  background: rgba(255,255,255,.16); color: #fff;
   display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
   transition: background .15s, transform .12s;
 }
-.avm-cp-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
-.avm-cp-body  { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.avm-cp-close:hover { background: rgba(255,255,255,.32); transform: rotate(90deg); }
+.avm-cp-body  { padding: 22px; display: flex; flex-direction: column; gap: 14px; }
+/* Popup field labels — match the Figma .sf-pop-body .sf-label: 11.5px, bold,
+   dark-purple (the main form uses a lighter slate medium-weight label). */
+.avm-cp-body .avm-field-label { font-size: 11.5px; font-weight: 700; color: #3b0764; margin-bottom: 5px; }
+[data-bs-theme="dark"] .avm-cp-body .avm-field-label,
+[data-layout-mode="dark"] .avm-cp-body .avm-field-label { color: #c4b5fd; }
+/* Figma .sf-pop-body .sf-input — popup inputs sit a touch taller/rounder than
+   the main form's, and popup grids breathe a little more. */
+.avm-cp-body .avm-input { height: 42px; border-radius: 11px; }
+.avm-cp-body .avm-grid-2, .avm-cp-body .avm-grid-3 { gap: 14px; }
 .avm-cp-foot {
-  display: flex; justify-content: flex-end; gap: 8px;
-  padding: 12px 18px;
-  border-top: 1px solid #ede9fe;
+  display: flex; justify-content: flex-end; gap: 11px;
+  padding: 14px 22px 20px;
+  border-top: 1px solid #f1ecfb;
+  background: linear-gradient(180deg, transparent, rgba(245,241,254,.5));
 }
 
 /* Readonly Step-1 summary strip — now rendered ON the Address &
@@ -6430,7 +6536,7 @@ const SCOPED_CSS = `
 
 [data-bs-theme="dark"] .avm-cp-popup { background: #14102a; color: #ede9fe; }
 [data-bs-theme="dark"] .avm-cp-head  { background: linear-gradient(135deg, #5b21b6, #a78bfa); }
-[data-bs-theme="dark"] .avm-cp-foot  { border-top-color: #3b2a6b; }
+[data-bs-theme="dark"] .avm-cp-foot  { border-top-color: #3b2a6b; background: linear-gradient(180deg, transparent, rgba(124,58,237,.08)); }
 /* .avm-cp-summary moved to .avm-id-summary on the Address tab — see
    the rule block above. The dark-mode overrides used to live here. */
 

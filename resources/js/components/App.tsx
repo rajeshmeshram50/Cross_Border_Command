@@ -90,8 +90,8 @@ import ClmAgreementsToApprovePage from '../pages/clm/operations/ClmAgreementsToA
 import HrDashboard from '../pages/hrms/HrDashboard';
 import HrOverview from '../pages/hrms/HrOverview';
 import HrEmployees from '../pages/hrms/HrEmployees';
-import HrRecruitment from '../pages/recruitment/HrRecruitment';
-import HrCandidates from '../pages/recruitment/HrCandidates';
+const HrRecruitment = lazy(() => import('../pages/recruitment/HrRecruitment'));
+const HrCandidates = lazy(() => import('../pages/recruitment/HrCandidates'));
 import HrExitManagement from '../pages/hrms/HrExitManagement';
 import HrAttendance from '../pages/hrms/HrAttendance';
 import HrLeave from '../pages/hrms/HrLeave';
@@ -794,8 +794,8 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/hr" element={<HrDashboard />} />
               <Route path="/hr/overview" element={<HrOverview />} />
               <Route path="/hr/employees" element={<HrEmployees />} />
-              <Route path="/hr/recruitment" element={<HrRecruitment />} />
-              <Route path="/hr/recruitment/:id/candidates" element={<HrCandidates />} />
+              <Route path="/hr/recruitment" element={<Suspense fallback={null}><HrRecruitment /></Suspense>} />
+              <Route path="/hr/recruitment/:id/candidates" element={<Suspense fallback={null}><HrCandidates /></Suspense>} />
               <Route path="/hr/exit-management" element={<HrExitManagement />} />
               {FEATURE_FLAGS.hrAttendance && (
                 <Route path="/hr/attendance" element={<HrAttendance />} />

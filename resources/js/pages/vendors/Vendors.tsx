@@ -329,8 +329,8 @@ useEffect(() => {
          (cstrip), the collapsible 4-step "What We Are Doing Here" box
          (bref), and (next step) the purple supplier table (sl-*). */}
       <style>{`
-        .sup-fig{font-family: var(--font-sans);display:flex;flex-direction:column;gap:6px;margin:-6px -10px 0;}
-        @media(max-width:640px){.sup-fig{margin:-2px -4px 0;}}
+        .sup-fig{font-family: var(--font-sans);display:flex;flex-direction:column;gap:6px;margin:-6px 0 0;}
+        @media(max-width:640px){.sup-fig{margin:-2px 0 0;}}
 
         /* HEADER STRIP */
         .sup-fig .cstrip{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;min-height:58px;padding:0 20px;border:1px solid #c4b5fd;border-radius:16px;background:linear-gradient(110deg,#faf5ff 0%,#f3e8ff 25%,#ede9fe 55%,#ddd6fe 85%,#c4b5fd 100%);box-shadow:0 2px 0 rgba(255,255,255,.85) inset,0 8px 28px rgba(139,92,246,.2),0 2px 8px rgba(0,0,0,.06);}

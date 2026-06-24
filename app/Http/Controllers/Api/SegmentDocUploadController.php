@@ -531,13 +531,15 @@ class SegmentDocUploadController extends Controller
             ];
         }
 
-        // Without Shipment ID = the procurement-stage view: every procurement
-        // created for this supplier (whether or not its lead later got a
-        // shipment). With Shipment ID is the shipment-stage view above.
+        // Without Shipment ID = procurement-stage ONLY: procurements whose lead
+        // does NOT yet have a shipment. A procurement that already became a
+        // shipment appears under With Shipment ID instead — strict either/or
+        // split, no overlap (a deal is in exactly one of the two views).
         $withoutShip = [];
         $sr = 0;
         foreach ($procs as $p) {
             $leadId = $p->lead_id ? (int) $p->lead_id : null;
+            if ($leadId !== null && $shipByLead->has($leadId)) continue;  // has a shipment → With Shipment only
             $docs   = $dealDocs($leadId);
             $withoutShip[] = [
                 'sr'             => ++$sr,
