@@ -618,7 +618,7 @@ function RowAttach({ files, onAdd, onRemove }: { files: File[]; onAdd: (f: File[
 const SCOPED_CSS = `
 .cps-backdrop {
   position: fixed; inset: 0; z-index: 1090;
-  background: rgba(15,23,42,.55); backdrop-filter: blur(3px);
+  background: rgba(15,23,42,.72); backdrop-filter: blur(6px);
   display: flex; align-items: center; justify-content: center;
   padding: 16px;
 }

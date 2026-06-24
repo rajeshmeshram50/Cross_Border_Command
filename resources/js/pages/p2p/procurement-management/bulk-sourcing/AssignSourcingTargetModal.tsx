@@ -4,6 +4,7 @@ import { useToast } from '../../../../contexts/ToastContext';
 import api from '../../../../api';
 import { type ReportRow } from './SourcingReportModal';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
+import { useModalGuard } from './useModalGuard';
 import './bulk-sourcing.css';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -47,6 +48,7 @@ const LockIco = () => <svg width="9" height="9" viewBox="0 0 24 24" fill="none" 
 export default function AssignSourcingTargetModal({ editRow = null, onClose, onSaved }: { editRow?: ReportRow | null; onClose: () => void; onSaved?: () => void }) {
   const toast = useToast();
   const isEdit = !!editRow;
+  const { pulse, guardOverlay } = useModalGuard();
   const [autoCode, setAutoCode] = useState('Auto');
   const srcId = editRow?.id ?? autoCode;
   const start = useMemo(() => editRow?.start ?? today(), [editRow]);
@@ -56,6 +58,8 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
   const [source, setSource] = useState<'master' | 'manual'>(editRow?.source === 'Manual Entry' ? 'manual' : 'master');
   const [masterRows, setMasterRows] = useState<MasterRow[]>([]);
   const [manualRows, setManualRows] = useState<ManualRow[]>([]);
+  // In edit mode the existing product rows load async — shimmer until they arrive.
+  const [listLoading, setListLoading] = useState(!!editRow);
   const [picks, setPicks] = useState<string[]>([]);
   const [pickQuery, setPickQuery] = useState('');
   const [pickOpen, setPickOpen] = useState(false);
@@ -86,9 +90,11 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
   }, []);
   useEffect(() => {
     if (!editRow) return;
+    setListLoading(true);
     api.get<{ data: { masterRows?: MasterRow[]; manualRows?: ManualRow[] } }>(`/p2p/sourcing-targets/${editRow.id}`)
       .then(r => { setMasterRows(r.data?.data?.masterRows ?? []); setManualRows(r.data?.data?.manualRows ?? []); })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setListLoading(false));
   }, [editRow]);
 
   const openClarity = (kind: 'master' | 'manual', idx: number) => {
@@ -174,7 +180,8 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
     req
       .then(() => { toast.success(isEdit ? 'Sourcing target updated' : 'Sourcing target assigned', `${n} product(s).`); onSaved?.(); onClose(); })
       .catch((err) => {
-        const msg = err?.response?.data?.message || (err?.response?.data?.errors && Object.values(err.response.data.errors)[0]?.[0]);
+        const errors = err?.response?.data?.errors as Record<string, string[]> | undefined;
+        const msg = err?.response?.data?.message || (errors && Object.values(errors)[0]?.[0]);
         toast.error('Save failed', msg || 'Please try again.');
       })
       .finally(() => setSaving(false));
@@ -183,8 +190,8 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
   const pickList = products.filter(p => { const q = pickQuery.toLowerCase(); return !q || (p.code + ' ' + p.name).toLowerCase().includes(q); });
 
   return createPortal(
-    <div className="ast-ov" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="ast-modal" role="dialog" aria-modal="true">
+    <div className="ast-ov" onMouseDown={guardOverlay}>
+      <div className={`ast-modal${pulse ? ' bsm-pulse' : ''}`} role="dialog" aria-modal="true">
         {/* Header */}
         <div className="ast-head">
           <div className="ast-head-ico" style={isEdit ? { background: 'linear-gradient(135deg,#0891b2,#0e7490)' } : undefined}>
@@ -258,7 +265,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                 <div className="ast-srccard-body">
                   {/* Source is switchable in edit too, so the user can append
                       products from either Product Master or Manual Entry. */}
-                  <div className="ast-field" style={{ marginBottom: 13 }}>
+                  <div className="ast-field" style={{ marginBottom: 11, gap: 2 }}>
                     <label>I want to source from <span className="ast-req">*</span></label>
                     <div className="ast-radios">
                       <label className={`ast-radio ${source === 'master' ? 'is-sel' : ''}`} onClick={() => setSource('master')}><span className="ast-radio-dot" /><span className="ast-radio-txt"><b>From Product Master</b><small>Pick existing products</small></span></label>
@@ -316,17 +323,21 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                   </div>
                 </div>
                 <div className="ast-srccard-body">
-                  {listTab === 'master' ? (
+                  {listLoading ? (
+                    <div className="ast-plist" style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {Array.from({ length: 3 }).map((_, i) => <span className="bsm-sk" key={i} style={{ width: '100%', height: 40, borderRadius: 8 }} />)}
+                    </div>
+                  ) : listTab === 'master' ? (
                     masterRows.length === 0 ? <div className="ast-plist-empty">No master products added yet. Select from the dropdown above and click Add.</div> : (
                       <div className="ast-plist">
-                        <div className="asrc-row asrc-row--head asrc-row--m"><span>Sr</span><span>Product Code</span><span>Product Name</span><span>Segment</span><span>HSN Code</span><span>Target Price (₹) <b className="asrc-th-req">*</b></span><span>Clarity <i className="asrc-th-opt">(optional)</i></span><span /></div>
+                        <div className="asrc-row asrc-row--head asrc-row--m"><span>Sr</span><span>Product Code</span><span>Product Name</span><span>Segment</span><span>HSN Code</span><span>Target Price (₹) <b className="asrc-th-req">*</b></span><span>Clarity <i className="asrc-th-opt">(optional)</i></span><span>Action</span></div>
                         {masterRows.map((r, i) => (
                           <div className="asrc-row asrc-row--m" key={r.code}>
                             <span className="asrc-sr" data-label="Sr">{i + 1}</span>
                             <span className="asrc-code" data-label="Product Code">{r.code}</span>
                             <span className="asrc-name" data-label="Product Name">{r.name}</span>
-                            <span data-label="Segment">{r.segment}</span>
-                            <span className="asrc-hsn" data-label="HSN Code">{r.hsn}</span>
+                            <span data-label="Segment"><span className={`srpt-seg ${(r.segment || 'General').replace(/ /g, '-')}`}>{r.segment}</span></span>
+                            <span className="asrc-hsn" data-label="HSN Code"><span className="srpt-hsn">{r.hsn}</span></span>
                             <span data-label="Target Price (₹)"><input type="text" className="ast-pl-price" style={priceTried && isBadPrice(r.price) ? { borderColor: '#ef4444', background: 'rgba(239,68,68,.06)' } : undefined} value={r.price} placeholder="Required" onChange={e => setMasterRows(rows => rows.map((x, xi) => xi === i ? { ...x, price: e.target.value } : x))} /></span>
                             <span data-label="Clarity"><ClarityBtn clarity={r.clarity} onClick={() => openClarity('master', i)} /></span>
                             <span data-label=""><button type="button" className="ast-pl-del" title={r.mapped ? 'Mapped to a supplier — can’t be removed' : 'Delete'} style={r.mapped ? { opacity: 0.4, cursor: 'not-allowed' } : undefined} onClick={() => r.mapped ? toast.info('Can’t remove product', `“${r.name}” is mapped to a supplier in the Sourcing Report. Unmap its suppliers there first.`) : setMasterRows(rows => rows.filter((_, xi) => xi !== i))}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button></span>
@@ -337,7 +348,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                   ) : (
                     manualRows.length === 0 ? <div className="ast-plist-empty">No manual products added yet. Fill the fields above and click Add to List.</div> : (
                       <div className="ast-plist">
-                        <div className="asrc-row asrc-row--head asrc-row--n"><span>Sr</span><span>Product Name</span><span>Target Price (₹) <b className="asrc-th-req">*</b></span><span>Clarity <i className="asrc-th-opt">(optional)</i></span><span /></div>
+                        <div className="asrc-row asrc-row--head asrc-row--n"><span>Sr</span><span>Product Name</span><span>Target Price (₹) <b className="asrc-th-req">*</b></span><span>Clarity <i className="asrc-th-opt">(optional)</i></span><span>Action</span></div>
                         {manualRows.map((r, i) => (
                           <div className="asrc-row asrc-row--n" key={i}>
                             <span className="asrc-sr" data-label="Sr">{i + 1}</span>

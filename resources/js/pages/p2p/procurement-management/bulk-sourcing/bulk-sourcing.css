@@ -304,7 +304,7 @@
 .snf-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0;
 }
 .srpt-bdot,
 .srpt-sdot {
@@ -1092,6 +1092,28 @@
   background: linear-gradient(180deg,#f7fdfe,#fff);
   flex-wrap: wrap;
 }
+/* Heartbeat pulse — fired on a backdrop click so the modal acknowledges the
+   click without closing. Two quick beats, like a heartbeat. */
+@keyframes bsm-heartbeat {
+  0%   { transform: scale(1); }
+  14%  { transform: scale(1.018); }
+  28%  { transform: scale(1); }
+  42%  { transform: scale(1.018); }
+  70%  { transform: scale(1); }
+}
+.bsm-pulse { animation: bsm-heartbeat .6s ease-in-out; }
+/* WorklistPager is violet app-wide; recolour to the module teal, scoped to
+   .bsm-teal (mirrors the CLM .clm-root recolour). */
+.bsm-teal .wl-pager, .bsm-teal .tc-wl-pag { border-top-color: #a5e8f5; background: linear-gradient(90deg,#f0fdff 0%,#e6fafe 40%,#f0fdff 100%); }
+.bsm-teal .tc-wl-info, .bsm-teal .tc-wl-rows { color: #0e7490; border-color: #a5e8f5; }
+.bsm-teal .tc-wl-info .tc-wl-hl, .bsm-teal .tc-wl-rows select { color: #0891b2; }
+.bsm-teal .tc-wl-range { background: linear-gradient(135deg,#22d3ee 0%,#0891b2 55%,#0e7490 100%); box-shadow: 0 3px 12px rgba(8,145,178,.4),0 1px 0 rgba(255,255,255,.2) inset; }
+.bsm-teal .tc-wl-btn { border-color: #a5e8f5; color: #0891b2; }
+.bsm-teal .tc-wl-btn:hover:not(:disabled) { border-color: #0891b2; box-shadow: 0 4px 12px rgba(8,145,178,.25); }
+[data-bs-theme="dark"] .bsm-teal .wl-pager, [data-bs-theme="dark"] .bsm-teal .tc-wl-pag { border-top-color: rgba(6,182,212,.30); background: linear-gradient(90deg,#0b1220 0%,#0e1726 45%,#0b1220 100%); }
+[data-bs-theme="dark"] .bsm-teal .tc-wl-info, [data-bs-theme="dark"] .bsm-teal .tc-wl-rows, [data-bs-theme="dark"] .bsm-teal .tc-wl-btn { color: #67e8f9; border-color: rgba(6,182,212,.30); background: rgba(255,255,255,.05); }
+[data-bs-theme="dark"] .bsm-teal .tc-wl-info .tc-wl-hl, [data-bs-theme="dark"] .bsm-teal .tc-wl-rows select { color: #a5f3fc; }
+[data-bs-theme="dark"] .bsm-teal .tc-wl-btn:hover:not(:disabled) { background: rgba(255,255,255,.10); border-color: #22d3ee; }
 [data-bs-theme="dark"] .bst-pager {
   background: linear-gradient(180deg,#0f2028,#0d1922);
   border-top-color: rgba(255,255,255,.05);
@@ -1386,6 +1408,11 @@
   background: rgba(255,255,255,.03);
   border-color: rgba(34,211,238,.16);
 }
+/* Dim the top white gloss on the stage cards in dark mode — at .5 it reads as a
+   harsh white band across the top of each step. */
+[data-bs-theme="dark"] .ast-scard::after {
+  background: linear-gradient(180deg,rgba(255,255,255,.05),transparent);
+}
 .ast-scard-glow {
   position: absolute;
   inset: 0;
@@ -1559,7 +1586,7 @@
 }
 .ast-field label {
   font-size: 10.5px;
-  font-weight: 600;
+  font-weight: 700;
   color: #64748b;
   letter-spacing: .04em;
   text-transform: uppercase;
@@ -1710,7 +1737,7 @@
 }
 .ast-srccard-htxt b {
   font-size: 13.5px;
-  font-weight: 600;
+  font-weight: 700;
   color: #0f172a;
   letter-spacing: -.25px;
   line-height: 1.1;
@@ -1749,7 +1776,7 @@
   box-shadow: 0 0 0 3px rgba(99,102,241,.18);
 }
 .ast-srccard-body {
-  padding: 13px 16px 14px;
+  padding: 9px 14px 10px;
 }
 .ast-srcgrid {
   display: grid;
@@ -2109,12 +2136,12 @@
   background: #f4fcfe;
 }
 .asrc-row--m {
-  grid-template-columns: 40px 86px minmax(150px,1.4fr) minmax(90px,1fr) 92px 116px 116px 38px;
-  min-width: 760px;
+  grid-template-columns: 40px 86px minmax(150px,1.4fr) minmax(90px,1fr) 92px 116px 116px 64px;
+  min-width: 786px;
 }
 .asrc-row--n {
-  grid-template-columns: 40px minmax(180px,2fr) 130px 130px 38px;
-  min-width: 560px;
+  grid-template-columns: 40px minmax(180px,2fr) 130px 130px 64px;
+  min-width: 586px;
 }
 .asrc-row--head {
   background: linear-gradient(180deg,#f4fbfd,#eef8fb);
@@ -2630,7 +2657,7 @@
 }
 .srpt-title {
   font-size: 17px;
-  font-weight: 500;
+  font-weight: 700;
   color: #fff;
   margin: 0;
   letter-spacing: -.3px;
@@ -2751,27 +2778,28 @@
 }
 .srpt-sbarlbl {
   font-size: 8.5px;
-  font-weight: 500;
-  color: rgba(160,220,255,.62);
+  font-weight: 700;
+  color: rgba(180,230,255,.85);
   text-transform: uppercase;
   letter-spacing: .09em;
   white-space: nowrap;
 }
 .srpt-sbarval {
   font-size: 22px;
-  font-weight: 500;
+  font-weight: 700;
   line-height: 1.1;
 }
 .srpt-sbarval.white {
   color: #fff;
+  text-shadow: 0 0 14px rgba(255,255,255,.55);
 }
 .srpt-sbarval.green {
   color: #6ee7b7;
-  text-shadow: 0 0 14px rgba(110,231,183,.4);
+  text-shadow: 0 0 14px rgba(110,231,183,.65);
 }
 .srpt-sbarval.amber {
   color: #fcd34d;
-  text-shadow: 0 0 14px rgba(252,211,77,.35);
+  text-shadow: 0 0 14px rgba(252,211,77,.65);
 }
 .srpt-pbar {
   width: 100%;
@@ -2807,7 +2835,7 @@
   gap: 8px;
   font-family: inherit;
   font-size: 12.5px;
-  font-weight: 500;
+  font-weight: 700;
   color: #5b7585;
   background: transparent;
   border: none;
@@ -2924,7 +2952,7 @@
   font-size: 11.5px;
 }
 .srpt-price {
-  font-weight: 500;
+  font-weight: 700;
   color: #0e7490;
   font-size: 12px;
 }
@@ -2935,6 +2963,15 @@
   padding: 2px 8px;
   border-radius: 999px;
   white-space: nowrap;
+  /* Default badge for segments without a specific colour class below */
+  background: #f0f9ff;
+  color: #0e7490;
+  border: 1px solid #cdeef5;
+}
+[data-bs-theme="dark"] .srpt-seg {
+  background: rgba(34,211,238,.1);
+  color: #67e8f9;
+  border-color: rgba(34,211,238,.3);
 }
 .srpt-seg.Mechanical {
   background: #fff7ed;
@@ -3099,7 +3136,7 @@
   position: relative;
   background: #f8fafc;
   border-radius: 24px;
-  width: min(760px,calc(100vw - 28px));
+  width: min(720px,calc(100vw - 28px));
   max-height: calc(100vh - 44px);
   display: flex;
   flex-direction: column;
@@ -3149,7 +3186,7 @@
 }
 .smp-title {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
   color: #fff;
   margin: 0;
   letter-spacing: -.3px;
@@ -3212,15 +3249,15 @@
 }
 .smp-ppill-lbl {
   font-size: 7.5px;
-  font-weight: 600;
-  color: rgba(150,210,255,.55);
+  font-weight: 700;
+  color: rgba(180,225,255,.75);
   text-transform: uppercase;
   letter-spacing: .1em;
   white-space: nowrap;
 }
 .smp-ppill-val {
   font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 700;
   color: #fff;
   white-space: nowrap;
 }
@@ -3311,7 +3348,7 @@
 }
 .smp-oc-title {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   color: #0f172a;
   letter-spacing: -.2px;
   line-height: 1.2;
@@ -3607,7 +3644,7 @@
   overflow-y: auto;
 }
 .snf-section {
-  padding: 16px 22px 12px;
+  padding: 13px 22px 9px;
   border-bottom: 1px solid #f1f5f9;
 }
 [data-bs-theme="dark"] .snf-section {
@@ -3621,11 +3658,11 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 .snf-sec-hdr span {
   font-size: 10.5px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .1em;
   color: #0891b2;
@@ -3654,7 +3691,7 @@
 .snf-row {
   display: grid;
   gap: 10px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 .snf-row:last-child {
   margin-bottom: 0;
@@ -3670,7 +3707,7 @@
 }
 .snf-lbl {
   font-size: 10.5px;
-  font-weight: 600;
+  font-weight: 700;
   color: #475569;
 }
 .snf-req {
@@ -3695,6 +3732,14 @@
 .snf-inp::placeholder {
   color: #c0ccd8;
   font-weight: 400;
+}
+/* Read-only "auto" field (e.g. State Code) — muted fill, theme-aware. */
+.snf-inp-ro {
+  background: #f8fafc;
+  cursor: default;
+}
+[data-bs-theme="dark"] .snf-inp-ro {
+  background: rgba(255,255,255,.04);
 }
 .snf-sel {
   font-size: 12px;
@@ -3845,7 +3890,7 @@
 }
 .sv-htitle {
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 700;
   color: #fff;
   letter-spacing: -.3px;
   line-height: 1.15;
@@ -3910,17 +3955,17 @@
 }
 .sv-ref-lbl {
   font-size: 9px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .09em;
-  color: rgba(255,255,255,.45);
+  color: rgba(255,255,255,.6);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .sv-ref-val {
   font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 700;
   color: #fff;
   white-space: nowrap;
   overflow: hidden;
@@ -3969,7 +4014,7 @@
 }
 .sv-sec-label {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .12em;
   color: #0369a1;
@@ -4058,7 +4103,7 @@
 }
 .sv-card-name {
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   color: #0c4a6e;
   letter-spacing: -.25px;
   margin-bottom: 7px;
@@ -4328,7 +4373,81 @@
 
 /* ProductListModal — narrower shell + loading shimmer */
 .pl-box {
-  width: min(900px, calc(100vw - 24px));
+  width: min(1040px, calc(100vw - 24px));
+}
+/* Product List header/table type — matched to Figma (bolder + larger than the
+   shared srpt-* defaults). Scoped to .pl-box so the Sourcing Report is untouched. */
+.pl-box .srpt-title { font-size: 16px; font-weight: 700; }
+/* Plain white sourcing ID — no pill chrome, same size/weight as the title */
+.pl-box .srpt-id-pill {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #fff;
+  font-weight: 700;
+  font-size: 16px;
+}
+/* Subtitle (Source · Due) — slightly larger and heavier */
+.pl-box .srpt-sub { font-size: 12px; font-weight: 700; }
+.pl-box .srpt-pname { font-size: 12.5px; font-weight: 600; }
+.pl-box .srpt-table thead th { font-weight: 600; }
+/* Target price — bold */
+.pl-box .srpt-price { font-weight: 700; }
+/* Segment value — bold */
+.pl-box .srpt-seg { font-weight: 700; }
+/* Tab strip on the header gradient; active tab = translucent white + cyan top accent */
+.pl-box .srpt-tabs {
+  background: linear-gradient(150deg,#062d3d 0%,#0a4d66 45%,#0e7490 100%);
+  border-bottom: none;
+}
+.pl-box .srpt-tab {
+  position: relative;
+  color: rgba(255,255,255,.72);
+  border-top: 2.5px solid transparent;
+  border-bottom: none;
+}
+.pl-box .srpt-tab:hover {
+  color: #fff;
+  background: rgba(255,255,255,.07);
+}
+.pl-box .srpt-tab.active {
+  color: #fff;
+  background: rgba(255,255,255,.15);
+  border-top-color: rgba(34,211,238,.5);
+  border-bottom-color: transparent;
+}
+/* Gradient bottom accent on the active tab */
+.pl-box .srpt-tab.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2.5px;
+  background: linear-gradient(90deg,#22d3ee,#6ee7b7);
+}
+/* Active tab count badge — green (matches Figma) */
+.pl-box .srpt-tab.active .srpt-tab-cnt {
+  background: linear-gradient(135deg,#4ade80,#22c55e);
+  color: #fff;
+  border-color: transparent;
+}
+/* HSN code — bordered chip */
+.srpt-hsn {
+  display: inline-block;
+  font-family: ui-monospace,Menlo,Consolas,monospace;
+  font-size: 11px;
+  color: #475569;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 2px 8px;
+  letter-spacing: .01em;
+}
+[data-bs-theme="dark"] .srpt-hsn {
+  color: #cbd5e1;
+  background: rgba(255,255,255,.04);
+  border-color: rgba(255,255,255,.12);
 }
 .pl-skel {
   position: relative;
@@ -4353,6 +4472,30 @@
 @keyframes pl-shimmer {
   100% { transform: translateX(100%); }
 }
+/* Generic shimmer skeleton — reuse anywhere in the module via a sized <span>.
+   e.g. <span className="bsm-sk" style={{ width: 80, height: 12 }} /> */
+.bsm-sk {
+  display: inline-block;
+  position: relative;
+  overflow: hidden;
+  background: #e6f1f6;
+  border-radius: 6px;
+  vertical-align: middle;
+}
+[data-bs-theme="dark"] .bsm-sk { background: rgba(255,255,255,.06); }
+.bsm-sk::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.6), transparent);
+  animation: pl-shimmer 1.25s infinite;
+}
+[data-bs-theme="dark"] .bsm-sk::after {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.12), transparent);
+}
+/* Circle variant for avatars / pills. */
+.bsm-sk-circle { border-radius: 50%; }
 .pl-skel-num {
   display: inline-block;
   width: 32px;
@@ -4375,44 +4518,60 @@
   display: flex;
   align-items: stretch;
   gap: 10px;
-  padding: 4px 24px 16px;
+  padding: 0 24px 12px;
+}
+/* Tighten the gap between the header title row and the KPI cards */
+.pl-box .srpt-hrow {
+  padding-bottom: 6px;
+}
+/* Two equal halves: left = the three stat cards, right = progress bar */
+.pl-stats-left {
+  flex: 1 1 50%;
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  min-width: 0;
+}
+.pl-stats-left .pl-stat {
+  flex: 1;
 }
 .pl-stat {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 4px;
-  min-width: 118px;
-  padding: 10px 16px;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 16px;
   border-radius: 12px;
   background: rgba(255,255,255,.07);
   border: 1px solid rgba(255,255,255,.13);
 }
 .pl-stat--prog {
-  flex: 1;
+  flex: 1 1 50%;
+  min-width: 0;
 }
 .pl-stat-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 .pl-stat-lbl {
   font-size: 8.5px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .09em;
-  color: rgba(160,220,255,.62);
+  color: rgba(180,230,255,.85);
   white-space: nowrap;
 }
 .pl-stat-val {
-  font-size: 22px;
-  font-weight: 600;
+  font-size: 21px;
+  font-weight: 700;
   line-height: 1.1;
 }
-.pl-stat-val.white { color: #fff; }
-.pl-stat-val.green { color: #6ee7b7; }
-.pl-stat-val.amber { color: #fcd34d; }
+.pl-stat-val.white { color: #fff; text-shadow: 0 0 14px rgba(255,255,255,.55); }
+.pl-stat-val.green { color: #6ee7b7; text-shadow: 0 0 14px rgba(110,231,183,.65); }
+.pl-stat-val.amber { color: #fcd34d; text-shadow: 0 0 14px rgba(252,211,77,.65); }
 
 /* Product Clarity — uploaded PDF row (delete to replace) */
 .ast-pdf-file {
@@ -4517,10 +4676,13 @@
 }
 
 @media (max-width: 480px) {
-  /* One stat card per row on narrow phones */
+  /* Stack the two halves and the three cards on narrow phones */
+  .pl-stats, .pl-stats-left { flex-direction: column; }
   .pl-stat { flex: 1 1 100%; }
   /* Tighter modal chrome */
   .srpt-title { font-size: 15px; }
+  .pl-box .srpt-title { font-size: 16px; }
+  .pl-stat-val { font-size: 22px; }
   .pl-box, .srpt-box { border-radius: 16px; }
 }
 

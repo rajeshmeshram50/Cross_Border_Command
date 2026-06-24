@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../../../contexts/ToastContext';
+import { useConfirm } from '../../../../contexts/ConfirmContext';
 import api from '../../../../api';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
+import { MasterMultiSelect } from '../../../../components/ui/MasterMultiSelect';
+import { useModalGuard } from './useModalGuard';
 import './bulk-sourcing.css';
 
 /* Map Supplier Directory — 2-step.
@@ -23,6 +26,13 @@ type FormMasters = {
 
 export type MapProduct = { name: string; code?: string; segment?: string; price?: string; supplierCount: number };
 const tInit = (n: string) => n.split(' ').map(w => w[0] || '').join('').slice(0, 2).toUpperCase();
+/* Show Target Price in INR — master rows already carry ₹; manual ones are plain. */
+const fmtPrice = (p?: string) => {
+  if (!p && p !== '0') return '—';
+  if (String(p).trim().startsWith('₹')) return p;
+  const n = Number(String(p).replace(/,/g, ''));
+  return isNaN(n) ? p : `₹${n.toLocaleString('en-IN')}`;
+};
 
 function Header({ p, step }: { p: MapProduct; step?: string }) {
   return (
@@ -41,7 +51,7 @@ function Header({ p, step }: { p: MapProduct; step?: string }) {
         <div className="smp-ppill-sep" />
         <div className="smp-ppill"><div className="smp-ppill-lbl">Product Code</div><div className="smp-ppill-val cyan">{p.code || '—'}</div></div>
         <div className="smp-ppill-sep" /><div className="smp-ppill"><div className="smp-ppill-lbl">Segment</div><div className="smp-ppill-val">{p.segment || '—'}</div></div>
-        <div className="smp-ppill-sep" /><div className="smp-ppill pill-price"><div className="smp-ppill-lbl">Target Price</div><div className="smp-ppill-val amber">{p.price || '—'}</div></div>
+        <div className="smp-ppill-sep" /><div className="smp-ppill pill-price"><div className="smp-ppill-lbl">Target Price</div><div className="smp-ppill-val amber">{fmtPrice(p.price)}</div></div>
         <div className="smp-ppill-sep" />
         <div className="smp-ppill pill-sup"><div className="smp-ppill-lbl">Suppliers Mapped</div><div className="smp-ppill-val green">{p.supplierCount} Supplier{p.supplierCount !== 1 ? 's' : ''}</div></div>
       </div>
@@ -51,10 +61,12 @@ function Header({ p, step }: { p: MapProduct; step?: string }) {
 
 export default function MapSupplierModal({ product, targetId, productId, onClose, onMapped }: { product: MapProduct; targetId?: string; productId?: string | number; onClose: () => void; onMapped: (name: string) => void }) {
   const toast = useToast();
+  const confirmDialog = useConfirm();
+  const { pulse, guardOverlay } = useModalGuard();
   const [step, setStep] = useState<'choose' | 'master' | 'new'>('choose');
   const [sel, setSel] = useState('');
   const [co, setCo] = useState(''); const [contact, setContact] = useState(''); const [mobile, setMobile] = useState('');
-  const [seg, setSeg] = useState(''); const [email, setEmail] = useState(''); const [gmaps, setGmaps] = useState('');
+  const [seg, setSeg] = useState<string[]>([]); const [email, setEmail] = useState(''); const [gmaps, setGmaps] = useState('');
   const [addr, setAddr] = useState(''); const [stateCode, setStateCode] = useState(''); const [city, setCity] = useState('');
   const [card, setCard] = useState(''); const [cardName, setCardName] = useState(''); const [cardUploading, setCardUploading] = useState(false);
   // Master-backed dropdowns + the selected country/state ids (names go to the API).
@@ -101,7 +113,8 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
     api.post(mapUrl, payload)
       .then(() => onMapped(name))
       .catch((err) => {
-        const msg = err?.response?.data?.message || (err?.response?.data?.errors && Object.values(err.response.data.errors)[0]?.[0]);
+        const errors = err?.response?.data?.errors as Record<string, string[]> | undefined;
+        const msg = err?.response?.data?.message || (errors && Object.values(errors)[0]?.[0]);
         toast.error('Map failed', msg || 'Please try again.');
       })
       .finally(() => setSaving(false));
@@ -115,7 +128,7 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
     if (!contact.trim()) e.contact = 'Contact person is required.';
     if (!mobile.trim()) e.mobile = 'Mobile number is required.';
     else if (!/^[0-9+\-\s()]{7,15}$/.test(mobile.trim())) e.mobile = 'Enter a valid mobile number.';
-    if (!seg) e.seg = 'Segment is required.';
+    if (!seg.length) e.seg = 'Segment is required.';
     if (!email.trim()) e.email = 'Email ID is required.';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) e.email = 'Enter a valid email address.';
     if (!addr.trim()) e.addr = 'Street address is required.';
@@ -134,12 +147,12 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
     if (Object.keys(e).length) { toast.warning('Missing details', 'Please fill all the required fields highlighted in red.'); return; }
     const countryName = masters.countries.find(c => c.id === countryId)?.name ?? '';
     const stateName = masters.states.find(s => s.id === stateId)?.name ?? '';
-    doMap({ new_supplier: { name: co.trim(), contact, mobile, segment: seg, email, gmaps, address: addr, country: countryName, state: stateName, state_code: stateCode, city, card } }, co.trim());
+    doMap({ new_supplier: { name: co.trim(), contact, mobile, segment: seg.join(', '), email, gmaps, address: addr, country: countryName, state: stateName, state_code: stateCode, city, card } }, co.trim());
   };
 
   return createPortal(
-    <div id="smp-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="smp-box">
+    <div id="smp-overlay" onMouseDown={guardOverlay}>
+      <div className={`smp-box${pulse ? ' bsm-pulse' : ''}`}>
         <Header p={product} step={step === 'choose' ? undefined : 'Step 2 of 2'} />
         <button className="smp-close" style={{ position: 'absolute', top: 18, right: 22 }} onClick={onClose}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
 
@@ -217,7 +230,7 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
               <div className="snf-row snf-row-3">
                 <div className="snf-field"><label className="snf-lbl">Contact Person <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.contact)} value={contact} onChange={e => setContact(e.target.value)} placeholder="Full name" />{errMsg(errs.contact)}</div>
                 <div className="snf-field"><label className="snf-lbl">Mobile Number <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.mobile)} value={mobile} onChange={e => setMobile(e.target.value)} placeholder="10-digit mobile" />{errMsg(errs.mobile)}</div>
-                <div className="snf-field"><label className="snf-lbl">Segment <span className="snf-req">*</span></label><MasterSelect value={seg} invalid={!!errs.seg} placeholder="Select segment..." options={masters.segments.map(s => ({ value: s.name, label: s.name }))} onChange={setSeg} />{errMsg(errs.seg)}</div>
+                <div className="snf-field"><label className="snf-lbl">Segment <span className="snf-req">*</span></label><MasterMultiSelect values={seg} invalid={!!errs.seg} placeholder="Select segment(s)..." options={masters.segments.map(s => ({ value: s.name, label: s.name }))} onChange={setSeg} />{errMsg(errs.seg)}</div>
               </div>
               <div className="snf-row snf-row-2">
                 <div className="snf-field"><label className="snf-lbl">Email ID <span className="snf-req">*</span></label><input className="snf-inp" type="email" style={invStyle(errs.email)} value={email} onChange={e => setEmail(e.target.value)} placeholder="supplier@company.com" />{errMsg(errs.email)}</div>
@@ -230,17 +243,31 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
               <div className="snf-row snf-row-4">
                 <div className="snf-field"><label className="snf-lbl">Country <span className="snf-req">*</span></label><MasterSelect value={countryId === '' ? '' : String(countryId)} invalid={!!errs.country} placeholder="Select country..." options={masters.countries.map(c => ({ value: String(c.id), label: c.name }))} onChange={v => { setCountryId(v ? Number(v) : ''); pickState(''); }} />{errMsg(errs.country)}</div>
                 <div className="snf-field"><label className="snf-lbl">State <span className="snf-req">*</span></label><MasterSelect value={stateId === '' ? '' : String(stateId)} invalid={!!errs.state} placeholder={countryId === '' ? 'Select country first' : 'Select state...'} disabled={countryId === ''} options={statesForCountry.map(s => ({ value: String(s.id), label: s.name }))} onChange={v => pickState(v ? Number(v) : '')} />{errMsg(errs.state)}</div>
-                <div className="snf-field"><label className="snf-lbl">State Code <span style={{ fontSize: 10, color: '#94a3b8' }}>(auto)</span></label><input className="snf-inp" value={stateCode} readOnly placeholder="—" style={{ textTransform: 'uppercase', background: '#f8fafc' }} /></div>
+                <div className="snf-field"><label className="snf-lbl">State Code <span style={{ fontSize: 10, color: '#94a3b8' }}>(auto)</span></label><input className="snf-inp snf-inp-ro" value={stateCode} readOnly placeholder="—" style={{ textTransform: 'uppercase' }} /></div>
                 <div className="snf-field"><label className="snf-lbl">City <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.city)} value={city} onChange={e => setCity(e.target.value)} placeholder="City name" />{errMsg(errs.city)}</div>
               </div>
             </div>
             <div className="snf-section snf-last">
               <div className="snf-sec-hdr"><div className="snf-sec-icon amber-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></div><span>Documents</span></div>
-              <label className="snf-upload">
-                <input type="file" style={{ display: 'none' }} accept="image/*,.pdf" onChange={e => { const f = e.target.files?.[0]; if (f) uploadCard(f); }} />
-                <div className="snf-upload-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg></div>
-                <div className="snf-upload-text"><span className="snf-upload-main" style={card ? { color: '#0891b2' } : undefined}>{cardUploading ? 'Uploading…' : (card ? `✓ ${cardName || 'Business Card uploaded'}` : 'Click to upload Business Card')}</span><span className="snf-upload-sub">PDF, JPG, PNG &nbsp;·&nbsp; Max 5 MB</span></div>
-              </label>
+              {card ? (
+                <div className="ast-pdf-file">
+                  <div className="ast-pdf-file-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></div>
+                  <span className="ast-pdf-file-name">{cardName || 'Business Card'}</span>
+                  <button type="button" className="ast-pdf-del" title="Remove document" onClick={async () => {
+                    const ok = await confirmDialog({ title: 'Remove document?', message: <>Remove <strong>{cardName || 'this document'}</strong> from the supplier? You can upload a new one after.</>, tone: 'danger', confirmLabel: 'Remove', cancelLabel: 'Keep' });
+                    if (!ok) return;
+                    const removed = cardName || 'Business Card';
+                    setCard(''); setCardName('');
+                    toast.success('Document removed', `${removed} removed.`);
+                  }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button>
+                </div>
+              ) : (
+                <label className="snf-upload">
+                  <input type="file" style={{ display: 'none' }} accept="image/*,.pdf" onChange={e => { const f = e.target.files?.[0]; if (f) uploadCard(f); }} />
+                  <div className="snf-upload-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg></div>
+                  <div className="snf-upload-text"><span className="snf-upload-main">{cardUploading ? 'Uploading…' : 'Click to upload Business Card'}</span><span className="snf-upload-sub">PDF, JPG, PNG &nbsp;·&nbsp; Max 5 MB</span></div>
+                </label>
+              )}
             </div>
             <div className="snf-foot">
               <button className="smp-btn-back" onClick={() => setStep('choose')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>Back</button>

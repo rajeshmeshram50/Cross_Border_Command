@@ -352,6 +352,8 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/p2p/products',      [\App\Http\Controllers\Api\P2p\SourcingController::class, 'products']);
     Route::get   ('/p2p/team-members',  [\App\Http\Controllers\Api\P2p\SourcingController::class, 'teamMembers']);
     Route::get   ('/p2p/suppliers',     [\App\Http\Controllers\Api\P2p\SourcingController::class, 'suppliers']);
+    Route::get   ('/p2p/new-suppliers', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'newSuppliers']);
+    Route::get   ('/p2p/new-suppliers/{supplier}/sourcings', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'supplierSourcings'])->whereNumber('supplier');
     Route::get   ('/p2p/form-masters',  [\App\Http\Controllers\Api\P2p\SourcingController::class, 'formMasters']);
     Route::post  ('/p2p/upload',        [\App\Http\Controllers\Api\P2p\SourcingController::class, 'upload']);
     Route::get   ('/p2p/sourcing-targets',          [\App\Http\Controllers\Api\P2p\SourcingController::class, 'index']);
