@@ -2872,7 +2872,8 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   color: #A78BFA !important;
 }
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded="true"]::before {
-  background-color: #A78BFA !important;
+  transform: translateY(-50%) rotate(90deg) !important;
+  color: #A78BFA !important;
 }
 /* connector line that runs down each open group */
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-sm {
@@ -3162,25 +3163,41 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-layout="vertical"] .app-menu .nav-link.cbc-sub.active .cbc-sub-ico { background: linear-gradient(135deg, #8b5cf6, #6d28d9); color: #ffffff; }
 [data-layout="vertical"] .app-menu .nav-link.cbc-sub.active .cbc-sub-t { color: #C4B5FD; }
 
-/* group header (expandable level-2) → purple UPPERCASE label + violet dot */
+/* group header (expandable level-2) → purple UPPERCASE label + violet chevron */
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded] {
   text-transform: uppercase;
   letter-spacing: .6px;
   font-size: 10.5px !important;
   font-weight: 800 !important;
+  position: relative !important;
+  padding-left: 18px !important;
 }
-/* round violet dot (not the default bar/dash) before the group header */
+/* chevron arrow (not a dot) before the group header — points right when
+   collapsed, rotates down when expanded */
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded]::before {
-  content: '' !important;
+  content: "\F0142" !important;
+  font-family: 'Material Design Icons' !important;
   position: absolute !important;
-  left: 4px !important;
+  left: 0 !important;
   top: 50% !important;
   transform: translateY(-50%) !important;
-  width: 5px !important;
-  height: 5px !important;
-  border-radius: 50% !important;
-  background-color: #A78BFA !important;
+  width: auto !important;
+  height: auto !important;
+  /* Velzon's base marker draws an L using border-left/-bottom + radius — clear
+     it so only the chevron glyph shows, no box around it */
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #A78BFA !important;
+  font-size: 0.95rem !important;
+  line-height: 1 !important;
   opacity: 1 !important;
+  transition: transform .2s !important;
+}
+/* open group → rotate the chevron to point DOWN. Declared AFTER the base rule
+   above (same specificity) so it wins; collapsed groups keep the ">" glyph. */
+[data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded="true"]::before {
+  transform: translateY(-50%) rotate(90deg) !important;
 }
 /* group headers are plain dotted labels — never a filled block, even when the
    active page lives inside them (only leaf tiles get the active pill) */
@@ -3191,6 +3208,16 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   box-shadow: none !important;
   margin-left: 0 !important;
   margin-right: 0 !important;
+}
+/* keep the chevron a bare glyph in hover/active/expanded states too — Velzon's
+   hover/active marker rules paint a background-color on this ::before, which
+   turned the arrow into a filled violet square */
+[data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded]:hover::before,
+[data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded].active::before,
+[data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded="true"]:hover::before {
+  background: transparent !important;
+  border: none !important;
+  color: #C4B5FD !important;
 }
 /* Velzon stamps aria-expanded="false" on a leaf you just navigated away from,
    which made the group-header rules above (uppercase / 800 weight / violet
