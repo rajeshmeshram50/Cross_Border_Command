@@ -6,8 +6,8 @@ import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
-import { SegmentModal, type SegmentForm } from '../clm/ClmSegmentPage';
-import { CLM_CSS } from '../clm/clmShared';
+import { SegmentModal, type SegmentForm } from '../clm/compliance/ClmSegmentPage';
+import { CLM_CSS } from '../clm/shared/clmShared';
 import {
   readProductMasterBundle,
   writeProductMasterBundle,
@@ -3159,7 +3159,7 @@ const SCOPED_CSS = `
   display: flex; align-items: center; justify-content: center;
   padding: 24px 20px;
   overflow-y: auto;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 .apm-modal {
   /* Capped at 1224 to match the Customer and Consignee wizards
@@ -3639,7 +3639,7 @@ const SCOPED_CSS = `
   display: flex; align-items: flex-start; justify-content: center;
   padding: 24px 20px;
   overflow-y: auto;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 .apm-mv-popup {
   width: 100%; max-width: 980px;
@@ -3697,7 +3697,7 @@ const SCOPED_CSS = `
   display: flex; align-items: flex-start; justify-content: center;
   padding: 24px 20px;
   overflow-y: auto;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 .apm-qc-popup {
   width: 100%; max-width: 1080px;
@@ -4285,7 +4285,7 @@ const SCOPED_CSS = `
   backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center;
   padding: 24px 20px;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 .apm-qa-popup {
   width: 100%; max-width: 480px;

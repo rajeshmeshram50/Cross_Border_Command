@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 
@@ -28,6 +29,30 @@ type ShipmentRow = {
   port_of_unloading: string | null;
 };
 
+/* A "New Supplier" directory entry — created inline from the Map Supplier
+   Directory "New Supplier" flow (p2p_suppliers), NOT the Vendor master. */
+type NewSupplierRow = {
+  id: number;
+  name: string | null;
+  segment: string | null;
+  contact: string | null;
+  mobile: string | null;
+  email: string | null;
+  address: string | null;
+  country: string | null;
+  state: string | null;
+  state_code: string | null;
+  city: string | null;
+  gmaps: string | null;
+  sourcing_count: number;
+  created_at: string | null;
+};
+
+/* A sourcing target that used a given new supplier (drill-down). */
+type SupplierSourcing = { code: string; due_date: string | null; products: string[] };
+
+type DevTab = 'shipments' | 'suppliers';
+
 const PAGE_SIZE = 10;
 
 function fmtDate(s: string | null): string {
@@ -38,11 +63,46 @@ function fmtDate(s: string | null): string {
 
 export default function DeveloperShipments() {
   const toast = useToast();
+  const [tab, setTab] = useState<DevTab>('shipments');
   const [rows, setRows] = useState<ShipmentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
   const [wdhOpen, setWdhOpen] = useState(false);
+
+  // ── New Suppliers tab (lazy-loaded on first open) ──
+  const [supRows, setSupRows] = useState<NewSupplierRow[]>([]);
+  const [supLoading, setSupLoading] = useState(false);
+  const [supLoaded, setSupLoaded] = useState(false);
+  const [supQ, setSupQ] = useState('');
+  const [supPage, setSupPage] = useState(1);
+  const [sourcingFor, setSourcingFor] = useState<NewSupplierRow | null>(null);
+
+  useEffect(() => {
+    if (tab !== 'suppliers' || supLoaded) return;
+    let alive = true;
+    setSupLoading(true);
+    api.get<{ status: boolean; data: NewSupplierRow[] }>('/p2p/new-suppliers')
+      .then(r => { if (alive) { setSupRows(r.data?.data ?? []); setSupLoaded(true); } })
+      .catch(() => { if (alive) toast.error('Load failed', 'Could not load new suppliers.'); })
+      .finally(() => { if (alive) setSupLoading(false); });
+    return () => { alive = false; };
+  }, [tab, supLoaded, toast]);
+
+  const supFiltered = useMemo(() => {
+    const lo = supQ.trim().toLowerCase();
+    if (!lo) return supRows;
+    return supRows.filter(r =>
+      [r.name, r.segment, r.contact, r.mobile, r.email, r.city, r.state, r.country]
+        .some(v => (v ?? '').toLowerCase().includes(lo)),
+    );
+  }, [supRows, supQ]);
+
+  const supTotalPages = Math.max(1, Math.ceil(supFiltered.length / PAGE_SIZE));
+  const supSafePage = Math.min(supPage, supTotalPages);
+  const supPageRows = supFiltered.slice((supSafePage - 1) * PAGE_SIZE, supSafePage * PAGE_SIZE);
+  const supStartIdx = supFiltered.length === 0 ? 0 : (supSafePage - 1) * PAGE_SIZE + 1;
+  const supEndIdx = Math.min(supSafePage * PAGE_SIZE, supFiltered.length);
 
   useEffect(() => {
     let alive = true;
@@ -73,6 +133,20 @@ export default function DeveloperShipments() {
     <div className="dsh-root">
       <style>{SCOPED_CSS}</style>
 
+      {/* ── Tabs ── */}
+      <div className="dsh-tabs">
+        <button type="button" className={`dsh-tab${tab === 'shipments' ? ' is-active' : ''}`} onClick={() => setTab('shipments')}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 17h4V5H2v12h3" /><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1" /><circle cx="7.5" cy="17.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" /></svg>
+          Shipment Tracker
+        </button>
+        <button type="button" className={`dsh-tab${tab === 'suppliers' ? ' is-active' : ''}`} onClick={() => setTab('suppliers')}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+          New Suppliers
+        </button>
+      </div>
+
+      {tab === 'shipments' && (
+      <>
       {/* ── Header banner ── */}
       <div className="dsh-cstrip">
         <div className="dsh-cstrip-left">
@@ -192,12 +266,179 @@ export default function DeveloperShipments() {
           </div>
         </div>
       </div>
+      </>
+      )}
+
+      {tab === 'suppliers' && (
+      <>
+      {/* ── Header banner ── */}
+      <div className="dsh-cstrip">
+        <div className="dsh-cstrip-left">
+          <div className="dsh-cstrip-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+          </div>
+          <div>
+            <div className="dsh-cstrip-title">New Suppliers</div>
+            <div className="dsh-cstrip-sub">Every supplier registered inline through the Map Supplier Directory “New Supplier” flow — kept separate from the Vendor master.</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Toolbar ── */}
+      <div className="dsh-toolbar">
+        <div className="dsh-search">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+          <input
+            value={supQ}
+            onChange={e => { setSupQ(e.target.value); setSupPage(1); }}
+            placeholder="Search by name, segment, contact, city…"
+          />
+        </div>
+      </div>
+
+      {/* ── Table ── */}
+      <div className="dsh-table-wrap">
+        <div className="dsh-table-scroll">
+          <table className="dsh-table">
+            <thead>
+              <tr>
+                <th className="ta-c" style={{ width: 56 }}>Sr No</th>
+                <th>Supplier Name</th>
+                <th>Segment</th>
+                <th>Contact Person</th>
+                <th>Mobile</th>
+                <th>Email</th>
+                <th>City</th>
+                <th>State</th>
+                <th>Country</th>
+                <th className="ta-c">Sourcings</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {supLoading && (
+                <tr><td colSpan={11} className="dsh-empty">Loading new suppliers…</td></tr>
+              )}
+              {!supLoading && supPageRows.length === 0 && (
+                <tr><td colSpan={11} className="dsh-empty">No new suppliers yet. They appear here once registered via “New Supplier” when mapping.</td></tr>
+              )}
+              {!supLoading && supPageRows.map((r, i) => (
+                <tr key={r.id}>
+                  <td className="ta-c"><span className="dsh-srno">{supStartIdx + i}</span></td>
+                  <td className="dsh-strong">{r.name ?? '—'}</td>
+                  <td>{r.segment ? <span className="dsh-opp-chip">{r.segment}</span> : <span className="dsh-em">—</span>}</td>
+                  <td>{r.contact ?? '—'}</td>
+                  <td className="dsh-date">{r.mobile ?? '—'}</td>
+                  <td className="dsh-link">{r.email ?? '—'}</td>
+                  <td>{r.city ?? '—'}</td>
+                  <td>{r.state ?? '—'}{r.state_code ? ` (${r.state_code})` : ''}</td>
+                  <td>{r.country ?? '—'}</td>
+                  <td className="ta-c">
+                    {r.sourcing_count > 0
+                      ? <button type="button" className="dsh-srcq-chip" title="View sourcings using this supplier" onClick={() => setSourcingFor(r)}>{r.sourcing_count}</button>
+                      : <span className="dsh-srcq-zero">0</span>}
+                  </td>
+                  <td className="dsh-date">{fmtDate(r.created_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="dsh-foot">
+          <span className="dsh-foot-count">
+            {supFiltered.length === 0 ? '0 results' : `${supStartIdx} to ${supEndIdx} of ${supFiltered.length}`}
+          </span>
+          <div className="dsh-pager">
+            <button type="button" className="dsh-pager-btn" disabled={supSafePage <= 1} onClick={() => setSupPage(p => Math.max(1, p - 1))} aria-label="Previous page">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6" /></svg>
+            </button>
+            <span className="dsh-pager-cur">{supSafePage} / {supTotalPages}</span>
+            <button type="button" className="dsh-pager-btn" disabled={supSafePage >= supTotalPages} onClick={() => setSupPage(p => Math.min(supTotalPages, p + 1))} aria-label="Next page">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6" /></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      </>
+      )}
+
+      {sourcingFor && <SupplierSourcingsModal supplier={sourcingFor} onClose={() => setSourcingFor(null)} />}
     </div>
+  );
+}
+
+/* Drill-down: the sourcing targets that mapped a given new supplier. */
+function SupplierSourcingsModal({ supplier, onClose }: { supplier: NewSupplierRow; onClose: () => void }) {
+  const [rows, setRows] = useState<SupplierSourcing[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    api.get<{ status: boolean; data: SupplierSourcing[] }>(`/p2p/new-suppliers/${supplier.id}/sourcings`)
+      .then(r => { if (alive) setRows(r.data?.data ?? []); })
+      .catch(() => { if (alive) setRows([]); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [supplier.id]);
+
+  return createPortal(
+    <div className="dssm-overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="dssm-box">
+        <div className="dssm-head">
+          <div className="dssm-head-main">
+            <div className="dssm-title">Sourcings using this supplier</div>
+            <div className="dssm-sub">{supplier.name ?? 'Supplier'} · {rows.length} sourcing{rows.length !== 1 ? 's' : ''}</div>
+          </div>
+          <button type="button" className="dssm-close" onClick={onClose} aria-label="Close">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </div>
+        <div className="dssm-body">
+          {loading ? (
+            <div className="dssm-empty">Loading…</div>
+          ) : rows.length === 0 ? (
+            <div className="dssm-empty">Not mapped to any sourcing.</div>
+          ) : rows.map((s, i) => (
+            <div className="dssm-row" key={s.code + i}>
+              <span className="dssm-code">{s.code}</span>
+              <div className="dssm-prods">
+                {s.products.length ? s.products.map((p, pi) => <span className="dssm-prod" key={pi}>{p}</span>) : <span className="dssm-em">—</span>}
+              </div>
+              <span className="dssm-due">{fmtDate(s.due_date)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
 const SCOPED_CSS = `
 .dsh-root { padding: 4px 2px 24px; font-family: inherit; }
+
+/* Tabs */
+.dsh-tabs {
+  display: inline-flex; gap: 6px; margin-bottom: 14px; padding: 4px;
+  background: #f3eaff; border: 1px solid #d6c5ff; border-radius: 12px;
+}
+.dsh-tab {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: inherit; font-size: 13px; font-weight: 700; color: #6d28d9;
+  background: transparent; border: none; border-radius: 9px; padding: 9px 18px;
+  cursor: pointer; transition: all .15s; white-space: nowrap;
+}
+.dsh-tab:hover { background: #ede4ff; }
+.dsh-tab.is-active {
+  color: #fff; background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  box-shadow: 0 4px 12px rgba(124,58,237,.35);
+}
+[data-bs-theme="dark"] .dsh-tabs { background: var(--color-surface-2); border-color: var(--color-border); }
+[data-bs-theme="dark"] .dsh-tab { color: #c4b5fd; }
+[data-bs-theme="dark"] .dsh-tab:hover { background: rgba(124,58,237,.16); }
+[data-bs-theme="dark"] .dsh-tab.is-active { color: #fff; }
 
 /* Header banner — violet wash matching the Customers hero. */
 .dsh-cstrip {
@@ -365,4 +606,55 @@ const SCOPED_CSS = `
 /* Scrollbar */
 [data-bs-theme="dark"] .dsh-table-scroll::-webkit-scrollbar-thumb { background: rgba(148,163,184,.45); }
 [data-bs-theme="dark"] .dsh-table-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,.65); }
+
+/* Sourcings count chip (clickable) */
+.dsh-srcq-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 28px; height: 26px; padding: 0 9px; cursor: pointer;
+  font-family: inherit; font-size: 12px; font-weight: 800; color: #fff;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9); border: none; border-radius: 8px;
+  box-shadow: 0 3px 9px rgba(124,58,237,.4); transition: transform .12s, box-shadow .12s;
+}
+.dsh-srcq-chip:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(124,58,237,.5); }
+.dsh-srcq-zero { color: #cbd5e1; font-weight: 700; }
+
+/* Sourcings drill-down modal (portalled to body). */
+.dssm-overlay {
+  position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center;
+  background: rgba(15,23,42,.55); backdrop-filter: blur(4px); padding: 20px;
+}
+.dssm-box {
+  width: min(540px, calc(100vw - 24px)); max-height: 80vh; display: flex; flex-direction: column;
+  background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 24px 60px rgba(15,23,42,.4);
+}
+.dssm-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 16px 18px; background: linear-gradient(135deg, #6d28d9, #5b21b6); color: #fff;
+}
+.dssm-title { font-size: 15px; font-weight: 800; }
+.dssm-sub { font-size: 11.5px; opacity: .85; margin-top: 2px; }
+.dssm-close {
+  width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0; border: none; cursor: pointer;
+  background: rgba(255,255,255,.18); color: #fff; display: flex; align-items: center; justify-content: center;
+}
+.dssm-close:hover { background: rgba(255,255,255,.3); }
+.dssm-body { padding: 12px 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; background: #faf7ff; }
+.dssm-empty { text-align: center; padding: 28px 0; color: #94a3b8; font-size: 13px; }
+.dssm-row {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+  background: #fff; border: 1px solid #ede9fe; border-radius: 10px;
+}
+.dssm-code {
+  font-family: ui-monospace, monospace; font-size: 12px; font-weight: 800; color: #6d28d9;
+  background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 6px; padding: 3px 9px; flex-shrink: 0;
+}
+.dssm-prods { flex: 1; display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.dssm-prod { font-size: 11px; font-weight: 600; color: #475569; background: #f1f5f9; border-radius: 6px; padding: 2px 8px; }
+.dssm-due { font-size: 11.5px; color: #94a3b8; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.dssm-em { color: #cbd5e1; }
+[data-bs-theme="dark"] .dssm-box { background: var(--color-surface); }
+[data-bs-theme="dark"] .dssm-body { background: var(--color-surface-2); }
+[data-bs-theme="dark"] .dssm-row { background: var(--color-surface); border-color: var(--color-border); }
+[data-bs-theme="dark"] .dssm-code { background: rgba(167,139,250,.16); border-color: rgba(167,139,250,.32); color: #ddd6fe; }
+[data-bs-theme="dark"] .dssm-prod { background: rgba(255,255,255,.06); color: var(--color-text); }
 `;

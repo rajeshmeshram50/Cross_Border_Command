@@ -612,7 +612,7 @@ function QcRowActions({ doc, productId, onReload, toast }: {
 /* ────────────────────────────────────────────────────────────────────────── */
 const SCOPED_CSS = `
 .pv2-root {
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
   background: #f8fafc;
   padding: 14px 18px 24px;
   margin: -1rem -0.75rem;

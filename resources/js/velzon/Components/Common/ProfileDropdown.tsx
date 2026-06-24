@@ -9,8 +9,14 @@ import { resolveFileUrl } from '../../../utils/resolveFileUrl';
 import avatar1 from "../../assets/images/users/image.png";
 
 const ProfileDropdown = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, tenantThemeEnabled } = useAuth();
   const toast = useToast();
+  // In brand mode the avatar ring + dropdown header pick up the tenant's
+  // brand colour, matching the horizontal header's brand behaviour.
+  const brandColor = user?.primary_color || '#7C3AED';
+  const ringGradient = tenantThemeEnabled
+    ? `linear-gradient(135deg, ${brandColor}, ${brandColor})`
+    : 'linear-gradient(135deg,#94A3B8,#8B5CF6 55%,#7C3AED)';
 
   const [isProfileDropdown, setIsProfileDropdown] = useState(false);
   const toggleProfileDropdown = () => setIsProfileDropdown(!isProfileDropdown);
@@ -30,55 +36,28 @@ const ProfileDropdown = () => {
   const profilePhoto = rawProfilePhoto ? resolveFileUrl(rawProfilePhoto) : avatar1;
 
   const roleLabel = user.user_type.replace(/_/g, ' ');
-  // Super admin's display name often equals the role ("Super Admin") — hide the
-  // duplicate role sub-line on the chip when they match (still shown inside the menu header).
-  const nameMatchesRole = user.name.trim().toLowerCase() === roleLabel.toLowerCase();
 
   const handleLogout = () => {
     toast.info('Logged Out', 'You have been signed out');
     logout();
   };
 
-  // Only the org owner (client_admin) manages the subscription — super_admin
-  // operates above the tenant model and has no plan of their own, and
-  // branch_user / employee / client_user are downstream of the plan.
-  const canSeeMyPlan = user.user_type === 'client_admin';
-
-  // My Team — every user that manages people. The flag is computed
-  // server-side (/me) and folds in two paths: anyone who's been set as a
-  // reporting_manager on at least one employee, OR a branch_user /
-  // client_user / client_admin who always needs the team view.
+  // My Team — every user that manages people (computed server-side in /me).
   const canSeeMyTeam = !!user.is_reporting_manager;
-
-  // Inbox — visible to every signed-in user. Anyone can be the next signer
-  // on a workflow regardless of role; the page filters server-side.
-  // /me also returns inbox_count so we can show a numeric badge.
-  const inboxCount = typeof user.inbox_count === 'number' ? user.inbox_count : 0;
-
-  // Platform Settings (branding, support email, privacy) is admin-only —
-  // employees just need to do their work, not configure the tenant.
+  // Platform Settings (branding, support email, privacy) is admin-only.
   const canSeeSettings = user.user_type !== 'employee';
+  // Branch / company line shown in the dropdown header (mirrors horizontal).
+  const branchName = user.branch_name || user.client_name || '';
 
-  // Gmail — outbound email history + compose/send box. Oversight of tenant
-  // correspondence, so it's shown to every non-employee tier; the page itself
-  // scopes the data per client/branch server-side. Lives here (profile menu)
-  // rather than the sidebar, alongside Inbox/My Team.
-  const canSeeMail = user.user_type !== 'employee';
-
-  const menuItems: { to: string; icon: string; label: string; grad: string; badge?: number }[] = [
-    { to: '/profile',  icon: 'ri-user-3-line',     label: 'Profile',  grad: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)' },
-    { to: '/inbox',    icon: 'ri-inbox-line',      label: 'Inbox',    grad: 'linear-gradient(135deg, #f59e0b 0%, #f7b84b 100%)', badge: inboxCount },
-    ...(canSeeMail
-      ? [{ to: '/gmail',    icon: 'ri-mail-send-line', label: 'Gmail',    grad: 'linear-gradient(135deg, #ea4335 0%, #fbbc05 100%)' }]
-      : []),
+  // Menu mirrors the horizontal header's profile dropdown: Profile, My Team,
+  // Settings, Logout. Inbox / Gmail now live as top-bar icons, not here.
+  const menuItems: { to: string; icon: string; label: string; grad: string }[] = [
+    { to: '/profile',  icon: 'ri-user-3-line',     label: 'Profile',  grad: 'linear-gradient(135deg,#A78BFA,#7C3AED)' },
     ...(canSeeMyTeam
-      ? [{ to: '/my-team',  icon: 'ri-team-line',      label: 'My Team',  grad: 'linear-gradient(135deg, #16a34a 0%, #22c55e 100%)' }]
-      : []),
-    ...(canSeeMyPlan
-      ? [{ to: '/my-plan',  icon: 'ri-bank-card-line',  label: 'My Plan',  grad: 'linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%)' }]
+      ? [{ to: '/my-team',  icon: 'ri-team-line',      label: 'My Team',  grad: 'linear-gradient(135deg,#34D399,#059669)' }]
       : []),
     ...(canSeeSettings
-      ? [{ to: '/settings', icon: 'ri-settings-3-line', label: 'Settings', grad: 'linear-gradient(135deg, #f59e0b 0%, #f7b84b 100%)' }]
+      ? [{ to: '/settings', icon: 'ri-settings-3-line', label: 'Settings', grad: 'linear-gradient(135deg,#94A3B8,#64748B)' }]
       : []),
   ];
 
@@ -87,8 +66,8 @@ const ProfileDropdown = () => {
       <style>{`
         .cbc-profile-menu.dropdown-menu,
         div.cbc-profile-menu.dropdown-menu {
-          min-width: 232px !important;
-          max-width: 232px !important;
+          min-width: 290px !important;
+          max-width: 290px !important;
           padding: 0 !important;
           border: 1px solid var(--vz-border-color) !important;
           border-radius: 14px !important;
@@ -125,9 +104,9 @@ const ProfileDropdown = () => {
         .cbc-profile-row {
           display: flex;
           align-items: center;
-          gap: 9px;
-          padding: 7px 8px;
-          border-radius: 9px;
+          gap: 12px;
+          padding: 9px 10px;
+          border-radius: 12px;
           color: var(--vz-body-color);
           text-decoration: none;
           transition: background .18s ease, transform .18s ease;
@@ -173,7 +152,7 @@ const ProfileDropdown = () => {
       <Dropdown
         isOpen={isProfileDropdown}
         toggle={toggleProfileDropdown}
-        className="ms-sm-3 header-item cbc-profile-chip"
+        className="header-item cbc-profile-chip"
         style={{ background: 'transparent' }}
       >
         <DropdownToggle
@@ -189,159 +168,110 @@ const ProfileDropdown = () => {
               className="position-relative d-inline-flex rounded-circle flex-shrink-0"
               style={{
                 padding: 2,
-                backgroundImage: 'linear-gradient(135deg,#405189,#0ab39c)',
+                backgroundImage: ringGradient,
               }}
             >
-              <span className="rounded-circle d-inline-flex" style={{ padding: 1.5, background: 'var(--vz-card-bg, #fff)' }}>
+              <span className="rounded-circle d-inline-flex" style={{ padding: 1, background: 'var(--vz-card-bg, #fff)' }}>
                 <img
                   className="rounded-circle header-profile-user"
                   src={profilePhoto}
                   alt="Header Avatar"
-                  style={{ display: 'block', objectFit: 'cover' }}
+                  style={{ display: 'block', objectFit: 'cover', width: 36, height: 36 }}
                 />
               </span>
               <span
                 className="position-absolute rounded-circle"
                 style={{
-                  width: 9,
-                  height: 9,
-                  right: 1,
-                  bottom: 1,
-                  background: '#10b981',
-                  boxShadow: '0 0 0 1.5px var(--vz-card-bg, #fff)',
+                  width: 10,
+                  height: 10,
+                  right: 2,
+                  bottom: 2,
+                  background: 'radial-gradient(circle at 35% 30%,#4ADE80,#16A34A)',
+                  border: '2.5px solid var(--vz-card-bg, #fff)',
                 }}
               />
             </span>
 
-            <span className="text-start ms-xl-2">
-              <span
-                className="d-none d-xl-inline-block ms-1 fw-bold user-name-text"
-                style={{
-                  backgroundImage: 'linear-gradient(135deg,#405189,#0ab39c)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text',
-                  fontSize: 13,
-                  lineHeight: 1.15,
-                }}
-              >
-                {user.name}
-              </span>
-              {!nameMatchesRole && (
-                <span
-                  className="d-none d-xl-block ms-1 fs-12 user-name-sub-text text-capitalize"
-                  style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.03em', fontSize: 11, lineHeight: 1.25, marginTop: 1 }}
-                >
-                  {roleLabel}
-                </span>
-              )}
-            </span>
-
-            {/* Teal dropdown chevron — rotates 180° when the menu is open */}
-            <svg
-              className="ms-2 flex-shrink-0"
-              width={12}
-              height={12}
-              viewBox="0 0 24 24"
-              fill="none"
-              aria-hidden="true"
-              style={{
-                color: '#0ab39c',
-                transform: isProfileDropdown ? 'rotate(180deg)' : 'rotate(0deg)',
-                transition: 'transform .2s ease',
-              }}
-            >
-              <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            {/* Name, role, and dropdown chevron hidden to match the horizontal
+                header, which shows the avatar only. */}
           </span>
         </DropdownToggle>
 
         <DropdownMenu className="dropdown-menu-end cbc-profile-menu">
-          {/* Neutral dark-slate header — reads well with any avatar image */}
+          {/* Header — purple gradient + avatar + name + role badge + branch
+              line, mirroring the horizontal header's profile dropdown. */}
           <div
-            className="position-relative overflow-hidden"
+            className="d-flex align-items-center gap-2"
             style={{
-              padding: '14px 14px 12px 14px',
-              backgroundImage: 'linear-gradient(135deg, #0f172a 0%, #1e293b 55%, #334155 100%)',
+              padding: '18px 18px 16px 18px',
+              backgroundImage: tenantThemeEnabled
+                ? `linear-gradient(135deg, ${brandColor} 0%, ${brandColor} 100%)`
+                : 'linear-gradient(135deg, #1E1B4B 0%, #4338CA 55%, #6D28D9 100%)',
             }}
           >
-            <div
-              className="position-absolute top-0 start-0 w-100 h-100"
-              style={{
-                backgroundImage:
-                  'radial-gradient(circle at 85% 15%, rgba(99,102,241,0.20), transparent 55%),' +
-                  'radial-gradient(circle at 10% 100%, rgba(14,165,233,0.12), transparent 50%)',
-                pointerEvents: 'none',
-              }}
-            />
-            <div className="position-relative d-flex align-items-center gap-2">
+            <span className="position-relative d-inline-flex flex-shrink-0">
+              <img
+                src={profilePhoto}
+                alt=""
+                className="rounded-circle"
+                style={{ width: 48, height: 48, display: 'block', objectFit: 'cover', border: '2.5px solid rgba(255,255,255,0.7)' }}
+              />
               <span
-                className="d-inline-flex rounded-circle flex-shrink-0"
+                className="position-absolute rounded-circle"
+                style={{ width: 11, height: 11, right: 1, bottom: 1, background: 'radial-gradient(circle at 35% 30%,#4ADE80,#16A34A)', border: '2.5px solid #312E81' }}
+              />
+            </span>
+            <div className="flex-grow-1 min-w-0">
+              <div
+                className="fw-bold text-white text-truncate"
+                style={{ fontSize: 15, lineHeight: 1.2, marginBottom: 6 }}
+                title={user.name}
+              >
+                {user.name}
+              </div>
+              <div
+                className="d-inline-flex align-items-center gap-1 rounded-pill fw-semibold text-capitalize"
                 style={{
-                  padding: 2,
-                  background: 'rgba(255,255,255,0.35)',
-                  boxShadow: '0 5px 14px rgba(0,0,0,0.18)',
+                  fontSize: 10,
+                  padding: '3px 9px 3px 7px',
+                  color: '#E9D5FF',
+                  background: 'rgba(255,255,255,0.16)',
+                  border: '1px solid rgba(255,255,255,0.25)',
                 }}
               >
-                <img
-                  src={profilePhoto}
-                  alt=""
-                  className="rounded-circle"
-                  style={{ width: 38, height: 38, display: 'block', objectFit: 'cover' }}
-                />
-              </span>
-              <div className="flex-grow-1 min-w-0">
-                <div
-                  className="fw-bold text-white text-truncate"
-                  style={{ fontSize: 13, lineHeight: 1.2 }}
-                  title={user.name}
-                >
-                  {user.name}
-                </div>
-                <div
-                  className="d-inline-flex align-items-center gap-1 mt-1 px-2 py-0 rounded-pill fw-semibold text-capitalize"
-                  style={{
-                    fontSize: 9.5,
-                    letterSpacing: '0.07em',
-                    textTransform: 'uppercase',
-                    color: '#fff',
-                    background: 'rgba(255,255,255,0.22)',
-                    border: '1px solid rgba(255,255,255,0.28)',
-                    backdropFilter: 'blur(6px)',
-                  }}
-                >
-                  <i className="ri-shield-keyhole-line" style={{ fontSize: 10 }}></i>
-                  {roleLabel}
-                </div>
+                <i className="ri-shield-keyhole-line" style={{ fontSize: 11 }}></i>
+                {roleLabel}
               </div>
+              {branchName && (
+                <div
+                  className="d-flex align-items-center gap-1 mt-2"
+                  style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', maxWidth: 165 }}
+                >
+                  <i className="ri-building-line" style={{ fontSize: 12, flexShrink: 0, opacity: 0.85 }}></i>
+                  <span className="text-truncate">{branchName}</span>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Menu items */}
-          <div style={{ padding: 6 }}>
+          <div style={{ padding: 8 }}>
             {menuItems.map(item => (
               <DropdownItem key={item.to} tag="div">
                 <Link to={item.to} className="cbc-profile-row">
                   <span
-                    className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+                    className="d-inline-flex align-items-center justify-content-center flex-shrink-0"
                     style={{
-                      width: 28,
-                      height: 28,
+                      width: 34,
+                      height: 34,
+                      borderRadius: 10,
                       background: item.grad,
-                      boxShadow: '0 3px 8px rgba(18,38,63,0.12)',
+                      boxShadow: '0 2px 6px rgba(15,23,42,0.18)',
                     }}
                   >
-                    <i className={item.icon} style={{ color: '#fff', fontSize: 14 }}></i>
+                    <i className={item.icon} style={{ color: '#fff', fontSize: 15 }}></i>
                   </span>
-                  <span className="fw-semibold flex-grow-1" style={{ fontSize: 12.5 }}>{item.label}</span>
-                  {typeof item.badge === 'number' && item.badge > 0 && (
-                    <span style={{
-                      minWidth: 22, padding: '0 6px', height: 18,
-                      borderRadius: 999, background: '#ef4444', color: '#fff',
-                      fontSize: 10.5, fontWeight: 800,
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    }}>{item.badge > 99 ? '99+' : item.badge}</span>
-                  )}
+                  <span className="fw-semibold flex-grow-1" style={{ fontSize: 13.5 }}>{item.label}</span>
                   <i className="ri-arrow-right-s-line cbc-profile-chev" />
                 </Link>
               </DropdownItem>
@@ -351,26 +281,27 @@ const ProfileDropdown = () => {
               style={{
                 height: 1,
                 background: 'var(--vz-border-color)',
-                margin: '4px 2px',
+                margin: '6px 8px',
               }}
             />
 
             <DropdownItem tag="div" onClick={handleLogout}>
               <div className="cbc-profile-row logout" style={{ cursor: 'pointer' }}>
                 <span
-                  className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+                  className="d-inline-flex align-items-center justify-content-center flex-shrink-0"
                   style={{
-                    width: 28,
-                    height: 28,
-                    background: 'linear-gradient(135deg, #f06548 0%, #ff9e7c 100%)',
-                    boxShadow: '0 3px 8px rgba(240,101,72,0.28)',
+                    width: 34,
+                    height: 34,
+                    borderRadius: 10,
+                    background: 'linear-gradient(135deg,#FB7185,#E11D48)',
+                    boxShadow: '0 2px 6px rgba(225,29,72,0.28)',
                   }}
                 >
-                  <i className="ri-logout-box-r-line" style={{ color: '#fff', fontSize: 14 }}></i>
+                  <i className="ri-logout-box-r-line" style={{ color: '#fff', fontSize: 15 }}></i>
                 </span>
                 <span
                   className="fw-semibold flex-grow-1"
-                  style={{ fontSize: 12.5, color: '#f06548' }}
+                  style={{ fontSize: 13.5, color: '#E11D48' }}
                 >
                   Logout
                 </span>

@@ -1,7 +1,7 @@
 import React from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { MENU_ITEMS, HR_GROUPS, SALES_GROUPS, CLM_GROUPS, P2P_GROUPS } from "../../constants";
-import { isMenuOpen, toggleMenu } from "./menuState";
+import { isMenuOpen, toggleMenu, toggleTopMenu, toggleGroupMenu } from "./menuState";
 import { moduleVisible } from "../../utils/menuAccess";
 
 /**
@@ -42,9 +42,105 @@ const iconMap: Record<string, string> = {
   ShoppingBag: "ri-shopping-bag-3-line",
   Globe:    "ri-global-line",
   Boxes:    "ri-stack-line",
+  // Sub-menu (leaf) icons — lucide names declared on *_GROUPS children,
+  // mapped to the sidebar's Remix icon set so sub-items can show a tile.
+  LayoutDashboard: "ri-dashboard-3-line",
+  BarChart3: "ri-bar-chart-2-line",
+  BarChart4: "ri-bar-chart-box-line",
+  ClipboardCheck: "ri-task-line",
+  UserSquare: "ri-account-box-line",
+  Truck: "ri-truck-line",
+  BadgeCheck: "ri-verified-badge-line",
+  Activity: "ri-pulse-line",
+  Tag: "ri-price-tag-3-line",
+  UserPlus: "ri-user-add-line",
+  User: "ri-user-3-line",
+  LogOut: "ri-logout-box-r-line",
+  CalendarOff: "ri-calendar-close-line",
+  CalendarDays: "ri-calendar-event-line",
+  Receipt: "ri-bill-line",
+  Megaphone: "ri-megaphone-line",
+  Star: "ri-star-line",
+  Zap: "ri-flashlight-line",
+  Stethoscope: "ri-stethoscope-line",
+  Send: "ri-send-plane-line",
+  CheckCircle: "ri-checkbox-circle-line",
+  Award: "ri-award-line",
+  CheckSquare: "ri-checkbox-line",
+  Search: "ri-search-line",
+  FileBadge: "ri-file-shield-2-line",
+  PenSquare: "ri-edit-box-line",
+  Hexagon: "ri-hexagon-line",
+  List: "ri-list-check",
+  BookOpen: "ri-book-open-line",
 };
 
 const resolveIcon = (name?: string) => (name && iconMap[name]) || "ri-circle-line";
+// Leaf icon used inside a sub-menu tile — same map, minus the ms-2 spacer the
+// top-level Dashboard entry carries (which would push the glyph off-centre in
+// the centred tile).
+const resolveLeafIcon = (name?: string) => resolveIcon(name).replace(" ms-2", "");
+
+// Short description shown under each sub-menu leaf — mirrors IdimsHeader's
+// LEAF_DESC so the sidebar and the horizontal mega-menu read identically.
+// Keep in sync when adding a menu leaf.
+const LEAF_DESC: Record<string, string> = {
+  "sales.analytics": "Sales dashboard, Diagnosis View & Resolution Center.",
+  "sales.productivity_tracker": "Manage reminders, meetings & to-do activities.",
+  "sales.customers": "Manage customer master records.",
+  "sales.consignee": "Manage consignee master records.",
+  "sales.lead_ack_master": "Manage Lead Acknowledgement reasons.",
+  "sales.workplace": "Manage active sales opportunities.",
+  "sales.quotation_vs_pi": "Track quotation & PI conversion history.",
+  "sales.sign_tracker": "Track all documents sent for e-signature.",
+  "clm.analytics": "Track contract KPIs & legal performance.",
+  "clm.diagnosis_resolution": "Diagnose contract risks & drive resolution actions.",
+  "clm.regulatory_defense": "Read-only regulatory defense file repository.",
+  "clm.buyer_profile": "Manage Customer onboarding & agreements.",
+  "clm.supplier_profile": "Manage supplier contracts & compliance.",
+  "clm.case_to_case": "Manage one-time operational contracts.",
+  "clm.agreements_sent": "Track agreements sent for approval.",
+  "clm.agreements_to_approve": "Review and approve received agreements.",
+  "clm.segment": "Manage segment-wise contract structures.",
+  "clm.authority": "Manage certifying & issuing authorities.",
+  "clm.quality_docs": "Manage QC & compliance documents.",
+  "clm.kyc": "Manage customer & vendor KYC records.",
+  "clm.due_diligence": "Manage risk verification processes.",
+  "clm.trade_licenses": "Manage statutory license documents.",
+  "clm.document_panel": "Manage document rules & governance.",
+  "clm.trade_documents": "Manage declarations & trade papers.",
+  "clm.agreements": "Manage agreement templates & masters.",
+  "clm.terms_conditions": "Manage reusable legal T&C structures.",
+  "clm.clause_library": "Manage reusable legal clauses.",
+  "hr.overview": "Headcount, joinings, exits & headline KPIs.",
+  "hr.pip": "Performance improvement plans.",
+  "hr.reports": "HR reports & analytics.",
+  "hr.recruitment": "Campaigns & candidate sourcing.",
+  "hr.employee": "Employee master, documents & permissions.",
+  "hr.onboarding": "Onboarding invites & profile capture.",
+  "hr.exit": "Exit & full-and-final processing.",
+  "hr.payroll": "Salary structures & payroll runs.",
+  "hr.attendance": "Face attendance & punch records.",
+  "hr.leave": "Leave requests & balances.",
+  "hr.leave_approvals": "Approve or reject leave requests.",
+  "hr.holiday": "Company holiday calendar.",
+  "hr.expense": "Expense claims & advances.",
+  "hr.broadcast": "Company-wide announcements.",
+  "hr.doc_templates": "Role-based document templates.",
+  "hr.custom_fields": "Tenant-defined custom fields.",
+  "master.trigger_point": "Lifecycle trigger modules.",
+  "master.leave_type": "Leave categories master.",
+  "master.leave_plan": "Leave plans & assignments.",
+  "p2p.analytics": "Procurement KPIs & insights.",
+  "p2p.diagnosis": "Identify and resolve procurement issues.",
+  "p2p.sales_summary": "Track sourcing performance.",
+  "p2p.product": "Manage products & sourcing readiness.",
+  "p2p.supplier": "Manage supplier onboarding & compliance.",
+  "p2p.bulk_sourcing": "Manage bulk sourcing requests.",
+  "p2p.case_to_case": "Manage request-based sourcing.",
+  "p2p.po": "Create & track purchase orders.",
+  "p2p.spi": "Process supplier invoices & taxes.",
+};
 
 const slugToPath = (slug: string): string => {
   switch (slug) {
@@ -203,6 +299,8 @@ const Navdata = () => {
   // re-renders via `subscribeMenu()` whenever `toggleMenu()` fires.
   const isOpen = isMenuOpen;
   const toggle = toggleMenu;
+  const toggleTop = toggleTopMenu;
+  const toggleGroup = toggleGroupMenu;
 
   const isSuperAdmin = user?.user_type === "super_admin";
   // Any non-super tenant user — they all inherit the org's plan, so an
@@ -289,6 +387,8 @@ const Navdata = () => {
             id: c.id,
             label: c.label,
             link: hrLeafLink(c.id),
+            icon: resolveLeafIcon((c as any).icon),
+            desc: LEAF_DESC[c.id],
           }));
         if (childItems.length === 0) return null;
         return {
@@ -296,7 +396,7 @@ const Navdata = () => {
           label: g.label,
           isChildItem: true,
           stateVariables: isOpen(g.id),
-          click: (e: any) => { e.preventDefault(); toggle(g.id); },
+          click: (e: any) => { e.preventDefault(); toggleGroup(g.id); },
           childItems,
         };
       })
@@ -323,6 +423,8 @@ const Navdata = () => {
             id: c.id,
             label: c.label,
             link: salesLeafLink(c.id),
+            icon: resolveLeafIcon((c as any).icon),
+            desc: LEAF_DESC[c.id],
           }));
         if (childItems.length === 0) return null;
         return {
@@ -330,7 +432,7 @@ const Navdata = () => {
           label: g.label,
           isChildItem: true,
           stateVariables: isOpen(g.id),
-          click: (e: any) => { e.preventDefault(); toggle(g.id); },
+          click: (e: any) => { e.preventDefault(); toggleGroup(g.id); },
           childItems,
         };
       })
@@ -350,6 +452,8 @@ const Navdata = () => {
             id: c.id,
             label: c.label,
             link: clmLeafLink(c.id),
+            icon: resolveLeafIcon((c as any).icon),
+            desc: LEAF_DESC[c.id],
           }));
         if (childItems.length === 0) return null;
         return {
@@ -357,7 +461,7 @@ const Navdata = () => {
           label: g.label,
           isChildItem: true,
           stateVariables: isOpen(g.id),
-          click: (e: any) => { e.preventDefault(); toggle(g.id); },
+          click: (e: any) => { e.preventDefault(); toggleGroup(g.id); },
           childItems,
         };
       })
@@ -374,11 +478,13 @@ const Navdata = () => {
       label: g.label,
       isChildItem: true,
       stateVariables: isOpen(g.id),
-      click: (e: any) => { e.preventDefault(); toggle(g.id); },
+      click: (e: any) => { e.preventDefault(); toggleGroup(g.id); },
       childItems: g.children.map((c) => ({
         id: c.id,
         label: c.label,
         link: p2pLeafLink(c.id),
+        icon: resolveLeafIcon((c as any).icon),
+        desc: LEAF_DESC[c.id],
       })),
     }));
   };
@@ -444,7 +550,7 @@ const Navdata = () => {
           // toggle, not navigate) — see the HR comment below.
           pathPrefix: slugToPath(m.id),
           stateVariables: isOpen(m.id),
-          click: (e: any) => { e.preventDefault(); toggle(m.id); },
+          click: (e: any) => { e.preventDefault(); toggleTop(m.id); },
           subItems,
         });
       }
@@ -472,7 +578,7 @@ const Navdata = () => {
           icon: resolveIcon(m.icon),
           pathPrefix: "/clm",
           stateVariables: isOpen(m.id),
-          click: (e: any) => { e.preventDefault(); toggle(m.id); },
+          click: (e: any) => { e.preventDefault(); toggleTop(m.id); },
           subItems,
         });
       }
@@ -501,7 +607,7 @@ const Navdata = () => {
           // the click handler must purely toggle the dropdown.
           pathPrefix: slugToPath(m.id),
           stateVariables: isOpen(m.id),
-          click: (e: any) => { e.preventDefault(); toggle(m.id); },
+          click: (e: any) => { e.preventDefault(); toggleTop(m.id); },
           subItems,
         });
       }
@@ -539,7 +645,7 @@ const Navdata = () => {
           icon: resolveIcon(m.icon),
           pathPrefix: slugToPath(m.id),
           stateVariables: isOpen(m.id),
-          click: (e: any) => { e.preventDefault(); toggle(m.id); },
+          click: (e: any) => { e.preventDefault(); toggleTop(m.id); },
           subItems,
         });
       }

@@ -22,7 +22,7 @@ import {
 } from './masterConfigs';
 import { MasterSelect, MasterDatePicker, MasterFileInput, MasterFormStyles } from './masterFormKit';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
-import { bustCustomerMasterBundle } from '../sales/customerBundleCache';
+import { bustCustomerMasterBundle } from '../sales/core-masters/customer/customerBundleCache';
 import { bustProductMasterBundle } from '../products/productBundleCache';
 import { bustVendorMasterBundle } from '../vendors/vendorBundleCache';
 import { bustClientFormBundle } from '../client/clientFormBundleCache';

@@ -1,0 +1,503 @@
+/* Card containers reuse the shared `ep-section-card-flat` (radius 16 + border +
+   shadow + dark #1c2531) from EmployeeProfile.css so the inbox matches the rest
+   of the app — see EmployeeProfile.css for the definition + dark override. */
+.ib-cardbody-0   { padding: 0; }
+
+.ib-section-head { padding: 14px 18px; border-bottom: 1px solid var(--vz-border-color); }
+.ib-row          { padding: 14px 18px; border-bottom: 1px solid var(--vz-border-color); }
+.ib-row-hist     { padding: 12px 18px; border-bottom: 1px solid var(--vz-border-color); }
+.ib-body-col     { flex: 1 1 320px; min-width: 240px; }
+.ib-shim-col     { flex: 1 1 320px; min-width: 240px; display: flex; flex-direction: column; gap: 8px; }
+.ib-actions-col  { min-width: 140px; }
+.ib-body-col-hist { flex: 1 1 280px; min-width: 200px; }
+
+/* ── Header strip ──────────────────────────────────────────────────────────── */
+.ib-pending-badge {
+  padding: 6px 14px; border-radius: 999px;
+  background: linear-gradient(135deg, #f7b84b, #fbc763);
+  color: #fff; font-weight: 700; font-size: 13px;
+}
+
+/* ── Tabs ──────────────────────────────────────────────────────────────────── */
+.ib-tab-cardbody    { padding: 10px; }
+.ib-tab-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 18px; border-radius: 10px; cursor: pointer;
+  border: 1.5px solid var(--vz-border-color);
+  background: var(--vz-card-bg); color: var(--vz-body-color);
+  font-size: 13px; font-weight: 700; transition: all .15s;
+}
+.ib-tab-btn.is-active {
+  border-color: var(--ib-tab-tone);
+  background: var(--ib-tab-tone);
+  color: #fff;
+}
+.ib-tab-icon  { font-size: 16px; }
+.ib-tab-count {
+  min-width: 20px; padding: 1px 7px; border-radius: 999px;
+  font-size: 11px; font-weight: 800;
+  background: var(--vz-secondary-bg); color: var(--vz-body-color);
+}
+.ib-tab-btn.is-active .ib-tab-count {
+  background: rgba(255,255,255,.25); color: #fff;
+}
+
+/* ── Section header icon chips + count badges (New tab) ─────────────────────── */
+.ib-head-chip {
+  width: 32px; height: 32px; border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.ib-head-chip--leave { background: linear-gradient(135deg, #ede9fe, #c4b5fd); }
+.ib-head-chip--exp   { background: linear-gradient(135deg, #fef3c7, #fde68a); }
+[data-bs-theme="dark"] .ib-head-chip--leave { background: rgba(124,92,252,0.20); }
+[data-bs-theme="dark"] .ib-head-chip--exp   { background: rgba(245,158,11,0.18); }
+
+.ib-head-icon        { font-size: 16px; }
+.ib-head-icon--leave { color: #5a3fd1; }
+.ib-head-icon--exp   { color: #a16207; }
+[data-bs-theme="dark"] .ib-head-icon--leave { color: #c4b5fd; }
+[data-bs-theme="dark"] .ib-head-icon--exp   { color: #fcd34d; }
+
+.ib-head-count {
+  padding: 4px 10px; border-radius: 999px; font-weight: 700; font-size: 11.5px;
+}
+.ib-head-count--leave { background: #ede9fe; color: #5a3fd1; }
+.ib-head-count--exp   { background: #fef3c7; color: #a16207; }
+[data-bs-theme="dark"] .ib-head-count--leave { background: rgba(124,92,252,0.20); color: #c4b5fd; }
+[data-bs-theme="dark"] .ib-head-count--exp   { background: rgba(245,158,11,0.18); color: #fcd34d; }
+
+.ib-head-title { font-size: 14px; }
+.ib-head-sub   { font-size: 11.5px; }
+
+/* History head chip + count (generic, accent driven by custom property) */
+.ib-hist-chip {
+  width: 32px; height: 32px; border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--ib-hist-bg);
+}
+.ib-hist-icon  { font-size: 16px; color: var(--ib-hist-fg); }
+.ib-hist-count {
+  padding: 4px 10px; border-radius: 999px; font-weight: 700; font-size: 11.5px;
+  background: var(--ib-hist-bg); color: var(--ib-hist-fg);
+}
+[data-bs-theme="dark"] .ib-hist-chip  { background: var(--ib-hist-bg-d); }
+[data-bs-theme="dark"] .ib-hist-icon  { color: var(--ib-hist-fg-d); }
+[data-bs-theme="dark"] .ib-hist-count { background: var(--ib-hist-bg-d); color: var(--ib-hist-fg-d); }
+
+/* ── Empty states ──────────────────────────────────────────────────────────── */
+.ib-empty       { padding: 28px; text-align: center; color: #9ca3af; }
+.ib-empty-icon  { font-size: 30px; display: block; margin-bottom: 6px; }
+.ib-empty-title { font-size: 13px; font-weight: 600; }
+.ib-empty-sub   { font-size: 11.5px; }
+.ib-hist-empty  { padding: 24px; text-align: center; color: #9ca3af; font-size: 12.5px; }
+.ib-shim-wrap   { padding: 18px; }
+
+/* ── Avatars ───────────────────────────────────────────────────────────────── */
+.ib-avatar {
+  width: 38px; height: 38px; font-size: 12px;
+}
+.ib-avatar--leave { background: linear-gradient(135deg, #7c5cfc, #5a3fd1); }
+.ib-avatar--exp   { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.ib-avatar-sm {
+  width: 34px; height: 34px; font-size: 11px;
+}
+.ib-avatar-sm--leave { background: linear-gradient(135deg, #7c5cfc, #5a3fd1); }
+.ib-avatar-sm--exp   { background: linear-gradient(135deg, #f59e0b, #d97706); }
+
+/* Update notification avatar (tone driven by runtime data) */
+.ib-upd-avatar {
+  width: 38px; height: 38px;
+  background: var(--ib-tone-bg); color: var(--ib-tone-fg);
+  border: 1px solid var(--ib-tone-ring);
+}
+.ib-upd-icon { font-size: 18px; }
+
+/* ── Row text bits ─────────────────────────────────────────────────────────── */
+.ib-name        { font-size: 13.5px; }
+.ib-name-sm     { font-size: 13px; }
+.ib-sub-meta    { font-size: 11px; color: #6b7280; }
+.ib-line        { font-size: 12.5px; }
+.ib-line-sm     { font-size: 12px; }
+.ib-quote       { font-size: 12px; }
+
+/* Leave-type pill */
+.ib-pill-leave {
+  padding: 2px 8px; border-radius: 6px;
+  background: #ede9fe; color: #5a3fd1; font-weight: 700; font-size: 11px;
+}
+[data-bs-theme="dark"] .ib-pill-leave { background: rgba(124,92,252,0.20); color: #c4b5fd; }
+.ib-pill-leave-sm {
+  padding: 1px 7px; border-radius: 6px;
+  background: #ede9fe; color: #5a3fd1; font-weight: 700; font-size: 10.5px;
+}
+[data-bs-theme="dark"] .ib-pill-leave-sm { background: rgba(124,92,252,0.20); color: #c4b5fd; }
+
+/* Expense/Advance type pill */
+.ib-pill-type {
+  padding: 2px 8px; border-radius: 999px;
+  font-weight: 700; font-size: 10px; letter-spacing: 0.3px; text-transform: uppercase;
+}
+.ib-pill-type--adv { background: #e0e7ff; color: #4338ca; }
+.ib-pill-type--exp { background: #fde9d3; color: #9a4d1a; }
+[data-bs-theme="dark"] .ib-pill-type--adv { background: rgba(99,102,241,0.20); color: #a5b4fc; }
+[data-bs-theme="dark"] .ib-pill-type--exp { background: rgba(245,158,11,0.18); color: #fdba74; }
+
+/* Category pill (amber) */
+.ib-pill-cat {
+  padding: 2px 8px; border-radius: 6px;
+  background: #fef3c7; color: #a16207; font-weight: 700; font-size: 11px;
+}
+[data-bs-theme="dark"] .ib-pill-cat { background: rgba(245,158,11,0.18); color: #fcd34d; }
+.ib-pill-cat-sm {
+  padding: 1px 7px; border-radius: 6px;
+  background: #fef3c7; color: #a16207; font-weight: 700; font-size: 10.5px;
+}
+[data-bs-theme="dark"] .ib-pill-cat-sm { background: rgba(245,158,11,0.18); color: #fcd34d; }
+
+/* Inline code pill (grey) */
+.ib-code-grey {
+  font-size: 10.5px; background: #f3f4f6; color: #4b5563;
+  padding: 1px 6px; border-radius: 4px;
+}
+[data-bs-theme="dark"] .ib-code-grey { background: rgba(255,255,255,0.08); color: #cbd5e1; }
+/* Inline code pill (amber) */
+.ib-code-amber {
+  font-size: 10.5px; background: #fef3c7; color: #a16207;
+  padding: 1px 6px; border-radius: 4px;
+}
+[data-bs-theme="dark"] .ib-code-amber { background: rgba(245,158,11,0.18); color: #fcd34d; }
+
+/* Amber amount text */
+.ib-amt { color: #a16207; }
+[data-bs-theme="dark"] .ib-amt { color: #fcd34d; }
+
+/* Stage pill */
+.ib-pill-stage {
+  padding: 1px 7px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase;
+}
+.ib-pill-stage--hr  { background: #e0e7ff; color: #4338ca; }
+.ib-pill-stage--mgr { background: #dcfce7; color: #15803d; }
+[data-bs-theme="dark"] .ib-pill-stage--hr  { background: rgba(99,102,241,0.20); color: #a5b4fc; }
+[data-bs-theme="dark"] .ib-pill-stage--mgr { background: rgba(16,185,129,0.18); color: #6ee7b7; }
+
+.ib-title-line { font-size: 12px; color: #374151; }
+
+/* ── Inputs ────────────────────────────────────────────────────────────────── */
+.ib-remark-input { font-size: 12.5px; }
+
+/* ── Approve / Reject buttons (rows) ───────────────────────────────────────── */
+.ib-btn-approve {
+  padding: 8px 12px; border-radius: 8px; border: 0;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.ib-btn-approve:disabled { cursor: not-allowed; opacity: 0.6; }
+.ib-btn-reject {
+  padding: 8px 12px; border-radius: 8px;
+  border: 1px solid #fecaca; background: #fff; color: #b91c1c;
+  font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.ib-btn-reject:disabled { cursor: not-allowed; opacity: 0.6; }
+/* Dark mode: the white outline reject button reads as light-theme on the dark
+   canvas — use a translucent-red danger treatment with light red text/border. */
+[data-bs-theme="dark"] .ib-btn-reject {
+  background: rgba(239,68,68,0.12);
+  border-color: rgba(239,68,68,0.40);
+  color: #fca5a5;
+}
+
+/* ── Status pill (history) ─────────────────────────────────────────────────── */
+.ib-status-pill {
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 11px; font-weight: 800; white-space: nowrap;
+}
+.ib-status-pill--ok  { background: #d1fae5; color: #047857; }
+.ib-status-pill--bad { background: #fee2e2; color: #b91c1c; }
+[data-bs-theme="dark"] .ib-status-pill--ok  { background: rgba(16,185,129,0.18); color: #6ee7b7; }
+[data-bs-theme="dark"] .ib-status-pill--bad { background: rgba(239,68,68,0.18); color: #fca5a5; }
+
+/* History stage muted text */
+.ib-hist-stage { font-size: 11px; }
+
+/* Document icon chip (history) */
+.ib-doc-chip {
+  width: 34px; height: 34px; border-radius: 8px;
+  background: #e0e7ff; color: #4338ca;
+}
+[data-bs-theme="dark"] .ib-doc-chip { background: rgba(99,102,241,0.20); color: #a5b4fc; }
+.ib-doc-chip-icon { font-size: 17px; }
+
+/* History meta line */
+.ib-hist-meta { font-size: 11.5px; margin-top: 2px; }
+.ib-hist-type-line { font-size: 12px; margin-top: 2px; }
+
+/* ── Pager ─────────────────────────────────────────────────────────────────── */
+.ib-pager { padding: 10px 18px; border-top: 1px solid var(--vz-border-color); }
+.ib-pager-info { color: var(--vz-secondary-color); font-size: 11.5px; }
+.ib-pager-btn {
+  border: 1px solid #e5e7eb; background: #fff;
+  padding: 4px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 600;
+  color: #374151; cursor: pointer;
+}
+.ib-pager-btn:disabled { color: #cbd5e1; cursor: not-allowed; }
+[data-bs-theme="dark"] .ib-pager-btn {
+  border-color: var(--vz-border-color); background: var(--vz-secondary-bg); color: #cbd5e1;
+}
+[data-bs-theme="dark"] .ib-pager-btn:disabled { color: #475569; }
+
+/* ── Your Claim Updates (Updated tab) ──────────────────────────────────────── */
+.ib-upd-chip {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.ib-upd-chip-icon { font-size: 16px; color: #1d4ed8; }
+.ib-upd-badge {
+  padding: 4px 10px; border-radius: 999px;
+  background: #dbeafe; color: #1d4ed8; font-weight: 700; font-size: 11.5px;
+}
+
+/* Update verdict pill (tone driven by runtime data) */
+.ib-upd-verdict {
+  padding: 2px 8px; border-radius: 6px;
+  background: var(--ib-tone-bg); color: var(--ib-tone-fg);
+  font-weight: 700; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.ib-upd-pending {
+  padding: 2px 8px; border-radius: 6px;
+  background: #fef3c7; color: #92400e;
+  font-weight: 700; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.ib-upd-desc { font-size: 12.5px; color: #374151; }
+.ib-upd-stage { color: var(--ib-tone-fg); }
+.ib-upd-time { font-size: 11px; }
+
+/* ── New-tab documents table ───────────────────────────────────────────────── */
+.ib-table { font-size: 13px; }
+.ib-thead-bg { background: #fffbeb; }
+.ib-thead-row {
+  font-size: 11px; letter-spacing: 0.4px; text-transform: uppercase;
+  color: #6b7280; font-weight: 800;
+}
+.ib-th-srno { padding: 10px 12px; width: 44px; }
+.ib-th-action { width: 240px; }
+.ib-empty-cell { padding: 40px; text-align: center; color: #9ca3af; }
+.ib-empty-cell-icon { font-size: 36px; display: block; margin-bottom: 8px; }
+.ib-empty-cell-title { font-size: 14px; font-weight: 600; }
+.ib-empty-cell-sub { font-size: 12px; }
+
+.ib-doc-name-cell { font-weight: 700; }
+.ib-muted-cell { font-size: 11.5px; color: #6b7280; }
+.ib-received-cell { font-size: 12px; color: #6b7280; }
+.ib-step-cell { font-size: 12px; }
+
+.ib-action-pill {
+  padding: 3px 9px; border-radius: 6px; font-size: 11.5px; font-weight: 700;
+}
+.ib-action-pill--sign    { background: #fef3c7; color: #92400e; }
+.ib-action-pill--approve { background: #dcfce7; color: #15803d; }
+.ib-action-pill--other   { background: #e0e7ff; color: #4338ca; }
+
+.ib-view-btn {
+  padding: 6px 10px; border-radius: 8px;
+  border: 1px solid #c7d2fe; background: #eef2ff; color: #4338ca;
+  font-size: 12px; font-weight: 700; cursor: pointer;
+}
+[data-bs-theme="dark"] .ib-view-btn {
+  border-color: rgba(99,102,241,0.4); background: rgba(99,102,241,0.15); color: #a5b4fc;
+}
+.ib-decide-btn {
+  padding: 6px 12px; border-radius: 8px; border: 0;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+
+/* ── Modal shell ───────────────────────────────────────────────────────────── */
+.ib-modal-backdrop {
+  position: fixed; inset: 0; background: rgba(15,23,42,0.55); z-index: 1500;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.ib-modal-card {
+  background: #fff; border-radius: 14px; width: 100%; max-width: 880px;
+  max-height: 90vh; overflow: hidden; display: flex; flex-direction: column;
+}
+.ib-modal-head { padding: 14px 18px; background: var(--ib-modal-gradient); color: #fff; }
+.ib-modal-title { font-size: 15px; }
+.ib-modal-subtitle { font-size: 11.5px; opacity: 0.9; margin-top: 2px; }
+.ib-modal-hint { font-size: 11px; opacity: 0.78; margin-top: 2px; }
+.ib-modal-close {
+  background: rgba(255,255,255,0.18); border: 0; color: #fff;
+  border-radius: 8px; width: 28px; height: 28px;
+}
+
+.ib-modal-body {
+  padding: 16px; background: #f9fafb; overflow-y: auto; flex: 1;
+}
+.ib-preview {
+  font-size: 13.5px; line-height: 1.65; color: #374151;
+}
+.ib-preview--view { min-height: 260px; }
+.ib-preview--action { min-height: 220px; }
+
+.ib-modal-footer {
+  padding: 12px 16px; border-top: 1px solid #e5e7eb; background: #fff;
+  box-shadow: 0 -3px 10px rgba(15,23,42,0.05);
+  display: flex; gap: 8px; flex-shrink: 0;
+}
+.ib-modal-footer--end { justify-content: flex-end; }
+.ib-modal-footer--between {
+  justify-content: space-between; align-items: center; flex-wrap: wrap;
+}
+
+.ib-form-card {
+  margin-top: 14px; padding: 14px; background: #fff;
+  border: 1px solid #e5e7eb; border-radius: 10px;
+}
+.ib-input-label {
+  font-size: 10.5px; font-weight: 800; color: #6b7280; letter-spacing: 0.4px;
+  text-transform: uppercase; display: block; margin-bottom: 4px;
+}
+.ib-input-label--mt { margin-top: 12px; }
+.ib-req { color: #ef4444; }
+.ib-input-text {
+  width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #d1d5db;
+  font-size: 14px; margin-bottom: 12px;
+}
+.ib-input-textarea {
+  width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #d1d5db;
+  font-size: 13px; resize: vertical;
+}
+.ib-input-hint { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+
+.ib-btn-ghost {
+  padding: 7px 14px; background: #fff; border: 1px solid #d1d5db; border-radius: 8px;
+  font-size: 13px; font-weight: 600; color: #374151; cursor: pointer;
+}
+.ib-btn-decide {
+  padding: 7px 16px; background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  border: 0; border-radius: 8px; font-size: 13px; font-weight: 700; color: #fff; cursor: pointer;
+}
+.ib-btn-sendback {
+  padding: 7px 14px; border: 0; border-radius: 8px;
+  font-size: 13px; font-weight: 700;
+}
+.ib-btn-sendback.is-ready {
+  background: linear-gradient(135deg, #dc2626, #ef4444); color: #fff;
+  cursor: pointer; opacity: 1;
+}
+.ib-btn-sendback.is-blocked {
+  background: #fee2e2; color: #b91c1c; cursor: not-allowed; opacity: 0.7;
+}
+.ib-btn-submit {
+  padding: 7px 16px; border: 0; border-radius: 8px;
+  font-size: 13px; font-weight: 700; color: #fff; cursor: pointer;
+}
+.ib-btn-submit--approve { background: linear-gradient(135deg, #16a34a, #22c55e); }
+.ib-btn-submit--sign    { background: linear-gradient(135deg, #0ea5e9, #3b82f6); }
+.ib-btn-submit--ack     { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+.ib-btn-submit-icon { margin-right: 6px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Dark-theme overrides — moved verbatim from the former inline <style> block.
+   Page-scoped rules use .inbox-page; modal rules use class names that don't
+   require the wrapper since the modal is rendered as a sibling of the page
+   container.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Reminder badge — the pulsing amber pill in the header strip that tells
+   the signer "someone nudged you". Drawn in both themes (not dark-only). */
+@keyframes inboxReminderPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.45); }
+  50%      { box-shadow: 0 0 0 4px rgba(245,158,11,0); }
+}
+.inbox-reminder-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 9px; border-radius: 999px;
+  background: #fef3c7; color: #b45309;
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.2px;
+  animation: inboxReminderPulse 1.8s ease-in-out infinite;
+}
+.inbox-reminder-pill--header {
+  padding: 6px 12px; font-size: 12px; color: #92400e;
+  background: #fde68a;
+}
+[data-bs-theme="dark"] .inbox-reminder-pill { background: rgba(245,158,11,0.20); color: #fbbf24; }
+[data-bs-theme="dark"] .inbox-reminder-pill--header { background: rgba(245,158,11,0.22); color: #fcd34d; }
+
+[data-bs-theme="dark"] .inbox-page .inbox-header-icon {
+  /* Stay on the same saturated amber gradient as light mode so the
+   * icon chip matches the Master-tile treatment in both themes,
+   * rather than the older translucent variant that washed out
+   * against the dark canvas. */
+  background: linear-gradient(135deg, #f7b84b, #fad07e) !important;
+  box-shadow: 0 4px 14px rgba(247, 184, 75, 0.38) !important;
+}
+[data-bs-theme="dark"] .inbox-page .inbox-thead {
+  background: rgba(251,191,36,0.10) !important;
+}
+[data-bs-theme="dark"] .inbox-page .inbox-thead tr,
+[data-bs-theme="dark"] .inbox-page .inbox-thead th {
+  color: rgba(255,255,255,0.65) !important;
+}
+[data-bs-theme="dark"] .inbox-page .inbox-table tbody td {
+  border-bottom-color: var(--vz-border-color) !important;
+  color: var(--vz-body-color);
+}
+/* "Your Claim Updates" (Updated tab) — recolour the blue icon chip and
+   counter badge for dark mode so they don't read as light-theme tiles. */
+[data-bs-theme="dark"] .inbox-page .claim-upd-icon { background: rgba(59,130,246,0.18) !important; }
+[data-bs-theme="dark"] .inbox-page .claim-upd-icon i { color: #60a5fa !important; }
+[data-bs-theme="dark"] .inbox-page .claim-upd-badge { background: rgba(59,130,246,0.18) !important; color: #93c5fd !important; }
+[data-bs-theme="dark"] .inbox-page .inbox-doc-name { color: rgba(255,255,255,0.95) !important; }
+[data-bs-theme="dark"] .inbox-page .inbox-muted { color: rgba(255,255,255,0.55) !important; }
+[data-bs-theme="dark"] .inbox-page .inbox-empty { color: rgba(255,255,255,0.5) !important; }
+[data-bs-theme="dark"] .inbox-page .inbox-code-pill {
+  background: rgba(251,191,36,0.18) !important; color: #fbbf24 !important;
+}
+[data-bs-theme="dark"] .inbox-page .inbox-action-Sign    { background: rgba(245,158,11,0.18) !important; color: #fbbf24 !important; }
+[data-bs-theme="dark"] .inbox-page .inbox-action-Approve { background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important; }
+[data-bs-theme="dark"] .inbox-page .inbox-action-Other   { background: rgba(124,92,252,0.18) !important; color: #c4b5fd !important; }
+[data-bs-theme="dark"] .inbox-page .inbox-view-btn {
+  background: rgba(99,102,241,0.18) !important; color: #c4b5fd !important;
+  border-color: rgba(124,92,252,0.35) !important;
+}
+
+/* Modals — rendered as siblings of the page card, scoped only by the
+   class names on the modal itself. */
+[data-bs-theme="dark"] .inbox-modal-card {
+  background: var(--vz-card-bg) !important;
+  color: var(--vz-body-color);
+}
+[data-bs-theme="dark"] .inbox-modal-body {
+  background: var(--vz-secondary-bg) !important;
+}
+[data-bs-theme="dark"] .inbox-modal-footer {
+  background: var(--vz-card-bg) !important;
+  border-top-color: var(--vz-border-color) !important;
+  box-shadow: 0 -3px 10px rgba(0,0,0,0.25) !important;
+}
+[data-bs-theme="dark"] .inbox-form-card {
+  background: var(--vz-card-bg) !important;
+  border-color: var(--vz-border-color) !important;
+}
+[data-bs-theme="dark"] .inbox-input {
+  background: var(--vz-card-bg) !important;
+  border-color: var(--vz-border-color) !important;
+  color: var(--vz-body-color) !important;
+}
+[data-bs-theme="dark"] .inbox-input::placeholder { color: rgba(255,255,255,0.45) !important; }
+[data-bs-theme="dark"] .inbox-input-label { color: rgba(255,255,255,0.55) !important; }
+[data-bs-theme="dark"] .inbox-hint { color: rgba(255,255,255,0.45) !important; }
+[data-bs-theme="dark"] .inbox-btn-ghost {
+  background: var(--vz-secondary-bg) !important;
+  border-color: var(--vz-border-color) !important;
+  color: var(--vz-body-color) !important;
+}
+/* Reject & Send Back — the enabled (red gradient) state reads fine on
+   dark, but the disabled state's light-pink fill / dark-red text looked
+   out of place against the dark footer. Tone it to the dark palette. */
+[data-bs-theme="dark"] .inbox-btn-reject:disabled {
+  background: rgba(239,68,68,0.16) !important;
+  color: #fca5a5 !important;
+}

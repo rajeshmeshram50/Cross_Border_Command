@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext } from 'react';
+import { useState, useEffect, createContext, useContext, lazy, Suspense } from 'react';
 import api from '../api';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
 import { Provider as ReduxProvider } from 'react-redux';
@@ -46,45 +46,47 @@ import ClientPayments from '../pages/client/ClientPayments';
 import ClientSettings from '../pages/client/ClientSettings';
 import MasterDashboard from '../pages/MasterDashboard';
 import MasterPage from '../pages/master/MasterPage';
-import SalesCustomers from '../pages/sales/SalesCustomers';
-import SalesConsignee from '../pages/sales/SalesConsignee';
-import SalesLeadAckMaster from '../pages/sales/SalesLeadAckMaster';
-import SalesLeadWorksheet from '../pages/sales/SalesLeadWorksheet';
-import LeadDistributionPage from '../pages/sales/AssignedLeadsModal';
-import SalesLeadsDetails from '../pages/sales/SalesLeadsDetails';
-import SalesTodo from '../pages/sales/SalesTodo';
-import SalesQPI from '../pages/sales/SalesQPI';
+// Route-level code-split: each page (plus its lazy-loaded modals) ships as its
+// own chunk, kept out of the main app bundle. Rendered behind <Suspense> below.
+const SalesCustomers = lazy(() => import('../pages/sales/core-masters/customer/SalesCustomers'));
+const SalesConsignee = lazy(() => import('../pages/sales/core-masters/consignee/SalesConsignee'));
+import SalesLeadAckMaster from '../pages/sales/core-masters/lead-ack/SalesLeadAckMaster';
+import SalesLeadWorksheet from '../pages/sales/opportunity-pipeline/SalesLeadWorksheet';
+import LeadDistributionPage from '../pages/sales/opportunity-pipeline/AssignedLeadsModal';
+import SalesLeadsDetails from '../pages/sales/opportunity-pipeline/SalesLeadsDetails';
+import SalesTodo from '../pages/sales/insights-productivity/SalesTodo';
+import SalesQPI from '../pages/sales/opportunity-pipeline/SalesQPI';
 import DeveloperShipments from '../pages/developers/DeveloperShipments';
-import SalesSignTracker from '../pages/sales/SalesSignTracker';
-import SalesP2PSummary from '../pages/sales/SalesP2PSummary';
-import SalesMatrixDetail from '../pages/sales/matrix/SalesMatrixDetail';
+import SalesSignTracker from '../pages/sales/opportunity-pipeline/SalesSignTracker';
+import SalesP2PSummary from '../pages/sales/opportunity-pipeline/SalesP2PSummary';
+import SalesMatrixDetail from '../pages/sales/opportunity-pipeline/matrix/SalesMatrixDetail';
 import Products from '../pages/products/Products';
 import ProductView from '../pages/products/ProductView';
 import Vendors from '../pages/vendors/Vendors';
-import SalesDiagnosis from '../pages/sales/SalesDiagnosis';
-import SalesResolutionCenter from '../pages/sales/SalesResolutionCenter';
-import SalesAnalytics from '../pages/sales/SalesAnalytics';
-import SalesPerformance from '../pages/sales/SalesPerformance';
-import ClmStubPage from '../pages/clm/ClmStubPage';
-import ClmAnalyticsPage from '../pages/clm/ClmAnalyticsPage';
-import ClmSegmentPage from '../pages/clm/ClmSegmentPage';
-import ClmAuthorityPage from '../pages/clm/ClmAuthorityPage';
-import ClmKycPage from '../pages/clm/ClmKycPage';
-import ClmDdPage from '../pages/clm/ClmDdPage';
-import ClmTradeLicensesPage from '../pages/clm/ClmTradeLicensesPage';
-import ClmQcPage from '../pages/clm/ClmQcPage';
-import ClmTradeDocumentsPage from '../pages/clm/ClmTradeDocumentsPage';
-import ClmTncPage from '../pages/clm/ClmTncPage';
-import ClmAgreementsPage from '../pages/clm/ClmAgreementsPage';
-import ClmClauseLibraryPage from '../pages/clm/ClmClauseLibraryPage';
-import ClmDcpPage from '../pages/clm/ClmDcpPage';
-import ClmBuyerProfilePage from '../pages/clm/ClmBuyerProfilePage';
-import ClmSupplierProfilePage from '../pages/clm/ClmSupplierProfilePage';
-import ClmDiagnosisResolutionPage from '../pages/clm/ClmDiagnosisResolutionPage';
-import ClmRegulatoryDefenseFilePage from '../pages/clm/ClmRegulatoryDefenseFilePage';
-import ClmCaseToCasePage from '../pages/clm/ClmCaseToCasePage';
-import ClmAgreementsSentPage from '../pages/clm/ClmAgreementsSentPage';
-import ClmAgreementsToApprovePage from '../pages/clm/ClmAgreementsToApprovePage';
+import SalesDiagnosis from '../pages/sales/insights-productivity/SalesDiagnosis';
+import SalesResolutionCenter from '../pages/sales/insights-productivity/SalesResolutionCenter';
+import SalesAnalytics from '../pages/sales/insights-productivity/SalesAnalytics';
+import SalesPerformance from '../pages/sales/insights-productivity/SalesPerformance';
+import ClmStubPage from '../pages/clm/shared/ClmStubPage';
+import ClmAnalyticsPage from '../pages/clm/command-center/ClmAnalyticsPage';
+import ClmSegmentPage from '../pages/clm/compliance/ClmSegmentPage';
+import ClmAuthorityPage from '../pages/clm/compliance/ClmAuthorityPage';
+import ClmKycPage from '../pages/clm/compliance/ClmKycPage';
+import ClmDdPage from '../pages/clm/compliance/ClmDdPage';
+import ClmTradeLicensesPage from '../pages/clm/compliance/ClmTradeLicensesPage';
+import ClmQcPage from '../pages/clm/compliance/ClmQcPage';
+import ClmTradeDocumentsPage from '../pages/clm/document-masters/ClmTradeDocumentsPage';
+import ClmTncPage from '../pages/clm/document-masters/ClmTncPage';
+import ClmAgreementsPage from '../pages/clm/document-masters/ClmAgreementsPage';
+import ClmClauseLibraryPage from '../pages/clm/document-masters/ClmClauseLibraryPage';
+import ClmDcpPage from '../pages/clm/compliance/ClmDcpPage';
+import ClmBuyerProfilePage from '../pages/clm/operations/ClmBuyerProfilePage';
+import ClmSupplierProfilePage from '../pages/clm/operations/ClmSupplierProfilePage';
+import ClmDiagnosisResolutionPage from '../pages/clm/command-center/ClmDiagnosisResolutionPage';
+import ClmRegulatoryDefenseFilePage from '../pages/clm/command-center/ClmRegulatoryDefenseFilePage';
+import ClmCaseToCasePage from '../pages/clm/operations/ClmCaseToCasePage';
+import ClmAgreementsSentPage from '../pages/clm/operations/ClmAgreementsSentPage';
+import ClmAgreementsToApprovePage from '../pages/clm/operations/ClmAgreementsToApprovePage';
 import HrDashboard from '../pages/hrms/HrDashboard';
 import HrOverview from '../pages/hrms/HrOverview';
 import HrEmployees from '../pages/hrms/HrEmployees';
@@ -110,7 +112,7 @@ import EmployeeProfile from '../pages/employee/EmployeeProfile';
 import PublicOnboarding from '../pages/PublicOnboarding';
 import ClockIn from '../pages/ClockIn';
 import ModuleStubPage from '../pages/ModuleStubPage';
-import P2pBulkSourcing from '../pages/p2p/P2pBulkSourcing';
+import P2pBulkSourcing from '../pages/p2p/procurement-management/bulk-sourcing/P2pBulkSourcing';
 import MyTeam from '../pages/MyTeam';
 import Inbox from '../pages/Inbox';
 import Gmail from '../pages/Gmail';
@@ -724,8 +726,8 @@ function DashboardRoutes({ user }: { user: any }) {
                   the catch-all /master/:slug so it takes priority. */}
               <Route path="/master/segments" element={<ClmSegmentPage />} />
               <Route path="/master/:slug" element={<MasterPage />} />
-              <Route path="/sales/customers" element={<SalesCustomers />} />
-              <Route path="/sales/consignee" element={<SalesConsignee />} />
+              <Route path="/sales/customers" element={<Suspense fallback={null}><SalesCustomers /></Suspense>} />
+              <Route path="/sales/consignee" element={<Suspense fallback={null}><SalesConsignee /></Suspense>} />
               <Route path="/sales/lead-ack-master" element={<SalesLeadAckMaster />} />
               <Route path="/sales/lead-worksheet" element={<SalesLeadWorksheet />} />
               <Route path="/sales/lead-distribution" element={<LeadDistributionPage />} />

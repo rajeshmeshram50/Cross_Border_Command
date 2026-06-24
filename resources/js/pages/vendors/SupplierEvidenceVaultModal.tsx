@@ -6,8 +6,8 @@ import { useToast } from '../../contexts/ToastContext';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { signatureRequestsToVaultDocs, mergeTradeDocuments, type SigReqRow } from '../../utils/vaultSignatureRows';
 import { downloadFile } from '../../utils/downloadFile';
-import SalesCustomerSendForSignatureModal from '../sales/SalesCustomerSendForSignatureModal';
-import { CEV_CSS } from '../sales/CustomerEvidenceVaultModal';
+import SalesCustomerSendForSignatureModal from '../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
+import { CEV_CSS } from '../sales/core-masters/customer/CustomerEvidenceVaultModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Supplier Evidence Vault — read-only compliance archive

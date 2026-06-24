@@ -13,6 +13,7 @@ import HeaderFooterPanel, {
 } from './hrms/doc-templates/HeaderFooterPanel';
 import { leaveRequestsApi, ApiLeaveRequest } from './hrms/leavePlansApi';
 import '../../css/recruitment.css';
+import './Inbox.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type SignerState = {
@@ -41,10 +42,6 @@ interface SignatureRun {
   audit_log?: AuditEvent[];
   created_at: string;
 }
-
-// One entry in a run's audit trail. A 'reminded' event carries signer_index
-// so we can tell whether the nudge was aimed at the slot the current viewer
-// is sitting on.
 type AuditEvent = {
   at: string;
   actor_id: number | null;
@@ -53,16 +50,19 @@ type AuditEvent = {
   message: string;
   signer_index?: number;
 };
-
-// Most-recent 'reminded' event aimed at this run's CURRENT signer (the person
-// whose turn it is, i.e. whoever is looking at this inbox row). Returns null
-// when nobody has nudged them yet.
 function latestReminder(run: SignatureRun): AuditEvent | null {
   const hits = (run.audit_log || []).filter(
     e => e.action === 'reminded' && (e.signer_index ?? -1) === run.current_index,
   );
   if (hits.length === 0) return null;
   return hits.reduce((a, b) => (a.at >= b.at ? a : b));
+}
+
+function hexA(hex: string, a: number): string {
+  const h = hex.replace('#', '');
+  const f = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+  const n = parseInt(f, 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
@@ -74,32 +74,13 @@ export default function Inbox() {
 
   const [rows, setRows] = useState<SignatureRun[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Inbox tabs — "New" holds everything still waiting on your sign/approve
-  // action (Leave · Expense · Documents); "Updated" is the history of items
-  // already acted on (Your Claim Updates). The containers themselves are
-  // unchanged — they're just grouped under the matching tab.
   const [tab, setTab] = useState<'new' | 'updated'>('new');
-
-  // Leave approvals — pending leave requests where the current user is
-  // an approver. Reporting managers see their direct reports;
-  // branch_user / client_admin / super_admin see every pending request
-  // in their tenant (parallel approval — the first one to act wins).
   const [leaveRows, setLeaveRows] = useState<ApiLeaveRequest[]>([]);
   const [leaveLoading, setLeaveLoading] = useState(true);
   const [leaveActing, setLeaveActing] = useState<{ id: number; verdict: 'approve' | 'reject' } | null>(null);
   const [leaveComment, setLeaveComment] = useState<Record<number, string>>({});
-
-  // Expense approvals — pending claims pulled from /my-team/approvals where
-  // module = 'expense'. Combines manager-stage (when the user is the assigned
-  // reporting manager) and HR-stage (when the user has hr.expense approval
-  // permission, e.g. branch admins / client admins). Stage lives on raw.stage
-  // so the dispatch knows whether to hit manager-approve or hr-approve.
   type ExpenseApprovalRow = {
     id: number;
-    // Both expense claims and advance requests share this row shape and the
-    // same two-stage approval flow; `module` decides which endpoint the
-    // approve/reject action hits (/expense-claims vs /advance-requests).
     module: 'expense' | 'advance';
     code: string | null;
     title: string;
@@ -123,18 +104,10 @@ export default function Inbox() {
   };
   const [expenseRows, setExpenseRows] = useState<ExpenseApprovalRow[]>([]);
   const [expenseLoading, setExpenseLoading] = useState(true);
-  // Expense and advance IDs share the same number space, so per-row state
-  // (in-flight action + draft comment) is keyed by `<module>-<id>` rather
-  // than the bare id — otherwise claim #5 and advance #5 would clobber each
-  // other's comment box and spinner.
-  const [expenseActing, setExpenseActing] = useState<{ key: string; verdict: 'approve' | 'reject' } | null>(null);
+ const [expenseActing, setExpenseActing] = useState<{ key: string; verdict: 'approve' | 'reject' } | null>(null);
   const [expenseComment, setExpenseComment] = useState<Record<string, string>>({});
   const expRowKey = (r: { module: string; id: number }) => `${r.module}-${r.id}`;
-
-  // Personal claim/advance updates — FYI notifications for claims THIS
-  // user filed that managers or HR have just acted on. Read-only; no
-  // approve/reject buttons. Sourced from /api/my-team/my-updates.
-  type MyUpdate = {
+ type MyUpdate = {
     module: 'expense' | 'advance';
     id: number;
     code: string | null;
@@ -283,8 +256,8 @@ export default function Inbox() {
     const pages = Math.ceil(total / PAGE_SIZE);
     const safePage = Math.max(0, Math.min(page, pages - 1));
     return (
-      <div className="d-flex align-items-center justify-content-between gap-2" style={{ padding: '10px 18px', borderTop: '1px solid #f3f4f6' }}>
-        <small style={{ color: '#6b7280', fontSize: 11.5 }}>
+      <div className="d-flex align-items-center justify-content-between gap-2 ib-pager">
+        <small className="ib-pager-info">
           Page {safePage + 1} of {pages} · {total} total
         </small>
         <div className="d-flex gap-1">
@@ -292,12 +265,7 @@ export default function Inbox() {
             type="button"
             onClick={() => onChange(Math.max(0, safePage - 1))}
             disabled={safePage === 0}
-            style={{
-              border: '1px solid #e5e7eb', background: '#fff',
-              padding: '4px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 600,
-              color: safePage === 0 ? '#cbd5e1' : '#374151',
-              cursor: safePage === 0 ? 'not-allowed' : 'pointer',
-            }}
+            className="ib-pager-btn"
           >
             <i className="ri-arrow-left-s-line" /> Prev
           </button>
@@ -305,12 +273,7 @@ export default function Inbox() {
             type="button"
             onClick={() => onChange(Math.min(pages - 1, safePage + 1))}
             disabled={safePage >= pages - 1}
-            style={{
-              border: '1px solid #e5e7eb', background: '#fff',
-              padding: '4px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 600,
-              color: safePage >= pages - 1 ? '#cbd5e1' : '#374151',
-              cursor: safePage >= pages - 1 ? 'not-allowed' : 'pointer',
-            }}
+            className="ib-pager-btn"
           >
             Next <i className="ri-arrow-right-s-line" />
           </button>
@@ -397,9 +360,6 @@ export default function Inbox() {
         toast.error('Remark required', 'Add a remark explaining what should change.');
         return;
       }
-      // Snapshot the run + close the action modal so the confirm
-      // popup isn't stacked on top of the open acknowledge modal.
-      // Restore if the user cancels.
       const targetRun = actionRun;
       const runId = targetRun.id;
       const code  = targetRun.code || 'this document';
@@ -473,7 +433,6 @@ export default function Inbox() {
     <Row>
       <Col xs={12}>
         <div className="rec-page inbox-page">
-          <InboxDarkStyles />
           {/* Header strip — same shape as the Clients / Branches module
               headers (violet border + left accent strip + violet icon). */}
           <div className="frm-cstrip mb-3">
@@ -493,7 +452,7 @@ export default function Inbox() {
                   {reminderCount} reminder{reminderCount === 1 ? '' : 's'}
                 </span>
               )}
-              <span style={{ padding: '6px 14px', borderRadius: 999, background: 'linear-gradient(135deg,#f7b84b,#fbc763)', color: '#fff', fontWeight: 700, fontSize: 13 }}>
+              <span className="ib-pending-badge">
                 <i className="ri-mail-unread-line me-1" />
                 {loading || leaveLoading || expenseLoading || myUpdatesLoading
                   ? '…'
@@ -522,21 +481,18 @@ export default function Inbox() {
             const TabBtn = ({ id, label, icon, count, tone }: { id: 'new' | 'updated'; label: string; icon: string; count: number; tone: string }) => {
               const active = tab === id;
               return (
-                <button type="button" onClick={() => setTab(id)} className="inbox-tab" style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 10, cursor: 'pointer',
-                  border: active ? `1.5px solid ${tone}` : '1.5px solid var(--vz-border-color)',
-                  background: active ? tone : 'var(--vz-card-bg)', color: active ? '#fff' : 'var(--vz-body-color)',
-                  fontSize: 13, fontWeight: 700, transition: 'all .15s',
-                }}>
-                  <i className={icon} style={{ fontSize: 16 }} />
+                <button type="button" onClick={() => setTab(id)}
+                  className={`inbox-tab ib-tab-btn${active ? ' is-active' : ''}`}
+                  style={{ ['--ib-tab-tone' as any]: tone }}>
+                  <i className={`${icon} ib-tab-icon`} />
                   {label}
-                  <span style={{ minWidth: 20, padding: '1px 7px', borderRadius: 999, fontSize: 11, fontWeight: 800, background: active ? 'rgba(255,255,255,.25)' : 'var(--vz-secondary-bg)', color: active ? '#fff' : 'var(--vz-body-color)' }}>{count}</span>
+                  <span className="ib-tab-count">{count}</span>
                 </button>
               );
             };
             return (
-              <Card className="mb-3" style={{ borderRadius: 12 }}>
-                <CardBody style={{ padding: 10 }}>
+              <Card className="mb-3 ep-section-card-flat">
+                <CardBody className="ib-tab-cardbody">
                   <div className="d-flex align-items-center gap-2 flex-wrap">
                     <TabBtn id="new" label="New" icon="ri-inbox-unarchive-line" count={newCount} tone="#f59e0b" />
                     <TabBtn id="updated" label="Updated (History)" icon="ri-history-line" count={updatedCount} tone="#1d4ed8" />
@@ -552,22 +508,21 @@ export default function Inbox() {
               the reporting manager OR a branch admin can act (first one to
               click wins). */}
           {tab === 'new' && (
-          <Card className="mb-3" style={{ borderRadius: 12 }}>
-            <CardBody style={{ padding: 0 }}>
-              <div className="d-flex align-items-center justify-content-between"
-                   style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
+          <Card className="mb-3 ep-section-card-flat">
+            <CardBody className="ib-cardbody-0">
+              <div className="d-flex align-items-center justify-content-between ib-section-head">
                 <div className="d-flex align-items-center gap-2">
-                  <span style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg,#ede9fe,#c4b5fd)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <i className="ri-calendar-2-line" style={{ fontSize: 16, color: '#5a3fd1' }} />
+                  <span className="ib-head-chip ib-head-chip--leave">
+                    <i className="ri-calendar-2-line ib-head-icon ib-head-icon--leave" />
                   </span>
                   <div>
-                    <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Leave Requests</h6>
-                    <div className="text-muted" style={{ fontSize: 11.5 }}>
+                    <h6 className="mb-0 fw-bold ib-head-title">Leave Requests</h6>
+                    <div className="text-muted ib-head-sub">
                       Approvals waiting on you. Either the reporting manager or a branch admin can decide.
                     </div>
                   </div>
                 </div>
-                <span style={{ padding: '4px 10px', borderRadius: 999, background: '#ede9fe', color: '#5a3fd1', fontWeight: 700, fontSize: 11.5 }}>
+                <span className="ib-head-count ib-head-count--leave">
                   {leaveLoading ? '…' : `${leaveRows.length}`}
                 </span>
               </div>
@@ -575,10 +530,10 @@ export default function Inbox() {
               {leaveLoading ? (
                 <div>
                   {Array.from({ length: 3 }).map((_, i) => (
-                    <div key={`leave-shim-${i}`} style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                    <div key={`leave-shim-${i}`} className="ib-row">
                       <div className="d-flex align-items-start gap-3 flex-wrap">
                         <Shimmer width={38} height={38} radius={999} />
-                        <div style={{ flex: '1 1 320px', minWidth: 240, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div className="ib-shim-col">
                           <div className="d-flex align-items-center gap-2">
                             <Shimmer width={140} height={13} />
                             <Shimmer width={80} height={11} />
@@ -589,7 +544,7 @@ export default function Inbox() {
                           </div>
                           <Shimmer height={32} radius={6} />
                         </div>
-                        <div className="d-flex flex-column gap-2" style={{ minWidth: 140 }}>
+                        <div className="d-flex flex-column gap-2 ib-actions-col">
                           <Shimmer height={32} radius={8} />
                           <Shimmer height={32} radius={8} />
                         </div>
@@ -598,10 +553,10 @@ export default function Inbox() {
                   ))}
                 </div>
               ) : leaveRows.length === 0 ? (
-                <div style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>
-                  <i className="ri-flight-takeoff-line" style={{ fontSize: 30, display: 'block', marginBottom: 6 }} />
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>No pending leave requests</div>
-                  <div style={{ fontSize: 11.5 }}>You're all caught up on approvals.</div>
+                <div className="ib-empty">
+                  <i className="ri-flight-takeoff-line ib-empty-icon" />
+                  <div className="ib-empty-title">No pending leave requests</div>
+                  <div className="ib-empty-sub">You're all caught up on approvals.</div>
                 </div>
               ) : (
                 <div>
@@ -616,56 +571,49 @@ export default function Inbox() {
                     const isRejecting = acting && leaveActing?.verdict === 'reject';
                     const fmt = (d: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
                     return (
-                      <div key={r.id} style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                      <div key={r.id} className="ib-row">
                         <div className="d-flex align-items-start gap-3 flex-wrap">
                           {/* Avatar */}
-                          <span className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                            style={{ width: 38, height: 38, fontSize: 12, background: 'linear-gradient(135deg,#7c5cfc,#5a3fd1)' }}>
+                          <span className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0 ib-avatar ib-avatar--leave">
                             {initials}
                           </span>
                           {/* Body */}
-                          <div style={{ flex: '1 1 320px', minWidth: 240 }}>
+                          <div className="ib-body-col">
                             <div className="d-flex align-items-center gap-2 flex-wrap">
-                              <strong style={{ fontSize: 13.5 }}>{empName}</strong>
-                              <span style={{ fontSize: 11, color: '#6b7280' }}>
+                              <strong className="ib-name">{empName}</strong>
+                              <span className="ib-sub-meta">
                                 {emp?.emp_code || '—'}
                                 {emp?.department?.name ? ` · ${emp.department.name}` : ''}
                               </span>
                             </div>
-                            <div className="mt-1" style={{ fontSize: 12.5 }}>
-                              <span style={{ padding: '2px 8px', borderRadius: 6, background: '#ede9fe', color: '#5a3fd1', fontWeight: 700, fontSize: 11 }}>
+                            <div className="mt-1 ib-line">
+                              <span className="ib-pill-leave">
                                 {r.leave_type?.name || 'Leave'}
                               </span>
                               <span className="ms-2 text-muted">{fmt(r.from_date)} – {fmt(r.to_date)}</span>
                               <span className="ms-2 fw-semibold">{Number(r.days)} {Number(r.days) === 1 ? 'day' : 'days'}</span>
                             </div>
                             {r.reason && (
-                              <div className="mt-1 text-muted" style={{ fontSize: 12 }}>
+                              <div className="mt-1 text-muted ib-quote">
                                 <i className="ri-double-quotes-l me-1" />{r.reason}
                               </div>
                             )}
                             {/* Comment input — required when rejecting, optional when approving */}
                             <input
                               type="text"
-                              className="form-control mt-2"
+                              className="form-control mt-2 ib-remark-input"
                               placeholder="Add a remark (required for reject, optional for approve)"
                               value={leaveComment[r.id] || ''}
                               onChange={e => setLeaveComment(prev => ({ ...prev, [r.id]: e.target.value }))}
-                              style={{ fontSize: 12.5 }}
                             />
                           </div>
                           {/* Actions */}
-                          <div className="d-flex flex-column gap-2" style={{ minWidth: 140 }}>
+                          <div className="d-flex flex-column gap-2 ib-actions-col">
                             <button
                               type="button"
                               onClick={() => actOnLeave(r.id, 'approve')}
                               disabled={acting}
-                              style={{
-                                padding: '8px 12px', borderRadius: 8, border: 0,
-                                background: 'linear-gradient(135deg,#10b981,#059669)',
-                                color: '#fff', fontSize: 12, fontWeight: 700, cursor: acting ? 'not-allowed' : 'pointer',
-                                opacity: acting ? 0.6 : 1,
-                              }}
+                              className="ib-btn-approve"
                             >
                               {isApproving ? <><i className="ri-loader-4-line ri-spin me-1" />Approving…</> : <><i className="ri-check-line me-1" />Accept</>}
                             </button>
@@ -673,13 +621,7 @@ export default function Inbox() {
                               type="button"
                               onClick={() => actOnLeave(r.id, 'reject')}
                               disabled={acting}
-                              style={{
-                                padding: '8px 12px', borderRadius: 8,
-                                border: '1px solid #fecaca',
-                                background: '#fff', color: '#b91c1c',
-                                fontSize: 12, fontWeight: 700, cursor: acting ? 'not-allowed' : 'pointer',
-                                opacity: acting ? 0.6 : 1,
-                              }}
+                              className="ib-btn-reject"
                             >
                               {isRejecting ? <><i className="ri-loader-4-line ri-spin me-1" />Rejecting…</> : <><i className="ri-close-line me-1" />Reject</>}
                             </button>
@@ -700,22 +642,21 @@ export default function Inbox() {
               someone with HR/Finance approval rights (hr stage). raw.stage
               decides which controller endpoint each action call dispatches. */}
           {tab === 'new' && (
-          <Card className="mb-3" style={{ borderRadius: 12 }}>
-            <CardBody style={{ padding: 0 }}>
-              <div className="d-flex align-items-center justify-content-between"
-                   style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
+          <Card className="mb-3 ep-section-card-flat">
+            <CardBody className="ib-cardbody-0">
+              <div className="d-flex align-items-center justify-content-between ib-section-head">
                 <div className="d-flex align-items-center gap-2">
-                  <span style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg,#fef3c7,#fde68a)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <i className="ri-bill-line" style={{ fontSize: 16, color: '#a16207' }} />
+                  <span className="ib-head-chip ib-head-chip--exp">
+                    <i className="ri-bill-line ib-head-icon ib-head-icon--exp" />
                   </span>
                   <div>
-                    <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Expense &amp; Advance Requests</h6>
-                    <div className="text-muted" style={{ fontSize: 11.5 }}>
+                    <h6 className="mb-0 fw-bold ib-head-title">Expense &amp; Advance Requests</h6>
+                    <div className="text-muted ib-head-sub">
                       Expense claims and advance requests waiting on you — reporting managers see manager-stage rows, branch admins see HR-stage rows.
                     </div>
                   </div>
                 </div>
-                <span style={{ padding: '4px 10px', borderRadius: 999, background: '#fef3c7', color: '#a16207', fontWeight: 700, fontSize: 11.5 }}>
+                <span className="ib-head-count ib-head-count--exp">
                   {expenseLoading ? '…' : `${expenseRows.length}`}
                 </span>
               </div>
@@ -723,10 +664,10 @@ export default function Inbox() {
               {expenseLoading ? (
                 <div>
                   {Array.from({ length: 3 }).map((_, i) => (
-                    <div key={`exp-shim-${i}`} style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                    <div key={`exp-shim-${i}`} className="ib-row">
                       <div className="d-flex align-items-start gap-3 flex-wrap">
                         <Shimmer width={38} height={38} radius={999} />
-                        <div style={{ flex: '1 1 320px', minWidth: 240, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div className="ib-shim-col">
                           <div className="d-flex align-items-center gap-2">
                             <Shimmer width={140} height={13} />
                             <Shimmer width={90} height={11} />
@@ -738,7 +679,7 @@ export default function Inbox() {
                           </div>
                           <Shimmer height={32} radius={6} />
                         </div>
-                        <div className="d-flex flex-column gap-2" style={{ minWidth: 140 }}>
+                        <div className="d-flex flex-column gap-2 ib-actions-col">
                           <Shimmer height={32} radius={8} />
                           <Shimmer height={32} radius={8} />
                         </div>
@@ -747,10 +688,10 @@ export default function Inbox() {
                   ))}
                 </div>
               ) : expenseRows.length === 0 ? (
-                <div style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>
-                  <i className="ri-wallet-3-line" style={{ fontSize: 30, display: 'block', marginBottom: 6 }} />
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>No pending expense or advance requests</div>
-                  <div style={{ fontSize: 11.5 }}>You're all caught up on reimbursements and advances.</div>
+                <div className="ib-empty">
+                  <i className="ri-wallet-3-line ib-empty-icon" />
+                  <div className="ib-empty-title">No pending expense or advance requests</div>
+                  <div className="ib-empty-sub">You're all caught up on reimbursements and advances.</div>
                 </div>
               ) : (
                 <div>
@@ -767,69 +708,62 @@ export default function Inbox() {
                     const stageLabel = r.raw.stage === 'hr' ? 'HR / Finance stage' : 'Manager stage';
                     const note = r.raw.purpose || r.raw.reason;
                     return (
-                      <div key={rk} style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                      <div key={rk} className="ib-row">
                         <div className="d-flex align-items-start gap-3 flex-wrap">
-                          <span className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                            style={{ width: 38, height: 38, fontSize: 12, background: 'linear-gradient(135deg,#f59e0b,#d97706)' }}>
+                          <span className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0 ib-avatar ib-avatar--exp">
                             {initials}
                           </span>
-                          <div style={{ flex: '1 1 320px', minWidth: 240 }}>
+                          <div className="ib-body-col">
                             <div className="d-flex align-items-center gap-2 flex-wrap">
-                              <strong style={{ fontSize: 13.5 }}>{empName}</strong>
-                              <span style={{ fontSize: 11, color: '#6b7280' }}>
+                              <strong className="ib-name">{empName}</strong>
+                              <span className="ib-sub-meta">
                                 {r.raw.employee_code || '—'}
                                 {r.raw.department_name ? ` · ${r.raw.department_name}` : ''}
                               </span>
                             </div>
-                            <div className="mt-1 d-flex align-items-center flex-wrap gap-2" style={{ fontSize: 12.5 }}>
-                              <span style={{ padding: '2px 8px', borderRadius: 999, background: isAdvance ? '#e0e7ff' : '#fde9d3', color: isAdvance ? '#4338ca' : '#9a4d1a', fontWeight: 700, fontSize: 10, letterSpacing: 0.3, textTransform: 'uppercase' }}>
+                            <div className="mt-1 d-flex align-items-center flex-wrap gap-2 ib-line">
+                              <span className={`ib-pill-type ${isAdvance ? 'ib-pill-type--adv' : 'ib-pill-type--exp'}`}>
                                 {isAdvance ? 'Advance' : 'Expense'}
                               </span>
-                              <span style={{ padding: '2px 8px', borderRadius: 6, background: '#fef3c7', color: '#a16207', fontWeight: 700, fontSize: 11 }}>
+                              <span className="ib-pill-cat">
                                 {r.raw.category_name || (isAdvance ? 'Advance' : 'Expense')}
                               </span>
                               {r.code && (
-                                <code style={{ fontSize: 10.5, background: '#f3f4f6', color: '#4b5563', padding: '1px 6px', borderRadius: 4 }}>
+                                <code className="ib-code-grey">
                                   {r.code}
                                 </code>
                               )}
                               {r.raw.expense_date && <span className="text-muted">· {fmtDate(r.raw.expense_date)}</span>}
-                              <span className="fw-bold" style={{ color: '#a16207' }}>· {fmtAmt}</span>
-                              <span style={{ padding: '1px 7px', borderRadius: 999, background: r.raw.stage === 'hr' ? '#e0e7ff' : '#dcfce7', color: r.raw.stage === 'hr' ? '#4338ca' : '#15803d', fontSize: 10, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase' }}>
+                              <span className="fw-bold ib-amt">· {fmtAmt}</span>
+                              <span className={`ib-pill-stage ${r.raw.stage === 'hr' ? 'ib-pill-stage--hr' : 'ib-pill-stage--mgr'}`}>
                                 {stageLabel}
                               </span>
                             </div>
                             {r.title && r.title !== 'Expense Claim' && r.title !== 'Advance Request' && (
-                              <div className="mt-1" style={{ fontSize: 12, color: '#374151' }}>
+                              <div className="mt-1 ib-title-line">
                                 <strong>{r.title}</strong>
                                 {r.raw.vendor ? <span className="text-muted"> · {r.raw.vendor}</span> : null}
                               </div>
                             )}
                             {note && (
-                              <div className="mt-1 text-muted" style={{ fontSize: 12 }}>
+                              <div className="mt-1 text-muted ib-quote">
                                 <i className="ri-double-quotes-l me-1" />{note}
                               </div>
                             )}
                             <input
                               type="text"
-                              className="form-control mt-2"
+                              className="form-control mt-2 ib-remark-input"
                               placeholder="Add a remark (required for reject, optional for approve)"
                               value={expenseComment[rk] || ''}
                               onChange={e => setExpenseComment(prev => ({ ...prev, [rk]: e.target.value }))}
-                              style={{ fontSize: 12.5 }}
                             />
                           </div>
-                          <div className="d-flex flex-column gap-2" style={{ minWidth: 140 }}>
+                          <div className="d-flex flex-column gap-2 ib-actions-col">
                             <button
                               type="button"
                               onClick={() => actOnExpense(r, 'approve')}
                               disabled={acting}
-                              style={{
-                                padding: '8px 12px', borderRadius: 8, border: 0,
-                                background: 'linear-gradient(135deg,#10b981,#059669)',
-                                color: '#fff', fontSize: 12, fontWeight: 700, cursor: acting ? 'not-allowed' : 'pointer',
-                                opacity: acting ? 0.6 : 1,
-                              }}
+                              className="ib-btn-approve"
                             >
                               {isApproving ? <><i className="ri-loader-4-line ri-spin me-1" />Approving…</> : <><i className="ri-check-line me-1" />Approve</>}
                             </button>
@@ -837,13 +771,7 @@ export default function Inbox() {
                               type="button"
                               onClick={() => actOnExpense(r, 'reject')}
                               disabled={acting}
-                              style={{
-                                padding: '8px 12px', borderRadius: 8,
-                                border: '1px solid #fecaca',
-                                background: '#fff', color: '#b91c1c',
-                                fontSize: 12, fontWeight: 700, cursor: acting ? 'not-allowed' : 'pointer',
-                                opacity: acting ? 0.6 : 1,
-                              }}
+                              className="ib-btn-reject"
                             >
                               {isRejecting ? <><i className="ri-loader-4-line ri-spin me-1" />Rejecting…</> : <><i className="ri-close-line me-1" />Reject</>}
                             </button>
@@ -864,39 +792,48 @@ export default function Inbox() {
           {tab === 'updated' && (() => {
             const fmtD = (d: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
             const StatusPill = ({ ok, label }: { ok: boolean; label: string }) => (
-              <span style={{ padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 800, background: ok ? '#d1fae5' : '#fee2e2', color: ok ? '#047857' : '#b91c1c', whiteSpace: 'nowrap' }}>
+              <span className={`ib-status-pill ${ok ? 'ib-status-pill--ok' : 'ib-status-pill--bad'}`}>
                 <i className={ok ? 'ri-checkbox-circle-line me-1' : 'ri-close-circle-line me-1'} />{label}
               </span>
             );
-            const HistHead = ({ icon, bg, fg, title, sub, count }: { icon: string; bg: string; fg: string; title: string; sub: string; count: number }) => (
-              <div className="d-flex align-items-center justify-content-between" style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
+            const HistHead = ({ icon, bg, fg, darkFg, title, sub, count }: { icon: string; bg: string; fg: string; darkFg: string; title: string; sub: string; count: number }) => {
+              // Light values drive --ib-hist-bg/--ib-hist-fg directly; the dark
+              // override (in Inbox.css) reads the *-d custom properties below.
+              const darkBg = hexA(darkFg, 0.18);
+              const vars = {
+                ['--ib-hist-bg' as any]: bg, ['--ib-hist-fg' as any]: fg,
+                ['--ib-hist-bg-d' as any]: darkBg, ['--ib-hist-fg-d' as any]: darkFg,
+              };
+              return (
+              <div className="d-flex align-items-center justify-content-between ib-section-head" style={vars}>
                 <div className="d-flex align-items-center gap-2">
-                  <span style={{ width: 32, height: 32, borderRadius: 8, background: bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><i className={icon} style={{ fontSize: 16, color: fg }} /></span>
-                  <div><h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>{title}</h6><div className="text-muted" style={{ fontSize: 11.5 }}>{sub}</div></div>
+                  <span className="ib-hist-chip"><i className={`${icon} ib-hist-icon`} /></span>
+                  <div><h6 className="mb-0 fw-bold ib-head-title">{title}</h6><div className="text-muted ib-head-sub">{sub}</div></div>
                 </div>
-                <span style={{ padding: '4px 10px', borderRadius: 999, background: bg, color: fg, fontWeight: 700, fontSize: 11.5 }}>{histLoading ? '…' : count}</span>
+                <span className="ib-hist-count">{histLoading ? '…' : count}</span>
               </div>
-            );
+              );
+            }
             return (
               <>
                 {/* Leave — decided */}
-                <Card className="mb-3" style={{ borderRadius: 12 }}>
-                  <CardBody style={{ padding: 0 }}>
-                    <HistHead icon="ri-calendar-2-line" bg="#ede9fe" fg="#5a3fd1" title="Leave Requests" sub="Requests you've approved or rejected." count={histLeave.length} />
+                <Card className="mb-3 ep-section-card-flat">
+                  <CardBody className="ib-cardbody-0">
+                    <HistHead icon="ri-calendar-2-line" bg="#ede9fe" fg="#5a3fd1" darkFg="#c4b5fd" title="Leave Requests" sub="Requests you've approved or rejected." count={histLeave.length} />
                     {histLoading ? (
-                      <div style={{ padding: 18 }}>{Array.from({ length: 2 }).map((_, i) => <Shimmer key={i} height={40} radius={8} />)}</div>
+                      <div className="ib-shim-wrap">{Array.from({ length: 2 }).map((_, i) => <Shimmer key={i} height={40} radius={8} />)}</div>
                     ) : histLeave.length === 0 ? (
-                      <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 12.5 }}>No decided leave requests yet.</div>
+                      <div className="ib-hist-empty">No decided leave requests yet.</div>
                     ) : paginate(histLeave, histLeavePage).map((r) => {
                       const emp = r.employee; const empName = emp ? (emp.display_name?.trim() || `${emp.first_name} ${emp.last_name ?? ''}`.trim()) : '—';
                       const initials = empName.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase() || '?';
                       return (
-                        <div key={r.id} style={{ padding: '12px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                        <div key={r.id} className="ib-row-hist">
                           <div className="d-flex align-items-center gap-3 flex-wrap">
-                            <span className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0" style={{ width: 34, height: 34, fontSize: 11, background: 'linear-gradient(135deg,#7c5cfc,#5a3fd1)' }}>{initials}</span>
-                            <div style={{ flex: '1 1 280px', minWidth: 200 }}>
-                              <div className="d-flex align-items-center gap-2 flex-wrap"><strong style={{ fontSize: 13 }}>{empName}</strong><span style={{ fontSize: 11, color: '#6b7280' }}>{emp?.emp_code || '—'}{emp?.department?.name ? ` · ${emp.department.name}` : ''}</span></div>
-                              <div style={{ fontSize: 12, marginTop: 2 }}><span style={{ padding: '1px 7px', borderRadius: 6, background: '#ede9fe', color: '#5a3fd1', fontWeight: 700, fontSize: 10.5 }}>{r.leave_type?.name || 'Leave'}</span><span className="ms-2 text-muted">{fmtD(r.from_date)} – {fmtD(r.to_date)}</span></div>
+                            <span className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0 ib-avatar-sm ib-avatar-sm--leave">{initials}</span>
+                            <div className="ib-body-col-hist">
+                              <div className="d-flex align-items-center gap-2 flex-wrap"><strong className="ib-name-sm">{empName}</strong><span className="ib-sub-meta">{emp?.emp_code || '—'}{emp?.department?.name ? ` · ${emp.department.name}` : ''}</span></div>
+                              <div className="ib-hist-type-line"><span className="ib-pill-leave-sm">{r.leave_type?.name || 'Leave'}</span><span className="ms-2 text-muted">{fmtD(r.from_date)} – {fmtD(r.to_date)}</span></div>
                             </div>
                             <StatusPill ok={r.status === 'Approved'} label={r.status} />
                           </div>
@@ -908,24 +845,24 @@ export default function Inbox() {
                 </Card>
 
                 {/* Expense — decided */}
-                <Card className="mb-3" style={{ borderRadius: 12 }}>
-                  <CardBody style={{ padding: 0 }}>
-                    <HistHead icon="ri-bill-line" bg="#fef3c7" fg="#a16207" title="Expense & Advance Requests" sub="Requests you've approved or rejected at your stage." count={histExpense.length} />
+                <Card className="mb-3 ep-section-card-flat">
+                  <CardBody className="ib-cardbody-0">
+                    <HistHead icon="ri-bill-line" bg="#fef3c7" fg="#a16207" darkFg="#fcd34d" title="Expense & Advance Requests" sub="Requests you've approved or rejected at your stage." count={histExpense.length} />
                     {histLoading ? (
-                      <div style={{ padding: 18 }}>{Array.from({ length: 2 }).map((_, i) => <Shimmer key={i} height={40} radius={8} />)}</div>
+                      <div className="ib-shim-wrap">{Array.from({ length: 2 }).map((_, i) => <Shimmer key={i} height={40} radius={8} />)}</div>
                     ) : histExpense.length === 0 ? (
-                      <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 12.5 }}>No decided expense or advance requests yet.</div>
+                      <div className="ib-hist-empty">No decided expense or advance requests yet.</div>
                     ) : paginate(histExpense, histExpensePage).map((r) => {
                       const empName = r.raw.employee_name || r.subject_name || '—';
                       const initials = empName.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase() || '?';
                       const amt = `₹${Number(r.raw.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
                       return (
-                        <div key={expRowKey(r)} style={{ padding: '12px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                        <div key={expRowKey(r)} className="ib-row-hist">
                           <div className="d-flex align-items-center gap-3 flex-wrap">
-                            <span className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0" style={{ width: 34, height: 34, fontSize: 11, background: 'linear-gradient(135deg,#f59e0b,#d97706)' }}>{initials}</span>
-                            <div style={{ flex: '1 1 280px', minWidth: 200 }}>
-                              <div className="d-flex align-items-center gap-2 flex-wrap"><strong style={{ fontSize: 13 }}>{empName}</strong>{r.code && <code style={{ fontSize: 10.5, background: '#f3f4f6', color: '#4b5563', padding: '1px 6px', borderRadius: 4 }}>{r.code}</code>}</div>
-                              <div style={{ fontSize: 12, marginTop: 2 }}><span style={{ padding: '1px 7px', borderRadius: 6, background: '#fef3c7', color: '#a16207', fontWeight: 700, fontSize: 10.5 }}>{r.raw.category_name || 'Expense'}</span><span className="ms-2 fw-bold" style={{ color: '#a16207' }}>{amt}</span><span className="ms-2 text-muted" style={{ fontSize: 11 }}>{r.raw.stage === 'hr' ? 'HR stage' : 'Manager stage'}</span></div>
+                            <span className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0 ib-avatar-sm ib-avatar-sm--exp">{initials}</span>
+                            <div className="ib-body-col-hist">
+                              <div className="d-flex align-items-center gap-2 flex-wrap"><strong className="ib-name-sm">{empName}</strong>{r.code && <code className="ib-code-grey">{r.code}</code>}</div>
+                              <div className="ib-hist-type-line"><span className="ib-pill-cat-sm">{r.raw.category_name || 'Expense'}</span><span className="ms-2 fw-bold ib-amt">{amt}</span><span className="ms-2 text-muted ib-hist-stage">{r.raw.stage === 'hr' ? 'HR stage' : 'Manager stage'}</span></div>
                             </div>
                             <StatusPill ok={r.verdict === 'approved'} label={r.verdict === 'approved' ? 'Approved' : 'Rejected'} />
                           </div>
@@ -937,27 +874,27 @@ export default function Inbox() {
                 </Card>
 
                 {/* Documents — acted */}
-                <Card className="mb-3" style={{ borderRadius: 12 }}>
-                  <CardBody style={{ padding: 0 }}>
-                    <HistHead icon="ri-file-text-line" bg="#e0e7ff" fg="#4338ca" title="Documents" sub="Documents you've signed, approved or acknowledged." count={histDocs.length} />
+                <Card className="mb-3 ep-section-card-flat">
+                  <CardBody className="ib-cardbody-0">
+                    <HistHead icon="ri-file-text-line" bg="#e0e7ff" fg="#4338ca" darkFg="#a5b4fc" title="Documents" sub="Documents you've signed, approved or acknowledged." count={histDocs.length} />
                     {histLoading ? (
-                      <div style={{ padding: 18 }}>{Array.from({ length: 2 }).map((_, i) => <Shimmer key={i} height={40} radius={8} />)}</div>
+                      <div className="ib-shim-wrap">{Array.from({ length: 2 }).map((_, i) => <Shimmer key={i} height={40} radius={8} />)}</div>
                     ) : histDocs.length === 0 ? (
-                      <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 12.5 }}>No signed or approved documents yet.</div>
+                      <div className="ib-hist-empty">No signed or approved documents yet.</div>
                     ) : paginate(histDocs, histDocsPage).map((r) => {
                       const mine = r.signers.find(s => s.user_id === user?.id);
                       const empName = r.employee?.display_name || `${r.employee?.first_name || ''} ${r.employee?.last_name || ''}`.trim() || '—';
                       const rejected = mine?.status === 'Rejected';
                       return (
-                        <div key={r.id} style={{ padding: '12px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                        <div key={r.id} className="ib-row-hist">
                           <div className="d-flex align-items-center gap-3 flex-wrap">
-                            <span className="d-inline-flex align-items-center justify-content-center flex-shrink-0" style={{ width: 34, height: 34, borderRadius: 8, background: '#e0e7ff', color: '#4338ca' }}><i className="ri-file-text-line" style={{ fontSize: 17 }} /></span>
-                            <div style={{ flex: '1 1 280px', minWidth: 200 }}>
-                              <div className="d-flex align-items-center gap-2 flex-wrap"><strong style={{ fontSize: 13 }}>{r.template?.name || '(template removed)'}</strong>{r.code && <code style={{ fontSize: 10.5, background: '#fef3c7', color: '#a16207', padding: '1px 6px', borderRadius: 4 }}>{r.code}</code>}</div>
-                              <div className="text-muted" style={{ fontSize: 11.5, marginTop: 2 }}>Subject: {empName}{mine?.acted_at ? ` · ${fmtD(mine.acted_at)}` : ''}</div>
+                            <span className="d-inline-flex align-items-center justify-content-center flex-shrink-0 ib-doc-chip"><i className="ri-file-text-line ib-doc-chip-icon" /></span>
+                            <div className="ib-body-col-hist">
+                              <div className="d-flex align-items-center gap-2 flex-wrap"><strong className="ib-name-sm">{r.template?.name || '(template removed)'}</strong>{r.code && <code className="ib-code-amber">{r.code}</code>}</div>
+                              <div className="text-muted ib-hist-meta">Subject: {empName}{mine?.acted_at ? ` · ${fmtD(mine.acted_at)}` : ''}</div>
                             </div>
                             <StatusPill ok={!rejected} label={rejected ? 'Rejected' : (mine?.action === 'Sign' ? 'Signed' : mine?.action === 'Approve' ? 'Approved' : 'Acknowledged')} />
-                            <button type="button" onClick={() => setViewRun(r)} className="inbox-view-btn" style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}><i className="ri-eye-line me-1" />View</button>
+                            <button type="button" onClick={() => setViewRun(r)} className="inbox-view-btn ib-view-btn"><i className="ri-eye-line me-1" />View</button>
                           </div>
                         </div>
                       );
@@ -975,22 +912,21 @@ export default function Inbox() {
               Source: /api/my-team/my-updates (last 30 days, max 50).
               Lives under the "Updated (History)" tab. */}
           {tab === 'updated' && (
-          <Card className="mb-3" style={{ borderRadius: 12 }}>
-            <CardBody style={{ padding: 0 }}>
-              <div className="d-flex align-items-center justify-content-between"
-                   style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
+          <Card className="mb-3 ep-section-card-flat">
+            <CardBody className="ib-cardbody-0">
+              <div className="d-flex align-items-center justify-content-between ib-section-head">
                 <div className="d-flex align-items-center gap-2">
-                  <span style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg,#dbeafe,#bfdbfe)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <i className="ri-notification-3-line" style={{ fontSize: 16, color: '#1d4ed8' }} />
+                  <span className="claim-upd-icon ib-upd-chip">
+                    <i className="ri-notification-3-line ib-upd-chip-icon" />
                   </span>
                   <div>
-                    <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Your Claim Updates</h6>
-                    <div className="text-muted" style={{ fontSize: 11.5 }}>
+                    <h6 className="mb-0 fw-bold ib-head-title">Your Claim Updates</h6>
+                    <div className="text-muted ib-head-sub">
                       Expense claims and advance requests you filed — recent manager / HR decisions.
                     </div>
                   </div>
                 </div>
-                <span style={{ padding: '4px 10px', borderRadius: 999, background: '#dbeafe', color: '#1d4ed8', fontWeight: 700, fontSize: 11.5 }}>
+                <span className="claim-upd-badge ib-upd-badge">
                   {myUpdatesLoading ? '…' : `${myUpdates.length}`}
                 </span>
               </div>
@@ -998,10 +934,10 @@ export default function Inbox() {
               {myUpdatesLoading ? (
                 <div>
                   {Array.from({ length: 3 }).map((_, i) => (
-                    <div key={`upd-shim-${i}`} style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                    <div key={`upd-shim-${i}`} className="ib-row">
                       <div className="d-flex align-items-start gap-3 flex-wrap">
                         <Shimmer width={38} height={38} radius={999} />
-                        <div style={{ flex: '1 1 320px', minWidth: 240, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div className="ib-shim-col">
                           <Shimmer width={160} height={13} />
                           <Shimmer width={220} height={11} />
                           <Shimmer width={140} height={11} />
@@ -1011,10 +947,10 @@ export default function Inbox() {
                   ))}
                 </div>
               ) : myUpdates.length === 0 ? (
-                <div style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>
-                  <i className="ri-mail-check-line" style={{ fontSize: 30, display: 'block', marginBottom: 6 }} />
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>No recent updates</div>
-                  <div style={{ fontSize: 11.5 }}>Manager or HR decisions on your filings will appear here.</div>
+                <div className="ib-empty">
+                  <i className="ri-mail-check-line ib-empty-icon" />
+                  <div className="ib-empty-title">No recent updates</div>
+                  <div className="ib-empty-sub">Manager or HR decisions on your filings will appear here.</div>
                 </div>
               ) : (
                 <div>
@@ -1032,47 +968,37 @@ export default function Inbox() {
                       return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
                     };
                     return (
-                      <div key={`${u.module}-${u.id}-${u.stage}`} style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                      <div key={`${u.module}-${u.id}-${u.stage}`} className="ib-row"
+                        style={{ ['--ib-tone-bg' as any]: tone.bg, ['--ib-tone-fg' as any]: tone.fg, ['--ib-tone-ring' as any]: tone.ring }}>
                         <div className="d-flex align-items-start gap-3 flex-wrap">
-                          <span className="rounded-circle d-inline-flex align-items-center justify-content-center flex-shrink-0"
-                            style={{ width: 38, height: 38, background: tone.bg, color: tone.fg, border: `1px solid ${tone.ring}` }}>
-                            <i className={tone.icon} style={{ fontSize: 18 }} />
+                          <span className="rounded-circle d-inline-flex align-items-center justify-content-center flex-shrink-0 ib-upd-avatar">
+                            <i className={`${tone.icon} ib-upd-icon`} />
                           </span>
-                          <div style={{ flex: '1 1 320px', minWidth: 240 }}>
+                          <div className="ib-body-col">
                             <div className="d-flex align-items-center gap-2 flex-wrap">
-                              <strong style={{ fontSize: 13.5 }}>
+                              <strong className="ib-name">
                                 {u.code ? `${u.code} · ` : ''}{u.title}
                               </strong>
-                              <span style={{
-                                padding: '2px 8px', borderRadius: 6,
-                                background: tone.bg, color: tone.fg,
-                                fontWeight: 700, fontSize: 10.5,
-                                textTransform: 'uppercase', letterSpacing: '0.04em',
-                              }}>
+                              <span className="ib-upd-verdict">
                                 {moduleLabel} · {isApproved ? 'Approved' : 'Rejected'}
                               </span>
                               {!u.final && (
-                                <span style={{
-                                  padding: '2px 8px', borderRadius: 6,
-                                  background: '#fef3c7', color: '#92400e',
-                                  fontWeight: 700, fontSize: 10.5,
-                                  textTransform: 'uppercase', letterSpacing: '0.04em',
-                                }}>
+                                <span className="ib-upd-pending">
                                   Awaiting next stage
                                 </span>
                               )}
                             </div>
-                            <div className="mt-1" style={{ fontSize: 12.5, color: '#374151' }}>
-                              <strong style={{ color: tone.fg }}>{stageLabel}</strong>
+                            <div className="mt-1 ib-upd-desc">
+                              <strong className="ib-upd-stage">{stageLabel}</strong>
                               {u.actor_name ? ` (${u.actor_name})` : ''} {isApproved ? 'approved' : 'rejected'} your {u.module === 'advance' ? 'advance request' : 'claim'}
                               {u.amount ? <> for <strong>₹{Number(u.amount).toLocaleString('en-IN')}</strong></> : null}.
                             </div>
                             {u.comment && (
-                              <div className="mt-1 text-muted" style={{ fontSize: 12 }}>
+                              <div className="mt-1 text-muted ib-quote">
                                 <i className="ri-double-quotes-l me-1" />{u.comment}
                               </div>
                             )}
-                            <small className="text-muted d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: 11 }}>
+                            <small className="text-muted d-inline-flex align-items-center gap-1 mt-1 ib-upd-time">
                               <i className="ri-time-line" /> {fmtTime(u.acted_at)}
                             </small>
                           </div>
@@ -1089,29 +1015,29 @@ export default function Inbox() {
 
           {/* Document signatures (existing) */}
           {tab === 'new' && (
-          <Card style={{ borderRadius: 12 }}>
-            <CardBody style={{ padding: 0 }}>
+          <Card className="ep-section-card-flat">
+            <CardBody className="ib-cardbody-0">
               <div className="table-responsive">
-                <table className="table align-middle mb-0 inbox-table" style={{ fontSize: 13 }}>
-                  <thead className="inbox-thead" style={{ background: '#fffbeb' }}>
-                    <tr style={{ fontSize: 11, letterSpacing: 0.4, textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
-                      <th style={{ padding: '10px 12px', width: 44 }}>Sr No</th>
+                <table className="table align-middle mb-0 inbox-table ib-table">
+                  <thead className="inbox-thead ib-thead-bg">
+                    <tr className="ib-thead-row">
+                      <th className="ib-th-srno">Sr No</th>
                       <th>Document</th>
                       <th>Subject Employee</th>
                       <th>Action Requested</th>
                       <th>Step</th>
                       <th>Received</th>
-                      <th style={{ width: 240 }}>Take Action</th>
+                      <th className="ib-th-action">Take Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {loading ? (
                       <ShimmerTableRows rows={5} cols={7} />
                     ) : rows.length === 0 ? (
-                      <tr><td colSpan={7} className="inbox-empty" style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>
-                        <i className="ri-checkbox-circle-line" style={{ fontSize: 36, display: 'block', marginBottom: 8 }} />
-                        <div style={{ fontSize: 14, fontWeight: 600 }}>No pending documents</div>
-                        <div style={{ fontSize: 12 }}>You're all caught up. Anything sent to you will land here.</div>
+                      <tr><td colSpan={7} className="inbox-empty ib-empty-cell">
+                        <i className="ri-checkbox-circle-line ib-empty-cell-icon" />
+                        <div className="ib-empty-cell-title">No pending documents</div>
+                        <div className="ib-empty-cell-sub">You're all caught up. Anything sent to you will land here.</div>
                       </td></tr>
                     ) : (
                       paginate(rows, docsPage).map((r, i) => {
@@ -1119,43 +1045,42 @@ export default function Inbox() {
                         const empName = r.employee?.display_name
                           || `${r.employee?.first_name || ''} ${r.employee?.last_name || ''}`.trim()
                           || '—';
-                        const actionTone =
-                          current?.action === 'Sign'    ? { bg: '#fef3c7', fg: '#92400e' }
-                          : current?.action === 'Approve'? { bg: '#dcfce7', fg: '#15803d' }
-                          :                                { bg: '#e0e7ff', fg: '#4338ca' };
+                        const actionToneClass =
+                          current?.action === 'Sign'    ? 'ib-action-pill--sign'
+                          : current?.action === 'Approve'? 'ib-action-pill--approve'
+                          :                                'ib-action-pill--other';
                         return (
                           <tr key={r.id}>
                             <td>{i + 1}</td>
                             <td>
-                              <div className="inbox-doc-name" style={{ fontWeight: 700 }}>{r.template?.name || '(template removed)'}</div>
-                              {r.code && <code className="inbox-code-pill" style={{ fontSize: 10.5, background: '#fef3c7', color: '#a16207', padding: '1px 6px', borderRadius: 4 }}>{r.code}</code>}
+                              <div className="inbox-doc-name ib-doc-name-cell">{r.template?.name || '(template removed)'}</div>
+                              {r.code && <code className="inbox-code-pill ib-code-amber">{r.code}</code>}
                             </td>
                             <td>
                               <div>{empName}</div>
-                              <div className="inbox-muted" style={{ fontSize: 11.5, color: '#6b7280' }}>
+                              <div className="inbox-muted ib-muted-cell">
                                 {r.employee?.emp_code || '—'}
                                 {r.employee?.department?.name ? ` · ${r.employee.department.name}` : ''}
                               </div>
                             </td>
                             <td>
-                              <span className={`inbox-action-pill inbox-action-${current?.action || 'Other'}`} style={{ padding: '3px 9px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, background: actionTone.bg, color: actionTone.fg }}>
+                              <span className={`inbox-action-pill inbox-action-${current?.action || 'Other'} ib-action-pill ${actionToneClass}`}>
                                 {current?.action || '—'}
                               </span>
                             </td>
-                            <td style={{ fontSize: 12 }}>
+                            <td className="ib-step-cell">
                               Step <strong>{r.current_index + 1}</strong> of {r.signers.length}
                             </td>
-                            <td className="inbox-muted" style={{ fontSize: 12, color: '#6b7280' }}>{new Date(r.created_at).toLocaleString()}</td>
+                            <td className="inbox-muted ib-received-cell">{new Date(r.created_at).toLocaleString()}</td>
                             <td>
                               <div className="d-flex gap-1 flex-wrap">
                                 <button type="button" onClick={() => setViewRun(r)}
                                   title="Preview the document before deciding"
-                                  className="inbox-view-btn"
-                                  style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                                  className="inbox-view-btn ib-view-btn">
                                   <i className="ri-eye-line me-1" />View
                                 </button>
                                 <button type="button" onClick={() => openAction(r)}
-                                  style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                                  className="ib-decide-btn">
                                   <i className="ri-checkbox-circle-line me-1" />Review &amp; Decide
                                 </button>
                               </div>
@@ -1179,7 +1104,7 @@ export default function Inbox() {
         <ModalShell onClose={() => setViewRun(null)} title="Document Preview"
           subtitle={`${viewRun.template?.name || ''} · ${viewRun.code || ''}`}
           gradient="linear-gradient(135deg,#6366f1 0%,#8b5cf6 60%,#a855f7 100%)">
-          <div className="inbox-modal-body" style={{ padding: 16, background: '#f9fafb', overflowY: 'auto', flex: 1 }}>
+          <div className="inbox-modal-body ib-modal-body">
             <HeaderFooterPanel
               header={{ ...DEFAULT_HEADER, ...(viewRun.header_config || {}) } as HeaderConfig}
               setHeader={() => {}}
@@ -1187,20 +1112,18 @@ export default function Inbox() {
               setFooter={() => {}}
               readOnly
             >
-              <div className="tpl-readonly-preview"
-                style={{ fontSize: 13.5, lineHeight: 1.65, color: '#374151', minHeight: 260 }}
+              <div className="tpl-readonly-preview ib-preview ib-preview--view"
                 dangerouslySetInnerHTML={{ __html: viewRun.content_html || '<p>(empty)</p>' }}
               />
             </HeaderFooterPanel>
           </div>
-          <div className="inbox-modal-footer" style={{ padding: '12px 16px', borderTop: '1px solid #e5e7eb', background: '#fff', boxShadow: '0 -3px 10px rgba(15,23,42,0.05)', display: 'flex', justifyContent: 'flex-end', gap: 8, flexShrink: 0 }}>
+          <div className="inbox-modal-footer ib-modal-footer ib-modal-footer--end">
             <button type="button" onClick={() => setViewRun(null)}
-              className="inbox-btn-ghost"
-              style={{ padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
+              className="inbox-btn-ghost ib-btn-ghost">
               Close
             </button>
             <button type="button" onClick={() => { const v = viewRun; setViewRun(null); openAction(v); }}
-              style={{ padding: '7px 16px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
+              className="ib-btn-decide">
               <i className="ri-checkbox-circle-line me-1" />Review &amp; Decide
             </button>
           </div>
@@ -1216,7 +1139,7 @@ export default function Inbox() {
             subtitle={`Action requested: ${current?.action} · ${actionRun.code || ''}`}
             hint={`Add a remark below, then choose ${current?.action} or Reject.`}
             gradient="linear-gradient(135deg,#6366f1,#8b5cf6)">
-            <div className="inbox-modal-body" style={{ padding: 16, background: '#f9fafb', overflowY: 'auto', flex: 1 }}>
+            <div className="inbox-modal-body ib-modal-body">
               <HeaderFooterPanel
                 header={{ ...DEFAULT_HEADER, ...(actionRun.header_config || {}) } as HeaderConfig}
                 setHeader={() => {}}
@@ -1224,24 +1147,22 @@ export default function Inbox() {
                 setFooter={() => {}}
                 readOnly
               >
-                <div className="tpl-readonly-preview"
-                  style={{ fontSize: 13.5, lineHeight: 1.65, color: '#374151', minHeight: 220 }}
+                <div className="tpl-readonly-preview ib-preview ib-preview--action"
                   dangerouslySetInnerHTML={{ __html: actionRun.content_html || '<p>(empty)</p>' }}
                 />
               </HeaderFooterPanel>
 
-              <div className="inbox-form-card" style={{ marginTop: 14, padding: 14, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10 }}>
+              <div className="inbox-form-card ib-form-card">
                 {isSign && (
                   <>
-                    <label className="inbox-input-label" style={inputLabelStyle}>
-                      Signer name <span style={{ color: '#ef4444' }}>*</span>
+                    <label className="inbox-input-label ib-input-label">
+                      Signer name <span className="ib-req">*</span>
                     </label>
                     <input type="text" value={actionName} onChange={e => setActionName(e.target.value)}
                       placeholder="Your full name (used in the audit trail)"
-                      className="inbox-input"
-                      style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14, marginBottom: 12 }} />
-                    <label className="inbox-input-label" style={inputLabelStyle}>
-                      Signature <span style={{ color: '#ef4444' }}>*</span>
+                      className="inbox-input ib-input-text" />
+                    <label className="inbox-input-label ib-input-label">
+                      Signature <span className="ib-req">*</span>
                     </label>
                     <SignaturePad
                       typedName={actionName}
@@ -1250,41 +1171,31 @@ export default function Inbox() {
                     />
                   </>
                 )}
-                <label className="inbox-input-label" style={{ ...inputLabelStyle, marginTop: isSign ? 12 : 0 }}>Remark</label>
+                <label className={`inbox-input-label ib-input-label${isSign ? ' ib-input-label--mt' : ''}`}>Remark</label>
                 <textarea value={actionNote} onChange={e => setActionNote(e.target.value)}
                   placeholder="Add a remark — optional when approving, REQUIRED when rejecting (describe what should change)."
-                  rows={3} className="inbox-input" style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 13, resize: 'vertical' }} />
-                <div className="inbox-hint" style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
+                  rows={3} className="inbox-input ib-input-textarea" />
+                <div className="inbox-hint ib-input-hint">
                   Remarks land in the audit trail. Rejection halts the workflow and returns the document to the sender.
                 </div>
               </div>
             </div>
-            <div className="inbox-modal-footer" style={{ padding: '12px 16px', borderTop: '1px solid #e5e7eb', background: '#fff', boxShadow: '0 -3px 10px rgba(15,23,42,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', flexShrink: 0 }}>
+            <div className="inbox-modal-footer ib-modal-footer ib-modal-footer--between">
               <button type="button" onClick={() => submitDecision('reject')}
                 disabled={submitting || !actionNote.trim()}
                 title={actionNote.trim() ? 'Reject with this remark' : 'Add a remark first'}
-                className="inbox-btn-reject"
-                style={{ padding: '7px 14px', background: actionNote.trim() ? 'linear-gradient(135deg,#dc2626,#ef4444)' : '#fee2e2', color: actionNote.trim() ? '#fff' : '#b91c1c', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: actionNote.trim() ? 'pointer' : 'not-allowed', opacity: actionNote.trim() ? 1 : 0.7 }}>
+                className={`inbox-btn-reject ib-btn-sendback ${actionNote.trim() ? 'is-ready' : 'is-blocked'}`}>
                 <i className="ri-close-circle-line me-1" />Reject &amp; Send Back
               </button>
               <div className="d-flex gap-2">
                 <button type="button" onClick={() => setActionRun(null)} disabled={submitting}
-                  className="inbox-btn-ghost"
-                  style={{ padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
+                  className="inbox-btn-ghost ib-btn-ghost">
                   Cancel
                 </button>
                 <button type="button" onClick={() => submitDecision('approve')}
                   disabled={submitting || (isSign && (!actionName.trim() || !drawnSignature))}
-                  style={{
-                    padding: '7px 16px',
-                    background: current?.action === 'Approve'
-                      ? 'linear-gradient(135deg,#16a34a,#22c55e)'
-                      : isSign
-                        ? 'linear-gradient(135deg,#0ea5e9,#3b82f6)'
-                        : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
-                    border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer',
-                  }}>
-                  <i className={isSign ? 'ri-quill-pen-line' : current?.action === 'Approve' ? 'ri-check-double-line' : 'ri-thumb-up-line'} style={{ marginRight: 6 }} />
+                  className={`ib-btn-submit ${current?.action === 'Approve' ? 'ib-btn-submit--approve' : isSign ? 'ib-btn-submit--sign' : 'ib-btn-submit--ack'}`}>
+                  <i className={`${isSign ? 'ri-quill-pen-line' : current?.action === 'Approve' ? 'ri-check-double-line' : 'ri-thumb-up-line'} ib-btn-submit-icon`} />
                   {submitting ? 'Submitting…' : current?.action}
                 </button>
               </div>
@@ -1306,21 +1217,19 @@ function ModalShell({
   gradient: string; children: React.ReactNode;
 }) {
   return (
-    <div className="inbox-modal-backdrop" style={{
-      position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', zIndex: 1500,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
-    }} onClick={onClose}>
-      <div className="inbox-modal-card" style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 880, maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+    <div className="inbox-modal-backdrop ib-modal-backdrop" onClick={onClose}>
+      <div className="inbox-modal-card ib-modal-card"
+        style={{ ['--ib-modal-gradient' as any]: gradient }}
         onClick={(e) => e.stopPropagation()}>
-        <div style={{ padding: '14px 18px', background: gradient, color: '#fff' }}>
+        <div className="ib-modal-head">
           <div className="d-flex align-items-center justify-content-between">
             <div className="min-w-0">
-              <strong style={{ fontSize: 15 }}><i className="ri-checkbox-circle-line me-2" />{title}</strong>
-              {subtitle && <div style={{ fontSize: 11.5, opacity: 0.9, marginTop: 2 }}>{subtitle}</div>}
-              {hint && <div style={{ fontSize: 11, opacity: 0.78, marginTop: 2 }}>{hint}</div>}
+              <strong className="ib-modal-title"><i className="ri-checkbox-circle-line me-2" />{title}</strong>
+              {subtitle && <div className="ib-modal-subtitle">{subtitle}</div>}
+              {hint && <div className="ib-modal-hint">{hint}</div>}
             </div>
             <button type="button" onClick={onClose} aria-label="Close"
-              style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 28, height: 28 }}>
+              className="ib-modal-close">
               <i className="ri-close-line" />
             </button>
           </div>
@@ -1328,110 +1237,5 @@ function ModalShell({
         {children}
       </div>
     </div>
-  );
-}
-
-const inputLabelStyle: React.CSSProperties = {
-  fontSize: 10.5, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', display: 'block', marginBottom: 4,
-};
-
-/* Dark-theme overrides. Page-scoped rules use .inbox-page; modal rules use
-   class names that don't require the wrapper since the modal is rendered as
-   a sibling of the page container. */
-function InboxDarkStyles() {
-  return (
-    <style>{`
-      /* Reminder badge — the pulsing amber pill in the header strip that tells
-         the signer "someone nudged you". Drawn in both themes (not dark-only). */
-      @keyframes inboxReminderPulse {
-        0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.45); }
-        50%      { box-shadow: 0 0 0 4px rgba(245,158,11,0); }
-      }
-      .inbox-reminder-pill {
-        display: inline-flex; align-items: center; gap: 4px;
-        padding: 2px 9px; border-radius: 999px;
-        background: #fef3c7; color: #b45309;
-        font-size: 10.5px; font-weight: 800; letter-spacing: 0.2px;
-        animation: inboxReminderPulse 1.8s ease-in-out infinite;
-      }
-      .inbox-reminder-pill--header {
-        padding: 6px 12px; font-size: 12px; color: #92400e;
-        background: #fde68a;
-      }
-      [data-bs-theme="dark"] .inbox-reminder-pill { background: rgba(245,158,11,0.20); color: #fbbf24; }
-      [data-bs-theme="dark"] .inbox-reminder-pill--header { background: rgba(245,158,11,0.22); color: #fcd34d; }
-
-      [data-bs-theme="dark"] .inbox-page .inbox-header-icon {
-        /* Stay on the same saturated amber gradient as light mode so the
-         * icon chip matches the Master-tile treatment in both themes,
-         * rather than the older translucent variant that washed out
-         * against the dark canvas. */
-        background: linear-gradient(135deg, #f7b84b, #fad07e) !important;
-        box-shadow: 0 4px 14px rgba(247, 184, 75, 0.38) !important;
-      }
-      [data-bs-theme="dark"] .inbox-page .inbox-thead {
-        background: rgba(251,191,36,0.10) !important;
-      }
-      [data-bs-theme="dark"] .inbox-page .inbox-thead tr,
-      [data-bs-theme="dark"] .inbox-page .inbox-thead th {
-        color: rgba(255,255,255,0.65) !important;
-      }
-      [data-bs-theme="dark"] .inbox-page .inbox-table tbody td {
-        border-bottom-color: var(--vz-border-color) !important;
-        color: var(--vz-body-color);
-      }
-      [data-bs-theme="dark"] .inbox-page .inbox-doc-name { color: rgba(255,255,255,0.95) !important; }
-      [data-bs-theme="dark"] .inbox-page .inbox-muted { color: rgba(255,255,255,0.55) !important; }
-      [data-bs-theme="dark"] .inbox-page .inbox-empty { color: rgba(255,255,255,0.5) !important; }
-      [data-bs-theme="dark"] .inbox-page .inbox-code-pill {
-        background: rgba(251,191,36,0.18) !important; color: #fbbf24 !important;
-      }
-      [data-bs-theme="dark"] .inbox-page .inbox-action-Sign    { background: rgba(245,158,11,0.18) !important; color: #fbbf24 !important; }
-      [data-bs-theme="dark"] .inbox-page .inbox-action-Approve { background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important; }
-      [data-bs-theme="dark"] .inbox-page .inbox-action-Other   { background: rgba(124,92,252,0.18) !important; color: #c4b5fd !important; }
-      [data-bs-theme="dark"] .inbox-page .inbox-view-btn {
-        background: rgba(99,102,241,0.18) !important; color: #c4b5fd !important;
-        border-color: rgba(124,92,252,0.35) !important;
-      }
-
-      /* Modals — rendered as siblings of the page card, scoped only by the
-         class names on the modal itself. */
-      [data-bs-theme="dark"] .inbox-modal-card {
-        background: var(--vz-card-bg) !important;
-        color: var(--vz-body-color);
-      }
-      [data-bs-theme="dark"] .inbox-modal-body {
-        background: var(--vz-secondary-bg) !important;
-      }
-      [data-bs-theme="dark"] .inbox-modal-footer {
-        background: var(--vz-card-bg) !important;
-        border-top-color: var(--vz-border-color) !important;
-        box-shadow: 0 -3px 10px rgba(0,0,0,0.25) !important;
-      }
-      [data-bs-theme="dark"] .inbox-form-card {
-        background: var(--vz-card-bg) !important;
-        border-color: var(--vz-border-color) !important;
-      }
-      [data-bs-theme="dark"] .inbox-input {
-        background: var(--vz-card-bg) !important;
-        border-color: var(--vz-border-color) !important;
-        color: var(--vz-body-color) !important;
-      }
-      [data-bs-theme="dark"] .inbox-input::placeholder { color: rgba(255,255,255,0.45) !important; }
-      [data-bs-theme="dark"] .inbox-input-label { color: rgba(255,255,255,0.55) !important; }
-      [data-bs-theme="dark"] .inbox-hint { color: rgba(255,255,255,0.45) !important; }
-      [data-bs-theme="dark"] .inbox-btn-ghost {
-        background: var(--vz-secondary-bg) !important;
-        border-color: var(--vz-border-color) !important;
-        color: var(--vz-body-color) !important;
-      }
-      /* Reject & Send Back — the enabled (red gradient) state reads fine on
-         dark, but the disabled state's light-pink fill / dark-red text looked
-         out of place against the dark footer. Tone it to the dark palette. */
-      [data-bs-theme="dark"] .inbox-btn-reject:disabled {
-        background: rgba(239,68,68,0.16) !important;
-        color: #fca5a5 !important;
-      }
-    `}</style>
   );
 }

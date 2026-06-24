@@ -195,7 +195,11 @@ const VerticalLayout = (props : any) => {
                                     <li className="nav-item">
                                         <Link
                                             onClick={item.click}
-                                            className="nav-link menu-link"
+                                            // cbc-has-sub: explicit marker for items that actually have a
+                                            // dropdown. The two-column caret keys off this class instead of
+                                            // aria-expanded, which the activation JS stamps onto flat active
+                                            // items too (causing stray carets on Dashboard etc.).
+                                            className="nav-link menu-link cbc-has-sub"
                                             to={item.link ? item.link : "/#"}
                                             aria-expanded={item.stateVariables}
                                             data-path-prefix={item.pathPrefix}
@@ -250,8 +254,16 @@ const VerticalLayout = (props : any) => {
                                                                                         <li className="nav-item">
                                                                                             <Link
                                                                                                 to={childItem.link ? childItem.link : "/#"}
-                                                                                                className="nav-link">
-                                                                                                {props.t(childItem.label)}
+                                                                                                className={childItem.icon ? "nav-link cbc-sub" : "nav-link"}>
+                                                                                                {childItem.icon ? (
+                                                                                                    <React.Fragment>
+                                                                                                        <span className="cbc-sub-ico"><i className={childItem.icon}></i></span>
+                                                                                                        <span className="cbc-sub-tx">
+                                                                                                            <span className="cbc-sub-t">{props.t(childItem.label)}</span>
+                                                                                                            {childItem.desc ? <span className="cbc-sub-d">{childItem.desc}</span> : null}
+                                                                                                        </span>
+                                                                                                    </React.Fragment>
+                                                                                                ) : props.t(childItem.label)}
                                                                                             </Link>
                                                                                         </li>
                                                                                         : <li className="nav-item">

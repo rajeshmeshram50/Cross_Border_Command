@@ -11,37 +11,14 @@ use App\Models\Permission;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Two-stage approval workflow controller for employee Advance Requests
- * (Travel / Salary / Medical / Other recoverable payouts).
- *
- * Mirrors ExpenseClaimController one-to-one — same scope rules (mine /
- * team / all), same tenant gate, same numbering pattern (ADV-0001), same
- * manager → HR/Finance verdict pair. Only the form payload differs
- * (advance type, recovery schedule, monthly EMI, reason).
- *
- * Endpoints (registered in routes/api.php under auth:sanctum):
- *   GET    /api/advance-requests?scope=mine|team|all
- *   POST   /api/advance-requests
- *   GET    /api/advance-requests/{id}
- *   POST   /api/advance-requests/{id}/manager-approve
- *   POST   /api/advance-requests/{id}/manager-reject
- *   POST   /api/advance-requests/{id}/hr-approve
- *   POST   /api/advance-requests/{id}/hr-reject
- *
- * Attachment streaming lives at /api/advance-requests/{id}/attachments/{i}
- * outside the sanctum group (query-token auth) so plain <a target="_blank">
- * clicks work — same pattern as expense-claim attachments and candidate CVs.
- */
+
 class AdvanceRequestController extends Controller
 {
     private const STATUSES         = ['pending', 'approved', 'rejected'];
     private const ADVANCE_TYPES    = ['Travel Advance', 'Salary Advance', 'Medical Advance', 'Other'];
     private const RECOVERY_MODES   = ['emi', 'lumpsum', 'bimonthly'];
 
-    /* ============================================================ */
-    /*  LIST                                                        */
-    /* ============================================================ */
+
 
     public function index(Request $request)
     {
@@ -103,9 +80,7 @@ class AdvanceRequestController extends Controller
         return response()->json($q->get()->map(fn ($r) => $this->serialize($r)));
     }
 
-    /* ============================================================ */
-    /*  STORE                                                       */
-    /* ============================================================ */
+   
 
     public function store(Request $request)
     {
@@ -128,10 +103,10 @@ class AdvanceRequestController extends Controller
             abort(403, 'You can only file advance requests for your own employee record.');
         }
 
-        // A request can only have been raised today or in the PAST — future
-        // dates are invalid. Floor at one year ago (mirrors the client bound)
-        // so a hand-crafted request can't backdate years.
-        $minRequested = now()->subYear()->toDateString();
+        // Requested date is when the advance is needed — today up to one year
+        // ahead (mirrors the client bound). Past dates and anything beyond a
+        // year from today are rejected.
+        $maxRequested = now()->addYear()->toDateString();
 
         $data = $request->validate([
             'advance_type'        => ['required', 'string', 'in:' . implode(',', self::ADVANCE_TYPES)],
@@ -143,7 +118,7 @@ class AdvanceRequestController extends Controller
             // column — matches the expense-claim guard so the SPA's input
             // sanitiser (12 whole digits + 2 fraction) can't overflow it.
             'amount'              => ['required', 'numeric', 'min:0', 'max:9999999999999.99'],
-            'requested_date'      => ['required', 'date', 'before_or_equal:today', 'after_or_equal:' . $minRequested],
+            'requested_date'      => ['required', 'date', 'after_or_equal:today', 'before_or_equal:' . $maxRequested],
             'recovery_start'      => ['required', 'date', 'after_or_equal:requested_date'],
             'recovery_mode'       => ['required', 'string', 'in:' . implode(',', self::RECOVERY_MODES)],
             // Months + monthly EMI only required when mode='emi'. The
@@ -156,8 +131,8 @@ class AdvanceRequestController extends Controller
             'files'               => ['nullable', 'array'],
             'files.*'             => ['file', 'max:5120', 'mimes:pdf,jpg,jpeg,png'],
         ], [
-            'requested_date.before_or_equal' => 'Requested date cannot be in the future.',
-            'requested_date.after_or_equal'  => 'Requested date cannot be more than a year ago.',
+            'requested_date.after_or_equal'  => 'Requested date cannot be in the past.',
+            'requested_date.before_or_equal' => 'Requested date cannot be more than one year from today.',
         ]);
 
         if ($data['recovery_mode'] === 'emi' && empty($data['recovery_months'])) {
@@ -225,9 +200,7 @@ class AdvanceRequestController extends Controller
         return response()->json($this->serialize($row), 201);
     }
 
-    /* ============================================================ */
-    /*  SHOW                                                        */
-    /* ============================================================ */
+ 
 
     public function show(Request $request, $id)
     {
@@ -238,11 +211,7 @@ class AdvanceRequestController extends Controller
         return response()->json($this->serialize($row));
     }
 
-    /**
-     * Stream one attachment by its index in the attachments array.
-     * Query-token auth so plain <a target="_blank"> works — mirrors the
-     * expense-claim attachment endpoint exactly.
-     */
+   
     public function downloadAttachment(Request $request, $id, $index)
     {
         $this->authenticateFromQueryToken($request);

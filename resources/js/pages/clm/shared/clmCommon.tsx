@@ -1,0 +1,532 @@
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+
+/* Locks scroll while a modal is mounted so the page behind the overlay can't
+ * scroll-chain. Locks BOTH <html> and <body> — the viewport scroll is owned by
+ * <html> in standards mode, so a body-only lock doesn't reliably stop it.
+ * Captures the prior overflow and restores it on unmount; nesting-safe.
+ * Shared by every CLM modal below. */
+function useBodyScrollLock() {
+  useEffect(() => {
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overflow = prevHtml;
+    };
+  }, []);
+}
+
+/* Conditional scroll lock for pages that render their own (custom) modal
+ * markup rather than the shared modal components below. Pass the page's
+ * "any modal open" boolean; locks <html>+<body> while it's true. */
+export function useScrollLock(active: boolean) {
+  useEffect(() => {
+    if (!active) return;
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overflow = prevHtml;
+    };
+  }, [active]);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Shared CLM input validators.
+ *
+ * Every CLM master form (Authority, KYC, DD, QC, Trade License, Agreement
+ * Type, T&C Category, Trade Document, …) accepts free-text names and
+ * descriptions that previously had no client-side validation, letting
+ * users save XSS payloads, SQL injection strings, emoji-only entries,
+ * symbol soup, and 1000-char garbage.
+ *
+ * The helpers below are exported so any modal can drop in matching
+ * defence in a few lines instead of duplicating the regex set.
+ *   sanitizeClmName       — XSS strip → SQL strip → name whitelist (`A-Z0-9 .,-()&/'%`)
+ *   sanitizeClmDescription — XSS strip → SQL strip → address-style whitelist
+ *                            (broader; permits #, _, : for prose)
+ *   validateClmDuplicate  — case-insensitive uniqueness against an existing
+ *                            list of rows, excluding the row being edited
+ * ───────────────────────────────────────────────────────────────────────── */
+export const CLM_NAME_MAX = 100;
+export const CLM_DESC_MAX = 255;
+const CLM_SQL_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/gi;
+const CLM_NAME_INVALID_RE = /[^A-Za-z0-9\s\-.,()&/'%]/g;
+const CLM_DESC_INVALID_RE = /[^A-Za-z0-9\s\-.,()&/'%#:_!?]/g;
+
+export type ClmSanitizeResult = { cleaned: string; error?: string };
+
+const stripXssAndSql = (raw: string) => {
+  const afterAngles = raw.replace(/[<>]/g, '');
+  const afterSql = afterAngles.replace(CLM_SQL_RE, '');
+  return { stripped: afterSql, afterAngles, afterSql };
+};
+
+export function sanitizeClmName(raw: string, maxLen = CLM_NAME_MAX): ClmSanitizeResult {
+  const { stripped, afterAngles, afterSql } = stripXssAndSql(raw);
+  let cleaned = stripped.replace(CLM_NAME_INVALID_RE, '');
+  if (cleaned.length > maxLen) cleaned = cleaned.slice(0, maxLen);
+  if (cleaned === raw) return { cleaned };
+  let error: string;
+  if (afterAngles !== raw)          error = 'HTML characters (< or >) are not allowed';
+  else if (afterSql !== afterAngles) error = 'SQL-like patterns are not allowed';
+  else                              error = "Use letters, numbers, spaces, and . , - ( ) & / ' % only";
+  return { cleaned, error };
+}
+
+export function sanitizeClmDescription(raw: string, maxLen = CLM_DESC_MAX): ClmSanitizeResult {
+  const { stripped, afterAngles, afterSql } = stripXssAndSql(raw);
+  let cleaned = stripped.replace(CLM_DESC_INVALID_RE, '');
+  if (cleaned.length > maxLen) cleaned = cleaned.slice(0, maxLen);
+  if (cleaned === raw) return { cleaned };
+  let error: string;
+  if (afterAngles !== raw)          error = 'HTML characters (< or >) are not allowed';
+  else if (afterSql !== afterAngles) error = 'SQL-like patterns are not allowed';
+  else                              error = `Description may only contain letters, numbers, spaces, and basic punctuation (max ${maxLen} chars)`;
+  return { cleaned, error };
+}
+
+/** Required-field meaningful-input check. Rejects whitespace-only,
+ * symbol-only, or emoji-only entries that bypass `if (!value.trim())`. */
+export function isMeaningfulClmValue(raw: string): boolean {
+  return /[A-Za-z0-9]/.test(raw);
+}
+
+/** Case-insensitive duplicate check against the existing list. */
+export function findClmDuplicate<T extends { id?: string | number; name?: string; description?: string; title?: string }>(
+  rows: T[],
+  field: 'name' | 'description' | 'title',
+  value: string,
+  editingId?: string | number | null,
+): T | undefined {
+  const target = value.trim().toLowerCase();
+  if (!target) return undefined;
+  return rows.find(r => {
+    if (editingId != null && r.id === editingId) return false;
+    return String((r as Record<string, unknown>)[field] ?? '').trim().toLowerCase() === target;
+  });
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Shimmer skeleton rows for CLM master tables while data loads.
+ *
+ * Drop-in replacement for the old `<tr><td colSpan>Loading…</td></tr>` text
+ * row. Delegates to the project-canonical `ShimmerTableRows` (the same
+ * `.shimmer` light-sweep used on Customer / Dashboard / Master pages) so the
+ * CLM masters match the rest of the app instead of using a one-off look.
+ * Keeps CLM table cell padding via `clm-skel-cell`.
+ * ───────────────────────────────────────────────────────────────────────── */
+export function ClmSkeletonRows(_props: { cols: number; rows?: number }) {
+  // Shimmer disabled across CLM masters by request — render nothing while the
+  // table loads (empty tbody until data arrives). Re-enable by returning
+  // <ShimmerTableRows rows={rows} cols={cols} cellClassName="clm-skel-cell" keyPrefix="clm-shim" />.
+  void _props;
+  return null;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Shared modal shells used by every 2-tab CLM master page.
+ *
+ *   SimpleNameModal    — one-field add/edit (Trade Doc Name, etc.)
+ *   SimpleDescModal    — name + description (Agreement Type, Clause Type)
+ *   ShortCodeNameModal — short_code + name (T&C Category)
+ *   DeleteConf         — confirmation dialog
+ *
+ * They reuse the `clm-modal-*` styles from clmShared.CSS so no extra CSS
+ * lives here. Pages call createPortal-wrapped modals already; these helpers
+ * are designed to be rendered inline because each page wraps them in its
+ * own modalOpen guard.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+export function SimpleNameModal(props: {
+  title: string;
+  placeholder: string;
+  code: string;
+  isEdit: boolean;
+  initial: string;
+  headIconSvg?: React.ReactNode;
+  onClose: () => void;
+  onSave: (name: string) => void;
+  /** Optional list of existing rows for client-side duplicate check.
+   *  When omitted, only XSS/SQL/charset/length validation runs. */
+  existingRows?: Array<{ id?: string | number; name?: string }>;
+  editingId?: string | number | null;
+}) {
+  const { title, placeholder, code, isEdit, initial, headIconSvg, onClose, onSave, existingRows, editingId } = props;
+  useBodyScrollLock();
+  const [name, setName]     = useState(initial);
+  const [error, setError]   = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleChange = (raw: string) => {
+    const { cleaned, error: e } = sanitizeClmName(raw);
+    setName(cleaned);
+    setError(e ?? '');
+  };
+
+  const handleSave = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) { setError('Name is required'); return; }
+    if (!isMeaningfulClmValue(trimmed)) { setError('Name must contain letters or numbers, not only symbols'); return; }
+    if (existingRows && findClmDuplicate(existingRows, 'name', trimmed, editingId)) {
+      setError(`"${trimmed}" already exists — pick a different name`);
+      return;
+    }
+    setSaving(true);
+    try { await Promise.resolve(onSave(trimmed)); }
+    finally { setSaving(false); }
+  };
+
+  return createPortal((
+    <div className="clm-modal-bd">
+      <div className="clm-modal">
+        <div className="clm-modal-head">
+          <div className="clm-modal-head-left">
+            <div className="clm-modal-head-ico">
+              {headIconSvg ?? (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                </svg>
+              )}
+            </div>
+            <div>
+              <div className="clm-modal-head-title">{title}</div>
+              <div className="clm-modal-head-sub">{isEdit ? 'Rename the entry below.' : 'Create a new lightweight master record.'}</div>
+            </div>
+          </div>
+          <button className="clm-modal-close" onClick={onClose}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+        </div>
+        <div className="clm-modal-body">
+          <div className="clm-autocode">
+            <div className="clm-autocode-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg></div>
+            <div className="clm-autocode-text">
+              <div className="clm-autocode-label">{isEdit ? 'Code' : 'Auto Generated Code'}</div>
+              <div className="clm-autocode-val">{code}</div>
+            </div>
+            <div className={`clm-autocode-badge ${isEdit ? 'edit' : ''}`}><span className="clm-autocode-dot" />{isEdit ? 'Edit' : 'Auto'}</div>
+          </div>
+          <div className="clm-field">
+            <label className="clm-field-label">Name <span className="clm-req">*</span></label>
+            <input className={`clm-input ${error ? 'clm-input-err' : ''}`} placeholder={placeholder} value={name} maxLength={CLM_NAME_MAX} onChange={e => handleChange(e.target.value)} autoFocus />
+            {error && <div className="clm-err">{error}</div>}
+          </div>
+        </div>
+        <div className="clm-modal-foot">
+          <button className="clm-btn-cancel" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="clm-btn-save" onClick={() => void handleSave()} disabled={saving}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+            {saving ? 'Saving…' : (isEdit ? 'Update' : 'Save')}
+          </button>
+        </div>
+      </div>
+    </div>
+  ), document.body);
+}
+
+export function SimpleDescModal(props: {
+  title: string;
+  namePlaceholder: string;
+  descPlaceholder: string;
+  code: string;
+  isEdit: boolean;
+  initialName: string;
+  initialDesc: string;
+  headIconSvg?: React.ReactNode;
+  onClose: () => void;
+  onSave: (form: { name: string; description: string }) => void;
+  /** Optional list of existing rows for client-side duplicate name check. */
+  existingRows?: Array<{ id?: string | number; name?: string }>;
+  editingId?: string | number | null;
+}) {
+  const { title, namePlaceholder, descPlaceholder, code, isEdit, initialName, initialDesc, headIconSvg, onClose, onSave, existingRows, editingId } = props;
+  useBodyScrollLock();
+  const [name, setName] = useState(initialName);
+  const [desc, setDesc] = useState(initialDesc);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  const handleNameChange = (raw: string) => {
+    const { cleaned, error } = sanitizeClmName(raw);
+    setName(cleaned);
+    setErrors(p => ({ ...p, name: error ?? '' }));
+  };
+  const handleDescChange = (raw: string) => {
+    const { cleaned, error } = sanitizeClmDescription(raw);
+    setDesc(cleaned);
+    setErrors(p => ({ ...p, desc: error ?? '' }));
+  };
+
+  const handleSave = async () => {
+    const next: Record<string, string> = {};
+    const trimmedName = name.trim();
+    const trimmedDesc = desc.trim();
+    if (!trimmedName) next.name = 'Name is required';
+    else if (!isMeaningfulClmValue(trimmedName)) next.name = 'Name must contain letters or numbers, not only symbols';
+    else if (existingRows && findClmDuplicate(existingRows, 'name', trimmedName, editingId)) {
+      next.name = `"${trimmedName}" already exists — pick a different name`;
+    }
+    if (!trimmedDesc) next.desc = 'Description is required';
+    else if (!isMeaningfulClmValue(trimmedDesc)) next.desc = 'Description must contain letters or numbers, not only symbols';
+    setErrors(next);
+    if (Object.keys(next).length) return;
+    setSaving(true);
+    try { await Promise.resolve(onSave({ name: trimmedName, description: trimmedDesc })); }
+    finally { setSaving(false); }
+  };
+
+  return createPortal((
+    <div className="clm-modal-bd">
+      <div className="clm-modal">
+        <div className="clm-modal-head">
+          <div className="clm-modal-head-left">
+            <div className="clm-modal-head-ico">
+              {headIconSvg ?? (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+                </svg>
+              )}
+            </div>
+            <div>
+              <div className="clm-modal-head-title">{title}</div>
+              <div className="clm-modal-head-sub">{isEdit ? 'Update the entry below.' : 'Register a new master record.'}</div>
+            </div>
+          </div>
+          <button className="clm-modal-close" onClick={onClose}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+        </div>
+        <div className="clm-modal-body">
+          <div className="clm-autocode">
+            <div className="clm-autocode-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg></div>
+            <div className="clm-autocode-text">
+              <div className="clm-autocode-label">{isEdit ? 'Code' : 'Auto Generated Code'}</div>
+              <div className="clm-autocode-val">{code}</div>
+            </div>
+            <div className={`clm-autocode-badge ${isEdit ? 'edit' : ''}`}><span className="clm-autocode-dot" />{isEdit ? 'Edit' : 'Auto'}</div>
+          </div>
+          <div className="clm-field">
+            <label className="clm-field-label">Name <span className="clm-req">*</span></label>
+            <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder={namePlaceholder} value={name} maxLength={CLM_NAME_MAX} onChange={e => handleNameChange(e.target.value)} autoFocus />
+            {errors.name && <div className="clm-err">{errors.name}</div>}
+          </div>
+          <div className="clm-field">
+            <label className="clm-field-label">Description <span className="clm-req">*</span></label>
+            <textarea className={`clm-textarea ${errors.desc ? 'clm-input-err' : ''}`} placeholder={descPlaceholder} value={desc} maxLength={CLM_DESC_MAX} onChange={e => handleDescChange(e.target.value)} />
+            {errors.desc && <div className="clm-err">{errors.desc}</div>}
+            <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2, textAlign: 'right' }}>{desc.length}/{CLM_DESC_MAX}</div>
+          </div>
+        </div>
+        <div className="clm-modal-foot">
+          <button className="clm-btn-cancel" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="clm-btn-save" onClick={() => void handleSave()} disabled={saving}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+            {saving ? 'Saving…' : (isEdit ? 'Update' : 'Save')}
+          </button>
+        </div>
+      </div>
+    </div>
+  ), document.body);
+}
+
+export function ShortCodeNameModal(props: {
+  title: string;
+  code: string;
+  isEdit: boolean;
+  initialShortCode: string;
+  initialName: string;
+  onClose: () => void;
+  onSave: (form: { short_code: string; name: string }) => void;
+}) {
+  const { title, code, isEdit, initialShortCode, onClose, onSave } = props;
+  useBodyScrollLock();
+  const [name, setName]     = useState(props.initialName);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  /* Auto-derive a 3–4 letter short_code from the category name:
+   * first letter of each word longer than 2 chars, uppercased, capped at 4.
+   * Backend still requires short_code, so we send it but never show the field. */
+  const deriveShortCode = (raw: string): string => {
+    const fromWords = raw.split(/\s+/).filter(w => w.length > 2).map(w => w[0]).join('').toUpperCase().slice(0, 4);
+    return fromWords || raw.replace(/\s+/g, '').toUpperCase().slice(0, 4) || 'CAT';
+  };
+
+  const handleSave = async () => {
+    const next: Record<string, string> = {};
+    if (!name.trim()) next.name = 'Name is required';
+    setErrors(next);
+    if (Object.keys(next).length) return;
+    setSaving(true);
+    try {
+      const sc = (initialShortCode && isEdit) ? initialShortCode : deriveShortCode(name.trim());
+      await Promise.resolve(onSave({ short_code: sc, name: name.trim() }));
+    } finally { setSaving(false); }
+  };
+
+  return createPortal((
+    <div className="clm-modal-bd">
+      <div className="clm-modal">
+        <div className="clm-modal-head">
+          <div className="clm-modal-head-left">
+            <div className="clm-modal-head-ico">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="15" y2="18" /></svg>
+            </div>
+            <div>
+              <div className="clm-modal-head-title">{title}</div>
+              <div className="clm-modal-head-sub">{isEdit ? 'Update category details.' : 'Create a new document category.'}</div>
+            </div>
+          </div>
+          <button className="clm-modal-close" onClick={onClose}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+        </div>
+        <div className="clm-modal-body">
+          <div className="clm-autocode">
+            <div className="clm-autocode-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div>
+            <div className="clm-autocode-text">
+              <div className="clm-autocode-label">Document Category ID</div>
+              <div className="clm-autocode-val">{code}</div>
+            </div>
+            <div className={`clm-autocode-badge ${isEdit ? 'edit' : ''}`}><span className="clm-autocode-dot" />{isEdit ? 'Edit' : 'Auto'}</div>
+          </div>
+          <div className="clm-field">
+            <label className="clm-field-label">Document Category Name <span className="clm-req">*</span></label>
+            <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder="e.g. International – Proforma Invoice" value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} autoFocus />
+            {errors.name && <div className="clm-err">{errors.name}</div>}
+          </div>
+        </div>
+        <div className="clm-modal-foot">
+          <button className="clm-btn-cancel" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="clm-btn-save" onClick={() => void handleSave()} disabled={saving}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+            {saving ? 'Saving…' : (isEdit ? 'Update Category' : 'Save Entry')}
+          </button>
+        </div>
+      </div>
+    </div>
+  ), document.body);
+}
+
+/**
+ * Blocked-action popup. Shown when the user tries to Edit or Delete a draft
+ * that has already been signed by the customer / consignee / supplier — the
+ * action is disallowed server-side (the controller returns 422), so this
+ * surfaces the reason up-front with a single Cancel button (no confirm).
+ */
+export function LockedConf(props: { title: string; sub: string; onClose: () => void }) {
+  const { title, sub, onClose } = props;
+  useBodyScrollLock();
+  // Inline styles can't be reached by the [data-bs-theme="dark"] CSS rules, so
+  // resolve the theme-dependent colours here. The red header band + Cancel
+  // button stay red in both themes; only the card surface, body text and
+  // footer flip so the popup doesn't render as a bright white card in dark.
+  const dark = typeof document !== 'undefined' && document.documentElement.getAttribute('data-bs-theme') === 'dark';
+  const cardBg       = dark ? '#1f2937' : '#fff';
+  const cardBorder   = dark ? 'rgba(239,68,68,.35)' : '#fecaca';
+  const alertText    = dark ? '#f87171' : '#b91c1c';
+  const bodyText     = dark ? '#cbd5e1' : '#334155';
+  const footerBg     = dark ? 'rgba(220,38,38,.12)' : '#fef2f2';
+  const footerBorder = dark ? 'rgba(255,255,255,.08)' : '#f1f5f9';
+  return createPortal((
+    // Backdrop intentionally does NOT close on click — the popup should only
+    // dismiss via the Cancel button so an accidental outside click can't lose it.
+    <div className="clm-conf-bd">
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: '100%', maxWidth: 460, background: cardBg, borderRadius: 12, overflow: 'hidden',
+          boxShadow: '0 24px 60px rgba(15,23,42,.45)', border: `1px solid ${cardBorder}`,
+          fontFamily: 'var(--font-sans)',
+        }}
+      >
+        {/* Red alert header band */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11, background: 'linear-gradient(180deg,#ef4444 0%,#dc2626 100%)', color: '#fff', padding: '13px 18px' }}>
+          <span style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(255,255,255,.20)', border: '1px solid rgba(255,255,255,.35)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+          </span>
+          <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-.01em' }}>{title}</span>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: '16px 18px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9, color: alertText, fontWeight: 800, fontSize: 13 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={alertText} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+            Action not allowed
+          </div>
+          <div style={{ fontSize: 13.5, color: bodyText, lineHeight: 1.6 }}>{sub}</div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '12px 18px', borderTop: `1px solid ${footerBorder}`, background: footerBg }}>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  ), document.body);
+}
+
+export function DeleteConf(props: { title: string; sub: string; onCancel: () => void; onConfirm: () => void | Promise<void> }) {
+  const { title, sub, onCancel, onConfirm } = props;
+  useBodyScrollLock();
+  /* Local in-flight guard — prevents duplicate API calls when the
+   * user double-clicks Delete (which was causing 404/409 backend
+   * errors). Awaits onConfirm so the state stays true until the
+   * parent's async delete actually resolves; if the parent unmounts
+   * the modal on success, the state is irrelevant. */
+  const [deleting, setDeleting] = useState(false);
+
+  const handleConfirm = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    try { await Promise.resolve(onConfirm()); }
+    finally { setDeleting(false); }
+  };
+  const handleCancel = () => { if (!deleting) onCancel(); };
+
+  /* Wrap any "(XX-NNN)" code pattern in the sub string with a
+   * monospace cyan pill — matches the CLM table code pills. We
+   * split on the parenthesised group and rebuild as JSX so React
+   * can attach the styling without dangerouslySetInnerHTML. */
+  const renderSub = (text: string) => {
+    const parts = text.split(/(\([A-Z]{1,4}-\d{2,4}\))/);
+    return parts.map((p, i) => {
+      const m = /^\((.+)\)$/.exec(p);
+      return m
+        ? <span key={i}>(<span className="clm-conf-code">{m[1]}</span>)</span>
+        : <span key={i}>{p}</span>;
+    });
+  };
+
+  return (
+    // Backdrop intentionally does NOT close on click — dismiss only via Cancel
+    // so an accidental outside click can't abandon the confirmation.
+    <div className="clm-conf-bd">
+      <div className="clm-conf" onClick={e => e.stopPropagation()}>
+        <div className="clm-conf-ico"><svg viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></div>
+        <div className="clm-conf-title">{title}</div>
+        <div className="clm-conf-sub">{renderSub(sub)}</div>
+        <div className="clm-conf-hint">This action cannot be undone.</div>
+        <div className="clm-conf-btns">
+          <button className="clm-btn-cancel" onClick={handleCancel} disabled={deleting}>Cancel</button>
+          <button className="clm-btn-del" onClick={() => void handleConfirm()} disabled={deleting}>
+            {deleting ? (
+              <>
+                <svg className="clm-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                </svg>
+                Deleting…
+              </>
+            ) : 'Delete'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

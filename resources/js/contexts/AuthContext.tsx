@@ -180,32 +180,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
     };
     const rgbStr = (c: { r: number; g: number; b: number }) => `${c.r}, ${c.g}, ${c.b}`;
-    // Perceived luminance — if the surface is light, use dark text; if dark, use light text.
-    const isLight = (c: { r: number; g: number; b: number }) =>
-      (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) / 255 > 0.6;
 
     if (user.primary_color) {
       const c = hexToRgb(user.primary_color);
       if (c) {
-        // Surfaces
-        root.style.setProperty('--vz-vertical-menu-bg', user.primary_color);
-        root.style.setProperty('--vz-header-bg', user.primary_color);
-        // Bootstrap brand
+        // Brand hue for buttons / links / focus rings / active accents only.
+        // We intentionally do NOT repaint the sidebar (`--vz-vertical-menu-bg`)
+        // or topbar (`--vz-header-bg`) surfaces — brand mode should recolour the
+        // ACTIVE menu item + accents (like the horizontal header), leaving the
+        // big surfaces on the default theme. So the menu text colors are left
+        // at their defaults too (they read against the default surface).
         root.style.setProperty('--vz-primary', user.primary_color);
         root.style.setProperty('--vz-primary-rgb', rgbStr(c));
         root.style.setProperty('--vz-link-color', user.primary_color);
         root.style.setProperty('--vz-link-color-rgb', rgbStr(c));
         root.style.setProperty('--vz-link-hover-color', user.primary_color);
-        // Auto-contrast text on the primary surfaces
-        const text = isLight(c) ? '#1a1d21' : '#ffffff';
-        const textMuted = isLight(c) ? '#4b5563' : 'rgba(255,255,255,0.78)';
-        const textTitle = isLight(c) ? '#6b7280' : 'rgba(255,255,255,0.62)';
-        root.style.setProperty('--vz-vertical-menu-item-color', textMuted);
-        root.style.setProperty('--vz-vertical-menu-item-hover-color', text);
-        root.style.setProperty('--vz-vertical-menu-sub-item-color', textMuted);
-        root.style.setProperty('--vz-vertical-menu-sub-item-hover-color', text);
-        root.style.setProperty('--vz-vertical-menu-title-color', textTitle);
-        root.style.setProperty('--vz-header-item-color', text);
       }
     }
 
