@@ -1269,7 +1269,7 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
         }
       }
     } finally {
-      setSaving(false);
+      setSaving(null);
     }
   };
 
@@ -1316,10 +1316,7 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
                 <p className="rec-form-section-title">Section 1 · Request Basics</p>
               </div>
             </div>
-            {/* Section 1 — all four fields share one row at md+; the
-                Col span dropped from md={4} → md={3} so 4 columns fit
-                across the 12-grid (md={4} gave 3-per-row, wrapping the
-                4th onto its own line). */}
+          
             <Row className="g-2">
               <Col md={3}>
                 <label className="rec-form-label">Request Title<span className="req">*</span></label>
@@ -1356,10 +1353,7 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
               </Col>
               <Col md={3}>
                 <label className="rec-form-label">Target Join Date</label>
-                {/* minDate = today so the picker physically blocks
-                    selecting a date in the past. errors.targetDate
-                    catches values that bypass the picker (paste,
-                    devtools, hydration of legacy rows). */}
+            
                 <MasterDatePicker
                   value={targetDate}
                   onChange={(v) => { setTargetDate(v); clear('targetDate'); }}
@@ -1382,10 +1376,7 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
                 <p className="rec-form-section-title">Section 2 · Hiring Need</p>
               </div>
             </div>
-            {/* Section 2 — all four fields share one row at md+. Work
-                Mode used to be a button grid and Urgency a chip row;
-                both became MasterSelect dropdowns so they line up
-                with Openings + Employment Type. */}
+           
             <Row className="g-2">
               <Col md={3}>
                 <label className="rec-form-label">No. of Openings<span className="req">*</span></label>
@@ -1473,10 +1464,7 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
               </Col>
               <Col md={6}>
                 <label className="rec-form-label">Required Skills<span className="req">*</span></label>
-                {/* Textarea (rec-textarea) instead of single-line so the
-                    requester can list as many skills as they need —
-                    one per line or comma-separated. Width bumped to
-                    md=6 to give the longer text room to breathe. */}
+                
                 <textarea
                   className={`rec-input rec-textarea${errors.requiredSkills ? ' is-invalid' : ''}`}
                   rows={3}

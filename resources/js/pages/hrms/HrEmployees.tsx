@@ -449,9 +449,14 @@ export default function HrEmployees() {
   const [mStates, setMStates] = useState<any[]>([]);
   const [mHolidayGroups, setMHolidayGroups] = useState<any[]>([]);
 
-  // Pre-built options derived from the masters above.
+  // Pre-built options derived from the masters above. Only ACTIVE holiday
+  // groups are selectable — Inactive groups must not appear when assigning a
+  // group to an employee. (`status` defaults to Active for legacy rows that
+  // predate the column.)
   const holidayGroupOptions = useMemo(
-    () => mHolidayGroups.map(g => ({ value: String(g.id), label: g.name })),
+    () => mHolidayGroups
+      .filter(g => (g.status ?? 'Active') === 'Active')
+      .map(g => ({ value: String(g.id), label: g.name })),
     [mHolidayGroups],
   );
   const departmentOptions = useMemo(
@@ -830,6 +835,18 @@ export default function HrEmployees() {
   // without realising they hadn't actually chosen).
   const [eHolidayList, setEHolidayList]          = useState('');
   const [eAttendanceTracking, setEAttendanceTracking] = useState(true);
+  // Options shown in the Holiday Group dropdown: the active groups, plus — when
+  // EDITING an employee already assigned to a group that has since been set
+  // Inactive — that group too (flagged), so the existing selection isn't
+  // silently cleared. New (Add) employees only ever see active groups.
+  const holidayGroupSelectOptions = useMemo(() => {
+    const opts = [...holidayGroupOptions];
+    if (eHolidayList && !opts.some(o => o.value === String(eHolidayList))) {
+      const g = mHolidayGroups.find(x => String(x.id) === String(eHolidayList));
+      if (g) opts.push({ value: String(g.id), label: `${g.name} (Inactive)` });
+    }
+    return opts;
+  }, [holidayGroupOptions, mHolidayGroups, eHolidayList]);
   const [eShift, setEShift]                      = useState('');
   const [eWeeklyOff, setEWeeklyOff]              = useState('');
   const [eAttendanceNumber, setEAttendanceNumber]= useState('');
@@ -5218,7 +5235,7 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Holiday List (Group)<span className="req">*</span></label>
-                      <MasterSelect value={eHolidayList} onChange={(v) => { setEHolidayList(v); clearEErr('holiday_list'); }} options={holidayGroupOptions} placeholder={holidayGroupOptions.length ? 'Select holiday group' : 'No groups — create in HR › Holiday › Groups'} invalid={!!eErrors.holiday_list} />
+                      <MasterSelect value={eHolidayList} onChange={(v) => { setEHolidayList(v); clearEErr('holiday_list'); }} options={holidayGroupSelectOptions} placeholder={holidayGroupOptions.length ? 'Select holiday group' : 'No groups — create in HR › Holiday › Groups'} invalid={!!eErrors.holiday_list} />
                       {eErrors.holiday_list && <small className="emp-err">{eErrors.holiday_list}</small>}
                     </Col>
                     <Col md={6}>

@@ -654,6 +654,8 @@ export default function HrEmployeeOnboarding() {
     <>
       <MasterFormStyles />
 
+      <div className="onb-page">
+
       {/* ── Header strip — same shape as the Clients / Branches headers. ── */}
       <div className="frm-cstrip mb-3">
         <span className="frm-cstrip-accent" />
@@ -962,6 +964,8 @@ export default function HrEmployeeOnboarding() {
           <WorklistPager total={filtered.length} page={safePage} pageSize={PAGE_SIZE} onPage={goto} />
         </div>
       </div>
+
+      </div>{/* /.onb-page */}
 
       {/* ── Onboarding Checklist Modal ── */}
       <ChecklistModal isOpen={checklistOpen} onClose={() => setChecklistOpen(false)} />
