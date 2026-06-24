@@ -6,6 +6,8 @@ import { useToast } from '../../contexts/ToastContext';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import WorklistPager from '../../components/ui/WorklistPager';
+import Tooltip from '../../components/ui/Tooltip';
+import DocGenerateModal from './doc-templates/DocGenerateModal';
 import '../../../css/recruitment.css';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -516,9 +518,9 @@ export default function HrExitManagement() {
                                             :           { dark: '#f06548', light: '#fda192' };
                                   const badgeLeft = Math.max(11, Math.min(89, p));
                                   return (
+                                    <Tooltip label={`Exit readiness ${p}%`} position="top" themed>
                                     <div
                                       style={{ position: 'relative', width: 120, paddingTop: 30 }}
-                                      title={`Exit readiness ${p}%`}
                                     >
                                       {/* Floating badge + downward pointer */}
                                       <div
@@ -570,6 +572,7 @@ export default function HrExitManagement() {
                                         />
                                       </div>
                                     </div>
+                                    </Tooltip>
                                   );
                                 })()}
                               </td>
@@ -580,19 +583,24 @@ export default function HrExitManagement() {
                               </td>
                               <td className="text-center pe-3">
                                 {isExited ? (
-                                  <button type="button" className="exit-action-btn exit-action-btn--vault" title="Open evidence vault" onClick={() => setVault(e)}>
-                                    <i className="ri-shield-check-line" />Evidence Vault
-                                  </button>
+                                  <Tooltip label="Open evidence vault" position="left" themed>
+                                    <button type="button" className="exit-action-btn exit-action-btn--vault" onClick={() => setVault(e)}>
+                                      <i className="ri-shield-check-line" />Evidence Vault
+                                    </button>
+                                  </Tooltip>
                                 ) : (isInProgress || isScheduled) ? (
-                                  <button type="button" className="exit-action-btn exit-action-btn--continue"
-                                    title={isScheduled ? `Exit scheduled — notice starts ${noticeFromLabel || 'later'}. Continue editing.` : 'Continue exit process'}
-                                    onClick={() => setProcessing(e)}>
-                                    <i className="ri-arrow-right-line" />Continue
-                                  </button>
+                                  <Tooltip label={isScheduled ? `Exit scheduled — notice starts ${noticeFromLabel || 'later'}. Continue editing.` : 'Continue exit process'} position="left" themed>
+                                    <button type="button" className="exit-action-btn exit-action-btn--continue"
+                                      onClick={() => setProcessing(e)}>
+                                      <i className="ri-arrow-right-line" />Continue
+                                    </button>
+                                  </Tooltip>
                                 ) : (
-                                  <button type="button" className="exit-action-btn exit-action-btn--initiate" title="Initiate exit process" onClick={() => setProcessing(e)}>
-                                    <i className="ri-logout-box-r-line" />Initiate Exit
-                                  </button>
+                                  <Tooltip label="Initiate exit process" position="left" themed>
+                                    <button type="button" className="exit-action-btn exit-action-btn--initiate" onClick={() => setProcessing(e)}>
+                                      <i className="ri-logout-box-r-line" />Initiate Exit
+                                    </button>
+                                  </Tooltip>
                                 )}
                               </td>
                             </tr>
@@ -1013,6 +1021,28 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     return m;
   }, [runs]);
 
+  // ── Generated documents ───────────────────────────────────────────────────
+  // A template counts as "Generated" once a generated-document record exists
+  // for it (saved via the Generate modal's "Save Generated"). We track the set
+  // of template_ids so the Stage-3 "Generated" KPI reflects real saved docs,
+  // not just signing runs. Re-fetched after each save.
+  const [generatedTplIds, setGeneratedTplIds] = useState<Set<number>>(new Set());
+  const fetchGenerated = async () => {
+    if (!employee) { setGeneratedTplIds(new Set()); return; }
+    try {
+      const { data } = await api.get('/hr-generated-documents', { params: { employee_id: employee.id } });
+      const ids = Array.isArray(data) ? data.map((d: any) => Number(d.template_id)) : [];
+      setGeneratedTplIds(new Set(ids));
+    } catch {
+      setGeneratedTplIds(new Set());
+    }
+  };
+  useEffect(() => {
+    if (!employee) { setGeneratedTplIds(new Set()); return; }
+    fetchGenerated();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employee?.id]);
+
   // ── Preview modal ────────────────────────────────────────────────────────
   const [previewOpen, setPreviewOpen]     = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -1084,6 +1114,31 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       setDownloadingRunId(null);
     }
   };
+
+  /* Nudge the current pending signer (in-app Inbox notification). Mirrors the
+     onboarding vault reminder — the backend throttles to 1 reminder / 6 hours
+     per signer, so a 429 is surfaced as a "slow down" message rather than an
+     error. Only meaningful while a run is Pending / In Progress. */
+  const [remindingRunId, setRemindingRunId] = useState<number | null>(null);
+  const sendReminder = async (run: SignatureRun) => {
+    if (remindingRunId !== null) return;
+    setRemindingRunId(run.id);
+    try {
+      const res = await api.post(`/hr-document-signatures/${run.id}/remind`);
+      const signer = res?.data?.signer || run.signers?.[run.current_index]?.name || 'the current signer';
+      toast.success('Reminder sent', `${signer} will see it in their Inbox.`);
+      fetchRuns();
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const msg = err?.response?.data?.message || 'Please try again.';
+      toast.error(status === 429 ? 'Slow down' : 'Could not send reminder', msg);
+    } finally {
+      setRemindingRunId(null);
+    }
+  };
+
+  // Generate modal — custom-field fill → preview → download / send for signature.
+  const [genTpl, setGenTpl] = useState<ExitTemplate | null>(null);
 
   // ── Send for signing — kicks off the configured signing workflow ────────
   const [sendForTpl, setSendForTpl] = useState<ExitTemplate | null>(null);
@@ -1779,11 +1834,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
             {stage === 3 && (() => {
               // KPI counts derived from real template + run data so the
               // tiles match what's rendered below. "Generated" counts any
-              // template that has at least one signing run started;
-              // "Pending Sign" filters that down to runs still in flight;
-              // "Completed" tracks runs that have crossed the finish line.
+              // template that has a saved generated-document record (via the
+              // Generate modal's "Save Generated") OR a signing run started
+              // (Send also produces the document); "Pending Sign" filters that
+              // down to runs still in flight; "Completed" tracks runs that have
+              // crossed the finish line.
               const totalDocs = exitTemplates.length;
-              const generatedCount = exitTemplates.filter(t => runByTemplateId.has(t.id)).length;
+              const generatedCount = exitTemplates.filter(t => generatedTplIds.has(t.id) || runByTemplateId.has(t.id)).length;
               const pendingCount = exitTemplates.filter(t => {
                 const r = runByTemplateId.get(t.id);
                 return r && (r.status === 'Pending' || r.status === 'In Progress');
@@ -1876,8 +1933,16 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         const signers = parseSigners(tpl.signers);
                         const run = runByTemplateId.get(tpl.id) || null;
                         const canGenerate = tpl.status === 'Active';
-                        const runHasFinished = run && (run.status === 'Completed' || run.status === 'Rejected' || run.status === 'Cancelled');
-                        const canSend = canGenerate && (!run || !!runHasFinished);
+                        // A run is "in flight" while it's collecting signatures.
+                        const runInFlight = !!run && (run.status === 'Pending' || run.status === 'In Progress');
+                        const runCompleted = run?.status === 'Completed';
+                        // Send is offered only when there's no run yet, or a prior
+                        // run was Rejected / Cancelled (re-sendable). It is NOT
+                        // shown while a run is in flight, nor once Completed — a
+                        // fully-signed document is final (BUG: Send stayed
+                        // clickable after completion). Completed rows show
+                        // Download; in-flight rows show Reminder instead.
+                        const canSend = canGenerate && (!run || run.status === 'Rejected' || run.status === 'Cancelled');
                         const runTone =
                           run?.status === 'Completed'  ? { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e' }
                           : run?.status === 'Rejected'  ? { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444' }
@@ -1912,43 +1977,83 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                               <span className={`ep-doc-tag ${tpl.status === 'Active' ? 'ep-doc-tag--pending' : 'ep-doc-tag--blank'}`}>
                                 {tpl.status || 'Draft'}
                               </span>
-                              <button type="button" className="ep-doc-btn ep-doc-btn--ghost" onClick={() => handleView(tpl)}>
-                                <i className="ri-eye-line" />View
-                              </button>
-                              <button
-                                type="button"
-                                className="ep-doc-btn"
-                                onClick={() => openSend(tpl)}
-                                disabled={!canSend}
-                                title={canSend ? 'Send through the configured signing workflow' : (run ? 'A signing run is already in flight' : 'Only Active templates can be sent')}
-                                style={{ opacity: canSend ? 1 : 0.5, cursor: canSend ? 'pointer' : 'not-allowed' }}
-                              >
-                                <i className="ri-send-plane-line" />Send
-                              </button>
-                              {/* Generate button removed per product call —
-                                  documents are generated as part of the
-                                  signing workflow (Send), not downloaded raw
-                                  from this stage. */}
+                              <Tooltip label="Preview with this employee's data" position="bottom" themed>
+                                <button type="button" className="ep-doc-btn ep-doc-btn--ghost" onClick={() => handleView(tpl)}>
+                                  <i className="ri-eye-line" />View
+                                </button>
+                              </Tooltip>
+                              {/* Send — only when there's no run yet, or a prior
+                                  run was Rejected / Cancelled. Hidden while a run
+                                  is in flight (Reminder takes its place) and once
+                                  Completed (Download takes its place). */}
+                              {canSend && (
+                                <Tooltip label="Send through the configured signing workflow" position="bottom" themed>
+                                  <button
+                                    type="button"
+                                    className="ep-doc-btn"
+                                    onClick={() => openSend(tpl)}
+                                  >
+                                    <i className="ri-send-plane-line" />{run ? 'Resend' : 'Send'}
+                                  </button>
+                                </Tooltip>
+                              )}
+                              {/* Reminder — while a run is collecting signatures,
+                                  nudge the current pending signer in their Inbox.
+                                  Backend throttles to 1 / 6 hours per signer. */}
+                              {runInFlight && run && (() => {
+                                const isReminding = remindingRunId === run.id;
+                                return (
+                                  <Tooltip label="Send a reminder to the current pending signer" position="bottom" themed>
+                                    <button
+                                      type="button"
+                                      className="ep-doc-btn"
+                                      onClick={() => sendReminder(run)}
+                                      disabled={isReminding}
+                                      style={{ background: 'linear-gradient(135deg,#f59e0b,#d97706)', color: '#fff', border: 0, ...(isReminding ? { opacity: 0.65, cursor: 'wait' } : {}) }}
+                                    >
+                                      {isReminding
+                                        ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Sending…</>
+                                        : <><i className="ri-mail-send-line" />Reminder</>}
+                                    </button>
+                                  </Tooltip>
+                                );
+                              })()}
+                              {/* Generate — fill the template's custom fields,
+                                  preview with this employee's data, then download
+                                  the DOCX or push it into the signing workflow.
+                                  Gated like Send (hidden while a run is active). */}
+                              {canSend && (
+                                <Tooltip label="Fill custom fields, preview & generate / send for signing" position="bottom" themed>
+                                  <button
+                                    type="button"
+                                    className="ep-doc-btn"
+                                    onClick={() => setGenTpl(tpl)}
+                                  >
+                                    <i className="ri-file-add-line" />Generate
+                                  </button>
+                                </Tooltip>
+                              )}
                               {/* Download signed PDF — only once the run is
                                   fully signed (all signers done). Shows a
                                   spinner + disables while the download is in
                                   flight so repeated clicks can't fire multiple
                                   downloads. */}
-                              {run && run.status === 'Completed' && (() => {
+                              {runCompleted && run && (() => {
                                 const isDownloading = downloadingRunId === run.id;
                                 return (
-                                  <button
-                                    type="button"
-                                    className="ep-doc-btn ep-doc-btn--done"
-                                    onClick={() => downloadSignedRun(run)}
-                                    disabled={isDownloading}
-                                    title="Download the signed PDF — all signatures complete"
-                                    style={isDownloading ? { opacity: 0.65, cursor: 'wait' } : undefined}
-                                  >
-                                    {isDownloading
-                                      ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Downloading…</>
-                                      : <><i className="ri-file-pdf-2-line" />Download</>}
-                                  </button>
+                                  <Tooltip label="Download the signed PDF — all signatures complete" position="bottom" themed>
+                                    <button
+                                      type="button"
+                                      className="ep-doc-btn ep-doc-btn--done"
+                                      onClick={() => downloadSignedRun(run)}
+                                      disabled={isDownloading}
+                                      style={isDownloading ? { opacity: 0.65, cursor: 'wait' } : undefined}
+                                    >
+                                      {isDownloading
+                                        ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Downloading…</>
+                                        : <><i className="ri-file-pdf-2-line" />Download</>}
+                                    </button>
+                                  </Tooltip>
                                 );
                               })()}
                             </div>
@@ -2207,6 +2312,19 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       </ModalBody>
     </Modal>
 
+    {/* ── Generate Document — custom-field fill → preview → download / send for signature ── */}
+    <DocGenerateModal
+      isOpen={!!genTpl}
+      onClose={() => setGenTpl(null)}
+      templateId={genTpl?.id ?? null}
+      templateName={genTpl?.name}
+      templateCode={genTpl?.code}
+      employeeId={employee?.id ?? null}
+      employeeName={employee?.name}
+      onSent={fetchRuns}
+      onGenerated={fetchGenerated}
+    />
+
     {/* ── Send-for-signing confirmation modal ── */}
     <Modal isOpen={!!sendForTpl} toggle={() => !sending && setSendForTpl(null)} size="md" centered contentClassName="border-0" backdrop="static">
       <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)', borderRadius: 16, overflow: 'hidden' }}>
@@ -2227,7 +2345,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
               <div className="fw-semibold" style={{ fontSize: 13.5 }}>
                 {sendForTpl.name || '(unnamed template)'}
                 {sendForTpl.code && (
-                  <span style={{ marginLeft: 8, fontSize: 11, fontFamily: 'monospace', color: '#a16207', background: '#fef3c7', padding: '1px 6px', borderRadius: 4 }}>{sendForTpl.code}</span>
+                  <span className="ep-tpl-code-badge" style={{ marginLeft: 8, fontSize: 11, fontFamily: 'monospace', padding: '1px 6px', borderRadius: 4 }}>{sendForTpl.code}</span>
                 )}
               </div>
               <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>
@@ -2943,9 +3061,16 @@ function _exitInitials(name: string): string {
 
 function apiToExitRow(e: any): EmployeeRow {
   const name = (e.display_name || `${e.first_name ?? ''} ${e.last_name ?? ''}`).trim() || '—';
+  // The manager can be set EITHER as an Employee (reporting_manager_id →
+  // reporting_manager) OR as a User who isn't an employee row
+  // (reporting_manager_user_id → reporting_manager_user). Only one is ever
+  // populated, so fall through to the user relation — without this, employees
+  // whose manager is a User (e.g. a branch admin / HR) showed "—". Mirrors the
+  // HR Employees list mapping.
   const mgr  = e.reporting_manager;
   const mgrName = mgr?.display_name
     || (mgr ? [mgr.first_name, mgr.last_name].filter(Boolean).join(' ').trim() : '')
+    || e.reporting_manager_user?.name
     || '—';
 
   // Map server status → ExitStatus bucket.

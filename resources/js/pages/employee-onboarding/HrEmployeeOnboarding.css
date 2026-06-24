@@ -319,11 +319,17 @@
           color: color-mix(in srgb, var(--pill-fg) 58%, #ffffff) !important;
         }
 
-        .onb-cl-footer { background: #fff; border-top: 1px solid #eef0f4; padding: 10px 22px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+        /* Pinned to the bottom of the scroll area so the Close button is always
+           fully visible (it used to scroll below the fold / jam into the 18px
+           rounded corner on short viewports). Extra, even padding keeps a
+           consistent gap from the modal boundaries. */
+        .onb-cl-footer { position: sticky; bottom: 0; z-index: 2; background: #fff; border-top: 1px solid #eef0f4; padding: 14px 22px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
         [data-bs-theme="dark"] .onb-cl-footer { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
         .onb-cl-footer .hint { font-size: 11px; color: #6b7280; }
         [data-bs-theme="dark"] .onb-cl-footer .hint { color: var(--vz-secondary-color); }
-        .onb-cl-close { padding: 7px 18px; border-radius: 9px; font-size: 12px; font-weight: 700; color: #fff; border: none; background: linear-gradient(90deg,#7c3aed,#4c1d95); box-shadow: 0 6px 14px rgba(76,29,149,0.28); cursor: pointer; }
+        /* margin-left:auto keeps the button hard-right even when the hint text
+           wraps onto its own line (space-between would otherwise left-align it). */
+        .onb-cl-close { margin-left: auto; padding: 8px 20px; border-radius: 9px; font-size: 12px; font-weight: 700; color: #fff; border: none; background: linear-gradient(90deg,#7c3aed,#4c1d95); box-shadow: 0 6px 14px rgba(76,29,149,0.28); cursor: pointer; }
         .onb-cl-close:hover { transform: translateY(-1px); box-shadow: 0 10px 18px rgba(76,29,149,0.36); }
 
 /* ── Block 2: Edit Employee modal ── */
@@ -1457,3 +1463,48 @@
 /* Sub-group section heading + label text colors */
 [data-bs-theme="dark"] .onb-init-label { color: var(--vz-body-color); }
 [data-bs-theme="dark"] .onb-init-subgroup { color: var(--vz-secondary-color); }
+
+/* ============================================================
+   Employee Onboarding Hub — mobile / tablet responsive (≤ 767.98px)
+   ------------------------------------------------------------
+   Scoped to .onb-page so the shared header strip (.frm-cstrip)
+   and toolbar styles don't leak into other modules.
+   - Header: title block on top, "Onboarding Checklist" button
+     drops full-width below it (was squeezing the title into a
+     narrow 3-line column).
+   - Toolbar: the two long-labelled status tabs and the search
+     box each take a full row instead of a cramped 50/50 split.
+   - KPI cards already tier via reactstrap Cols; the list table
+     already scrolls inside .rec-list-scroll — no change needed.
+   ============================================================ */
+@media (max-width: 767.98px) {
+  /* ── Header strip ── stack title above a full-width CTA. */
+  .onb-page .frm-cstrip {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .onb-page .frm-cstrip .frm-cstrip-title { font-size: 16px; }
+  .onb-page .frm-cstrip .onb-checklist-cta {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* ── Toolbar ── tabs + search each break onto their own full-width row.
+     !important overrides the inline `flex:1 1 0` set in the JSX. */
+  .onb-page .rec-req-filter-row {
+    padding: 12px 14px;
+  }
+  .onb-page .rec-req-filter-row .rec-tab-track,
+  .onb-page .rec-req-filter-row .rec-req-search {
+    flex: 1 1 100% !important;
+    min-width: 0;
+    width: 100%;
+  }
+  /* Two long-labelled tabs ("Onboarding Pending (New Joiners)" / "Completed")
+     stack full-width instead of squashing into 50% slivers. Overrides the
+     inline `flex:1` on each tab button. */
+  .onb-page .rec-req-filter-row .rec-tab {
+    flex: 1 1 100% !important;
+  }
+}

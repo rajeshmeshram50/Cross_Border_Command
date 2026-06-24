@@ -503,8 +503,9 @@ function Stage1(p: {
   const [midStep, setMidStep] = useState<1 | 2 | 3>(1);          // inner Step 01 / 02 / 03
   const [renewal, setRenewal] = useState<'yes' | 'no'>('yes');
   const [renewalType, setRenewalType] = useState<'manual' | 'auto'>('manual');
-  const [termNotice, setTermNotice] = useState('30');
   const [editorFs, setEditorFs] = useState(false);              // draft editor full-screen
+  const [linkOpen, setLinkOpen] = useState(false);              // themed "insert link" dialog
+  const [linkUrl, setLinkUrl] = useState('');
   // Page-shell header/footer config (logo, header name, footer text, pagination) —
   // lifted to the parent so the Stage-2 preview shares the same config.
   const header = p.header, setHeader = p.setHeader, footer = p.footer, setFooter = p.setFooter;
@@ -539,6 +540,9 @@ function Stage1(p: {
   const insertText = (text: string) => { restoreCaret(); document.execCommand('insertText', false, text + ' '); syncDraft(); };
   const insertHtml = (html: string) => { restoreCaret(); document.execCommand('insertHTML', false, html); syncDraft(); };
   const exec = (cmd: string, val?: string) => { editorRef.current?.focus(); document.execCommand(cmd, false, val); syncDraft(); };
+  // Apply the link from the themed dialog. restoreCaret() puts the stashed editor
+  // selection back (the dialog input stole focus) so createLink wraps the right text.
+  const applyLink = () => { const url = linkUrl.trim(); setLinkOpen(false); if (!url) return; restoreCaret(); document.execCommand('createLink', false, url); syncDraft(); };
   const uploadDocx = async (file: File) => {
     const fd = new FormData(); fd.append('docx', file);
     try {
@@ -560,15 +564,7 @@ function Stage1(p: {
   // Inline field errors (Step 2 required *). Flags set on a failed validate;
   // each field's red state auto-clears once it has a value (see the `error`
   // props on the Fields below), so we never have to manually reset them.
-  const [errors, setErrors] = useState<{ title?: boolean; type?: boolean; effDate?: boolean; endDate?: boolean; term?: boolean }>({});
-  // Agreement length in days (end − start) and whether the termination notice
-  // exceeds it — a 30-day notice on a 1-day agreement makes no sense, so it's
-  // blocked. Computed here so both validate() and the inline Field error use it.
-  const agreementDays = (p.effDate && p.endDate)
-    ? Math.round((new Date(p.endDate).getTime() - new Date(p.effDate).getTime()) / 86400000)
-    : null;
-  const termDays = parseInt(termNotice || '', 10);
-  const termInvalid = agreementDays !== null && agreementDays >= 0 && Number.isFinite(termDays) && termDays > agreementDays;
+  const [errors, setErrors] = useState<{ title?: boolean; type?: boolean; effDate?: boolean; endDate?: boolean }>({});
   const validateStep1 = (): boolean => {
     if (!p.cps.length) { toast.error('Counterparty required', 'Add at least one counterparty before continuing.'); setMidStep(1); return false; }
     if (!p.org)        { toast.error('Organisation required', 'Select your organisation details before continuing.'); setMidStep(1); return false; }
@@ -576,14 +572,13 @@ function Stage1(p: {
   };
   const validateStep2 = (): boolean => {
     // Mark every empty required field so all of them highlight inline at once…
-    const e = { title: !p.agTitle.trim(), type: !p.agType, effDate: !p.effDate, endDate: !p.endDate, term: termInvalid };
+    const e = { title: !p.agTitle.trim(), type: !p.agType, effDate: !p.effDate, endDate: !p.endDate };
     setErrors(e);
     // …while the toaster still calls out the first one (unchanged behaviour).
     if (e.title)   { toast.error('Agreement name required', 'Enter the agreement title.'); setMidStep(2); return false; }
     if (e.type)    { toast.error('Agreement type required', 'Select the agreement type.'); setMidStep(2); return false; }
     if (e.effDate) { toast.error('Effective date required', 'Select the effective date.'); setMidStep(2); return false; }
     if (e.endDate) { toast.error('End date required', 'Select the end date.'); setMidStep(2); return false; }
-    if (e.term)    { toast.error('Invalid termination notice', `Termination period (${termDays} days) can't exceed the agreement length (${agreementDays} day${agreementDays === 1 ? '' : 's'}).`); setMidStep(2); return false; }
     return true;
   };
   const validateAll = (): boolean => validateStep1() && validateStep2();
@@ -827,18 +822,12 @@ function Stage1(p: {
                 <div style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(16,185,129,.3)' : '#BBF7D0'}`, overflow: 'hidden', boxShadow: '0 2px 12px rgba(109,40,217,.06)' }}>
                   <div style={{ padding: '11px 14px', background: t.dark ? 'rgba(16,185,129,.12)' : 'linear-gradient(110deg,#ECFDF5 0%,#F0FDF9 40%,#D1FAE5 100%)', borderBottom: `1.5px solid ${t.dark ? 'rgba(16,185,129,.25)' : '#A7F3D0'}`, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#059669,#047857)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg></div>
-                    <div><div style={{ fontSize: 11.5, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#064E3B' }}>Agreement Details</div><div style={{ fontSize: 8, color: t.dark ? '#34d399' : '#059669', fontWeight: 500 }}>Dates, renewal &amp; termination terms</div></div>
+                    <div><div style={{ fontSize: 11.5, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#064E3B' }}>Agreement Details</div><div style={{ fontSize: 8, color: t.dark ? '#34d399' : '#059669', fontWeight: 500 }}>Dates &amp; renewal terms</div></div>
                   </div>
                   <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, alignItems: 'end' }}>
                       <Field t={t} label="Effective Date *" green error={errors.effDate && !p.effDate ? 'Effective date is required' : undefined}><MasterDatePicker value={p.effDate} onChange={p.setEffDate} placeholder="Select date" /></Field>
                       <Field t={t} label="End Date *" green error={errors.endDate && !p.endDate ? 'End date is required' : undefined}><MasterDatePicker value={p.endDate} onChange={p.setEndDate} minDate={p.effDate || undefined} placeholder="Select date" /></Field>
-                      <Field t={t} label="Termination Notice" green error={(errors.term && termInvalid) ? `Cannot exceed agreement length (${agreementDays} day${agreementDays === 1 ? '' : 's'})` : undefined}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <input type="number" min="1" max={agreementDays ?? undefined} value={termNotice} onChange={e => setTermNotice(e.target.value)} style={{ ...ipt, borderColor: termInvalid ? '#ef4444' : (t.dark ? 'rgba(16,185,129,.35)' : '#A7F3D0'), width: 60, textAlign: 'center', padding: '0 6px' }} />
-                          <span style={{ fontSize: 10, color: t.textSub, fontWeight: 600 }}>days</span>
-                        </div>
-                      </Field>
                     </div>
                     <div>
                       <MiniLabel t={t} green>Auto Renewal</MiniLabel>
@@ -901,7 +890,7 @@ function Stage1(p: {
                   <ToolBtn t={t} title="Indent" onClick={() => exec('indent')}><line x1="3" y1="6" x2="21" y2="6" /><polyline points="3 12 8 16 3 20" /><line x1="10" y1="12" x2="21" y2="12" /><line x1="10" y1="18" x2="21" y2="18" /></ToolBtn>
                   <ToolBtn t={t} title="Outdent" onClick={() => exec('outdent')}><line x1="3" y1="6" x2="21" y2="6" /><polyline points="11 12 6 16 11 20" /><line x1="13" y1="12" x2="21" y2="12" /><line x1="13" y1="18" x2="21" y2="18" /></ToolBtn>
                   <ToolDiv t={t} />
-                  <ToolBtn t={t} title="Insert link" onClick={() => { const u = window.prompt('Link URL'); if (u) exec('createLink', u); }}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></ToolBtn>
+                  <ToolBtn t={t} title="Insert link" onClick={() => { setLinkUrl(''); setLinkOpen(true); }}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></ToolBtn>
                   <ToolBtn t={t} title="Undo" onClick={() => exec('undo')}><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 .49-4.95" /></ToolBtn>
                   <ToolBtn t={t} title="Redo" onClick={() => exec('redo')}><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-.49-4.95" /></ToolBtn>
                 </div>
@@ -915,8 +904,26 @@ function Stage1(p: {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg><span style={{ fontSize: 8, color: t.dark ? '#a78bfa' : '#A78BFA', fontWeight: 500, fontStyle: 'italic' }}>Placeholders auto-fill on agreement generation</span></div>
                   <span style={{ fontSize: 8, fontWeight: 700, color: t.dark ? '#a78bfa' : '#C4B5FD', letterSpacing: '.05em' }}>{'{{PLACEHOLDER}}'}</span>
                 </div>
-                {phOpen && <ClmInsertPlaceholderModal open={phOpen} hideProductTab counterparties={p.cps.map(c => ({ name: c.name, code: String(c.sourceId ?? ''), role: (c.sourceType || c.badge || '').toLowerCase(), type: c.sourceType, id: c.sourceId }))} onClose={() => setPhOpen(false)} onInsert={tok => { if (/^\s*</.test(tok)) insertHtml(tok); else insertText(tok); }} />}
+                {phOpen && <ClmInsertPlaceholderModal open={phOpen} hideProductTab counterparties={p.cps.map(c => ({ name: c.name, code: String(c.sourceId ?? ''), role: (c.sourceType || c.badge || '').toLowerCase(), type: c.sourceType, id: c.sourceId }))} onClose={() => setPhOpen(false)} onInsert={tok => { if (/^\s*</.test(tok)) { insertHtml(tok); toast.success('Inserted', 'Added to the agreement draft.'); } else { insertText(tok); toast.success('Placeholder added', tok); } }} />}
                 {clauseOpen && <ClmClauseInsertPanel onClose={() => setClauseOpen(false)} onInsert={html => insertHtml(html)} />}
+                {linkOpen && (
+                  <div onMouseDown={e => { if (e.target === e.currentTarget) setLinkOpen(false); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,7,50,.55)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: 'var(--font-sans)' }}>
+                    <div style={{ width: 'min(420px,92vw)', background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD'}`, boxShadow: '0 30px 80px rgba(8,3,28,.5)', overflow: 'hidden' }}>
+                      <div style={{ padding: '13px 18px', background: t.dark ? 'rgba(124,58,237,.16)' : 'linear-gradient(110deg,#EDE9FE,#F3F0FF)', borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#DDD6FE'}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: t.dark ? '#ede9fe' : '#4C1D95' }}>Insert Link</span>
+                      </div>
+                      <div style={{ padding: 18 }}>
+                        <label style={{ fontSize: 9.5, fontWeight: 800, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.07em' }}>Link URL</label>
+                        <input autoFocus value={linkUrl} onChange={e => setLinkUrl(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applyLink(); } else if (e.key === 'Escape') setLinkOpen(false); }} placeholder="https://example.com" style={{ width: '100%', marginTop: 6, height: 38, padding: '0 12px', borderRadius: 9, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#DDD6FE'}`, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', color: t.textStrong, fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+                          <button type="button" onClick={() => setLinkOpen(false)} style={{ padding: '8px 16px', borderRadius: 9, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: 'none', color: t.textMuted, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+                          <button type="button" onClick={applyLink} style={{ padding: '8px 18px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(91,33,182,.4)' }}>Insert</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1043,7 +1050,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
   // Surfaced here so the sender sees the query in Stage 2 and can reply without
   // leaving the form. Stays visible while the contract sits in 'clarification'
   // (i.e. until the sender resubmits a fresh draft or the approver decides).
-  const clarifications = (Array.isArray(record?.clarifications) ? record!.clarifications : []) as { query?: string; date?: string; response?: string; resolved?: boolean }[];
+  const clarifications = (Array.isArray(record?.clarifications) ? record!.clarifications : []) as { query?: string; date?: string; response?: string; resolved?: boolean; by?: string }[];
   const inClarification = approval === 'clarification';
   const openClar = inClarification ? clarifications[clarifications.length - 1] ?? null : null;
   const sendClarReply = async () => {
@@ -1145,7 +1152,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                 const cp = (p?: { x?: number; y?: number }) => ({ x: Math.max(0, Math.min(100, p?.x ?? 50)), y: Math.max(0, Math.min(100, p?.y ?? 50)) });
                 const lp = cp(header.logo_pos), tp = cp(header.title_pos);
                 return (
-                  <div style={{ position: 'relative', minHeight: Math.max(64, logoH + 24), marginBottom: 14, borderBottom: '2px solid rgba(124,58,237,.18)', background: header.background, color: header.text_color, borderRadius: 6 }}>
+                  <div style={{ position: 'relative', minHeight: Math.max(64, logoH + 24), marginBottom: 14, borderBottom: '2px solid rgba(124,58,237,.18)', background: header.background, color: header.text_color, borderRadius: 6, overflow: 'hidden' }}>
                     {header.show_logo && header.logo_url && <img src={header.logo_url} alt="logo" style={{ position: 'absolute', left: `${lp.x}%`, top: `${lp.y}%`, transform: 'translate(-50%,-50%)', height: logoH, maxWidth: Math.max(180, logoH * 3), objectFit: 'contain' }} />}
                     {header.show_title && (
                       <div style={{ position: 'absolute', left: `${tp.x}%`, top: `${tp.y}%`, transform: 'translate(-50%,-50%)', textAlign: header.align, maxWidth: '60%' }}>
@@ -1391,7 +1398,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                   // sender has replied. (Stored clarifications carry a date only,
                   // no time, so they can't be reliably interleaved by timestamp.)
                   const clarItems: TL[] = clarifications.flatMap(c => {
-                    const items: TL[] = [{ tone: 'active', title: 'Clarification Requested', badge: 'Clarification', sub: c.query || 'The approver requested clarification before deciding.', date: c.date, by: apprName }];
+                    const items: TL[] = [{ tone: 'active', title: 'Clarification Requested', badge: 'Clarification', sub: c.query || 'The approver requested clarification before deciding.', date: c.date, by: c.by || apprName }];
                     if (c.response) items.push({ tone: 'done', title: 'Clarification Answered', badge: 'Responded', sub: c.response, date: c.date });
                     return items;
                   });

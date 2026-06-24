@@ -10,7 +10,7 @@ import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import '../../../css/recruitment.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
-type RecruitmentStatus = 'In Progress' | 'Completed' | 'Cancelled';
+type RecruitmentStatus = 'In Progress' | 'Completed' | 'Cancelled' | 'Expired';
 type Priority = 'Low' | 'Medium' | 'High' | 'Critical';
 type WorkMode = 'On-site' | 'Remote' | 'Hybrid' | 'Flexible';
 type EmployType = 'Full Time' | 'Part Time' | 'Contract' | 'Internship';
@@ -464,6 +464,7 @@ export default function HrRecruitment() {
     const inProgress = recruitments.filter(r => r.status === 'In Progress').length;
     const completed  = recruitments.filter(r => r.status === 'Completed').length;
     const cancelled  = recruitments.filter(r => r.status === 'Cancelled').length;
+    const expired    = recruitments.filter(r => r.status === 'Expired').length;
     return {
       total,
       active:     inProgress,
@@ -483,7 +484,7 @@ export default function HrRecruitment() {
           - candidateStats.offered
           - candidateStats.rejected,
       ),
-      tabs: { 'In Progress': inProgress, Completed: completed, Cancelled: cancelled },
+      tabs: { 'In Progress': inProgress, Completed: completed, Cancelled: cancelled, Expired: expired },
     };
   }, [recruitments, candidateStats]);
 
@@ -677,6 +678,7 @@ export default function HrRecruitment() {
                         { key: 'In Progress' as const, label: 'In Progress', count: counts.tabs['In Progress'], icon: 'ri-time-line',           variant: 'in-progress' },
                         { key: 'Completed'   as const, label: 'Completed',   count: counts.tabs.Completed,     icon: 'ri-checkbox-circle-line',variant: 'completed'   },
                         { key: 'Cancelled'   as const, label: 'Cancelled',   count: counts.tabs.Cancelled,     icon: 'ri-close-circle-line',   variant: 'cancelled'   },
+                        { key: 'Expired'     as const, label: 'Expired',     count: counts.tabs.Expired,       icon: 'ri-alarm-warning-line',  variant: 'cancelled'   },
                       ]).map(t => (
                         <button
                           key={t.key}
@@ -801,9 +803,10 @@ export default function HrRecruitment() {
                                   onClick={() => { setCreateMode('edit'); setCreateEditingId(r.id); setCreateOpen(true); }}
                                 />
                                 <ActionBtn
-                                  title="View Candidates"
+                                  title={r.status === 'Cancelled' ? 'Cancelled — no candidates can be added' : 'View Candidates'}
                                   icon="ri-team-line"
                                   color="primary"
+                                  disabled={r.status === 'Cancelled'}
                                   onClick={() => navigate(`/hr/recruitment/${r.id}/candidates`)}
                                 />
                                 {/* Two distinct close-out actions —
@@ -1099,8 +1102,15 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
 
   const validate = (): RaiseErrors => {
     const e: RaiseErrors = {};
+    // Only letters, numbers, spaces and basic title punctuation (- . , /) —
+    // mirrors the Recruitment "Job Title" rule so a special-char title is
+    // rejected consistently in both modules.
+    const titleRe = /^[A-Za-z0-9 .,\-\/]+$/;
+    const titleMsg = 'cannot contain special characters — use only letters, numbers, spaces and - . , /';
     if (!title.trim())          e.title          = 'Request title is required';
+    else if (!titleRe.test(title.trim())) e.title = `Request title ${titleMsg}`;
     if (!jobRole.trim())        e.jobRole        = 'Job role is required';
+    else if (!titleRe.test(jobRole.trim())) e.jobRole = `Job role ${titleMsg}`;
     if (!departmentId)          e.department     = 'Department is required';
     // Target Join Date — optional, but if supplied must not be in the
     // past. Backs up the picker's minDate guard (paste / devtools /
@@ -2005,6 +2015,9 @@ function ViewHiringRequestModal({ request, onClose, onReject, onCreate, canCreat
                 </div>
               </div>
             </div>
+            <button type="button" onClick={onClose} aria-label="Close" className="rec-close-btn d-inline-flex align-items-center justify-content-center">
+              <i className="ri-close-line" style={{ fontSize: 17 }} />
+            </button>
           </div>
         </div>
 
@@ -2507,12 +2520,17 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       e.ctcRange = 'CTC range is required';
     } else if (ctc.length > 50) {
       e.ctcRange = 'CTC range cannot exceed 50 characters';
+    } else if (!/^\d+(\.\d+)?(\s*-\s*\d+(\.\d+)?)?$/.test(ctc)) {
+      // Must be a single value or a proper "min-max" range with exactly one
+      // hyphen — rejects multiple hyphens ("10---20"), trailing hyphens and
+      // any stray separators / letters.
+      e.ctcRange = 'Enter a valid CTC range — a number or min-max, e.g. 8 or 8-12';
     } else {
       const nums = ctc.match(/\d+(?:\.\d+)?/g) || [];
-      if (nums.length === 0) {
-        e.ctcRange = 'Enter a valid CTC range (e.g. 8-12)';
-      } else if (nums.some(num => Number(num) > 9999.99)) {
+      if (nums.some(num => Number(num) > 9999.99)) {
         e.ctcRange = 'CTC values cannot exceed 9,999.99 LPA';
+      } else if (nums.length === 2 && Number(nums[0]) > Number(nums[1])) {
+        e.ctcRange = 'CTC range minimum cannot be greater than the maximum';
       }
     }
     if (!priority)               e.priority        = 'Priority is required';
@@ -2530,8 +2548,10 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
     if (startDate && startDate < todayIso) {
       e.startDate = 'Start date cannot be in the past';
     }
-    if (deadline && startDate && deadline < startDate) {
-      e.deadline = 'TAT/Deadline cannot be before the start date';
+    // Deadline must be strictly LATER than the start date — the same day is
+    // not a valid turnaround window, so equal dates are rejected too.
+    if (deadline && startDate && deadline <= startDate) {
+      e.deadline = 'TAT/Deadline must be later than the start date';
     }
     // Require real content, not a single throwaway character ("1").
     const jd = jobDescription.trim();
@@ -2938,15 +2958,21 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
               </Col>
               <Col md={3}>
                 <label className="rec-form-label"><i className="ri-calendar-event-line" />TAT / Deadline<span className="req">*</span></label>
-                {/* Deadline picker floor = start date (or today as a
-                    fallback when start hasn't been picked yet) so the
-                    user can't choose a deadline before the kickoff. */}
+                {/* Deadline picker floor = the DAY AFTER the start date (or
+                    after today when start hasn't been picked yet) so the user
+                    can't choose a deadline before — or the same as — the
+                    kickoff. The deadline must be strictly later than start. */}
                 <MasterDatePicker
                   value={deadline}
                   onChange={(v) => { setDeadline(v); clear('deadline'); }}
                   placeholder="dd-mm-yyyy"
                   invalid={!!errors.deadline}
-                  minDate={startDate || new Date().toISOString().slice(0, 10)}
+                  minDate={(() => {
+                    const floor = startDate || new Date().toISOString().slice(0, 10);
+                    const d = new Date(floor);
+                    d.setDate(d.getDate() + 1);
+                    return d.toISOString().slice(0, 10);
+                  })()}
                 />
                 {errors.deadline && <div className="rec-error"><i className="ri-error-warning-line" />{errors.deadline}</div>}
               </Col>

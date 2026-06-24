@@ -9418,3 +9418,68 @@
 .rec-form-modal-navy .rec-input.has-leading-icon {
   padding-left: 11px !important;
 }
+
+/* Template / document code badge (e.g. "IT-INT-012") — amber pill used in
+   the Send-for-Signing confirmation popup. The light values are the original
+   inline ones; the dark override keeps the amber identity but on a dark-mode
+   compatible translucent fill + readable light text so the badge no longer
+   shows a light-theme background inside the Dark Mode popup. */
+.ep-tpl-code-badge {
+  background: #fef3c7;
+  color: #a16207;
+}
+[data-bs-theme="dark"] .ep-tpl-code-badge,
+[data-layout-mode="dark"] .ep-tpl-code-badge {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fcd34d;
+}
+
+/* ============================================================
+   Recruitment list — mobile / tablet responsive (≤ 767.98px)
+   ------------------------------------------------------------
+   Scoped to .rec-page so the shared header strip (.frm-cstrip)
+   and toolbar styles don't leak into other modules.
+   - Header: title on top, action buttons stack full-width.
+   - Toolbar: status tabs and the search box each take a full
+     row instead of being jammed into 50/50 columns; the four
+     tabs flow 2-per-row.
+   - The list table already lives in .rec-list-scroll
+     (overflow-x:auto) + table-nowrap, so it scrolls sideways
+     as-is — no change needed there.
+   ============================================================ */
+@media (max-width: 767.98px) {
+  /* ── Header strip ── stack the title block above full-width buttons. */
+  .rec-page .frm-cstrip {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  /* The buttons container is the only direct .d-flex child of the strip
+     (the title's inner flex is nested deeper, so `>` leaves it alone). */
+  .rec-page .frm-cstrip > .d-flex {
+    width: 100%;
+  }
+  .rec-page .frm-cstrip .rec-btn-primary,
+  .rec-page .frm-cstrip .rec-btn-teal {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+
+  /* ── Toolbar ── tabs + search each break onto their own full-width row
+     (the row keeps flex-wrap; a 100% basis forces the wrap). !important
+     overrides the inline `flex:1 1 0` set on these in the JSX. */
+  .rec-page .rec-req-filter-row {
+    padding: 12px 14px;
+  }
+  .rec-page .rec-req-filter-row .rec-tab-track,
+  .rec-page .rec-req-filter-row .rec-req-search {
+    flex: 1 1 100% !important;
+    min-width: 0;
+    width: 100%;
+  }
+  /* Four status tabs flow two-per-row instead of four cramped slivers.
+     Overrides the inline `flex:1` on each tab button. */
+  .rec-page .rec-req-filter-row .rec-tab {
+    flex: 1 1 calc(50% - 4px) !important;
+  }
+}

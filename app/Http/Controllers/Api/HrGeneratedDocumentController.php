@@ -144,6 +144,23 @@ class HrGeneratedDocumentController extends Controller
         }
     }
 
+   public function index(Request $request): JsonResponse
+    {
+        $this->authorize($request, 'can_view');
+
+        $q = HrGeneratedDocument::query()->with(self::WITH);
+        $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
+
+        if ($request->filled('employee_id')) {
+            $q->where('employee_id', (int) $request->integer('employee_id'));
+        }
+        if ($request->filled('template_id')) {
+            $q->where('template_id', (int) $request->integer('template_id'));
+        }
+
+        return response()->json($q->orderByDesc('id')->get());
+    }
+
     /* ───── SHOW / DOWNLOAD ───── */
 
     public function show(Request $request, $id)

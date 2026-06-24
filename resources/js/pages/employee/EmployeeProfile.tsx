@@ -11,6 +11,7 @@ import HeaderFooterPanel, {
 } from '../hrms/doc-templates/HeaderFooterPanel';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
+import { draftFilesKey, saveDraftFiles, loadDraftFiles, deleteDraftFiles } from '../../utils/draftFileStore';
 import { type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
 import {
@@ -436,15 +437,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   };
 
   const handleChangePassword = async () => {
+    const adminReset = !isOwnProfile;
+
     // Client-side guards first so the user sees mistakes without a round-trip.
     const errs: Record<string, string> = {};
-    if (!pwCurrent) errs.current_password = 'Current password is required';
+    if (!adminReset && !pwCurrent) errs.current_password = 'Current password is required';
     if (!pwNew) {
       errs.password = 'New password is required';
     } else {
       const failed = validatePwRules(pwNew);
       if (failed.length) errs.password = failed.join(', ');
-      else if (pwNew === pwCurrent) errs.password = 'New password must differ from the current one';
+      else if (!adminReset && pwNew === pwCurrent) errs.password = 'New password must differ from the current one';
     }
     if (!pwConfirm) errs.password_confirmation = 'Please re-enter the new password';
     else if (pwNew !== pwConfirm) errs.password_confirmation = 'Passwords do not match';
@@ -453,12 +456,20 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     setPwSaving(true);
     setPwErrors({});
     try {
-      await api.post('/change-password', {
-        current_password: pwCurrent,
-        password: pwNew,
-        password_confirmation: pwConfirm,
-      });
-      toast.success('Password updated', 'A confirmation email has been sent.');
+      if (adminReset) {
+        await api.post(`/employees/${employeeId}/set-password`, {
+          password: pwNew,
+          password_confirmation: pwConfirm,
+        });
+        toast.success('Password updated', `${employee?.name || 'The employee'}'s login password has been reset. A confirmation email has been sent to them.`);
+      } else {
+        await api.post('/change-password', {
+          current_password: pwCurrent,
+          password: pwNew,
+          password_confirmation: pwConfirm,
+        });
+        toast.success('Password updated', 'A confirmation email has been sent.');
+      }
       setPwOpen(false);
       resetPwForm();
     } catch (err: any) {
@@ -485,10 +496,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     }
   };
 
-  // Attendance regularization modal — opens from the "+ Regularization" button
-  // in the Intraday Punch Timeline card. Lets the user submit a request to
-  // either adjust time entries or exempt the day from penalization.
-  const [regOpen, setRegOpen] = useState(false);
+   const [regOpen, setRegOpen] = useState(false);
   const [regOption, setRegOption] = useState<'adjust' | 'exempt'>('adjust');
   const [regLocations, setRegLocations] = useState<string[]>(['Baner Office']);
   const [regLocationDraft, setRegLocationDraft] = useState('');
@@ -500,8 +508,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [regNote, setRegNote] = useState('');
   const REG_LOCATION_OPTIONS = ['Baner Office', 'Hinjewadi Office', 'Kharadi Office', 'Remote', 'Client Site'];
 
-  // Today's date in "DD MMM YYYY" so the regularization modal shows the
-  // correct selected day on every open instead of a stale hardcoded value.
   const regSelectedDate = new Date()
     .toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
     .replace(/ /g, '-');
@@ -572,7 +578,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [claimCategories, setClaimCategories] = useState<ClaimCategory[]>([]);
   useEffect(() => {
     if (!claimOpen) return;
-    api.get('/master/expense_category')
+    // Use the expense-claims categories endpoint (branch-scoped) rather than
+    // the generic /master endpoint — the latter peer-isolates employees and
+    // hides the branch-level categories HR configured, so the dropdown only
+    // showed a few. This returns every Active category visible to the
+    // employee's branch.
+    api.get('/expense-claims/categories')
       .then((res: any) => {
         const rows = Array.isArray(res?.data) ? res.data : [];
         setClaimCategories(
@@ -593,6 +604,35 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     const num = Number(id);
     return claimCategories.find(c => c.id === num) || null;
   };
+
+  // Currencies pulled from the `currencies` master so the dropdown lists every
+  // Active currency the admin configured (Master > Currencies) — the form
+  // previously hardcoded just INR / USD / EUR, hiding the rest. Value is the
+  // currency code (what the claim stores); label shows the symbol + code.
+  type ClaimCurrency = { code: string; name: string; symbol: string };
+  const [claimCurrencies, setClaimCurrencies] = useState<ClaimCurrency[]>([]);
+  useEffect(() => {
+    if (!claimOpen) return;
+    api.get('/master/currencies')
+      .then((res: any) => {
+        const rows = Array.isArray(res?.data) ? res.data : [];
+        setClaimCurrencies(
+          rows
+            .filter((r: any) => (r.status ?? 'Active') === 'Active')
+            .map((r: any) => ({
+              code:   String(r.code ?? '').trim(),
+              name:   String(r.name ?? '').trim(),
+              symbol: String(r.symbol ?? '').trim(),
+            }))
+            .filter((c: ClaimCurrency) => c.code !== ''),
+        );
+      })
+      .catch(() => setClaimCurrencies([]));
+  }, [claimOpen]);
+  const currencyOptions = claimCurrencies.map(c => ({
+    value: c.code,
+    label: c.symbol ? `${c.symbol} ${c.code}` : c.code,
+  }));
 
   // Multi-draft tab support — every form-render reads/writes the active draft
   // in `claimDrafts`. "Save & Add Another" appends a fresh draft and switches
@@ -723,15 +763,25 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       if (resumeFromDraft && editingDraftId) {
         const entry = expenseDrafts.find(e => e.id === editingDraftId);
         if (entry && entry.drafts.length > 0) {
-          // File objects can't survive JSON serialisation, so attachments
-          // staged before Save Draft are lost — force `files: []` on
-          // every restored draft so we don't end up with `undefined`
-          // (which would crash the file list map).
+          // Start with empty file lists (the JSON had `files: []`); the real
+          // attachments are loaded from IndexedDB just below and patched in.
           restored = entry.drafts.map(p => ({ ...p, files: [] }));
         }
       }
       setClaimDrafts(restored || [blankDraft()]);
       setActiveClaimIdx(0);
+      // Rehydrate attachments persisted in IndexedDB for this draft. Async, so
+      // we patch them onto the just-set drafts once they load.
+      if (resumeFromDraft && editingDraftId && restored) {
+        const key = draftFilesKey(claimDraftKey, editingDraftId);
+        loadDraftFiles<File[][]>(key).then(fileArrs => {
+          if (!Array.isArray(fileArrs)) return;
+          setClaimDrafts(prev => prev.map((d, i) => ({
+            ...d,
+            files: Array.isArray(fileArrs[i]) ? fileArrs[i] : (d.files || []),
+          })));
+        });
+      }
     } else {
       // Modal just closed (or first mount) — refresh the cached meta so
       // the Drafts pill on the table reflects what's actually in storage.
@@ -761,28 +811,38 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         };
         // If we opened via Resume, update that entry in place; otherwise
         // append a fresh one so multiple in-progress drafts coexist.
+        const entryId = editingDraftId || newId;
         const next: AdvanceDraftEntry[] = editingDraftId
           ? advanceDrafts.map(e => e.id === editingDraftId ? { ...e, savedAt, data: payload } : e)
           : [...advanceDrafts, { id: newId, savedAt, data: payload }];
         localStorage.setItem(advanceDraftKey, JSON.stringify(next));
+        // Attachments → IndexedDB (File can't round-trip JSON) so they survive
+        // Save Draft and rehydrate on resume.
+        void saveDraftFiles(draftFilesKey(advanceDraftKey, entryId), advFiles);
         toast.success(
           editingDraftId ? 'Draft updated' : 'Draft saved',
           advFiles.length > 0
-            ? `Form fields saved — you'll need to re-attach ${advFiles.length} file${advFiles.length === 1 ? '' : 's'} on resume.`
+            ? `Saved with ${advFiles.length} attachment${advFiles.length === 1 ? '' : 's'} — they'll be restored when you resume.`
             : 'Your draft is now available in the Drafts tab.',
         );
         setExpenseModuleTab('advance');
       } else {
+        // Field data → localStorage (File can't round-trip JSON). The actual
+        // attachments are persisted separately in IndexedDB keyed per draft,
+        // so they survive Save Draft and rehydrate on resume.
+        const entryId = editingDraftId || newId;
         const serialisable = claimDrafts.map(d => ({ ...d, files: [] }));
         const next: ExpenseDraftEntry[] = editingDraftId
           ? expenseDrafts.map(e => e.id === editingDraftId ? { ...e, savedAt, drafts: serialisable } : e)
           : [...expenseDrafts, { id: newId, savedAt, drafts: serialisable }];
         localStorage.setItem(claimDraftKey, JSON.stringify(next));
+        // One File[] per sub-draft, index-aligned with `serialisable`.
+        void saveDraftFiles(draftFilesKey(claimDraftKey, entryId), claimDrafts.map(d => d.files || []));
         const stagedFiles = claimDrafts.reduce((n, d) => n + (d.files?.length || 0), 0);
         toast.success(
           editingDraftId ? 'Draft updated' : 'Draft saved',
           stagedFiles > 0
-            ? `Form fields saved — you'll need to re-attach ${stagedFiles} file${stagedFiles === 1 ? '' : 's'} on resume.`
+            ? `Saved with ${stagedFiles} attachment${stagedFiles === 1 ? '' : 's'} — they'll be restored when you resume.`
             : 'Your draft is now available in the Drafts tab.',
         );
         setExpenseModuleTab('expense');
@@ -954,6 +1014,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           const next = advanceDrafts.filter(e => e.id !== editingDraftId);
           if (next.length) localStorage.setItem(advanceDraftKey, JSON.stringify(next));
           else             localStorage.removeItem(advanceDraftKey);
+          void deleteDraftFiles(draftFilesKey(advanceDraftKey, editingDraftId));
         } catch { /* swallow */ }
       }
       setEditingDraftId(null);
@@ -1083,6 +1144,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             if (typeof d.advReason          === 'string') setAdvReason(d.advReason);
           }
         }
+        // Rehydrate attachments persisted in IndexedDB for this advance draft.
+        loadDraftFiles<File[]>(draftFilesKey(advanceDraftKey, editingDraftId)).then(files => {
+          if (Array.isArray(files) && files.length) setAdvFiles(files);
+        });
       } catch { /* ignore — leave defaults in place */ }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1579,6 +1644,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           const next = expenseDrafts.filter(e => e.id !== editingDraftId);
           if (next.length) localStorage.setItem(claimDraftKey, JSON.stringify(next));
           else             localStorage.removeItem(claimDraftKey);
+          void deleteDraftFiles(draftFilesKey(claimDraftKey, editingDraftId));
         } catch { /* ignore */ }
       }
       setEditingDraftId(null);
@@ -1888,7 +1954,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           <i className="ri-close-line ep-fs-20" />
         </button>
 
-        <Row className="g-4 align-items-center ep-rel-z2">
+        <Row className="g-4 align-items-center ep-rel-z2 ep-hero-row">
           {/* Avatar */}
           <Col xs="auto">
             {profilePhotoSrc ? (
@@ -1902,8 +1968,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             )}
           </Col>
 
-          {/* Identity */}
-          <Col xs={12} md className="min-w-0">
+          {/* Identity — `col` (no xs=12) so it sits BESIDE the avatar at every
+              breakpoint, including mobile (was xs=12 → wrapped under the photo). */}
+          <Col className="min-w-0">
             <div className="d-flex align-items-center gap-2 mb-1">
               <h2 className="text-white mb-0 fw-bold ep-fs-22 ep-line-115">{employee?.name || employeeId}</h2>
             </div>
@@ -1981,8 +2048,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </div>
           </Col>
 
-          {/* Ring charts — pulled in toward the centre with auto-margin */}
-          <Col xs="auto" className="ms-auto ep-mr-80">
+          {/* Ring charts — pulled in toward the centre with auto-margin.
+              xs=12 so on mobile they drop to their own full-width row below the
+              avatar+identity (centred via .ep-rings-col) instead of crowding
+              the name beside the photo. */}
+          <Col xs={12} md="auto" className="ms-md-auto ep-mr-80 ep-rings-col">
             <div className="d-flex gap-3">
               <div>
                 <div
@@ -2519,8 +2589,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <div className="ep-claim-label">Currency</div>
                     <MasterSelect
                       value={claimCurrency}
-                      placeholder="Select currency"
-                      options={[{ value: 'INR', label: '₹ INR' }, { value: 'USD', label: '$ USD' }, { value: 'EUR', label: '€ EUR' }]}
+                      placeholder={claimCurrencies.length ? 'Select currency' : 'Loading…'}
+                      options={currencyOptions.length ? currencyOptions : [{ value: 'INR', label: '₹ INR' }, { value: 'USD', label: '$ USD' }, { value: 'EUR', label: '€ EUR' }]}
                       onChange={setClaimCurrency}
                     />
                   </Col>
@@ -3055,8 +3125,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               <i className="ri-lock-password-line ep-fs-18" />
             </span>
             <div>
-              <h6 className="mb-0 fw-bold ep-fs-14">Change Password</h6>
-              <small className="text-muted ep-fs-11">Pick a strong, unique password</small>
+              <h6 className="mb-0 fw-bold ep-fs-14">{isOwnProfile ? 'Change Password' : 'Reset Employee Password'}</h6>
+              <small className="text-muted ep-fs-11">
+                {isOwnProfile
+                  ? 'Pick a strong, unique password'
+                  : `Set a new login password for ${employee?.name || 'this employee'}`}
+              </small>
             </div>
           </div>
           <button
@@ -3070,7 +3144,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           </button>
         </div>
         <div className="px-3 py-3">
-          {/* Current Password */}
+          {/* Current Password — only for self-service. An admin resetting
+              another employee's password doesn't know (and shouldn't need)
+              their current one. */}
+          {isOwnProfile && (
           <div className="mb-3">
             <label className="emp-label fw-semibold ep-fs-12">Current Password<span className="text-danger">*</span></label>
             <div className="position-relative">
@@ -3095,6 +3172,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </div>
             {pwErrors.current_password && <small className="text-danger d-block mt-1 ep-fs-11">{pwErrors.current_password}</small>}
           </div>
+          )}
 
           {/* New Password */}
           <div className="mb-3">

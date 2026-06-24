@@ -39,7 +39,6 @@ return new class extends Migration
 
             $table->date('eff_date')->nullable();
             $table->date('end_date')->nullable();
-            $table->unsignedSmallInteger('termination_notice')->nullable();
             $table->boolean('auto_renewal')->default(false);
             $table->string('renewal_type', 16)->nullable();    // manual | auto
 

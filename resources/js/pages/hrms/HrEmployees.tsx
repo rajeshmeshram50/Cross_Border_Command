@@ -8,6 +8,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useConfirm } from '../../contexts/ConfirmContext';
 import api from '../../api';
 import * as XLSX from 'xlsx';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
@@ -71,6 +72,45 @@ const PAY_GROUP_OPTIONS         = ['Default pay group','Senior Pay Group','Inter
 const SALARY_FREQUENCY_OPTIONS  = ['Per annum','Per month','Per hour','Per day'].map(v => ({ value: v, label: v }));
 const SALARY_STRUCTURE_OPTIONS  = ['Range Based','Fixed','Component Based'].map(v => ({ value: v, label: v }));
 const TAX_REGIME_OPTIONS        = ['New Regime (115BAC)','Old Regime'].map(v => ({ value: v, label: v }));
+
+// Detailed salary-breakup component shape — mirrors the JSON stored on the
+// versioned `salary_structures` table ({code,label,amount}) so the wizard
+// persists through the same /salary-structures endpoint the Payroll → Salary
+// Setup tab (SalaryStructureModal) uses. Amounts are MONTHLY.
+interface SalBreakComp { code: string; label: string; amount: number }
+
+// Seed a fresh 50 / 30 / 20 monthly split (Basic / HRA / Special) from a
+// monthly gross — the same default the Salary Setup modal applies when an
+// employee has no structure yet.
+const seedBreakup = (monthlyGross: number): SalBreakComp[] => {
+  const g = Math.max(0, Math.round(monthlyGross));
+  const basic = Math.round(g * 0.5);
+  const hra = Math.round(g * 0.3);
+  const special = Math.max(0, g - basic - hra);
+  return [
+    { code: 'basic',   label: 'Basic Salary',          amount: basic },
+    { code: 'hra',     label: 'House Rent Allowance',   amount: hra },
+    { code: 'special', label: 'Special Allowance',      amount: special },
+  ];
+};
+
+// Per-component validation bounds — kept in lockstep with the
+// /salary-structures backend rules (amount decimal(10,2)-ish cap, label max).
+const MAX_COMP_AMOUNT = 99999999.99;
+const MAX_COMP_LABEL  = 120;
+
+// Stable signature of a breakup (earnings + deductions + statutory toggles)
+// used to detect whether the user actually changed anything before POSTing a
+// new salary-structure version — avoids spamming versions on every Save.
+const breakupSignature = (
+  earnings: SalBreakComp[],
+  deductions: SalBreakComp[],
+  pf: boolean, esi: boolean, pt: boolean,
+): string => JSON.stringify({
+  e: earnings.map(c => [c.code, c.label.trim(), Number(c.amount) || 0]),
+  d: deductions.map(c => [c.code, c.label.trim(), Number(c.amount) || 0]),
+  pf, esi, pt,
+});
 
 // HR → Employee directory page. KPI tiles, tabs, filter row and table follow
 // the same surface/card pattern used on Clients.tsx so the look stays
@@ -409,9 +449,14 @@ export default function HrEmployees() {
   const [mStates, setMStates] = useState<any[]>([]);
   const [mHolidayGroups, setMHolidayGroups] = useState<any[]>([]);
 
-  // Pre-built options derived from the masters above.
+  // Pre-built options derived from the masters above. Only ACTIVE holiday
+  // groups are selectable — Inactive groups must not appear when assigning a
+  // group to an employee. (`status` defaults to Active for legacy rows that
+  // predate the column.)
   const holidayGroupOptions = useMemo(
-    () => mHolidayGroups.map(g => ({ value: String(g.id), label: g.name })),
+    () => mHolidayGroups
+      .filter(g => (g.status ?? 'Active') === 'Active')
+      .map(g => ({ value: String(g.id), label: g.name })),
     [mHolidayGroups],
   );
   const departmentOptions = useMemo(
@@ -522,6 +567,7 @@ export default function HrEmployees() {
   // master/client forms: per-field error map cleared as the user fixes the
   // field, with a summary toast on submit if anything is still invalid.
   const toast = useToast();
+  const confirmDialog = useConfirm();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   type OnbErrors = { name?: string; email?: string; dept?: string; date?: string };
@@ -789,6 +835,18 @@ export default function HrEmployees() {
   // without realising they hadn't actually chosen).
   const [eHolidayList, setEHolidayList]          = useState('');
   const [eAttendanceTracking, setEAttendanceTracking] = useState(true);
+  // Options shown in the Holiday Group dropdown: the active groups, plus — when
+  // EDITING an employee already assigned to a group that has since been set
+  // Inactive — that group too (flagged), so the existing selection isn't
+  // silently cleared. New (Add) employees only ever see active groups.
+  const holidayGroupSelectOptions = useMemo(() => {
+    const opts = [...holidayGroupOptions];
+    if (eHolidayList && !opts.some(o => o.value === String(eHolidayList))) {
+      const g = mHolidayGroups.find(x => String(x.id) === String(eHolidayList));
+      if (g) opts.push({ value: String(g.id), label: `${g.name} (Inactive)` });
+    }
+    return opts;
+  }, [holidayGroupOptions, mHolidayGroups, eHolidayList]);
   const [eShift, setEShift]                      = useState('');
   const [eWeeklyOff, setEWeeklyOff]              = useState('');
   const [eAttendanceNumber, setEAttendanceNumber]= useState('');
@@ -1034,6 +1092,19 @@ export default function HrEmployees() {
   const [eBonusInAnnual, setEBonusInAnnual]      = useState(false);
   const [ePfEligible, setEPfEligible]            = useState(false);
   const [eDetailedBreakup, setEDetailedBreakup]  = useState(false);
+  // Detailed monthly salary breakup — earnings/deductions component lists
+  // persisted to the versioned salary_structures table. Loaded from the
+  // active structure on edit, seeded from annual_salary/12 when first enabled.
+  const [eEarnings, setEEarnings]                = useState<SalBreakComp[]>([]);
+  const [eDeductions, setEDeductions]            = useState<SalBreakComp[]>([]);
+  const [eEsiApplicable, setEEsiApplicable]      = useState(false);
+  const [ePtApplicable, setEPtApplicable]        = useState(true);
+  const [eBreakupLoading, setEBreakupLoading]    = useState(false);
+  // Which employee dbId we've already hydrated the breakup for (guards the
+  // load effect from re-fetching/overwriting in-progress edits) + a baseline
+  // signature so Save only POSTs a new structure version when it changed.
+  const breakupLoadedForRef = useRef<number | 'new' | null>(null);
+  const breakupBaselineRef  = useRef<string | null>(null);
 
   const resetEmpForm = () => {
     setEmpStep(1);
@@ -1073,6 +1144,10 @@ export default function HrEmployees() {
     setEAnnualSalary(''); setESalaryFreq(''); setESalaryFrom('');
     setESalaryStructure(''); setETaxRegime('');
     setEBonusInAnnual(false); setEPfEligible(false); setEDetailedBreakup(false);
+    setEEarnings([]); setEDeductions([]); setEEsiApplicable(false); setEPtApplicable(true);
+    setEBreakupLoading(false);
+    breakupLoadedForRef.current = null;
+    breakupBaselineRef.current = null;
     setEErrors({});
   };
 
@@ -1101,6 +1176,246 @@ export default function HrEmployees() {
   // user saw in the list.
   const editingDbIdRef = useRef<number | null>(null);
   useEffect(() => { editingDbIdRef.current = editingDbId; }, [editingDbId]);
+
+  // Monthly gross implied by the entered salary + frequency. The salary_structures
+  // model is monthly, so an annual figure is divided by 12; "Per month" is taken
+  // as-is. Used to seed the detailed breakup and to annualise the CTC display.
+  const monthlyGrossFromSalary = useCallback((): number => {
+    const amt = Number(eAnnualSalary) || 0;
+    return eSalaryFreq === 'Per month' ? amt : amt / 12;
+  }, [eAnnualSalary, eSalaryFreq]);
+
+  // ── Detailed salary breakup: load (edit) or seed (new) ──
+  // Runs when the user is on Step 4 with "Detailed breakup" enabled. For an
+  // existing employee we pull their active salary_structures row and prefill the
+  // editable component tables; otherwise we seed a 50/30/20 monthly split from
+  // the entered salary. breakupLoadedForRef makes this fire once per target so
+  // re-renders (and the user's own in-progress edits) are never clobbered.
+  useEffect(() => {
+    if (!empOpen || empStep !== 4 || !eDetailedBreakup) return;
+    const target: number | 'new' = editingDbId ?? 'new';
+    if (breakupLoadedForRef.current === target) return;
+    breakupLoadedForRef.current = target;
+
+    const monthlyGross = monthlyGrossFromSalary();
+    const seedFresh = () => {
+      setEEarnings(seedBreakup(monthlyGross));
+      setEDeductions([]);
+      setEEsiApplicable(monthlyGross > 0 && monthlyGross <= 21000);
+      setEPtApplicable(true);
+      breakupBaselineRef.current = null; // no server version yet → treat as dirty
+    };
+
+    if (typeof target === 'number') {
+      setEBreakupLoading(true);
+      api.get('/salary-structures', { params: { employee_id: target, active_only: 1 } })
+        .then(res => {
+          const rows = res.data?.data ?? [];
+          const active = Array.isArray(rows) && rows.length ? rows[0] : null;
+          if (active && Array.isArray(active.earnings) && active.earnings.length) {
+            const earn: SalBreakComp[] = active.earnings.map((c: any) => ({ code: c.code, label: c.label, amount: Number(c.amount) || 0 }));
+            const ded: SalBreakComp[] = (active.deductions ?? []).map((c: any) => ({ code: c.code, label: c.label, amount: Number(c.amount) || 0 }));
+            const pf = !!active.pf_applicable, esi = !!active.esi_applicable, pt = active.pt_applicable !== false;
+            setEEarnings(earn);
+            setEDeductions(ded);
+            setEPfEligible(pf);
+            setEEsiApplicable(esi);
+            setEPtApplicable(pt);
+            breakupBaselineRef.current = breakupSignature(earn, ded, pf, esi, pt);
+          } else {
+            seedFresh();
+          }
+        })
+        .catch(() => seedFresh())
+        .finally(() => setEBreakupLoading(false));
+    } else {
+      seedFresh();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [empOpen, empStep, eDetailedBreakup, editingDbId]);
+
+  // Running monthly totals for the detailed breakup sheet.
+  const breakupGross = useMemo(() => eEarnings.reduce((s, c) => s + (Number(c.amount) || 0), 0), [eEarnings]);
+  const breakupDed   = useMemo(() => eDeductions.reduce((s, c) => s + (Number(c.amount) || 0), 0), [eDeductions]);
+
+  // Full validation of the detailed breakup. Returns a per-row error map for
+  // earnings + deductions (keyed by index) plus a form-level message for
+  // whole-sheet problems. A completely blank row is treated as "not yet
+  // filled" (it's stripped on save) so freshly-added empty rows don't flash
+  // red; only partially-filled / out-of-bounds / duplicate rows are flagged.
+  const breakupErrors = useMemo(() => {
+    const earnings: Record<number, string> = {};
+    const deductions: Record<number, string> = {};
+    let form = '';
+    if (!eDetailedBreakup) return { earnings, deductions, form };
+
+    const checkRow = (c: SalBreakComp, treatEmptyAsBlank: boolean): string | null => {
+      const label = c.label.trim();
+      const amt = Number(c.amount);
+      const blank = !label && (!Number.isFinite(amt) || amt === 0);
+      if (blank && treatEmptyAsBlank) return null; // stripped on save → ignore
+      if (!label) return 'Component name is required';
+      if (label.length > MAX_COMP_LABEL) return `Name must be ≤ ${MAX_COMP_LABEL} characters`;
+      if (!Number.isFinite(amt) || amt <= 0) return 'Amount must be greater than 0';
+      if (amt > MAX_COMP_AMOUNT) return 'Amount is too large';
+      return null;
+    };
+
+    const flagDuplicates = (list: SalBreakComp[], errs: Record<number, string>) => {
+      const seen = new Map<string, number>();
+      list.forEach((c, i) => {
+        if (errs[i]) return;
+        const key = c.label.trim().toLowerCase();
+        if (!key) return;
+        if (seen.has(key)) errs[i] = 'Duplicate component name';
+        else seen.set(key, i);
+      });
+    };
+
+    eEarnings.forEach((c, i) => { const er = checkRow(c, true); if (er) earnings[i] = er; });
+    eDeductions.forEach((c, i) => { const er = checkRow(c, true); if (er) deductions[i] = er; });
+    flagDuplicates(eEarnings, earnings);
+    flagDuplicates(eDeductions, deductions);
+
+    const hasValidEarning = eEarnings.some(c => c.label.trim() && Number(c.amount) > 0);
+    if (!hasValidEarning || breakupGross <= 0) {
+      form = 'Add at least one earning component with a positive amount';
+    } else if (breakupDed > breakupGross) {
+      form = 'Total deductions cannot exceed the monthly gross';
+    }
+    return { earnings, deductions, form };
+  }, [eDetailedBreakup, eEarnings, eDeductions, breakupGross, breakupDed]);
+
+  // Component-table row mutators shared by the Earnings + Deductions lists.
+  const updateBreakRow = (which: 'earn' | 'ded', i: number, field: 'label' | 'amount', value: string) => {
+    const list = which === 'earn' ? eEarnings : eDeductions;
+    const setList = which === 'earn' ? setEEarnings : setEDeductions;
+    const next = [...list];
+    if (field === 'amount') {
+      // Salary components are never negative — block a negative / non-numeric
+      // keystroke outright (the value stays unchanged) rather than storing it
+      // and flagging later. Empty maps to 0.
+      if (value === '') {
+        next[i] = { ...next[i], amount: 0 };
+      } else {
+        const n = Number(value);
+        if (!Number.isFinite(n) || n < 0) return;
+        next[i] = { ...next[i], amount: n };
+      }
+    } else {
+      next[i] = { ...next[i], label: value };
+    }
+    setList(next);
+    clearEErr('salary_breakup');
+  };
+  const addBreakRow = (which: 'earn' | 'ded') => {
+    if (which === 'earn') setEEarnings([...eEarnings, { code: `comp_${eEarnings.length + 1}`, label: '', amount: 0 }]);
+    else setEDeductions([...eDeductions, { code: `ded_${eDeductions.length + 1}`, label: '', amount: 0 }]);
+  };
+  // Confirm before dropping a component — routes through the app's themed
+  // confirm dialog (SweetAlert-style, renders above the wizard modal). The
+  // removal only persists when the employee is saved, so the copy says so.
+  const removeBreakRow = async (which: 'earn' | 'ded', i: number) => {
+    const list = which === 'earn' ? eEarnings : eDeductions;
+    const name = list[i]?.label?.trim() || 'this component';
+    const ok = await confirmDialog({
+      title: 'Remove component?',
+      message: <>Remove <strong>{name}</strong> from the salary breakup? It’s applied when you save the employee.</>,
+      tone: 'danger',
+      confirmLabel: 'Remove',
+      cancelLabel: 'Cancel',
+      icon: 'delete-bin-line',
+    });
+    if (!ok) return;
+    if (which === 'earn') setEEarnings(eEarnings.filter((_, idx) => idx !== i));
+    else setEDeductions(eDeductions.filter((_, idx) => idx !== i));
+    clearEErr('salary_breakup');
+  };
+
+  // Editable component table (Earnings / Deductions) for the detailed breakup
+  // sheet. Mirrors the layout of SalaryStructureModal so the wizard and the
+  // Payroll → Salary Setup modal read identically.
+  const renderBreakTable = (which: 'earn' | 'ded', accent: string, heading: string) => {
+    const list = which === 'earn' ? eEarnings : eDeductions;
+    const errs = which === 'earn' ? breakupErrors.earnings : breakupErrors.deductions;
+    return (
+      <div>
+        <div className="d-flex align-items-center justify-content-between mb-2">
+          <span className="fw-bold text-uppercase" style={{ fontSize: 11, letterSpacing: '0.06em', color: accent }}>{heading}</span>
+          <button type="button" className="btn btn-sm" style={{ fontSize: 11, color: accent, border: `1px solid ${accent}40`, borderRadius: 8, padding: '2px 10px' }}
+            onClick={() => addBreakRow(which)}>
+            <i className="ri-add-line" /> Add
+          </button>
+        </div>
+        {list.length === 0 && <div className="text-muted mb-2" style={{ fontSize: 12 }}>No components.</div>}
+        {list.map((c, i) => {
+          const rowErr = errs[i];
+          return (
+            <div key={i} className="mb-2">
+              <div className="d-flex align-items-center gap-2">
+                <input
+                  className={`form-control form-control-sm${rowErr ? ' is-invalid' : ''}`}
+                  style={{ flex: 2 }}
+                  placeholder="Component name"
+                  maxLength={MAX_COMP_LABEL}
+                  value={c.label}
+                  onChange={e => updateBreakRow(which, i, 'label', e.target.value)}
+                />
+                <div className="d-flex align-items-center" style={{ flex: 1, position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: 8, fontSize: 12, color: 'var(--vz-secondary-color)' }}>₹</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={MAX_COMP_AMOUNT}
+                    step="0.01"
+                    inputMode="decimal"
+                    className={`form-control form-control-sm${rowErr ? ' is-invalid' : ''}`}
+                    style={{ paddingLeft: 18, textAlign: 'right' }}
+                    value={c.amount}
+                    onChange={e => updateBreakRow(which, i, 'amount', e.target.value)}
+                  />
+                </div>
+                <button type="button" className="btn btn-sm" style={{ color: '#dc2626', padding: '2px 6px' }}
+                  onClick={() => removeBreakRow(which, i)} title="Remove">
+                  <i className="ri-delete-bin-line" />
+                </button>
+              </div>
+              {rowErr && <small className="emp-err d-block mt-1">{rowErr}</small>}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // Persist the detailed monthly breakup to the versioned salary_structures
+  // table — only when the toggle is on AND the components changed since they
+  // were loaded (breakupBaselineRef), so re-saving an unchanged employee won't
+  // spawn a redundant structure version. The /salary-structures endpoint
+  // supersedes the prior active row and recomputes any draft payslips.
+  const persistBreakup = async (empId: number): Promise<void> => {
+    if (!eDetailedBreakup) return;
+    const earn = eEarnings
+      .filter(c => c.label.trim() && Number(c.amount) >= 0)
+      .map((c, i) => ({ code: (c.code || `comp_${i + 1}`).trim(), label: c.label.trim(), amount: Number(c.amount) || 0 }));
+    if (!earn.length) return; // validateStep4 blocks a payroll-enabled empty breakup
+    const ded = eDeductions
+      .filter(c => c.label.trim())
+      .map((c, i) => ({ code: (c.code || `ded_${i + 1}`).trim(), label: c.label.trim(), amount: Number(c.amount) || 0 }));
+    const sig = breakupSignature(earn, ded, ePfEligible, eEsiApplicable, ePtApplicable);
+    if (breakupBaselineRef.current === sig) return; // unchanged → no new version
+
+    await api.post('/salary-structures', {
+      employee_id: empId,
+      effective_from: eSalaryFrom || new Date().toISOString().slice(0, 10),
+      earnings: earn,
+      deductions: ded,
+      pf_applicable: ePfEligible,
+      esi_applicable: eEsiApplicable,
+      pt_applicable: ePtApplicable,
+    });
+    breakupBaselineRef.current = sig;
+  };
 
   // Token used to ignore stale uniqueness-check responses if the user
   // edits the mobile field again before the previous request returns.
@@ -1704,8 +2019,21 @@ export default function HrEmployees() {
        * instead of silently saving an unrealistic future date. */
       e.salary_effective_from = `Salary effective date must be within 6 months of joining (on or before ${salaryEffectiveCap})`;
     }
+    // Detailed breakup — surface per-row problems first (the row inputs go
+    // red), falling back to the whole-sheet message (no earnings / deductions
+    // exceed gross). Either way Step 4 carries a salary_breakup error so submit
+    // jumps back here.
+    if (eDetailedBreakup) {
+      const hasRowErrors = Object.keys(breakupErrors.earnings).length > 0
+        || Object.keys(breakupErrors.deductions).length > 0;
+      if (hasRowErrors) {
+        e.salary_breakup = 'Fix the highlighted salary components';
+      } else if (breakupErrors.form) {
+        e.salary_breakup = breakupErrors.form;
+      }
+    }
     return e;
-  }, [eEnablePayroll, eAnnualSalary, eSalaryFreq, eSalaryFrom, eJoinDate, salaryEffectiveCap]);
+  }, [eEnablePayroll, eAnnualSalary, eSalaryFreq, eSalaryFrom, eJoinDate, salaryEffectiveCap, eDetailedBreakup, breakupErrors]);
 
   // First step that contains any of the given error keys. Used to jump-back
   // when a deeper step's submit surfaces a problem in an earlier step.
@@ -1716,7 +2044,7 @@ export default function HrEmployees() {
       { step: 1, keys: new Set(['work_country_id','first_name','middle_name','last_name','display_name','actual_name','gender','date_of_birth','nationality_country_id','email','mobile','address_line1','city','country_id','state_id','pincode']) },
       { step: 2, keys: new Set(['date_of_joining','department_id','designation_id','primary_role_id','legal_entity_id','probation_policy','notice_period']) },
       { step: 3, keys: new Set(['leave_plan','holiday_list','shift','weekly_off','time_tracking','penalization_policy','expense_policy','doc_aadhaar','doc_pan','laptop_master_asset_id','mobile_master_asset_id']) },
-      { step: 4, keys: new Set(['annual_salary','salary_frequency','salary_effective_from']) },
+      { step: 4, keys: new Set(['annual_salary','salary_frequency','salary_effective_from','salary_breakup']) },
     ];
     for (const s of STEP_KEYS) {
       if (k.some(x => s.keys.has(x))) return s.step;
@@ -2037,6 +2365,12 @@ export default function HrEmployees() {
           leavePlansApi.assignEmployees(planId, [finalEmpId])
             .catch(err => console.warn('[HrEmployees] leave plan assign failed', err));
         }
+      }
+      // Persist the detailed salary breakup as a salary_structures version.
+      // Awaited (not fire-and-forget) so a failure keeps the modal open and is
+      // surfaced — this is core compensation data, not a best-effort mirror.
+      if (finalEmpId) {
+        await persistBreakup(finalEmpId);
       }
       // Same fire-and-forget treatment as persistCurrentStep — the modal
       // closes immediately and the table refreshes in the background, so
@@ -4901,7 +5235,7 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Holiday List (Group)<span className="req">*</span></label>
-                      <MasterSelect value={eHolidayList} onChange={(v) => { setEHolidayList(v); clearEErr('holiday_list'); }} options={holidayGroupOptions} placeholder={holidayGroupOptions.length ? 'Select holiday group' : 'No groups — create in HR › Holiday › Groups'} invalid={!!eErrors.holiday_list} />
+                      <MasterSelect value={eHolidayList} onChange={(v) => { setEHolidayList(v); clearEErr('holiday_list'); }} options={holidayGroupSelectOptions} placeholder={holidayGroupOptions.length ? 'Select holiday group' : 'No groups — create in HR › Holiday › Groups'} invalid={!!eErrors.holiday_list} />
                       {eErrors.holiday_list && <small className="emp-err">{eErrors.holiday_list}</small>}
                     </Col>
                     <Col md={6}>
@@ -5368,33 +5702,92 @@ export default function HrEmployees() {
                   <div className="text-muted mb-3" style={{ fontSize: 13 }}>
                     {eSalaryFrom ? eSalaryFrom : '—'}
                   </div>
-                  <div
-                    className="emp-ctc-card d-flex align-items-center justify-content-between flex-wrap"
-                    style={{
-                      borderRadius: 10,
-                      padding: '14px 16px',
-                      gap: 12,
-                    }}
-                  >
-                    <div className="text-center" style={{ flex: 1 }}>
-                      <div className="emp-label mb-1">Regular Salary</div>
-                      <div className="emp-ctc-num" style={{ fontSize: 18, fontWeight: 800 }}>
-                        INR {Number(eAnnualSalary || 0).toLocaleString('en-IN')}
+
+                  {!eDetailedBreakup ? (
+                    /* Simple view — Regular + Bonus = Total CTC (annual figures). */
+                    <div
+                      className="emp-ctc-card d-flex align-items-center justify-content-between flex-wrap"
+                      style={{
+                        borderRadius: 10,
+                        padding: '14px 16px',
+                        gap: 12,
+                      }}
+                    >
+                      <div className="text-center" style={{ flex: 1 }}>
+                        <div className="emp-label mb-1">Regular Salary</div>
+                        <div className="emp-ctc-num" style={{ fontSize: 18, fontWeight: 800 }}>
+                          INR {Number(eAnnualSalary || 0).toLocaleString('en-IN')}
+                        </div>
+                      </div>
+                      <div className="emp-ctc-plus" style={{ fontSize: 18 }}>+</div>
+                      <div className="text-center" style={{ flex: 1 }}>
+                        <div className="emp-label mb-1">Bonus</div>
+                        <div className="emp-ctc-num" style={{ fontSize: 18, fontWeight: 800 }}>INR 0</div>
+                      </div>
+                      <div className="emp-ctc-plus" style={{ fontSize: 18 }}>=</div>
+                      <div className="text-center emp-ctc-total" style={{ flex: 1, borderRadius: 8, padding: '6px 8px' }}>
+                        <div className="emp-label mb-1">Total CTC</div>
+                        <div className="emp-ctc-num" style={{ fontSize: 18, fontWeight: 800 }}>
+                          INR {Number(eAnnualSalary || 0).toLocaleString('en-IN')}
+                        </div>
                       </div>
                     </div>
-                    <div className="emp-ctc-plus" style={{ fontSize: 18 }}>+</div>
-                    <div className="text-center" style={{ flex: 1 }}>
-                      <div className="emp-label mb-1">Bonus</div>
-                      <div className="emp-ctc-num" style={{ fontSize: 18, fontWeight: 800 }}>INR 0</div>
+                  ) : eBreakupLoading ? (
+                    <div className="text-center py-4 text-muted" style={{ fontSize: 13 }}>
+                      <i className="ri-loader-4-line emp-spin" /> Loading breakup…
                     </div>
-                    <div className="emp-ctc-plus" style={{ fontSize: 18 }}>=</div>
-                    <div className="text-center emp-ctc-total" style={{ flex: 1, borderRadius: 8, padding: '6px 8px' }}>
-                      <div className="emp-label mb-1">Total CTC</div>
-                      <div className="emp-ctc-num" style={{ fontSize: 18, fontWeight: 800 }}>
-                        INR {Number(eAnnualSalary || 0).toLocaleString('en-IN')}
+                  ) : (
+                    /* Detailed view — editable monthly earnings + deductions,
+                       persisted as a versioned salary_structures row on Save. */
+                    <>
+                      <div className="text-muted mb-3" style={{ fontSize: 12 }}>
+                        Monthly component breakup. Saved as the employee's active salary
+                        structure — payroll runs read these figures.
                       </div>
-                    </div>
-                  </div>
+                      <div className="d-flex align-items-center gap-3 flex-wrap mb-3">
+                        <label className="d-flex align-items-center gap-1 mb-0" style={{ fontSize: 12.5, cursor: 'pointer' }}>
+                          <input type="checkbox" checked={ePfEligible} onChange={e => setEPfEligible(e.target.checked)} /> PF (12%)
+                        </label>
+                        <label className="d-flex align-items-center gap-1 mb-0" style={{ fontSize: 12.5, cursor: 'pointer' }}>
+                          <input type="checkbox" checked={eEsiApplicable} onChange={e => setEEsiApplicable(e.target.checked)} /> ESI
+                        </label>
+                        <label className="d-flex align-items-center gap-1 mb-0" style={{ fontSize: 12.5, cursor: 'pointer' }}>
+                          <input type="checkbox" checked={ePtApplicable} onChange={e => setEPtApplicable(e.target.checked)} /> Professional Tax
+                        </label>
+                      </div>
+                      <Row className="g-4">
+                        <Col md={6}>{renderBreakTable('earn', '#108548', 'Earnings')}</Col>
+                        <Col md={6}>{renderBreakTable('ded', '#b91c1c', 'Fixed Deductions (optional)')}</Col>
+                      </Row>
+
+                      {/* Totals — monthly gross + net, with annualised CTC. */}
+                      <div className="d-flex align-items-center justify-content-between mt-3 p-2 px-3"
+                        style={{ background: 'var(--vz-secondary-bg)', borderRadius: 10, border: '1px solid var(--vz-border-color)' }}>
+                        <div>
+                          <span className="fw-semibold" style={{ fontSize: 13 }}>Monthly Gross (CTC)</span>
+                          {breakupDed > 0 && (
+                            <div className="text-muted" style={{ fontSize: 11.5 }}>
+                              Net after fixed deductions: ₹{(breakupGross - breakupDed).toLocaleString('en-IN')}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-end">
+                          <div className="fw-bold" style={{ fontSize: 18, color: '#5a3fd1' }}>
+                            ₹{breakupGross.toLocaleString('en-IN')}
+                          </div>
+                          <div className="text-muted" style={{ fontSize: 11.5 }}>
+                            ≈ ₹{Math.round(breakupGross * 12).toLocaleString('en-IN')} / year
+                          </div>
+                        </div>
+                      </div>
+                      {(eErrors.salary_breakup || breakupErrors.form) && (
+                        <small className="emp-err d-block mt-2">{eErrors.salary_breakup || breakupErrors.form}</small>
+                      )}
+                      <div className="text-muted mt-2" style={{ fontSize: 11 }}>
+                        PF / ESI / PT / LOP are computed at payroll run-time.
+                      </div>
+                    </>
+                  )}
                 </div>
               </>
             )}
