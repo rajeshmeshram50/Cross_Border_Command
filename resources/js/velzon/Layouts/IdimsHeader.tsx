@@ -1268,7 +1268,18 @@ const IDIMS_CSS = `
 .idims-mob-item .idims-ico { display: flex; color: #8B5CF6; }
 .idims-mob-label { flex: 1; }
 .idims-mob-chev { display: flex; transition: transform .18s; opacity: .5; }
-.idims-mob-item.open .idims-mob-chev { transform<|fim_middle|>
+.idims-mob-item.open .idims-mob-chev { transform: rotate(180deg); }
+
+/* Expanded sub-menu inside a mobile group — indented, left-bordered column of
+   stacked leaf buttons grouped under small section labels. (These base rules
+   were lost to a bad autocomplete; without them the leaves rendered as inline
+   buttons and ran together, e.g. "RecruitmentEmployeeEmployee Onboarding".) */
+.idims-mob-sub { display: flex; flex-direction: column; margin: 2px 0 6px 22px; padding-left: 12px; border-left: 2px solid #EDE9FE; }
+.idims-mob-subgroup { display: flex; flex-direction: column; }
+.idims-mob-subgroup + .idims-mob-subgroup { margin-top: 4px; }
+.idims-mob-sub-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: #8B5CF6; padding: 8px 10px 4px; }
+.idims-mob-sub-item { display: block; width: 100%; text-align: left; padding: 9px 12px; border: none; background: none; font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: #475569; cursor: pointer; border-radius: 9px; }
+.idims-mob-sub-item:hover { background: #F5F3FF; color: #6D28D9; }
 
 .idims-dark .idims-mobile-panel { background: #171A23; border-bottom-color: #262B38; }
 .idims-dark .idims-mob-item { color: #E5E7EB; }
@@ -1285,15 +1296,10 @@ const IDIMS_CSS = `
    ───────────────────────────────────────────────────────────────────────── */
 
 /* Laptop: keep the two-row layout but tighten the top row so nothing clips. */
-@media (max-width: 1280px) {
+@media (min-width: 1025px) and (max-width: 1280px) {
   .idims-search { width: 300px; }
   .idims-branch-btn { width: auto; min-width: 0; max-width: 230px; }
   .idims-nav-right { gap: 9px; }
-}
-@media (max-width: 1120px) {
-  .idims-search { width: 240px; }
-  .idims-theme-switch-label { display: none; }
-  .idims-theme-switch { padding: 4px 8px; }
 }
 
 /* Tablet + phone share the collapse to a hamburger-driven single bar. */
@@ -1322,26 +1328,33 @@ const IDIMS_CSS = `
    the header becomes one clean row (logo · hamburger · icons · profile).
    Branch switching stays reachable on tablet/desktop; search via the menu. */
 @media (max-width: 640px) {
-  .idims-nav { padding: 9px 12px; gap: 8px; align-items: center; flex-wrap: nowrap; }
+  .idims-nav { padding: 8px 10px; gap: 6px; align-items: center; flex-wrap: nowrap; }
+  .idims-logo-full { height: 30px; }
   .idims-search { display: none; }
   .idims-branch-wrap { display: none; }
   .idims-theme-switch { display: none; }
   .idims-fs-btn { display: none; }
   /* One tidy single row: [logo] ............ [☰ · icons · profile].
      nowrap keeps the icons from dropping to a second line; the auto-margin on
-     the hamburger pushes the whole right cluster to the right edge. */
-  .idims-row-top { gap: 8px; flex-wrap: nowrap; }
-  .idims-hamburger { margin-left: auto; flex-shrink: 0; }
-  .idims-nav-right { margin-left: 6px; flex-shrink: 0; }
-  .idims-actions { gap: 2px; }
-  .idims-action-btn { width: 36px; height: 36px; }
+     the hamburger pushes the whole right cluster to the right edge. Everything
+     in the right cluster is shrunk so all icons + the profile stay on-screen. */
+  .idims-row-top { gap: 6px; flex-wrap: nowrap; }
+  .idims-hamburger { margin-left: auto; flex-shrink: 0; width: 32px; height: 32px; }
+  .idims-hamburger svg { width: 18px; height: 18px; }
+  .idims-nav-right { margin-left: 4px; gap: 4px; flex-shrink: 0; }
+  .idims-actions { gap: 1px; }
+  .idims-action-btn { width: 30px; height: 30px; }
+  .idims-action-btn svg { width: 16px; height: 16px; }
   .idims-action-sep { display: none; }
+  .idims-profile-icon { width: 32px; height: 32px; }
+  .idims-online-dot { width: 8px; height: 8px; border-width: 2px; }
   .idims-profile-panel { width: min(290px, calc(100vw - 24px)); }
 }
 @media (max-width: 380px) {
-  .idims-logo-full { height: 32px; }
+  .idims-logo-full { height: 28px; }
   .idims-logo-pill { padding: 4px 9px; }
-  .idims-action-btn { width: 33px; height: 33px; }
-  .idims-action-btn svg { width: 17px; height: 17px; }
+  .idims-action-btn { width: 28px; height: 28px; }
+  .idims-action-btn svg { width: 15px; height: 15px; }
+  .idims-profile-icon { width: 30px; height: 30px; }
 }
 `;

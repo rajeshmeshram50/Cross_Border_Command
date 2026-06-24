@@ -355,6 +355,7 @@ export default function SalesLeadAckMaster() {
               across the project, instead of the violet gradient
               hero used elsewhere on Sales). ── */}
       <div className="lam-hero">
+        <span className="lam-hero__accent" />
         <div className="lam-hero-icon">
           <i className="ri-checkbox-circle-line" />
         </div>
@@ -758,15 +759,18 @@ const SCOPED_CSS = `
 .lam-root {
   font-family: var(--font-sans);
   background: linear-gradient(180deg, #faf7ff 0%, #f5f3ff 100%);
-  padding: 14px 18px 22px;
-  margin: -1rem -0.75rem;
+  /* Sit flush at the container gutter (no horizontal break-out / own side
+     padding) so the left/right margin matches the Customer & Consignee pages.
+     Top break-out is kept so the fixed-height table layout still fills. */
+  padding: 14px 0 22px;
+  margin: -1rem 0 0;
   /* Fixed available height (viewport minus the top header + horizontal menu)
      so the table card fills the screen, the table scrolls INSIDE it, and the
      pagination stays pinned at the bottom — no big empty area below the card,
      no page scroll. */
   height: calc(100vh - 130px);
   overflow: hidden;
-  display: flex; flex-direction: column; gap: 8px;
+  display: flex; flex-direction: column; gap: 16px;
   color: #111827;
   font-size: 13.5px;
 }
@@ -824,6 +828,16 @@ const SCOPED_CSS = `
   border-radius: 16px 16px 0 0;
 }
 .lam-hero > * { position: relative; z-index: 1; }
+/* Left accent strip — same 4px violet gradient bar the Customer & Consignee
+   hero strips carry, so all three top containers read as one design family.
+   Declared after the .lam-hero > * rule so its absolute position + z-index win. */
+.lam-hero__accent {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
+  border-radius: 16px 0 0 16px;
+  z-index: 2;
+}
 .lam-hero-icon {
   width: 38px; height: 38px; border-radius: 12px;
   background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%);
@@ -923,54 +937,56 @@ const SCOPED_CSS = `
 /* ─── Tabs + search row — segmented pill container with all three
    tabs inside. Active tab paints as a violet gradient pill within
    the white shell; inactive tabs stay flat with a soft count chip. */
-.lam-tabs-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.lam-tabs-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 /* Figma tabs: standalone pills (no shared shell) — inactive read as light
    outlined pills, the active tab is a solid violet gradient pill. */
 /* Figma tabs: a single segmented pill container (soft violet shell) with
    the tabs inside it — inactive read as flat grey text, the active tab is a
    solid violet gradient pill within the shell. */
 .lam-tabs {
+  /* Mirrors the Customer .smc-pill-group — glassy white shell with a violet
+     border, so the Lead Ack tabs read identically to the Customer tabs. */
   display: inline-flex; align-items: center; gap: 2px;
-  /* Figma: a clean, near-white container — light fill + a thin subtle
-     border, no heavy lavender gradient. */
-  background: #f7f5fe;
-  border: 1px solid #ece6fb;
+  height: 50px;
+  background: rgba(255, 255, 255, .5);
+  border: 1.5px solid #c4b5fd;
   border-radius: 12px;
   padding: 4px;
-  box-shadow: 0 1px 3px rgba(124,58,237,.06);
+  flex-shrink: 0;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 2px 8px rgba(109, 40, 217, .1);
   overflow-x: auto;
   scrollbar-width: none;
 }
 .lam-tabs::-webkit-scrollbar { display: none; }
 .lam-tab {
+  /* Mirrors the Customer .smc-pill. */
   flex: 0 0 auto;
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 5px 14px;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 0 16px; height: 34px;
   background: transparent;
-  border: none;
-  border-radius: 7px;
-  color: #64748b;
+  border: 0;
+  border-radius: 9px;
+  color: #6d28d9;
   box-shadow: none;
-  font-family: inherit; font-size: 11.5px; font-weight: 600;
+  font-family: inherit; font-size: 12.5px; font-weight: 600;
   cursor: pointer; white-space: nowrap;
-  transition: color .18s ease, background .18s ease, box-shadow .22s ease;
+  transition: all .18s ease;
 }
-.lam-tab-icon { font-size: 15px; opacity: 0.85; }
-.lam-tab:hover:not(.is-active) { color: #7c3aed; background: rgba(124,58,237,.10); }
+.lam-tab-icon { font-size: 14px; opacity: 0.85; }
+.lam-tab:hover:not(.is-active) { color: #5b21b6; background: rgba(124,58,237,.08); }
 .lam-tab.is-active {
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
   border-color: transparent;
   color: #fff;
-  box-shadow: 0 2px 8px rgba(139,92,246,.38);
-  transition: background .18s ease, color .18s ease, box-shadow .18s ease;
+  box-shadow: 0 3px 10px rgba(124,58,237,0.30);
 }
-/* Hovering the selected tab fades it to a faint glossy lavender (matches the
-   reference): light gradient + violet text + soft sheen, then it settles back
-   to the solid violet pill on mouse-out. */
+/* Selected tab stays the solid violet pill on hover (same as the Customer
+   tabs — no fade-out). */
 .lam-tab.is-active:hover {
-  background: linear-gradient(100deg, #f5f3ff 0%, #ede9fe 55%, #ddd6fe 100%);
-  color: #7c3aed;
-  box-shadow: 0 2px 10px rgba(139,92,246,.18), 0 1px 0 rgba(255,255,255,.7) inset;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(124,58,237,0.30);
 }
 .lam-tab.is-active .lam-tab-icon { opacity: 1; }
 .lam-tab-count {
@@ -996,7 +1012,7 @@ const SCOPED_CSS = `
   border: 1px solid var(--vz-border-color, #e2e8f0);
   border-radius: 8px;
   padding: 6px 14px;
-  flex: 1 1 320px; max-width: 380px; min-width: 220px;
+  flex: 1 1 320px; min-width: 220px;
   transition: border-color .15s, box-shadow .15s;
 }
 .lam-search:hover { border-color: #cbd5e1; }

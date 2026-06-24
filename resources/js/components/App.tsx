@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext } from 'react';
+import { useState, useEffect, createContext, useContext, lazy, Suspense } from 'react';
 import api from '../api';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
 import { Provider as ReduxProvider } from 'react-redux';
@@ -46,8 +46,10 @@ import ClientPayments from '../pages/client/ClientPayments';
 import ClientSettings from '../pages/client/ClientSettings';
 import MasterDashboard from '../pages/MasterDashboard';
 import MasterPage from '../pages/master/MasterPage';
-import SalesCustomers from '../pages/sales/SalesCustomers';
-import SalesConsignee from '../pages/sales/SalesConsignee';
+// Route-level code-split: each page (plus its lazy-loaded modals) ships as its
+// own chunk, kept out of the main app bundle. Rendered behind <Suspense> below.
+const SalesCustomers = lazy(() => import('../pages/sales/SalesCustomers'));
+const SalesConsignee = lazy(() => import('../pages/sales/SalesConsignee'));
 import SalesLeadAckMaster from '../pages/sales/SalesLeadAckMaster';
 import SalesLeadWorksheet from '../pages/sales/SalesLeadWorksheet';
 import LeadDistributionPage from '../pages/sales/AssignedLeadsModal';
@@ -724,8 +726,8 @@ function DashboardRoutes({ user }: { user: any }) {
                   the catch-all /master/:slug so it takes priority. */}
               <Route path="/master/segments" element={<ClmSegmentPage />} />
               <Route path="/master/:slug" element={<MasterPage />} />
-              <Route path="/sales/customers" element={<SalesCustomers />} />
-              <Route path="/sales/consignee" element={<SalesConsignee />} />
+              <Route path="/sales/customers" element={<Suspense fallback={null}><SalesCustomers /></Suspense>} />
+              <Route path="/sales/consignee" element={<Suspense fallback={null}><SalesConsignee /></Suspense>} />
               <Route path="/sales/lead-ack-master" element={<SalesLeadAckMaster />} />
               <Route path="/sales/lead-worksheet" element={<SalesLeadWorksheet />} />
               <Route path="/sales/lead-distribution" element={<LeadDistributionPage />} />
