@@ -89,7 +89,11 @@ import ClmAgreementsSentPage from '../pages/clm/operations/ClmAgreementsSentPage
 import ClmAgreementsToApprovePage from '../pages/clm/operations/ClmAgreementsToApprovePage';
 import HrDashboard from '../pages/hrms/HrDashboard';
 import HrOverview from '../pages/hrms/HrOverview';
-import HrEmployees from '../pages/hrms/HrEmployees';
+// Lazy — this large list page statically imports VaultModal from the
+// employee-onboarding module, so keeping it eager would also drag the whole
+// onboarding page into the main bundle. Splitting both lets that shared code
+// live in its own chunk, out of the initial download.
+const HrEmployees = lazy(() => import('../pages/hrms/HrEmployees'));
 const HrRecruitment = lazy(() => import('../pages/recruitment/HrRecruitment'));
 const HrCandidates = lazy(() => import('../pages/recruitment/HrCandidates'));
 import HrExitManagement from '../pages/hrms/HrExitManagement';
@@ -106,7 +110,7 @@ import HrDocumentTemplates from '../pages/hrms/HrDocumentTemplates';
 import HrCustomFields from '../pages/hrms/HrCustomFields';
 import TemplateFormPage from '../pages/hrms/doc-templates/TemplateForm';
 import GenerateDocument from '../pages/hrms/doc-templates/GenerateDocument';
-import HrEmployeeOnboarding from '../pages/employee-onboarding/HrEmployeeOnboarding';
+const HrEmployeeOnboarding = lazy(() => import('../pages/employee-onboarding/HrEmployeeOnboarding'));
 import EmployeePermissions from '../pages/employee/EmployeePermissions';
 import EmployeeProfile from '../pages/employee/EmployeeProfile';
 import PublicOnboarding from '../pages/PublicOnboarding';
@@ -793,7 +797,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/clm/:slug" element={<ClmStubPage />} />
               <Route path="/hr" element={<HrDashboard />} />
               <Route path="/hr/overview" element={<HrOverview />} />
-              <Route path="/hr/employees" element={<HrEmployees />} />
+              <Route path="/hr/employees" element={<Suspense fallback={null}><HrEmployees /></Suspense>} />
               <Route path="/hr/recruitment" element={<Suspense fallback={null}><HrRecruitment /></Suspense>} />
               <Route path="/hr/recruitment/:id/candidates" element={<Suspense fallback={null}><HrCandidates /></Suspense>} />
               <Route path="/hr/exit-management" element={<HrExitManagement />} />
@@ -813,7 +817,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/hr/doc-templates/:id/edit" element={<TemplateFormPage />} />
               <Route path="/hr/doc-templates/:id/generate" element={<GenerateDocument />} />
               <Route path="/hr/custom-fields" element={<HrCustomFields />} />
-              <Route path="/hr/employee-onboarding" element={<HrEmployeeOnboarding />} />
+              <Route path="/hr/employee-onboarding" element={<Suspense fallback={null}><HrEmployeeOnboarding /></Suspense>} />
               <Route path="/hr/employees/:id/permissions" element={<EmployeePermissionsWrapper />} />
               <Route path="/hr/employees/:id/profile" element={<EmployeeProfileWrapper />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
