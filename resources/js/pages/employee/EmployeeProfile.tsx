@@ -1954,7 +1954,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           <i className="ri-close-line ep-fs-20" />
         </button>
 
-        <Row className="g-4 align-items-center ep-rel-z2">
+        <Row className="g-4 align-items-center ep-rel-z2 ep-hero-row">
           {/* Avatar */}
           <Col xs="auto">
             {profilePhotoSrc ? (
@@ -1968,8 +1968,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             )}
           </Col>
 
-          {/* Identity */}
-          <Col xs={12} md className="min-w-0">
+          {/* Identity — `col` (no xs=12) so it sits BESIDE the avatar at every
+              breakpoint, including mobile (was xs=12 → wrapped under the photo). */}
+          <Col className="min-w-0">
             <div className="d-flex align-items-center gap-2 mb-1">
               <h2 className="text-white mb-0 fw-bold ep-fs-22 ep-line-115">{employee?.name || employeeId}</h2>
             </div>
@@ -2047,8 +2048,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </div>
           </Col>
 
-          {/* Ring charts — pulled in toward the centre with auto-margin */}
-          <Col xs="auto" className="ms-auto ep-mr-80">
+          {/* Ring charts — pulled in toward the centre with auto-margin.
+              xs=12 so on mobile they drop to their own full-width row below the
+              avatar+identity (centred via .ep-rings-col) instead of crowding
+              the name beside the photo. */}
+          <Col xs={12} md="auto" className="ms-md-auto ep-mr-80 ep-rings-col">
             <div className="d-flex gap-3">
               <div>
                 <div

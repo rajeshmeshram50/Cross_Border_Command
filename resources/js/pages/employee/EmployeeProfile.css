@@ -3080,3 +3080,78 @@
   padding: 7px 16px; background: linear-gradient(135deg,#dc2626,#ef4444);
   border: 0; border-radius: 8px; font-size: 13px; font-weight: 700; color: #fff; cursor: pointer;
 }
+
+/* ============================================================
+   Mobile responsive (phones & small tablets, ≤ 767.98px)
+   ------------------------------------------------------------
+   - Name + identity sit BESIDE the photo (compact, smaller
+     fonts) instead of wrapping under it.
+   - Onboarding/Profile rings drop to their own centred row.
+   - The tab strip becomes a 2-column button grid so every tab
+     is visible and tappable (no cut-off horizontal row).
+   - Content padding tightens and wide data tables scroll
+     sideways inside their cards.
+   ============================================================ */
+@media (max-width: 767.98px) {
+  /* ── Hero ── */
+  .ep-hero { padding: 16px 14px 12px; }
+  .ep-close-btn { top: 10px; right: 10px; width: 28px; height: 28px; font-size: 15px; }
+  /* Tighten the avatar↔identity gutter so the name reads as sitting right
+     next to the photo (g-4 is a big gap on a phone). */
+  .ep-hero-row { --bs-gutter-x: 0.85rem; --bs-gutter-y: 0.75rem; }
+
+  /* Smaller photo + identity text so the name + meta fit beside it. */
+  .ep-avatar-square { width: 68px; height: 68px; border-radius: 16px; font-size: 23px; }
+  .ep-avatar-square::after { width: 13px; height: 13px; border-width: 2px; }
+  .ep-hero h2 { font-size: 17px !important; }
+  .ep-hero-empcode { font-size: 11.5px; }
+  .ep-hero-subline { font-size: 11px; }
+  .ep-hero-pill { font-size: 10px; padding: 2px 8px; }
+  .ep-hero-meta i { font-size: 12px; }
+  .ep-hero-meta-label { font-size: 8.5px; }
+  .ep-hero-meta-value { font-size: 11.5px; }
+
+  /* Profile / Onboarding rings are hidden on mobile — the same numbers live
+     in the Profile / Onboarding tabs, and dropping them keeps the header
+     compact. */
+  .ep-rings-col { display: none !important; }
+
+  /* ── Tab strip → 2-column button grid ── every tab visible (no scroll /
+     cut-off), each cell a tappable pill that fills its column. */
+  .ep-tabbar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    overflow: visible;
+  }
+  .ep-tabbar-btn {
+    width: 100%;
+    justify-content: flex-start;
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.10);
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+
+  /* ── Content padding ── px-4 (1.5rem) is too wide on a phone. The
+     two-class selector outranks the .px-4 utility without !important. */
+  .ep-fullscreen-overlay .ep-content-pane { padding-left: 12px; padding-right: 12px; }
+
+  /* ── Tables ── Bootstrap data tables already ship inside .table-responsive
+     (horizontal scroll). The Attendance timelog wrapper only scrolled
+     vertically, so add horizontal scroll there too; keep a sensible min-width
+     so its nowrap columns stay readable while scrolling. */
+  .ep-att-scroll-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .ep-att-table { min-width: 620px; }
+
+  /* Breakdown modal table scrolls sideways on narrow screens rather than
+     overflowing the dialog. */
+  .ep-bd-body { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}
+
+/* Extra-small phones — tighten the hero meta grid to a single column so the
+   Email / Manager / Mobile cells stack cleanly instead of truncating. */
+@media (max-width: 480px) {
+  .ep-hero { padding: 14px 12px 10px; }
+  .ep-fullscreen-overlay .ep-content-pane { padding-left: 10px; padding-right: 10px; }
+}
