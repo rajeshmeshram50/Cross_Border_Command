@@ -437,15 +437,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   };
 
   const handleChangePassword = async () => {
+    const adminReset = !isOwnProfile;
+
     // Client-side guards first so the user sees mistakes without a round-trip.
     const errs: Record<string, string> = {};
-    if (!pwCurrent) errs.current_password = 'Current password is required';
+    if (!adminReset && !pwCurrent) errs.current_password = 'Current password is required';
     if (!pwNew) {
       errs.password = 'New password is required';
     } else {
       const failed = validatePwRules(pwNew);
       if (failed.length) errs.password = failed.join(', ');
-      else if (pwNew === pwCurrent) errs.password = 'New password must differ from the current one';
+      else if (!adminReset && pwNew === pwCurrent) errs.password = 'New password must differ from the current one';
     }
     if (!pwConfirm) errs.password_confirmation = 'Please re-enter the new password';
     else if (pwNew !== pwConfirm) errs.password_confirmation = 'Passwords do not match';
@@ -454,12 +456,20 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     setPwSaving(true);
     setPwErrors({});
     try {
-      await api.post('/change-password', {
-        current_password: pwCurrent,
-        password: pwNew,
-        password_confirmation: pwConfirm,
-      });
-      toast.success('Password updated', 'A confirmation email has been sent.');
+      if (adminReset) {
+        await api.post(`/employees/${employeeId}/set-password`, {
+          password: pwNew,
+          password_confirmation: pwConfirm,
+        });
+        toast.success('Password updated', `${employee?.name || 'The employee'}'s login password has been reset. A confirmation email has been sent to them.`);
+      } else {
+        await api.post('/change-password', {
+          current_password: pwCurrent,
+          password: pwNew,
+          password_confirmation: pwConfirm,
+        });
+        toast.success('Password updated', 'A confirmation email has been sent.');
+      }
       setPwOpen(false);
       resetPwForm();
     } catch (err: any) {
@@ -486,10 +496,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     }
   };
 
-  // Attendance regularization modal — opens from the "+ Regularization" button
-  // in the Intraday Punch Timeline card. Lets the user submit a request to
-  // either adjust time entries or exempt the day from penalization.
-  const [regOpen, setRegOpen] = useState(false);
+   const [regOpen, setRegOpen] = useState(false);
   const [regOption, setRegOption] = useState<'adjust' | 'exempt'>('adjust');
   const [regLocations, setRegLocations] = useState<string[]>(['Baner Office']);
   const [regLocationDraft, setRegLocationDraft] = useState('');
@@ -501,8 +508,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [regNote, setRegNote] = useState('');
   const REG_LOCATION_OPTIONS = ['Baner Office', 'Hinjewadi Office', 'Kharadi Office', 'Remote', 'Client Site'];
 
-  // Today's date in "DD MMM YYYY" so the regularization modal shows the
-  // correct selected day on every open instead of a stale hardcoded value.
   const regSelectedDate = new Date()
     .toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
     .replace(/ /g, '-');
@@ -3116,8 +3121,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               <i className="ri-lock-password-line ep-fs-18" />
             </span>
             <div>
-              <h6 className="mb-0 fw-bold ep-fs-14">Change Password</h6>
-              <small className="text-muted ep-fs-11">Pick a strong, unique password</small>
+              <h6 className="mb-0 fw-bold ep-fs-14">{isOwnProfile ? 'Change Password' : 'Reset Employee Password'}</h6>
+              <small className="text-muted ep-fs-11">
+                {isOwnProfile
+                  ? 'Pick a strong, unique password'
+                  : `Set a new login password for ${employee?.name || 'this employee'}`}
+              </small>
             </div>
           </div>
           <button
@@ -3131,7 +3140,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           </button>
         </div>
         <div className="px-3 py-3">
-          {/* Current Password */}
+          {/* Current Password — only for self-service. An admin resetting
+              another employee's password doesn't know (and shouldn't need)
+              their current one. */}
+          {isOwnProfile && (
           <div className="mb-3">
             <label className="emp-label fw-semibold ep-fs-12">Current Password<span className="text-danger">*</span></label>
             <div className="position-relative">
@@ -3156,6 +3168,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </div>
             {pwErrors.current_password && <small className="text-danger d-block mt-1 ep-fs-11">{pwErrors.current_password}</small>}
           </div>
+          )}
 
           {/* New Password */}
           <div className="mb-3">

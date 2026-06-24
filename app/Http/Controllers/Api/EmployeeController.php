@@ -13,6 +13,7 @@ use App\Models\Module;
 use App\Models\Permission;
 use App\Models\User;
 use App\Support\Settings;
+use App\Traits\PasswordHistory;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
@@ -27,7 +28,7 @@ use Illuminate\Validation\ValidationException;
 
 class EmployeeController extends Controller
 {
-   
+    use PasswordHistory;
     private const WITH = [
         'client:id,org_name',
         'branch:id,name',
@@ -1047,17 +1048,59 @@ class EmployeeController extends Controller
         return $q->findOrFail($id);
     }
 
-    /**
-     * Reject employee creation when the target branch has reached its
-     * configured user cap. `Branch.max_users = 0` (the default) is
-     * treated as "unlimited" — only a positive value enforces a limit.
-     *
-     * The count includes ALL user_types parked on the branch (the
-     * inaugural branch_user created with the branch, plus every
-     * employee-tier User created via this controller). Without this
-     * gate, the cap stored on the Branch row was never read and a
-     * branch limited to 1 user could grow without bound.
-     */
+   
+    public function setPassword(Request $request, $id)
+    {
+        $this->authorize($request, 'can_edit');
+
+        $employee = $this->resolveRow($request, $this->resolveIdParam($id));
+        $this->guardHierarchicalAction($request->user(), $employee, 'reset the password for');
+
+        // Load the FULL user row — the eager-loaded `user` relation restricts
+        // columns (no `password`), which would break the reuse-check + history.
+        $target = $employee->user_id ? User::find($employee->user_id) : null;
+        if (!$target) {
+            abort(422, 'This employee has no linked login account, so there is no password to reset.');
+        }
+
+        if ($target->id === $request->user()->id) {
+            abort(422, 'Use the regular Change Password option to update your own password.');
+        }
+
+        $data = $request->validate([
+            'password' => 'required|string|min:8|confirmed',
+        ]);
+
+        if ($this->isPasswordReused($target, $data['password'])) {
+            return response()->json(['message' => $this->passwordReuseMessage()], 422);
+        }
+
+        // Save the OLD hash to history BEFORE overwriting it.
+        $this->recordPasswordHistory($target);
+        $target->update(['password' => Hash::make($data['password'])]);
+
+        // SMTP issue never rolls back the (already persisted) password change.
+        if (Settings::shouldSendMail() && $target->email) {
+            try {
+                Mail::to($target->email)->send(new PasswordChangedMail(
+                    $target->name,
+                    $target->email,
+                    $data['password'],
+                    PasswordChangedMail::resolveLoginUrl($request),
+                    \App\Support\BrandingResolver::forUser($target),
+                ));
+            } catch (\Throwable $e) {
+                Log::warning('Password-changed confirmation mail failed (admin reset)', [
+                    'target_user_id' => $target->id,
+                    'email'          => $target->email,
+                    'error'          => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return response()->json(['message' => 'Password updated for ' . ($employee->display_name ?: $target->name) . '.']);
+    }
+
     private function assertBranchUserCap(?int $branchId): void
     {
         if (!$branchId) return;
@@ -1121,39 +1164,14 @@ class EmployeeController extends Controller
             $ignoreUserId = Employee::withTrashed()->where('id', $employeeId)->value('user_id');
         }
 
-        // Heal dangling asset references before validation runs. Old employee
-        // rows can carry asset IDs that have since been deleted from
-        // master_assets; the `exists:` rule below would otherwise reject the
-        // entire save for a problem the user can't fix from the form. Strip
-        // unknown ids on the way in so the save succeeds and the bad refs
-        // are cleaned up on first edit.
         $this->stripDanglingAssetRefs($request);
-
-        // Normalize email to lowercase up-front so the rest of the flow
-        // (uniqueness check, User row, login email) all see the same
-        // canonical value. Without this, "John@Example.com" and
-        // "john@example.com" would create two distinct user rows and
-        // the user could end up unable to log in because the bcrypt
-        // hash was attached to one case while the login form was
-        // sending the other. The mb_strtolower form handles emoji /
-        // unicode locals correctly.
         if ($request->filled('email')) {
             $request->merge(['email' => mb_strtolower(trim($request->input('email')))]);
         }
-
-        // Canonicalise PAN to upper-case so storage + the uniqueness check
-        // below always compare the same form (PANs are case-insensitive; the
-        // frontend already upper-cases, this guards direct API callers).
-        if ($request->filled('pan_number')) {
+      if ($request->filled('pan_number')) {
             $request->merge(['pan_number' => mb_strtoupper(trim($request->input('pan_number')))]);
         }
-        // PAN uniqueness — a duplicate PAN is hard-blocked at the DB level,
-        // scoped to the tenant (a government ID can't belong to two employees
-        // of the same client). Ignores the current employee on update and
-        // skips soft-deleted rows. Combined with the format regex below this
-        // satisfies the QA "duplicate PAN hard-blocked" + "format enforced"
-        // cases. client_id comes from the authenticated user, never the body.
-        $panRule = ['nullable', 'string', 'regex:/^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/'];
+    $panRule = ['nullable', 'string', 'regex:/^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/'];
         if ($request->filled('pan_number')) {
             $panClientId = optional($request->user())->client_id;
             $panRule[] = Rule::unique('employees', 'pan_number')
@@ -1162,34 +1180,17 @@ class EmployeeController extends Controller
                 ->ignore($employeeId);
         }
 
-        // Email rules: required + unique on store; nullable + still-unique on
-        // update so partial step-3/step-4 PATCHes don't fail validation.
-        // The uniqueness check now compares LOWER(email) to dodge the
-        // case-sensitive collation some MySQL builds use by default —
-        // a tenant on case-sensitive collation could otherwise register
-        // multiple users with mixed-case versions of the same address.
+        
         $emailRule = $isUpdate ? ['nullable', 'email', 'max:191'] : ['required', 'email', 'max:191'];
         $emailRule[] = Rule::unique('users', 'email')
             ->whereNull('deleted_at')
             ->where(fn($q) => $q->whereRaw('LOWER(email) = ?', [mb_strtolower((string) $request->input('email'))]))
             ->ignore($ignoreUserId);
 
-        // Step 4 (Compensation) is the wizard's terminal save — salary fields
-        // are mandatory there because zero-decision payroll setup was leaking
-        // employees into the DB with empty CTC (caught by QA). On earlier
-        // steps (wizard_step_completed < 4) salary stays nullable so partial
-        // PATCHes from steps 1-3 don't fail validation.
-        //
-        // `enable_payroll = false` is the explicit opt-out (contractor / paid
-        // externally) — in that case we don't require the numeric fields.
+        
         $isFinalStep   = (int) $request->input('wizard_step_completed', 0) >= 4;
         $payrollOn     = (bool) $request->input('enable_payroll', true);
         $requireSalary = $isFinalStep && $payrollOn;
-        // Column type is decimal(14, 2) — anything beyond 999,999,999,999.99
-        // overflows the DB and used to surface as a generic 500. Cap the
-        // input here so the validator returns a clean 422 with a usable
-        // message ("must be less than…") instead of swallowing an SQL
-        // overflow exception.
         $salaryMax     = 999999999999.99; // decimal(14, 2)
         $salaryRule    = $requireSalary
             ? ['required', 'numeric', 'min:0.01', "max:{$salaryMax}"]
@@ -1197,23 +1198,14 @@ class EmployeeController extends Controller
         $salaryFreqRule = $requireSalary ? ['required', 'string', 'max:30']   : ['nullable', 'string', 'max:30'];
         $salaryFromRule = $requireSalary ? ['required', 'date']               : ['nullable', 'date'];
 
-        // Free-text address fields must not carry HTML/script markup — reject
-        // any angle brackets so `<script>`/tag-injection can never be stored
-        // (XSS defence). SQL injection is already neutralised by Eloquent's
-        // parameter binding, so we deliberately do NOT blacklist SQL keywords,
-        // which would wrongly reject legitimate values like "123 Drop Lane".
         $noTags = ['not_regex:/[<>]/'];
 
         return $request->validate([
-            // Identity — first_name is the only field the server insists on
-            // (drives display_name + login user.name). Everything else can
-            // arrive in a later step.
+            
             'first_name'   => $isUpdate ? 'nullable|string|max:100' : 'required|string|max:100',
             'middle_name'  => 'nullable|string|max:100',
             'last_name'    => 'nullable|string|max:100',
-            // "Prefer not to say" is offered in the frontend GENDER_OPTIONS;
-            // the backend was rejecting it as out-of-enum which surfaced as
-            // a confusing 500/422 when the user picked it.
+           
             'gender'       => 'nullable|in:Male,Female,Other,Prefer not to say',
             'date_of_birth' => 'nullable|date',
             'blood_group'   => 'nullable|string|max:10',
