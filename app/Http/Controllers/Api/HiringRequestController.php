@@ -422,8 +422,13 @@ class HiringRequestController extends Controller
 
         return $request->validate([
             // Section 1
-            'title'             => [$isUpdate || $isDraft ? 'nullable' : 'required', 'string', 'max:191'],
-            'job_role'          => [$isUpdate || $isDraft ? 'nullable' : 'required', 'string', 'max:191'],
+            // Reject special characters (@ # $ % ^ & * …). Only letters,
+            // numbers, spaces and basic title punctuation (- . , /) allowed —
+            // mirrors RecruitmentController's job_title rule so validation is
+            // consistent across both modules. nullable in draft/update mode
+            // skips the regex when the field is left blank.
+            'title'             => [$isUpdate || $isDraft ? 'nullable' : 'required', 'string', 'max:191', 'regex:/^[A-Za-z0-9 .,\-\/]+$/'],
+            'job_role'          => [$isUpdate || $isDraft ? 'nullable' : 'required', 'string', 'max:191', 'regex:/^[A-Za-z0-9 .,\-\/]+$/'],
             'department_id'     => [$isUpdate || $isDraft ? 'nullable' : 'required', 'integer', 'exists:master_departments,id'],
             'team'              => 'nullable|string|max:100',
             'requested_by_name' => 'nullable|string|max:150',
@@ -458,6 +463,9 @@ class HiringRequestController extends Controller
             // crafted POST / legacy row can't smuggle one in.
             'target_join_date' => 'nullable|date|after_or_equal:today',
             'status'           => ['nullable', Rule::in(self::STATUSES)],
+        ], [
+            'title.regex'    => 'Request title cannot contain special characters — use only letters, numbers, spaces and - . , /',
+            'job_role.regex' => 'Job role cannot contain special characters — use only letters, numbers, spaces and - . , /',
         ]);
     }
 

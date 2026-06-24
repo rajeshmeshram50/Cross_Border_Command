@@ -198,6 +198,12 @@ export default function HrCandidates() {
   // empty page after the result set shrinks.
   useEffect(() => { setPage(1); }, [tab, sourceFilter, statusFilter, search]);
 
+  // A closed recruitment (Cancelled / Completed / Expired) no longer accepts
+  // new candidates — the server rejects Add/Import with a 422, so we also grey
+  // out the entry points here to match. Existing candidates stay editable.
+  const recClosed = ['Cancelled', 'Completed', 'Expired'].includes(recruitment?.status || '');
+  const recClosedMsg = `Cannot add candidates — this recruitment is ${(recruitment?.status || '').toLowerCase()}`;
+
   // Page slice
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage  = Math.min(page, pageCount);
@@ -274,13 +280,13 @@ export default function HrCandidates() {
                 <button type="button" className="cand-pill-btn cand-pill-btn--blue" title="Download a sample CSV" onClick={() => setSampleOpen(true)}>
                   <i className="ri-download-line" />Sample
                 </button>
-                <button type="button" className="cand-pill-btn cand-pill-btn--violet" title="Import candidates from CSV" onClick={() => setImportOpen(true)}>
+                <button type="button" className="cand-pill-btn cand-pill-btn--violet" disabled={recClosed} title={recClosed ? recClosedMsg : 'Import candidates from CSV'} onClick={() => setImportOpen(true)}>
                   <i className="ri-upload-2-line" />Import
                 </button>
                 <button type="button" className="cand-pill-btn cand-pill-btn--green" title="Export candidates" onClick={() => setExportOpen(true)}>
                   <i className="ri-external-link-line" />Export
                 </button>
-                <button type="button" className="cand-pill-btn cand-pill-btn--primary" onClick={() => { setEditing(null); setModalOpen(true); }}>
+                <button type="button" className="cand-pill-btn cand-pill-btn--primary" disabled={recClosed} title={recClosed ? recClosedMsg : 'Add a candidate'} onClick={() => { setEditing(null); setModalOpen(true); }}>
                   <i className="ri-add-line" />Add Candidate
                 </button>
               </div>
@@ -1394,6 +1400,17 @@ function CandidateFormModal({
 
     if (!qualification.trim()) {
       errs.qualification = 'Qualification is required';
+    } else {
+      // Allow letters, digits, spaces and the punctuation that legitimately
+      // appears in qualification names (e.g. "B.Tech", "B.Sc (Hons)",
+      // "B.E. / M.E.", "MBA - Finance"). Must contain at least one letter so
+      // junk like "!@#$%^TGBFv67" or pure numbers is rejected (HRMS-BUG).
+      const qual = qualification.trim();
+      if (!/[A-Za-z]/.test(qual)) {
+        errs.qualification = 'Qualification must contain letters';
+      } else if (!/^[A-Za-z0-9 .,/&()+-]+$/.test(qual)) {
+        errs.qualification = 'Qualification can only contain letters, numbers, spaces and . , / & ( ) + -';
+      }
     }
 
     const expNum = Number(experience);
