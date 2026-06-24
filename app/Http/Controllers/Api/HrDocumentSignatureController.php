@@ -7,6 +7,7 @@ use App\Mail\SignedDocumentMail;
 use App\Models\Employee;
 use App\Models\HrDocumentSignature;
 use App\Models\HrDocumentTemplate;
+use App\Models\HrGeneratedDocument;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -138,6 +139,22 @@ class HrDocumentSignatureController extends Controller
             $tpl = HrDocumentTemplate::findOrFail((int) $data['template_id']);
             $emp = Employee::with(['department', 'designation'])->findOrFail((int) $data['employee_id']);
 
+            // When Send is fired from a document row (no custom_values in the
+            // request), inherit the values the user filled when they last
+            // "Save Generated" for this template + employee. This keeps the
+            // generate-then-send-from-outside flow lossless: the signed copy
+            // carries the same custom-field edits as the saved generated doc.
+            $customValues = (array) ($data['custom_values'] ?? []);
+            if (empty($customValues)) {
+                $lastGenerated = HrGeneratedDocument::where('template_id', $tpl->id)
+                    ->where('employee_id', $emp->id)
+                    ->orderByDesc('id')
+                    ->first();
+                if ($lastGenerated && is_array($lastGenerated->custom_values)) {
+                    $customValues = $lastGenerated->custom_values;
+                }
+            }
+
             // Idempotency guard — a fast double-submit (double-click on Send)
             // was creating two identical in-flight signature runs for the same
             // template + employee. If an ACTIVE run already exists (Pending or
@@ -190,7 +207,7 @@ class HrDocumentSignatureController extends Controller
             // Overlay the wizard-entered custom field values onto the token
             // context so {{CustomToken}} placeholders are frozen with the
             // user's edits (not left blank) at send time.
-            foreach ((array) ($data['custom_values'] ?? []) as $k => $v) {
+            foreach ($customValues as $k => $v) {
                 if (is_scalar($v)) {
                     $ctx[(string) $k] = (string) $v;
                 }

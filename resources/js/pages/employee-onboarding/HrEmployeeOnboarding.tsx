@@ -13,6 +13,7 @@ import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
 } from '../hrms/doc-templates/HeaderFooterPanel';
+import DocGenerateModal from '../hrms/doc-templates/DocGenerateModal';
 import Tooltip from '../../components/ui/Tooltip';
 import WorklistPager from '../../components/ui/WorklistPager';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
@@ -1554,6 +1555,9 @@ export function VaultModal({
   const [actionName, setActionName] = useState('');
   const [actionNote, setActionNote] = useState('');
 
+  // Generate modal — custom-field fill → preview → download / send for signature
+  const [genTpl, setGenTpl] = useState<MatchedTemplate | null>(null);
+
   // Send-confirmation modal
   const [sendForTpl, setSendForTpl] = useState<MatchedTemplate | null>(null);
   const [sending, setSending] = useState(false);
@@ -1773,8 +1777,14 @@ export function VaultModal({
   };
 
   /* Download the fully-signed PDF once a run is Completed (all signers done).
-     Hits the same endpoint the Employee Profile "My Signed Documents" tab uses. */
+     Hits the same endpoint the Employee Profile "My Signed Documents" tab uses.
+     Tracks the in-flight run id so the button can show a spinner + disable
+     itself while the (potentially slow) PDF render streams back, and so a
+     repeated click can't fire multiple downloads. */
+  const [downloadingRunId, setDownloadingRunId] = useState<number | null>(null);
   const downloadSignedDoc = async (run: SignatureRun) => {
+    if (downloadingRunId !== null) return; // a download is already in flight
+    setDownloadingRunId(run.id);
     try {
       const resp = await api.get(`/hr-document-signatures/${run.id}/download-pdf`, { responseType: 'blob' });
       const url = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
@@ -1788,6 +1798,8 @@ export function VaultModal({
       toast.success('Downloaded', 'Signed PDF saved.');
     } catch (err: any) {
       toast.error('Could not download', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setDownloadingRunId(null);
     }
   };
 
@@ -2164,6 +2176,18 @@ export function VaultModal({
                               <i className="ri-quill-pen-line me-1" />{currentSigner!.action}
                             </button>
                           )}
+                          {/* Generate — fill the template's custom fields, preview
+                              with this employee's data, then download the DOCX or
+                              push it into the signing workflow. Same conditions as
+                              Send (hidden while a run is in flight / completed). */}
+                          {(!run || run.status === 'Rejected' || run.status === 'Cancelled') && (
+                            <button type="button" onClick={() => { if (canGenerate) setGenTpl(tpl); }}
+                              disabled={!canGenerate}
+                              style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: canGenerate ? 'pointer' : 'not-allowed', opacity: canGenerate ? 1 : 0.5 }}
+                              data-tooltip={canGenerate ? 'Fill custom fields, preview & generate / send for signing' : 'Only Active templates can be generated'} data-tooltip-pos="bottom" aria-label="Generate document">
+                              <i className="ri-file-add-line me-1" /> Generate
+                            </button>
+                          )}
                           {/* Send for signing — only when there's no active run
                               (or a previous run was Rejected/Cancelled). While a
                               run is in flight it's hidden (can't re-send); once
@@ -2191,14 +2215,20 @@ export function VaultModal({
                           {/* Download signed PDF — icon-only (compact) so the
                               action row stays uncluttered. Shown only once the
                               run is fully signed. */}
-                          {run && run.status === 'Completed' && (
-                            <button type="button" onClick={() => downloadSignedDoc(run)}
-                              aria-label="Download signed document"
-                              style={{ padding: '6px 14px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#16a34a,#22c55e)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                              data-tooltip="Download the fully-signed document" data-tooltip-pos="bottom">
-                              <i className="ri-download-2-line" /> Download
-                            </button>
-                          )}
+                          {run && run.status === 'Completed' && (() => {
+                            const isDownloading = downloadingRunId === run.id;
+                            return (
+                              <button type="button" onClick={() => downloadSignedDoc(run)}
+                                disabled={isDownloading}
+                                aria-label="Download signed document"
+                                style={{ padding: '6px 14px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#16a34a,#22c55e)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: isDownloading ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, opacity: isDownloading ? 0.7 : 1 }}
+                                data-tooltip={isDownloading ? 'Preparing the signed PDF…' : 'Download the fully-signed document'} data-tooltip-pos="bottom">
+                                {isDownloading
+                                  ? <><span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" /> Downloading…</>
+                                  : <><i className="ri-download-2-line" /> Download</>}
+                              </button>
+                            );
+                          })()}
 
                           {/* 3-dot menu — audit trail + cancel (when a run exists) */}
                           <div style={{ position: 'relative' }}>
@@ -2306,6 +2336,18 @@ export function VaultModal({
             </div>
         </div>
       </ModalBody>
+
+      {/* Generate Document — custom-field fill → preview → download / send for signature */}
+      <DocGenerateModal
+        isOpen={!!genTpl}
+        onClose={() => setGenTpl(null)}
+        templateId={genTpl?.id ?? null}
+        templateName={genTpl?.name}
+        templateCode={genTpl?.code}
+        employeeId={emp?.dbId ?? null}
+        employeeName={emp?.name}
+        onSent={fetchRuns}
+      />
 
       {/* Document preview — opens on top of the vault modal */}
       <Modal isOpen={previewOpen} toggle={() => setPreviewOpen(false)} size="lg" centered
@@ -6912,7 +6954,8 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
   const toast = useToast();
   const [templates, setTemplates] = useState<Tpl[]>([]);
   const [loading, setLoading] = useState(false);
-  const [generatingId, setGeneratingId] = useState<number | null>(null);
+  // Generate modal — custom-field fill → preview → download / send for signature.
+  const [genTpl, setGenTpl] = useState<Tpl | null>(null);
   /* Click-to-expand: the row a user has clicked, revealing the
    * signing-workflow stepper underneath. Single-row open at a time so
    * Stage 5 doesn't turn into a long unscrollable wall when every
@@ -6959,30 +7002,6 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
     })();
     return () => { cancelled = true; };
   }, [emp?.dbId]);
-
-  const handleGenerate = async (tpl: Tpl) => {
-    if (!emp?.dbId) return;
-    setGeneratingId(tpl.id);
-    try {
-      const resp = await api.get(`/hr-document-templates/${tpl.id}/generate`, {
-        params: { employee_id: emp.dbId },
-        responseType: 'blob',
-      });
-      const url = URL.createObjectURL(new Blob([resp.data]));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${(emp.name || 'employee').replace(/\s+/g, '-')}-${tpl.code || tpl.id}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast.success('Document generated', `${tpl.code || tpl.name} downloaded.`);
-    } catch (err: any) {
-      toast.error('Could not generate', err?.response?.data?.message || 'Please try again.');
-    } finally {
-      setGeneratingId(null);
-    }
-  };
 
   // ── Signing runs — the SAME workflow Exit Management uses. "Send" creates
   // a row in hr_document_signatures with the template's configured signers;
@@ -7081,8 +7100,7 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
         )}
 
         {!loading && templates.map(tpl => {
-          const isGenerating = generatingId === tpl.id;
-          const canGenerate = tpl.status === 'Active' && !!emp.dbId && !isGenerating;
+          const canGenerate = tpl.status === 'Active' && !!emp.dbId;
           const isExpanded = expandedId === tpl.id;
           const signers = parseSigners(tpl.signers);
           const toggle = () => setExpandedId(prev => prev === tpl.id ? null : tpl.id);
@@ -7146,16 +7164,15 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
                   type="button"
                   className="onb-pol-gen-btn"
                   disabled={!canGenerate}
-                  onClick={(e) => { e.stopPropagation(); handleGenerate(tpl); }}
+                  onClick={(e) => { e.stopPropagation(); if (canGenerate) setGenTpl(tpl); }}
                   title={
-                    isGenerating       ? 'Generating…'
-                    : tpl.status !== 'Active' ? 'Only Active templates can be generated'
+                    tpl.status !== 'Active' ? 'Only Active templates can be generated'
                     : !emp.dbId        ? 'Save the employee first'
-                    : 'Generate DOCX with this employee\'s data'
+                    : 'Fill custom fields, preview & generate / send for signing'
                   }
                   style={{ opacity: canGenerate ? 1 : 0.6, cursor: canGenerate ? 'pointer' : 'not-allowed' }}
                 >
-                  <i className={isGenerating ? 'ri-loader-4-line' : 'ri-file-add-line'} /> {isGenerating ? 'Generating…' : 'Generate'}
+                  <i className="ri-file-add-line" /> Generate
                 </button>
                 {/* Send for signing — kicks off the signing workflow (same as
                     Exit Stage 3). Hidden while a run is already active; once
@@ -7273,6 +7290,18 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
           );
         })}
       </div>
+
+      {/* Generate Document — custom-field fill → preview → download / send for signature */}
+      <DocGenerateModal
+        isOpen={!!genTpl}
+        onClose={() => setGenTpl(null)}
+        templateId={genTpl?.id ?? null}
+        templateName={genTpl?.name}
+        templateCode={genTpl?.code}
+        employeeId={emp?.dbId ?? null}
+        employeeName={emp?.name}
+        onSent={fetchRuns}
+      />
 
       {/* Send-for-signing — rich workflow modal (matches the Evidence Vault) */}
       <Modal isOpen={!!sendForTpl} toggle={() => setSendForTpl(null)} size="md" centered contentClassName="border-0" modalClassName="send-sign-modal" backdrop="static">
