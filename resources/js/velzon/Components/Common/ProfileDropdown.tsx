@@ -9,8 +9,14 @@ import { resolveFileUrl } from '../../../utils/resolveFileUrl';
 import avatar1 from "../../assets/images/users/image.png";
 
 const ProfileDropdown = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, tenantThemeEnabled } = useAuth();
   const toast = useToast();
+  // In brand mode the avatar ring + dropdown header pick up the tenant's
+  // brand colour, matching the horizontal header's brand behaviour.
+  const brandColor = user?.primary_color || '#7C3AED';
+  const ringGradient = tenantThemeEnabled
+    ? `linear-gradient(135deg, ${brandColor}, ${brandColor})`
+    : 'linear-gradient(135deg,#94A3B8,#8B5CF6 55%,#7C3AED)';
 
   const [isProfileDropdown, setIsProfileDropdown] = useState(false);
   const toggleProfileDropdown = () => setIsProfileDropdown(!isProfileDropdown);
@@ -162,7 +168,7 @@ const ProfileDropdown = () => {
               className="position-relative d-inline-flex rounded-circle flex-shrink-0"
               style={{
                 padding: 2,
-                backgroundImage: 'linear-gradient(135deg,#94A3B8,#8B5CF6 55%,#7C3AED)',
+                backgroundImage: ringGradient,
               }}
             >
               <span className="rounded-circle d-inline-flex" style={{ padding: 1, background: 'var(--vz-card-bg, #fff)' }}>
@@ -198,7 +204,9 @@ const ProfileDropdown = () => {
             className="d-flex align-items-center gap-2"
             style={{
               padding: '18px 18px 16px 18px',
-              backgroundImage: 'linear-gradient(135deg, #1E1B4B 0%, #4338CA 55%, #6D28D9 100%)',
+              backgroundImage: tenantThemeEnabled
+                ? `linear-gradient(135deg, ${brandColor} 0%, ${brandColor} 100%)`
+                : 'linear-gradient(135deg, #1E1B4B 0%, #4338CA 55%, #6D28D9 100%)',
             }}
           >
             <span className="position-relative d-inline-flex flex-shrink-0">

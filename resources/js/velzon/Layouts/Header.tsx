@@ -102,14 +102,26 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
               [data-bs-theme="dark"] .vth-switch { background: linear-gradient(180deg,#1E2230,#1A1D29); border-color: #2C3242; }
               .vth-sep { width: 1px; height: 20px; flex-shrink: 0; background: #E7EAF3; align-self: center; margin: 0 10px; }
               [data-bs-theme="dark"] .vth-sep { background: #2C3242; }
-              /* Tighten the gap between the right-side action icons (horizontal uses ~2px). */
-              .vth-topbar-actions .header-item { margin-left: 2px !important; }
+              /* Smaller, tighter action icons in the vertical top bar. */
+              .vth-topbar-actions .header-item { margin-left: 0 !important; }
+              .vth-topbar-actions .btn-topbar { height: 35px !important; width: 35px !important; line-height: 30px !important; }
+              .vth-topbar-actions .btn-topbar i { font-size: 17px !important; }
               /* Red logout button, matching the horizontal header. */
               .vth-logout-btn { color: #E11D48 !important; }
               .vth-logout-btn:hover, .vth-logout-btn:focus { background-color: #FFF1F2 !important; color: #E11D48 !important; }
               [data-bs-theme="dark"] .vth-logout-btn:hover, [data-bs-theme="dark"] .vth-logout-btn:focus { background-color: rgba(225,29,72,0.15) !important; }
+              /* Brand mode: recolor the top-bar accents with the tenant brand colour,
+                 mirroring the horizontal header. Logout stays red. */
+              .vth-brand .vth-search .form-control:focus { border-color: var(--vth-bp) !important; box-shadow: 0 0 0 4px color-mix(in srgb, var(--vth-bp) 16%, transparent) !important; }
+              .vth-brand .vth-search .form-control:focus ~ span.search-widget-icon { color: var(--vth-bp) !important; }
+              .vth-brand .vth-search-kbd { color: var(--vth-bp); border-color: color-mix(in srgb, var(--vth-bp) 35%, #E2E6F0); }
+              .vth-brand .vth-topbar-actions .btn-topbar:not(.vth-logout-btn):hover { color: var(--vth-bp) !important; background-color: color-mix(in srgb, var(--vth-bp) 10%, transparent) !important; }
             `}</style>
-            <header id="page-topbar" className={headerClass}>
+            <header
+                id="page-topbar"
+                className={`${headerClass || ''} ${tenantThemeEnabled ? 'vth-brand' : ''}`}
+                style={{ ['--vth-bp' as any]: user?.primary_color || '#7C3AED' }}
+            >
                 <div className="layout-width">
                     <div className="navbar-header">
                         <div className="d-flex">

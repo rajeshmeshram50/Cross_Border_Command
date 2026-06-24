@@ -365,7 +365,6 @@ export const DEVELOPERS_GROUPS: MenuGroup[] = [
 ];
 
 export const MENU_ITEMS: MenuItem[] = [
-  { id: '', section: 'MAIN', label: '', icon: '', roles: ALL_TENANT_ROLES },
   { id: 'dashboard', icon: 'LayoutGrid', label: 'Dashboard', roles: ALL_TENANT_ROLES },
 
   { id: '', section: 'MANAGEMENT', label: '', icon: '', roles: ['super_admin'] },
@@ -383,7 +382,8 @@ export const MENU_ITEMS: MenuItem[] = [
   { id: '', section: 'BILLING', label: '', icon: '', roles: ['client_admin'] },
   { id: 'my-plan', icon: 'CreditCard', label: 'My Plan', roles: ['client_admin'] },
 
-  { id: '', section: 'MASTER DATA', label: '', icon: '', roles: ALL_TENANT_ROLES },
+  // "MASTER DATA" header removed by request — these modules now sit under the
+  // MAIN section above. ACCESS CONTROL + SYSTEM headers remain further down.
   // Credentials Vault — top-level module. No dedicated page yet (renders a
   // permission-gated stub); surfaces for any tenant role that holds
   // can_view, granted from the Permissions sheet like every other module.
@@ -462,10 +462,8 @@ export const MENU_ITEMS: MenuItem[] = [
 
   // Permissions panel — only admins should grant. Employees never manage
   // their peers' access, so no `employee` here.
-  { id: '', section: 'ACCESS CONTROL', label: '', icon: '', roles: ['super_admin', 'client_admin', 'branch_user'] },
   { id: 'permissions', icon: 'ShieldCheck', label: 'Permissions', roles: ['super_admin', 'client_admin', 'branch_user'] },
 
-  { id: '', section: 'SYSTEM', label: '', icon: '', roles: ALL_TENANT_ROLES },
   { id: 'settings', icon: 'Settings', label: 'Settings', roles: ['super_admin'] },
   { id: 'profile', icon: 'UserCircle', label: 'Profile', roles: ALL_TENANT_ROLES },
 ];
