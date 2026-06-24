@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
-import type { VaultData, VaultDoc, VaultStatus } from '../sales/CustomerEvidenceVaultModal';
+import type { VaultData, VaultDoc, VaultStatus } from '../sales/core-masters/customer/CustomerEvidenceVaultModal';
 
 /* ──────────────────────────────────────────────────────────────────────────
  * CLM → Buyer / Supplier Profile document popup.

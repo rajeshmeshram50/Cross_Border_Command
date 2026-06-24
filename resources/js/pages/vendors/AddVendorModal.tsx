@@ -10,7 +10,7 @@ import {
   validateEmail, validatePincode, validateWebsite,
   validateGstin, validateIfsc, validateAccountNumber,
 } from '../../utils/fieldValidators';
-import SalesCustomerSendForSignatureModal from '../sales/SalesCustomerSendForSignatureModal';
+import SalesCustomerSendForSignatureModal from '../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
 import {
   readVendorMasterBundle,
   writeVendorMasterBundle,

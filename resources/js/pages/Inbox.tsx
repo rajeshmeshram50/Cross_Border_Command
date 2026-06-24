@@ -42,10 +42,6 @@ interface SignatureRun {
   audit_log?: AuditEvent[];
   created_at: string;
 }
-
-// One entry in a run's audit trail. A 'reminded' event carries signer_index
-// so we can tell whether the nudge was aimed at the slot the current viewer
-// is sitting on.
 type AuditEvent = {
   at: string;
   actor_id: number | null;
@@ -54,10 +50,6 @@ type AuditEvent = {
   message: string;
   signer_index?: number;
 };
-
-// Most-recent 'reminded' event aimed at this run's CURRENT signer (the person
-// whose turn it is, i.e. whoever is looking at this inbox row). Returns null
-// when nobody has nudged them yet.
 function latestReminder(run: SignatureRun): AuditEvent | null {
   const hits = (run.audit_log || []).filter(
     e => e.action === 'reminded' && (e.signer_index ?? -1) === run.current_index,
@@ -66,8 +58,6 @@ function latestReminder(run: SignatureRun): AuditEvent | null {
   return hits.reduce((a, b) => (a.at >= b.at ? a : b));
 }
 
-// Hex → rgba with the given alpha (used to derive the dark-mode translucent
-// chip tint for the history section headers).
 function hexA(hex: string, a: number): string {
   const h = hex.replace('#', '');
   const f = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
@@ -84,32 +74,13 @@ export default function Inbox() {
 
   const [rows, setRows] = useState<SignatureRun[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Inbox tabs — "New" holds everything still waiting on your sign/approve
-  // action (Leave · Expense · Documents); "Updated" is the history of items
-  // already acted on (Your Claim Updates). The containers themselves are
-  // unchanged — they're just grouped under the matching tab.
   const [tab, setTab] = useState<'new' | 'updated'>('new');
-
-  // Leave approvals — pending leave requests where the current user is
-  // an approver. Reporting managers see their direct reports;
-  // branch_user / client_admin / super_admin see every pending request
-  // in their tenant (parallel approval — the first one to act wins).
   const [leaveRows, setLeaveRows] = useState<ApiLeaveRequest[]>([]);
   const [leaveLoading, setLeaveLoading] = useState(true);
   const [leaveActing, setLeaveActing] = useState<{ id: number; verdict: 'approve' | 'reject' } | null>(null);
   const [leaveComment, setLeaveComment] = useState<Record<number, string>>({});
-
-  // Expense approvals — pending claims pulled from /my-team/approvals where
-  // module = 'expense'. Combines manager-stage (when the user is the assigned
-  // reporting manager) and HR-stage (when the user has hr.expense approval
-  // permission, e.g. branch admins / client admins). Stage lives on raw.stage
-  // so the dispatch knows whether to hit manager-approve or hr-approve.
   type ExpenseApprovalRow = {
     id: number;
-    // Both expense claims and advance requests share this row shape and the
-    // same two-stage approval flow; `module` decides which endpoint the
-    // approve/reject action hits (/expense-claims vs /advance-requests).
     module: 'expense' | 'advance';
     code: string | null;
     title: string;
@@ -133,18 +104,10 @@ export default function Inbox() {
   };
   const [expenseRows, setExpenseRows] = useState<ExpenseApprovalRow[]>([]);
   const [expenseLoading, setExpenseLoading] = useState(true);
-  // Expense and advance IDs share the same number space, so per-row state
-  // (in-flight action + draft comment) is keyed by `<module>-<id>` rather
-  // than the bare id — otherwise claim #5 and advance #5 would clobber each
-  // other's comment box and spinner.
-  const [expenseActing, setExpenseActing] = useState<{ key: string; verdict: 'approve' | 'reject' } | null>(null);
+ const [expenseActing, setExpenseActing] = useState<{ key: string; verdict: 'approve' | 'reject' } | null>(null);
   const [expenseComment, setExpenseComment] = useState<Record<string, string>>({});
   const expRowKey = (r: { module: string; id: number }) => `${r.module}-${r.id}`;
-
-  // Personal claim/advance updates — FYI notifications for claims THIS
-  // user filed that managers or HR have just acted on. Read-only; no
-  // approve/reject buttons. Sourced from /api/my-team/my-updates.
-  type MyUpdate = {
+ type MyUpdate = {
     module: 'expense' | 'advance';
     id: number;
     code: string | null;

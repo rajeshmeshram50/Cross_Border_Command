@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
-import CustomerEvidenceVaultModal, { type CustomerVaultTarget, type TabKey as VaultTab } from '../sales/CustomerEvidenceVaultModal';
-import ConsigneeEvidenceVaultModal, { type ConsigneeVaultTarget } from '../sales/ConsigneeEvidenceVaultModal';
+import CustomerEvidenceVaultModal, { type CustomerVaultTarget, type TabKey as VaultTab } from '../sales/core-masters/customer/CustomerEvidenceVaultModal';
+import ConsigneeEvidenceVaultModal, { type ConsigneeVaultTarget } from '../sales/core-masters/consignee/ConsigneeEvidenceVaultModal';
 import ClmDocsPopup, { type DocCategory } from './ClmDocsPopup';
 
 /*
