@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class ProcurementProduct extends Model
 {
     protected $fillable = [
-        'procurement_id', 'lead_product_id', 'product_id',
+        'procurement_id', 'lead_product_id', 'product_id', 'vendor_id',
         'qty', 'target_price', 'attachments',
     ];
 
@@ -31,5 +31,11 @@ class ProcurementProduct extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
+    }
+
+    /** Recorded sourced supplier for this line (nullable). */
+    public function vendor(): BelongsTo
+    {
+        return $this->belongsTo(Vendor::class);
     }
 }

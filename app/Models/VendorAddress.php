@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class VendorAddress extends Model
 {
     protected $fillable = [
-        'vendor_id',
+        'vendor_id', 'address_type',
         'address_line', 'country_id', 'state_id', 'state_code',
         'city', 'pincode',
         'contact_name', 'designation', 'contact_no', 'email',

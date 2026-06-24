@@ -25,6 +25,10 @@ import { resolveFileUrl } from './resolveFileUrl';
 export interface SigReqRow {
   id: number;
   status: string;
+  /** 'trade_doc' | 'agreement' — discriminates which library the
+   *  trade_doc_ids point at, so a trade-doc id and an agreement id that
+   *  happen to share a number aren't conflated when overlaying status. */
+  document_type?: string | null;
   zoho_request_id?: string | null;
   request_name?: string | null;
   trade_doc_ids?: number[] | null;

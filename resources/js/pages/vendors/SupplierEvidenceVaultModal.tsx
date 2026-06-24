@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
@@ -96,7 +96,28 @@ export interface VaultData {
   trade_licenses:         VaultDoc[];
   trade_documents:        VaultDoc[];
   shipment_agreements:    VaultShipmentRow[];
+  /* Case-to-Case deals — split by whether the lead has a shipment. */
+  vendor_with_shipment?:    VendorDealRow[];
+  vendor_without_shipment?: VendorDealRow[];
+  vendor_deal_ratios?:      DealRatios | null;
   last_updated:           string;
+}
+
+type DealCount = { d: number; t: number };
+export interface DealRatios { kyc: DealCount; dd: DealCount; tl: DealCount; td: DealCount }
+export interface VendorDealRow {
+  sr: number;
+  shipment_id?: string;
+  procurement_id?: string;
+  customer?: string;
+  consignee?: string;
+  supplier: string;
+  ratios: DealRatios;
+  /** This deal's applicable Trade Documents (from the vendor's mapped products),
+   *  with live Zoho signature status — drives the Trade Documents drill-down. */
+  docs?: VaultDoc[];
+  /** Same, for Agreements — drives the Agreements drill-down. */
+  agreements?: VaultDoc[];
 }
 
 export interface SupplierVaultTarget {
@@ -108,6 +129,9 @@ export interface SupplierVaultTarget {
   country?: string;
   contact?: string;
   contactCity?: string;
+  /* Primary contact email — the default signer when sending a trade doc for
+   * e-signature from this supplier's vault. */
+  email?: string;
   /* Linked customer code (e.g. C-010) so the header can show the
    * buyer-supplier relationship at a glance. */
   customerId?: string;
@@ -200,7 +224,9 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
   const [overview, setOverview] = useState<GroupKey | null>(null);
   const [overviewPage, setOverviewPage] = useState(1);
   const [ovShip, setOvShip] = useState<number | null>(null);
-  const [shipmentFilter, setShipmentFilter] = useState<'buyer-eq-supplier' | 'buyer-neq-supplier'>('buyer-eq-supplier');
+  /* Case-to-Case top toggle (Figma .ev-shp-toggle) — splits per-deal records
+     into those tied to a shipment vs general trade docs. */
+  const [shipmentIdMode, setShipmentIdMode] = useState<'with' | 'without'>('with');
 
   /* Switch the active group and jump to its first sub-tab. */
   const selectGroup = (g: GroupKey) => {
@@ -222,6 +248,9 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
    * wizard opens with these clm_trade_doc_library ids pre-checked. Driven
    * by the Trade Documents tab's per-row Send button. */
   const [sendDocIds, setSendDocIds] = useState<number[] | null>(null);
+  // Whether the open Send modal is sending case-to-case Agreements (→ agreement_ids)
+  // or Trade Documents (→ trade_doc_ids). Drives which library the backend uses.
+  const [sendKind, setSendKind] = useState<'trade' | 'agreement'>('trade');
 
   useEffect(() => {
     if (!open) return;
@@ -247,7 +276,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
     if (!open) return;
     setTab('company-dd');
     setGroup('standard');
-    setShipmentFilter('buyer-eq-supplier');
+    setShipmentIdMode('with');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, supplier?.db_id]);
 
@@ -324,6 +353,20 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
     return () => { cancelled = true; };
   }, [open, supplier?.db_id]);
 
+  /* Re-poll signing status when the user returns to this tab — e.g. after
+   * signing in the Zoho Sign tab — so the vault flips Pending → Signed without
+   * a manual refresh. Only while the vault is open. */
+  useEffect(() => {
+    if (!open || !supplier?.db_id) return;
+    const onBack = () => { if (document.visibilityState === 'visible') void reloadSignatures(); };
+    window.addEventListener('focus', onBack);
+    document.addEventListener('visibilitychange', onBack);
+    return () => {
+      window.removeEventListener('focus', onBack);
+      document.removeEventListener('visibilitychange', onBack);
+    };
+  }, [open, supplier?.db_id, reloadSignatures]);
+
   const vault: VaultData | null = useMemo(() => {
     if (!supplier) return null;
     /* Priority: explicit `data` prop > live API > demo fallback. */
@@ -333,17 +376,56 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
     // td, party-filtered to mirror the edit form) merged with their live
     // Zoho Sign status. Each row exposes Send-for-Signature; signed rows
     // also carry the signed PDF + certificate links.
-    const sigRows            = signatureRequestsToVaultDocs(signatureRows);
+    // Split signature requests by library so a trade-doc id and an agreement
+    // id that share a number don't overlay onto each other.
+    const tradeSigRows       = signatureRequestsToVaultDocs(signatureRows.filter(r => (r.document_type ?? 'trade_doc') !== 'agreement'));
+    const agrSigRows         = signatureRequestsToVaultDocs(signatureRows.filter(r => r.document_type === 'agreement'));
+    const sigRows            = tradeSigRows;
     const baseSegmentTd      = (base.trade_documents ?? []) as VaultDoc[];
     const mergedTd           = mergeTradeDocuments(baseSegmentTd as any, sigRows, 'supplier') as unknown as VaultDoc[];
     const baseSegmentSigned  = baseSegmentTd.filter(r => r.status === 'Verified' || r.status === 'Signed').length;
     const baseSegmentPending = baseSegmentTd.filter(r => r.status === 'Pending').length;
     const mergedSigned       = mergedTd.filter(r => r.status === 'Verified' || r.status === 'Signed').length;
     const mergedPending      = mergedTd.filter(r => r.status === 'Pending').length;
+
+    /* Overlay the live Zoho status onto the per-deal Trade Documents AND
+     * Agreements (matched by db_id / library id — vendor-level, same as the
+     * standard tab), each from its OWN library's requests, so a signed doc or
+     * agreement flips to Signed without waiting on a per-deal lead_id. Recompute
+     * the TRADE DOCS column ratio from the overlaid trade-doc statuses. */
+    const buildSigMap = (rows: ReturnType<typeof signatureRequestsToVaultDocs>) => {
+      const m = new Map<number, VaultDoc>();
+      for (const s of rows as unknown as VaultDoc[]) {
+        if (s.db_id != null && !m.has(s.db_id)) m.set(s.db_id, s);
+      }
+      return m;
+    };
+    const sigByDoc = buildSigMap(tradeSigRows);
+    const sigByAgr = buildSigMap(agrSigRows);
+    const overlayDoc = (d: VaultDoc, map: Map<number, VaultDoc>): VaultDoc => {
+      const sig = d.db_id != null ? map.get(d.db_id) : undefined;
+      return sig ? {
+        ...d,
+        status:               sig.status,
+        attachment_url:       sig.attachment_url ?? d.attachment_url,
+        certificate_url:      sig.certificate_url ?? d.certificate_url,
+        signature_request_id: sig.signature_request_id ?? d.signature_request_id,
+        sig_state:            sig.sig_state ?? d.sig_state,
+      } : d;
+    };
+    const overlayRows = (rows?: VendorDealRow[]): VendorDealRow[] => (rows ?? []).map(r => {
+      const docs       = (r.docs ?? []).map(d => overlayDoc(d, sigByDoc));
+      const agreements = (r.agreements ?? []).map(d => overlayDoc(d, sigByAgr));
+      const signed = docs.filter(d => d.status === 'Signed').length;
+      return { ...r, docs, agreements, ratios: { ...r.ratios, td: { d: signed, t: docs.length } } };
+    });
+
     return {
       ...base,
       trade_documents: mergedTd as typeof base.trade_documents,
       trade_documents_count: mergedTd.length,
+      vendor_with_shipment:    overlayRows(base.vendor_with_shipment),
+      vendor_without_shipment: overlayRows(base.vendor_without_shipment),
       // KPI roll-ups: swap the raw segment-rule TD contribution for the
       // merged (party-filtered + signature-aware) numbers.
       verified_signed: Math.max(0, (base.verified_signed ?? 0) - baseSegmentSigned) + mergedSigned,
@@ -384,15 +466,48 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
 
   const tabMeta = TABS.find(t => t.key === tab)!;
 
-  /* Tab badge count. Standard tabs keep their own count key; the
-   * case-to-case tabs reflect the trade-doc / shipment counts. */
-  const tabCount = (t: typeof TABS[number]): number => vault[t.countKey] as number;
+  /* Tab badge count. Standard tabs keep their own count key. The case-to-case
+   * tabs render the per-deal matrix, so their badge must follow the active
+   * With/Without Shipment view — otherwise it claims "1" while the table reads
+   * "No shipments". Both sub-tabs share the same deal rows, so both reflect the
+   * current mode's deal count. */
+  const tabCount = (t: typeof TABS[number]): number => {
+    if (t.group === 'case-to-case') {
+      return (shipmentIdMode === 'with' ? (vault.vendor_with_shipment ?? []) : (vault.vendor_without_shipment ?? [])).length;
+    }
+    return vault[t.countKey] as number;
+  };
 
   const showSkeleton = loading && !vaultLive && !data;
 
   return createPortal(
     <div className="cev-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <style>{CEV_CSS}</style>
+      {/* With/Without Shipment ID segmented toggle — matches the Figma .ev-shp-toggle
+          (joined bar, not two separate pills). */}
+      <style>{`
+        /* Padded track with a floating, fully-rounded active pill (content-width). */
+        .cev-shp-toggle{display:inline-flex;align-self:flex-start;width:fit-content;align-items:center;gap:2px;padding:3px;border-radius:10px;border:1.5px solid rgba(6,182,212,.2);background:#f0fdff;margin:-6px 18px 6px;}
+        .cev-shp-toggle button{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:7px 13px;border:none;border-radius:7px;cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;letter-spacing:.01em;white-space:nowrap;transition:background .15s,color .15s,box-shadow .15s;background:transparent;color:#94a3b8;}
+        .cev-shp-toggle button:hover:not(.is-active){color:#0891b2;}
+        .cev-shp-toggle button.is-active{background:linear-gradient(135deg,#0891b2,#06b6d4);color:#fff;box-shadow:0 2px 8px rgba(6,182,212,.3);}
+        [data-bs-theme="dark"] .cev-shp-toggle{background:rgba(6,182,212,.08);border-color:rgba(6,182,212,.25);}
+        [data-bs-theme="dark"] .cev-shp-toggle button{color:#7dd3fc;}
+        [data-bs-theme="dark"] .cev-shp-toggle button.is-active{background:linear-gradient(135deg,#0891b2,#06b6d4);color:#fff;}
+        /* Complete / Partial / Pending status pills in the deal-matrix section header (Figma .ev-spill). */
+        .cev-deal-spill{display:inline-flex;align-items:center;gap:5px;font-size:9.5px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;letter-spacing:.01em;}
+        .cev-deal-dot{width:5px;height:5px;border-radius:50%;display:inline-block;flex-shrink:0;}
+        /* Deal-matrix surfaces as CSS variables so the inline-styled table + JS
+           hover flip with the theme (the matrix is Figma-light by default). */
+        .cev-deal{--dl-row:#fff;--dl-zebra:#fafbff;--dl-hover:#f0fdff;--dl-ink:#083344;--dl-sub:#64748b;--dl-muted:#94a3b8;--dl-border:#eef0fa;--dl-line:#e8eaf5;--dl-panel:#fafbff;--dl-docrow:#fff;--dl-docline:#f0f2fa;}
+        [data-bs-theme="dark"] .cev-deal{--dl-row:#101c2b;--dl-zebra:#13212f;--dl-hover:#193044;--dl-ink:#e7f2f7;--dl-sub:#9db2c4;--dl-muted:#7f97aa;--dl-border:rgba(148,197,255,.10);--dl-line:rgba(148,197,255,.12);--dl-panel:#0d1925;--dl-docrow:#101c2b;--dl-docline:rgba(148,197,255,.08);}
+        /* On phones the With/Without toggle fills the row (equal buttons) so it
+           can't overflow at ~320-360px. */
+        @media (max-width: 640px) {
+          .cev-shp-toggle{display:flex;width:auto;margin:-6px 12px 6px;}
+          .cev-shp-toggle button{flex:1;padding:7px 8px;}
+        }
+      `}</style>
       <div className="cev-card" onMouseDown={(e) => e.stopPropagation()}>
         {/* ─── HEADER ─── */}
         <div className="cev-header">
@@ -484,6 +599,19 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           </div>
         </div>
 
+        {/* ─── CASE-TO-CASE: With / Without Shipment ID toggle (Figma .ev-shp-toggle).
+               Sits above the Trade Documents / Agreements sub-tabs. */}
+        {group === 'case-to-case' && (
+          <div className="cev-shp-toggle">
+            <button type="button" className={shipmentIdMode === 'with' ? 'is-active' : ''} onClick={() => setShipmentIdMode('with')}>
+              <i className="ri-time-line" aria-hidden />With Shipment ID
+            </button>
+            <button type="button" className={shipmentIdMode === 'without' ? 'is-active' : ''} onClick={() => setShipmentIdMode('without')}>
+              <i className="ri-file-list-2-line" aria-hidden />Without Shipment ID
+            </button>
+          </div>
+        )}
+
         {/* ─── SUB-TABS — for the active group. */}
         <div className="cev-tabs-wrap">
           <div className="cev-tabs">
@@ -516,7 +644,23 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
               </div>
             </div>
             <div className="cev-section-right">
-              {tab === 'shipment-agreements' ? (
+              {group === 'case-to-case' && tab === 'trade-documents' ? (() => {
+                const dr = shipmentIdMode === 'with' ? (vault.vendor_with_shipment ?? []) : (vault.vendor_without_shipment ?? []);
+                const cmpl = dr.filter(r => (r.ratios?.td?.t ?? 0) > 0 && r.ratios?.td?.d === r.ratios?.td?.t).length;
+                const part = dr.filter(r => (r.ratios?.td?.d ?? 0) > 0 && (r.ratios?.td?.d ?? 0) < (r.ratios?.td?.t ?? 0)).length;
+                const pend = dr.filter(r => (r.ratios?.td?.d ?? 0) === 0).length;
+                const spill = (txt: string, bg: string, fg: string, bd: string, dot: string) => (
+                  <span className="cev-deal-spill" style={{ background: bg, color: fg, border: `1px solid ${bd}` }}><span className="cev-deal-dot" style={{ background: dot }} />{txt}</span>
+                );
+                return (<>
+                  {cmpl > 0 && spill(`Complete ${cmpl}`, 'linear-gradient(135deg,#ecfdf5,#d1fae5)', '#059669', '#6ee7b7', '#10b981')}
+                  {part > 0 && spill(`Partial ${part}`, 'linear-gradient(135deg,#fffbeb,#fef3c7)', '#d97706', '#fcd34d', '#f59e0b')}
+                  {pend > 0 && spill(`Pending ${pend}`, 'linear-gradient(135deg,#fef2f2,#fee2e2)', '#dc2626', '#fca5a5', '#ef4444')}
+                  <span className="cev-sec-pill cev-sec-pill-docs">{dr.length} {shipmentIdMode === 'with' ? 'Shipments' : 'Procurements'}</span>
+                </>);
+              })() : group === 'case-to-case' && tab === 'shipment-agreements' ? (
+                <span className="cev-sec-pill cev-sec-pill-docs">{(shipmentIdMode === 'with' ? (vault.vendor_with_shipment ?? []) : (vault.vendor_without_shipment ?? [])).length} {shipmentIdMode === 'with' ? 'Shipments' : 'Procurements'}</span>
+              ) : tab === 'shipment-agreements' ? (
                 <span className="cev-sec-pill cev-sec-pill-docs">{vault.total_shipments} Shipments</span>
               ) : (
                 <>
@@ -527,11 +671,16 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
             </div>
           </div>
 
-          {tab === 'shipment-agreements'
-            ? <ShipmentTable rows={vault.shipment_agreements} filter={shipmentFilter} setFilter={setShipmentFilter} />
-            : <DocsTable rows={docsForTab} tab={tab} ownerType="supplier" ownerId={supplier?.db_id ?? null} onReload={reloadVault}
-                         onSendTradeDoc={(d) => { if (d.db_id) setSendDocIds([d.db_id]); }}
-                         onRemindTradeDoc={handleRemind} />}
+          {group === 'case-to-case' && (tab === 'trade-documents' || tab === 'shipment-agreements')
+            ? <VendorDealTable key={`${shipmentIdMode}-${tab}`} mode={shipmentIdMode} docKind={tab === 'shipment-agreements' ? 'agreement' : 'trade'}
+                               rows={shipmentIdMode === 'with' ? (vault.vendor_with_shipment ?? []) : (vault.vendor_without_shipment ?? [])}
+                               ownerId={supplier?.db_id ?? null} onReload={reloadVault}
+                               onSendTradeDoc={(d) => { if (d.db_id) { setSendKind(tab === 'shipment-agreements' ? 'agreement' : 'trade'); setSendDocIds([d.db_id]); } }} onRemindTradeDoc={handleRemind} />
+            : tab === 'shipment-agreements'
+              ? <ShipmentTable rows={vault.shipment_agreements} />
+              : <DocsTable rows={docsForTab} tab={tab} ownerType="supplier" ownerId={supplier?.db_id ?? null} onReload={reloadVault}
+                           onSendTradeDoc={(d) => { if (d.db_id) { setSendKind('trade'); setSendDocIds([d.db_id]); } }}
+                           onRemindTradeDoc={handleRemind} />}
         </div>
         </>)}
 
@@ -550,7 +699,11 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
       </div>
 
       {/* Send for Signature — launched from a Trade Documents row. The
-          modal portals to <body>, so it overlays the vault cleanly. */}
+          modal portals to <body>, so it overlays the vault cleanly.
+          NOTE: multiBox (one-person-multiple-signatures "Sign 1/2/3" picker) is
+          temporarily DISABLED — the single-signature original Zoho flow is used.
+          The multi-box code stays intact in the send modal, gated behind the
+          prop; re-enable by adding `multiBox` back to the props below. */}
       <SalesCustomerSendForSignatureModal
         open={Array.isArray(sendDocIds)}
         customer={supplier?.db_id ? {
@@ -558,8 +711,10 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           db_id:   supplier.db_id,
           company: supplier.company,
           contact: supplier.contact,
+          email:   supplier.email,   // primary contact email → default signer
         } : null}
         modelName="Vendor"
+        sendAsAgreement={sendKind === 'agreement'}
         preselectedDocIds={sendDocIds ?? undefined}
         onClose={() => setSendDocIds(null)}
         onSent={() => { setSendDocIds(null); void reloadSignatures(); }}
@@ -765,7 +920,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   doc: VaultDoc;
   ownerType: 'customer' | 'consignee' | 'supplier';
   ownerId: number | null;
-  category: 'kyc' | 'dd' | 'tl' | 'td';
+  category: 'kyc' | 'dd' | 'tl' | 'td' | 'agreement';
   onReload: () => Promise<void> | void;
   onSendTradeDoc?: (doc: VaultDoc) => void;
   onRemindTradeDoc?: (doc: VaultDoc) => void | Promise<void>;
@@ -783,7 +938,10 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   //                            count as "dead" so a fresh round can start)
   const isSigned     = doc.sig_state === 'completed' || doc.status === 'Signed';
   const isInProgress = doc.sig_state === 'inprogress';
-  const isTradeDoc   = category === 'td' && !!ownerId && !!doc.db_id;
+  // Trade Documents AND case-to-case Agreements both support Send / Remind —
+  // ClmSignatureController::send accepts agreement_ids and runs the same Zoho
+  // flow, so the same lifecycle gates (signed / in-progress / fresh) apply.
+  const isTradeDoc   = (category === 'td' || category === 'agreement') && !!ownerId && !!doc.db_id;
   const canSend   = isTradeDoc && !!onSendTradeDoc && !isSigned && !isInProgress;
   const canRemind = isTradeDoc && !!onRemindTradeDoc && isInProgress && !!doc.signature_request_id;
 
@@ -947,19 +1105,215 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
 /* ─── Shipment-ID-wise matrix — one row per shipment with the Customer /
  *      Supplier compliance ratios. A Customer = / ≠ Supplier toggle filters
  *      the rows. */
-function ShipmentTable({ rows, filter, setFilter }: {
-  rows: VaultShipmentRow[];
-  filter: 'buyer-eq-supplier' | 'buyer-neq-supplier';
-  setFilter: (f: 'buyer-eq-supplier' | 'buyer-neq-supplier') => void;
+/* Case-to-Case matrix — shipment-wise (With Shipment ID) or procurement-wise
+   (Without Shipment ID). Reuses the shipment table's chip pills + Ratio cells.
+   The KYC/DD/Lic/Docs ratios are the vendor's overall verified-vs-total. */
+/* ── Vendor deal matrix (Case-to-Case → Trade Documents) ──────────────────
+ * Faithful port of the P2P_Sourcing Figma "Trade Documents" matrix: dark-teal
+ * gradient header, teal rounded ID pill with a clock glyph, gradient avatar
+ * blocks for Customer / Consignee / Supplier, and colour-coded d/t + % ratio
+ * cells (green 100% · amber partial · red 0%). Styling is inline to mirror the
+ * prototype 1:1. */
+const DEAL_TH: React.CSSProperties = { padding: '10px 8px', fontSize: 7, fontWeight: 700, letterSpacing: '.12em', color: 'rgba(255,255,255,.65)', textTransform: 'uppercase' };
+const DEAL_THC: React.CSSProperties = { ...DEAL_TH, textAlign: 'center' };
+const DEAL_AV_GRADS = [
+  'linear-gradient(135deg,#06b6d4,#22d3ee)',
+  'linear-gradient(135deg,#0e7490,#22d3ee)',
+  'linear-gradient(135deg,#0891b2,#06b6d4)',
+  'linear-gradient(135deg,#083344,#0891b2)',
+];
+
+function dealFrac(c?: DealCount) {
+  // Null-safe against a malformed/missing ratio so one bad row can't crash the
+  // whole Case-to-Case table (server is expected to always send {d,t}).
+  const d = c?.d ?? 0, t = c?.t ?? 0;
+  const pct = t > 0 ? Math.round((d / t) * 100) : 0;
+  const col = pct === 100 ? '#059669' : pct > 0 ? '#d97706' : '#dc2626';
+  return (
+    <div style={{ lineHeight: 1.3 }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: col }}>{d}/{t}</div>
+      <div style={{ fontSize: 8, fontWeight: 600, color: col, opacity: 0.7 }}>{pct}%</div>
+    </div>
+  );
+}
+
+function DealAvatar({ name, grad, tag }: { name: string; grad: string; tag?: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ width: 34, height: 34, borderRadius: 10, background: grad, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: '#fff', flexShrink: 0, boxShadow: '0 2px 8px rgba(6,182,212,.3)' }}>{(name || '—').charAt(0).toUpperCase()}</div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dl-ink, #083344)', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220 }}>{name || '—'}</div>
+        {tag && <div style={{ marginTop: 2 }}><span style={{ fontSize: 8, background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>{tag}</span></div>}
+      </div>
+    </div>
+  );
+}
+
+function DealIdPill({ text }: { text: string }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 9.5, fontWeight: 700, padding: '4px 9px', borderRadius: 20, border: '1.5px solid #a5f3fc', background: '#ecfeff', color: '#0e7490', whiteSpace: 'nowrap' }}>
+      <span style={{ width: 13, height: 13, borderRadius: '50%', border: '1.5px solid #a5f3fc', background: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+      </span>{text}
+    </span>
+  );
+}
+
+/* Compact Figma drill-down sub-table — small fonts + the Figma columns
+ * (# · Document Name · Required · Uploaded On · Valid Upto · Status · Actions),
+ * but each row keeps the real VaultRowActions Zoho wiring (Send / Remind /
+ * signed-status / certificate / re-upload) so it behaves exactly like the
+ * Customer vault. */
+const DEAL_SUB_TH: React.CSSProperties = { padding: '8px 12px', fontSize: 6.5, fontWeight: 700, letterSpacing: '.12em', color: 'rgba(255,255,255,.65)', textTransform: 'uppercase' };
+
+function dealDocState(d: VaultDoc): { label: string; c: [string, string, string, string] } {
+  if (d.sig_state === 'completed' || d.status === 'Signed') return { label: 'Signed', c: ['#ecfdf5', '#059669', '#a7f3d0', '#10b981'] };
+  if (d.sig_state === 'inprogress') return { label: 'Sent', c: ['#fffbeb', '#d97706', '#fcd34d', '#f59e0b'] };
+  if (d.status === 'Verified') return { label: 'Verified', c: ['#ecfdf5', '#059669', '#a7f3d0', '#10b981'] };
+  return { label: 'Pending', c: ['#fef2f2', '#dc2626', '#fca5a5', '#ef4444'] };
+}
+
+function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc, category = 'td', emptyLabel = 'No trade documents on record.' }: {
+  rows: VaultDoc[];
+  ownerId: number | null;
+  onReload: () => Promise<void> | void;
+  onSendTradeDoc?: (doc: VaultDoc) => void;
+  onRemindTradeDoc?: (doc: VaultDoc) => void | Promise<void>;
+  /** 'td' = Trade Documents, 'agreement' = case-to-case Agreements. Both get
+   *  the full Send / Remind / View actions (supplier agreement-send is wired
+   *  through ClmSignatureController::send with agreement_ids). */
+  category?: 'td' | 'agreement';
+  emptyLabel?: string;
 }) {
-  const buyerNeq = filter === 'buyer-neq-supplier';
-  const filtered = rows.filter(r => buyerNeq ? !r.buyer_is_supplier : r.buyer_is_supplier);
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <thead>
+        <tr style={{ background: 'linear-gradient(110deg,#083344,#0e7490)' }}>
+          <th style={{ ...DEAL_SUB_TH, width: 32, textAlign: 'center' }}>#</th>
+          <th style={{ ...DEAL_SUB_TH, textAlign: 'left' }}>Document Name</th>
+          <th style={{ ...DEAL_SUB_TH, textAlign: 'center' }}>Required</th>
+          <th style={{ ...DEAL_SUB_TH, textAlign: 'center' }}>Uploaded On</th>
+          <th style={{ ...DEAL_SUB_TH, textAlign: 'center' }}>Valid Upto</th>
+          <th style={{ ...DEAL_SUB_TH, textAlign: 'center' }}>Status</th>
+          <th style={{ ...DEAL_SUB_TH, textAlign: 'center' }}>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.length === 0 ? (
+          <tr><td colSpan={7} style={{ padding: 18, textAlign: 'center', color: 'var(--dl-muted)', fontSize: 11, background: 'var(--dl-docrow)' }}>{emptyLabel}</td></tr>
+        ) : rows.map((d, di) => {
+          const st = dealDocState(d);
+          return (
+            <tr key={`${d.doc_code ?? 'doc'}-${di}`} style={{ background: 'var(--dl-docrow)', borderBottom: '1px solid var(--dl-docline)' }}>
+              <td style={{ padding: '11px 12px', textAlign: 'center', fontSize: 10.5, fontWeight: 700, color: '#0e7490' }}>{di + 1}</td>
+              <td style={{ padding: '11px 12px' }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--dl-ink, #083344)' }}>{d.name}</div>
+                {(d.reference || d.doc_code) && <div style={{ fontSize: 9, color: 'var(--dl-muted)', marginTop: 2 }}>{d.reference || d.doc_code}</div>}
+              </td>
+              <td style={{ padding: '11px 12px', textAlign: 'center' }}>
+                <span style={{ fontSize: 8.5, fontWeight: 800, padding: '2.5px 8px', borderRadius: 5, ...(d.requirement === 'O' ? { background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0' } : { background: 'linear-gradient(135deg,#fef3c7,#fde68a)', color: '#92400e', border: '1px solid #fcd34d' }) }}>{d.requirement === 'O' ? 'OPT' : 'REQ'}</span>
+              </td>
+              <td style={{ padding: '11px 12px', textAlign: 'center', fontSize: 10.5, color: 'var(--dl-sub)' }}>{d.issue_date || '—'}</td>
+              <td style={{ padding: '11px 12px', textAlign: 'center', fontSize: 10.5, color: 'var(--dl-sub)' }}>{d.expiry || '—'}</td>
+              <td style={{ padding: '11px 12px', textAlign: 'center' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9.5, fontWeight: 700, padding: '3px 9px', borderRadius: 6, background: st.c[0], color: st.c[1], border: `1px solid ${st.c[2]}` }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: st.c[3], display: 'inline-block' }} />{st.label}</span>
+              </td>
+              <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                <VaultRowActions doc={d} ownerType="supplier" ownerId={ownerId} category={category} onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc} />
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function VendorDealTable({ mode, rows, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc, docKind = 'trade' }: {
+  mode: 'with' | 'without';
+  rows: VendorDealRow[];
+  ownerId: number | null;
+  onReload: () => Promise<void> | void;
+  onSendTradeDoc?: (doc: VaultDoc) => void;
+  onRemindTradeDoc?: (doc: VaultDoc) => void | Promise<void>;
+  /** Which per-deal doc set the drill-down shows: Trade Documents or Agreements. */
+  docKind?: 'trade' | 'agreement';
+}) {
+  const [open, setOpen] = useState<number | null>(null);
+  // total column count incl. the leading expand-arrow column
+  const span = (mode === 'with' ? 9 : 7) + 1;
+  return (
+    <div className="cev-deal" style={{ margin: 0, border: '1.5px solid var(--dl-line)', borderRadius: 8, overflow: 'hidden' }}>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: mode === 'with' ? 920 : 660 }}>
+          <thead>
+            <tr style={{ background: 'linear-gradient(110deg,#083344 0%,#0c4a6e 55%,#0e7490 100%)' }}>
+              <th style={{ ...DEAL_TH, paddingLeft: 14, width: 40 }} />
+              <th style={{ ...DEAL_TH, textAlign: 'left' }}>SR</th>
+              <th style={{ ...DEAL_TH, textAlign: 'left' }}>{mode === 'with' ? 'Shipment ID' : 'Procurement ID'}</th>
+              {mode === 'with' && <th style={{ ...DEAL_TH, textAlign: 'left' }}>Customer</th>}
+              {mode === 'with' && <th style={{ ...DEAL_TH, textAlign: 'left' }}>Consignee</th>}
+              <th style={{ ...DEAL_TH, textAlign: 'left' }}>Supplier</th>
+              <th style={DEAL_THC}>KYC</th>
+              <th style={DEAL_THC}>Due Dil.</th>
+              <th style={DEAL_THC}>Trade Lic.</th>
+              <th style={{ ...DEAL_THC, paddingRight: 14 }}>Trade Docs</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr><td colSpan={span} style={{ padding: 34, textAlign: 'center', color: 'var(--dl-muted)', fontSize: 12, background: 'var(--dl-panel)' }}>
+                {mode === 'with' ? 'No shipments for this supplier yet.' : 'No procurements for this supplier yet.'}
+              </td></tr>
+            ) : rows.map((r, idx) => {
+              const bg = idx % 2 === 0 ? 'var(--dl-row)' : 'var(--dl-zebra)';
+              const isOpen = open === idx;
+              return (
+                <Fragment key={`${r.sr}-${r.shipment_id ?? r.procurement_id}`}>
+                  <tr style={{ background: isOpen ? 'var(--dl-hover)' : bg, borderBottom: '1.5px solid var(--dl-border)', cursor: 'pointer' }}
+                      onClick={() => setOpen(isOpen ? null : idx)}
+                      onMouseEnter={(e) => { if (!isOpen) e.currentTarget.style.background = 'var(--dl-hover)'; }}
+                      onMouseLeave={(e) => { if (!isOpen) e.currentTarget.style.background = bg; }}>
+                    <td style={{ padding: '13px 8px 13px 14px', verticalAlign: 'middle', width: 40 }}>
+                      <span style={{ fontSize: 9, color: '#0e7490', userSelect: 'none' }}>{isOpen ? '▼' : '▶'}</span>
+                    </td>
+                    <td style={{ padding: '13px 8px', verticalAlign: 'middle', fontSize: 11, fontWeight: 700, color: '#0e7490' }}>{r.sr}</td>
+                    <td style={{ padding: '13px 8px', verticalAlign: 'middle' }}><DealIdPill text={r.shipment_id ?? r.procurement_id ?? '—'} /></td>
+                    {mode === 'with' && <td style={{ padding: '13px 8px', verticalAlign: 'middle' }}><DealAvatar name={r.customer || '—'} grad={DEAL_AV_GRADS[idx % DEAL_AV_GRADS.length]} /></td>}
+                    {mode === 'with' && <td style={{ padding: '13px 8px', verticalAlign: 'middle' }}>{r.consignee ? <DealAvatar name={r.consignee} grad="linear-gradient(135deg,#059669,#10b981)" tag="Consignee" /> : <span style={{ fontSize: 10, color: 'var(--dl-muted)' }}>—</span>}</td>}
+                    <td style={{ padding: '13px 8px', verticalAlign: 'middle' }}><DealAvatar name={r.supplier} grad="linear-gradient(135deg,#0891b2,#06b6d4)" /></td>
+                    <td style={{ padding: '13px 8px', verticalAlign: 'middle', textAlign: 'center' }}>{dealFrac(r.ratios?.kyc)}</td>
+                    <td style={{ padding: '13px 8px', verticalAlign: 'middle', textAlign: 'center' }}>{dealFrac(r.ratios?.dd)}</td>
+                    <td style={{ padding: '13px 8px', verticalAlign: 'middle', textAlign: 'center' }}>{dealFrac(r.ratios?.tl)}</td>
+                    <td style={{ padding: '13px 14px 13px 8px', verticalAlign: 'middle', textAlign: 'center' }}>{dealFrac(r.ratios?.td)}</td>
+                  </tr>
+                  {isOpen && (
+                    <tr>
+                      <td colSpan={span} style={{ padding: 0, background: 'var(--dl-panel)', borderTop: '1.5px solid var(--dl-line)', borderBottom: '1.5px solid var(--dl-line)' }}>
+                        {/* Compact Figma drill-down — small fonts + Figma columns,
+                            but the same Zoho Send / Remind / signed-status / cert
+                            wiring as the Customer vault (via VaultRowActions). */}
+                        <DealDocsSubTable rows={docKind === 'agreement' ? (r.agreements ?? []) : (r.docs ?? [])} ownerId={ownerId}
+                                          onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc}
+                                          category={docKind === 'agreement' ? 'agreement' : 'td'}
+                                          emptyLabel={docKind === 'agreement' ? 'No agreements on record.' : 'No trade documents on record.'} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ShipmentTable({ rows }: { rows: VaultShipmentRow[] }) {
+  const filtered = rows;
   return (
     <>
-      <div className="cev-ship-filter cev-ship-filter-2">
-        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-eq-supplier' ? 'is-active' : ''}`} onClick={() => setFilter('buyer-eq-supplier')}><span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✓</span>Customer = Supplier</button>
-        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-neq-supplier' ? 'is-active' : ''}`} onClick={() => setFilter('buyer-neq-supplier')}><span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✕</span>Customer &ne; Supplier</button>
-      </div>
       <div className="cev-table-wrap">
         <div className="cev-table-scroll">
         <table className="cev-table">

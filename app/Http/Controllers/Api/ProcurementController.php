@@ -52,6 +52,11 @@ class ProcurementController extends Controller
             'products'                      => 'required|array|min:1',
             'products.*.product_id'         => 'required|integer|exists:products,id',
             'products.*.lead_product_id'    => 'nullable|integer|exists:lead_products,id',
+            // Recorded supplier for this line (real vendor⇄procurement link).
+            // Optional: when omitted, auto-set to the product's sole mapped vendor
+            // if unambiguous — so Fresh/Recurring + the vault deal matrix reflect
+            // the actual sourced supplier instead of a shared-product guess.
+            'products.*.vendor_id'          => 'nullable|integer|exists:vendors,id',
             // B10/B11: zero qty / zero target_price are nonsensical for
             // procurement (you can't "buy 0 units" or "buy at ₹0"). The
             // earlier `min:0` permitted them. Use `gt:0` so an explicit
@@ -93,6 +98,21 @@ class ProcurementController extends Controller
             }
         }
 
+        // Tenant gate for explicitly-chosen suppliers: every products[].vendor_id
+        // must belong to this client. The validation rule is the global
+        // exists:vendors,id, so without this a caller could pin a foreign-tenant
+        // vendor onto their procurement line.
+        $vendorIds = array_values(array_unique(array_filter(array_column($data['products'], 'vendor_id'))));
+        if (!empty($vendorIds)) {
+            $own = \App\Models\Vendor::whereIn('id', $vendorIds)->where('client_id', $user->client_id)->count();
+            if ($own !== count($vendorIds)) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'One or more selected suppliers are not in your tenant',
+                ], 403);
+            }
+        }
+
         // Procurement-level attachments.
         $procAttachments = [];
         foreach ((array) $request->file('attachments') as $file) {
@@ -115,6 +135,20 @@ class ProcurementController extends Controller
                 'created_by'       => $user->id,
             ]);
 
+            // Sole-vendor lookup for the lines without an explicit supplier:
+            // product_id => vendor_id only when that product has exactly one
+            // mapped vendor (null otherwise). Scoped to THIS client's vendors and
+            // live mappings only (vendor_product_mappings soft-deletes). One query.
+            $soleVendor = DB::table('vendor_product_mappings as vpm')
+                ->join('vendors as v', 'v.id', '=', 'vpm.vendor_id')
+                ->where('v.client_id', $user->client_id)
+                ->whereNull('vpm.deleted_at')
+                ->whereIn('vpm.product_id', array_column($data['products'], 'product_id'))
+                ->groupBy('vpm.product_id')
+                ->select('vpm.product_id', DB::raw('count(distinct vpm.vendor_id) as c'), DB::raw('min(vpm.vendor_id) as vendor_id'))
+                ->get()
+                ->mapWithKeys(fn ($r) => [(int) $r->product_id => ((int) $r->c === 1 ? (int) $r->vendor_id : null)]);
+
             foreach ($data['products'] as $idx => $p) {
                 $pAttachments = [];
                 foreach ((array) $request->file("products.$idx.attachment") as $pFile) {
@@ -129,6 +163,8 @@ class ProcurementController extends Controller
                     'procurement_id'  => $procurement->id,
                     'lead_product_id' => $p['lead_product_id'] ?? null,
                     'product_id'      => $p['product_id'],
+                    // Explicit pick wins; else auto-assign the sole mapped vendor.
+                    'vendor_id'       => $p['vendor_id'] ?? ($soleVendor[(int) $p['product_id']] ?? null),
                     'qty'             => $p['qty']             ?? null,
                     'target_price'    => $p['target_price']    ?? null,
                     'attachments'     => $pAttachments ?: null,

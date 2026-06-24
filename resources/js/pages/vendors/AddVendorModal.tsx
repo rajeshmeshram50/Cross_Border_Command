@@ -281,15 +281,6 @@ const KYC_TAB_SUB: Record<string, string> = {
   gst:     'GST registration & compliance checks',
 };
 
-/* Classification & Flags — fixed vocabulary for the visual-only field that
- * mirrors the Figma. Not persisted yet (no backing column). */
-const CLASSIFICATION_OPTS: { value: string; label: string }[] = [
-  { value: 'Standard',  label: 'Standard' },
-  { value: 'Preferred', label: 'Preferred' },
-  { value: 'Watchlist', label: 'Watchlist' },
-  { value: 'Blacklisted', label: 'Blacklisted' },
-];
-
 /* ──────────────────────────────────────────────────────────────────────────
  * Component
  * ────────────────────────────────────────────────────────────────────── */
@@ -314,7 +305,9 @@ export default function AddVendorModal(props: {
   const [kycTab,   setKycTab]   = useState<KycTab>('company');
   const [tradeTab, setTradeTab] = useState<TradeTab>('kyc');
   const [kycSub,   setKycSub]   = useState<KycSubTab>('owner');
-  const [prevOpen, setPrevOpen] = useState(true);
+  // Collapsed by default — the user expands "What you did in previous stages"
+  // only when they want to review it.
+  const [prevOpen, setPrevOpen] = useState(false);
 
   /* ─── Master option lists (fetched once on mount) ─── */
   type Opt = { value: string; label: string };
@@ -322,6 +315,7 @@ export default function AddVendorModal(props: {
   const [riskLevelOpts,  setRiskLevelOpts]      = useState<Opt[]>([]);
   const [segmentOpts,    setSegmentOpts]        = useState<Opt[]>([]);
   const [complianceOpts, setComplianceOpts]     = useState<Opt[]>([]);
+  const [classificationOpts, setClassificationOpts] = useState<Opt[]>([]);
   const [behaviourOpts,  setBehaviourOpts]      = useState<Opt[]>([]);
   const [countryOpts,    setCountryOpts]        = useState<Opt[]>([]);
   /* master_states drives the State dropdown — full per-country list
@@ -447,10 +441,10 @@ export default function AddVendorModal(props: {
    * id as `segment_id` and the joined list as `segment_ids`. */
   const [segment,     setSegment]     = useState<string[]>([]);
   const [complianceBehaviour, setComplianceBehaviour] = useState('');
-  /* Classification & Flags — visual field to match the Figma. There is no
-   * backing vendor column yet, so it is NOT sent to the API; it defaults to
-   * "Standard" and is purely presentational until a column ships. */
-  const [classificationFlag, setClassificationFlag] = useState('Standard');
+  /* Classification & Flags — FK to the shared classification master
+   * (master_customer_classifications). Holds the selected id; options come
+   * from the master bundle and the value persists as vendors.classification_id. */
+  const [classificationId, setClassificationId] = useState('');
 
   /* Segment-rule template — resolved KYC/DD/TL/TD/QC master rows for the
    * currently-selected supplier segment. Renders as a reference banner
@@ -525,6 +519,7 @@ export default function AddVendorModal(props: {
   };
 
   /* ─── Step 1: Address + primary contact ─── */
+  const [addressType, setAddressType] = useState('Registered Office');
   const [registeredOffice, setRegisteredOffice] = useState('');
   const [country,   setCountry]   = useState('');
   const [state,     setState]     = useState('');
@@ -681,6 +676,8 @@ export default function AddVendorModal(props: {
     name: string;
     hsn: string;
     segment: string;
+    segmentId: number | null;  // product's segment_id — used to gate mapping to the vendor's own segments
+
     /* Auto-seed values pulled from the product itself — picking a
        product in the mapping modal pre-fills Purchase Price and GST %
        so the user only confirms or overrides. */
@@ -754,6 +751,7 @@ export default function AddVendorModal(props: {
       vendor_behaviour: NamedRow[];
       segments: Array<IdRow & { name?: string | null; title?: string | null }>;
       compliance_behaviours: NamedRow[];
+      classifications: NamedRow[];
       countries: NamedRow[];
       state_codes: Array<IdRow & {
         state_id: number | string;
@@ -784,6 +782,7 @@ export default function AddVendorModal(props: {
           .filter(o => o.value !== '' && o.label !== '')
       );
       setComplianceOpts(toOpt(b.compliance_behaviours));
+      setClassificationOpts(toOpt(b.classifications));
       setCountryOpts(toOpt(b.countries));
       setStateCodeRows(
         (b.state_codes || [])
@@ -1092,10 +1091,12 @@ export default function AddVendorModal(props: {
   useEffect(() => {
     if (!initialVendorId) return;
     type ApiAddress = {
+      address_type?: string | null;
       address_line?: string | null; country_id?: number | null; state_id?: number | null;
       state_code?: string | null; city?: string | null; pincode?: string | null;
       contact_name?: string | null; designation?: string | null; contact_no?: string | null;
       email?: string | null; whatsapp_enabled?: boolean;
+      attachment_path?: string | null; attachment_url?: string | null;
     };
     type ApiExtra = {
       id: number; contact_name?: string | null; designation?: string | null;
@@ -1114,7 +1115,9 @@ export default function AddVendorModal(props: {
       company_name?: string | null; legal_name?: string | null; website?: string | null;
       vendor_type_id?: number | null; vendor_type_name?: string | null; risk_level_id?: number | null;
       vendor_behaviour_id?: number | null; segment_id?: number | null;
+      segment_ids?: Array<number | string> | string | null;
       compliance_behaviour_id?: number | null;
+      classification_id?: number | null;
       primary_address?: ApiAddress | null;
       extra_contacts?: ApiExtra[];
       due_diligence?: ApiDd[];
@@ -1188,17 +1191,23 @@ export default function AddVendorModal(props: {
          * scalar — when the server starts shipping a `segment_ids`
          * array (or comma-joined string), we honour it; otherwise we
          * fall back to a single-element array sourced from segment_id. */
-        const segIds: string[] = Array.isArray((v as any).segment_ids)
+        const fromIds: string[] = Array.isArray((v as any).segment_ids)
           ? (v as any).segment_ids.map((x: any) => String(x)).filter(Boolean)
           : typeof (v as any).segment_ids === 'string'
             ? (v as any).segment_ids.split(',').map((s: string) => s.trim()).filter(Boolean)
-            : v.segment_id ? [String(v.segment_id)] : [];
+            : [];
+        // Legacy suppliers saved before multi-segment have an EMPTY pivot but a
+        // scalar segment_id — fall back to it so editing doesn't drop the segment
+        // (an empty array would otherwise sync the pivot to nothing on save).
+        const segIds: string[] = fromIds.length ? fromIds : (v.segment_id ? [String(v.segment_id)] : []);
         setSegment(segIds);
         setComplianceBehaviour(numStr(v.compliance_behaviour_id));
+        setClassificationId(numStr(v.classification_id));
 
         // Step 1 — primary address + extra contacts
         const pa = v.primary_address;
         if (pa) {
+          setAddressType(pa.address_type || 'Registered Office');
           setRegisteredOffice(pa.address_line ?? '');
           setCountry(numStr(pa.country_id));
           setState(numStr(pa.state_id));
@@ -1373,12 +1382,13 @@ export default function AddVendorModal(props: {
         vendor_type: vendorType || null,
         risk_level_id: riskLevel ? Number(riskLevel) : null,
         vendor_behaviour_id: vendorBehaviour ? Number(vendorBehaviour) : null,
-        /* Multi-segment: the legacy `segment_id` column is scalar so
-         * we send the first selected id as primary. `segment_ids` is
-         * a comma-joined list for the future column. */
+        /* Multi-segment: send the full set as an array (backend syncs the
+         * vendor_segments pivot and keeps the first as the scalar
+         * segment_id for backward compatibility). */
         segment_id: (segment ?? [])[0] ? Number((segment ?? [])[0]) : null,
-        segment_ids: (segment ?? []).join(','),
+        segment_ids: (segment ?? []).map(Number),
         compliance_behaviour_id: complianceBehaviour ? Number(complianceBehaviour) : null,
+        classification_id: classificationId ? Number(classificationId) : null,
       });
       setVendorId(res.data?.data?.id ?? vendorId);
       // Capture the server-assigned vendor_code so the header on
@@ -1418,28 +1428,41 @@ export default function AddVendorModal(props: {
 
     setSaving(true);
     try {
-      await api.put(`/vendors/${vendorId}/step/contacts`, {
-        primary_address: {
-          address_line: registeredOffice,
-          country_id: country ? Number(country) : null,
-          state_id:   state   ? Number(state)   : null,
-          state_code: stateCode,
-          city,
-          pincode: pincode || null,
-          contact_name: contactName,
-          designation,
-          contact_no: contactNo,
-          email,
-          whatsapp_enabled: whatsappEnabled,
-        },
-        extra_contacts: extraContacts.map(c => ({
-          contact_name: c.name,
-          designation: c.designation,
-          contact_no: c.phone,
-          email: c.email,
-          whatsapp_enabled: c.whatsapp,
-        })),
+      // Multipart so the primary contact's business card can upload. The
+      // contacts route is PUT, but PHP only parses multipart on POST, so we
+      // POST with _method=PUT spoofing (the route still resolves to PUT).
+      const fd = new FormData();
+      fd.append('_method', 'PUT');
+      const pa: Record<string, string> = {
+        address_type: addressType,
+        address_line: registeredOffice,
+        country_id: country ? String(Number(country)) : '',
+        state_id:   state   ? String(Number(state))   : '',
+        state_code: stateCode,
+        city,
+        pincode: pincode || '',
+        contact_name: contactName,
+        designation,
+        contact_no: contactNo,
+        email,
+        whatsapp_enabled: whatsappEnabled ? '1' : '0',
+      };
+      Object.entries(pa).forEach(([k, v]) => fd.append(`primary_address[${k}]`, v));
+      // New business-card upload, else echo the existing stored path on edit.
+      if (attachment) fd.append('primary_attachment', attachment);
+      else if (primaryAttachmentPath) fd.append('primary_address[attachment_path]', primaryAttachmentPath);
+
+      // Additional contacts are NOT sent here — each persists on its own via
+      // the per-contact CRUD endpoints, so Save & Next only writes the primary.
+
+      const { data } = await api.post(`/vendors/${vendorId}/step/contacts`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
+      // Sync the stored business-card path back so a re-save echoes it
+      // (instead of re-uploading) and the chooser reflects the saved file.
+      const savedPath = (data?.data?.primary_address as { attachment_path?: string } | undefined)?.attachment_path;
+      setPrimaryAttachmentPath(savedPath ?? '');
+      if (attachment) setAttachment(null);
       setFieldErrors({});
       toast.success('Contacts saved', 'Address & contact persons captured');
       return true;
@@ -1502,22 +1525,8 @@ export default function AddVendorModal(props: {
       if (r.file) fd.append(`tl_files[${i}]`, r.file);
       else if (r.existingPath) fd.append(`trade_licenses[${i}][existing_path]`, r.existingPath);
     });
-    bankRows.forEach((r, i) => {
-      fd.append(`bank_accounts[${i}][bank_name]`, r.bankName);
-      fd.append(`bank_accounts[${i}][branch_name]`, r.branchName);
-      fd.append(`bank_accounts[${i}][account_number]`, r.accountNumber);
-      fd.append(`bank_accounts[${i}][ifsc]`, r.ifsc);
-      fd.append(`bank_accounts[${i}][branch_address]`, r.branchAddress || '');
-      if (r.chequeFile) fd.append(`cheque_files[${i}]`, r.chequeFile);
-      else if (r.existingPath) fd.append(`bank_accounts[${i}][existing_path]`, r.existingPath);
-    });
-    gstRows.forEach((r, i) => {
-      fd.append(`gst_scrutiny[${i}][gst_number]`, r.gstNumber);
-      fd.append(`gst_scrutiny[${i}][status]`, r.status);
-      if (r.lastFilingDate) fd.append(`gst_scrutiny[${i}][last_filing_date]`, r.lastFilingDate);
-      fd.append(`gst_scrutiny[${i}][prev_non_gst_2a_invoice]`, r.prevNonGst2aInvoice || '');
-      fd.append(`gst_scrutiny[${i}][red_flags]`, r.redFlags || '');
-    });
+    // Bank Accounts + GST Scrutiny are NOT sent here — each persists on its
+    // own via the bank-accounts / gst-scrutiny CRUD endpoints.
 
     setSaving(true);
     try {
@@ -1601,11 +1610,10 @@ export default function AddVendorModal(props: {
       const idx = KYC_TAB_ORDER.indexOf(kycTab);
       if (idx >= 0 && idx < KYC_TAB_ORDER.length - 1) {
         setKycTab(KYC_TAB_ORDER[idx + 1]);
-      } else {
-        // Last KYC sub-tab → straight to Map Products (now Step 3). The
-        // Trade Document Management / Evidence Vault step was removed.
-        setStep(3);
       }
+      // Last KYC sub-tab is the final step — the Save/Update button
+      // (finishSupplier) closes the wizard; there is no Product step to
+      // advance to here.
     }
   };
 
@@ -1613,10 +1621,17 @@ export default function AddVendorModal(props: {
     if (step > 1) setStep((step - 1) as StepKey);
   };
 
-  const submitAll = async () => {
+  /* Final step is KYC — there is no separate Product Mapping step in the
+   * wizard. The Save/Update button persists the active KYC sub-tab, saves any
+   * product mappings added via the header "Map Product" button, then closes. */
+  const finishSupplier = async () => {
     if (saving) return;
-    const ok = await saveProducts();
-    if (!ok) return;
+    const okKyc = await saveKyc();
+    if (!okKyc) return;
+    if (productMappings.length > 0) {
+      const okProd = await saveProducts();
+      if (!okProd) return;
+    }
     onSubmit({
       companyName, legalName, vendorType, website, riskLevel,
       vendorBehaviour, segment, complianceBehaviour,
@@ -1712,32 +1727,118 @@ export default function AddVendorModal(props: {
   };
   const removeLicRow = (id: string) => setLicenseRows(prev => prev.filter(r => r.id !== id));
 
+  /** Strip the storage slug prefix → original filename for table labels. */
+  const lastName = (p?: string | null): string => {
+    const f = (p ?? '').split('/').pop() ?? '';
+    return f.includes('__') ? f.slice(f.indexOf('__') + 2) : f;
+  };
+  type ApiBankRow = { id: number; bank_name?: string | null; branch_name?: string | null; account_number?: string | null; ifsc?: string | null; branch_address?: string | null; cheque_path?: string | null; cheque_url?: string | null };
+  type ApiGstRow = { id: number; gst_number?: string | null; status?: string | null; last_filing_date?: string | null; prev_non_gst_2a_invoice?: string | null; red_flags?: string | null };
+
   const openBankPopup = () => { setBankDraft(EMPTY_BANK_DRAFT); setBankPopupOpen(true); };
-  const saveBankDraft = () => {
+  const saveBankDraft = async () => {
     if (!bankDraft.bankName.trim())      { toast.error('Missing field', 'Bank Name is required'); return; }
     if (!bankDraft.branchName.trim())    { toast.error('Missing field', 'Branch is required'); return; }
     if (!bankDraft.accountNumber.trim()) { toast.error('Missing field', 'Account Number is required'); return; }
     if (!bankDraft.ifsc.trim())          { toast.error('Missing field', 'IFSC Code is required'); return; }
     const accErr = validateAccountNumber(bankDraft.accountNumber); if (accErr) { toast.error('Invalid Account Number', accErr); return; }
     const ifscErr = validateIfsc(bankDraft.ifsc); if (ifscErr) { toast.error('Invalid IFSC', ifscErr); return; }
-    const row: BankRow = { id: uid(), ...bankDraft };
-    setBankRows(prev => [...prev, row]);
-    setBankPopupOpen(false);
-    toast.success('Bank added', `${row.bankName} (${row.branchName})`);
+    if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return; }
+
+    // Persist immediately via the bank-accounts CRUD endpoint (multipart for
+    // the cancelled-cheque upload).
+    const fd = new FormData();
+    fd.append('bank_name', bankDraft.bankName);
+    fd.append('branch_name', bankDraft.branchName);
+    fd.append('account_number', bankDraft.accountNumber);
+    fd.append('ifsc', bankDraft.ifsc);
+    fd.append('branch_address', bankDraft.branchAddress || '');
+    if (bankDraft.chequeFile) fd.append('cheque', bankDraft.chequeFile);
+
+    setSaving(true);
+    try {
+      const { data } = await api.post<{ data: ApiBankRow }>(`/vendors/${vendorId}/bank-accounts`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const b = data.data;
+      setBankRows(prev => [...prev, {
+        id: String(b.id),
+        bankName: b.bank_name ?? '', branchName: b.branch_name ?? '',
+        accountNumber: b.account_number ?? '', ifsc: b.ifsc ?? '',
+        branchAddress: b.branch_address ?? '',
+        chequeFile: null, chequeFileName: lastName(b.cheque_path),
+        existingPath: b.cheque_path ?? undefined, existingUrl: b.cheque_url ?? undefined,
+      }]);
+      setBankPopupOpen(false);
+      toast.success('Bank saved', `${b.bank_name} (${b.branch_name})`);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save bank';
+      toast.error('Save failed', msg);
+    } finally {
+      setSaving(false);
+    }
   };
-  const removeBankRow = (id: string) => setBankRows(prev => prev.filter(r => r.id !== id));
+  const removeBankRow = async (id: string) => {
+    if (!vendorId || !/^\d+$/.test(id)) { setBankRows(prev => prev.filter(r => r.id !== id)); return; }
+    setSaving(true);
+    try {
+      await api.delete(`/vendors/${vendorId}/bank-accounts/${id}`);
+      setBankRows(prev => prev.filter(r => r.id !== id));
+      toast.success('Bank deleted', 'Bank account removed');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not delete bank';
+      toast.error('Delete failed', msg);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const openGstPopup = () => { setGstDraft(EMPTY_GST_DRAFT); setGstPopupOpen(true); };
-  const saveGstDraft = () => {
+  const saveGstDraft = async () => {
     if (!gstDraft.gstNumber.trim())     { toast.error('Missing field', 'GST Number is required'); return; }
     if (!gstDraft.lastFilingDate)       { toast.error('Missing field', 'GST Last Filing Date is required'); return; }
     const gstErr = validateGstin(gstDraft.gstNumber); if (gstErr) { toast.error('Invalid GST Number', gstErr); return; }
-    const row: GstScrutinyRow = { id: uid(), ...gstDraft };
-    setGstRows(prev => [...prev, row]);
-    setGstPopupOpen(false);
-    toast.success('GST scrutiny added', row.gstNumber);
+    if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return; }
+
+    setSaving(true);
+    try {
+      const { data } = await api.post<{ data: ApiGstRow }>(`/vendors/${vendorId}/gst-scrutiny`, {
+        gst_number: gstDraft.gstNumber,
+        status: gstDraft.status,
+        last_filing_date: gstDraft.lastFilingDate || null,
+        prev_non_gst_2a_invoice: gstDraft.prevNonGst2aInvoice || null,
+        red_flags: gstDraft.redFlags || null,
+      });
+      const g = data.data;
+      setGstRows(prev => [...prev, {
+        id: String(g.id),
+        gstNumber: g.gst_number ?? '',
+        status: (g.status === 'Suspended' || g.status === 'Cancelled' ? g.status : 'Active'),
+        lastFilingDate: g.last_filing_date ?? '',
+        prevNonGst2aInvoice: g.prev_non_gst_2a_invoice ?? '',
+        redFlags: g.red_flags ?? '',
+      }]);
+      setGstPopupOpen(false);
+      toast.success('GST scrutiny saved', g.gst_number ?? '');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save GST scrutiny';
+      toast.error('Save failed', msg);
+    } finally {
+      setSaving(false);
+    }
   };
-  const removeGstRow = (id: string) => setGstRows(prev => prev.filter(r => r.id !== id));
+  const removeGstRow = async (id: string) => {
+    if (!vendorId || !/^\d+$/.test(id)) { setGstRows(prev => prev.filter(r => r.id !== id)); return; }
+    setSaving(true);
+    try {
+      await api.delete(`/vendors/${vendorId}/gst-scrutiny/${id}`);
+      setGstRows(prev => prev.filter(r => r.id !== id));
+      toast.success('GST scrutiny deleted', 'Entry removed');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not delete GST scrutiny';
+      toast.error('Delete failed', msg);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   /* Tab-aware label + handler for the SectionCard's "+ Add …" button */
   const kycTabAddMeta: Record<KycTab, { label: string; onClick: () => void }> = {
@@ -1858,8 +1959,9 @@ export default function AddVendorModal(props: {
         id: number; product_code?: string; name?: string;
         status?: string; step_completed?: number;
         base_price?: number | string | null;
+        segment_id?: number | null;
         hsn?: { hsn_code?: string } | null;
-        segment?: { title?: string } | null;
+        segment?: { id?: number; title?: string } | null;
         gst_percentage?: { percentage?: number | string } | null;
       };
       // Pull every product (no `status=` filter) so we get both the
@@ -1878,6 +1980,7 @@ export default function AddVendorModal(props: {
         name:     r.name ?? '',
         hsn:      r.hsn?.hsn_code ?? '',
         segment:  r.segment?.title ?? '',
+        segmentId: r.segment_id ?? r.segment?.id ?? null,
         basePrice:     r.base_price != null ? String(r.base_price) : '',
         gstPercentage: r.gst_percentage?.percentage != null ? String(r.gst_percentage.percentage) : '',
       })));
@@ -1924,8 +2027,45 @@ export default function AddVendorModal(props: {
     }));
   };
 
-  const saveMapDraft = () => {
+  /* Persist the full mapping list to the backend immediately (replace-all via
+   * POST /vendors/{id}/step/products) so each per-row Map Product add / edit /
+   * delete saves right away — no waiting for the final "Save Supplier". Stays
+   * local (no-op) while the vendor doesn't exist yet (mid add-flow). Returns
+   * false on failure so the caller can keep the popup open. */
+  const persistMappings = async (list: ProductMappingRow[]): Promise<boolean> => {
+    if (!vendorId) return true;   // add-flow: vendor not created yet → keep local
+    try {
+      await api.post(`/vendors/${vendorId}/step/products`, {
+        mappings: list.map(m => ({
+          product_id: m.productId,
+          batch_serial_lot: m.batchSerialLot || null,
+          purchase_price: m.purchasePrice,
+          gst_percentage: m.gstPercentage,
+          gst_amount: m.gstAmount,
+          total_amount: m.totalAmount,
+        })),
+      });
+      return true;
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save the product mapping';
+      toast.error('Save failed', msg);
+      return false;
+    }
+  };
+
+  const saveMapDraft = async () => {
     if (!mapDraft.productId)             { toast.error('Missing field', 'Pick a Product Name'); return; }
+    // Segment gate: a product can only be mapped if its segment is one of the
+    // supplier's own segments. (Belt-and-suspenders — the dropdown is already
+    // filtered, but this blocks any stale/forced selection.)
+    {
+      const segSet = new Set((segment ?? []).map(Number).filter(n => n > 0));
+      const opt = productOpts.find(o => o.value === mapDraft.productId);
+      if (segSet.size > 0 && opt && opt.segmentId != null && !segSet.has(opt.segmentId)) {
+        toast.error('Segment mismatch', `${mapDraft.productCode || 'This product'} is in a segment this supplier isn't onboarded for.`);
+        return;
+      }
+    }
     if (!mapDraft.purchasePrice.trim())  { toast.error('Missing field', 'Purchase Price is required'); return; }
     const price = parseFloat(mapDraft.purchasePrice);
     if (!isFinite(price) || price < 0)   { toast.error('Invalid price', 'Purchase Price must be a non-negative number'); return; }
@@ -1937,7 +2077,7 @@ export default function AddVendorModal(props: {
       return;
     }
     if (mapEditingId) {
-      setProductMappings(prev => prev.map(r => r.id !== mapEditingId ? r : {
+      const next = productMappings.map(r => r.id !== mapEditingId ? r : {
         ...r,
         productId:    Number(mapDraft.productId),
         productCode:  mapDraft.productCode,
@@ -1949,7 +2089,9 @@ export default function AddVendorModal(props: {
         gstPercentage: parseFloat(mapDraft.gstPercentage) || 0,
         gstAmount:    parseFloat(mapDraft.gstAmount) || 0,
         totalAmount:  parseFloat(mapDraft.totalAmount) || price,
-      }));
+      });
+      if (!(await persistMappings(next))) return;   // keep popup open on failure
+      setProductMappings(next);
       setMapEditingId(null);
       setMapPopupOpen(false);
       toast.success('Mapping updated', `${mapDraft.productCode} ${mapDraft.productName} updated`);
@@ -1968,11 +2110,17 @@ export default function AddVendorModal(props: {
       gstAmount:    parseFloat(mapDraft.gstAmount) || 0,
       totalAmount:  parseFloat(mapDraft.totalAmount) || price,
     };
-    setProductMappings(prev => [...prev, row]);
+    const next = [...productMappings, row];
+    if (!(await persistMappings(next))) return;     // keep popup open on failure
+    setProductMappings(next);
     setMapPopupOpen(false);
     toast.success('Product mapped', `${row.productCode} ${row.productName} added`);
   };
-  const removeMapRow = (id: string) => setProductMappings(prev => prev.filter(r => r.id !== id));
+  const removeMapRow = async (id: string) => {
+    const next = productMappings.filter(r => r.id !== id);
+    if (!(await persistMappings(next))) return;
+    setProductMappings(next);
+  };
 
   /* Backfill HSN / Segment on existing mappings once productOpts arrive.
    * Edit-load seeds these as empty (the vendor show payload doesn't
@@ -2030,7 +2178,12 @@ export default function AddVendorModal(props: {
      marks it saved so it surfaces as the locked "Primary" row in the
      table below. The actual persistence still happens in saveContacts()
      on Save & Next; this is the in-form confirmation step the user asked for. */
-  const savePrimaryContact = () => {
+  const savePrimaryContact = async () => {
+    // Validate the contact fields first so errors highlight on THIS tab, then
+    // actually persist via saveContacts() (PUT /vendors/{id}/step/contacts).
+    // Previously this only set a local flag + toast, so the primary contact
+    // stayed unsaved (primary_address null) until Save & Next — the button
+    // claimed success while nothing hit the backend.
     const errs: Record<string, string> = {};
     if (!contactName.trim())  errs.contactName = 'Contact Person Name is required';
     if (!designation.trim())  errs.designation = 'Designation is required';
@@ -2043,8 +2196,8 @@ export default function AddVendorModal(props: {
       toast.error('Missing required fields', 'Please fix the highlighted fields');
       return;
     }
-    setPrimarySaved(true);
-    toast.success('Primary contact saved', `${contactName} added below`);
+    const ok = await saveContacts();   // persists primary_address + business card
+    if (ok) setPrimarySaved(true);
   };
 
   const openContactPopup = () => {
@@ -2068,7 +2221,28 @@ export default function AddVendorModal(props: {
     });
     setContactPopupOpen(true);
   };
-  const saveContactDraft = () => {
+  /* Map a server contact (shapeContact) → local ContactRow. */
+  type ApiContactRow = {
+    id: number; contact_name?: string | null; designation?: string | null;
+    contact_no?: string | null; email?: string | null; whatsapp_enabled?: boolean;
+    attachment_path?: string | null;
+  };
+  const mapApiContact = (c: ApiContactRow): ContactRow => {
+    const raw = (c.attachment_path ?? '').split('/').pop() ?? '';
+    const label = raw.includes('__') ? raw.slice(raw.indexOf('__') + 2) : raw;
+    return {
+      id: c.id,
+      name: c.contact_name ?? '',
+      designation: c.designation ?? '',
+      phone: c.contact_no ?? '',
+      email: c.email ?? '',
+      whatsapp: c.whatsapp_enabled ?? true,
+      attachmentName: label,
+      attachmentPath: c.attachment_path ?? undefined,
+    };
+  };
+
+  const saveContactDraft = async () => {
     const missing: string[] = [];
     if (!contactDraft.name.trim())        missing.push('Contact Person Name');
     if (!contactDraft.designation.trim()) missing.push('Designation');
@@ -2083,18 +2257,57 @@ export default function AddVendorModal(props: {
     if (phoneErr) { toast.error('Invalid Contact No', phoneErr); return; }
     const emailErr = validateEmail(contactDraft.email);
     if (emailErr) { toast.error('Invalid Email', emailErr); return; }
+    if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return; }
 
-    if (contactEditingId !== null) {
-      setExtraContacts(prev => prev.map(c => c.id === contactEditingId ? { ...c, ...contactDraft } : c));
-      toast.success('Contact updated', `${contactDraft.name} updated`);
-    } else {
-      setExtraContacts(prev => [...prev, { id: Date.now(), ...contactDraft }]);
-      toast.success('Contact added', `${contactDraft.name} added to the list`);
+    // Persist immediately via the per-contact CRUD endpoint so the row is
+    // stored the moment the user clicks Save — independent of "Save & Next".
+    const fd = new FormData();
+    fd.append('contact_name', contactDraft.name);
+    fd.append('designation', contactDraft.designation || '');
+    fd.append('contact_no', contactDraft.phone || '');
+    fd.append('email', contactDraft.email || '');
+    fd.append('whatsapp_enabled', contactDraft.whatsapp ? '1' : '0');
+    if (contactDraft.attachmentFile) fd.append('attachment', contactDraft.attachmentFile);
+    else if (contactDraft.attachmentPath) fd.append('attachment_path', contactDraft.attachmentPath);
+
+    setSaving(true);
+    try {
+      if (contactEditingId !== null) {
+        fd.append('_method', 'PUT');  // PHP parses multipart only on POST
+        const { data } = await api.post<{ data: ApiContactRow }>(`/vendors/${vendorId}/contacts/${contactEditingId}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        const saved = mapApiContact(data.data);
+        setExtraContacts(prev => prev.map(c => c.id === contactEditingId ? saved : c));
+        toast.success('Contact updated', `${saved.name} updated`);
+      } else {
+        const { data } = await api.post<{ data: ApiContactRow }>(`/vendors/${vendorId}/contacts`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        const saved = mapApiContact(data.data);
+        setExtraContacts(prev => [...prev, saved]);
+        toast.success('Contact saved', `${saved.name} added`);
+      }
+      setContactPopupOpen(false);
+      setContactEditingId(null);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save contact';
+      toast.error('Save failed', msg);
+    } finally {
+      setSaving(false);
     }
-    setContactPopupOpen(false);
-    setContactEditingId(null);
   };
-  const removeExtraContact = (id: number) => setExtraContacts(prev => prev.filter(c => c.id !== id));
+
+  const removeExtraContact = async (id: number) => {
+    if (!vendorId) { setExtraContacts(prev => prev.filter(c => c.id !== id)); return; }
+    setSaving(true);
+    try {
+      await api.delete(`/vendors/${vendorId}/contacts/${id}`);
+      setExtraContacts(prev => prev.filter(c => c.id !== id));
+      toast.success('Contact deleted', 'Contact person removed');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not delete contact';
+      toast.error('Delete failed', msg);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   /* Row count for the active KYC sub-tab — drives the Figma "N documents"
      header badge. Falls back to the segment-rule reference rows when the user
@@ -2427,8 +2640,8 @@ export default function AddVendorModal(props: {
                       <SelectInput value={vendorBehaviour} onChange={(v) => { setVendorBehaviour(v); clearFieldError('vendorBehaviour'); }} placeholder="Select" options={behaviourOpts} />
                     </Field>
                     <Field label="Classification & Flags">
-                      {/* Visual-only — see classificationFlag state note. */}
-                      <SelectInput value={classificationFlag} onChange={setClassificationFlag} placeholder="Select" options={CLASSIFICATION_OPTS} />
+                      {/* Master-driven (master_customer_classifications) → vendors.classification_id. */}
+                      <SelectInput value={classificationId} onChange={setClassificationId} placeholder="Select" options={classificationOpts} />
                     </Field>
                     <Field label="Compliance Behaviour" required addNew onAdd={() => setQuickAdd('compliance_behaviours')} error={fieldErrors.complianceBehaviour}>
                       <SelectInput value={complianceBehaviour} onChange={(v) => { setComplianceBehaviour(v); clearFieldError('complianceBehaviour'); }} placeholder="Select" options={complianceOpts} />
@@ -2438,22 +2651,10 @@ export default function AddVendorModal(props: {
               )}
 
               {idTab === 'identification' && (
-                <SectionCard tone="amber" icon={<i className="ri-map-pin-line" />} title="Supplier Address Details" subtitle="Registered office and location">
-                  <div className="avm-grid-2">
-                    <Field label="Address Type" required>
-                      {/* Primary address type is locked to "Registered Office
-                          Address" — same as the Customer form. Other types
-                          (Warehouse, Billing, …) belong on later steps. */}
-                      <div className="avm-master-select">
-                        <MasterSelect
-                          value="Registered Office"
-                          options={[{ value: 'Registered Office', label: 'Registered Office' }]}
-                          placeholder="Select address type"
-                          disabled
-                          onChange={() => { /* locked */ }}
-                        />
-                      </div>
-                    </Field>
+                <SectionCard tone="violet" icon={<i className="ri-map-pin-line" />} title="Supplier Address Details" subtitle="Registered office and location">
+                  {/* Single full-width address field — no separate Address Type
+                      dropdown; the primary address is the registered office. */}
+                  <div className="avm-grid-2" style={{ gridTemplateColumns: '1fr' }}>
                     <Field label="Registered Office Address" required error={fieldErrors.registeredOffice}>
                       <input
                         className="avm-input"
@@ -2552,7 +2753,7 @@ export default function AddVendorModal(props: {
                         </div>
                       </Field>
                       <Field label="Attachment (Business Card)">
-                        <FileChooser file={attachment} onPick={(f) => setAttachment(f)} placeholder="No files attached" />
+                        <FileChooser file={attachment} onPick={(f) => setAttachment(f)} existingPath={primaryAttachmentPath} placeholder="No files attached" />
                       </Field>
                     </div>
                   </SectionCard>
@@ -2819,7 +3020,7 @@ export default function AddVendorModal(props: {
           </div>
           <div className="avm-foot-right">
             {step > 1 && <button className="avm-btn-outline" onClick={goPrev}>← Previous</button>}
-            {step < 3 ? (
+            {!(step === 2 && KYC_TAB_ORDER.indexOf(kycTab) === KYC_TAB_ORDER.length - 1) ? (
               <button className="avm-btn-primary" onClick={goNext} disabled={saving}>
                 {saving ? (
                   <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
@@ -2828,11 +3029,12 @@ export default function AddVendorModal(props: {
                 )}
               </button>
             ) : (
-              <button className="avm-btn-primary" onClick={submitAll} disabled={saving}>
+              /* Last KYC sub-tab = final step. Saves + closes (no Product step). */
+              <button className="avm-btn-primary" onClick={finishSupplier} disabled={saving}>
                 {saving ? (
                   <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
                 ) : (
-                  <><i className="ri-check-line" /> Save Supplier</>
+                  <><i className="ri-check-line" /> {isEdit ? 'Update Supplier' : 'Save Supplier'}</>
                 )}
               </button>
             )}
@@ -2905,7 +3107,14 @@ export default function AddVendorModal(props: {
         <AddProductMappingPopup
           draft={mapDraft}
           setDraft={setMapDraft}
-          productOpts={productOpts}
+          /* Only products whose segment matches one of the supplier's own
+             segments can be mapped. The currently-edited product is kept visible
+             so editing an existing row never blanks the dropdown. */
+          productOpts={(() => {
+            const segSet = new Set((segment ?? []).map(Number).filter(n => n > 0));
+            if (segSet.size === 0) return productOpts;
+            return productOpts.filter(o => (o.segmentId != null && segSet.has(o.segmentId)) || o.value === mapDraft.productId);
+          })()}
           gstPctOpts={gstPctOpts}
           onProductChange={onMapProductChange}
           recompute={recomputeMapTotals}
@@ -3509,7 +3718,9 @@ function FileChooser(props: {
           accept={FILE_ACCEPT}
           onChange={onChange}
         />
-        <span className="avm-filechooser-icon"><i className="ri-attachment-line" /></span>
+        {/* Upload-cloud icon for the EMPTY state so it reads as "upload here",
+            not an already-attached file (the paperclip stays for the filled state). */}
+        <span className="avm-filechooser-icon"><i className="ri-upload-cloud-2-line" /></span>
         <span className="avm-filechooser-text">{placeholder ?? `Choose file (${FILE_TYPE_LABEL}, max 2 MB)`}</span>
       </div>
     );
@@ -3689,60 +3900,36 @@ function AttachmentCell(props: {
   file?: File | null;
   existingPath?: string;
   existingUrl?: string;
+  /** Still accepted so callers don't break, but no longer rendered — the row's
+   *  Action column handles deletion; the filename link handles viewing. */
   onClear?: () => void;
 }) {
-  const { fileName, file, existingPath, existingUrl, onClear } = props;
+  const { fileName, file, existingPath, existingUrl } = props;
   const hasContent = !!(fileName || file || existingPath);
   if (!hasContent) return <span className="text-muted fs-13">—</span>;
   const href = file
     ? URL.createObjectURL(file)
     : (existingUrl || (existingPath ? resolveFileUrl(existingPath) : ''));
-  return (
-    <div className="d-inline-flex align-items-center gap-2">
-      {href ? (
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="fs-13 text-truncate d-inline-flex align-items-center"
-          style={{ maxWidth: 180, color: '#6d28d9', textDecoration: 'underline', textUnderlineOffset: 2 }}
-          title={`Open ${fileName}`}
-        >
-          <i className="ri-attachment-line me-1" />
-          {fileName || 'Attachment'}
-        </a>
-      ) : (
-        <span className="fs-13 text-truncate" style={{ maxWidth: 180 }} title={fileName}>
-          <i className="ri-attachment-line text-muted me-1" />
-          {fileName || 'Attachment'}
-        </span>
-      )}
-      {href ? (
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn btn-sm btn-soft-primary p-0 d-inline-flex align-items-center justify-content-center"
-          style={{ width: 26, height: 26 }}
-          data-tooltip="View attachment"
-          aria-label="View attachment"
-        >
-          <i className="ri-eye-line" style={{ fontSize: 13 }} />
-        </a>
-      ) : null}
-      {onClear ? (
-        <button
-          type="button"
-          onClick={onClear}
-          className="btn btn-sm btn-soft-danger p-0 d-inline-flex align-items-center justify-content-center"
-          style={{ width: 26, height: 26 }}
-          data-tooltip="Delete attachment"
-          aria-label="Delete attachment"
-        >
-          <i className="ri-delete-bin-line" style={{ fontSize: 13 }} />
-        </button>
-      ) : null}
-    </div>
+  // Just the filename as a clickable link — click the name to open/view it.
+  // No separate view (eye) or delete-attachment icons (the row's own Action
+  // column handles removal).
+  return href ? (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="fs-13 text-truncate d-inline-flex align-items-center"
+      style={{ maxWidth: 260, color: '#6d28d9', textDecoration: 'underline', textUnderlineOffset: 2 }}
+      title={`Open ${fileName}`}
+    >
+      <i className="ri-attachment-line me-1" />
+      {fileName || 'Attachment'}
+    </a>
+  ) : (
+    <span className="fs-13 text-truncate d-inline-flex align-items-center" style={{ maxWidth: 260 }} title={fileName}>
+      <i className="ri-attachment-line text-muted me-1" />
+      {fileName || 'Attachment'}
+    </span>
   );
 }
 
@@ -4834,7 +5021,19 @@ function BankAddPopup(props: {
 }) {
   const { draft, setDraft, onClose, onSave } = props;
   const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
-  const [errors, setErrors] = useState<{ bankName?: string; branchName?: string; branchAddress?: string }>({});
+  const [errors, setErrors] = useState<{ bankName?: string; branchName?: string; branchAddress?: string; accountNumber?: string; ifsc?: string; cheque?: string }>({});
+  /* Highlight empty required fields when the user hits Save without filling
+     them (the parent's toast-only check never reached the field state). */
+  const handleSave = () => {
+    const e: typeof errors = {};
+    if (!draft.bankName.trim())      e.bankName = 'Bank Name is required';
+    if (!draft.branchName.trim())    e.branchName = 'Branch is required';
+    if (!draft.accountNumber.trim()) e.accountNumber = 'Account Number is required';
+    if (!draft.ifsc.trim())          e.ifsc = 'IFSC Code is required';
+    if (!draft.chequeFile && !draft.existingPath) e.cheque = 'Cancelled Cheque is required';
+    if (Object.keys(e).length) { setErrors(prev => ({ ...prev, ...e })); return; }
+    onSave();
+  };
   const handleBankNameChange = (raw: string) => {
     const { cleaned, error } = sanitizeKycName(raw, 80);
     setDraft({ ...draft, bankName: cleaned });
@@ -4851,7 +5050,7 @@ function BankAddPopup(props: {
     setErrors(prev => ({ ...prev, branchAddress: error }));
   };
   return (
-    <PopupShell title="Add Bank Details" icon="ri-bank-line" onClose={onClose} onSave={onSave}>
+    <PopupShell title="Add Bank Details" icon="ri-bank-line" onClose={onClose} onSave={handleSave}>
       <div className="avm-grid-4">
         <Field label="Bank Name" required error={errors.bankName}>
           <input
@@ -4871,11 +5070,11 @@ function BankAddPopup(props: {
             onChange={e => handleBranchChange(e.target.value)}
           />
         </Field>
-        <Field label="Account Number" required>
-          <input className="avm-input" placeholder="Enter account number" value={draft.accountNumber} onChange={e => set('accountNumber', e.target.value)} />
+        <Field label="Account Number" required error={errors.accountNumber}>
+          <input className="avm-input" placeholder="Enter account number" value={draft.accountNumber} onChange={e => { set('accountNumber', e.target.value); setErrors(p => ({ ...p, accountNumber: undefined })); }} />
         </Field>
-        <Field label="IFSC Code" required>
-          <input className="avm-input" placeholder="Enter IFSC code" value={draft.ifsc} onChange={e => set('ifsc', e.target.value.toUpperCase())} />
+        <Field label="IFSC Code" required error={errors.ifsc}>
+          <input className="avm-input" placeholder="Enter IFSC code" value={draft.ifsc} onChange={e => { set('ifsc', e.target.value.toUpperCase()); setErrors(p => ({ ...p, ifsc: undefined })); }} />
         </Field>
       </div>
       <div className="avm-grid-2">
@@ -4888,11 +5087,11 @@ function BankAddPopup(props: {
             onChange={e => handleBranchAddressChange(e.target.value)}
           />
         </Field>
-        <Field label="Cancelled Cheque" required>
+        <Field label="Cancelled Cheque" required error={errors.cheque}>
           <FileChooser
             file={draft.chequeFile}
             existingPath={draft.existingPath}
-            onPick={f => setDraft({ ...draft, chequeFile: f, chequeFileName: f?.name ?? '', existingPath: f ? undefined : draft.existingPath })}
+            onPick={f => { setDraft({ ...draft, chequeFile: f, chequeFileName: f?.name ?? '', existingPath: f ? undefined : draft.existingPath }); setErrors(p => ({ ...p, cheque: undefined })); }}
             placeholder="Upload Cancelled Cheque (JPG / PNG / PDF, max 2 MB)"
           />
         </Field>
@@ -4910,7 +5109,7 @@ function GstScrutinyAddPopup(props: {
 }) {
   const { draft, setDraft, onClose, onSave } = props;
   const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
-  const [errors, setErrors] = useState<{ gstNumber?: string; prevNonGst2aInvoice?: string; redFlags?: string }>({});
+  const [errors, setErrors] = useState<{ gstNumber?: string; prevNonGst2aInvoice?: string; redFlags?: string; lastFilingDate?: string }>({});
   /* GST number is strictly alphanumeric (15 chars: 27AADCI6120M1ZH style).
    * Strip everything else and uppercase; backend still validates the full
    * regex, this just keeps obvious garbage out of the picker. */
@@ -4936,8 +5135,16 @@ function GstScrutinyAddPopup(props: {
     set('redFlags', cleaned);
     setErrors(prev => ({ ...prev, redFlags: error }));
   };
+  /* Highlight empty required fields on Save (GST Number + Last Filing Date). */
+  const handleSave = () => {
+    const e: typeof errors = {};
+    if (!draft.gstNumber.trim())  e.gstNumber = 'GST Number is required';
+    if (!draft.lastFilingDate)    e.lastFilingDate = 'GST Last Filing Date is required';
+    if (Object.keys(e).length) { setErrors(prev => ({ ...prev, ...e })); return; }
+    onSave();
+  };
   return (
-    <PopupShell title="Add GST Scrutiny" icon="ri-file-text-line" tone="amber" onClose={onClose} onSave={onSave}>
+    <PopupShell title="Add GST Scrutiny" icon="ri-file-text-line" tone="amber" onClose={onClose} onSave={handleSave}>
       <div className="avm-grid-3">
         <Field label="GST Number" required error={errors.gstNumber}>
           <input
@@ -4951,10 +5158,10 @@ function GstScrutinyAddPopup(props: {
         <Field label="GST Status" required>
           <SelectInput value={draft.status} onChange={v => set('status', v as 'Active' | 'Suspended' | 'Cancelled')} placeholder="Select GST status" options={['Active', 'Suspended', 'Cancelled']} />
         </Field>
-        <Field label="GST Last Filing Date" required>
+        <Field label="GST Last Filing Date" required error={errors.lastFilingDate}>
           <MasterDatePicker
             value={draft.lastFilingDate}
-            onChange={(v) => set('lastFilingDate', v)}
+            onChange={(v) => { set('lastFilingDate', v); setErrors(p => ({ ...p, lastFilingDate: undefined })); }}
             placeholder="dd/mm/yyyy"
             maxDate={new Date().toISOString().slice(0, 10)}
           />
@@ -5008,15 +5215,14 @@ function AddProductMappingPopup(props: {
           <input className="avm-input" value={draft.productCode} readOnly placeholder="Auto-fills from product" />
         </Field>
       </div>
-      <div className="avm-grid-3">
+      {/* HSN/SAC + Segment only (2-col) — matches the Figma's Map Product
+          modal, which has no Batch/Serial/Lot field. */}
+      <div className="avm-grid-2">
         <Field label="HSN / SAC Code">
           <input className="avm-input" value={draft.hsnSacCode} readOnly placeholder="—" />
         </Field>
         <Field label="Segment">
           <input className="avm-input" value={draft.segment} readOnly placeholder="—" />
-        </Field>
-        <Field label="Batch/Serial/Lot Number">
-          <input className="avm-input" placeholder="—" value={draft.batchSerialLot} onChange={e => set('batchSerialLot', e.target.value)} />
         </Field>
       </div>
       <div className="avm-grid-3">
@@ -5062,10 +5268,17 @@ const SCOPED_CSS = `
 }
 .avm-modal {
   width: 100%; max-width: 1200px;
-  max-height: calc(100vh - 48px);
+  /* Fixed height so the modal never resizes with content — the body
+     (.avm-body) scrolls internally instead of the whole dialog growing. */
+  height: calc(100vh - 48px);
   margin: auto;
-  background: #fff;
-  border-radius: 18px;
+  /* Figma lavender wash (.sf-modal) — soft glows over a light gradient so the
+     white section cards read as elevated, not flat on plain white. */
+  background:
+    radial-gradient(ellipse at 12% 0%, rgba(196,181,253,.25), transparent 45%),
+    radial-gradient(ellipse at 100% 8%, rgba(167,139,250,.22), transparent 50%),
+    linear-gradient(180deg, #fbf9ff 0%, #f5f1fe 55%, #efe9fd 100%);
+  border-radius: 22px;
   /* Soft white frame so the modal (and the purple header's top edge) reads
      as a bordered card — like the Add Customer modal, but no dotted texture. */
   border: 1.5px solid rgba(255, 255, 255, .65);
@@ -5082,7 +5295,9 @@ const SCOPED_CSS = `
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
   padding: 14px 22px;
   position: relative; overflow: hidden;
-  background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 28%, #6d28d9 55%, #7c3aed 80%, #8b5cf6 100%);
+  /* Matches the Add Product Mapping popup header (.avm-cp-head): 135deg,
+     deep purple #5b21b6 -> light purple #a78bfa. */
+  background: linear-gradient(135deg, #5b21b6, #a78bfa);
   color: #fff;
   border-bottom: 1px solid rgba(255, 255, 255, .22);
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, .35);
@@ -5119,7 +5334,7 @@ const SCOPED_CSS = `
 /* Stepper, body and footer share ONE continuous light-lavender surface so
    the modal reads as a single sheet (Figma) — the white section cards float
    on top. No dividing band between the stepper and the form. */
-.avm-stepper-wrap { padding: 12px 18px; background: #f5f2fc; }
+.avm-stepper-wrap { padding: 12px 18px; background: transparent; }
 .avm-stepper { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
 
 /* Step card — matches the Figma two-card stepper: icon chip with a small
@@ -5181,7 +5396,7 @@ const SCOPED_CSS = `
 .avm-body {
   flex: 1; overflow-y: auto;
   padding: 12px 22px 14px;
-  background: #f5f2fc;
+  background: transparent;   /* show the modal's lavender wash (Figma) */
   scrollbar-width: thin; scrollbar-color: #ddd6fe transparent;
   position: relative;  /* anchor for the .avm-load-overlay during edit-load */
 }
@@ -5243,12 +5458,12 @@ const SCOPED_CSS = `
 /* Switch the per-stage rows from flex-wrap to the same 4-column grid
  * used by .avm-id-summary-row, so labels and values line up cleanly
  * across stages — matches the Stage 1 screenshot exactly. */
-.avm-prev-rows { display: flex; flex-direction: column; gap: 13px; }
+.avm-prev-rows { display: flex; flex-direction: column; gap: 7px; }
 .avm-prev-row {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   column-gap: 28px;
-  row-gap: 13px;
+  row-gap: 7px;
   align-items: baseline;
 }
 .avm-prev-pair {
@@ -5339,7 +5554,7 @@ const SCOPED_CSS = `
   position: relative;
   background: #fff;
   border: 1px solid #ece4fb;
-  border-radius: 12px; margin-bottom: 8px; overflow: hidden;
+  border-radius: 14px; margin-bottom: 8px; overflow: hidden;   /* Figma .sf-section radius */
 }
 /* Left accent strip — a vertical GRADIENT bar (Figma), not a flat border. */
 .avm-section::before {
@@ -5439,8 +5654,8 @@ const SCOPED_CSS = `
    wizard reads as part of the same form family as Clients / Recruitment.
    Subtle blue-tinted surface, indigo focus ring, 10px radius. */
 .avm-input {
-  height: 32px; width: 100%;
-  padding: 5px 11px;
+  height: 38px; width: 100%;   /* Figma .sf-input height */
+  padding: 5px 12px;
   border: 1px solid color-mix(in srgb, #a78bfa 20%, var(--vz-border-color, #e9ebec));
   border-radius: 10px;
   background: color-mix(in srgb, #a78bfa 5%, var(--vz-card-bg, #fff));
@@ -5498,16 +5713,17 @@ const SCOPED_CSS = `
 
 /* MasterSelect inside this modal — match Velzon form-select chrome */
 .avm-master-select .master-select-wrap .master-select-toggle {
-  min-height: 32px !important; height: 32px;
+  min-height: 38px !important; height: 38px;   /* match Figma .sf-input 38px */
   /* Right padding trimmed 32px -> 12px: the chevron is a flex item pushed to
      the right by the toggle's space-between, so the extra 32px right padding
      was holding it ~20px in from the edge, making it look centred. 12px sits
      it flush near the right edge like a normal select. */
   padding: 0 12px !important;
   font-size: 13px !important;
-  background: var(--vz-card-bg, #fff) !important;
-  border: 1px solid var(--vz-border-color, #e9ebec) !important;
-  border-radius: 6px !important;
+  /* Match .avm-input exactly so dropdowns and text fields look identical. */
+  background: color-mix(in srgb, #a78bfa 5%, var(--vz-card-bg, #fff)) !important;
+  border: 1px solid color-mix(in srgb, #a78bfa 20%, var(--vz-border-color, #e9ebec)) !important;
+  border-radius: 10px !important;
   color: var(--vz-body-color, #495057) !important;
 }
 .avm-master-select .master-select-wrap.show .master-select-toggle {
@@ -5983,6 +6199,10 @@ const SCOPED_CSS = `
  * Dark mode
  * ════════════════════════════════════════════════════════════════════ */
 [data-bs-theme="dark"] .avm-modal { background: #14102a; color: #ede9fe; }
+/* Flat solid surfaces in dark — no gradient sweeps (clean + clear). */
+[data-bs-theme="dark"] .avm-head { background: #4c1d95; box-shadow: none; border-bottom-color: rgba(167,139,250,.30); }
+[data-bs-theme="dark"] .avm-step-active { background: #2a1d5c; border-color: #7c3aed; box-shadow: none; }
+[data-bs-theme="dark"] .avm-step-active .avm-step-ico { background: #6d28d9; box-shadow: none; }
 [data-bs-theme="dark"] .avm-stepper-wrap { background: #1a1430; border-bottom-color: #3b2a6b; }
 [data-bs-theme="dark"] .avm-step { background: #221852; }
 [data-bs-theme="dark"] .avm-step-title { color: #ede9fe; }
@@ -5996,7 +6216,10 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-section-teal   { border-color: #0f766e; border-left-color: #14b8a6; }
 [data-bs-theme="dark"] .avm-section-green  { border-color: #14532d; border-left-color: #4ade80; }
 [data-bs-theme="dark"] .avm-section-violet .avm-section-head,
-[data-bs-theme="dark"] .avm-section-purple .avm-section-head { background: linear-gradient(135deg, #221852, #2a1d5c); }
+[data-bs-theme="dark"] .avm-section-purple .avm-section-head { background: #241a47; }
+/* The head/body divider was a light lavender line (#f1ecfb) with no dark
+   override — it read as an ugly white line. Subtle purple instead. */
+[data-bs-theme="dark"] .avm-section-head { border-bottom-color: rgba(167,139,250,.15); }
 [data-bs-theme="dark"] .avm-section-amber  .avm-section-head { background: linear-gradient(135deg, #3f2c0a, #4a3408); }
 [data-bs-theme="dark"] .avm-section-teal   .avm-section-head { background: linear-gradient(135deg, #0c2522, #133e3a); }
 [data-bs-theme="dark"] .avm-section-green  .avm-section-head { background: linear-gradient(135deg, #14241a, #1a3225); }
