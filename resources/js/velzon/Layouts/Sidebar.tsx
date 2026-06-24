@@ -68,19 +68,19 @@ const Sidebar = ({ layoutType } : any) => {
               completely different image when you flipped the colour). */}
           <Link to="/" className="logo logo-dark">
             <span className="logo-sm">
-              <img src={smallLogo} alt="" style={{ height: '50px', width: 'auto', objectFit: 'contain' }} />
+              <img src={smallLogo} alt="" style={{ height: '50px', maxWidth: '100%', width: 'auto', objectFit: 'contain' }} />
             </span>
             <span className="logo-lg">
-              <img src={largeLogoDark} alt="" style={{ height: '50px', width: 'auto', objectFit: 'contain' }} />
+              <img src={largeLogoDark} alt="" style={{ height: '50px', maxWidth: '100%', width: 'auto', objectFit: 'contain' }} />
             </span>
           </Link>
 
           <Link to="/" className="logo logo-light">
             <span className="logo-sm">
-              <img src={smallLogo} alt="" style={{ height: '50px', width: 'auto', objectFit: 'contain' }} />
+              <img src={smallLogo} alt="" style={{ height: '50px', maxWidth: '100%', width: 'auto', objectFit: 'contain' }} />
             </span>
             <span className="logo-lg">
-              <img src={largeLogoLight} alt="" style={{ height: '50px', width: 'auto', objectFit: 'contain' }} />
+              <img src={largeLogoLight} alt="" style={{ height: '50px', maxWidth: '100%', width: 'auto', objectFit: 'contain' }} />
             </span>
           </Link>
           <button

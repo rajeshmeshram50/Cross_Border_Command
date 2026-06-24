@@ -934,7 +934,7 @@ ${CSTRIP_CSS}
   background: transparent;
   padding: 0;
   margin: 0;
-  display: flex; flex-direction: column; gap: 10px;
+  display: flex; flex-direction: column; gap: 16px;
   color: var(--vz-body-color);
 }
 .smc-root *, .smc-root *::before, .smc-root *::after { box-sizing: border-box; }
@@ -953,6 +953,16 @@ ${CSTRIP_CSS}
   border-radius: 16px;
   overflow: hidden;
   box-shadow: 0 4px 16px rgba(124,58,237,0.10), 0 1px 3px rgba(124,58,237,0.06);
+}
+/* Left accent strip — mirrors the header strip (.cv-cstrip__accent) so the
+   2nd container reads as part of the same branded set. */
+.smc-wdh-card::before {
+  content: "";
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
+  border-radius: 16px 0 0 16px;
+  z-index: 2;
 }
 /* Top gradient accent line removed per Figma — the banner has no separate
    top border colour. */

@@ -720,7 +720,7 @@ const SCOPED_CSS = `
   background: transparent;
   padding: 0;
   margin: 0;
-  display: flex; flex-direction: column; gap: 7px;
+  display: flex; flex-direction: column; gap: 16px;
   color: var(--vz-body-color);
 }
 .smcg-root *, .smcg-root *::before, .smcg-root *::after { box-sizing: border-box; }
@@ -898,6 +898,16 @@ const SCOPED_CSS = `
   border-radius: 16px;
   overflow: hidden;
   box-shadow: 0 4px 16px rgba(13,148,136,0.12), 0 1px 0 rgba(255,255,255,0.8) inset;
+}
+/* Left accent strip — mirrors the header strip (.smcg-cstrip__accent) so the
+   2nd container reads as part of the same branded set. */
+.smcg-wdh-card::before {
+  content: "";
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, #5eead4, #10b981, #047857);
+  border-radius: 16px 0 0 16px;
+  z-index: 2;
 }
 .smcg-wdh-toggle-row {
   width: 100%;

@@ -195,7 +195,7 @@ const TwoColumnLayout = (props: any) => {
                         <div id="two-column-menu">
                             <SimpleBar className="twocolumn-iconview">
                                 <Link to="#" className="logo">
-                                    <img src={brandLogo} alt="" height="22" />
+                                    <img src={brandLogo} alt="" style={{ height: '22px', maxWidth: '100%', width: 'auto', objectFit: 'contain' }} />
                                 </Link>
                                 {(navData || []).map((item: any, key: number) => (
                                     <React.Fragment key={key}>
