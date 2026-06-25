@@ -9833,3 +9833,42 @@
   background: rgba(255,255,255,0.08) !important;
   color: var(--vz-secondary-color) !important;
 }
+
+/* ── Attendance page (HrAttendance) ─────────────────────────────────────────
+   Moved out of the HrAttendance.tsx inline <style> block. Search-field resting
+   border + dark-mode remap of the hardcoded pastel status pills. */
+.att-emplist-search .search-box .form-control {
+  border: 1px solid #cbd5e1;
+}
+[data-bs-theme="dark"] .att-emplist-search .search-box .form-control,
+[data-layout-mode="dark"] .att-emplist-search .search-box .form-control {
+  border-color: rgba(255,255,255,0.20);
+}
+.att-emplist-search .search-box .form-control:focus {
+  border-color: rgba(99,102,241,0.45);
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
+}
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Present"] {
+  color: #6ee7b7 !important; background: rgba(34,197,94,0.18) !important;
+}
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Late"],
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Half Day"] {
+  color: #fcd34d !important; background: rgba(245,158,11,0.18) !important;
+}
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Missing In"],
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Missing Out"],
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Absent"] {
+  color: #fca5a5 !important; background: rgba(239,68,68,0.18) !important;
+}
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Weekly Off"],
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Holiday"] {
+  color: #93c5fd !important; background: rgba(59,130,246,0.18) !important;
+}
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="On Duty"],
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Work From Home"] {
+  color: #5eead4 !important; background: rgba(20,184,166,0.18) !important;
+}
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Leave"],
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Corrected"] {
+  color: #c4b5fd !important; background: rgba(124,92,252,0.18) !important;
+}
