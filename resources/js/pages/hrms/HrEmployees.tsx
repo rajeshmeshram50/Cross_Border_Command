@@ -3461,8 +3461,13 @@ export default function HrEmployees() {
                             // shared the same `e.id` and React rendered the
                             // newer row in BOTH active and disabled tabs).
                             key={(e as any)._dbId ?? e.id}
-                            onClick={() => navigate(`/hr/employees/${encodeURIComponent(e.encryptedId || e.id)}/profile`, { state: { employee: e } })}
-                            style={{ cursor: 'pointer' }}
+                            // Disabled employees are read-only — clicking a row
+                            // must NOT open their profile (only the active tab
+                            // navigates). Actions column still gates per-row.
+                            onClick={tab === 'disabled'
+                              ? undefined
+                              : () => navigate(`/hr/employees/${encodeURIComponent(e.encryptedId || e.id)}/profile`, { state: { employee: e } })}
+                            style={{ cursor: tab === 'disabled' ? 'default' : 'pointer' }}
                           >
                             <td className="ps-3 text-center fs-13 hr-emp-srno">{(page - 1) * ROWS_PER_PAGE + idx + 1}</td>
                             <td>

@@ -146,7 +146,7 @@ export default function ProfileTab() {
         { label: 'Gender', value: empDetail?.gender },
         { label: 'Nationality', value: empDetail?.nationality_country?.name },
       ].map((f, i) => (
-        <Col key={i} lg={3} md={4} sm={6}>
+        <Col key={i} lg md={4} sm={6}>
           <div className="ep-field-label">{f.label}</div>
           {empDetailLoading
             ? <Shimmer height={16} width="70%" />
@@ -261,19 +261,19 @@ export default function ProfileTab() {
                     const notProvided = <span className="text-muted fst-italic">Not Provided</span>;
                     return (
                       <Row className="g-3">
-                        <Col xs={6}>
+                        <Col xs={6} md={3} xl>
                           <div className="ep-field-label">Status</div>
                           <div className="ep-field-value">{hasExp ? 'Experienced' : 'Fresher'}</div>
                         </Col>
-                        <Col xs={6}>
+                        <Col xs={6} md={3} xl>
                           <div className="ep-field-label">Total Experience</div>
                           <div className="ep-field-value">{totalExp}</div>
                         </Col>
-                        <Col xs={6}>
+                        <Col xs={6} md={3} xl>
                           <div className="ep-field-label">Last Company</div>
                           <div className="ep-field-value">{last?.company_name || notProvided}</div>
                         </Col>
-                        <Col xs={6}>
+                        <Col xs={6} md={3} xl>
                           <div className="ep-field-label">Last Designation</div>
                           <div className="ep-field-value">{last?.job_title || notProvided}</div>
                         </Col>
@@ -345,8 +345,8 @@ export default function ProfileTab() {
                 {/* 4 mini-tiles */}
                 <div className="px-3 pb-3 flex-grow-1">
                   <Row className="g-2">
-                    <Col xs={6}>
-                      <div className="px-3 py-2 pft-mini-green">
+                    <Col xs={6} md={3} xl>
+                      <div className="px-3 py-2 h-100 pft-mini-green">
                         <div className="ep-field-label pft-mini-label-green">Status</div>
                         <div className="ep-field-value d-inline-flex align-items-center gap-1 pft-mini-value-green">
                           <span className="pft-mini-dot" />
@@ -354,20 +354,20 @@ export default function ProfileTab() {
                         </div>
                       </div>
                     </Col>
-                    <Col xs={6}>
-                      <div className="px-3 py-2 pft-mini-indigo">
+                    <Col xs={6} md={3} xl>
+                      <div className="px-3 py-2 h-100 pft-mini-indigo">
                         <div className="ep-field-label pft-mini-label-indigo">Emp Type</div>
                         <div className="ep-field-value pft-mini-value-indigo">Full-time</div>
                       </div>
                     </Col>
-                    <Col xs={6}>
-                      <div className="px-3 py-2 pft-mini-amber">
+                    <Col xs={6} md={3} xl>
+                      <div className="px-3 py-2 h-100 pft-mini-amber">
                         <div className="ep-field-label pft-mini-label-amber">Joined</div>
                         <div className="ep-field-value font-monospace pft-mini-value-amber">03-Nov-2023</div>
                       </div>
                     </Col>
-                    <Col xs={6}>
-                      <div className="px-3 py-2 pft-mini-teal">
+                    <Col xs={6} md={3} xl>
+                      <div className="px-3 py-2 h-100 pft-mini-teal">
                         <div className="ep-field-label pft-mini-label-teal">Department</div>
                         <div className="ep-field-value pft-mini-value-teal">{employee?.department || '—'}</div>
                       </div>
@@ -391,34 +391,38 @@ export default function ProfileTab() {
                   <span className="badge rounded-pill fw-semibold px-2 py-1 pft-kyc-badge">3 / 3</span>
                 </div>
                 <div className="px-3 py-3 flex-grow-1">
-                  {[
-                    { label: 'Aadhaar Card',   status: 'Uploaded' },
-                    { label: 'PAN Card',       status: 'Uploaded' },
-                    { label: 'Passport Photo', status: 'Uploaded' },
-                  ].map(d => {
-                    const uploaded = d.status === 'Uploaded';
-                    return (
-                      <div key={d.label} className="d-flex align-items-center gap-2 px-2 py-1">
-                        <span
-                          className="d-inline-flex align-items-center justify-content-center pft-kyc-status-icon"
-                          style={{ ['--pft-kyc-icon-bg' as any]: uploaded ? '#3b82f6' : '#f59e0b' }}
-                        >
-                          <i className={uploaded ? 'ri-check-line' : 'ri-time-line'} />
-                        </span>
-                        <div className="flex-grow-1 pft-kyc-doc-label">{d.label}</div>
-                        <span
-                          className="d-inline-flex align-items-center fw-semibold pft-kyc-status-pill"
-                          style={{
-                            ['--pft-kyc-pill-bg' as any]: uploaded ? 'rgba(59,130,246,0.10)' : 'rgba(245,158,11,0.12)',
-                            ['--pft-kyc-pill-color' as any]: uploaded ? '#1d4ed8' : '#a16207',
-                            ['--pft-kyc-pill-border' as any]: uploaded ? 'rgba(59,130,246,0.25)' : 'rgba(245,158,11,0.25)',
-                          }}
-                        >
-                          {d.status}
-                        </span>
-                      </div>
-                    );
-                  })}
+                  <Row className="g-2">
+                    {[
+                      { label: 'Aadhaar Card',   status: 'Uploaded' },
+                      { label: 'PAN Card',       status: 'Uploaded' },
+                      { label: 'Passport Photo', status: 'Uploaded' },
+                    ].map(d => {
+                      const uploaded = d.status === 'Uploaded';
+                      return (
+                        <Col xs={4} key={d.label}>
+                          <div
+                            className="h-100 d-flex flex-column align-items-center text-center gap-1 px-2 py-2 pft-kyc-tile"
+                            style={{
+                              ['--pft-kyc-pill-bg' as any]: uploaded ? 'rgba(59,130,246,0.10)' : 'rgba(245,158,11,0.12)',
+                              ['--pft-kyc-pill-color' as any]: uploaded ? '#1d4ed8' : '#a16207',
+                              ['--pft-kyc-pill-border' as any]: uploaded ? 'rgba(59,130,246,0.25)' : 'rgba(245,158,11,0.25)',
+                            }}
+                          >
+                            <span
+                              className="d-inline-flex align-items-center justify-content-center pft-kyc-status-icon"
+                              style={{ ['--pft-kyc-icon-bg' as any]: uploaded ? '#3b82f6' : '#f59e0b' }}
+                            >
+                              <i className={uploaded ? 'ri-check-line' : 'ri-time-line'} />
+                            </span>
+                            <div className="pft-kyc-doc-label">{d.label}</div>
+                            <span className="d-inline-flex align-items-center fw-semibold pft-kyc-status-pill">
+                              {d.status}
+                            </span>
+                          </div>
+                        </Col>
+                      );
+                    })}
+                  </Row>
                 </div>
               </div>
             </Col>
