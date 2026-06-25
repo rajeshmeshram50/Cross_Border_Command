@@ -732,6 +732,33 @@ export default function HrAttendance() {
                         border-color: rgba(99,102,241,0.45);
                         box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
                       }
+                      /* Status pills (list / today / calendar) use hardcoded
+                         pastel light tones inline; remap to translucent dark
+                         tones so they read on the dark card. */
+                      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Present"] {
+                        color: #6ee7b7 !important; background: rgba(34,197,94,0.18) !important;
+                      }
+                      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Late"],
+                      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Half Day"] {
+                        color: #fcd34d !important; background: rgba(245,158,11,0.18) !important;
+                      }
+                      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Missing In"],
+                      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Missing Out"],
+                      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Absent"] {
+                        color: #fca5a5 !important; background: rgba(239,68,68,0.18) !important;
+                      }
+                      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Weekly Off"],
+                      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Holiday"] {
+                        color: #93c5fd !important; background: rgba(59,130,246,0.18) !important;
+                      }
+                      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="On Duty"],
+                      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Work From Home"] {
+                        color: #5eead4 !important; background: rgba(20,184,166,0.18) !important;
+                      }
+                      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Leave"],
+                      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Corrected"] {
+                        color: #c4b5fd !important; background: rgba(124,92,252,0.18) !important;
+                      }
                     `}</style>
                     <div className="rec-req-search search-box">
                       <Input type="text" className="form-control form-control-sm" placeholder="Search name, EMP-ID, biometric…" value={search} onChange={e => setSearch(e.target.value)} />
@@ -761,7 +788,7 @@ export default function HrAttendance() {
                             )}
                           </div>
                           <div className="att-emp-right">
-                            <span className="att-status-pill" style={{ color: tone.fg, background: tone.bg }}>
+                            <span className="att-status-pill att-tone-pill" data-status={e.status} style={{ color: tone.fg, background: tone.bg }}>
                               <span className="att-status-dot" style={{ background: tone.dot }} />{tone.label}
                             </span>
                             {e.firstIn && <div className="att-emp-time">{renderTime(e.firstIn, hour24)}</div>}
@@ -894,7 +921,7 @@ function TodayRecordCard({
           <div className="d-flex align-items-center gap-2 min-w-0">
             <span className="att-today-titlebar-icon"><i className="ri-time-line" /></span>
             <div className="att-today-titlebar-text">Today's Updated Record</div>
-            <span className="att-today-status-pill" style={{ color: tone.fg, background: tone.bg }}>
+            <span className="att-today-status-pill att-tone-pill" data-status={effectiveStatus} style={{ color: tone.fg, background: tone.bg }}>
               <span className="att-today-status-dot" style={{ background: tone.dot }} />
               {tone.label}
               {!isPast && employee.lateByMinutes > 0 && effectiveStatus !== 'Weekly Off' && effectiveStatus !== 'Holiday' && effectiveStatus !== 'Leave' && effectiveStatus !== 'Absent' && (
@@ -1563,7 +1590,7 @@ function CalendarMonthGrid({
             >
               <span className="att-cal-day">{c.day}</span>
               {tone && (
-                <span className="att-cal-status" style={{ color: tone.fg, background: tone.bg }}>
+                <span className="att-cal-status att-tone-pill" data-status={c.status} style={{ color: tone.fg, background: tone.bg }}>
                   <span className="att-cal-status-dot" style={{ background: tone.dot }} />
                   {tone.label}
                 </span>

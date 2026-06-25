@@ -307,7 +307,7 @@ export default function GenerateDocument() {
           </div>
 
           {/* Step strip */}
-          <div style={{ display: 'flex', gap: 16, padding: '14px 22px', borderBottom: '1px solid #e5e7eb' }}>
+          <div style={{ display: 'flex', gap: 16, padding: '14px 22px', borderBottom: '1px solid var(--shim-border, #e5e7eb)' }}>
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
                 <Shimmer width={28} height={28} radius={999} />
@@ -321,7 +321,7 @@ export default function GenerateDocument() {
             <Shimmer width={200} height={14} style={{ marginBottom: 16 }} />
             <div style={{ display: 'grid', gap: 10 }}>
               {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, border: '1px solid #eef2f7', borderRadius: 10 }}>
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, border: '1px solid var(--shim-border, #eef2f7)', borderRadius: 10 }}>
                   <Shimmer width={18} height={18} radius={4} />
                   <Shimmer width={36} height={36} radius={999} />
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -334,7 +334,7 @@ export default function GenerateDocument() {
           </CardBody>
 
           {/* Footer */}
-          <div style={{ padding: 14, borderTop: '1px solid #e5e7eb', background: '#f9fafb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ padding: 14, borderTop: '1px solid var(--shim-border, #e5e7eb)', background: 'var(--shim-secondary-bg, #f9fafb)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Shimmer width={90} height={12} />
             <div style={{ display: 'flex', gap: 8 }}>
               <Shimmer width={80} height={34} radius={8} />

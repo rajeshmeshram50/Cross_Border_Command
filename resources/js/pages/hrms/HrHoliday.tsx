@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, Col, Row, Modal, ModalBody, Spinner, Input } from 'reactstrap';
 import * as XLSX from 'xlsx';
-import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
+import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
+import { useConfirm } from '../../contexts/ConfirmContext';
 import api from '../../api';
 import { ShimmerTableRows } from '../../components/ui/Shimmer';
 import Tooltip from '../../components/ui/Tooltip';
@@ -71,6 +72,7 @@ function weekdayName(raw: any): string {
 // ── Page ────────────────────────────────────────────────────────────────────
 export default function HrHoliday() {
   const toast = useToast();
+  const confirmDialog = useConfirm();
 
   const [rows, setRows] = useState<HolidayRow[]>([]);
   const [groups, setGroups] = useState<HolidayGroup[]>([]);
@@ -155,7 +157,15 @@ export default function HrHoliday() {
   const targetGroupId = groupFilter !== 'All' ? Number(groupFilter) : null;
 
   const handleDelete = async (row: HolidayRow) => {
-    if (!window.confirm(`Delete holiday "${row.name}" (${formatDate(row.date)})? This cannot be undone.`)) return;
+    const ok = await confirmDialog({
+      title: 'Delete holiday?',
+      message: <>Delete <strong>{row.name}</strong> ({formatDate(row.date)})? This cannot be undone.</>,
+      tone: 'danger',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      icon: 'delete-bin-line',
+    });
+    if (!ok) return;
     try {
       await api.delete(`/holidays/${row.id}`);
       toast.success('Deleted', `${row.name} removed.`);
@@ -306,7 +316,7 @@ export default function HrHoliday() {
 
                   {groups.length === 0 && (
                     <div className="px-3 pt-2" style={{ fontSize: 12 }}>
-                      <span className="rec-pill" style={{ background: '#fff1d6', color: '#b66a00' }}>
+                      <span className="rec-pill holiday-tip-pill" style={{ background: '#fff1d6', color: '#b66a00' }}>
                         <i className="ri-information-line me-1" />Tip: create a Holiday Group first (e.g. “Indian Employees”), then add holidays into it.
                       </span>
                     </div>
@@ -538,7 +548,7 @@ function HolidayModal({
 
             <Col md={6}>
               <label className="rec-form-label">Date<span className="req">*</span></label>
-              <input type="date" className={`rec-input${errors.date ? ' is-invalid' : ''}`} value={date} onChange={e => setDate(e.target.value)} />
+              <MasterDatePicker value={date} onChange={setDate} invalid={!!errors.date} />
               {date && <div className="text-muted mt-1" style={{ fontSize: 11.5 }}>{weekdayName(date)}</div>}
               {errors.date && <div className="rec-error"><i className="ri-error-warning-line" />{errors.date}</div>}
             </Col>
@@ -579,6 +589,7 @@ function ManageGroupsModal({
   onChanged: () => void;
 }) {
   const toast = useToast();
+  const confirmDialog = useConfirm();
   const [editing, setEditing] = useState<HolidayGroup | null>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -621,7 +632,15 @@ function ManageGroupsModal({
   };
 
   const remove = async (g: HolidayGroup) => {
-    if (!window.confirm(`Delete group "${g.name}"? Its holidays are kept but become ungrouped, and any employee on this group is unassigned.`)) return;
+    const ok = await confirmDialog({
+      title: 'Delete group?',
+      message: <>Delete group <strong>{g.name}</strong>? Its holidays are kept but become ungrouped, and any employee on this group is unassigned.</>,
+      tone: 'danger',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      icon: 'delete-bin-line',
+    });
+    if (!ok) return;
     try {
       await api.delete(`/holiday-groups/${g.id}`);
       toast.success('Group deleted', `${g.name} removed.`);
@@ -702,7 +721,7 @@ function ManageGroupsModal({
                     </td>
                     <td className="fs-13">{g.holidays_count ?? 0}</td>
                     <td>
-                      <span className="rec-pill" style={g.status === 'Active' ? { background: '#d8f5e6', color: '#0f8a4d' } : { background: '#f1f1f4', color: '#5b6270' }}>{g.status}</span>
+                      <span className="rec-pill holiday-status-pill" data-status={g.status} style={g.status === 'Active' ? { background: '#d8f5e6', color: '#0f8a4d' } : { background: '#f1f1f4', color: '#5b6270' }}>{g.status}</span>
                     </td>
                     <td className="text-center">
                       <div className="rec-row-actions justify-content-center">

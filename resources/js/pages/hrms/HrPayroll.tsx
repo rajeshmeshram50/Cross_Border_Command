@@ -962,7 +962,7 @@ export default function HrPayroll() {
             </DropdownToggle>
             {/* toggle={false} on items keeps the menu open so the per-item
                 spinner stays visible until the download finishes. */}
-            <DropdownMenu end style={{ fontSize: 13 }}>
+            <DropdownMenu end container="body" strategy="fixed" style={{ fontSize: 13 }}>
               <DropdownItem header>This cycle ({cycle.label})</DropdownItem>
               <DropdownItem toggle={false} disabled={!!downloading} onClick={exportExcelCurrent}>
                 {downloading === 'excel' ? <Spinner size="sm" className="me-2" /> : <i className="ri-file-excel-2-line me-2 text-success" />} Excel (full data)

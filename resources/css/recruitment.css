@@ -9656,3 +9656,21 @@
   background-size: 50% 100%;
   background-repeat: no-repeat;
 }
+
+/* Holiday Calendar empty-state tip pill — keep the inline light amber tone in
+   light mode; remap to a translucent dark amber so it reads on the dark card. */
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .holiday-tip-pill {
+  background: rgba(245,158,11,0.18) !important;
+  color: #fcd34d !important;
+}
+
+/* Holiday Groups status pill — inline light tones in light mode; translucent
+   dark tones on the dark modal. */
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .holiday-status-pill[data-status="Active"] {
+  background: rgba(16,179,108,0.18) !important;
+  color: #6ee7b7 !important;
+}
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .holiday-status-pill[data-status="Inactive"] {
+  background: rgba(255,255,255,0.10) !important;
+  color: var(--vz-secondary-color) !important;
+}
