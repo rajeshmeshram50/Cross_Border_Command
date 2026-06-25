@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Modal, ModalBody, Spinner } from 'reactstrap';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmContext';
+import { MasterDatePicker, MasterFormStyles } from '../pages/master/masterFormKit';
 
 export interface SalaryComponent { code: string; label: string; amount: number }
 
@@ -50,6 +52,7 @@ const splitFromGross = (gross: number): SalaryComponent[] => {
  */
 export default function SalaryStructureModal({ open, onClose, employee, onSaved }: Props) {
   const toast = useToast();
+  const confirm = useConfirm();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -116,8 +119,20 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
   const addRow = (list: SalaryComponent[], setList: (v: SalaryComponent[]) => void) =>
     setList([...list, { code: `comp_${list.length + 1}`, label: '', amount: 0 }]);
 
-  const removeRow = (list: SalaryComponent[], setList: (v: SalaryComponent[]) => void, i: number) =>
+  const removeRow = async (list: SalaryComponent[], setList: (v: SalaryComponent[]) => void, i: number) => {
+    const comp = list[i];
+    const ok = await confirm({
+      title: 'Remove component?',
+      message: comp?.label?.trim()
+        ? <>Remove <strong>{comp.label.trim()}</strong> from the salary structure?</>
+        : <>Remove this component from the salary structure?</>,
+      tone: 'danger',
+      confirmLabel: 'Remove',
+      icon: 'delete-bin-line',
+    });
+    if (!ok) return;
     setList(list.filter((_, idx) => idx !== i));
+  };
 
   const save = async () => {
     const clean = earnings.filter(c => c.label.trim() && c.amount >= 0);
@@ -180,6 +195,7 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
 
   return (
     <Modal isOpen={open} toggle={onClose} centered size="lg" backdrop="static">
+      <MasterFormStyles />
       <ModalBody className="p-0">
         {/* Header */}
         <div style={{ padding: '16px 22px', background: 'linear-gradient(135deg, #5a3fd1, #7c5cfc)', borderTopLeftRadius: 6, borderTopRightRadius: 6 }}>
@@ -208,7 +224,7 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
             <div className="row g-3 mb-3">
               <div className="col-md-4">
                 <label className="form-label fw-semibold" style={{ fontSize: 12 }}>Effective From</label>
-                <input type="date" className="form-control form-control-sm" value={effectiveFrom} onChange={e => setEffectiveFrom(e.target.value)} />
+                <MasterDatePicker value={effectiveFrom} onChange={setEffectiveFrom} placeholder="Select date" />
               </div>
               <div className="col-md-8 d-flex align-items-end gap-3 flex-wrap">
                 <label className="d-flex align-items-center gap-1" style={{ fontSize: 12.5 }}>
@@ -243,10 +259,8 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
             </div>
 
             <div className="d-flex justify-content-end gap-2 mt-4">
-              <button type="button" className="btn btn-light" onClick={onClose} disabled={saving}>Cancel</button>
-              <button type="button" className="btn fw-semibold text-white d-inline-flex align-items-center gap-2"
-                style={{ background: 'linear-gradient(135deg,#7c5cfc,#5a3fd1)', border: 'none', opacity: saving ? 0.7 : 1 }}
-                onClick={save} disabled={saving}>
+              <button type="button" className="master-modal-cancel" onClick={onClose} disabled={saving}>Cancel</button>
+              <button type="button" className="master-modal-save" onClick={save} disabled={saving}>
                 {saving ? <Spinner size="sm" /> : <i className="ri-save-line" />}
                 {employee.has_structure ? 'Save Revision' : 'Save Salary'}
               </button>

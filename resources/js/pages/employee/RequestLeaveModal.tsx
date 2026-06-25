@@ -11,20 +11,6 @@ import {
 } from '../hrms/leavePlansApi';
 import '../../../css/request-leave-drawer.css';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// RequestLeaveModal — Keka-style right-side drawer. Sits on top of the
-// EmployeeProfile fullscreen overlay (z-index 1080) via zIndex={2100}.
-//
-// Layout:
-//   - Header: gradient strip, leave icon, title + subtitle, X close button
-//   - From / To date strip using MasterDatePicker for proper calendar UX
-//   - Leave type dropdown showing "N days available" per option
-//   - Note textarea
-//   - Notify list — searchable employee chooser with checkbox rows
-//     showing avatar / designation / emp_code. Selected colleagues
-//     render as removable chips above the search.
-//   - Footer: Cancel + Request buttons
-// ─────────────────────────────────────────────────────────────────────────────
 interface NotifyEmployee {
   id: number;
   name: string;
@@ -68,7 +54,6 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
   const [submitting, setSubmitting] = useState(false);
   const notifyBoxRef = useRef<HTMLDivElement | null>(null);
 
-  // Reset when the modal opens (preserve nothing across cycles).
   useEffect(() => {
     if (!isOpen) return;
     setFromDate(''); setToDate('');
@@ -78,8 +63,6 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
     setNotifyOptions([]); setSelectedNotify([]);
   }, [isOpen]);
 
-  // Pull this employee's balance summary so the type dropdown can show
-  // "Paid Leave — 6 days available".
   useEffect(() => {
     if (!isOpen) return;
     const empId = Number(employeeId);
@@ -89,16 +72,11 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
       .catch(err => console.warn('[RequestLeaveModal] balance fetch failed', err));
   }, [isOpen, employeeId]);
 
-  // Debounced notify search.
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(notifySearch.trim()), 300);
     return () => clearTimeout(t);
   }, [notifySearch]);
 
-  // Search is "open" whenever the user has typed something. Hits the
-  // dedicated /api/leave-requests/colleagues endpoint — open to every
-  // authed user (the main /api/employees needs HR permission so a
-  // regular employee filing leave gets a silent 403 there).
   const [searchError, setSearchError] = useState<string | null>(null);
   useEffect(() => {
     if (!debouncedSearch) { setNotifyOptions([]); setSearchError(null); return; }
@@ -119,9 +97,6 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
       })
       .catch(err => {
         if (!alive) return;
-        // Surface the failure inline so future API changes don't go
-        // unnoticed (the previous swallow-and-show-blank UX was the
-        // exact reason the empty-list bug hid for so long).
         const msg = err?.response?.data?.message || err?.message || 'Search failed';
         setSearchError(msg);
         setNotifyOptions([]);
@@ -131,8 +106,6 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
 
   const totalDays = useMemo(() => diffDaysInclusive(fromDate, toDate), [fromDate, toDate]);
 
-  // Earliest selectable date — the backend rejects past-dated leave, so the
-  // calendar must not offer past days in the first place (HRMS-BUG-143).
   const today = new Date().toISOString().slice(0, 10);
 
   const isSelected = useCallback(
@@ -149,10 +122,6 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
 
   const submit = async () => {
     if (!canSubmit) return;
-    // Client-side balance guard. The backend will accept-and-create with
-    // an over-balance request today; surfacing the failure here saves a
-    // round-trip and keeps the user on the form for a quick edit.
-    // Skipped for "unlimited" types since they have no quota cap.
     const selectedBalance = balanceTypes.find(t => String(t.leave_type_id) === String(leaveTypeId));
     if (selectedBalance && !selectedBalance.unlimited) {
       const remaining = selectedBalance.available ?? 0;
@@ -195,19 +164,13 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
       isOpen={isOpen}
       toggle={onClose}
       backdrop="static"
-      // zIndex prop is required — reactstrap sets z-index as an inline
-      // style on the outer wrapper (default 1050). EmployeeProfile's
-      // fullscreen overlay sits at 1080, so we need at least 2100 here.
       zIndex={2100}
-      // Custom class flips the modal into a right-side drawer (see CSS
-      // .lvr-drawer-modal in resources/css/leave.css).
       modalClassName="lvr-drawer-modal"
       contentClassName="lvr-drawer-content"
       backdropClassName="lvr-drawer-backdrop"
       fade
     >
       <ModalBody className="p-0 d-flex flex-column h-100">
-        {/* Header — gradient strip with leave icon */}
         <div className="lvr-header">
           <div className="d-flex align-items-center gap-3">
             <span className="lvr-header-icon">
@@ -230,9 +193,7 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
           </button>
         </div>
 
-        {/* Scrollable body */}
         <div className="lvr-body">
-          {/* ── Section: Dates ── */}
           <div className="lvr-section">
             <div className="lvr-section-title">
               <i className="ri-calendar-line" />
@@ -269,7 +230,6 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
             </div>
           </div>
 
-          {/* ── Section: Leave Type ── */}
           <div className="lvr-section">
             <div className="lvr-section-title">
               <i className="ri-bookmark-line" />
@@ -288,9 +248,6 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
               >
                 <option value="">Select a leave type…</option>
                 {balanceTypes.map(t => {
-                  // Native <option> text can't be styled per-character, so the
-                  // tiny ∞ glyph read as invisible (HRMS-BUG-098). Spell it out
-                  // as "Unlimited" instead for unlimited types.
                   const availLabel = t.unlimited
                     ? 'Unlimited days available'
                     : `${t.available ?? 0} days available`;
@@ -304,7 +261,6 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
             )}
           </div>
 
-          {/* ── Section: Note ── */}
           <div className="lvr-section">
             <div className="lvr-section-title">
               <i className="ri-edit-2-line" />
@@ -319,7 +275,6 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
             />
           </div>
 
-          {/* ── Section: Notify colleagues ── */}
           <div className="lvr-section">
             <div className="lvr-section-title">
               <i className="ri-user-shared-line" />
@@ -368,9 +323,6 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
               />
             </div>
 
-            {/* Inline checkbox list. Always shown when there are search
-                results; expanded layout (vs. dropdown) makes it easier
-                to scan multiple matches in a drawer width. */}
             {notifyOptions.length > 0 && (
               <div className="lvr-notify-list">
                 {notifyOptions.map(e => {
@@ -426,7 +378,6 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
           </div>
         </div>
 
-        {/* Footer — sticky bottom */}
         <div className="lvr-footer">
           <button type="button" className="lvr-btn-ghost" onClick={onClose}>
             <i className="ri-close-line" /> Cancel

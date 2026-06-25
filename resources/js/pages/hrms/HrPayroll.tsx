@@ -12,68 +12,56 @@ import { ShimmerTableRows, Shimmer } from '../../components/ui/Shimmer';
 import WorklistPager from '../../components/ui/WorklistPager';
 import api from '../../api';
 import '../../../css/recruitment.css';
-// Reuses the purple hero-card, hero-pill, KPI surface and table styles that
-// HrEmployeeOnboarding ships (.onb-hero-card / .onb-hero-pill / .onb-surface
-// / .onb-kpi-card / .onb-pill / .onb-id-pill / .onb-role-pill) so the page
-// reads the same as the rest of the HR module.
 import '../employee-onboarding/HrEmployeeOnboarding.css';
 
-// ── Types ────────────────────────────────────────────────────────────────────
 type CycleStatus = 'Completed' | 'In Progress' | 'Not Started';
 type RowStatus   = 'Ready' | 'Processed' | 'Pending Review' | 'On Hold' | 'Paid';
-// Source of truth for the biometric tab. "Biometric" = device sync clean,
-// "Review" = needs HR attention (missing punches / mismatches), "Manual" =
-// no device data available, attendance entered manually.
 type AttSource   = 'Biometric' | 'Review' | 'Manual';
 
 interface CycleMonth {
-  key: string;          // 'apr-2025'
-  label: string;        // 'Apr 2025'
-  range: string;        // '01 APR–30 APR'
+  key: string;
+  label: string;
+  range: string;
   status: CycleStatus;
-  month?: number;       // 1-12 (from /payroll/cycles)
-  year?: number;        // 4-digit
+  month?: number;
+  year?: number;
 }
 
 interface PayrollRow {
   id: string;
-  payslip_id?: number;  // server payslip id — used to fetch the full breakup
-  employee_id?: number; // server employee id — used for slip history
+  payslip_id?: number;
+  employee_id?: number;
   empId: string;
   name: string;
   initials: string;
   accent: string;
   department: string;
   designation: string;
-  ctc: number;          // monthly gross
+  ctc: number;
   earnings: number;
   deductions: number;
   netPay: number;
-  attendance: number;   // present days (0..30)
+  attendance: number;
   status: RowStatus;
   attMismatch?: boolean;
-  // Biometric tab fields — would come from /api/timelogs once wired.
   present: number;
   absent: number;
   lateMarks: number;
   missingPunch: number;
-  unpaidLeave: number;  // counted toward "Unpaid Leave Cases" KPI
+  unpaidLeave: number;
   attSource: AttSource;
-  mismatch?: string;    // short note shown in the Mismatch column ("Punch gap", etc.)
-  // Salary Report tab — itemised deductions & advances (would come from
-  // /api/payroll/salary-report once wired).
+  mismatch?: string;
   pfEmp: number;
   esi: number;
   pt: number;
   tds: number;
-  lopDeducted: number;  // pay docked for unpaid leave / LOP days
-  advanceRec: number;   // recovered from prior salary advance
+  lopDeducted: number;
+  advanceRec: number;
   holdReason?: string | null;
-  reasons?: string[];   // real server-computed exception reasons
+  reasons?: string[];
   bankVerified?: boolean;
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
 const fmtINR = (n: number) =>
   new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n);
 
@@ -84,22 +72,43 @@ const fmtINRShort = (n: number) => {
   return `₹${n}`;
 };
 
-// ── Cycle history (12 months, Apr 2025 → Apr 2026 — matches the screenshot) ─
-const CYCLE_MONTHS: CycleMonth[] = [
-  { key: 'apr-2025', label: 'Apr 2025', range: '01 APR–30 APR', status: 'Completed' },
-  { key: 'may-2025', label: 'May 2025', range: '01 MAY–31 MAY', status: 'Completed' },
-  { key: 'jun-2025', label: 'Jun 2025', range: '01 JUN–30 JUN', status: 'Completed' },
-  { key: 'jul-2025', label: 'Jul 2025', range: '01 JUL–31 JUL', status: 'Completed' },
-  { key: 'aug-2025', label: 'Aug 2025', range: '01 AUG–31 AUG', status: 'Completed' },
-  { key: 'sep-2025', label: 'Sep 2025', range: '01 SEP–30 SEP', status: 'Completed' },
-  { key: 'oct-2025', label: 'Oct 2025', range: '01 OCT–31 OCT', status: 'Completed' },
-  { key: 'nov-2025', label: 'Nov 2025', range: '01 NOV–30 NOV', status: 'Completed' },
-  { key: 'dec-2025', label: 'Dec 2025', range: '01 DEC–31 DEC', status: 'Completed' },
-  { key: 'jan-2026', label: 'Jan 2026', range: '01 JAN–31 JAN', status: 'Completed' },
-  { key: 'feb-2026', label: 'Feb 2026', range: '01 FEB–28 FEB', status: 'Completed' },
-  { key: 'mar-2026', label: 'Mar 2026', range: '01 MAR–31 MAR', status: 'In Progress' },
-  { key: 'apr-2026', label: 'Apr 2026', range: '01 APR–30 APR', status: 'Not Started' },
-];
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+
+const monthKey = (year: number, monthIdx: number) => `${MONTHS_SHORT[monthIdx].toLowerCase()}-${year}`;
+
+// Build the full 12-month cycle list for a year, merging real per-month status
+// from the backend /payroll/cycles payload (keyed `${year}-${month}`); months
+// the backend hasn't surfaced yet default to 'Not Started'.
+//
+// "In Progress" is clamped to the current calendar month only: future months
+// can't have started, and a past month is either Completed (actually paid) or
+// Not Started — never "In Progress", even if a stray unpaid period lingers.
+const buildYearMonths = (year: number, statusByKey: Record<string, CycleStatus>, today: Date): CycleMonth[] => {
+  const curYear = today.getFullYear();
+  const curMonth = today.getMonth() + 1;
+  return MONTHS_SHORT.map((mon, idx) => {
+    const m = idx + 1;
+    const upper = mon.toUpperCase();
+    const lastDay = new Date(year, m, 0).getDate();
+    const raw = statusByKey[`${year}-${m}`] ?? 'Not Started';
+    let status: CycleStatus;
+    if (year > curYear || (year === curYear && m > curMonth)) {
+      status = 'Not Started';                                   // future
+    } else if (year === curYear && m === curMonth) {
+      status = raw;                                             // live cycle
+    } else {
+      status = raw === 'Completed' ? 'Completed' : 'Not Started'; // past
+    }
+    return {
+      key: monthKey(year, idx),
+      label: `${mon} ${year}`,
+      range: `01 ${upper}–${lastDay} ${upper}`,
+      month: m,
+      year,
+      status,
+    };
+  });
+};
 
 const CYCLE_TONES: Record<CycleStatus, { bg: string; fg: string; dot: string }> = {
   'Completed':   { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' },
@@ -107,8 +116,6 @@ const CYCLE_TONES: Record<CycleStatus, { bg: string; fg: string; dot: string }> 
   'Not Started': { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' },
 };
 
-// Keyed loosely (not by RowStatus) so the server's post-disbursement 'Paid'
-// status — which isn't in the RowStatus union — still resolves to a tone.
 const ROW_TONES: Record<string, { bg: string; fg: string; dot: string }> = {
   'Ready':          { bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
   'Processed':      { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' },
@@ -117,18 +124,8 @@ const ROW_TONES: Record<string, { bg: string; fg: string; dot: string }> = {
   'Paid':           { bg: '#d6f4e3', fg: '#0a7d5a', dot: '#0ab39c' },
 };
 
-// Safe tone lookup — falls back to the neutral "Processed" tone for any
-// unexpected status so a row never crashes on an undefined tone.
 const toneFor = (status: string) => ROW_TONES[status] ?? ROW_TONES['Processed'];
 
-// ── Mock employee payroll rows for the Apr 2026 cycle ───────────────────────
-// 26 working days in Apr 2026 — drives the biometric tab's "26 working days"
-// banner and the present/absent breakdown. Salary deductions are split into
-// individual heads (PF / ESI / PT / TDS / LOP / advance recovery) so the
-// Salary Report tab can render them as columns; legacy `deductions` and
-// `netPay` are recomputed from those heads to stay consistent.
-
-// ── Filter option lists ──────────────────────────────────────────────────────
 const DEPT_OPTIONS = [
   { value: 'All',          label: 'All' },
   { value: 'Engineering',  label: 'Engineering' },
@@ -150,7 +147,6 @@ const STATUS_OPTIONS: { value: 'All' | RowStatus; label: string }[] = [
   { value: 'Paid',           label: 'Paid' },
 ];
 
-// KPI cards (top strip + tile icon, matches the onboarding layout)
 const KPI_CARDS = [
   { key: 'totalPayroll',   label: 'Total Payroll',     icon: 'ri-money-dollar-circle-line', tint: '#d6f4e3', fg: '#108548', strip: '#10b981', mode: 'currency' as const },
   { key: 'readyProcessed', label: 'Ready / Processed', icon: 'ri-checkbox-circle-line',    tint: '#dceefe', fg: '#0c63b0', strip: '#3b82f6', mode: 'fraction' as const },
@@ -158,7 +154,6 @@ const KPI_CARDS = [
   { key: 'onHold',         label: 'On Hold',           icon: 'ri-error-warning-line',      tint: '#fdd9d6', fg: '#b1401d', strip: '#f06548', mode: 'count' as const },
 ] as const;
 
-// ── Animated number — same easing as the onboarding KPIs ────────────────────
 function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) {
   const [display, setDisplay] = useState(0);
   useEffect(() => {
@@ -177,12 +172,10 @@ function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; pr
   return <>{prefix}{display.toLocaleString('en-IN')}{suffix}</>;
 }
 
-// ── Page ─────────────────────────────────────────────────────────────────────
 export default function HrPayroll() {
   const toast = useToast();
   const navigate = useNavigate();
 
-  // Issue-card actions (Go to Attendance / Open Employee) — real navigation.
   const handleIssueAction = (action: { kind?: string }, issue: { empCode?: string }) => {
     setRunOpen(false);
     if (action.kind === 'attendance') {
@@ -192,41 +185,51 @@ export default function HrPayroll() {
     }
   };
 
-  // Cycle strip — seeded with the static months for the first paint, then
-  // replaced by /api/payroll/cycles (which carries real month/year + status).
-  const [cycleMonths, setCycleMonths] = useState<CycleMonth[]>(CYCLE_MONTHS);
+  const today = useMemo(() => new Date(), []);
 
-  // Live payroll rows for the selected cycle (from /api/payroll). Seeded once
-  // behind the mount shimmer so nothing flashes empty.
-  // Starts empty — the mount shimmer covers the first /api/payroll fetch, then
-  // real rows load. No mock/seed data ever renders.
+  // Raw backend cycle statuses (trailing window from /payroll/cycles), keyed
+  // by `${year}-${month}`. The visible strip is generated one full year at a
+  // time from this map — no hardcoded month seed on the frontend.
+  const [rawCycles, setRawCycles] = useState<CycleMonth[]>([]);
+  const [selectedYear, setSelectedYear] = useState<number>(today.getFullYear());
+
+  const statusByKey = useMemo(() => {
+    const map: Record<string, CycleStatus> = {};
+    for (const c of rawCycles) {
+      if (c.year && c.month) map[`${c.year}-${c.month}`] = c.status;
+    }
+    return map;
+  }, [rawCycles]);
+
+  // The 12 months of the selected year — drives the strip + the hero dropdown.
+  const cycleMonths = useMemo(
+    () => buildYearMonths(selectedYear, statusByKey, today),
+    [selectedYear, statusByKey, today],
+  );
+
+  // Years offered in the picker — whichever the backend returned, plus the
+  // selected and current years.
+  const yearOptions = useMemo(() => {
+    const years = new Set<number>();
+    rawCycles.forEach(c => { if (c.year) years.add(c.year); });
+    years.add(selectedYear);
+    years.add(today.getFullYear());
+    return Array.from(years).sort((a, b) => a - b).map(y => ({ value: String(y), label: String(y) }));
+  }, [rawCycles, selectedYear, today]);
+
   const [rows, setRows] = useState<PayrollRow[]>([]);
-  // Period + run meta for the selected cycle (drives finalize/run/approve/pay
-  // gating). run_id is needed for approve/pay.
   const [periodMeta, setPeriodMeta] = useState<{ attendance_finalized: boolean; status: string; run_status: string | null; working_days?: number } | null>(null);
   const [runMeta, setRunMeta] = useState<{ id: number; status: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
-  // Tracks which export/download is in flight ('csv' | 'excel' | 'zip' |
-  // 'history' | 'email') so each menu item can spin + the menu disables until
-  // the download completes.
   const [downloading, setDownloading] = useState<string | null>(null);
-  // Per-row payslip PDF download in progress (row id).
   const [pdfBusyId, setPdfBusyId] = useState<string | null>(null);
 
-  // Selected cycle drives every downstream stat. Defaults to the live "In
-  // Progress" cycle (Mar 2026); falls back to the last entry if all cycles
-  // are completed.
-  const initialCycleKey = useMemo(() => {
-    const live = CYCLE_MONTHS.find(c => c.status === 'In Progress' || c.status === 'Not Started');
-    return (live ?? CYCLE_MONTHS[CYCLE_MONTHS.length - 1]).key;
-  }, []);
-  const [cycleKey, setCycleKey] = useState<string>(initialCycleKey);
+  const [cycleKey, setCycleKey] = useState<string>(monthKey(today.getFullYear(), today.getMonth()));
   const [cycleCollapsed, setCycleCollapsed] = useState(false);
 
   const [tab, setTab] = useState<'processing' | 'biometric' | 'report' | 'salary'>('processing');
 
-  // Salary Setup tab — roster of employees + their structure status.
   const [roster, setRoster] = useState<SalaryEmployeeLite[]>([]);
   const [rosterLoading, setRosterLoading] = useState(false);
   const [salaryEmp, setSalaryEmp] = useState<SalaryEmployeeLite | null>(null);
@@ -238,28 +241,17 @@ export default function HrPayroll() {
       .catch(() => setRoster([]))
       .finally(() => setRosterLoading(false));
   };
-  // Load the roster the first time the Salary tab is opened (and after saves).
   useEffect(() => { if (tab === 'salary' && roster.length === 0) loadRoster(); /* eslint-disable-next-line */ }, [tab]);
   const [q, setQ] = useState('');
   const [deptFilter, setDeptFilter]     = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<'All' | RowStatus>('All');
 
-  // Payslip viewer modal — opened from the Payslip column in the Salary
-  // Report tab. Holds the row currently being viewed so the modal can render
-  // that employee's earnings/deductions breakdown.
   const [paySlipRow, setPaySlipRow] = useState<PayrollRow | null>(null);
-  // Real component-level breakup fetched from /payroll/payslip/{id}; falls
-  // back to a synthesized split when unavailable.
   const [payslipBreakup, setPayslipBreakup] = useState<{ earnings: PayslipLine[]; deductions: PayslipLine[] } | null>(null);
-  // Rule 16 — provisional vs final (official) slip; gates download/email.
   const [payslipFinal, setPayslipFinal] = useState<boolean | undefined>(undefined);
-  // Salary-slip history for the employee being viewed (powers the modal's
-  // Recent Payslips list + click-to-load).
   const [payslipRecent, setPayslipRecent] = useState<{ label: string; now?: boolean; payslipId?: number; status?: string }[]>([]);
-  // Real (branch-resolved) company letterhead for the viewer — no dummy data.
   const [payslipCompany, setPayslipCompany] = useState<{ name: string; meta: string; initials: string; hrEmail: string } | null>(null);
 
-  // Load one payslip's full breakup + company letterhead into the viewer.
   const loadPayslipDetail = (payslipId?: number) => {
     if (!payslipId) return;
     api.get(`/payroll/payslip/${payslipId}`)
@@ -278,7 +270,7 @@ export default function HrPayroll() {
           });
         }
       })
-      .catch(() => { /* fall back to the synthesized split */ });
+      .catch(() => {});
   };
 
   const openPayslip = (row: PayrollRow) => {
@@ -286,11 +278,8 @@ export default function HrPayroll() {
     setPayslipBreakup(null);
     setPayslipFinal(undefined);
     setPayslipCompany(null);
-    // Seed the recent list with the current cycle so the dummy default never
-    // shows; the history fetch then replaces it with the full list.
     setPayslipRecent(row.payslip_id ? [{ label: cycle.label, now: true, payslipId: row.payslip_id, status: row.status }] : []);
     loadPayslipDetail(row.payslip_id);
-    // Fetch this employee's slip history for the "Recent Payslips" sidebar.
     if (row.employee_id) {
       api.get(`/payroll/employee/${row.employee_id}/payslips`)
         .then(res => {
@@ -304,31 +293,20 @@ export default function HrPayroll() {
             })));
           }
         })
-        .catch(() => { /* keep the seeded current-cycle entry */ });
+        .catch(() => {});
     }
   };
   const selectRecent = (entry: { payslipId?: number }) => loadPayslipDetail(entry.payslipId);
   const closePayslip = () => { setPaySlipRow(null); setPayslipBreakup(null); setPayslipFinal(undefined); setPayslipRecent([]); setPayslipCompany(null); };
 
-  // Payroll run pre-flight modal — opened from the Run Payroll button in the
-  // hero. Bridges the click into the two-phase blocking-issues / success
-  // flow defined in PayrollRunModal.
   const [runOpen, setRunOpen] = useState(false);
 
-  // Issues are derived from the live `rows` (each payslip carries its own
-  // server-computed exceptions, surfaced via status/mismatch fields):
-  //   - status 'On Hold'        → blocking
-  //   - attMismatch || mismatch → warning
-  // This keeps the modal in sync with the table; the same buckets are what
-  // /api/payroll/preflight returns.
   const runIssues = useMemo<PayrollRunIssue[]>(() => {
     const list: PayrollRunIssue[] = [];
     for (const r of rows) {
-      // Prefer the REAL server-computed reasons; only fall back to heuristics
-      // when the row carries none (e.g. older payslip without exceptions).
       const realReasons = (r.reasons && r.reasons.length) ? r.reasons : null;
       if (r.status === 'On Hold') {
-        let reasons: string[] = realReasons ?? [];
+        const reasons: string[] = realReasons ?? [];
         if (!reasons.length) {
           if (r.holdReason) reasons.push(r.holdReason);
           if (r.bankVerified === false) reasons.push('Bank details not verified');
@@ -350,7 +328,7 @@ export default function HrPayroll() {
           ],
         });
       } else if (r.status === 'Pending Review' || r.attMismatch || r.mismatch) {
-        let reasons: string[] = realReasons ?? [];
+        const reasons: string[] = realReasons ?? [];
         if (!reasons.length) {
           if (r.mismatch)        reasons.push(r.mismatch);
           if (r.lateMarks > 0)   reasons.push(`${r.lateMarks} late mark${r.lateMarks === 1 ? '' : 's'} flagged`);
@@ -375,8 +353,6 @@ export default function HrPayroll() {
     return list;
   }, [rows]);
 
-  // Sum of net pay for the blocking & at-risk buckets — drives the 3 KPI
-  // tiles at the top of the pre-flight modal.
   const blockedAmount = useMemo(
     () => rows.filter(r => r.status === 'On Hold').reduce((s, r) => s + r.netPay, 0),
     [rows],
@@ -386,12 +362,9 @@ export default function HrPayroll() {
     [rows],
   );
 
-  // Pagination — dynamic rows-per-page via WorklistPager (matches the
-  // recruitment / leave / holiday tables).
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  // Reset page when filters change.
   useEffect(() => { setPage(1); }, [q, deptFilter, statusFilter, cycleKey, tab]);
 
   const [loading, setLoading] = useState(true);
@@ -401,23 +374,30 @@ export default function HrPayroll() {
     [cycleKey, cycleMonths],
   );
 
-  // Load the real cycle strip once on mount, then snap the selection to the
-  // live (In Progress / Not Started) cycle.
+  // Switch the displayed year — keep the same month if possible, else snap to
+  // the live (In Progress) cycle of that year, else its first month.
+  const selectYear = (y: number) => {
+    const months = buildYearMonths(y, statusByKey, today);
+    const sameMonth = cycle ? months.find(m => m.month === cycle.month) : undefined;
+    const live = months.find(m => m.status === 'In Progress');
+    setSelectedYear(y);
+    setCycleKey((sameMonth ?? live ?? months[0]).key);
+  };
+
   useEffect(() => {
     api.get('/payroll/cycles')
       .then(res => {
         const list = (res.data?.data ?? []) as CycleMonth[];
         if (Array.isArray(list) && list.length) {
-          setCycleMonths(list);
-          const live = list.find(c => c.status === 'In Progress' || c.status === 'Not Started');
-          setCycleKey((live ?? list[list.length - 1]).key);
+          setRawCycles(list);
+          const live = list.find(c => c.status === 'In Progress' || c.status === 'Not Started') ?? list[list.length - 1];
+          if (live?.year)  setSelectedYear(live.year);
+          if (live?.month) setCycleKey(monthKey(live.year!, live.month - 1));
         }
       })
-      .catch(() => { /* keep the seeded strip on failure */ });
+      .catch(() => {});
   }, []);
 
-  // Fetch payslip rows for the selected cycle. Maps the server payload (which
-  // already uses the PayrollRow field names) straight into table state.
   const reloadCycle = useMemo(() => () => {
     const c = cycleMonths.find(m => m.key === cycleKey);
     const month = c?.month;
@@ -441,9 +421,6 @@ export default function HrPayroll() {
 
   useEffect(() => { reloadCycle(); }, [reloadCycle]);
 
-  // ── Actions ────────────────────────────────────────────────────────────
-  // Run Payroll: Rule 1 finalizes attendance first (if not already), then
-  // generates the run and opens the pre-flight modal against the fresh rows.
   const runPayroll = async () => {
     if (busy) return;
     const month = cycle?.month, year = cycle?.year;
@@ -463,8 +440,6 @@ export default function HrPayroll() {
     }
   };
 
-  // Proceed to Pay — approve the run (so it's ready to disburse), then open the
-  // disbursement flow (mode → advice/NEFT → 3-level sign-off → initiate).
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentRunId, setPaymentRunId] = useState<number | null>(null);
   const proceedToPay = async () => {
@@ -484,8 +459,6 @@ export default function HrPayroll() {
     }
   };
 
-  // Rule 15 — reopen a non-paid run for corrections (re-edit attendance/leave
-  // then re-run). Paid cycles are immutable and the server rejects them.
   const reopenPayroll = async () => {
     if (busy) return;
     const month = cycle?.month, year = cycle?.year;
@@ -502,10 +475,8 @@ export default function HrPayroll() {
     }
   };
 
-  // A generated/approved (but not paid) run can be corrected.
   const canReopen = !!runMeta && runMeta.status !== 'paid';
 
-  // Download a single payslip PDF (from the table row buttons).
   const downloadPayslipPdf = async (row: PayrollRow) => {
     if (!row.payslip_id) {
       toast.error('Not available', 'Generate payroll before downloading payslips.');
@@ -531,7 +502,6 @@ export default function HrPayroll() {
     }
   };
 
-  // Bulk — every payslip in the cycle zipped (permission-gated server-side).
   const downloadAllPayslips = async () => {
     if (downloading) return;
     const month = cycle?.month, year = cycle?.year;
@@ -553,11 +523,10 @@ export default function HrPayroll() {
       URL.revokeObjectURL(url);
       toast.success('Payslips ready', `${cycle.label} payslips downloaded as a ZIP.`);
     } catch (err: any) {
-      // Blob error responses need parsing back to text for the message.
       let msg = 'Could not generate payslips.';
       if (err?.response?.status === 403) msg = 'You are not allowed to download payslips.';
       else if (err?.response?.data instanceof Blob) {
-        try { msg = JSON.parse(await err.response.data.text())?.message || msg; } catch { /* keep default */ }
+        try { msg = JSON.parse(await err.response.data.text())?.message || msg; } catch {}
       }
       toast.error('Bulk download failed', msg);
     } finally {
@@ -565,8 +534,6 @@ export default function HrPayroll() {
     }
   };
 
-  // Email every (final) payslip in the cycle to each employee. Server skips
-  // employees with no email and reports the breakdown.
   const emailAllPayslips = async () => {
     if (downloading) return;
     const month = cycle?.month, year = cycle?.year;
@@ -585,7 +552,6 @@ export default function HrPayroll() {
     }
   };
 
-  // Rule 17 — filtered, permission-gated CSV export streamed from the server.
   const exportCsv = async () => {
     if (downloading) return;
     const month = cycle?.month, year = cycle?.year;
@@ -616,8 +582,6 @@ export default function HrPayroll() {
     }
   };
 
-  // Excel (.xlsx) of the CURRENT cycle — every column, built client-side from
-  // the loaded rows (matches the project's xlsx export pattern).
   const exportExcelCurrent = () => {
     if (downloading) return;
     if (!rows.length) { toast.error('Nothing to export', 'Generate payroll for this cycle first.'); return; }
@@ -660,8 +624,6 @@ export default function HrPayroll() {
     }
   };
 
-  // Payroll HISTORY (Excel) — overall data across all cycles. Two sheets:
-  // a per-cycle Summary and a per-employee Detail (every column).
   const exportHistoryExcel = async () => {
     if (downloading) return;
     setDownloading('history');
@@ -724,7 +686,6 @@ export default function HrPayroll() {
     }
   };
 
-  // Counts — derived from the live cycle-scoped `rows`.
   const counts = useMemo(() => {
     const totalEmployees = rows.length;
     const ready          = rows.filter(r => r.status === 'Ready').length;
@@ -734,12 +695,10 @@ export default function HrPayroll() {
     const totalPayroll   = rows.reduce((s, r) => s + r.netPay, 0);
     const avgCtc         = totalEmployees ? Math.round(rows.reduce((s, r) => s + r.ctc, 0) / totalEmployees) : 0;
     const attMismatch    = rows.filter(r => r.attMismatch || r.attSource === 'Review').length;
-    // Biometric tab aggregates
     const syncedEmployees    = rows.filter(r => r.attSource === 'Biometric').length;
     const missingPunchCases  = rows.filter(r => r.missingPunch > 0).length;
     const mismatchCases      = rows.filter(r => r.attSource === 'Review').length;
     const unpaidLeaveCases   = rows.filter(r => r.unpaidLeave > 0).length;
-    // Salary Report aggregates
     const totalGross    = rows.reduce((s, r) => s + r.earnings, 0);
     const totalNetPay   = rows.reduce((s, r) => s + r.netPay, 0);
     const totalPf       = rows.reduce((s, r) => s + r.pfEmp, 0);
@@ -789,7 +748,6 @@ export default function HrPayroll() {
   const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
   const goto = (p: number) => setPage(Math.min(Math.max(1, p), pageCount));
 
-  // Cycle strip — horizontal scroller controlled by the prev/next chevrons.
   const cycleStripRef = useRef<HTMLDivElement | null>(null);
   const scrollCycle = (dir: 'prev' | 'next') => {
     const el = cycleStripRef.current;
@@ -802,105 +760,8 @@ export default function HrPayroll() {
   return (
     <>
       <MasterFormStyles />
+      <div className="pay-page">
 
-      {/* ── Payroll-only dark-mode shims. Most of the page uses theme-aware
-          tokens (var(--vz-*)) and the .onb-* classes from HrEmployeeOnboarding,
-          but a handful of pastel surfaces (banner / mini-tiles / selected
-          cycle chip / cycle calendar icon) are hardcoded — these get a
-          translucent dark variant here so the page reads on both themes. ── */}
-      <style>{`
-        /* Hero action row — dark-violet 2px ring around the cycle dropdown
-           and the Run Payroll / Export buttons so they stand out against the
-           light purple hero card. */
-        .pay-hero-select .master-select-toggle {
-          border: 1px solid #5a3fd1 !important;
-          background: #fff !important;
-          box-shadow: 0 4px 12px rgba(90,63,209,0.18) !important;
-        }
-        [data-bs-theme="dark"] .pay-hero-select .master-select-toggle {
-          background: var(--vz-card-bg) !important;
-          border-color: #a78bfa !important;
-        }
-        .pay-hero-run:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 12px 22px rgba(90,63,209,0.42) !important;
-        }
-        .pay-hero-export:hover {
-          background: #f5f1ff !important;
-          box-shadow: 0 6px 14px rgba(90,63,209,0.20) !important;
-        }
-        [data-bs-theme="dark"] .pay-hero-export {
-          color: #c4b5fd !important;
-          border-color: #a78bfa !important;
-        }
-        [data-bs-theme="dark"] .pay-hero-export:hover {
-          background: rgba(124,92,252,0.16) !important;
-        }
-
-        .pay-cycle-icon { background: #ece6ff; color: #5a3fd1; }
-        [data-bs-theme="dark"] .pay-cycle-icon { background: rgba(124,92,252,0.20); color: #c4b5fd; }
-
-        .pay-cycle-chip { background: var(--vz-card-bg); border: 1px solid var(--vz-border-color); }
-        .pay-cycle-chip.is-selected {
-          background: linear-gradient(135deg,#f5f1ff,#ece6ff);
-          border-color: #7c5cfc;
-          box-shadow: 0 4px 12px rgba(124,92,252,0.18);
-        }
-        .pay-cycle-chip-label { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .pay-cycle-chip.is-selected .pay-cycle-chip-label { color: #5a3fd1; }
-        [data-bs-theme="dark"] .pay-cycle-chip.is-selected {
-          background: linear-gradient(135deg, rgba(124,92,252,0.22), rgba(124,92,252,0.10));
-          border-color: #a78bfa;
-          box-shadow: 0 4px 14px rgba(124,92,252,0.30);
-        }
-        [data-bs-theme="dark"] .pay-cycle-chip.is-selected .pay-cycle-chip-label { color: #c4b5fd; }
-
-        .pay-banner { background: #e6f7f0; border: 1px solid #b6e4c8; color: #0a716a; }
-        [data-bs-theme="dark"] .pay-banner {
-          background: rgba(10,113,106,0.18);
-          border-color: rgba(10,179,156,0.34);
-          color: #4dd4be;
-        }
-
-        .pay-mini-tile { border-radius: 12px; padding: 14px 16px; border: 1px solid; }
-        .pay-mini-tile--green  { background: #e6f7ed; border-color: #b6e4c8; }
-        .pay-mini-tile--red    { background: #fde7e3; border-color: #f5c0b5; }
-        .pay-mini-tile--amber  { background: #fdf3d6; border-color: #f0d990; }
-        .pay-mini-tile--blue   { background: #dceefe; border-color: #b8d6f7; }
-        .pay-mini-tile--purple { background: #ece6ff; border-color: #d6c9ff; }
-        .pay-mini-tile-num--green  { color: #108548; }
-        .pay-mini-tile-num--red    { color: #b1401d; }
-        .pay-mini-tile-num--amber  { color: #a06f00; }
-        .pay-mini-tile-num--blue   { color: #0c63b0; }
-        .pay-mini-tile-num--purple { color: #5a3fd1; }
-        [data-bs-theme="dark"] .pay-mini-tile--green  { background: rgba(16,133,72,0.18);  border-color: rgba(16,179,108,0.36); }
-        [data-bs-theme="dark"] .pay-mini-tile--red    { background: rgba(177,64,29,0.18);  border-color: rgba(240,101,72,0.38); }
-        [data-bs-theme="dark"] .pay-mini-tile--amber  { background: rgba(160,111,0,0.18);  border-color: rgba(245,158,11,0.38); }
-        [data-bs-theme="dark"] .pay-mini-tile--blue   { background: rgba(12,99,176,0.18);  border-color: rgba(59,130,246,0.38); }
-        [data-bs-theme="dark"] .pay-mini-tile--purple { background: rgba(90,63,209,0.18);  border-color: rgba(124,92,252,0.38); }
-        [data-bs-theme="dark"] .pay-mini-tile-num--green  { color: #6ee7b7; }
-        [data-bs-theme="dark"] .pay-mini-tile-num--red    { color: #fda192; }
-        [data-bs-theme="dark"] .pay-mini-tile-num--amber  { color: #fcd34d; }
-        [data-bs-theme="dark"] .pay-mini-tile-num--blue   { color: #93c5fd; }
-        [data-bs-theme="dark"] .pay-mini-tile-num--purple { color: #c4b5fd; }
-
-        /* Cycle history status pill — pastel bg keeps working on dark, but
-           bump opacity so the tone reads against the dark card. */
-        [data-bs-theme="dark"] .pay-cycle-status-pill { filter: brightness(1.05); }
-
-        /* Status pills inside table rows — when used on a dark card the pastel
-           bg still pops; just nudge contrast with a subtle ring. */
-        [data-bs-theme="dark"] .onb-pill { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); }
-
-        /* Tab segmented bar — count chip looks washed out against the dark
-           secondary bg; switch to translucent white for inactive tabs. */
-        [data-bs-theme="dark"] .pay-tab-count-inactive {
-          background: rgba(255,255,255,0.08) !important;
-          color: var(--vz-secondary-color) !important;
-        }
-      `}</style>
-
-      {/* ── Hero card (purple-tinted, mirrors HrEmployeeOnboarding) ── */}
       <div className="frm-cstrip mb-3">
         <span className="frm-cstrip-accent" />
         <div className="frm-cstrip-left">
@@ -960,8 +821,6 @@ export default function HrPayroll() {
                 ? <><Spinner size="sm" className="me-2" /> Exporting…</>
                 : <><i className="ri-download-2-line me-2" style={{ fontSize: 14 }} /> Export</>}
             </DropdownToggle>
-            {/* toggle={false} on items keeps the menu open so the per-item
-                spinner stays visible until the download finishes. */}
             <DropdownMenu end container="body" strategy="fixed" style={{ fontSize: 13 }}>
               <DropdownItem header>This cycle ({cycle.label})</DropdownItem>
               <DropdownItem toggle={false} disabled={!!downloading} onClick={exportExcelCurrent}>
@@ -1006,7 +865,6 @@ export default function HrPayroll() {
         </div>
       </div>
 
-      {/* ── Cycle History strip (own card) ───────────────────────────── */}
       <Card className="mb-3">
         <CardBody style={{ padding: '14px 16px' }}>
           <div className="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
@@ -1035,19 +893,30 @@ export default function HrPayroll() {
                 );
               })}
             </div>
-            <button
-              type="button"
-              onClick={() => setCycleCollapsed(v => !v)}
-              className="btn btn-sm fw-semibold"
-              style={{
-                background: 'transparent',
-                color: '#5a3fd1',
-                border: 'none',
-                fontSize: 12,
-              }}
-            >
-              {cycleCollapsed ? 'Expand ↓' : 'Collapse ↑'}
-            </button>
+            <div className="d-flex align-items-center gap-2">
+              <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em' }}>Year</span>
+              <div style={{ minWidth: 104 }}>
+                <MasterSelect
+                  value={String(selectedYear)}
+                  onChange={(v) => selectYear(Number(v))}
+                  options={yearOptions}
+                  placeholder="Year"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setCycleCollapsed(v => !v)}
+                className="btn btn-sm fw-semibold"
+                style={{
+                  background: 'transparent',
+                  color: '#5a3fd1',
+                  border: 'none',
+                  fontSize: 12,
+                }}
+              >
+                {cycleCollapsed ? 'Expand ↓' : 'Collapse ↑'}
+              </button>
+            </div>
           </div>
 
           {!cycleCollapsed && (
@@ -1134,7 +1003,6 @@ export default function HrPayroll() {
         </CardBody>
       </Card>
 
-      {/* ── KPI cards (own row, each its own card) ── */}
       <Row className="g-3 mb-3 align-items-stretch">
         {KPI_CARDS.map(k => {
           let displayValue: React.ReactNode;
@@ -1159,7 +1027,7 @@ export default function HrPayroll() {
                                          'Blocked — resolve first';
 
           return (
-            <Col key={k.key} xl={3} md={6} sm={6} xs={12}>
+            <Col key={k.key} xl={3} md={6} sm={6} xs={6}>
               <div
                 className="onb-surface onb-kpi-card"
                 style={{
@@ -1193,14 +1061,10 @@ export default function HrPayroll() {
         })}
       </Row>
 
-      {/* ── Tabs — segmented pill inside a rounded gray bar (mirrors
-          HrExpenseManagement). Active tab gets the violet gradient with white
-          text + count chip; inactive tabs sit transparent inside the same
-          container. ── */}
       <Row className="g-2 align-items-center mb-3">
         <Col xs={12}>
           <div
-            className="d-flex flex-wrap"
+            className="d-flex flex-wrap pay-tabs"
             style={{
               background: 'var(--vz-secondary-bg)',
               border: '1px solid var(--vz-border-color)',
@@ -1251,7 +1115,6 @@ export default function HrPayroll() {
         </Col>
       </Row>
 
-      {/* ── Filters + Table — own card, like Employee list ── */}
       <Card>
         <CardBody>
           {tab !== 'salary' && (
@@ -1404,8 +1267,6 @@ export default function HrPayroll() {
 
           {tab === 'biometric' && (
             <>
-              {/* Read-only banner — biometric data is sourced from Timelogs and
-                  edited there, not here. */}
               <div
                 className="pay-banner d-flex align-items-center gap-2 mb-3"
                 style={{
@@ -1419,7 +1280,6 @@ export default function HrPayroll() {
                 Read-only · Source data from Attendance · {cycle.label} · {periodMeta?.working_days || 26} working days
               </div>
 
-              {/* 4-tile mini strip — Synced / Missing Punch / Mismatch / Unpaid Leave */}
               <Row className="g-3 mb-3 align-items-stretch">
                 {[
                   { key: 'syncedEmployees',   label: 'Synced Employees',    n: counts.syncedEmployees,   tone: 'green' as const },
@@ -1427,7 +1287,7 @@ export default function HrPayroll() {
                   { key: 'mismatchCases',     label: 'Mismatch Cases',      n: counts.mismatchCases,     tone: 'red'   as const },
                   { key: 'unpaidLeaveCases',  label: 'Unpaid Leave Cases',  n: counts.unpaidLeaveCases,  tone: 'amber' as const },
                 ].map(t => (
-                  <Col key={t.key} xl={3} md={6} sm={6} xs={12}>
+                  <Col key={t.key} xl={3} md={6} sm={6} xs={6}>
                     <div className={`pay-mini-tile pay-mini-tile--${t.tone}`}>
                       <div className={`fw-bold pay-mini-tile-num--${t.tone}`} style={{ fontSize: 22, lineHeight: 1 }}>
                         {loading ? <Shimmer height={20} width={40} radius={6} /> : t.n}
@@ -1531,7 +1391,6 @@ export default function HrPayroll() {
 
           {tab === 'report' && (
             <>
-              {/* Totals strip — Gross / Net Pay / PF / TDS / LOP Ded. */}
               <Row className="g-3 mb-3 align-items-stretch">
                 {[
                   { key: 'totalGross',  label: 'Total Gross',    n: counts.totalGross,  tone: 'green'  as const },
@@ -1540,7 +1399,7 @@ export default function HrPayroll() {
                   { key: 'totalTds',    label: 'Total TDS',      n: counts.totalTds,    tone: 'amber'  as const },
                   { key: 'totalLop',    label: 'Total LOP Ded.', n: counts.totalLop,    tone: 'red'    as const },
                 ].map(t => (
-                  <Col key={t.key} xl={true} md={4} sm={6} xs={12}>
+                  <Col key={t.key} xl={true} md={4} sm={6} xs={6}>
                     <div className={`pay-mini-tile pay-mini-tile--${t.tone}`}>
                       <div className={`fw-bold pay-mini-tile-num--${t.tone}`} style={{ fontSize: 20, lineHeight: 1 }}>
                         {loading ? <Shimmer height={18} width={70} radius={6} /> : `₹${fmtINR(t.n)}`}
@@ -1652,7 +1511,6 @@ export default function HrPayroll() {
             </>
           )}
 
-          {/* ── Salary Setup tab — configure employee salary structures ── */}
           {tab === 'salary' && (
             <>
               <div className="pay-banner d-flex align-items-center gap-2 mb-3" style={{ padding: '10px 14px', borderRadius: 10, fontSize: 12.5, fontWeight: 600 }}>
@@ -1724,14 +1582,13 @@ export default function HrPayroll() {
             </>
           )}
 
-          {/* Pagination — only for the payslip-row tabs (not Salary Setup). */}
           {tab !== 'salary' && (
             <WorklistPager total={filtered.length} page={safePage} pageSize={pageSize} onPage={goto} onPageSize={(n) => { setPageSize(n); setPage(1); }} />
           )}
         </CardBody>
       </Card>
+      </div>
 
-      {/* ── Proceed-to-Pay disbursement flow (mode → advice → 3-level sign-off → initiate) ── */}
       <PaymentDisbursementModal
         open={paymentOpen}
         onClose={() => setPaymentOpen(false)}
@@ -1740,7 +1597,6 @@ export default function HrPayroll() {
         onPaid={() => { reloadCycle(); }}
       />
 
-      {/* ── Salary Structure editor — set/revise an employee's salary ── */}
       <SalaryStructureModal
         open={!!salaryEmp}
         employee={salaryEmp}
@@ -1748,7 +1604,6 @@ export default function HrPayroll() {
         onSaved={loadRoster}
       />
 
-      {/* ── Payroll Run Modal — pre-flight checks → success → proceed-to-pay ── */}
       <PayrollRunModal
         open={runOpen}
         onClose={() => setRunOpen(false)}
@@ -1762,18 +1617,11 @@ export default function HrPayroll() {
         onAction={handleIssueAction}
       />
 
-      {/* ── Payslip Viewer Modal ──
-          Earnings split is synthesized 50/25/25 (Basic / HRA / Special) since
-          the row only carries a single gross figure; deductions are taken
-          straight from the row's individual heads. Wire to /api/payslips for
-          the real component-level breakdown when available. */}
       {paySlipRow && (() => {
         const r = paySlipRow;
         const basic   = Math.round(r.earnings * 0.50);
         const hra     = Math.round(r.earnings * 0.25);
         const special = r.earnings - basic - hra;
-        // Prefer the real structure breakup; synthesize 50/25/25 only as a
-        // fallback when the detail fetch hasn't landed.
         const earnings: PayslipLine[] = payslipBreakup?.earnings?.length
           ? payslipBreakup.earnings
           : [
@@ -1791,8 +1639,6 @@ export default function HrPayroll() {
               ...(r.lopDeducted > 0 ? [{ label: 'Loss of Pay',        amount: r.lopDeducted }] : []),
               ...(r.advanceRec  > 0 ? [{ label: 'Advance Recovery',   amount: r.advanceRec }]  : []),
             ];
-        // Pretty-print the cycle key ('mar-2026' → 'March' / '2026') so the
-        // modal opens directly on the row's payroll period.
         const [mAbbr, yStr] = cycle.label.split(' ');
         const monthFull = ({
           Jan:'January', Feb:'February', Mar:'March', Apr:'April', May:'May', Jun:'June',

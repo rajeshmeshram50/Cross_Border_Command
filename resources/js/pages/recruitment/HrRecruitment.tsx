@@ -1511,6 +1511,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
         request={viewing}
         onClose={() => setViewing(null)}
         canCreate={!!viewing && !linkedHrIds.has(Number(viewing.id)) && viewing.status !== 'Rejected'}
+        recruitmentCreated={!!viewing && linkedHrIds.has(Number(viewing.id))}
         onCreate={(req) => { setViewing(null); onCreateRecruitment(req); }}
         onReject={async (req) => {
           try {
@@ -1531,17 +1532,19 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
 }
 
 
-function ViewHiringRequestModal({ request, onClose, onReject, onCreate, canCreate }: {
+function ViewHiringRequestModal({ request, onClose, onReject, onCreate, canCreate, recruitmentCreated }: {
   request: HiringRequestRow | null;
   onClose: () => void;
   onReject?: (req: HiringRequestRow) => Promise<void>;
   onCreate?: (req: HiringRequestRow) => void;
   canCreate?: boolean;
+  recruitmentCreated?: boolean;
 }) {
   const [rejecting, setRejecting] = useState(false);
   if (!request) return null;
   const r = request;
-  const canReject = !!onReject && !['Rejected', 'Approved'].includes(r.status);
+  // Once a recruitment exists for this request, it's read-only: no rejecting.
+  const canReject = !!onReject && !recruitmentCreated && !['Rejected', 'Approved'].includes(r.status);
   const showCreate = !!onCreate && !!canCreate;
   const raw = r._raw || {};
   const u = REQUEST_URGENCY_TONES[r.urgency];

@@ -1,0 +1,139 @@
+/* Expense Management page (HrExpenseManagement) — moved out of the inline
+   <style> block. Hero card, KPI tiles, dropdown/button treatments, and the
+   dark-mode overrides for the inline pastel surfaces. */
+
+.hrexp-surface { background: #ffffff; }
+[data-bs-theme="dark"] .hrexp-surface { background: #1c2531; }
+
+.hrexp-hero-card {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap;
+  padding: 18px 22px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #f3edff 0%, #ede4ff 100%);
+  border: 1px solid #e3d6ff;
+  box-shadow: 0 2px 12px rgba(124,92,252,0.06);
+}
+[data-bs-theme="dark"] .hrexp-hero-card {
+  background: linear-gradient(135deg, rgba(124,92,252,0.18) 0%, rgba(167,139,250,0.10) 100%);
+  border-color: rgba(124,92,252,0.32);
+}
+.hrexp-hero-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border-radius: 999px;
+  font-size: 11px; font-weight: 700;
+  background: rgba(124,92,252,0.18); color: #5a3fd1;
+}
+.hrexp-hero-pill .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #7c5cfc; box-shadow: 0 0 0 3px rgba(124,92,252,0.20);
+}
+.hrexp-cta {
+  padding: 10px 18px;
+  font-size: 13px; font-weight: 700;
+  color: #fff !important;
+  background: linear-gradient(135deg,#7c5cfc 0%,#5a3fd1 100%) !important;
+  border: none !important;
+  border-radius: 999px;
+  box-shadow: 0 8px 18px rgba(91,63,209,0.30) !important;
+  display: inline-flex; align-items: center;
+  cursor: pointer;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.hrexp-cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 22px rgba(91,63,209,0.38) !important;
+}
+.hrexp-hero-select .master-select-toggle {
+  border-color: rgba(124,92,252,0.45) !important;
+  color: #5a3fd1 !important;
+  font-weight: 600 !important;
+}
+.hrexp-hero-select .master-select-toggle:hover:not(:disabled) {
+  border-color: #7c5cfc !important;
+  box-shadow: 0 2px 8px rgba(124,92,252,0.18) !important;
+}
+.hrexp-hero-select.master-select-wrap.show .master-select-toggle,
+.hrexp-hero-select .master-select-wrap.show .master-select-toggle {
+  border-color: #7c5cfc !important;
+  box-shadow: 0 0 0 3px rgba(124,92,252,0.18), 0 4px 12px rgba(124,92,252,0.18) !important;
+}
+.hrexp-hero-select .master-select-chev { color: #7c5cfc !important; }
+.hrexp-ghost-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 16px;
+  font-size: 13px; font-weight: 600;
+  background: #ffffff;
+  color: #5a3fd1;
+  border: 1px solid rgba(124,92,252,0.30);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.hrexp-ghost-btn:hover {
+  background: #faf6ff;
+  border-color: #a78bfa;
+  color: #5a3fd1;
+}
+[data-bs-theme="dark"] .hrexp-ghost-btn {
+  background: rgba(124,92,252,0.10);
+  color: #c4b5fd;
+}
+.hrexp-kpi-card { transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
+.hrexp-kpi-card:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(0,0,0,0.12); border-color: rgba(124,92,252,0.45); }
+[data-bs-theme="dark"] .hrexp-kpi-card:hover { box-shadow: 0 10px 28px rgba(0,0,0,0.5); border-color: rgba(124,92,252,0.55); }
+
+.hrexp-kpi-ic { background: var(--kpi-tint); }
+.hrexp-kpi-ic i { color: var(--kpi-fg); }
+[data-bs-theme="dark"] .hrexp-kpi-ic { background: var(--kpi-tint-dark); }
+[data-bs-theme="dark"] .hrexp-kpi-ic i { color: var(--kpi-fg-dark); }
+
+[data-bs-theme="dark"] .hrexp-card-ic--chart {
+  background: rgba(124,92,252,0.20) !important; color: #c4b5fd !important;
+}
+[data-bs-theme="dark"] .hrexp-card-ic--policy {
+  background: rgba(240,101,72,0.20) !important; color: #ffa78f !important;
+}
+[data-bs-theme="dark"] .hrexp-over-badge,
+[data-layout-mode="dark"] .hrexp-over-badge {
+  background: rgba(239,68,68,0.22) !important; color: #fca5a5 !important;
+}
+
+/* ── Mobile / tablet (≤ 767.98px) ──────────────────────────────────────────
+   Scoped to .hrexp-page so the shared header strip + pager only restack on
+   this page. Hero: title on top, then the All-Dates filter stacked above a
+   full-width Export button. Pager: "Showing X of Y" and the controls each
+   take their own centered row instead of overflowing. */
+@media (max-width: 767.98px) {
+  .hrexp-page .frm-cstrip {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  /* Only the actions container is a direct .d-flex child of the strip — stack
+     its controls (date filter above the Export button), each full width. */
+  .hrexp-page .frm-cstrip > .d-flex {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .hrexp-page .frm-cstrip .hrexp-hero-select,
+  .hrexp-page .frm-cstrip .hrexp-hero-select .master-select-toggle,
+  .hrexp-page .frm-cstrip .dropdown {
+    width: 100%;
+    min-width: 0;
+  }
+  .hrexp-page .frm-cstrip .hrexp-cta {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Pager footer — info row centered on top, controls centered below. */
+  .hrexp-page .wl-pager { justify-content: center; }
+  .hrexp-page .wl-pager .tc-wl-info,
+  .hrexp-page .wl-pager .tc-wl-right {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+}
