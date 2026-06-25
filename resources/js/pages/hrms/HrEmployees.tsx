@@ -6074,6 +6074,7 @@ export default function HrEmployees() {
         tab={vaultTab}
         onTabChange={setVaultTab}
         triggerKeyword={null}
+        signedOnly
       />
 
       {/* Face Registration modal — opened from the row action. Posts the
