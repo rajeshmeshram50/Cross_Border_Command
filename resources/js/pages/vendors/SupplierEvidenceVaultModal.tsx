@@ -229,10 +229,24 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
   const [shipmentIdMode, setShipmentIdMode] = useState<'with' | 'without'>('with');
 
   /* Switch the active group and jump to its first sub-tab. */
+  // Case-to-Case keeps its full logic (With Shipment = deals whose shipment is
+  // created, Without Shipment = deals whose procurement is created), but a few
+  // pieces (e.g. signature send) are still being finished — flag it as
+  // in-progress so it's clearly marked.
+  const flagCaseToCasePending = () =>
+    toast.info('Development pending', 'Some work in this section is still pending (procurement-linked) — it isn\'t fully wired up yet.');
+
   const selectGroup = (g: GroupKey) => {
+    if (g === 'case-to-case' && group !== 'case-to-case') flagCaseToCasePending();
     setGroup(g);
     const first = TABS.find(t => t.group === g);
     if (first) setTab(first.key);
+  };
+  // Tab click — re-flag when landing on a Case-to-Case tab (Trade Documents /
+  // Agreements) so the heads-up shows even when switching between its tabs.
+  const selectTab = (t: typeof TABS[number]) => {
+    if (t.group === 'case-to-case' && t.key !== tab) flagCaseToCasePending();
+    setTab(t.key);
   };
   /* Live API payload — populated by the fetch effect below. Falls back
    * to the demo builder if the fetch fails or the supplier has no
@@ -620,7 +634,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                 key={t.key}
                 type="button"
                 className={`cev-tab ${tab === t.key ? 'is-active' : ''}`}
-                onClick={() => setTab(t.key)}
+                onClick={() => selectTab(t)}
               >
                 <span className="cev-tab-icon"><i className={t.icon} aria-hidden /></span>
                 <span className="cev-tab-label">{t.label}</span>
