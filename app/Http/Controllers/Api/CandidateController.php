@@ -505,20 +505,19 @@ class CandidateController extends Controller
 
         $request->validate([
             'recruitment_id' => 'required|integer|exists:recruitments,id',
-            // Accept the same extensions as the frontend drop-zone. Real
-            // .xlsx parsing isn't supported (no Excel lib installed) — we
-            // expect a CSV; xlsx uploads will fail row parsing and surface
-            // a clear error.
+            // Accept the same extensions as the frontend drop-zone. Both CSV
+            // and .xlsx are parsed natively (see parseUpload); legacy binary
+            // .xls is rejected with a clear message.
             'file'           => 'required|file|mimes:csv,txt,xlsx,xls|max:10240',
         ]);
 
         $parent = $this->loadParentRecruitment($request, (int) $request->input('recruitment_id'));
         $this->guardRecruitmentOpen($parent);
 
-        $rows = $this->parseCsv($request->file('file'));
+        $rows = $this->parseUpload($request->file('file'));
         if ($rows === null) {
             throw ValidationException::withMessages([
-                'file' => ['Could not read the file. Please upload a CSV exported from the Sample template.'],
+                'file' => ['Could not read the file. Please upload a CSV or .xlsx exported from the Sample template.'],
             ]);
         }
         if (count($rows) <= 1) {
@@ -697,6 +696,143 @@ class CandidateController extends Controller
         }, $filename, [
             'Content-Type' => 'text/csv; charset=UTF-8',
         ]);
+    }
+
+    /**
+     * Dispatch an uploaded import file to the right parser based on its byte
+     * signature (not its extension, so a mislabelled file still routes
+     * correctly). CSV → parseCsv, .xlsx → parseXlsx. Legacy binary .xls can't
+     * be read without a spreadsheet library, so we surface a clear 422 telling
+     * the user to re-save as .xlsx or .csv. Returns null when unreadable.
+     */
+    private function parseUpload($uploaded): ?array
+    {
+        $path = $uploaded?->getRealPath();
+        if (!$path || !is_readable($path)) return null;
+
+        $sig = (string) file_get_contents($path, false, null, 0, 8);
+
+        // .xlsx (Office Open XML) is a ZIP archive — magic "PK\x03\x04".
+        if (str_starts_with($sig, "PK\x03\x04")) {
+            return $this->parseXlsx($uploaded);
+        }
+        // Legacy .xls (OLE2 compound document) — magic "\xD0\xCF\x11\xE0".
+        if (str_starts_with($sig, "\xD0\xCF\x11\xE0")) {
+            throw ValidationException::withMessages([
+                'file' => ['Legacy .xls files aren\'t supported — open the file and "Save As" .xlsx or .csv, then re-upload.'],
+            ]);
+        }
+        return $this->parseCsv($uploaded);
+    }
+
+    /**
+     * Read an uploaded .xlsx into the same row/array shape as parseCsv(), using
+     * ZipArchive + SimpleXML so no spreadsheet library is required. Reads the
+     * first worksheet only (the Sample template is single-sheet). Cell column
+     * positions are honoured via each cell's "r" reference so re-ordered or
+     * sparse columns stay aligned with the header row. Returns null if the
+     * archive can't be opened or has no worksheet.
+     */
+    private function parseXlsx($uploaded): ?array
+    {
+        $path = $uploaded?->getRealPath();
+        if (!$path || !is_readable($path)) return null;
+
+        $zip = new \ZipArchive();
+        if ($zip->open($path) !== true) return null;
+
+        try {
+            // Shared-strings table — cells of type "s" reference these by index.
+            $shared = [];
+            $ssXml = $zip->getFromName('xl/sharedStrings.xml');
+            if ($ssXml !== false) {
+                $sst = $this->loadXlsxXml($ssXml);
+                if ($sst !== null) {
+                    foreach ($sst->si as $si) {
+                        // Concatenate every <t> run so rich-text cells keep text.
+                        $text = '';
+                        foreach ($si->xpath('.//t') as $t) { $text .= (string) $t; }
+                        $shared[] = $text;
+                    }
+                }
+            }
+
+            // First worksheet — sheet1.xml for files made from the Sample
+            // template; fall back to the lowest-numbered worksheet part.
+            $sheetEntry = null;
+            if ($zip->locateName('xl/worksheets/sheet1.xml') !== false) {
+                $sheetEntry = 'xl/worksheets/sheet1.xml';
+            } else {
+                for ($i = 0; $i < $zip->numFiles; $i++) {
+                    $name = $zip->getNameIndex($i);
+                    if ($name !== false && preg_match('#^xl/worksheets/sheet\d+\.xml$#', $name)) {
+                        if ($sheetEntry === null || strcmp($name, $sheetEntry) < 0) $sheetEntry = $name;
+                    }
+                }
+            }
+            if ($sheetEntry === null) return null;
+
+            $sheetXml = $zip->getFromName($sheetEntry);
+            if ($sheetXml === false) return null;
+            $sheet = $this->loadXlsxXml($sheetXml);
+            if ($sheet === null || !isset($sheet->sheetData)) return [];
+
+            $rows = [];
+            foreach ($sheet->sheetData->row as $row) {
+                $cells = [];
+                $maxIdx = -1;
+                foreach ($row->c as $c) {
+                    $colIdx = $this->xlsxColumnIndex((string) $c['r']);
+                    $type   = (string) $c['t'];
+                    if ($type === 's') {
+                        $val = $shared[(int) $c->v] ?? '';
+                    } elseif ($type === 'inlineStr') {
+                        $val = '';
+                        foreach ($c->is->xpath('.//t') as $t) { $val .= (string) $t; }
+                    } elseif ($type === 'b') {
+                        $val = ((string) $c->v === '1') ? 'TRUE' : 'FALSE';
+                    } else {
+                        // numeric / date-serial / formula-string result
+                        $val = (string) $c->v;
+                    }
+                    $cells[$colIdx] = $val;
+                    if ($colIdx > $maxIdx) $maxIdx = $colIdx;
+                }
+                $rowArr = [];
+                for ($k = 0; $k <= $maxIdx; $k++) {
+                    $rowArr[] = $cells[$k] ?? '';
+                }
+                $rows[] = $rowArr;
+            }
+            return $rows;
+        } finally {
+            $zip->close();
+        }
+    }
+
+    /**
+     * Parse an OOXML payload with the default namespace stripped, so elements
+     * (<row>/<c>/<si>) are reachable without SimpleXML namespace juggling.
+     */
+    private function loadXlsxXml(string $xml): ?\SimpleXMLElement
+    {
+        $xml = preg_replace('/\sxmlns="[^"]*"/', '', $xml, 1); // drop default ns only
+        $prev = libxml_use_internal_errors(true);
+        $node = simplexml_load_string($xml);
+        libxml_use_internal_errors($prev);
+        return $node === false ? null : $node;
+    }
+
+    /** Convert a cell reference like "B7" to a 0-based column index (B → 1). */
+    private function xlsxColumnIndex(string $ref): int
+    {
+        if (!preg_match('/^([A-Za-z]+)/', $ref, $m)) return 0;
+        $letters = strtoupper($m[1]);
+        $idx = 0;
+        for ($i = 0, $len = strlen($letters); $i < $len; $i++) {
+            $idx = $idx * 26 + (ord($letters[$i]) - 64);
+        }
+        return $idx - 1;
     }
 
     /**
