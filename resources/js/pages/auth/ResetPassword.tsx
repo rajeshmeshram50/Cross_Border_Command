@@ -22,6 +22,10 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  // Org picker — shown when this email is registered with more than one client
+  // and the backend asks which account to reset.
+  const [orgChoices, setOrgChoices] = useState<{ client_id: number | null; name: string }[] | null>(null);
+  const [orgMessage, setOrgMessage] = useState<string>('');
 
   const validatePassword = (password: string): string[] => {
     const errors: string[] = [];
@@ -51,17 +55,29 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
       return;
     }
 
-    setLoading(true);
+    await submitReset();
+  };
 
+  // clientId is supplied only when the user picks an organization (this email
+  // exists in more than one client).
+  const submitReset = async (clientId?: number | null) => {
+    setLoading(true);
     try {
       await api.post('/forgot-password/reset', {
         email,
         password: newPassword,
         password_confirmation: confirmPassword,
+        ...(clientId != null ? { client_id: clientId } : {}),
       });
+      setOrgChoices(null);
       setShowSuccessModal(true);
     } catch (err: any) {
       const data = err.response?.data;
+      if (err.response?.status === 409 && data?.needs_org_selection) {
+        setOrgChoices(data.organizations || []);
+        setOrgMessage(data.message || '');
+        return;
+      }
       const msg = data?.message || 'Failed to reset password. Please try again.';
       if (data?.expired) {
         toast.error('Expired', 'Your session has expired. Please request a new code.');
@@ -99,6 +115,29 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
           buttonText="Continue"
           onContinue={handleContinueClick}
         />
+      )}
+      {orgChoices && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => { if (!loading) setOrgChoices(null); }}>
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl p-5" onClick={e => e.stopPropagation()}>
+            <h3 className="text-[15px] font-bold text-slate-800 mb-1">Choose your organization</h3>
+            <p className="text-[12.5px] text-slate-500 mb-4">{orgMessage || 'This email is registered with more than one organization. Pick which account to reset.'}</p>
+            <div className="space-y-2">
+              {orgChoices.map((org, i) => (
+                <button
+                  key={`${org.client_id ?? 'null'}-${i}`}
+                  type="button"
+                  disabled={loading}
+                  onClick={() => submitReset(org.client_id)}
+                  className="w-full text-left px-4 py-3 rounded-xl border border-slate-200 hover:border-primary hover:bg-primary/5 transition-all text-[13px] font-semibold text-slate-700 disabled:opacity-60 flex items-center justify-between gap-2"
+                >
+                  <span>{org.name}</span>
+                  {loading ? <Loader2 size={15} className="animate-spin text-slate-400" /> : null}
+                </button>
+              ))}
+            </div>
+            <button type="button" disabled={loading} onClick={() => setOrgChoices(null)} className="mt-4 w-full text-[12px] font-semibold text-slate-400 hover:text-slate-600 transition-colors bg-transparent border-0">Cancel</button>
+          </div>
+        </div>
       )}
       <AuthCardLayout
         title="Set a new password"

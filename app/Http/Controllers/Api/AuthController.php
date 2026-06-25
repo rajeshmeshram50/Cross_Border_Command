@@ -55,6 +55,9 @@ class AuthController extends Controller
         $request->validate([
             'email' => 'required|email',
             'password' => 'required',
+            // Optional — sent only when the SPA re-submits after asking which
+            // organization to sign in to (duplicate email across clients).
+            'client_id' => 'nullable|integer',
         ]);
 
         $lockKey = $this->bruteForceKey($request->email);
@@ -69,14 +72,44 @@ class AuthController extends Controller
         // have no direct client_id, so the parent-org check has to traverse
         // branch → client. Without this, an inactive client would only lock
         // out client_admin / client_user, leaving branch users able to log in.
-        $user = User::with(['client', 'branch.client'])->where('email', $request->email)->first();
+        //
+        // Email is unique PER TENANT now, so the same email can belong to
+        // accounts in different clients. Gather ALL matches and let the
+        // PASSWORD pick which account the user means — a single-account email
+        // behaves exactly as before (one candidate, one password check).
+        $candidates = User::with(['client', 'branch.client'])->where('email', $request->email)->get();
+        $matches = $candidates->filter(fn ($u) => Hash::check($request->password, $u->password))->values();
 
-        if (! $user || ! Hash::check($request->password, $user->password)) {
+        // If the SPA already asked which organization (same email+password
+        // matched more than one), it re-submits with the chosen client_id.
+        if ($request->filled('client_id')) {
+            $matches = $matches->where('client_id', (int) $request->client_id)->values();
+        }
+
+        if ($matches->isEmpty()) {
             $this->bruteForceRecordFailure($lockKey);
             throw ValidationException::withMessages([
                 'email' => ['Invalid email or password.'],
             ]);
         }
+
+        if ($matches->count() > 1) {
+            // Same email + same password across multiple clients. The user has
+            // proven the credential, so it's safe to list their organizations
+            // and let them pick which one to sign in to.
+            Cache::forget($lockKey);
+            return response()->json([
+                'needs_org_selection' => true,
+                'message' => 'This email is registered with more than one organization. Choose which one to sign in to.',
+                'organizations' => $matches->map(fn ($u) => [
+                    'client_id' => $u->client_id,
+                    'name'      => $u->effectiveClient()?->org_name
+                        ?? ($u->user_type === 'super_admin' ? 'Platform Admin' : 'Organization'),
+                ])->values(),
+            ], 409);
+        }
+
+        $user = $matches->first();
 
         // Successful login → clear any prior failed-attempt counter
         Cache::forget($lockKey);
@@ -154,6 +187,8 @@ class AuthController extends Controller
             'email'        => 'required|email',
             'descriptor'   => 'required|array|size:128',
             'descriptor.*' => 'required|numeric',
+            // Optional org pick when the email exists in multiple clients.
+            'client_id'    => 'nullable|integer',
         ]);
 
         $lockKey = $this->bruteForceKey($request->email);
@@ -164,35 +199,61 @@ class AuthController extends Controller
             ]);
         }
 
-        $user = User::with(['client', 'branch.client'])->where('email', $request->email)->first();
-        $employee = $user ? \App\Models\Employee::where('user_id', $user->id)->first() : null;
+        // Email is per-tenant — the same email can have accounts in multiple
+        // clients. Try the captured face against EACH matching account's
+        // enrolled descriptor and pick the closest under threshold. A
+        // single-account email behaves exactly as before.
+        $accounts = User::with(['client', 'branch.client'])->where('email', $request->email)->get();
+        if ($request->filled('client_id')) {
+            $accounts = $accounts->where('client_id', (int) $request->client_id)->values();
+        }
 
-        // Combine "no user", "no linked employee", "no face on file" into
-        // ONE generic failure — we don't want to leak which condition failed
-        // (otherwise an attacker can probe valid emails).
-        if (!$user || !$employee || empty($employee->face_descriptor) || $employee->face_registered_at === null) {
+        $captured = $request->input('descriptor');
+        $threshold = 0.50;
+        $bestUser = null;
+        $bestEmployee = null;
+        $bestDistance = INF;
+        $anyFaceOnFile = false;
+
+        foreach ($accounts as $candidate) {
+            $emp = \App\Models\Employee::where('user_id', $candidate->id)->first();
+            if (!$emp || empty($emp->face_descriptor) || $emp->face_registered_at === null) {
+                continue;
+            }
+            $anyFaceOnFile = true;
+            $sum = 0.0;
+            for ($i = 0; $i < 128; $i++) {
+                $d = (float) $captured[$i] - (float) $emp->face_descriptor[$i];
+                $sum += $d * $d;
+            }
+            $dist = sqrt($sum);
+            if ($dist < $bestDistance) {
+                $bestDistance = $dist;
+                $bestUser = $candidate;
+                $bestEmployee = $emp;
+            }
+        }
+
+        // No account with this email has a face enrolled. Generic message so we
+        // don't leak which condition failed (mirrors the original guard).
+        if (!$anyFaceOnFile) {
             $this->bruteForceRecordFailure($lockKey);
             throw ValidationException::withMessages([
                 'email' => ['Face login is not available for this account. Try password login.'],
             ]);
         }
 
-        // Euclidean distance between the captured descriptor and the enrolled one.
-        $sum = 0.0;
-        $captured = $request->input('descriptor');
-        for ($i = 0; $i < 128; $i++) {
-            $d = (float) $captured[$i] - (float) $employee->face_descriptor[$i];
-            $sum += $d * $d;
-        }
-        $distance = sqrt($sum);
-        $threshold = 0.50;
-
-        if ($distance > $threshold) {
+        // A face is on file but none matched closely enough.
+        if (!$bestUser || $bestDistance > $threshold) {
             $this->bruteForceRecordFailure($lockKey);
             throw ValidationException::withMessages([
                 'email' => ['Face did not match. Please try again with better lighting or use password login.'],
             ]);
         }
+
+        $user = $bestUser;
+        $employee = $bestEmployee;
+        $distance = $bestDistance;
 
         Cache::forget($lockKey);
 
@@ -252,6 +313,8 @@ class AuthController extends Controller
     {
         $request->validate([
             'id_token' => 'required|string',
+            // Optional org pick when the email exists in multiple clients.
+            'client_id' => 'nullable|integer',
         ]);
 
         $clientId = config('services.google.client_id');
@@ -290,14 +353,36 @@ class AuthController extends Controller
             ], 429);
         }
 
-        $user = User::with(['client', 'branch.client'])->where('email', $email)->first();
+        // Email is per-tenant — the same Google email can map to accounts in
+        // multiple clients. Google only proves the email (no password), so when
+        // there's more than one we must ask which organization. The email is
+        // Google-verified, so listing the orgs to its owner is safe.
+        $googleAccounts = User::with(['client', 'branch.client'])->where('email', $email)->get();
+        $selectedClientId = $request->input('client_id');
+        if ($selectedClientId !== null && $selectedClientId !== '') {
+            $googleAccounts = $googleAccounts->where('client_id', (int) $selectedClientId)->values();
+        }
 
-        if (! $user) {
+        if ($googleAccounts->isEmpty()) {
             $this->bruteForceRecordFailure($lockKey);
             return response()->json([
                 'message' => 'Account not found. Please contact your administrator.',
             ], 404);
         }
+
+        if ($googleAccounts->count() > 1) {
+            return response()->json([
+                'needs_org_selection' => true,
+                'message' => 'This email is registered with more than one organization. Choose which one to sign in to.',
+                'organizations' => $googleAccounts->map(fn ($u) => [
+                    'client_id' => $u->client_id,
+                    'name'      => $u->effectiveClient()?->org_name
+                        ?? ($u->user_type === 'super_admin' ? 'Platform Admin' : 'Organization'),
+                ])->values(),
+            ], 409);
+        }
+
+        $user = $googleAccounts->first();
 
         if ($user->status !== 'active') {
             $this->bruteForceRecordFailure($lockKey);

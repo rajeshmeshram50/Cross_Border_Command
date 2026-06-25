@@ -266,6 +266,20 @@ export default function PublicOnboarding() {
   // "12365444" (8 digits). Tightening to the IN format catches typos at
   // the source instead of pushing them downstream to address services.
   const isValidPincode = (raw: string) => /^[1-9]\d{5}$/.test(raw.trim());
+  // A street address must look real: contain at least one letter AND at least
+  // one digit or space (a building/house number or multiple words). This
+  // rejects meaningless input — "@@@@@", "#####", "$$$$$", "-----", ".....",
+  // "12345", "asdfgh", "@@@123" — while still accepting "12 MG Road",
+  // "Flat 4B, Park Lane", "Plot No 7, Sector 21". Minimum 5 chars guards
+  // against trivially short junk.
+  const isValidAddress = (raw: string) => {
+    const v = raw.trim();
+    if (v.length < 5) return false;
+    if (!/[A-Za-z]/.test(v)) return false; // needs a letter (street/building name)
+    if (!/[\s\d]/.test(v)) return false;   // ...and a number or space (structure)
+    return true;
+  };
+  const ADDRESS_MSG = 'Enter a valid address — include a house/building number and street name.';
 
   // Per-step validators
   const validateStep1 = (): Record<string, string> => {
@@ -310,6 +324,9 @@ export default function PublicOnboarding() {
   const validateStep2 = (): Record<string, string> => {
     const e: Record<string, string> = {};
     if (!curAddr1.trim())   e.address_line1 = 'Address Line 1 is required';
+    else if (!isValidAddress(curAddr1)) e.address_line1 = ADDRESS_MSG;
+    // Address Line 2 is optional, but if filled it must still be a real value.
+    if (curAddr2.trim() && !isValidAddress(curAddr2)) e.address_line2 = ADDRESS_MSG;
     // City must be a real place name — letters, spaces and basic name
     // punctuation (- . ') only. Reuses the same pattern as the name fields so
     // "Pune123", "12345", "Pune@" and "-----" are all rejected.
@@ -322,6 +339,10 @@ export default function PublicOnboarding() {
     // Permanent address (only when NOT mirroring current). City, if provided,
     // follows the same name rule; pincode format is checked when present.
     if (!sameAsCurrent) {
+      if (permAddr1.trim() && !isValidAddress(permAddr1))
+        e.perm_address_line1 = ADDRESS_MSG;
+      if (permAddr2.trim() && !isValidAddress(permAddr2))
+        e.perm_address_line2 = ADDRESS_MSG;
       if (permCity.trim() && !nameRe.test(permCity.trim()))
         e.perm_city = 'Enter a valid city name (letters only — no numbers or special characters)';
       if (permPin.trim() && !isValidPincode(permPin))
@@ -357,7 +378,7 @@ export default function PublicOnboarding() {
       setErrs(e);
       // Jump to the earliest step with an error.
       const step1Keys = ['first_name','last_name','gender','date_of_birth','nationality_country_id','work_country_id','mobile'];
-      const step2Keys = ['address_line1','city','country_id','state_id','pincode'];
+      const step2Keys = ['address_line1','address_line2','city','country_id','state_id','pincode','perm_address_line1','perm_address_line2','perm_city','perm_pincode'];
       if (step1Keys.some(k => e[k])) setStep(1);
       else if (step2Keys.some(k => e[k])) setStep(2);
       const n = Object.keys(e).length;
@@ -798,6 +819,12 @@ export default function PublicOnboarding() {
            area gets more breathing room. */
         @media (max-width: 1280px) {
           .onb-layout { grid-template-columns: 260px minmax(0, 1fr); padding: 20px; }
+          /* Re-align the decorative seam (white notch tab + blue wave) to the
+             NARROWER 260px sidebar / 20px padding used at this breakpoint.
+             Without this they stay pinned to the 300px desktop offset and
+             slide ~48px into the form pane, overlapping the field content. */
+          .onb-layout::before,
+          .onb-wave { left: calc(20px + 260px - 1px); }
         }
         /* Tablets and below — collapse to single column. Sidebar stacks
            above the form. Removed at 1024px (was 900px) because 900-1024
@@ -1313,7 +1340,10 @@ export default function PublicOnboarding() {
           font-weight: 700;
           color: var(--vz-heading-color, #0f172a);
           margin: 6px auto 14px;
-          max-width: 920px;
+          /* Match the field grid's max-width (1100) so the heading's left edge
+             lines up with the first field column instead of sitting ~40px
+             indented (was 920, which left it misaligned with the grid). */
+          max-width: 1100px;
           padding-left: 4px;
           letter-spacing: -0.005em;
         }
@@ -1321,14 +1351,29 @@ export default function PublicOnboarding() {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 12px;
-          max-width: 920px;
+          /* Allow the toggle to drop onto its own line when the form pane
+             gets narrow — without this the fixed-width "Same as Current
+             Address" pill collides with the section title and the clipped
+             overlap reads as broken text on smaller windows. */
+          flex-wrap: wrap;
+          gap: 8px 12px;
+          /* Align with the field grid (1100) — see .onb-section-title note. */
+          max-width: 1100px;
           margin: 22px auto 12px;
           padding-left: 4px;
         }
         .onb-section-title-row .onb-section-title {
           margin: 0;
           padding-left: 0;
+          /* Let the title shrink inside the flex row instead of forcing the
+             row wider than the pane (its default min-width: auto would). */
+          min-width: 0;
+        }
+        /* Keep the toggle pill intact (never wrap its text mid-phrase) and
+           let it move as a whole unit to the next line when space is tight. */
+        .onb-section-title-row .onb-same-toggle {
+          flex-shrink: 0;
+          white-space: nowrap;
         }
         .onb-same-toggle {
           font-size: 12.5px;
@@ -1748,7 +1793,8 @@ export default function PublicOnboarding() {
                 <div className="onb-hrow">
                   <label className="emp-label">Address Line 2</label>
                   <div className="onb-hrow-input">
-                    <input className="emp-input" value={curAddr2} onChange={e => setCurAddr2(e.target.value)} placeholder="(optional)" />
+                    <input className={`emp-input${errs.address_line2 ? ' is-invalid' : ''}`} value={curAddr2} onChange={e => { setCurAddr2(e.target.value); clearErr('address_line2'); }} placeholder="(optional)" />
+                    {errs.address_line2 && <small className="emp-err">{errs.address_line2}</small>}
                   </div>
                 </div>
                 <div className="onb-hrow">
@@ -1802,13 +1848,15 @@ export default function PublicOnboarding() {
                 <div className="onb-hrow">
                   <label className="emp-label">Address Line 1</label>
                   <div className="onb-hrow-input">
-                    <input className="emp-input" value={permAddr1} onChange={e => setPermAddr1(e.target.value)} disabled={sameAsCurrent} />
+                    <input className={`emp-input${errs.perm_address_line1 ? ' is-invalid' : ''}`} value={permAddr1} onChange={e => { setPermAddr1(e.target.value); clearErr('perm_address_line1'); }} disabled={sameAsCurrent} />
+                    {errs.perm_address_line1 && <small className="emp-err">{errs.perm_address_line1}</small>}
                   </div>
                 </div>
                 <div className="onb-hrow">
                   <label className="emp-label">Address Line 2</label>
                   <div className="onb-hrow-input">
-                    <input className="emp-input" value={permAddr2} onChange={e => setPermAddr2(e.target.value)} disabled={sameAsCurrent} />
+                    <input className={`emp-input${errs.perm_address_line2 ? ' is-invalid' : ''}`} value={permAddr2} onChange={e => { setPermAddr2(e.target.value); clearErr('perm_address_line2'); }} disabled={sameAsCurrent} />
+                    {errs.perm_address_line2 && <small className="emp-err">{errs.perm_address_line2}</small>}
                   </div>
                 </div>
                 <div className="onb-hrow">

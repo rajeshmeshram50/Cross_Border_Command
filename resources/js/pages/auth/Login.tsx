@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth, type LoginOrg, type LoginResult } from '../../contexts/AuthContext';
 import AuthCardLayout from '../../layouts/AuthCardLayout';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
@@ -31,6 +31,21 @@ export default function Login({ onForgotPassword }: LoginProps) {
   const [showPassword, setShowPassword] = useState(false);
   const googleBtnRef = useRef<HTMLDivElement>(null);
   const handleCredentialRef = useRef<(resp: { credential?: string }) => void>(() => {});
+  // Organization picker — shown when an email exists in more than one client
+  // and the backend asks which one to sign in to. `retry` re-runs the same
+  // login (password or Google) with the chosen client_id.
+  const [orgPrompt, setOrgPrompt] = useState<{ organizations: LoginOrg[]; message?: string; retry: (clientId: number | null) => Promise<void> } | null>(null);
+  const [orgBusy, setOrgBusy] = useState(false);
+
+  // Common handling for a final (non-org-prompt) login result.
+  const applyResult = (result: LoginResult, failTitle: string) => {
+    if (result.success) {
+      setOrgPrompt(null);
+      toast.success('Welcome back!', 'You have been logged in successfully');
+    } else {
+      toast.error(failTitle, result.error || 'Could not sign in');
+    }
+  };
 
   // Load Google Identity Services script once, initialize, and render the official Google button.
   useEffect(() => {
@@ -102,11 +117,15 @@ export default function Login({ onForgotPassword }: LoginProps) {
     e?.preventDefault();
     if (!email || !password) { toast.warning('Missing fields', 'Please enter email and password'); return; }
     const result = await login(email, password);
-    if (!result.success) {
-      toast.error('Login Failed', result.error || 'Invalid credentials');
-    } else {
-      toast.success('Welcome back!', 'You have been logged in successfully');
+    if (result.needsOrgSelection) {
+      setOrgPrompt({
+        organizations: result.organizations || [],
+        message: result.message,
+        retry: async (clientId) => { applyResult(await login(email, password, clientId), 'Login Failed'); },
+      });
+      return;
     }
+    applyResult(result, 'Login Failed');
   };
 
   // Updated each render so the GIS callback captures the latest closures.
@@ -115,12 +134,17 @@ export default function Login({ onForgotPassword }: LoginProps) {
       toast.error('Google Sign-In', 'No credential returned from Google');
       return;
     }
-    const result = await googleLogin(resp.credential);
-    if (!result.success) {
-      toast.error('Google Sign-In Failed', result.error || 'Could not sign in with Google');
-    } else {
-      toast.success('Welcome back!', 'You have been logged in successfully');
+    const credential = resp.credential;
+    const result = await googleLogin(credential);
+    if (result.needsOrgSelection) {
+      setOrgPrompt({
+        organizations: result.organizations || [],
+        message: result.message,
+        retry: async (clientId) => { applyResult(await googleLogin(credential, clientId), 'Google Sign-In Failed'); },
+      });
+      return;
     }
+    applyResult(result, 'Google Sign-In Failed');
   };
 
   return (
@@ -394,6 +418,45 @@ export default function Login({ onForgotPassword }: LoginProps) {
         initialEmail={email}
         onSubmit={faceLogin}
       />
+
+      {orgPrompt && (
+        <div
+          className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          onClick={() => { if (!orgBusy) setOrgPrompt(null); }}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white shadow-2xl p-5"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="text-[15px] font-bold text-slate-800 mb-1">Choose your organization</h3>
+            <p className="text-[12.5px] text-slate-500 mb-4">
+              {orgPrompt.message || 'This email is registered with more than one organization. Pick which one to sign in to.'}
+            </p>
+            <div className="space-y-2">
+              {orgPrompt.organizations.map((org, i) => (
+                <button
+                  key={`${org.client_id ?? 'null'}-${i}`}
+                  type="button"
+                  disabled={orgBusy}
+                  onClick={async () => { setOrgBusy(true); try { await orgPrompt.retry(org.client_id); } finally { setOrgBusy(false); } }}
+                  className="w-full text-left px-4 py-3 rounded-xl border border-slate-200 hover:border-primary hover:bg-primary/5 transition-all text-[13px] font-semibold text-slate-700 disabled:opacity-60 flex items-center justify-between gap-2"
+                >
+                  <span>{org.name}</span>
+                  {orgBusy ? <Loader2 size={15} className="animate-spin text-slate-400" /> : null}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              disabled={orgBusy}
+              onClick={() => setOrgPrompt(null)}
+              className="mt-4 w-full text-[12px] font-semibold text-slate-400 hover:text-slate-600 transition-colors bg-transparent border-0"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </AuthCardLayout>
   );
 }
