@@ -25,7 +25,7 @@ function validateContactNumber(value: string, label = 'Contact No'): string {
   const v = (value ?? '').trim();
   if (!v) return '';
   if (!/^\d+$/.test(v))           return `${label} must contain digits only (no spaces, +, or punctuation)`;
-  if (v.length < 6 || v.length > 15) return `${label} must be 6 to 15 digits`;
+  if (v.length < 7 || v.length > 15) return `${label} must be 7 to 15 digits`;
   return '';
 }
 
@@ -1601,6 +1601,12 @@ export default function AddVendorModal(props: {
       const ok = await saveContacts();
       if (ok) setStep(2);
     } else if (step === 2) {
+      // Bank Details is MANDATORY — at least one bank account must be on record
+      // before leaving the Bank Details sub-tab.
+      if (kycTab === 'bank' && bankRows.length === 0) {
+        toast.error('Bank Details required', 'Add at least one bank account before continuing.');
+        return;
+      }
       // Step 2 has 5 sub-tabs (Company DD → Owner KYC → Trade License →
       // Bank → GST). Save & Next persists the full KYC payload AND
       // walks one sub-tab forward. Only on the last sub-tab (gst) does
@@ -1626,6 +1632,13 @@ export default function AddVendorModal(props: {
    * product mappings added via the header "Map Product" button, then closes. */
   const finishSupplier = async () => {
     if (saving) return;
+    // Bank Details is mandatory — block the final save until a bank account is on
+    // record, and jump to the Bank Details tab so the user can add it.
+    if (bankRows.length === 0) {
+      toast.error('Bank Details required', 'Add at least one bank account before saving the supplier.');
+      setKycTab('bank');
+      return;
+    }
     const okKyc = await saveKyc();
     if (!okKyc) return;
     if (productMappings.length > 0) {
@@ -1741,8 +1754,17 @@ export default function AddVendorModal(props: {
     if (!bankDraft.branchName.trim())    { toast.error('Missing field', 'Branch is required'); return; }
     if (!bankDraft.accountNumber.trim()) { toast.error('Missing field', 'Account Number is required'); return; }
     if (!bankDraft.ifsc.trim())          { toast.error('Missing field', 'IFSC Code is required'); return; }
+    if (!bankDraft.chequeFile)           { toast.error('Missing field', 'Cancelled Cheque is required'); return; }
     const accErr = validateAccountNumber(bankDraft.accountNumber); if (accErr) { toast.error('Invalid Account Number', accErr); return; }
     const ifscErr = validateIfsc(bankDraft.ifsc); if (ifscErr) { toast.error('Invalid IFSC', ifscErr); return; }
+    // No-duplicate guard — the same account number can't be added twice for this
+    // supplier (the account number uniquely identifies a bank account).
+    const accNorm  = bankDraft.accountNumber.trim();
+    const ifscNorm = bankDraft.ifsc.trim().toUpperCase();
+    if (bankRows.some(b => b.accountNumber.trim() === accNorm)) {
+      toast.error('Duplicate Account Number', `Account number ${accNorm} is already added for this supplier.`);
+      return;
+    }
     if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return; }
 
     // Persist immediately via the bank-accounts CRUD endpoint (multipart for
@@ -1750,8 +1772,8 @@ export default function AddVendorModal(props: {
     const fd = new FormData();
     fd.append('bank_name', bankDraft.bankName);
     fd.append('branch_name', bankDraft.branchName);
-    fd.append('account_number', bankDraft.accountNumber);
-    fd.append('ifsc', bankDraft.ifsc);
+    fd.append('account_number', accNorm);
+    fd.append('ifsc', ifscNorm);
     fd.append('branch_address', bankDraft.branchAddress || '');
     if (bankDraft.chequeFile) fd.append('cheque', bankDraft.chequeFile);
 
@@ -2257,6 +2279,17 @@ export default function AddVendorModal(props: {
     if (phoneErr) { toast.error('Invalid Contact No', phoneErr); return; }
     const emailErr = validateEmail(contactDraft.email);
     if (emailErr) { toast.error('Invalid Email', emailErr); return; }
+    // Email must be UNIQUE across all contacts (primary + additional). Exclude
+    // the row being edited so re-saving it unchanged doesn't false-positive.
+    const emailNorm = contactDraft.email.trim().toLowerCase();
+    const usedEmails = new Set<string>([
+      email.trim().toLowerCase(),
+      ...extraContacts.filter(c => c.id !== contactEditingId).map(c => (c.email ?? '').trim().toLowerCase()),
+    ].filter(Boolean));
+    if (usedEmails.has(emailNorm)) {
+      toast.error('Duplicate Email', 'This email is already used by another contact — each contact must have a unique email.');
+      return;
+    }
     if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return; }
 
     // Persist immediately via the per-contact CRUD endpoint so the row is
@@ -2721,39 +2754,43 @@ export default function AddVendorModal(props: {
                       Details" tab. Same component state, so saveContacts()
                       still validates + persists it on Save & Next. */}
                   <SectionCard tone="violet" icon={<i className="ri-user-3-line" />} title="Primary Contact Person Details" subtitle="Primary point of contact for this supplier" headerAction={
-                    <button className="avm-section-add-btn" onClick={savePrimaryContact}>
-                      <i className="ri-save-line" /> Save Contact
-                    </button>
+                    (primarySaved || isEdit)
+                      ? <span className="avm-doc-count"><i className="ri-lock-2-line" /> Saved — locked</span>
+                      : (
+                        <button className="avm-section-add-btn" onClick={savePrimaryContact}>
+                          <i className="ri-save-line" /> Save Contact
+                        </button>
+                      )
                   }>
                     <div className="avm-grid-4">
                       <Field label="Contact Person Name" required error={fieldErrors.contactName}>
-                        <input className="avm-input" placeholder="Rahul Sharma" value={contactName} maxLength={60} onChange={e => applySanitizer(e.target.value, 'contactName', setContactName, raw => sanitizeKycAlpha(raw, 60))} />
+                        <input className="avm-input" placeholder="Rahul Sharma" value={contactName} maxLength={60} readOnly={primarySaved || isEdit} onChange={e => applySanitizer(e.target.value, 'contactName', setContactName, raw => sanitizeKycAlpha(raw, 60))} />
                       </Field>
                       <Field label="Designation" required error={fieldErrors.designation}>
-                        <input className="avm-input" placeholder="Manager" value={designation} maxLength={60} onChange={e => applySanitizer(e.target.value, 'designation', setDesignation, raw => sanitizeKycDesignation(raw, 60))} />
+                        <input className="avm-input" placeholder="Manager" value={designation} maxLength={60} readOnly={primarySaved || isEdit} onChange={e => applySanitizer(e.target.value, 'designation', setDesignation, raw => sanitizeKycDesignation(raw, 60))} />
                       </Field>
                       <Field label="Contact No" required error={fieldErrors.contactNo}>
-                        <input className="avm-input" placeholder="9876543210" inputMode="numeric" pattern="\d*" maxLength={15} value={contactNo} onChange={e => { setContactNo(digitsOnly(e.target.value)); clearFieldError('contactNo'); }} />
+                        <input className="avm-input" placeholder="9876543210" inputMode="numeric" pattern="\d*" maxLength={15} value={contactNo} readOnly={primarySaved || isEdit} onChange={e => { setContactNo(digitsOnly(e.target.value)); clearFieldError('contactNo'); }} />
                       </Field>
                       <Field label="Email" required error={fieldErrors.email}>
-                        <input className="avm-input" placeholder="rahul@abclogistics.com" value={email} onChange={e => { setEmail(e.target.value); clearFieldError('email'); }} />
+                        <input className="avm-input" placeholder="rahul@abclogistics.com" value={email} readOnly={primarySaved || isEdit} onChange={e => { setEmail(e.target.value); clearFieldError('email'); }} />
                       </Field>
                     </div>
                     <div className="avm-grid-2">
                       <Field label="WhatsApp Enabled ?">
                         <div className="avm-radio-row">
                           <label className="avm-radio">
-                            <input type="radio" checked={whatsappEnabled} onChange={() => setWhatsappEnabled(true)} />
+                            <input type="radio" checked={whatsappEnabled} disabled={primarySaved || isEdit} onChange={() => setWhatsappEnabled(true)} />
                             <span>Yes</span>
                           </label>
                           <label className="avm-radio">
-                            <input type="radio" checked={!whatsappEnabled} onChange={() => setWhatsappEnabled(false)} />
+                            <input type="radio" checked={!whatsappEnabled} disabled={primarySaved || isEdit} onChange={() => setWhatsappEnabled(false)} />
                             <span>No</span>
                           </label>
                         </div>
                       </Field>
                       <Field label="Attachment (Business Card)">
-                        <FileChooser file={attachment} onPick={(f) => setAttachment(f)} existingPath={primaryAttachmentPath} placeholder="No files attached" />
+                        <FileChooser file={attachment} onPick={(f) => { setAttachment(f); if (!f) setPrimaryAttachmentPath(''); }} existingPath={primaryAttachmentPath} placeholder="No files attached" readOnly={primarySaved || isEdit} />
                       </Field>
                     </div>
                   </SectionCard>
@@ -3084,6 +3121,7 @@ export default function AddVendorModal(props: {
           setDraft={setBankDraft}
           onClose={() => setBankPopupOpen(false)}
           onSave={saveBankDraft}
+          existingAccounts={bankRows.map(b => b.accountNumber.trim())}
         />
       )}
       {gstPopupOpen && (
@@ -3660,8 +3698,10 @@ function FileChooser(props: {
    *  knows about Azure Blob Storage, where Storage::url() is the only
    *  authoritative URL builder. */
   existingUrl?: string;
+  /** When true the chooser is locked — no upload, no delete (view-only link). */
+  readOnly?: boolean;
 }) {
-  const { file, onPick, placeholder, existingPath, existingUrl } = props;
+  const { file, onPick, placeholder, existingPath, existingUrl, readOnly } = props;
   const toast = useToast();
 
   const onChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -3709,6 +3749,15 @@ function FileChooser(props: {
     : (existingUrl || (existingPath ? resolveFileUrl(existingPath) : ''));
 
   if (!hasFile) {
+    // Locked + nothing attached → plain read-only text (no upload affordance).
+    if (readOnly) {
+      return (
+        <div className="avm-filechooser">
+          <span className="avm-filechooser-icon"><i className="ri-attachment-line" /></span>
+          <span className="avm-filechooser-text">No file attached</span>
+        </div>
+      );
+    }
     // Empty state — clickable drop affordance.
     return (
       <div className="avm-filechooser">
@@ -3748,28 +3797,20 @@ function FileChooser(props: {
         <span className="avm-filechooser-text" title={fileName}>{fileName}</span>
       )}
       <div className="avm-filechooser-actions">
-        {viewHref && (
-          <a
-            href={viewHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="avm-fc-action avm-fc-view"
-            data-tooltip="View attachment"
-            aria-label="View attachment"
-            onClick={(e) => e.stopPropagation()}
+        {/* View (eye) removed — the filename above is itself a link that opens
+            the attachment, so a separate view icon is redundant. Delete only,
+            and hidden when the chooser is locked (read-only). */}
+        {!readOnly && (
+          <button
+            type="button"
+            className="avm-fc-action avm-fc-delete"
+            data-tooltip="Delete attachment"
+            aria-label="Delete attachment"
+            onClick={(e) => { e.stopPropagation(); e.preventDefault(); onPick(null); }}
           >
-            <i className="ri-eye-line" />
-          </a>
+            <i className="ri-delete-bin-line" />
+          </button>
         )}
-        <button
-          type="button"
-          className="avm-fc-action avm-fc-delete"
-          data-tooltip="Delete attachment"
-          aria-label="Delete attachment"
-          onClick={(e) => { e.stopPropagation(); e.preventDefault(); onPick(null); }}
-        >
-          <i className="ri-delete-bin-line" />
-        </button>
       </div>
     </div>
   );
@@ -5022,8 +5063,11 @@ function BankAddPopup(props: {
   setDraft: Setter<BankAddPopupDraft>;
   onClose: () => void;
   onSave: () => void;
+  /** Account numbers already on this supplier — used to highlight a duplicate
+   *  on the field itself (not just a toast). */
+  existingAccounts: string[];
 }) {
-  const { draft, setDraft, onClose, onSave } = props;
+  const { draft, setDraft, onClose, onSave, existingAccounts } = props;
   const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
   const [errors, setErrors] = useState<{ bankName?: string; branchName?: string; branchAddress?: string; accountNumber?: string; ifsc?: string; cheque?: string }>({});
   /* Highlight empty required fields when the user hits Save without filling
@@ -5033,8 +5077,14 @@ function BankAddPopup(props: {
     if (!draft.bankName.trim())      e.bankName = 'Bank Name is required';
     if (!draft.branchName.trim())    e.branchName = 'Branch is required';
     if (!draft.accountNumber.trim()) e.accountNumber = 'Account Number is required';
+    else { const accErr = validateAccountNumber(draft.accountNumber); if (accErr) e.accountNumber = accErr; }
     if (!draft.ifsc.trim())          e.ifsc = 'IFSC Code is required';
+    else { const ifscErr = validateIfsc(draft.ifsc); if (ifscErr) e.ifsc = ifscErr; }
     if (!draft.chequeFile && !draft.existingPath) e.cheque = 'Cancelled Cheque is required';
+    // Duplicate account number — highlight the field itself, not just a toast.
+    if (!e.accountNumber && existingAccounts.includes(draft.accountNumber.trim())) {
+      e.accountNumber = 'This account number is already added for this supplier.';
+    }
     if (Object.keys(e).length) { setErrors(prev => ({ ...prev, ...e })); return; }
     onSave();
   };
@@ -6120,7 +6170,24 @@ const SCOPED_CSS = `
  * would overflow the column and break the table layout. Allow text
  * cells to wrap with sane per-cell limits, but keep nowrap for the
  * status badges and the action button column so they stay aligned. */
-.avm-kyc-table-wrap { overflow-x: auto; }
+/* These tables live inside the modal, NOT a Velzon .card — so Velzon's
+   .table-card negative margin (margin: -card-spacer) bleeds them wider than the
+   card and forces a horizontal scrollbar. Neutralize the margin so the table
+   fits the card width and sizes to the popup dynamically. */
+.avm-kyc-table-wrap { overflow-x: clip; margin: 0 !important; }
+.avm-kyc-table-wrap.table-card { margin: 0 !important; }
+/* Fill the card width so columns spread to fit (no bleed, no scroll on desktop). */
+.avm-kyc-table-wrap .avm-kyc-table { width: 100%; }
+/* On small / mobile screens the table can't compress to readable widths, so let
+   it keep a min width and scroll HORIZONTALLY instead of clipping the columns. */
+@media (max-width: 820px) {
+  .avm-kyc-table-wrap { overflow-x: auto !important; }
+  .avm-kyc-table-wrap .avm-kyc-table { min-width: 680px; }
+  .avm-kyc-table th, .avm-kyc-table td { white-space: nowrap; max-width: none; }
+}
+/* KYC step card (teal tone) — extend down to fill the modal body instead of
+   floating short with empty space below. Step-1 sections (violet) are untouched. */
+.avm-section-teal { min-height: calc(100vh - 430px); }
 /* width:auto so the table hugs its content — columns sit tight together
    instead of stretching across the full card (no wasted gaps / no scroll). */
 .avm-kyc-table {
@@ -6638,6 +6705,10 @@ const SCOPED_CSS = `
 .avm-kyc-actions { display: inline-flex; align-items: center; gap: 5px; }
 .avm-kyc-act {
   width: 27px; height: 27px; border-radius: 7px; cursor: pointer;
+  /* margin:0 — the Upload is a <label>, which Bootstrap gives a default
+     margin-bottom, pushing it ~4px higher than the Download (<a>). Zeroing it
+     makes the two action buttons line up. */
+  margin: 0; vertical-align: middle;
   display: inline-flex; align-items: center; justify-content: center;
   transition: transform .14s, box-shadow .14s, filter .14s; text-decoration: none;
 }
