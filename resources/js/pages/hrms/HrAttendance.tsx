@@ -5,10 +5,9 @@ import { useToast } from '../../contexts/ToastContext';
 import { Turtle } from 'lucide-react';
 import api from '../../api';
 import WorklistPager from '../../components/ui/WorklistPager';
+import { Shimmer, ShimmerTable } from '../../components/ui/Shimmer';
 import '../../../css/recruitment.css';
 
-// "Today" anchor — dynamic, locked at module load so a single render pass
-// stays consistent. Date picker / refetch uses this as the default `viewDate`.
 const TODAY_ISO = new Date().toISOString().slice(0, 10);
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const WEEK_LABELS  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -17,15 +16,10 @@ const parseISO  = (iso: string) => { const [y,m,d] = iso.split('-').map(Number);
 const toISO     = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const addDays   = (iso: string, n: number) => { const d = parseISO(iso); d.setDate(d.getDate() + n); return toISO(d); };
 const fmtLong   = (iso: string) => { const d = parseISO(iso); return `${WEEK_LABELS[d.getDay()]}, ${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`; };
-const monthKey  = (iso: string) => `${iso.slice(0,7)}`;                      // "2026-04"
-const monthOf   = (iso: string) => MONTHS_SHORT[parseISO(iso).getMonth()];   // "Apr"
+const monthKey  = (iso: string) => `${iso.slice(0,7)}`;
+const monthOf   = (iso: string) => MONTHS_SHORT[parseISO(iso).getMonth()];
 const yearOf    = (iso: string) => parseISO(iso).getFullYear();
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Types — these match the live Employee model fields. When the backend
-// endpoints land we map directly: `attendance_tracking`, `shift`, `weekly_off`,
-// `attendance_number`, `reporting_manager` are all already on Employee.
-// ─────────────────────────────────────────────────────────────────────────────
 type DayStatus =
   | 'Present'
   | 'Late'
@@ -40,95 +34,45 @@ type DayStatus =
   | 'Leave'
   | 'Corrected';
 
-// Two regularization modes — mirrors the Keka pattern. "adjust" = the employee
-// (or HR on behalf) is editing the actual punch list for the day. "exempt" =
-// no time edits, just request the day be excluded from late/absent penalty.
 type RegMode = 'adjust' | 'exempt';
-
 type CorrStatus = 'Pending' | 'Approved' | 'Rejected';
-type ApprovalState = 'Pending' | 'Approved' | 'Rejected' | 'NA';
 
-// One row inside the multi-punch editor on the regularization form. Mirrors
-// the editable in/out pair shown in the Keka screenshot.
 interface PunchEdit {
-  // What kind of change this row represents.
-  //   add    — new punch pair added by the requester
-  //   edit   — existing punch's time being changed
-  //   keep   — original row, no change (renders read-only in the editor)
-  //   delete — existing punch being removed
   action: 'add' | 'edit' | 'keep' | 'delete';
-  // Original times (for keep/edit/delete — null for add)
   oldIn?: string;
   oldOut?: string;
-  // Requested times (for add/edit — empty string for delete)
   newIn: string;
   newOut: string;
 }
 
-// A request that goes through the Employee → Manager → HR workflow. New
-// shape used by the Approval Queue. Old `CorrectionRequest` (defined further
-// below alongside the original modal) stays during the transition.
-interface ApprovalRequest {
-  id: string;                    // CR-1042
-  employeeId: number;
-  employeeName: string;
-  employeeCode: string;
-  department: string;
-  designation: string;
-  managerId: number;
-  managerName: string;
-  date: string;                  // "21 Apr 2026" — day being corrected
-  raisedAt: string;              // when the request was submitted
-  raisedBy: 'employee' | 'hr';   // 'hr' = raised on behalf
-  mode: RegMode;
-  punchEdits: PunchEdit[];       // for mode === 'adjust'
-  workLocations: string[];       // multi-select
-  reason: string;
-  // Workflow state — manager decides first, then HR may override on dispute
-  managerStatus: ApprovalState;
-  managerActionAt?: string;
-  managerComment?: string;
-  hrStatus: ApprovalState;       // 'NA' until escalated to HR
-  hrActionAt?: string;
-  hrComment?: string;
-  // Final derived state (cached)
-  status: ApprovalState;
-}
-
-// Preset work locations for the regularization form. When the backend lands,
-// this'll come from a `master_work_locations` table per client/branch.
 const WORK_LOCATIONS = ['Baner Office', 'Wakad Office', 'WFH', 'Client Site', 'Field Visit'];
 
 interface AttendanceEmployee {
   id: number;
-  empCode: string;            // emp_code
-  name: string;               // display_name
+  empCode: string;
+  name: string;
   initials: string;
   accent: string;
   department: string;
   designation: string;
-  managerName: string;        // for the approval routing line
-  shift: string;              // e.g. "General (09:00 – 18:00)"
-  shiftStart: string;         // "09:00"
-  shiftEnd: string;           // "18:00"
-  weeklyOff: string;          // "Sun" | "Sat, Sun" | "Alt Sat, Sun"
-  attendanceNumber: string;   // biometric punch ID
-  // Today
+  managerName: string;
+  shift: string;
+  shiftStart: string;
+  shiftEnd: string;
+  weeklyOff: string;
+  attendanceNumber: string;
   status: DayStatus;
   firstIn?: string;
-  lastOut?: string | null;    // null → still in (In Progress)
+  lastOut?: string | null;
   workedMinutes: number;
   expectedMinutes: number;
   lateByMinutes: number;
   punches: PunchEvent[];
-  // Open correction (the badge on the left list, and the action card on the right)
   correction?: CorrectionRequest;
-  // Month-to-date
   presentDays: number;
   lateMarks: number;
   missingPunch: number;
   compliancePct: number;
-  // History (last N rows of daily_attendance for this employee)
   logs: AttendanceLog[];
 }
 
@@ -136,16 +80,10 @@ interface PunchEvent {
   time: string;
   type: 'in' | 'out' | 'missing';
   source: 'BIOMETRIC' | 'MANUAL' | 'WEB' | 'MOBILE';
-  /** Human label for the timeline (Check In / Step Out / Lunch Out / etc.).
-   *  Falls back to "Check In" / "Check Out" by type when omitted. */
   label?: string;
   worked?: string;
   breakAfter?: string;
   note?: string;
-  /** Geo-fix recorded at punch time. Sent by the SPA on
-   *  /attendance/face/clock-in & clock-out. Optional — missing punches and
-   *  legacy records won't have it. `place` is reverse-geocoded server-side
-   *  (or by the mobile app) for human-readable display. */
   lat?: number | null;
   lng?: number | null;
   place?: string | null;
@@ -153,20 +91,20 @@ interface PunchEvent {
 
 interface CorrectionRequest {
   id: string;
-  date: string;            // "21 Apr 2026"
+  date: string;
   type: string;
-  requestedIn?: string;    // "09:32"
+  requestedIn?: string;
   requestedOut?: string;
   reason: string;
   status: CorrStatus;
-  raisedAt: string;        // "21 Apr 2026 14:12"
+  raisedAt: string;
   managerActionAt?: string;
   hrActionAt?: string;
 }
 
 interface AttendanceLog {
-  iso?: string;              // YYYY-MM-DD — backend emits this for Calendar lookup
-  date: string;              // human-readable, e.g. "13 May 2026"
+  iso?: string;
+  date: string;
   weekday: string;
   status: DayStatus;
   shift: string;
@@ -175,8 +113,6 @@ interface AttendanceLog {
   worked: string;
   deviation: string;
   exception?: string;
-  /* Keka-style visual fields. Hours are 0-24 floats so they map cleanly onto
-   * the 24-h timeline bar in the table. */
   workSegments?: Array<{ start: number; end: number }>;
   effectiveMinutes?: number;
   grossMinutes?: number;
@@ -184,9 +120,6 @@ interface AttendanceLog {
   lateMinutes?: number;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Status palette — one source of truth
-// ─────────────────────────────────────────────────────────────────────────────
 const STATUS_TONE: Record<DayStatus, { fg: string; bg: string; dot: string; label: string }> = {
   'Present':         { fg: '#15803d', bg: '#dcfce7', dot: '#22c55e', label: 'Present' },
   'Late':            { fg: '#92400e', bg: '#fef3c7', dot: '#f59e0b', label: 'Late' },
@@ -202,16 +135,10 @@ const STATUS_TONE: Record<DayStatus, { fg: string; bg: string; dot: string; labe
   'Corrected':       { fg: '#5b3fd1', bg: '#ede9fe', dot: '#7c5cfc', label: 'Corrected' },
 };
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
 const ACCENTS = ['#7c5cfc', '#0ab39c', '#f7b84b', '#f06548', '#0ea5e9', '#e83e8c', '#0c63b0', '#22c55e', '#a855f7'];
 const accent = (i: number) => ACCENTS[i % ACCENTS.length];
 const fmtMinutes = (m: number) => `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
 
-// Render a 24-h "HH:MM" time as the big tile value with a small AM/PM suffix.
-// Returns "—" for empty/null. Hour 0 displays as 12 AM, 12 displays as 12 PM.
 const renderTime = (t?: string | null, hour24 = false): ReactNode => {
   if (!t) return '—';
   const m = /^(\d{1,2}):(\d{2})/.exec(t);
@@ -224,254 +151,7 @@ const renderTime = (t?: string | null, hour24 = false): ReactNode => {
   return <>{`${String(h12).padStart(2,'0')}:${mm}`}<span className="att-tile-am">{ampm}</span></>;
 };
 
-// Deterministic per-(employee, date) status for the calendar grid. When backend
-// is wired, replace with `daily_attendance` rows for the month. Keeps weekly-off
-// as `Weekly Off`, future dates as `null` so the cell stays blank.
-const dayHash = (s: string) => { let h = 0; for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0; return Math.abs(h); };
-const statusForDate = (empId: number, iso: string): DayStatus | null => {
-  if (iso > TODAY_ISO) return null;
-  const d = parseISO(iso);
-  if (d.getDay() === 0) return 'Weekly Off';
-  const h = dayHash(`${empId}-${iso}`) % 100;
-  if (h < 4)  return 'Absent';
-  if (h < 8)  return 'Leave';
-  if (h < 14) return 'Late';
-  if (h < 17) return 'Half Day';
-  if (h < 20) return 'Work From Home';
-  if (h < 22) return 'On Duty';
-  if (h < 24) return 'Missing Out';
-  return 'Present';
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Dummy data builder — wire to `GET /api/attendance/daily?date=YYYY-MM-DD` later
-// ─────────────────────────────────────────────────────────────────────────────
-// Fixed office locations so timeline punches show realistic coordinates.
-// Replace with real lat/lng/place from the punches table once geo capture is
-// rolled out to every employee.
-const OFFICE_BIOMETRIC = { lat: 18.5908, lng: 73.7378, place: 'Hinjewadi Phase 1, Pune' };
-const OFFICE_DESK_WEB  = { lat: 18.5912, lng: 73.7388, place: 'Hinjewadi Phase 1, Pune' };
-const FIELD_CLIENT     = { lat: 18.5641, lng: 73.7765, place: 'Baner Office, Pune' };
-const HOME_WFH         = { lat: 18.5288, lng: 73.8746, place: 'Koregaon Park, Pune' };
-
-const buildPunches = (kind: 'normal' | 'late' | 'missing-out' | 'missing-in' | 'partial'): PunchEvent[] => {
-  if (kind === 'late') return [
-    { time: '09:32 AM', type: 'in',      label: 'Check In',  source: 'BIOMETRIC', ...OFFICE_BIOMETRIC },
-    { time: '01:14 PM', type: 'out',     label: 'Lunch Out', source: 'BIOMETRIC', worked: '3h 42m', ...OFFICE_BIOMETRIC },
-    { time: '02:06 PM', type: 'in',      label: 'Lunch In',  source: 'BIOMETRIC', breakAfter: '52m', ...OFFICE_BIOMETRIC },
-    { time: '—',         type: 'missing', label: 'Check Out',source: 'BIOMETRIC', note: 'Check Out — Missing punch' },
-  ];
-  if (kind === 'missing-out') return [
-    { time: '09:00 AM', type: 'in',      label: 'Check In', source: 'BIOMETRIC', ...OFFICE_BIOMETRIC },
-    { time: '—',         type: 'missing', label: 'Check Out',source: 'BIOMETRIC', note: 'Check Out — Missing punch' },
-  ];
-  if (kind === 'missing-in') return [
-    { time: '—',         type: 'missing', label: 'Check In', source: 'BIOMETRIC', note: 'Check In — Missing punch' },
-  ];
-  if (kind === 'partial') return [
-    { time: '09:05 AM', type: 'in',  label: 'Check In',  source: 'BIOMETRIC', ...OFFICE_BIOMETRIC },
-    { time: '12:30 PM', type: 'out', label: 'Check Out', source: 'BIOMETRIC', worked: '3h 25m', ...OFFICE_BIOMETRIC },
-  ];
-  // "Normal" — a richer mock that exercises the horizontal timeline UI:
-  // Check In → Step Out (field visit) → Step In → Lunch → Meeting (off-site)
-  return [
-    { time: '08:02 AM', type: 'in',  label: 'Check In',  source: 'BIOMETRIC',                            ...OFFICE_BIOMETRIC },
-    { time: '10:15 AM', type: 'out', label: 'Step Out',  source: 'WEB',                                  ...FIELD_CLIENT },
-    { time: '10:42 AM', type: 'in',  label: 'Step In',   source: 'WEB',       breakAfter: '27m',         ...OFFICE_DESK_WEB },
-    { time: '12:30 PM', type: 'out', label: 'Lunch Out', source: 'BIOMETRIC', worked: '3h 48m',          ...OFFICE_BIOMETRIC },
-    { time: '01:14 PM', type: 'in',  label: 'Lunch In',  source: 'BIOMETRIC', breakAfter: '44m',         ...OFFICE_BIOMETRIC },
-    { time: '02:48 PM', type: 'out', label: 'Meeting',   source: 'MOBILE',                               ...FIELD_CLIENT },
-    { time: '04:05 PM', type: 'in',  label: 'Back',      source: 'MOBILE',    breakAfter: '1h 17m',      ...HOME_WFH },
-  ];
-};
-
-const buildLogs = (): AttendanceLog[] => [
-  { date: '21 Apr 2026', weekday: 'Mon', status: 'Late',           shift: 'Early',   firstIn: '07:01', lastOut: '16:02', worked: '9h 01m', deviation: '+0h 01m', exception: 'Late Entry',
-    workSegments: [{ start: 7.02, end: 13.02 }, { start: 14, end: 16.03 }], effectiveMinutes: 9 * 60 + 1, grossMinutes: 9 * 60 + 1, expectedMinutes: 9 * 60, lateMinutes: 1 },
-  { date: '20 Apr 2026', weekday: 'Sun', status: 'Weekly Off',     shift: '—',       firstIn: '—',     lastOut: '—',     worked: '—',      deviation: '—' },
-  { date: '18 Apr 2026', weekday: 'Fri', status: 'Present',        shift: 'General', firstIn: '09:15', lastOut: '18:20', worked: '9h 05m', deviation: '+0h 05m',
-    workSegments: [{ start: 9.25, end: 13 }, { start: 14, end: 18.33 }], effectiveMinutes: 9 * 60 + 5, grossMinutes: 9 * 60 + 5, expectedMinutes: 9 * 60, lateMinutes: 15 },
-  { date: '17 Apr 2026', weekday: 'Thu', status: 'Late',           shift: 'General', firstIn: '10:02', lastOut: '19:15', worked: '9h 13m', deviation: '+0h 13m', exception: 'Late Entry',
-    workSegments: [{ start: 10.03, end: 13.5 }, { start: 14.5, end: 19.25 }], effectiveMinutes: 9 * 60 + 13, grossMinutes: 9 * 60 + 13, expectedMinutes: 9 * 60, lateMinutes: 62 },
-  { date: '16 Apr 2026', weekday: 'Wed', status: 'Present',        shift: 'General', firstIn: '09:00', lastOut: '18:00', worked: '9h 00m', deviation: '+0h 00m',
-    workSegments: [{ start: 9, end: 13 }, { start: 14, end: 18 }], effectiveMinutes: 9 * 60, grossMinutes: 9 * 60, expectedMinutes: 9 * 60, lateMinutes: 0 },
-  { date: '15 Apr 2026', weekday: 'Tue', status: 'Corrected',      shift: 'General', firstIn: '09:00', lastOut: '18:15', worked: '9h 15m', deviation: '+0h 15m', exception: 'Regularized',
-    workSegments: [{ start: 9, end: 13.25 }, { start: 14.25, end: 18.25 }], effectiveMinutes: 9 * 60 + 15, grossMinutes: 9 * 60 + 15, expectedMinutes: 9 * 60, lateMinutes: 0 },
-  { date: '14 Apr 2026', weekday: 'Mon', status: 'Present',        shift: 'General', firstIn: '09:00', lastOut: '13:30', worked: '4h 30m', deviation: '-4h 30m',
-    workSegments: [{ start: 9, end: 13.5 }], effectiveMinutes: 4 * 60 + 30, grossMinutes: 4 * 60 + 30, expectedMinutes: 9 * 60, lateMinutes: 0 },
-  { date: '13 Apr 2026', weekday: 'Sun', status: 'Weekly Off',     shift: '—',       firstIn: '—',     lastOut: '—',     worked: '—',      deviation: '—' },
-  { date: '12 Apr 2026', weekday: 'Sat', status: 'Work From Home', shift: 'WFH',     firstIn: '09:30', lastOut: '14:00', worked: '4h 30m', deviation: '-4h 30m',
-    workSegments: [{ start: 9.5, end: 14 }], effectiveMinutes: 4 * 60 + 30, grossMinutes: 4 * 60 + 30, expectedMinutes: 9 * 60, lateMinutes: 30 },
-  { date: '11 Apr 2026', weekday: 'Fri', status: 'Present',        shift: 'General', firstIn: '09:30', lastOut: '15:30', worked: '6h 00m', deviation: '-3h 00m',
-    workSegments: [{ start: 9.5, end: 13 }, { start: 14, end: 15.5 }], effectiveMinutes: 6 * 60, grossMinutes: 6 * 60, expectedMinutes: 9 * 60, lateMinutes: 30 },
-  { date: '10 Apr 2026', weekday: 'Thu', status: 'Half Day',       shift: 'General', firstIn: '09:05', lastOut: '12:30', worked: '3h 25m', deviation: '-5h 35m', exception: 'Half Day',
-    workSegments: [{ start: 9.08, end: 12.5 }], effectiveMinutes: 3 * 60 + 25, grossMinutes: 3 * 60 + 25, expectedMinutes: 9 * 60, lateMinutes: 5 },
-  { date: '09 Apr 2026', weekday: 'Wed', status: 'Absent',         shift: '—',       firstIn: '—',     lastOut: '—',     worked: '—',      deviation: '-9h 00m', exception: 'Absent' },
-];
-
-const buildEmployees = (): AttendanceEmployee[] => {
-  type Seed = Partial<AttendanceEmployee>;
-  const seeds: Seed[] = [
-    { name: 'Rohan Mehta',   empCode: 'EMP-0042', initials: 'RM',  department: 'Engineering', designation: 'Senior Developer',  managerName: 'Arun Gupta',     shift: 'General (09:00 – 18:00)',    shiftStart: '09:00', shiftEnd: '18:00', weeklyOff: 'Sun',       attendanceNumber: 'B-1042', status: 'Late',          firstIn: '09:32', lastOut: null,     workedMinutes: 7 * 60 + 14, lateByMinutes: 32, punches: buildPunches('late') },
-    { name: 'Priya Sharma',  empCode: 'EMP-0018', initials: 'PS',  department: 'Operations',  designation: 'Ops Manager',       managerName: 'Ritu Khanna',    shift: 'Early (07:00 – 16:00)',     shiftStart: '07:00', shiftEnd: '16:00', weeklyOff: 'Sun',       attendanceNumber: 'B-1018', status: 'Present',       firstIn: '07:01', lastOut: '17:30',  workedMinutes: 9 * 60 + 14, lateByMinutes: 1,   punches: buildPunches('normal') },
-    { name: 'Ankit Verma',   empCode: 'EMP-0031', initials: 'AV',  department: 'Sales',       designation: 'Sales Executive',   managerName: 'Priya Iyer',     shift: 'General (09:00 – 18:00)',    shiftStart: '09:00', shiftEnd: '18:00', weeklyOff: 'Sun',       attendanceNumber: 'B-1031', status: 'Missing In',    workedMinutes: 0,            lateByMinutes: 0,   punches: buildPunches('missing-in') },
-    { name: 'Sunita Rao',    empCode: 'EMP-0056', initials: 'SR',  department: 'HR & Admin',  designation: 'HR Lead',           managerName: 'Vishal Rao',     shift: 'General (09:00 – 18:00)',    shiftStart: '09:00', shiftEnd: '18:00', weeklyOff: 'Sun',       attendanceNumber: 'B-1056', status: 'Missing Out',   firstIn: '09:14',                       workedMinutes: 0,            lateByMinutes: 14,  punches: buildPunches('missing-out') },
-    { name: 'Karan Singh',   empCode: 'EMP-0067', initials: 'KS',  department: 'Engineering', designation: 'Software Engineer', managerName: 'Arun Gupta',     shift: 'Night (21:00 – 06:00)',     shiftStart: '21:00', shiftEnd: '06:00', weeklyOff: 'Sat, Sun',  attendanceNumber: 'B-1067', status: 'Present',       firstIn: '21:00', lastOut: '06:00',  workedMinutes: 9 * 60,       lateByMinutes: 0,   punches: buildPunches('normal') },
-    { name: 'Deepa Nair',    empCode: 'EMP-0073', initials: 'DN',  department: 'Finance',     designation: 'Finance Analyst',   managerName: 'Nikhil Mehra',   shift: 'General (09:00 – 18:00)',    shiftStart: '09:00', shiftEnd: '18:00', weeklyOff: 'Sun',       attendanceNumber: 'B-1073', status: 'Late',          firstIn: '10:15', lastOut: '19:42',  workedMinutes: 8 * 60 + 12,  lateByMinutes: 75,  punches: buildPunches('late') },
-    { name: 'Arjun Patel',   empCode: 'EMP-0089', initials: 'AP',  department: 'Operations',  designation: 'Logistics Lead',    managerName: 'Ritu Khanna',    shift: 'General (09:00 – 18:00)',    shiftStart: '09:00', shiftEnd: '18:00', weeklyOff: 'Sun',       attendanceNumber: 'B-1089', status: 'Weekly Off',    workedMinutes: 0,            lateByMinutes: 0,   punches: [] },
-    { name: 'Meera Iyer',    empCode: 'EMP-0094', initials: 'MI',  department: 'Engineering', designation: 'QA Engineer',       managerName: 'Arun Gupta',     shift: 'General (09:00 – 18:00)',    shiftStart: '09:00', shiftEnd: '18:00', weeklyOff: 'Sun',       attendanceNumber: 'B-1094', status: 'Corrected',     firstIn: '09:00', lastOut: '18:30',  workedMinutes: 8 * 60 + 30,  lateByMinutes: 0,   punches: buildPunches('normal') },
-    { name: 'Rahul Gupta',   empCode: 'EMP-0101', initials: 'RG',  department: 'Sales',       designation: 'Account Executive', managerName: 'Priya Iyer',     shift: 'General (09:00 – 18:00)',    shiftStart: '09:00', shiftEnd: '18:00', weeklyOff: 'Sun',       attendanceNumber: 'B-1101', status: 'Absent',        workedMinutes: 0,            lateByMinutes: 0,   punches: [] },
-    { name: 'Kavita Singh',  empCode: 'EMP-0115', initials: 'KSi', department: 'HR & Admin',  designation: 'HR Executive',      managerName: 'Sunita Rao',     shift: 'General (09:00 – 18:00)',    shiftStart: '09:00', shiftEnd: '18:00', weeklyOff: 'Sun',       attendanceNumber: 'B-1115', status: 'Present',       firstIn: '09:02', lastOut: '18:12',  workedMinutes: 8 * 60 + 30,  lateByMinutes: 2,   punches: buildPunches('normal') },
-    { name: 'Vikram Joshi',  empCode: 'EMP-0124', initials: 'VJ',  department: 'Engineering', designation: 'DevOps Engineer',   managerName: 'Arun Gupta',     shift: 'WFH (09:00 – 18:00)',       shiftStart: '09:00', shiftEnd: '18:00', weeklyOff: 'Sun',       attendanceNumber: 'B-1124', status: 'Work From Home',firstIn: '08:55', lastOut: '18:10',  workedMinutes: 8 * 60 + 45,  lateByMinutes: 0,   punches: buildPunches('normal') },
-    { name: 'Neha Kulkarni', empCode: 'EMP-0138', initials: 'NK',  department: 'Design',      designation: 'Product Designer',  managerName: 'Vishal Rao',     shift: 'General (09:00 – 18:00)',    shiftStart: '09:00', shiftEnd: '18:00', weeklyOff: 'Sun',       attendanceNumber: 'B-1138', status: 'Late',          firstIn: '09:55', lastOut: '19:00',  workedMinutes: 8 * 60 + 5,   lateByMinutes: 55,  punches: buildPunches('late') },
-    { name: 'Sandeep Roy',   empCode: 'EMP-0142', initials: 'SR',  department: 'Marketing',   designation: 'Content Lead',      managerName: 'Ritu Khanna',    shift: 'General (09:00 – 18:00)',    shiftStart: '09:00', shiftEnd: '18:00', weeklyOff: 'Sun',       attendanceNumber: 'B-1142', status: 'Present',       firstIn: '09:08', lastOut: '18:20',  workedMinutes: 8 * 60 + 22,  lateByMinutes: 8,   punches: buildPunches('normal') },
-    { name: 'Divya Pillai',  empCode: 'EMP-0156', initials: 'DP',  department: 'Finance',     designation: 'Accounts Manager',  managerName: 'Nikhil Mehra',   shift: 'Early (08:00 – 17:00)',     shiftStart: '08:00', shiftEnd: '17:00', weeklyOff: 'Sun',       attendanceNumber: 'B-1156', status: 'Half Day',      firstIn: '09:05', lastOut: '12:30',  workedMinutes: 3 * 60 + 25,  lateByMinutes: 65,  punches: buildPunches('partial') },
-    { name: 'Manish Yadav',  empCode: 'EMP-0167', initials: 'MY',  department: 'Engineering', designation: 'Tech Lead',         managerName: 'Arun Gupta',     shift: 'General (09:00 – 18:00)',    shiftStart: '09:00', shiftEnd: '18:00', weeklyOff: 'Sun',       attendanceNumber: 'B-1167', status: 'On Duty',       firstIn: '09:18', lastOut: '19:30',  workedMinutes: 9 * 60 + 12,  lateByMinutes: 18,  punches: buildPunches('normal') },
-    { name: 'Pooja Shetty',  empCode: 'EMP-0173', initials: 'PoS', department: 'Operations',  designation: 'Coordinator',       managerName: 'Ritu Khanna',    shift: 'General (09:00 – 18:00)',    shiftStart: '09:00', shiftEnd: '18:00', weeklyOff: 'Sun',       attendanceNumber: 'B-1173', status: 'Missing In',    workedMinutes: 0,            lateByMinutes: 0,   punches: buildPunches('missing-in') },
-    { name: 'Tushar Bhatt',  empCode: 'EMP-0188', initials: 'TB',  department: 'Sales',       designation: 'BD Manager',        managerName: 'Priya Iyer',     shift: 'General (09:00 – 18:00)',    shiftStart: '09:00', shiftEnd: '18:00', weeklyOff: 'Sun',       attendanceNumber: 'B-1188', status: 'Present',       firstIn: '09:30', lastOut: '18:45',  workedMinutes: 8 * 60 + 45,  lateByMinutes: 30,  punches: buildPunches('normal') },
-    { name: 'Anjali Desai',  empCode: 'EMP-0192', initials: 'AD',  department: 'HR & Admin',  designation: 'Recruitment Head',  managerName: 'Vishal Rao',     shift: 'General (09:00 – 18:00)',    shiftStart: '09:00', shiftEnd: '18:00', weeklyOff: 'Sun',       attendanceNumber: 'B-1192', status: 'Leave',         workedMinutes: 0,            lateByMinutes: 0,   punches: [] },
-    { name: 'Harsh Vora',    empCode: 'EMP-0204', initials: 'HV',  department: 'Engineering', designation: 'Backend Engineer',  managerName: 'Arun Gupta',     shift: 'General (09:00 – 18:00)',    shiftStart: '09:00', shiftEnd: '18:00', weeklyOff: 'Sun',       attendanceNumber: 'B-1204', status: 'Late',          firstIn: '09:42', lastOut: '19:10',  workedMinutes: 8 * 60 + 28,  lateByMinutes: 42,  punches: buildPunches('late') },
-    { name: 'Ritika Saxena', empCode: 'EMP-0212', initials: 'RS',  department: 'Marketing',   designation: 'Brand Manager',     managerName: 'Ritu Khanna',    shift: 'General (09:00 – 18:00)',    shiftStart: '09:00', shiftEnd: '18:00', weeklyOff: 'Sun',       attendanceNumber: 'B-1212', status: 'Absent',        workedMinutes: 0,            lateByMinutes: 0,   punches: [] },
-  ];
-
-  return seeds.map((s, i): AttendanceEmployee => ({
-    id: i + 1,
-    accent: accent(i),
-    expectedMinutes: 9 * 60,
-    presentDays: 16 + (i % 4),
-    lateMarks: i % 3,
-    missingPunch: s.status === 'Missing In' || s.status === 'Missing Out' ? 1 : 0,
-    compliancePct: 100 - (i % 3) * 4,
-    correction: (i === 0 || i === 3) ? {
-      id: `CR-${1000 + i}`,
-      date: '21 Apr 2026',
-      type: i === 0 ? 'Forgot to Punch' : 'Missing Punch Out',
-      requestedIn: i === 0 ? '09:32' : undefined,
-      requestedOut: i === 0 ? '18:30' : '18:00',
-      reason: i === 0 ? 'Forgot to punch out before leaving for client visit' : 'Biometric was offline at exit time',
-      status: 'Pending',
-      raisedAt: '21 Apr 2026 14:12',
-    } : undefined,
-    logs: buildLogs(),
-    ...s,
-  } as AttendanceEmployee));
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Approval Queue — dummy requests across employees with mixed states. Replace
-// with `GET /api/attendance/approvals?status=&dept=&from=&to=` when wired.
-// ─────────────────────────────────────────────────────────────────────────────
-const buildApprovalRequests = (employees: AttendanceEmployee[]): ApprovalRequest[] => {
-  const pick = (id: number) => employees.find(e => e.id === id)!;
-  const baseFor = (e: AttendanceEmployee) => ({
-    employeeId: e.id,
-    employeeName: e.name,
-    employeeCode: e.empCode,
-    department: e.department,
-    designation: e.designation,
-    managerId: e.id * 1000,
-    managerName: e.managerName,
-  });
-
-  const reqs: ApprovalRequest[] = [
-    // Pending at manager
-    {
-      id: 'CR-1042', ...baseFor(pick(1)),
-      date: '21 Apr 2026', raisedAt: '21 Apr 2026 14:12', raisedBy: 'employee',
-      mode: 'adjust',
-      punchEdits: [
-        { action: 'keep', oldIn: '09:32', oldOut: '13:14', newIn: '09:32', newOut: '13:14' },
-        { action: 'keep', oldIn: '14:06', oldOut: '14:06', newIn: '14:06', newOut: '14:06' },
-        { action: 'add',  newIn: '14:06', newOut: '18:30' },
-      ],
-      workLocations: ['Baner Office'],
-      reason: 'Forgot to punch out before leaving for client visit',
-      managerStatus: 'Pending', hrStatus: 'NA', status: 'Pending',
-    },
-    // Manager approved, awaiting HR sign-off (escalated due to >7 days old)
-    {
-      id: 'CR-1056', ...baseFor(pick(4)),
-      date: '17 Apr 2026', raisedAt: '20 Apr 2026 09:30', raisedBy: 'employee',
-      mode: 'adjust',
-      punchEdits: [
-        { action: 'edit', oldIn: '09:14', oldOut: '—', newIn: '09:14', newOut: '18:30' },
-      ],
-      workLocations: ['Baner Office'],
-      reason: 'Biometric was offline at exit time, security log confirms',
-      managerStatus: 'Approved', managerActionAt: '20 Apr 2026 16:45', managerComment: 'Verified with security log.',
-      hrStatus: 'Pending', status: 'Pending',
-    },
-    // Manager rejected — visible to HR for override
-    {
-      id: 'CR-1073', ...baseFor(pick(6)),
-      date: '17 Apr 2026', raisedAt: '17 Apr 2026 19:55', raisedBy: 'employee',
-      mode: 'exempt',
-      punchEdits: [],
-      workLocations: ['Baner Office'],
-      reason: 'Stuck in traffic due to road closure',
-      managerStatus: 'Rejected', managerActionAt: '18 Apr 2026 10:12', managerComment: 'Late arrivals are tracked monthly; please plan commute accordingly.',
-      hrStatus: 'NA', status: 'Rejected',
-    },
-    // HR raised on behalf
-    {
-      id: 'CR-1080', ...baseFor(pick(8)),
-      date: '14 Apr 2026', raisedAt: '21 Apr 2026 11:00', raisedBy: 'hr',
-      mode: 'adjust',
-      punchEdits: [
-        { action: 'add', newIn: '09:00', newOut: '18:15' },
-      ],
-      workLocations: ['Wakad Office'],
-      reason: 'Field-work day not captured by biometric. Cleared by HR after manager confirmation over email.',
-      managerStatus: 'Approved', managerActionAt: '21 Apr 2026 10:30',
-      hrStatus: 'Approved', hrActionAt: '21 Apr 2026 11:05', status: 'Approved',
-    },
-    // Pending at manager — multi-punch edit
-    {
-      id: 'CR-1091', ...baseFor(pick(11)),
-      date: '19 Apr 2026', raisedAt: '21 Apr 2026 09:08', raisedBy: 'employee',
-      mode: 'adjust',
-      punchEdits: [
-        { action: 'edit', oldIn: '09:55', oldOut: '13:00', newIn: '09:30', newOut: '13:00' },
-        { action: 'edit', oldIn: '14:00', oldOut: '19:00', newIn: '14:00', newOut: '19:30' },
-      ],
-      workLocations: ['Baner Office', 'Client Site'],
-      reason: 'Came in 25 mins earlier than recorded; system was buffering. Stayed late for client demo.',
-      managerStatus: 'Pending', hrStatus: 'NA', status: 'Pending',
-    },
-    // Approved — historical
-    {
-      id: 'CR-1099', ...baseFor(pick(13)),
-      date: '11 Apr 2026', raisedAt: '12 Apr 2026 11:20', raisedBy: 'employee',
-      mode: 'adjust',
-      punchEdits: [
-        { action: 'add', newIn: '08:50', newOut: '19:00' },
-      ],
-      workLocations: ['Field Visit'],
-      reason: 'On-duty visit to vendor warehouse — no biometric on site',
-      managerStatus: 'Approved', managerActionAt: '12 Apr 2026 14:00',
-      hrStatus: 'NA', status: 'Approved',
-    },
-    // Pending at manager — exempt mode
-    {
-      id: 'CR-1102', ...baseFor(pick(15)),
-      date: '21 Apr 2026', raisedAt: '21 Apr 2026 13:00', raisedBy: 'employee',
-      mode: 'exempt',
-      punchEdits: [],
-      workLocations: ['WFH'],
-      reason: 'Internet outage in the morning, switched to mobile hotspot',
-      managerStatus: 'Pending', hrStatus: 'NA', status: 'Pending',
-    },
-  ];
-  return reqs;
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// HrAttendance — page component
-// ─────────────────────────────────────────────────────────────────────────────
 export default function HrAttendance() {
-  // Real backend data — populated from /api/attendance/daily-view. The mock
-  // builders (buildEmployees / buildPunches / buildLogs / buildApprovalRequests)
-  // are kept as dev fallbacks ONLY and are no longer used as initial state.
   const [employees, setEmployees] = useState<AttendanceEmployee[]>([]);
   const [employeesLoading, setEmployeesLoading] = useState<boolean>(true);
   const [employeesError, setEmployeesError] = useState<string | null>(null);
@@ -480,44 +160,28 @@ export default function HrAttendance() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [logTab, setLogTab]       = useState<'log' | 'calendar'>('log');
   const [regOpen, setRegOpen]     = useState(false);
-  // Time-format preference, shared across the whole attendance page so the
-  // "24 hour format" toggle in the Logs card reformats EVERY clock time —
-  // the employee list, Today's Record tiles, and the log popovers — not just
-  // its own card (previously the state lived inside LogsRequestsCard, so the
-  // toggle visibly did nothing for the list/dashboard times).
-  // Persisted to localStorage so the choice survives a page refresh (it used
-  // to reset to the default 24h on every reload).
-  // Defaults to OFF (12-hour AM/PM) per requirement; persisted choice wins after.
+
+  // Time-format preference, shared page-wide so the "24 hour format" toggle
+  // reformats every clock time. Persisted to localStorage; defaults to 12-hour.
   const [hour24, setHour24]       = useState<boolean>(() => {
     try { const v = localStorage.getItem('cbc-attendance-hour24'); return v === null ? false : v === '1'; }
     catch { return false; }
   });
   useEffect(() => {
-    try { localStorage.setItem('cbc-attendance-hour24', hour24 ? '1' : '0'); } catch { /* storage blocked */ }
+    try { localStorage.setItem('cbc-attendance-hour24', hour24 ? '1' : '0'); } catch {}
   }, [hour24]);
 
-  // viewDate is the date HR is inspecting. Defaults to TODAY but can be any
-  // past day (read-only) — the right pane, KPIs, and Today's Record all
-  // re-target to that date. The Calendar tab uses it as the focus month.
   const [viewDate, setViewDate]   = useState<string>(TODAY_ISO);
-  const [calMonth, setCalMonth]   = useState<string>(monthKey(TODAY_ISO)); // "YYYY-MM" for the calendar tab navigation
+  const [calMonth, setCalMonth]   = useState<string>(monthKey(TODAY_ISO));
   const isToday = viewDate === TODAY_ISO;
   const isPast  = viewDate < TODAY_ISO;
 
-  // Keep the Logs & Requests month (used by the calendar grid AND the month
-  // range pills) in sync with the inspected date — picking 13 Mar in the
-  // top-right date picker should snap the calendar/log table to March
-  // without the user having to also click the MAR pill.
   useEffect(() => {
     const wantedMonth = monthKey(viewDate);
     setCalMonth((prev) => (prev === wantedMonth ? prev : wantedMonth));
   }, [viewDate]);
 
-  // ── Fetch real attendance for the selected date ──
-  // Re-runs every time the viewDate picker changes so the KPI cards, today's
-  // record, intraday timeline and 30-day logs all re-target to the chosen
-  // day. The colour accent (not returned by the API) is computed locally so
-  // each card keeps its consistent stripe colour across renders.
+  // Fetch real attendance for the inspected date; refires on viewDate change.
   useEffect(() => {
     let cancelled = false;
     setEmployeesLoading(true);
@@ -529,14 +193,10 @@ export default function HrAttendance() {
         const hydrated = rows.map((e, i) => ({
           ...e,
           accent: e.accent || accent(i),
-          // The backend uses default labels when display_name is empty; guard
-          // against undefined punches / logs so map() in the renderer is safe.
           punches: Array.isArray(e.punches) ? e.punches : [],
           logs:    Array.isArray(e.logs)    ? e.logs    : [],
         }));
         setEmployees(hydrated);
-        // Pick a default selection: keep the previous one if it's still in
-        // the list, otherwise fall back to the first row.
         setSelectedId((prev) => {
           if (prev != null && hydrated.some((e) => e.id === prev)) return prev;
           return hydrated[0]?.id ?? null;
@@ -580,7 +240,6 @@ export default function HrAttendance() {
     [employees, selectedId]
   );
 
-
   const onSubmitRegularization = (req: Omit<CorrectionRequest, 'id' | 'status' | 'raisedAt'>) => {
     const newReq: CorrectionRequest = {
       ...req,
@@ -594,11 +253,87 @@ export default function HrAttendance() {
     setRegOpen(false);
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
-  // Guard against an empty employee list (still loading / branch has no
-  // attendance-tracked employees yet). Without this, every `selected.foo`
-  // reference below would crash because `selected` would be undefined.
-  if (employeesLoading || !selected) {
+  if (employeesLoading) {
+    return (
+      <>
+        <MasterFormStyles />
+        <Row>
+          <Col xs={12}>
+            <div
+              className="hr-employees-surface"
+              style={{
+                borderRadius: 18,
+                border: '1px solid var(--vz-border-color)',
+                boxShadow: '0 8px 28px rgba(15,23,42,0.06), 0 2px 6px rgba(15,23,42,0.04)',
+                padding: '18px',
+                marginBottom: '24px',
+              }}
+            >
+              <div className="d-flex align-items-center justify-content-between gap-3 mb-3 flex-wrap">
+                <div className="d-flex align-items-center gap-3">
+                  <Shimmer width={44} height={44} radius={12} />
+                  <div className="d-flex flex-column gap-2">
+                    <Shimmer width={150} height={18} />
+                    <Shimmer width={280} height={12} />
+                  </div>
+                </div>
+                <Shimmer width={230} height={40} radius={10} />
+              </div>
+
+              <Row className="g-2 align-items-stretch">
+                <Col xl={3} lg={4} md={5} xs={12}>
+                  <div className="d-flex flex-column gap-2">
+                    <div className="d-flex gap-2 flex-wrap">
+                      {Array.from({ length: 5 }).map((_, i) => <Shimmer key={i} width={56} height={30} radius={8} />)}
+                    </div>
+                    <Shimmer height={38} radius={10} />
+                    {Array.from({ length: 7 }).map((_, i) => (
+                      <div key={i} className="d-flex align-items-center gap-2" style={{ padding: '8px 4px' }}>
+                        <Shimmer width={40} height={40} radius={999} />
+                        <div className="flex-grow-1 d-flex flex-column gap-2">
+                          <Shimmer height={13} width="70%" />
+                          <Shimmer height={11} width="45%" />
+                        </div>
+                        <Shimmer width={64} height={22} radius={999} />
+                      </div>
+                    ))}
+                  </div>
+                </Col>
+
+                <Col xl={9} lg={8} md={7} xs={12}>
+                  <div className="d-flex align-items-center gap-3 mb-3">
+                    <Shimmer width={48} height={48} radius={999} />
+                    <div className="flex-grow-1 d-flex flex-column gap-2">
+                      <Shimmer height={16} width={200} />
+                      <Shimmer height={12} width={320} />
+                    </div>
+                  </div>
+
+                  <Row className="g-2 mb-2 row-cols-xl-4 row-cols-md-2 row-cols-1">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <Col key={i}><Shimmer height={84} radius={12} /></Col>
+                    ))}
+                  </Row>
+
+                  <Row className="g-2">
+                    <Col xl={7} lg={12}><Shimmer height={230} radius={14} /></Col>
+                    <Col xl={5} lg={12}><Shimmer height={230} radius={14} /></Col>
+                  </Row>
+                </Col>
+              </Row>
+
+              <div className="mt-3">
+                <Shimmer height={48} radius={12} style={{ marginBottom: 12 }} />
+                <ShimmerTable rows={6} cols={6} />
+              </div>
+            </div>
+          </Col>
+        </Row>
+      </>
+    );
+  }
+
+  if (!selected) {
     return (
       <>
         <MasterFormStyles />
@@ -607,12 +342,7 @@ export default function HrAttendance() {
             <Card>
               <CardBody>
                 <div style={{ minHeight: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, color: 'var(--vz-secondary-color)' }}>
-                  {employeesLoading ? (
-                    <>
-                      <i className="ri-loader-4-line" style={{ fontSize: 28, animation: 'spin 1s linear infinite' }} />
-                      <span style={{ fontSize: 13 }}>Loading attendance for {fmtLong(viewDate)}…</span>
-                    </>
-                  ) : employeesError ? (
+                  {employeesError ? (
                     <>
                       <i className="ri-error-warning-line" style={{ fontSize: 28, color: '#f06548' }} />
                       <span style={{ fontSize: 13 }}>{employeesError}</span>
@@ -638,9 +368,6 @@ export default function HrAttendance() {
       <MasterFormStyles />
       <Row>
         <Col xs={12}>
-          {/* ── Single page surface — same as HR · Employee. Wraps the header,
-                tabs, and content so everything sits inside ONE rounded white
-                card with a soft shadow (no banner / floating sub-cards). ── */}
           <div
             className="hr-employees-surface"
             style={{
@@ -651,8 +378,6 @@ export default function HrAttendance() {
               marginBottom: '24px',
             }}
           >
-
-            {/* ── Header strip — same shape as the Clients / Branches headers. ── */}
             <div className="frm-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
@@ -687,23 +412,11 @@ export default function HrAttendance() {
               </div>
             </div>
 
-            {/* Daily View is the only mode HR uses today — the Approval
-                Queue + Reports tabs were removed because they had no real
-                backend behind them. Re-introduce a tab strip if/when those
-                features get wired. */}
-
-            {/* ── Two-pane layout (Daily View) ── */}
             <Row className="g-2 align-items-stretch">
-
-              {/* ===================== LEFT PANE ===================== */}
               <Col xl={3} lg={4} md={5} xs={12}>
                 <div className="att-emplist">
                   <div className="att-emplist-tabs">
                     {[
-                      // "Missing" and "WFH/OD" chips removed per request —
-                      // the filter state values still exist server-side
-                      // (kept in the union type) so this only hides the
-                      // chips, doesn't break stored selections.
                       { k: 'all'     as const, l: 'All',      c: counts.all },
                       { k: 'on_time' as const, l: 'On Time',  c: counts.on_time },
                       { k: 'late'    as const, l: 'Late',     c: counts.late },
@@ -717,22 +430,6 @@ export default function HrAttendance() {
                   </div>
 
                   <div className="att-emplist-search">
-                    {/* BUG-069: give the search field a real resting border so
-                        it reads as interactive instead of blending into the
-                        panel — in both light and dark mode. */}
-                    <style>{`
-                      .att-emplist-search .search-box .form-control {
-                        border: 1px solid #cbd5e1;
-                      }
-                      [data-bs-theme="dark"] .att-emplist-search .search-box .form-control,
-                      [data-layout-mode="dark"] .att-emplist-search .search-box .form-control {
-                        border-color: rgba(255,255,255,0.20);
-                      }
-                      .att-emplist-search .search-box .form-control:focus {
-                        border-color: rgba(99,102,241,0.45);
-                        box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
-                      }
-                    `}</style>
                     <div className="rec-req-search search-box">
                       <Input type="text" className="form-control form-control-sm" placeholder="Search name, EMP-ID, biometric…" value={search} onChange={e => setSearch(e.target.value)} />
                       <i className="ri-search-line search-icon" />
@@ -741,9 +438,6 @@ export default function HrAttendance() {
 
                   <div className="att-emplist-meta">
                     <span>{filteredEmployees.length} of {employees.length} employees</span>
-                    {/* Sort button removed per request — no client-side sort
-                        was wired up to it anyway, so this only drops the
-                        non-functional control. */}
                   </div>
 
                   <div className="att-emplist-scroll">
@@ -761,7 +455,7 @@ export default function HrAttendance() {
                             )}
                           </div>
                           <div className="att-emp-right">
-                            <span className="att-status-pill" style={{ color: tone.fg, background: tone.bg }}>
+                            <span className="att-status-pill att-tone-pill" data-status={e.status} style={{ color: tone.fg, background: tone.bg }}>
                               <span className="att-status-dot" style={{ background: tone.dot }} />{tone.label}
                             </span>
                             {e.firstIn && <div className="att-emp-time">{renderTime(e.firstIn, hour24)}</div>}
@@ -779,10 +473,7 @@ export default function HrAttendance() {
                 </div>
               </Col>
 
-              {/* ===================== RIGHT PANE ===================== */}
               <Col xl={9} lg={8} md={7} xs={12}>
-
-                {/* Selected employee identity bar */}
                 <div className="att-emp-bar">
                   <span className="att-emp-bar-avatar" style={{ background: selected.accent }}>{selected.initials.slice(0, 2).toUpperCase()}</span>
                   <div className="att-emp-bar-info">
@@ -799,7 +490,6 @@ export default function HrAttendance() {
                   </div>
                 </div>
 
-                {/* KPI strip */}
                 <Row className="g-2 mb-2 align-items-stretch row-cols-xl-4 row-cols-md-2 row-cols-1">
                   {([
                     { key: 'pres', label: 'Present Days',   sub: 'This month',     value: selected.presentDays,        icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c,#22c8a9)', deep: '#0ab39c' },
@@ -823,7 +513,6 @@ export default function HrAttendance() {
                   ))}
                 </Row>
 
-                {/* Today's record + intraday timeline */}
                 <div className="att-section-head">
                   <span className="att-section-label">{isToday ? "TODAY'S RECORD" : 'DAY RECORD'}</span>
                   <span className="att-section-date">{fmtLong(viewDate)}</span>
@@ -839,8 +528,6 @@ export default function HrAttendance() {
               </Col>
             </Row>
 
-            {/* Logs & Requests — Full-width below the two-pane so the left
-                employee list doesn't stretch to match a tall right pane. */}
             <div className="mt-2">
               <LogsRequestsCard
                 employee={selected}
@@ -855,7 +542,6 @@ export default function HrAttendance() {
         </Col>
       </Row>
 
-      {/* Regularization modal */}
       <RegularizationModal
         open={regOpen}
         employee={selected}
@@ -866,9 +552,6 @@ export default function HrAttendance() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Today's Record card
-// ─────────────────────────────────────────────────────────────────────────────
 function TodayRecordCard({
   employee, viewDate, isPast, hour24 = false,
 }: {
@@ -877,10 +560,7 @@ function TodayRecordCard({
   isPast: boolean;
   hour24?: boolean;
 }) {
-  // Backend returns each employee's status FOR THE SELECTED DATE — so
-  // `employee.status` is already correct whether viewDate is today or any
-  // past day. The dailyView fetcher refires on date change.
-  void isPast; // kept on the prop list for future use; no longer toggles status
+  void isPast;
   const effectiveStatus: DayStatus = employee.status;
   const tone = STATUS_TONE[effectiveStatus];
 
@@ -889,12 +569,11 @@ function TodayRecordCard({
   return (
     <Card className="att-today-card mb-0">
       <CardBody className="p-0">
-        {/* Title bar */}
         <div className="att-today-titlebar">
           <div className="d-flex align-items-center gap-2 min-w-0">
             <span className="att-today-titlebar-icon"><i className="ri-time-line" /></span>
             <div className="att-today-titlebar-text">Today's Updated Record</div>
-            <span className="att-today-status-pill" style={{ color: tone.fg, background: tone.bg }}>
+            <span className="att-today-status-pill att-tone-pill" data-status={effectiveStatus} style={{ color: tone.fg, background: tone.bg }}>
               <span className="att-today-status-dot" style={{ background: tone.dot }} />
               {tone.label}
               {!isPast && employee.lateByMinutes > 0 && effectiveStatus !== 'Weekly Off' && effectiveStatus !== 'Holiday' && effectiveStatus !== 'Leave' && effectiveStatus !== 'Absent' && (
@@ -905,7 +584,6 @@ function TodayRecordCard({
           <span className="att-today-date">{dateLabel}</span>
         </div>
 
-        {/* Two prominent inner cards: First In / Last Out */}
         <div className="att-today-times-2">
           <div className="att-tile">
             <div className="att-tile-label"><i className="ri-login-circle-line" />FIRST IN</div>
@@ -952,7 +630,6 @@ function TodayRecordCard({
           </div>
         </div>
 
-        {/* Stats row */}
         <div className="att-today-stats">
           <div className="att-stat">
             <div className="att-stat-num" style={{ color: '#7c5cfc' }}>{employee.punches.filter(p => p.type !== 'missing').length}</div>
@@ -973,9 +650,6 @@ function TodayRecordCard({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Punch Timeline
-// ─────────────────────────────────────────────────────────────────────────────
 function PunchTimelineCard({ employee }: { employee: AttendanceEmployee }) {
   const punchCount = employee.punches.filter(p => p.type !== 'missing').length;
   const hasMissing = employee.punches.some(p => p.type === 'missing');
@@ -991,8 +665,6 @@ function PunchTimelineCard({ employee }: { employee: AttendanceEmployee }) {
           <span className="att-timeline-count">{punchCount} punches today</span>
         </div>
 
-        {/* Horizontal scrollable timeline — circles connected by a line, with
-            time + label + source-pill stacked under each event. */}
         <div className="att-h-timeline">
           {employee.punches.length === 0 ? (
             <div className="att-timeline-empty">
@@ -1049,12 +721,7 @@ function PunchTimelineCard({ employee }: { employee: AttendanceEmployee }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Keka-style row visuals — 24h timeline bar, effective-hours donut, arrival
-// indicator (turtle / on-time tick).
-// ─────────────────────────────────────────────────────────────────────────────
 function AttendanceVisualBar({ segments }: { segments: Array<{ start: number; end: number }> }) {
-  // 24-hour ruler with hour ticks; teal blocks render the worked segments.
   const ticks = Array.from({ length: 24 }, (_, h) => h);
   return (
     <div className="att-vbar">
@@ -1073,10 +740,6 @@ function AttendanceVisualBar({ segments }: { segments: Array<{ start: number; en
 }
 
 function EffectiveDonut({ effective, expected }: { effective: number; expected: number }) {
-  // Keka-style liquid-fill circle. A single span with
-  //   background-image: linear-gradient(to top, color X%, transparent 0px)
-  // produces the bottom-up fill directly — no inner absolute element. The
-  // percentage rounded to 4 decimals (matches Keka's CSS literal).
   const pct = Math.max(0, Math.min(1, effective / Math.max(1, expected)));
   const fill = (pct * 100).toFixed(4);
   return (
@@ -1088,27 +751,17 @@ function EffectiveDonut({ effective, expected }: { effective: number; expected: 
   );
 }
 
-// Turtle icon — uses lucide-react's professionally-designed Turtle (matches
-// Keka's ki-turtle look). Coloured amber/yellow via stroke, sized via prop.
 function TurtleIcon({ size = 24 }: { size?: number }) {
   return <Turtle size={size} color="#fbbf24" strokeWidth={1.5} aria-hidden="true" />;
 }
 
 function ArrivalIcon({ lateMinutes, arrival }: { lateMinutes: number; arrival: ReactNode }) {
-  // Shows the actual ARRIVAL clock time (formatted by the page's 24h toggle,
-  // so it flips between e.g. 13:40 ↔ 01:40 PM) with a late/on-time cue:
-  //   late  → turtle icon + time + LATE tag
-  //   on-time → green tick + time
   const late = lateMinutes > 0;
   return (
     <span className="att-arrival">
       <span className={`att-arrival-icon ${late ? 'att-arrival-icon--late' : 'att-arrival-icon--ok'}`}>
         {late ? <TurtleIcon size={20} /> : <i className="ri-check-line" />}
       </span>
-      {/* The "late" pill is appended by .att-arrival-text--late::after (CSS), so
-          we DON'T render a second one here. The time sits in a fixed-width inner
-          span so switching 24h↔12h ("13:40" vs "01:40 PM") doesn't change the
-          cell width and shift the row content. */}
       <span className={`att-arrival-text ${late ? 'att-arrival-text--late' : ''}`}>
         <span style={{ display: 'inline-block', minWidth: 62, textAlign: 'left' }}>{arrival || '—'}</span>
       </span>
@@ -1116,39 +769,27 @@ function ArrivalIcon({ lateMinutes, arrival }: { lateMinutes: number; arrival: R
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Logs & Requests card
-// ─────────────────────────────────────────────────────────────────────────────
 function LogsRequestsCard({
   employee, tab, setTab, calMonth, setCalMonth, onPickDate, onRegularize, hour24, setHour24,
 }: {
   employee: AttendanceEmployee;
   tab: 'log' | 'calendar';
   setTab: (t: 'log' | 'calendar') => void;
-  calMonth: string;            // "YYYY-MM" — month being navigated in the calendar
+  calMonth: string;
   setCalMonth: (m: string) => void;
   onPickDate: (iso: string) => void;
-  onRegularize: () => void;    // opens the parent's regularization modal
-  hour24: boolean;             // shared time-format preference (page-level)
+  onRegularize: () => void;
+  hour24: boolean;
   setHour24: (v: boolean | ((p: boolean) => boolean)) => void;
 }) {
-  // Pagination + display settings — default 5 rows so the table stays compact
-  // and the rest of the records flow to the next page.
   const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(1);
 
-  // Logs filtered by the active month range pill / calendar month — this is
-  // what makes "30 DAYS / APR / MAR / FEB / JAN / DEC / NOV" actually filter
-  // the table rows. Logs without an iso field (legacy / unparsable) drop
-  // out so we don't leak undated rows into the wrong month.
   const filteredLogs = useMemo(() => {
     if (!calMonth) return employee.logs;
     return employee.logs.filter((l) => (l.iso || '').startsWith(calMonth));
   }, [employee.logs, calMonth]);
 
-  // Reset to page 1 whenever the active month changes — otherwise picking a
-  // month with fewer rows than the previous page index leaves the table
-  // showing an empty page that you can't navigate away from cleanly.
   useEffect(() => { setPage(1); }, [calMonth, employee.id]);
 
   const totalPages = Math.max(1, Math.ceil(filteredLogs.length / pageSize));
@@ -1157,11 +798,8 @@ function LogsRequestsCard({
   const pageEnd    = Math.min(pageStart + pageSize, filteredLogs.length);
   const visibleLogs = filteredLogs.slice(pageStart, pageEnd);
 
-  // View toggle (list/calendar). The 24-hour switch is now a page-level prop
-  // (hour24/setHour24) so the toggle reformats every clock time on the page.
   const [viewMode, setViewMode] = useState<'list' | 'cal'>('list');
 
-  // Range-pill state — months to scroll through (THIS MONTH + last 6)
   const ranges = useMemo(() => {
     const out: { key: string; label: string; mk: string }[] = [];
     const t = parseISO(TODAY_ISO);
@@ -1173,10 +811,8 @@ function LogsRequestsCard({
     return out;
   }, []);
 
-  // Per-row info popover state — only one open at a time
   const [popoverIdx, setPopoverIdx] = useState<number | null>(null);
 
-  // 24h↔12h time formatter for the table cells & the row popover
   const fmtClock = (raw: string): string => {
     if (!raw || raw === '—') return raw;
     const m = /^(\d{1,2}):(\d{2})$/.exec(raw);
@@ -1192,7 +828,6 @@ function LogsRequestsCard({
   return (
     <Card className="att-logs-card mb-0">
       <CardBody>
-        {/* ── Big header bar — title + range pills + view toggle + 24h ── */}
         <div className="att-logs-headbar">
           <div className="d-flex align-items-center gap-3 min-w-0">
             <span className="att-logs-headbar-icon"><i className="ri-file-list-3-line" /></span>
@@ -1226,8 +861,6 @@ function LogsRequestsCard({
           </div>
         </div>
 
-        {/* Tab strip — Attendance Log + Calendar only. Regularization
-            Requests was removed because it had no backend behind it. */}
         <div className="att-logs-tabs">
           <button type="button" className={`att-logs-tab ${tab === 'log' ? 'is-active' : ''}`} onClick={() => setTab('log')}>
             <i className="ri-checkbox-circle-line" />Attendance Log
@@ -1239,14 +872,6 @@ function LogsRequestsCard({
 
         {tab === 'log' && (
           <>
-            {/* Same table style used by HR · Employee — Bootstrap responsive
-                table-card with table-light header. Custom .att-* classes only
-                kick in for the cells that need attendance-specific styling
-                (date split, shift pill, status pill, action icons, popover). */}
-            {/* Height tracks the ACTUAL rows on the page (header ~46px + visible
-                rows × ~52px), capped at the page size — so a short page (e.g. 4
-                records with page size 10) doesn't leave a big empty placeholder
-                area below the rows (HRMS-BUG-080). */}
             <div
               className="table-responsive table-card border rounded att-logs-table-wrap--fixed"
               style={{ minHeight: `${46 + Math.min(Math.max(visibleLogs.length, 1), pageSize) * 52}px` }}
@@ -1264,10 +889,10 @@ function LogsRequestsCard({
                 </thead>
                 <tbody>
                   {visibleLogs.map((l, i) => {
-                    const dParts = l.date.split(' ');                         // ["21","Apr","2026"]
-                    const dateDay   = (dParts[0] || '').padStart(2, '0');     // "21"
-                    const dateMonth = dParts[1] || '';                        // "Apr"
-                    const dateYear  = dParts[2] || '';                        // "2026"
+                    const dParts = l.date.split(' ');
+                    const dateDay   = (dParts[0] || '').padStart(2, '0');
+                    const dateMonth = dParts[1] || '';
+                    const dateYear  = dParts[2] || '';
                     const formattedDate = `${dateDay}-${dateMonth}-${dateYear}`;
                     const popId = `att-log-info-${employee.id}-${pageStart + i}`;
                     const isOpen = popoverIdx === pageStart + i;
@@ -1275,8 +900,6 @@ function LogsRequestsCard({
                     const isAbsent = l.status === 'Absent';
                     const tone = STATUS_TONE[l.status];
 
-                    // Weekly-off / Holiday rows collapse the data columns into
-                    // a single "Full day Weekly-off" cell — matches Keka.
                     if (isOff) {
                       return (
                         <tr key={pageStart + i} className="att-log-row--off">
@@ -1326,7 +949,6 @@ function LogsRequestsCard({
                           </button>
                           <Popover isOpen={isOpen} target={popId} placement="left" toggle={() => setPopoverIdx(isOpen ? null : pageStart + i)} trigger="legacy" className="att-log-pop att-log-pop--keka">
                             <PopoverBody>
-                              {/* Dark header band — status text + warning icon */}
                               <div className="att-log-pop-head--v2">
                                 <span className="att-log-pop-head-text">
                                   {tone.label}
@@ -1337,15 +959,10 @@ function LogsRequestsCard({
                                 )}
                               </div>
 
-                              {/* Shift info + Regularize action */}
                               {l.shift !== '—' && (
                                 <div className="att-log-pop-body">
                                   <div className="att-log-pop-shift--v2">
                                     {(() => {
-                                      // Don't double the word "Shift" if the
-                                      // stored label already ends with it
-                                      // (e.g. "General Shift" → "General Shift",
-                                      // not "General Shift Shift").
                                       const raw = l.shift;
                                       if (raw === 'WFH') return 'WFH Shift';
                                       return /shift\s*$/i.test(raw) ? raw : `${raw} Shift`;
@@ -1362,14 +979,10 @@ function LogsRequestsCard({
                                 </div>
                               )}
 
-                              {/* Location */}
                               <div className="att-log-pop-body att-log-pop-body--tight">
                                 <div className="att-log-pop-location--v2">Baner Office</div>
                               </div>
 
-                              {/* 2-column punch pair grid — green ↗ for IN, red ↗ for OUT.
-                                  Pairs are derived from workSegments; if status is
-                                  Missing Out the last out cell shows MISSING in red. */}
                               {l.workSegments && l.workSegments.length > 0 && (
                                 <div className="att-log-pop-body att-log-pop-body--tight">
                                   <div className="att-log-pop-pairs">
@@ -1415,8 +1028,6 @@ function LogsRequestsCard({
               </table>
             </div>
 
-            {/* Pagination — same WorklistPager (dynamic rows-per-page) as the
-                recruitment / leave / holiday tables. */}
             <WorklistPager
               total={filteredLogs.length}
               page={safePage}
@@ -1449,15 +1060,11 @@ function LogsRequestsCard({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Calendar Month Grid — month view of one employee, status-coloured cells.
-// Click any past day → page's viewDate jumps to that date (drill-in).
-// ─────────────────────────────────────────────────────────────────────────────
 function CalendarMonthGrid({
   employee, month, onPrevMonth, onNextMonth, onPickDate,
 }: {
   employee: AttendanceEmployee;
-  month: string;          // "YYYY-MM"
+  month: string;
   onPrevMonth: () => void;
   onNextMonth: () => void;
   onPickDate: (iso: string) => void;
@@ -1465,14 +1072,9 @@ function CalendarMonthGrid({
   const [y, m] = month.split('-').map(Number);
   const first  = new Date(y, m - 1, 1);
   const last   = new Date(y, m, 0);
-  const startWeekday = first.getDay(); // 0 = Sun
+  const startWeekday = first.getDay();
   const daysInMonth  = last.getDate();
 
-  // Real-data lookup map: ISO date → status, derived from the employee's
-  // backend-provided 30-day logs array. Cells outside that window stay null
-  // (blank) which is the correct UX — we don't have data for those days.
-  // Weekly-off detection is preserved as a fallback for blank days inside
-  // the window, parsed from the employee's `weeklyOff` string (e.g. "Sun").
   const logByIso = new Map<string, DayStatus>();
   for (const lg of (employee.logs || [])) {
     if (lg.iso) logByIso.set(lg.iso, lg.status);
@@ -1487,14 +1089,11 @@ function CalendarMonthGrid({
     if (iso > TODAY_ISO) return null;
     const fromLog = logByIso.get(iso);
     if (fromLog) return fromLog;
-    // Fallback — log map is empty for this day; mark weekend if matching.
     const d = parseISO(iso);
     if (weeklyOffDays.has(d.getDay())) return 'Weekly Off';
     return null;
   };
 
-  // Build a 6×7 grid of cells. Leading/trailing slots (before day 1 / after
-  // last day) render as faded "spillover" cells so the grid stays rectangular.
   type Cell = { iso: string; day: number; inMonth: boolean; future: boolean; status: DayStatus | null };
   const cells: Cell[] = [];
   const prevMonthLast = new Date(y, m - 1, 0).getDate();
@@ -1516,7 +1115,6 @@ function CalendarMonthGrid({
     if (cells.length >= 42) break;
   }
 
-  // Month-level summary (counters across only days inside the month and ≤ today)
   const summary = cells.reduce<Record<DayStatus, number>>((acc, c) => {
     if (!c.inMonth || !c.status || c.future) return acc;
     acc[c.status] = (acc[c.status] || 0) + 1;
@@ -1563,7 +1161,7 @@ function CalendarMonthGrid({
             >
               <span className="att-cal-day">{c.day}</span>
               {tone && (
-                <span className="att-cal-status" style={{ color: tone.fg, background: tone.bg }}>
+                <span className="att-cal-status att-tone-pill" data-status={c.status} style={{ color: tone.fg, background: tone.bg }}>
                   <span className="att-cal-status-dot" style={{ background: tone.dot }} />
                   {tone.label}
                 </span>
@@ -1576,14 +1174,6 @@ function CalendarMonthGrid({
   );
 }
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Regularization Modal — Keka-style multi-punch editor with two modes
-// (adjust / exempt), work-location multi-select, approval routing preview,
-// and validation. Used both for HR raise-on-behalf and (later) employee
-// self-service. Calls onSubmit({...}) with the full ApprovalRequest payload
-// when valid.
-// ─────────────────────────────────────────────────────────────────────────────
 function RegularizationModal({
   open, employee, onClose, onSubmit,
 }: {
@@ -1594,12 +1184,8 @@ function RegularizationModal({
 }) {
   const toast = useToast();
 
-  // ── Form state ──────────────────────────────────────────────────────────
   const [date]                    = useState('2 May 2026');
   const [mode, setMode]           = useState<RegMode>('adjust');
-  // Each row in the multi-punch editor — seeded from the selected employee's
-  // existing punches so the requester can edit-in-place. `keep` rows render
-  // read-only until the user clicks the time to start editing.
   const initialEdits = useMemo<PunchEdit[]>(() => {
     const inOuts: { in?: string; out?: string }[] = [];
     let cur: { in?: string; out?: string } = {};
@@ -1617,15 +1203,12 @@ function RegularizationModal({
   const [reason, setReason]       = useState('');
   const [errors, setErrors]       = useState<Partial<Record<'reason' | 'punches' | 'locations', string>>>({});
 
-  // Reset editor when the employee changes
-  useMemo(() => { setPunchEdits(initialEdits); }, [initialEdits]);
+  useEffect(() => { setPunchEdits(initialEdits); }, [initialEdits]);
 
-  // ── Punch row helpers ────────────────────────────────────────────────────
   const updateEdit = (idx: number, patch: Partial<PunchEdit>) => {
     setPunchEdits(prev => prev.map((e, i) => {
       if (i !== idx) return e;
       const next = { ...e, ...patch };
-      // If the user touches a `keep` row, promote it to `edit`
       if (e.action === 'keep' && (next.newIn !== e.oldIn || next.newOut !== e.oldOut)) {
         next.action = 'edit';
       }
@@ -1636,20 +1219,17 @@ function RegularizationModal({
   const removeEdit = (idx: number) => {
     setPunchEdits(prev => prev.flatMap((e, i) => {
       if (i !== idx) return [e];
-      // For `add` rows, just drop. For original rows, mark as `delete`.
       if (e.action === 'add') return [];
       return [{ ...e, action: 'delete' as const, newIn: '', newOut: '' }];
     }));
   };
 
-  // ── Work-location helpers ────────────────────────────────────────────────
   const addLocation = (loc: string) => {
     if (!loc || workLocations.includes(loc)) return;
     setWorkLocations(prev => [...prev, loc]);
   };
   const removeLocation = (loc: string) => setWorkLocations(prev => prev.filter(l => l !== loc));
 
-  // ── Submit ───────────────────────────────────────────────────────────────
   const submit = () => {
     const errs: typeof errors = {};
     if (!reason.trim()) errs.reason = 'Reason is required';
@@ -1669,9 +1249,6 @@ function RegularizationModal({
       return;
     }
     setErrors({});
-    // Map back into the older CorrectionRequest shape expected by the parent
-    // for now — the queue uses ApprovalRequest, but the per-employee daily
-    // card still consumes CorrectionRequest. First non-deleted edit wins.
     const firstEdit = punchEdits.find(e => e.action !== 'delete');
     onSubmit({
       date,
@@ -1688,7 +1265,6 @@ function RegularizationModal({
     <Modal isOpen={open} toggle={onClose} centered size="lg" backdrop="static" className="att-reg-modal-keka">
       <ModalBody className="p-0">
         <div className="att-reg-modal-v3">
-          {/* ── Header ── */}
           <div className="att-reg-keka-head">
             <div className="att-reg-keka-title">Request Attendance Regularization</div>
             <button type="button" className="att-reg-keka-close" onClick={onClose} aria-label="Close">
@@ -1697,13 +1273,11 @@ function RegularizationModal({
           </div>
 
           <div className="att-reg-keka-body">
-            {/* ── Selected Date (read-only style) ── */}
             <div className="att-reg-keka-field">
               <label className="att-reg-keka-label">Selected Date</label>
               <div className="att-reg-keka-readonly">{date}</div>
             </div>
 
-            {/* ── Mode (single radio) — drives whether the punch editor shows ── */}
             <div className="att-reg-keka-modes">
               <label className={`att-reg-keka-radio ${mode === 'adjust' ? 'is-active' : ''}`}>
                 <input type="radio" name="reg-mode" checked={mode === 'adjust'} onChange={() => setMode('adjust')} />
@@ -1722,7 +1296,6 @@ function RegularizationModal({
               </div>
             </div>
 
-            {/* ── Punch editor (only in `adjust` mode) ── */}
             {mode === 'adjust' && (
               <>
                 <div className="att-reg-keka-section-head">
@@ -1732,8 +1305,6 @@ function RegularizationModal({
                   </button>
                 </div>
 
-                {/* Location selector — same line, replaces the duplicate label
-                    + dropdown that used to render before & after the rows. */}
                 <div className="att-reg-keka-loc-pick">
                   <i className="ri-map-pin-line" />
                   <select
@@ -1780,7 +1351,6 @@ function RegularizationModal({
                   {punchEdits.filter(e => e.action !== 'delete').length === 0 && (
                     <div className="att-reg-keka-empty">Click <strong>Add Log</strong> to add a punch entry.</div>
                   )}
-                  {/* Hidden helpers retained for back-compat with the sub-list API */}
                   <button type="button" className="d-none" onClick={() => addLocation('')} aria-hidden></button>
                   <button type="button" className="d-none" onClick={() => removeLocation('')} aria-hidden></button>
                 </div>
@@ -1788,7 +1358,6 @@ function RegularizationModal({
               </>
             )}
 
-            {/* ── Note ── */}
             <div className="att-reg-keka-field">
               <label className="att-reg-keka-label">Note</label>
               <textarea
@@ -1803,7 +1372,6 @@ function RegularizationModal({
             </div>
           </div>
 
-          {/* ── Footer ── */}
           <div className="att-reg-keka-foot">
             <button type="button" className="att-reg-keka-cancel" onClick={onClose}>Cancel</button>
             <button type="button" className="att-reg-keka-submit" onClick={submit}>Request</button>

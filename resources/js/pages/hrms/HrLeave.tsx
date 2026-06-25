@@ -8,13 +8,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { leaveRequestsApi, ApiLeaveRequest } from './leavePlansApi';
 import '../../../css/recruitment.css';
 import '../../../css/leave.css';
-// Reuses the purple hero-card & hero-pill that HrEmployeeOnboarding ships
-// (.onb-hero-card / .onb-hero-pill) so the page header reads the same as the
-// Onboarding Hub.
 import '../employee-onboarding/HrEmployeeOnboarding.css';
 
-// Renders dates as "05-Apr-2026" (DD-MMM-YYYY) — same project-standard format
-// used by HrRecruitment so every HR module reads dates the same way.
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function formatDate(raw: any): string {
   if (raw == null || raw === '') return '—';
@@ -23,29 +18,19 @@ function formatDate(raw: any): string {
   const dd = String(d.getDate()).padStart(2, '0');
   return `${dd}-${MONTH_ABBR[d.getMonth()]}-${d.getFullYear()}`;
 }
-// Date range formatter — collapses to a single date when from/to are equal.
 function formatRange(from: string, to: string): string {
   if (!from) return '—';
   if (!to || to === from) return formatDate(from);
   return `${formatDate(from)} – ${formatDate(to)}`;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Types — wire to GET /api/leaves when the backend is available.
-//
-// Workflow mirrors the project's existing Attendance Regularization pattern
-// (Employee → Reporting Manager → HR). Manager is the primary approver; HR
-// only steps in when (a) manager rejected (override), (b) request aged out
-// past 7 days (auto-escalation), or (c) HR raised the request on the
-// employee's behalf (manager step skipped).
-// ─────────────────────────────────────────────────────────────────────────────
 type LeaveType = 'Annual' | 'Sick' | 'Casual' | 'Earned' | 'Maternity' | 'Comp Off' | 'LOP';
 type LeaveStage =
-  | 'Approved'           // final state — manager approved (or HR overrode)
-  | 'Pending (Manager)'  // sitting with the reporting manager
-  | 'Pending (HR)'       // escalated to HR (override / age-out / HR-raised)
-  | 'Rejected'           // both levels rejected (or final no)
-  | 'Cancelled';         // employee withdrew before action
+  | 'Approved'
+  | 'Pending (Manager)'
+  | 'Pending (HR)'
+  | 'Rejected'
+  | 'Cancelled';
 type ApprovalState = 'Pending' | 'Approved' | 'Rejected' | 'NA';
 type PayrollMode = 'Paid Leave' | 'Unpaid' | 'Half-Pay';
 type ProofState = 'Uploaded' | 'Missing' | 'N/A';
@@ -58,15 +43,11 @@ interface PersonRef {
 }
 
 interface LeaveRequest {
-  id: string;                          // LV-1042 (matches approval_queue.id)
-  empCode: string;                     // employee.emp_code
+  id: string;
+  empCode: string;
   empInitials: string;
   empName: string;
-  empRole: string;                     // designation + department
-  // New facets used by the Figma filter chips (Department / Location /
-  // Legal Entity). Backend will eventually expose these as employee-level
-  // attributes; for the dummy rows below they're seeded so each row exercises
-  // the filter logic.
+  empRole: string;
   department: string;
   location: string;
   legalEntity: string;
@@ -74,8 +55,6 @@ interface LeaveRequest {
   type: LeaveType;
   durationDays: number;
   durationLabel: string;
-  // ISO dates (YYYY-MM-DD). Display strings are computed via formatDate /
-  // formatRange so the format stays consistent with HrRecruitment.
   fromDate: string;
   toDate: string;
   appliedOn: string;
@@ -85,42 +64,31 @@ interface LeaveRequest {
   hrApprover?: PersonRef;
 
   managerStatus: ApprovalState;
-  managerActionAt?: string;            // ISO
+  managerActionAt?: string;
   managerComment?: string;
 
   hrStatus: ApprovalState;
-  hrActionAt?: string;                 // ISO
+  hrActionAt?: string;
   hrComment?: string;
 
   escalatedToHr: boolean;
   escalationReason: EscalationReason;
 
   stage: LeaveStage;
-  // Short SLA / state hint shown next to the status pill ("3d pending",
-  // "auto-escalated", "HR override"). Date-bearing notes (like
-  // "Approved: 13-Apr-2026") are derived at render time, not stored here.
   stageNote?: string;
 
   payroll: PayrollMode;
   proof: ProofState;
   proofVia?: string;
-  // Supporting-document metadata. Backend will expose these when the
-  // /api/leaves endpoint lands; for now they're dummy strings so HR can
-  // see realistic file chips in the table.
-  proofType?: string;        // human-friendly category, e.g. "Medical Certificate"
-  proofFileName?: string;    // actual file name, e.g. "medical-certificate.pdf"
-  proofUrl?: string;         // download/preview URL — left blank in dummy data
-  proofUploadedAt?: string;  // ISO timestamp of upload
-  proofMimeType?: string;    // "application/pdf", "image/jpeg", …
+  proofType?: string;
+  proofFileName?: string;
+  proofUrl?: string;
+  proofUploadedAt?: string;
+  proofMimeType?: string;
   proofSizeKb?: number;
   reason: string;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Tone palettes — bg/fg pairs consumed by `.rec-pill` (which only carries the
-// shape; colour comes through inline style — same convention HrRecruitment
-// uses for priority / employment-type pills).
-// ─────────────────────────────────────────────────────────────────────────────
 const STAGE_TONE: Record<LeaveStage, { fg: string; bg: string; dot: string }> = {
   'Approved':          { fg: '#0a716a', bg: '#d3f0ee', dot: '#0ab39c' },
   'Pending (Manager)': { fg: '#a4661c', bg: '#fde8c4', dot: '#f59e0b' },
@@ -145,10 +113,6 @@ const PAYROLL_TONE: Record<PayrollMode, { fg: string; bg: string }> = {
   'Half-Pay':   { fg: '#a4661c', bg: '#fde8c4' },
 };
 
-// SLA traffic-light: green (fresh) → red (aging) → solid amber (breached).
-// Anchored against `appliedOn`; the 7-day cutoff matches deriveChain()'s
-// `aged_out` rule so the pill flips to OVERDUE the same moment HR auto-
-// escalation kicks in.
 type SlaTone = { label: string; bg: string; fg: string; solid?: boolean };
 function computeSla(r: LeaveRequest, today = new Date()): SlaTone | null {
   if (!r.stage.startsWith('Pending')) return null;
@@ -163,9 +127,6 @@ function computeSla(r: LeaveRequest, today = new Date()): SlaTone | null {
 const ACCENTS = ['#7c5cfc', '#0ab39c', '#f7b84b', '#f06548', '#0ea5e9', '#e83e8c', '#0c63b0', '#22c55e'];
 const accent = (i: number) => ACCENTS[i % ACCENTS.length];
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AnimatedNumber — same count-up the recruitment KPIs use.
-// ─────────────────────────────────────────────────────────────────────────────
 function AnimatedNumber({ value }: { value: number }) {
   const [display, setDisplay] = useState(0);
   useEffect(() => {
@@ -186,11 +147,6 @@ function AnimatedNumber({ value }: { value: number }) {
   return <>{display.toLocaleString()}</>;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Approval-chain projection. The backend stores the workflow as discrete
-// fields (managerStatus / hrStatus / escalatedToHr); the table and timeline
-// both consume a flat 3-node list, so this projection happens at render-time.
-// ─────────────────────────────────────────────────────────────────────────────
 interface ApprovalNode {
   initials: string;
   name: string;
@@ -263,22 +219,6 @@ const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
   return [self, manager, hr];
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HrLeave — page component. Layout, classes and table mirror HrRecruitment.
-// ─────────────────────────────────────────────────────────────────────────────
-// The page now surfaces "On Leave Today" as its own employee panel below
-// the KPI strip (avatar chips, not a count tile), so the KPI row drops to
-// four cards. Anchoring against a fixed demo date so the panel is always
-// populated until the backend feeds real `LEAVE_REQUESTS.startDate <= today
-// <= endDate` data.
-// ─────────────────────────────────────────────────────────────────────────────
-// API → LeaveRequest adapter. The interface above carries a bunch of fields
-// that the backend doesn't yet expose per-row (location, legalEntity, full
-// proof metadata, escalation reason). For each unknown field the adapter
-// emits a sensible default so the existing table cells keep rendering
-// without a wider type rewrite. As the backend grows these fields, the
-// adapter is the only place that needs to learn about them.
-// ─────────────────────────────────────────────────────────────────────────────
 function apiToLeaveRequest(api: ApiLeaveRequest, idx: number): LeaveRequest {
   const emp = api.employee;
   const empName = emp
@@ -289,7 +229,6 @@ function apiToLeaveRequest(api: ApiLeaveRequest, idx: number): LeaveRequest {
     || emp?.department?.name
     || '—';
 
-  // Map status + current_approval_level chain to the legacy stage shape.
   const chain = (api as any).approval_chain as Array<{ status?: string }> | null;
   const status = api.status;
   let stage: LeaveStage = 'Pending (Manager)';
@@ -304,21 +243,14 @@ function apiToLeaveRequest(api: ApiLeaveRequest, idx: number): LeaveRequest {
     managerStatus = 'Rejected';
     hrStatus = 'Pending';
   } else if (status === 'Cancelled') {
-    // Withdrawn by the employee before either approver acted — paint it
-    // grey rather than reusing the Rejected red so the row is clearly
-    // distinguishable from a denial in the queue.
     stage = 'Cancelled';
     managerStatus = 'NA';
     hrStatus = 'NA';
   } else {
-    // Pending — distinguish manager vs HR by which level we're currently on
     const level = (api as any).current_approval_level ?? 1;
     stage = level > 1 ? 'Pending (HR)' : 'Pending (Manager)';
   }
 
-  // Map the leave_type category to the existing LeaveType union. Falls
-  // through to "Casual" for anything we don't recognise — the table cell
-  // will still render with whatever palette is configured.
   const typeMap: Record<string, LeaveType> = {
     'Sick Leave': 'Sick', 'Casual Leave': 'Casual', 'Annual Leave': 'Annual',
     'Earned Leave': 'Earned', 'Comp Off': 'Comp Off',
@@ -372,29 +304,15 @@ const KPI_CARDS = [
 
 export default function HrLeave() {
   const navigate = useNavigate();
-  // Permission gating — the page is keyed by the `hr.leave` leaf on the
-  // Permissions sheet. A view-only grant must NOT expose approve / reject /
-  // bulk-select or the Leave Plans management screen. Super admin bypasses.
   const { user } = useAuth();
   const isSuperAdmin = user?.user_type === 'super_admin';
   const leavePerm = user?.permissions?.['hr.leave'];
   const canApprove = isSuperAdmin || !!leavePerm?.can_approve;
-  // Leave Plans is a management surface (create/edit/delete plans + types), so
-  // only surface its entry point when the user can add or edit.
   const canManagePlans = isSuperAdmin || !!leavePerm?.can_add || !!leavePerm?.can_edit;
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
 
-  // Pull every leave request the current user is allowed to see.
-  // /api/leave-requests/approvals scopes server-side: branch_user /
-  // client_admin / super_admin see the whole tenant; regular users see
-  // their direct reports + anything they've already acted on. The
-  // status filter is undefined here so we get All — the page's own
-  // tabs filter further client-side.
   const loadRequests = useCallback(async () => {
     try {
-      // Pass 'All' explicitly — the backend defaults status to 'Pending'
-      // when omitted, but this page (and its KPI cards / On-Leave-Today
-      // panel) needs every status to compute counts correctly.
       const list = await leaveRequestsApi.approvals({ status: 'All' });
       setRequests(list.map(apiToLeaveRequest));
     } catch (err) {
@@ -404,9 +322,6 @@ export default function HrLeave() {
   }, []);
   useEffect(() => { loadRequests(); }, [loadRequests]);
 
-  // Confirmation popup for the Approve / Reject row actions. Open state
-  // carries which row is being actioned and the intent so the modal copy +
-  // accent colour can react accordingly.
   const [confirmAction, setConfirmAction] = useState<
     { row: LeaveRequest; action: 'approve' | 'reject' } | null
   >(null);
@@ -425,10 +340,6 @@ export default function HrLeave() {
       } else {
         await leaveRequestsApi.reject(id, comment.trim() || undefined);
       }
-      // Refetch so the chain / stage / approver columns reflect the
-      // server's decision (multi-level chains may advance instead of
-      // terminating, which the local optimistic update wouldn't get
-      // right).
       await loadRequests();
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Action failed';
@@ -438,9 +349,6 @@ export default function HrLeave() {
     }
   };
 
-  // Filter state. Tabs drive the Status filter (no separate dropdown for it
-  // since the segmented control owns that pivot). Dropdowns cover the
-  // remaining facets — Department / Type / Stage / Payroll.
   const [search,  setSearch]  = useState('');
   const [status,  setStatus]  = useState<string>('All');
   const [department, setDepartment] = useState<string>('All');
@@ -450,19 +358,10 @@ export default function HrLeave() {
   const [page,    setPage]    = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  // Drawer state — opens the read-only details modal for a single row.
   const [detail, setDetail] = useState<LeaveRequest | null>(null);
-  // Collapsible state for the "On Leave Today" panel.
   const [todayOpen, setTodayOpen] = useState(true);
-  // The date the "On Leave Today" panel is filtering to. Defaults to
-  // the actual current date; HR can rewind / fast-forward via the
-  // date picker right next to the title so they can answer "who was
-  // on leave on the 5th?" without leaving the page.
   const [onLeaveDate, setOnLeaveDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
 
-  // Bulk-selection state — only Pending rows are selectable since terminal
-  // states can't be re-actioned. The header checkbox cycles select-all /
-  // deselect-all over the *currently visible* pending rows.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const isPendingRow = (r: LeaveRequest) => r.stage.startsWith('Pending');
   const toggleRow = (id: string) => {
@@ -493,9 +392,6 @@ export default function HrLeave() {
     };
   }, [requests]);
 
-  // Employees whose approved leave overlaps the panel's date. Defaults
-  // to "today" but HR can shift via the inline date picker — useful for
-  // "who was on leave on the 5th?" lookups without leaving the page.
   const onLeaveToday = useMemo(() => {
     return requests.filter(r =>
       r.stage === 'Approved' && r.fromDate <= onLeaveDate && r.toDate >= onLeaveDate
@@ -534,16 +430,11 @@ export default function HrLeave() {
   const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
   const goto = (p: number) => setPage(Math.min(Math.max(1, p), pageCount));
 
-  // Department options derived from the rows themselves so the dropdown
-  // never offers a value with zero matches.
   const DEPT_OPTIONS = [
     { value: 'All', label: 'All Departments' },
     ...Array.from(new Set(requests.map(r => r.department))).filter(Boolean).sort()
       .map(v => ({ value: v, label: v })),
   ];
-  // Stage filter values mirror the four real backend states. "Submitted"
-  // is intentionally absent — the backend skips that pseudo-state and
-  // sends new requests straight into Pending (Manager) or Pending (HR).
   const STAGE_OPTIONS = [
     { value: 'All',             label: 'All Stages' },
     { value: 'Manager Review',  label: 'Manager Review' },
@@ -575,9 +466,6 @@ export default function HrLeave() {
       <Row>
         <Col xs={12}>
           <div className="rec-page">
-            {/* ── Hero card — purple-tinted banner, mirrors Onboarding Hub.
-                  Uses the existing .onb-hero-card / .onb-hero-pill classes
-                  shipped by HrEmployeeOnboarding. ── */}
             <div className="frm-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
@@ -618,7 +506,6 @@ export default function HrLeave() {
               </div>
             </div>
 
-            {/* ── KPI cards (4 tiles) ── */}
             <Row className="g-3 mb-3 align-items-stretch rec-page-kpis">
               {KPI_CARDS.map(k => (
                 <Col key={k.key} xl={3} md={6} sm={6} xs={12}>
@@ -638,16 +525,8 @@ export default function HrLeave() {
               ))}
             </Row>
 
-            {/* ── On Leave Today — collapsible avatar strip. Header doubles
-                  as a toggle so the panel can fold away when HR wants more
-                  vertical space. Decorative gradient banner + by-leave-type
-                  mini-summary ("3 Sick · 2 Annual") makes the strip readable
-                  at a glance even before the chips render. */}
             <div className={`lv-today-card mb-3 ${todayOpen ? 'is-open' : 'is-closed'}`}>
               <div className="lv-today-head" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                {/* Banner — clicking it toggles the collapse. Kept as a
-                    button only on the banner so the date input stays
-                    independently clickable. */}
                 <button
                   type="button"
                   className="lv-today-head-btn"
@@ -679,10 +558,6 @@ export default function HrLeave() {
                   </span>
                 </button>
 
-                {/* Date filter — pick any day to see who's on leave on it.
-                    Uses the same styled date-nav as the Attendance page
-                    (prev / picker / next / Today) for visual consistency
-                    (HRMS-BUG-082). */}
                 <div className="d-flex align-items-center gap-2" style={{ marginLeft: 'auto' }}>
                   <label className="text-muted" style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase' }}>
                     Date
@@ -794,8 +669,6 @@ export default function HrLeave() {
               )}
             </div>
 
-            {/* ── Tabs (All / Pending / Approved / Rejected) — segmented control,
-                  drives the Status filter so the dropdown stays in sync. ── */}
             <div className="rec-tab-track mb-2">
               {([
                 { key: 'All',      label: 'All Leaves',      count: counts.tabs.All,      icon: 'ri-stack-line',          variant: 'in-progress' },
@@ -816,10 +689,6 @@ export default function HrLeave() {
               ))}
             </div>
 
-            {/* ── Bulk-action bar — only renders when at least one row is
-                  selected. Composed from existing recruitment classes
-                  (rec-header-count, rec-act-icon, rec-btn-primary,
-                  rec-btn-ghost) + Bootstrap utilities. */}
             {canApprove && selectedIds.size > 0 && (
               <div className="d-flex align-items-center gap-2 flex-wrap p-2 rounded-3 border mb-2 bg-light">
                 <span className="rec-header-count">
@@ -838,7 +707,6 @@ export default function HrLeave() {
               </div>
             )}
 
-            {/* ── Search + Filters + Table — single rec-list-frame ── */}
             <Card className="border-0 shadow-none mb-0 bg-transparent">
               <CardBody className="p-0">
                 <div className="rec-list-frame">
@@ -874,9 +742,6 @@ export default function HrLeave() {
 
                   <div className="rec-list-scroll">
                     {(() => {
-                      // Header checkbox toggles all *visible pending* rows on
-                      // the current page. Tri-state: indeterminate when only
-                      // some are selected, checked when all are.
                       const visiblePending = visible.filter(isPendingRow);
                       const visiblePendingIds = visiblePending.map(r => r.id);
                       const selectedVisible = visiblePendingIds.filter(id => selectedIds.has(id)).length;
@@ -984,13 +849,6 @@ export default function HrLeave() {
                               </td>
                               <td>
                                 {r.proof === 'Uploaded' ? (
-                                  // Uploaded → pill-button with eye icon. The
-                                  // proof is a file (image / PDF / etc.) so
-                                  // the click opens the proofUrl directly
-                                  // when one is present; the form-popup is
-                                  // *not* used because that's for request
-                                  // metadata, not files. Backend will fill
-                                  // proofUrl from the storage layer.
                                   <button
                                     type="button"
                                     className="lv-proof-btn lv-proof-uploaded"
@@ -1004,9 +862,6 @@ export default function HrLeave() {
                                     <i className="ri-eye-line lv-proof-view" />
                                   </button>
                                 ) : (
-                                  // Missing and N/A both render as a quiet
-                                  // dash — keeps the column scannable for
-                                  // rows where proof isn't actionable.
                                   <span className="text-muted fs-13">—</span>
                                 )}
                               </td>
@@ -1039,8 +894,6 @@ export default function HrLeave() {
                                     tone="info"
                                     onClick={() => setDetail(r)}
                                   />
-                                  {/* Approve / Reject require the can_approve grant on
-                                      hr.leave — view-only users see only "View details". */}
                                   {canApprove && (
                                     <>
                                   <ActionBtn
@@ -1079,7 +932,6 @@ export default function HrLeave() {
                     })()}
                   </div>
 
-                  {/* Pagination footer — same shape as recruitment */}
                   <WorklistPager
                     total={filtered.length}
                     page={safePage}
@@ -1094,7 +946,6 @@ export default function HrLeave() {
         </Col>
       </Row>
 
-      {/* ── Read-only details modal — mirrors HrRecruitment's view modal. ── */}
       <LeaveDetailsModal row={detail} onClose={() => setDetail(null)} />
       <ConfirmActionModal
         state={confirmAction}
@@ -1104,11 +955,7 @@ export default function HrLeave() {
     </>
   );
 }
-// ─────────────────────────────────────────────────────────────────────────────
-// LeaveDetailsModal — read-only Reactstrap Modal using the rec-form-modal
-// shell (same chrome HrRecruitment uses for its View modal). All copy lives
-// in tagged sub-components so the body reads top-to-bottom.
-// ─────────────────────────────────────────────────────────────────────────────
+
 function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose: () => void }) {
   if (!row) return null;
 
@@ -1134,7 +981,6 @@ function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose
       contentClassName="rec-view-content border-0"
     >
       <ModalBody className="p-0">
-        {/* Header */}
         <div className="rec-form-header" style={{ padding: '14px 22px 12px' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-3 min-w-0">
@@ -1168,11 +1014,8 @@ function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose
           </div>
         </div>
 
-        {/* Body */}
         <div className="rec-view-body" style={{ padding: '14px 18px', maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
 
-          {/* Leave Details — 3-column grid so values like the manager
-              "Name · Designation" line don't wrap awkwardly. */}
           <div className="rec-view-card">
             <div className="rec-view-grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0,1fr))' }}>
               <Field label="Leave Type" value={
@@ -1200,8 +1043,6 @@ function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose
             </div>
           </div>
 
-          {/* Approval Timeline — clean vertical list. Each step is a row:
-              colored dot + role/name/action/date + comment block beneath. */}
           <div className="rec-view-card mt-3">
             <div className="rec-view-label mb-2">Approval Timeline</div>
             <ApprovalTimelineList chain={chain} reportingManager={row.reportingManager} appliedOn={row.appliedOn} />
@@ -1226,13 +1067,9 @@ function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose
             )}
           </div>
 
-          {/* Policy Flags — auto-derived from the request shape (short
-              notice, long duration, manager rejection, etc). HR uses these
-              to spot-check requests that need a closer look. */}
           {(() => {
             const flags: { label: string; tone: { bg: string; fg: string } }[] = [];
 
-            // "Short Notice" — applied less than 2 days before the leave starts.
             const applied = new Date(row.appliedOn);
             const startsAt = new Date(row.fromDate);
             const noticeDays = Math.round((startsAt.getTime() - applied.getTime()) / (1000 * 60 * 60 * 24));
@@ -1240,22 +1077,18 @@ function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose
               flags.push({ label: 'Short Notice', tone: { bg: '#fde2dc', fg: '#b91c1c' } });
             }
 
-            // "Long Duration" — more than 5 working days.
             if (row.durationDays > 5) {
               flags.push({ label: 'Long Duration', tone: { bg: '#fde8c4', fg: '#a4661c' } });
             }
 
-            // "Manager Override" — HR overrode a manager rejection.
             if (row.escalationReason === 'manager_rejected' && row.hrStatus === 'Approved') {
               flags.push({ label: 'HR Override', tone: { bg: '#ede9fe', fg: '#5a3fd1' } });
             }
 
-            // "SLA Breached" — pending more than 7 days (auto-escalation cutoff).
             if (row.escalationReason === 'aged_out') {
               flags.push({ label: 'SLA Breached', tone: { bg: '#fef3c7', fg: '#92400e' } });
             }
 
-            // "Missing Proof" — required document hasn't been uploaded yet.
             if (row.proof === 'Missing') {
               flags.push({ label: 'Missing Proof', tone: { bg: '#fde2dc', fg: '#b91c1c' } });
             }
@@ -1282,9 +1115,6 @@ function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose
             );
           })()}
 
-          {/* Payroll & Balance Impact — per-leave-type usage bars + the
-              payroll mode this request will be charged against. Numbers are
-              dummy until the backend exposes /api/employees/:id/leave-balances. */}
           <div className="rec-view-card mt-3">
             <div className="rec-view-label mb-2">Payroll &amp; Balance Impact</div>
             {[
@@ -1319,7 +1149,6 @@ function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose
             </div>
           </div>
 
-          {/* Audit trail */}
           <div className="rec-view-card mt-3">
             <div className="rec-view-label mb-2">Audit Trail</div>
             <ul className="list-unstyled mb-0">
@@ -1342,7 +1171,6 @@ function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose
           </div>
         </div>
 
-        {/* Footer */}
         <div className="rec-form-footer">
           <span className="hint">Read-only view · Use the row actions to approve / reject</span>
           <button type="button" className="rec-btn-ghost" onClick={onClose}>
@@ -1354,18 +1182,6 @@ function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ApprovalTimelineList — horizontal stepper for the details modal.
-//   [Dot] —— [Dot] —— [Dot]
-//    You    Manager   HR
-//   Name    Name      Name
-//   Date    Date      Date
-// Uses a CSS grid (3 step columns Ã— auto-sized connector tracks) so the dots
-// always sit at fixed positions; connectors take only the leftover space
-// between them — no more stretched-out lines or off-centre dots.
-// Comments render as a single quote block underneath the row, attributed to
-// whichever actor left them, so a long comment doesn't break the alignment.
-// ─────────────────────────────────────────────────────────────────────────────
 function ApprovalTimelineList({
   chain, reportingManager, appliedOn,
 }: {
@@ -1373,7 +1189,6 @@ function ApprovalTimelineList({
   reportingManager: PersonRef;
   appliedOn: string;
 }) {
-  // Comments live below the row — one entry per actor that left a note.
   const comments = chain
     .filter(n => !!n.comment)
     .map(n => ({
@@ -1384,9 +1199,6 @@ function ApprovalTimelineList({
 
   return (
     <div>
-      {/* Step row — 3 columns of equal width with dots centred. The
-          connector line is painted as a flat ::before pseudo via inline
-          style on the rail. */}
       <div
         style={{
           display: 'grid',
@@ -1422,21 +1234,17 @@ function ApprovalTimelineList({
           const role = n.role === 'Self' ? 'You' : n.role === 'Manager' ? 'Manager' : 'HR';
           const dateLabel = formatDate(n.actionAt || (n.role === 'Self' ? appliedOn : ''));
 
-          // Connector colour reflects state of the *current* step.
           const connectorColor =
             isApproved ? '#10b981' : isRejected ? '#dc2626' : '#e5e7eb';
 
           return (
             <div key={i} className="text-center position-relative" style={{ minWidth: 0, opacity: isSkipped ? 0.6 : 1 }}>
-              {/* Connector — sits at dot's vertical centre, painted from the
-                  middle of this step's column to the start of the next. The
-                  fixed offsets keep it from clipping into the dots. */}
               {!isLast && (
                 <span
                   aria-hidden
                   style={{
                     position: 'absolute',
-                    top: 14,            // half the dot height
+                    top: 14,
                     left: 'calc(50% + 16px)',
                     right: 'calc(-50% + 16px)',
                     height: 2,
@@ -1446,7 +1254,6 @@ function ApprovalTimelineList({
                 />
               )}
 
-              {/* Dot */}
               <span
                 className="d-inline-flex align-items-center justify-content-center rounded-circle position-relative"
                 style={{
@@ -1459,7 +1266,6 @@ function ApprovalTimelineList({
                 <i className={dotIcon} />
               </span>
 
-              {/* Labels */}
               <div className="text-uppercase fw-bold mt-2" style={{ fontSize: 10, letterSpacing: '0.08em', color: 'var(--vz-secondary-color)' }}>
                 {role}
               </div>
@@ -1480,8 +1286,6 @@ function ApprovalTimelineList({
         })}
       </div>
 
-      {/* Comment block — one collapsed area below the row. Attributes each
-          comment to the actor who left it so HR can read them in context. */}
       {comments.length > 0 && (
         <div className="mt-3 px-3 py-2 rounded" style={{ background: '#f3eeff', border: '1px solid #d8c8ff' }}>
           {comments.map((c, i) => (
@@ -1497,11 +1301,6 @@ function ApprovalTimelineList({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ConfirmActionModal — guard-rail popup for Approve / Reject row actions.
-// HR sees the request summary, can leave a comment (mandatory for Reject so
-// the audit trail captures *why*), and confirms before the row mutates.
-// ─────────────────────────────────────────────────────────────────────────────
 function ConfirmActionModal({
   state, onClose, onConfirm,
 }: {
@@ -1510,16 +1309,12 @@ function ConfirmActionModal({
   onConfirm: (comment: string) => void;
 }) {
   const [comment, setComment] = useState('');
-  // Reset the comment whenever the popup opens so a previous draft doesn't
-  // leak between rows.
   useEffect(() => { if (state) setComment(''); }, [state?.row.id, state?.action]);
 
   if (!state) return null;
   const { row, action } = state;
   const isApprove = action === 'approve';
   const tType = TYPE_TONE[row.type];
-  // Reject without a reason is bad for the audit trail; require a comment
-  // to flip the confirm button on.
   const canConfirm = isApprove || comment.trim().length > 0;
 
   return (
@@ -1616,11 +1411,6 @@ function ConfirmActionModal({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ActionBtn — row-level icon button. Mirrors the helper in HrRecruitment.tsx
-// so the leave row-actions share the exact same chrome (rec-act-icon +
-// rec-act-tone-*) and disabled handling already defined in recruitment.css.
-// ─────────────────────────────────────────────────────────────────────────────
 function ActionBtn({
   title, icon, tone, onClick, disabled,
 }: {
@@ -1650,26 +1440,9 @@ function ActionBtn({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ChainDots — compact in-row approval-chain renderer.
-//   Self → Manager → HR rendered as 3 small connected avatars with a single
-//   caption underneath surfacing the latest decision / SLA hint.
-//
-// Visual states (mirrors the Onboarding-Hub stepper convention):
-//   approved  → solid green dot, white check icon, soft green ring
-//   rejected  → solid red dot, white close icon, soft red ring
-//   pending   → solid amber dot, white initials of the actor on duty
-//   skipped   → soft grey dot with dash icon, dimmed (HR-raised case)
-//   idle      → outlined grey dot with the ROLE abbreviation in muted text
-//               ("HR" when HR isn't yet involved)
-// ─────────────────────────────────────────────────────────────────────────────
 function ChainDots({ row }: { row: LeaveRequest }) {
   const chain = deriveChain(row);
 
-  // Caption — always reflects the *most recent* signal on the row:
-  //   resolved approved → "Approved: <last action date>"
-  //   resolved rejected → "Rejected: <last action date>"
-  //   pending           → SLA hint stored on the row (e.g., "3d pending")
   const lastAction = row.hrActionAt || row.managerActionAt;
   const caption =
     row.stage === 'Approved' && lastAction ? { text: `Approved: ${formatDate(lastAction)}`, tone: 'text-success' }
@@ -1688,11 +1461,6 @@ function ChainDots({ row }: { row: LeaveRequest }) {
           const isSkipped  = n.decision === 'skipped';
           const isLast     = i === chain.length - 1;
 
-          // Resolve the dot's visual treatment as a single object so the JSX
-          // stays readable. Approved / Rejected / Pending circles all carry
-          // the actor's initials so HR sees *who* acted at each step;
-          // colour alone conveys the decision. Idle / Skipped fall back to
-          // a role abbreviation since there's no actor history yet.
           const initialsContent = (
             <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.02em' }}>
               {n.initials || (n.role === 'Self' ? 'YOU' : n.role === 'Manager' ? 'MGR' : 'HR')}
@@ -1723,7 +1491,7 @@ function ChainDots({ row }: { row: LeaveRequest }) {
               shadow: 'none',
               content: <i className="ri-subtract-line" />,
             }
-            : /* idle */ {
+            : {
               bg: '#fff', fg: '#9ca3af',
               border: '1.5px solid #e5e7eb',
               shadow: 'none',
@@ -1734,8 +1502,6 @@ function ChainDots({ row }: { row: LeaveRequest }) {
               ),
             };
 
-          // Connector colour reflects whether the *current* step is past:
-          // green when this step is approved, red when rejected, otherwise grey.
           const connectorColor =
             isApproved ? '#16a34a' : isRejected ? '#dc2626' : '#cbd5e1';
 

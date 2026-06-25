@@ -5845,7 +5845,7 @@
    visual language stays consistent. */
 .ev-kpis {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   padding: 12px 20px;
   background: #ffffff;
@@ -9655,4 +9655,220 @@
     rgba(255,255,255,0) 100%);
   background-size: 50% 100%;
   background-repeat: no-repeat;
+}
+
+/* Holiday Calendar empty-state tip pill — keep the inline light amber tone in
+   light mode; remap to a translucent dark amber so it reads on the dark card. */
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .holiday-tip-pill {
+  background: rgba(245,158,11,0.18) !important;
+  color: #fcd34d !important;
+}
+
+/* Holiday Groups status pill — inline light tones in light mode; translucent
+   dark tones on the dark modal. */
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .holiday-status-pill[data-status="Active"] {
+  background: rgba(16,179,108,0.18) !important;
+  color: #6ee7b7 !important;
+}
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .holiday-status-pill[data-status="Inactive"] {
+  background: rgba(255,255,255,0.10) !important;
+  color: var(--vz-secondary-color) !important;
+}
+
+/* Exit Management page — extracted from inline <style> in HrExitManagement.tsx.
+   Serial-number column + .ep-* form-control overrides (rounded, themed, dark-aware). */
+.hr-exit-srno { color: var(--vz-secondary-color); font-weight: 600; }
+[data-bs-theme="dark"] .hr-exit-srno,
+[data-layout-mode="dark"] .hr-exit-srno { color: #d0d4dc; }
+
+.ep-input,
+.ep-textarea,
+.ep-select {
+  background: var(--vz-card-bg) !important;
+  color: var(--vz-heading-color, var(--vz-body-color)) !important;
+  border: 1px solid var(--vz-border-color) !important;
+  border-radius: 10px !important;
+  padding: 8px 12px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04) !important;
+  transition: border-color .18s ease, box-shadow .18s ease !important;
+  width: 100%;
+}
+.ep-input { height: 38px; }
+.ep-textarea { min-height: 64px; resize: vertical; }
+.ep-select {
+  height: 38px;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23878a99' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 10px center !important;
+  padding-right: 34px !important;
+}
+.ep-input::placeholder,
+.ep-textarea::placeholder {
+  color: var(--vz-secondary-color);
+  opacity: 0.65;
+}
+.ep-input:hover:not(:disabled),
+.ep-textarea:hover:not(:disabled),
+.ep-select:hover:not(:disabled) {
+  border-color: rgba(99,102,241,0.55) !important;
+  box-shadow: 0 2px 6px rgba(99,102,241,0.08) !important;
+}
+.ep-input:focus,
+.ep-textarea:focus,
+.ep-select:focus {
+  outline: none !important;
+  border-color: #6366f1 !important;
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.15), 0 4px 12px rgba(99,102,241,0.12) !important;
+}
+.ep-input:disabled,
+.ep-textarea:disabled,
+.ep-select:disabled {
+  background: var(--vz-secondary-bg) !important;
+  color: var(--vz-secondary-color) !important;
+  cursor: not-allowed;
+  opacity: 0.85;
+  box-shadow: none !important;
+}
+[data-bs-theme="dark"] .ep-select option,
+[data-layout-mode="dark"] .ep-select option {
+  background: #1c2531;
+  color: #e6e8ec;
+}
+.ep-field-label {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  color: var(--vz-secondary-color) !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+  margin-bottom: 6px !important;
+}
+[data-bs-theme="dark"] .ep-field-label,
+[data-layout-mode="dark"] .ep-field-label { color: #b0b4bd !important; }
+
+/* ── Payroll page (HrPayroll) ───────────────────────────────────────────────
+   Moved out of the HrPayroll.tsx inline <style> block. Most of the page uses
+   theme tokens (var(--vz-*)) and the .onb-* classes from HrEmployeeOnboarding;
+   these are the hardcoded pastel surfaces that need a dark-mode variant. */
+.pay-hero-select .master-select-toggle {
+  border: 1px solid #5a3fd1 !important;
+  background: #fff !important;
+  box-shadow: 0 4px 12px rgba(90,63,209,0.18) !important;
+}
+[data-bs-theme="dark"] .pay-hero-select .master-select-toggle {
+  background: var(--vz-card-bg) !important;
+  border-color: #a78bfa !important;
+}
+.pay-hero-run:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 22px rgba(90,63,209,0.42) !important;
+}
+.pay-hero-export:hover {
+  background: #f5f1ff !important;
+  box-shadow: 0 6px 14px rgba(90,63,209,0.20) !important;
+}
+[data-bs-theme="dark"] .pay-hero-export {
+  color: #c4b5fd !important;
+  border-color: #a78bfa !important;
+}
+[data-bs-theme="dark"] .pay-hero-export:hover {
+  background: rgba(124,92,252,0.16) !important;
+}
+
+.pay-cycle-icon { background: #ece6ff; color: #5a3fd1; }
+[data-bs-theme="dark"] .pay-cycle-icon { background: rgba(124,92,252,0.20); color: #c4b5fd; }
+
+.pay-cycle-chip { background: var(--vz-card-bg); border: 1px solid var(--vz-border-color); }
+.pay-cycle-chip.is-selected {
+  background: linear-gradient(135deg,#f5f1ff,#ece6ff);
+  border-color: #7c5cfc;
+  box-shadow: 0 4px 12px rgba(124,92,252,0.18);
+}
+.pay-cycle-chip-label { color: var(--vz-heading-color, var(--vz-body-color)); }
+.pay-cycle-chip.is-selected .pay-cycle-chip-label { color: #5a3fd1; }
+[data-bs-theme="dark"] .pay-cycle-chip.is-selected {
+  background: linear-gradient(135deg, rgba(124,92,252,0.22), rgba(124,92,252,0.10));
+  border-color: #a78bfa;
+  box-shadow: 0 4px 14px rgba(124,92,252,0.30);
+}
+[data-bs-theme="dark"] .pay-cycle-chip.is-selected .pay-cycle-chip-label { color: #c4b5fd; }
+
+.pay-banner { background: #e6f7f0; border: 1px solid #b6e4c8; color: #0a716a; }
+[data-bs-theme="dark"] .pay-banner {
+  background: rgba(10,113,106,0.18);
+  border-color: rgba(10,179,156,0.34);
+  color: #4dd4be;
+}
+
+.pay-mini-tile { border-radius: 12px; padding: 14px 16px; border: 1px solid; }
+.pay-mini-tile--green  { background: #e6f7ed; border-color: #b6e4c8; }
+.pay-mini-tile--red    { background: #fde7e3; border-color: #f5c0b5; }
+.pay-mini-tile--amber  { background: #fdf3d6; border-color: #f0d990; }
+.pay-mini-tile--blue   { background: #dceefe; border-color: #b8d6f7; }
+.pay-mini-tile--purple { background: #ece6ff; border-color: #d6c9ff; }
+.pay-mini-tile-num--green  { color: #108548; }
+.pay-mini-tile-num--red    { color: #b1401d; }
+.pay-mini-tile-num--amber  { color: #a06f00; }
+.pay-mini-tile-num--blue   { color: #0c63b0; }
+.pay-mini-tile-num--purple { color: #5a3fd1; }
+[data-bs-theme="dark"] .pay-mini-tile--green  { background: rgba(16,133,72,0.18);  border-color: rgba(16,179,108,0.36); }
+[data-bs-theme="dark"] .pay-mini-tile--red    { background: rgba(177,64,29,0.18);  border-color: rgba(240,101,72,0.38); }
+[data-bs-theme="dark"] .pay-mini-tile--amber  { background: rgba(160,111,0,0.18);  border-color: rgba(245,158,11,0.38); }
+[data-bs-theme="dark"] .pay-mini-tile--blue   { background: rgba(12,99,176,0.18);  border-color: rgba(59,130,246,0.38); }
+[data-bs-theme="dark"] .pay-mini-tile--purple { background: rgba(90,63,209,0.18);  border-color: rgba(124,92,252,0.38); }
+[data-bs-theme="dark"] .pay-mini-tile-num--green  { color: #6ee7b7; }
+[data-bs-theme="dark"] .pay-mini-tile-num--red    { color: #fda192; }
+[data-bs-theme="dark"] .pay-mini-tile-num--amber  { color: #fcd34d; }
+[data-bs-theme="dark"] .pay-mini-tile-num--blue   { color: #93c5fd; }
+[data-bs-theme="dark"] .pay-mini-tile-num--purple { color: #c4b5fd; }
+
+[data-bs-theme="dark"] .pay-cycle-status-pill { filter: brightness(1.05); }
+
+[data-bs-theme="dark"] .onb-pill { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); }
+
+[data-bs-theme="dark"] .pay-tab-count-inactive {
+  background: rgba(255,255,255,0.08) !important;
+  color: var(--vz-secondary-color) !important;
+}
+
+/* ── Attendance page (HrAttendance) ─────────────────────────────────────────
+   Moved out of the HrAttendance.tsx inline <style> block. Search-field resting
+   border + dark-mode remap of the hardcoded pastel status pills. */
+.att-emplist-search .search-box .form-control {
+  border: 1px solid #cbd5e1;
+}
+[data-bs-theme="dark"] .att-emplist-search .search-box .form-control,
+[data-layout-mode="dark"] .att-emplist-search .search-box .form-control {
+  border-color: rgba(255,255,255,0.20);
+}
+.att-emplist-search .search-box .form-control:focus {
+  border-color: rgba(99,102,241,0.45);
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
+}
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Present"] {
+  color: #6ee7b7 !important; background: rgba(34,197,94,0.18) !important;
+}
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Late"],
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Half Day"] {
+  color: #fcd34d !important; background: rgba(245,158,11,0.18) !important;
+}
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Missing In"],
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Missing Out"],
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Absent"] {
+  color: #fca5a5 !important; background: rgba(239,68,68,0.18) !important;
+}
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Weekly Off"],
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Holiday"] {
+  color: #93c5fd !important; background: rgba(59,130,246,0.18) !important;
+}
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="On Duty"],
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Work From Home"] {
+  color: #5eead4 !important; background: rgba(20,184,166,0.18) !important;
+}
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Leave"],
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Corrected"] {
+  color: #c4b5fd !important; background: rgba(124,92,252,0.18) !important;
 }

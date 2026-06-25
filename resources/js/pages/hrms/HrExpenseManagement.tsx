@@ -786,7 +786,7 @@ export default function HrExpenseManagement() {
                 Export
                 <i className="ri-arrow-down-s-line ms-1" style={{ fontSize: 16 }} />
               </DropdownToggle>
-              <DropdownMenu end>
+              <DropdownMenu end container="body" strategy="fixed">
                 <DropdownItem header>Download as</DropdownItem>
                 <DropdownItem onClick={() => runExport('xlsx')}>
                   <i className="ri-file-excel-2-line me-2 text-success" />Excel (.xlsx)

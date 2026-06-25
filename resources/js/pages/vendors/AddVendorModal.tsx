@@ -5314,8 +5314,9 @@ function AddProductMappingPopup(props: {
 const SCOPED_CSS = `
 .avm-backdrop {
   position: fixed; inset: 0; z-index: 1090;
-  background: rgba(49, 22, 99, .42);
-  backdrop-filter: blur(3px);
+  background: rgba(40, 44, 52, .42);
+  backdrop-filter: blur(7px) saturate(118%);
+  -webkit-backdrop-filter: blur(7px) saturate(118%);
   display: flex; align-items: flex-start; justify-content: center;
   padding: 24px 20px;
   overflow-y: auto;
