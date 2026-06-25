@@ -48,102 +48,125 @@ class AttendanceBackfillController extends Controller
             $employees = array_filter(array_map('intval', explode(',', $employees)));
         }
 
-        $createdAtt = 0;
-        $skippedAtt = 0;
-        $createdPunch = 0;
+        @set_time_limit(0); // belt-and-suspenders; bulk insert is fast anyway
 
-        DB::transaction(function () use (
-            $clientId, $branchId, $start, $end, $employees,
-            &$createdAtt, &$skippedAtt, &$createdPunch
-        ) {
-            $tz = self::DISPLAY_TZ;
-            $dayIdx = 0;
+        $tz  = self::DISPLAY_TZ;
+        $nowUtc = Carbon::now('UTC')->format('Y-m-d H:i:s');
+        $employees = array_values(array_map('intval', (array) $employees));
 
-            for ($day = $start->copy(); $day->lte($end); $day->addDay()) {
-                if ($day->isWeekend()) {
-                    continue; // Mon-Fri only
-                }
-                $dayIdx++;
-                $date = $day->toDateString();
-
-                foreach ($employees as $eid) {
-                    $eid  = (int) $eid;
-                    $seed = $eid * 7 + $dayIdx;
-
-                    // Status mix — mostly Present, deterministic sprinkle.
-                    $absent = (($eid + $dayIdx) % 23 === 0);
-                    $leave  = (($eid + $dayIdx) % 37 === 0);
-                    $late   = ($seed % 11 === 0);
-                    $status = 'Present';
-                    if ($absent)    $status = 'Absent';
-                    elseif ($leave) $status = 'Leave';
-                    elseif ($late)  $status = 'Late';
-
-                    // Skip if a row already exists (idempotent / non-destructive).
-                    $existing = Attendance::where('employee_id', $eid)
-                        ->whereDate('attendance_date', $date)
-                        ->first();
-                    if ($existing) {
-                        $skippedAtt++;
-                        continue;
-                    }
-
-                    $inUtc = $outUtc = null;
-                    if ($status !== 'Absent' && $status !== 'Leave') {
-                        $inMin  = $late ? (40 + $seed % 25) : (25 + $seed % 20);
-                        $inH    = 9 + intdiv($inMin, 60);
-                        $inM    = $inMin % 60;
-                        $outMin = 20 + ($seed % 30);
-
-                        $inUtc  = Carbon::parse(sprintf('%s %02d:%02d:00', $date, $inH, $inM), $tz)->utc();
-                        $outUtc = Carbon::parse(sprintf('%s 18:%02d:00', $date, $outMin), $tz)->utc();
-                    }
-
-                    $att = Attendance::create([
-                        'client_id'        => $clientId,
-                        'branch_id'        => $branchId,
-                        'employee_id'      => $eid,
-                        'attendance_date'  => $date,
-                        'check_in_at'      => $inUtc,
-                        'check_out_at'     => $outUtc,
-                        'check_in_method'  => $inUtc ? 'manual' : null,
-                        'check_out_method' => $outUtc ? 'manual' : null,
-                        'status'           => $status,
-                    ]);
-                    $createdAtt++;
-
-                    if ($inUtc) {
-                        AttendancePunch::create([
-                            'attendance_id' => $att->id,
-                            'employee_id'   => $eid,
-                            'punched_at'    => $inUtc,
-                            'direction'     => 'in',
-                            'label'         => 'Check In',
-                            'method'        => 'manual',
-                        ]);
-                        AttendancePunch::create([
-                            'attendance_id' => $att->id,
-                            'employee_id'   => $eid,
-                            'punched_at'    => $outUtc,
-                            'direction'     => 'out',
-                            'label'         => 'Check Out',
-                            'method'        => 'manual',
-                        ]);
-                        $createdPunch += 2;
-                    }
-                }
+        // ---- Build all attendance rows in memory (no per-row queries) ----
+        $rows   = [];
+        $dayIdx = 0;
+        for ($day = $start->copy(); $day->lte($end); $day->addDay()) {
+            if ($day->isWeekend()) {
+                continue; // Mon-Fri only
             }
+            $dayIdx++;
+            $date = $day->toDateString();
+
+            foreach ($employees as $eid) {
+                $seed = $eid * 7 + $dayIdx;
+
+                $absent = (($eid + $dayIdx) % 23 === 0);
+                $leave  = (($eid + $dayIdx) % 37 === 0);
+                $late   = ($seed % 11 === 0);
+                $status = 'Present';
+                if ($absent)    $status = 'Absent';
+                elseif ($leave) $status = 'Leave';
+                elseif ($late)  $status = 'Late';
+
+                $inUtc = $outUtc = null;
+                if ($status !== 'Absent' && $status !== 'Leave') {
+                    $inMin  = $late ? (40 + $seed % 25) : (25 + $seed % 20);
+                    $inH    = 9 + intdiv($inMin, 60);
+                    $inM    = $inMin % 60;
+                    $outMin = 20 + ($seed % 30);
+                    $inUtc  = Carbon::parse(sprintf('%s %02d:%02d:00', $date, $inH, $inM), $tz)->utc()->format('Y-m-d H:i:s');
+                    $outUtc = Carbon::parse(sprintf('%s 18:%02d:00', $date, $outMin), $tz)->utc()->format('Y-m-d H:i:s');
+                }
+
+                $rows[] = [
+                    'client_id'        => $clientId,
+                    'branch_id'        => $branchId,
+                    'employee_id'      => $eid,
+                    'attendance_date'  => $date,
+                    'check_in_at'      => $inUtc,
+                    'check_out_at'     => $outUtc,
+                    'check_in_method'  => $inUtc ? 'manual' : null,
+                    'check_out_method' => $outUtc ? 'manual' : null,
+                    'status'           => $status,
+                    'notes'            => null,
+                    'created_at'       => $nowUtc,
+                    'updated_at'       => $nowUtc,
+                ];
+            }
+        }
+
+        $startStr = $start->toDateString();
+        $endStr   = $end->toDateString();
+        $idList   = implode(',', $employees);
+
+        $before = DB::table('attendances')
+            ->where('client_id', $clientId)->where('branch_id', $branchId)
+            ->whereIn('employee_id', $employees)
+            ->whereBetween('attendance_date', [$startStr, $endStr])
+            ->count();
+
+        DB::transaction(function () use ($rows) {
+            // insertOrIgnore -> Postgres ON CONFLICT DO NOTHING, so the
+            // UNIQUE(employee_id, attendance_date) makes re-runs non-destructive.
+            foreach (array_chunk($rows, 500) as $chunk) {
+                DB::table('attendances')->insertOrIgnore($chunk);
+            }
+
+            // Derive Check In / Check Out punches straight from the rows we just
+            // inserted — two statements total, guarded so they never duplicate.
+            DB::statement("
+                INSERT INTO attendance_punches
+                    (attendance_id, employee_id, punched_at, direction, label, method, created_at, updated_at)
+                SELECT a.id, a.employee_id, a.check_in_at, 'in', 'Check In', 'manual', NOW(), NOW()
+                FROM attendances a
+                WHERE a.client_id = ? AND a.branch_id = ?
+                  AND a.employee_id IN ($idList)
+                  AND a.attendance_date BETWEEN ? AND ?
+                  AND a.check_in_at IS NOT NULL
+                  AND NOT EXISTS (SELECT 1 FROM attendance_punches p WHERE p.attendance_id = a.id AND p.direction = 'in')
+            ", [$clientId, $branchId, $startStr, $endStr]);
+
+            DB::statement("
+                INSERT INTO attendance_punches
+                    (attendance_id, employee_id, punched_at, direction, label, method, created_at, updated_at)
+                SELECT a.id, a.employee_id, a.check_out_at, 'out', 'Check Out', 'manual', NOW(), NOW()
+                FROM attendances a
+                WHERE a.client_id = ? AND a.branch_id = ?
+                  AND a.employee_id IN ($idList)
+                  AND a.attendance_date BETWEEN ? AND ?
+                  AND a.check_out_at IS NOT NULL
+                  AND NOT EXISTS (SELECT 1 FROM attendance_punches p WHERE p.attendance_id = a.id AND p.direction = 'out')
+            ", [$clientId, $branchId, $startStr, $endStr]);
         });
+
+        $after = DB::table('attendances')
+            ->where('client_id', $clientId)->where('branch_id', $branchId)
+            ->whereIn('employee_id', $employees)
+            ->whereBetween('attendance_date', [$startStr, $endStr])
+            ->count();
+
+        $totalPunches = DB::table('attendance_punches')
+            ->whereIn('employee_id', $employees)
+            ->whereBetween('punched_at', [$startStr . ' 00:00:00', $endStr . ' 23:59:59'])
+            ->count();
 
         return response()->json([
             'message'              => 'Attendance backfill complete.',
-            'window'               => [$start->toDateString(), $end->toDateString()],
+            'window'               => [$startStr, $endStr],
             'client_id'            => $clientId,
             'branch_id'            => $branchId,
             'employees'            => count($employees),
-            'attendances_created'  => $createdAtt,
-            'attendances_skipped'  => $skippedAtt,
-            'punches_created'      => $createdPunch,
+            'attendances_created'  => $after - $before,
+            'attendances_skipped'  => count($rows) - ($after - $before),
+            'attendances_total'    => $after,
+            'punches_total'        => $totalPunches,
         ]);
     }
 }
