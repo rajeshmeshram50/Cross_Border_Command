@@ -9,21 +9,7 @@ import api from '../../api';
 import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
 import { ShimmerDashboard } from '../../components/ui/Shimmer';
 import { useChartTheme } from '../../hooks/useChartTheme';
-
-/* ───────────────────────────────────────────────────────────────────────────
- *  HRMS Overview — live dashboard at /hr/overview.
- *
- *  Pulls a single aggregate payload from GET /api/hrms/overview and renders:
- *    • a strip of KPI cards (headcount, new hires, open roles, etc.)
- *    • a "structure" strip (departments / designations / roles totals)
- *    • department headcount + gender split
- *    • 12-month joining + exit trends
- *    • recruitment + expense status pies
- *    • recent and upcoming joiners tables
- *
- *  All counts respect the active BranchSwitcher selection — the controller
- *  re-runs aggregates whenever selectedBranchId changes.
- * ───────────────────────────────────────────────────────────────────────── */
+import './HrOverview.css';
 
 const PALETTE = ['#405189', '#0ab39c', '#f7b84b', '#f06548', '#299cdb', '#9b72cf', '#7c5cfc', '#0d8aff'];
 const GENDER_COLORS: Record<string, string> = {
@@ -59,8 +45,6 @@ interface OverviewData {
   expense_by_category: Array<{ category: string; amount: number; count: number }>;
 }
 
-/** Smooth count-up animation for KPI numbers. Capped at 1.2s so big numbers
- *  don't take forever to settle; ticks 60 times max regardless of magnitude. */
 function AnimatedNumber({ value }: { value: number }) {
   const [display, setDisplay] = useState(0);
   useEffect(() => {
@@ -89,101 +73,34 @@ interface KpiProps {
   hint?: string;
 }
 
-/**
- * Stat-only KPI tile. No `onClick` — the overview is informational; users
- * navigate from the actual HR module pages, not the dashboard. Hover lift
- * is pure visual polish.
- *
- * Background uses `var(--vz-card-bg)` (white in light mode, dark-surface
- * token in dark mode) so the card stays readable on either theme.
- */
 function KpiCard({ label, value, iconClass, gradient, hint }: KpiProps) {
   return (
-    <div
-      className="hr-ov-kpi-card"
-      style={{
-        borderRadius: 16,
-        padding: '18px 18px 14px',
-        boxShadow: '0 6px 16px -4px rgba(15, 23, 42, 0.10), 0 2px 4px rgba(15, 23, 42, 0.06)',
-        border: '1px solid var(--vz-border-color)',
-        background: 'var(--vz-card-bg)',
-        position: 'relative',
-        overflow: 'hidden',
-        height: '100%',
-      }}
-    >
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: gradient }} />
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+    <div className="hr-ov-kpi-card">
+      <div className="hr-ov-kpi-strip" style={{ background: gradient }} />
+      <div className="hr-ov-kpi-head">
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>{label}</p>
-          <h3 style={{
-            fontSize: 'clamp(20px, 1.8vw, 26px)',
-            fontWeight: 800,
-            color: 'var(--vz-heading-color, var(--vz-body-color))',
-            margin: 0, lineHeight: 1.05,
-          }}>
+          <p className="hr-ov-kpi-label">{label}</p>
+          <h3 className="hr-ov-kpi-value">
             <AnimatedNumber value={value} />
           </h3>
-          {hint && <div style={{ marginTop: 6, fontSize: 11, color: 'var(--vz-secondary-color)' }}>{hint}</div>}
+          {hint && <div className="hr-ov-kpi-hint">{hint}</div>}
         </div>
-        <div className="hr-ov-kpi-icon" style={{
-          width: 40, height: 40, borderRadius: 12,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: gradient, flexShrink: 0,
-        }}>
-          <i className={iconClass} style={{ fontSize: 18, color: '#fff' }} />
+        <div className="hr-ov-kpi-icon" style={{ background: gradient }}>
+          <i className={iconClass} />
         </div>
       </div>
     </div>
   );
 }
 
-/* Shared hover treatment for HR Overview KPI cards — same recipe as
-   hr-emp-kpi-card / admin-kpi-card / myteam-kpi-tile so the product
-   feels coherent: 4px translateY lift, deeper violet shadow, violet
-   border tint, and a 1.06x scale on the gradient icon tile. */
-function HrOverviewKpiStyles() {
-  return (
-    <style>{`
-      .hr-ov-kpi-card {
-        transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
-      }
-      .hr-ov-kpi-card:hover {
-        transform: translateY(-4px);
-        box-shadow:
-          0 16px 32px -8px rgba(15, 23, 42, 0.18),
-          0 4px 10px rgba(124, 92, 252, 0.10);
-        border-color: rgba(124, 92, 252, 0.45) !important;
-      }
-      [data-bs-theme="dark"] .hr-ov-kpi-card:hover,
-      [data-layout-mode="dark"] .hr-ov-kpi-card:hover {
-        box-shadow:
-          0 18px 36px -8px rgba(0, 0, 0, 0.65),
-          0 4px 12px rgba(124, 92, 252, 0.25);
-        border-color: rgba(124, 92, 252, 0.55) !important;
-      }
-      .hr-ov-kpi-icon {
-        transition: transform .18s ease, box-shadow .18s ease;
-      }
-      .hr-ov-kpi-card:hover .hr-ov-kpi-icon {
-        transform: scale(1.06);
-        box-shadow: 0 8px 18px rgba(0,0,0,0.18);
-      }
-    `}</style>
-  );
-}
-
 const ChartTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{
-      background: '#1e2a3a', borderRadius: 10, padding: '8px 14px',
-      boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: 'none', fontSize: 12,
-    }}>
-      {label && <div style={{ color: '#a8b8c8', fontWeight: 600, marginBottom: 4, fontSize: 11 }}>{label}</div>}
+    <div className="hr-ov-tooltip">
+      {label && <div className="hr-ov-tooltip-label">{label}</div>}
       {payload.map((p: any, i: number) => (
-        <div key={i} style={{ color: '#fff', fontWeight: 700, fontSize: 13 }}>
-          {p.name && <span style={{ color: '#a8b8c8', fontWeight: 500, marginRight: 6 }}>{p.name}:</span>}
+        <div key={i} className="hr-ov-tooltip-row">
+          {p.name && <span className="hr-ov-tooltip-key">{p.name}:</span>}
           {typeof p.value === 'number' ? p.value.toLocaleString() : p.value}
         </div>
       ))}
@@ -191,39 +108,8 @@ const ChartTooltip = ({ active, payload, label }: any) => {
   );
 };
 
-const cardStyle: React.CSSProperties = {
-  borderRadius: 16,
-  border: '1px solid var(--vz-border-color)',
-  boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
-  overflow: 'hidden',
-  marginBottom: 0,
-  height: '100%',
-};
-// Card header rhythm — matches Admin / Branch dashboards (16px 20px
-// padding, 15px / 11px font pair) so every dashboard card reads as
-// part of the same product.
-const cardHeaderStyle: React.CSSProperties = {
-  background: 'var(--vz-card-bg)',
-  borderBottom: '1px solid var(--vz-border-color)',
-  padding: '16px 20px',
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-};
-const cardTitleStyle: React.CSSProperties = {
-  fontWeight: 700,
-  fontSize: 15,
-  color: 'var(--vz-heading-color, var(--vz-body-color))',
-  margin: 0,
-};
-const cardSubStyle: React.CSSProperties = {
-  margin: 0,
-  marginTop: 2,
-  fontSize: 11,
-  color: 'var(--vz-secondary-color)',
-};
-
 function fmtDate(s: string | null): string {
   if (!s) return '—';
-  // YYYY-MM-DD → "12 May 2026"
   try {
     return new Date(s + 'T00:00:00').toLocaleDateString('en-IN', {
       day: '2-digit', month: 'short', year: 'numeric',
@@ -236,9 +122,6 @@ export default function HrOverview() {
   const [data, setData]     = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]   = useState<string | null>(null);
-  // Theme-aware grid + axis palette, same hook the other dashboards
-  // use so a flip between light / dark mode keeps the chart readable
-  // without harsh white grid lines on the dark card.
   const ct = useChartTheme();
 
   useEffect(() => {
@@ -250,10 +133,6 @@ export default function HrOverview() {
       signal: ctrl.signal,
     })
       .then(r => {
-        // Defensive normalization — guarantees every array field is iterable
-        // even if the API returns a partial / unexpected shape (e.g. one of
-        // the aggregates silently failed server-side). Keeps the page from
-        // crashing on `.map()` / spread of `undefined`.
         const raw = r.data || {};
         const arr = (v: any) => Array.isArray(v) ? v : [];
         setData({
@@ -295,10 +174,6 @@ export default function HrOverview() {
     return () => ctrl.abort();
   }, [selectedBranchId]);
 
-  // Trim "Headcount by Department" to top 8 — beyond that the bar chart
-  // labels overlap. Remaining departments roll up into "Other".
-  // Defensive: if the API returns null / an unexpected shape we still want
-  // a usable array, otherwise spreading would throw "not iterable".
   const departmentChart = useMemo(() => {
     const rows = Array.isArray(data?.by_department) ? data!.by_department : [];
     const sorted = [...rows].sort((a, b) => b.count - a.count);
@@ -313,7 +188,7 @@ export default function HrOverview() {
   if (error) {
     return (
       <div className="p-4">
-        <div style={{ ...cardStyle, padding: 32, textAlign: 'center' }}>
+        <div className="hr-ov-card" style={{ padding: 32, textAlign: 'center' }}>
           <i className="ri-error-warning-line" style={{ fontSize: 40, color: '#f06548' }} />
           <h5 className="mt-3 fw-bold">Couldn't load HR overview</h5>
           <p className="text-muted mb-0">{error}</p>
@@ -328,11 +203,6 @@ export default function HrOverview() {
 
   return (
     <div>
-      <HrOverviewKpiStyles />
-      {/* Page header — same typography rhythm as AdminDashboard /
-          BranchDashboard so flipping between dashboards doesn't feel
-          like a different app: h4 at 20/800, sub at 12. */}
-      {/* Header strip — same shape as the Clients / Branches module headers. */}
       <div className="frm-cstrip mb-3">
         <span className="frm-cstrip-accent" />
         <div className="frm-cstrip-left">
@@ -353,7 +223,6 @@ export default function HrOverview() {
         </span>
       </div>
 
-      {/* ── KPI strip ───────────────────────────────────────────────────── */}
       <Row className="g-3 mb-3">
         <Col xs={6} md={4} lg={2}>
           <KpiCard
@@ -411,12 +280,11 @@ export default function HrOverview() {
         </Col>
       </Row>
 
-      {/* ── Structure strip ─────────────────────────────────────────────── */}
-      <Card style={{ ...cardStyle, marginBottom: 16 }}>
+      <Card className="hr-ov-card" style={{ marginBottom: 16 }}>
         <CardBody style={{ padding: '14px 18px' }}>
           <Row className="g-2 align-items-center">
             <Col xs={12} md={3}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              <div className="hr-ov-eyebrow">
                 Org Structure
               </div>
               <div style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)' }}>Master records currently defined</div>
@@ -448,14 +316,13 @@ export default function HrOverview() {
         </CardBody>
       </Card>
 
-      {/* ── Row: Department headcount + Gender split ───────────────────── */}
       <Row className="g-3 mb-3">
         <Col xs={12} lg={8}>
-          <Card style={cardStyle}>
-            <div style={cardHeaderStyle}>
+          <Card className="hr-ov-card">
+            <div className="hr-ov-card-head">
               <div>
-                <h5 style={cardTitleStyle}>Headcount by Department</h5>
-                <p style={cardSubStyle}>Top {Math.min(departmentChart.length, 8)} departments</p>
+                <h5 className="hr-ov-card-title">Headcount by Department</h5>
+                <p className="hr-ov-card-sub">Top {Math.min(departmentChart.length, 8)} departments</p>
               </div>
               <i className="ri-building-line" style={{ fontSize: 18, color: '#405189' }} />
             </div>
@@ -482,11 +349,11 @@ export default function HrOverview() {
         </Col>
 
         <Col xs={12} lg={4}>
-          <Card style={cardStyle}>
-            <div style={cardHeaderStyle}>
+          <Card className="hr-ov-card">
+            <div className="hr-ov-card-head">
               <div>
-                <h5 style={cardTitleStyle}>Gender Split</h5>
-                <p style={cardSubStyle}>Across active employees</p>
+                <h5 className="hr-ov-card-title">Gender Split</h5>
+                <p className="hr-ov-card-sub">Across active employees</p>
               </div>
               <i className="ri-user-2-line" style={{ fontSize: 18, color: '#e83e8c' }} />
             </div>
@@ -503,9 +370,6 @@ export default function HrOverview() {
                         nameKey="gender"
                         innerRadius={55}
                         outerRadius={85}
-                        // No padding gap + no stroke so the slices meet
-                        // cleanly with no white seam — matches the
-                        // donut treatment on Admin / Branch dashboards.
                         paddingAngle={0}
                         stroke="none"
                       >
@@ -528,14 +392,13 @@ export default function HrOverview() {
         </Col>
       </Row>
 
-      {/* ── Row: Joining trend + Exit trend ─────────────────────────────── */}
       <Row className="g-3 mb-3">
         <Col xs={12} lg={6}>
-          <Card style={cardStyle}>
-            <div style={cardHeaderStyle}>
+          <Card className="hr-ov-card">
+            <div className="hr-ov-card-head">
               <div>
-                <h5 style={cardTitleStyle}>Joining Trend</h5>
-                <p style={cardSubStyle}>Last 12 months</p>
+                <h5 className="hr-ov-card-title">Joining Trend</h5>
+                <p className="hr-ov-card-sub">Last 12 months</p>
               </div>
               <i className="ri-user-follow-line" style={{ fontSize: 18, color: '#0ab39c' }} />
             </div>
@@ -543,10 +406,6 @@ export default function HrOverview() {
               <ResponsiveContainer width="100%" height={240}>
                 <AreaChart data={data.joining_trend} margin={{ top: 8, right: 12, left: -10, bottom: 0 }}>
                   <defs>
-                    {/* 3-stop fill + glow filter, same recipe as the
-                       polished area charts on Admin / Branch dashboards
-                       so the curve lifts off the canvas instead of
-                       sitting flat. */}
                     <linearGradient id="joinGrad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%"   stopColor="#0ab39c" stopOpacity={0.45} />
                       <stop offset="55%"  stopColor="#0ab39c" stopOpacity={0.15} />
@@ -574,11 +433,11 @@ export default function HrOverview() {
         </Col>
 
         <Col xs={12} lg={6}>
-          <Card style={cardStyle}>
-            <div style={cardHeaderStyle}>
+          <Card className="hr-ov-card">
+            <div className="hr-ov-card-head">
               <div>
-                <h5 style={cardTitleStyle}>Exit Trend</h5>
-                <p style={cardSubStyle}>Last 12 months</p>
+                <h5 className="hr-ov-card-title">Exit Trend</h5>
+                <p className="hr-ov-card-sub">Last 12 months</p>
               </div>
               <i className="ri-logout-box-line" style={{ fontSize: 18, color: '#f06548' }} />
             </div>
@@ -608,14 +467,13 @@ export default function HrOverview() {
         </Col>
       </Row>
 
-      {/* ── Row: Recruitment status + Expense status ────────────────────── */}
       <Row className="g-3 mb-3">
         <Col xs={12} lg={6}>
-          <Card style={cardStyle}>
-            <div style={cardHeaderStyle}>
+          <Card className="hr-ov-card">
+            <div className="hr-ov-card-head">
               <div>
-                <h5 style={cardTitleStyle}>Recruitment Status</h5>
-                <p style={cardSubStyle}>All requisitions</p>
+                <h5 className="hr-ov-card-title">Recruitment Status</h5>
+                <p className="hr-ov-card-sub">All requisitions</p>
               </div>
               <i className="ri-search-line" style={{ fontSize: 18, color: '#299cdb' }} />
             </div>
@@ -625,11 +483,11 @@ export default function HrOverview() {
           </Card>
         </Col>
         <Col xs={12} lg={6}>
-          <Card style={cardStyle}>
-            <div style={cardHeaderStyle}>
+          <Card className="hr-ov-card">
+            <div className="hr-ov-card-head">
               <div>
-                <h5 style={cardTitleStyle}>Expense Claims</h5>
-                <p style={cardSubStyle}>By approval state</p>
+                <h5 className="hr-ov-card-title">Expense Claims</h5>
+                <p className="hr-ov-card-sub">By approval state</p>
               </div>
               <i className="ri-bill-line" style={{ fontSize: 18, color: '#f7b84b' }} />
             </div>
@@ -640,14 +498,13 @@ export default function HrOverview() {
         </Col>
       </Row>
 
-      {/* ── Row: Department turnover + Probation snapshot + Expense by category ─ */}
       <Row className="g-3 mb-3">
         <Col xs={12} lg={6}>
-          <Card style={cardStyle}>
-            <div style={cardHeaderStyle}>
+          <Card className="hr-ov-card">
+            <div className="hr-ov-card-head">
               <div>
-                <h5 style={cardTitleStyle}>Department Turnover</h5>
-                <p style={cardSubStyle}>Exits last 12 months ÷ current headcount</p>
+                <h5 className="hr-ov-card-title">Department Turnover</h5>
+                <p className="hr-ov-card-sub">Exits last 12 months ÷ current headcount</p>
               </div>
               <i className="ri-fire-line" style={{ fontSize: 18, color: '#f06548' }} />
             </div>
@@ -658,11 +515,11 @@ export default function HrOverview() {
         </Col>
 
         <Col xs={12} md={6} lg={3}>
-          <Card style={cardStyle}>
-            <div style={cardHeaderStyle}>
+          <Card className="hr-ov-card">
+            <div className="hr-ov-card-head">
               <div>
-                <h5 style={cardTitleStyle}>Probation Snapshot</h5>
-                <p style={cardSubStyle}>Current vs completed</p>
+                <h5 className="hr-ov-card-title">Probation Snapshot</h5>
+                <p className="hr-ov-card-sub">Current vs completed</p>
               </div>
               <i className="ri-time-line" style={{ fontSize: 18, color: '#f7b84b' }} />
             </div>
@@ -673,11 +530,11 @@ export default function HrOverview() {
         </Col>
 
         <Col xs={12} md={6} lg={3}>
-          <Card style={cardStyle}>
-            <div style={cardHeaderStyle}>
+          <Card className="hr-ov-card">
+            <div className="hr-ov-card-head">
               <div>
-                <h5 style={cardTitleStyle}>Top Expense Categories</h5>
-                <p style={cardSubStyle}>By total amount</p>
+                <h5 className="hr-ov-card-title">Top Expense Categories</h5>
+                <p className="hr-ov-card-sub">By total amount</p>
               </div>
               <i className="ri-wallet-3-line" style={{ fontSize: 18, color: '#0ab39c' }} />
             </div>
@@ -688,14 +545,13 @@ export default function HrOverview() {
         </Col>
       </Row>
 
-      {/* ── Row: Recent joiners + Upcoming joiners ──────────────────────── */}
       <Row className="g-3">
         <Col xs={12} lg={6}>
-          <Card style={cardStyle}>
-            <div style={cardHeaderStyle}>
+          <Card className="hr-ov-card">
+            <div className="hr-ov-card-head">
               <div>
-                <h5 style={cardTitleStyle}>Recent Joiners</h5>
-                <p style={cardSubStyle}>Last 5 employees</p>
+                <h5 className="hr-ov-card-title">Recent Joiners</h5>
+                <p className="hr-ov-card-sub">Last 5 employees</p>
               </div>
               <i className="ri-user-add-line" style={{ fontSize: 18, color: '#0ab39c' }} />
             </div>
@@ -703,15 +559,10 @@ export default function HrOverview() {
               {data.recent_joiners.length === 0 ? (
                 <EmptyState icon="ri-user-add-line" text="No recent joiners yet." />
               ) : (
-                <div style={{ padding: '4px 0' }}>
+                <div className="hr-ov-list">
                   {data.recent_joiners.map(e => (
-                    <div key={e.id} className="d-flex align-items-center" style={{ padding: '10px 18px', borderBottom: '1px solid var(--vz-border-color)' }}>
-                      <div style={{
-                        width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-                        background: 'linear-gradient(135deg,#405189,#6691e7)',
-                        color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontWeight: 700, fontSize: 12,
-                      }}>
+                    <div key={e.id} className="hr-ov-list-row">
+                      <div className="hr-ov-avatar" style={{ background: 'linear-gradient(135deg,#405189,#6691e7)' }}>
                         {(e.display_name || '?').trim().charAt(0).toUpperCase()}
                       </div>
                       <div className="ms-2 flex-grow-1 min-w-0">
@@ -734,11 +585,11 @@ export default function HrOverview() {
         </Col>
 
         <Col xs={12} lg={6}>
-          <Card style={cardStyle}>
-            <div style={cardHeaderStyle}>
+          <Card className="hr-ov-card">
+            <div className="hr-ov-card-head">
               <div>
-                <h5 style={cardTitleStyle}>Upcoming Joiners</h5>
-                <p style={cardSubStyle}>Next 5 expected starts</p>
+                <h5 className="hr-ov-card-title">Upcoming Joiners</h5>
+                <p className="hr-ov-card-sub">Next 5 expected starts</p>
               </div>
               <i className="ri-calendar-event-line" style={{ fontSize: 18, color: '#7c5cfc' }} />
             </div>
@@ -746,16 +597,13 @@ export default function HrOverview() {
               {data.upcoming_joiners.length === 0 ? (
                 <EmptyState icon="ri-calendar-event-line" text="No future joiners scheduled." />
               ) : (
-                <div style={{ padding: '4px 0' }}>
+                <div className="hr-ov-list">
                   {data.upcoming_joiners.map((e, i) => (
-                    <div key={i} className="d-flex align-items-center" style={{ padding: '10px 18px', borderBottom: '1px solid var(--vz-border-color)' }}>
-                      <div style={{
-                        width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+                    <div key={i} className="hr-ov-list-row">
+                      <div className="hr-ov-avatar" style={{
                         background: e.source === 'invite'
                           ? 'linear-gradient(135deg,#7c5cfc,#a993fd)'
                           : 'linear-gradient(135deg,#0ab39c,#3dd6c3)',
-                        color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontWeight: 700, fontSize: 12,
                       }}>
                         <i className={e.source === 'invite' ? 'ri-mail-line' : 'ri-user-add-line'} />
                       </div>
@@ -782,7 +630,6 @@ export default function HrOverview() {
   );
 }
 
-/** Donut + a simple legend row, reused for recruitment / expense status. */
 function StatusBreakdown({ rows }: { rows: Array<{ status: string; count: number }> }) {
   if (!rows.length || rows.every(r => r.count === 0)) {
     return <EmptyState icon="ri-pie-chart-line" text="No data yet." />;
@@ -850,17 +697,12 @@ function EmptyState({ icon, text }: { icon: string; text: string }) {
   );
 }
 
-/* ───────────────────────────────────────────────────────────────────────────
- *  Department Turnover %  —  horizontal bar chart, color-graded by severity:
- *  green < 5%, amber 5-10%, red ≥ 10%. Top 8 departments shown.
- * ───────────────────────────────────────────────────────────────────────── */
 function DepartmentTurnover({ rows }: { rows: OverviewData['department_turnover'] }) {
   if (!rows.length) {
     return <EmptyState icon="ri-fire-line" text="No turnover data yet — needs at least one exit." />;
   }
   const top = rows.slice(0, 8);
   const colorFor = (pct: number) => pct >= 10 ? '#f06548' : pct >= 5 ? '#f7b84b' : '#0ab39c';
-  // Same chart palette as the parent so light/dark mode matches.
   const ct = useChartTheme();
   return (
     <ResponsiveContainer width="100%" height={300}>
@@ -879,10 +721,10 @@ function DepartmentTurnover({ rows }: { rows: OverviewData['department_turnover'
             if (!active || !payload?.length) return null;
             const row = payload[0].payload;
             return (
-              <div style={{ background: '#1e2a3a', borderRadius: 10, padding: '8px 14px', boxShadow: '0 4px 20px rgba(0,0,0,0.18)', fontSize: 12 }}>
-                <div style={{ color: '#a8b8c8', fontWeight: 600, fontSize: 11, marginBottom: 4 }}>{row.name}</div>
-                <div style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>{row.turnover_pct}% turnover</div>
-                <div style={{ color: '#a8b8c8', fontSize: 11, marginTop: 2 }}>
+              <div className="hr-ov-tooltip">
+                <div className="hr-ov-tooltip-label">{row.name}</div>
+                <div className="hr-ov-tooltip-row" style={{ fontSize: 14 }}>{row.turnover_pct}% turnover</div>
+                <div className="hr-ov-tooltip-foot">
                   {row.exits} exit{row.exits === 1 ? '' : 's'} · {row.headcount} on rolls
                 </div>
               </div>
@@ -897,11 +739,6 @@ function DepartmentTurnover({ rows }: { rows: OverviewData['department_turnover'
   );
 }
 
-/* ───────────────────────────────────────────────────────────────────────────
- *  Probation Snapshot — two big-stat tiles + a thin progress strip showing
- *  the in-progress share. Color follows the same palette as the rest of the
- *  dashboard (amber for in-progress, teal for completed).
- * ───────────────────────────────────────────────────────────────────────── */
 function ProbationSnapshot({ data }: { data: OverviewData['probation_snapshot'] }) {
   const total = data.in_progress + data.completed;
   if (total === 0) {
@@ -924,7 +761,6 @@ function ProbationSnapshot({ data }: { data: OverviewData['probation_snapshot'] 
           </div>
         </div>
       </div>
-      {/* Visual share — amber chunk on left, teal chunk on right */}
       <div style={{
         height: 10, borderRadius: 999, background: 'var(--vz-border-color)',
         overflow: 'hidden', display: 'flex',
@@ -940,10 +776,6 @@ function ProbationSnapshot({ data }: { data: OverviewData['probation_snapshot'] 
   );
 }
 
-/* ───────────────────────────────────────────────────────────────────────────
- *  Top Expense Categories — list with proportional bars. Amounts formatted
- *  in Indian numbering with L / Cr compaction (mirrors ClientDashboard).
- * ───────────────────────────────────────────────────────────────────────── */
 function formatINRCompact(n: number): string {
   const v = Math.max(0, Number(n) || 0);
   if (v < 100000) return '₹' + v.toLocaleString('en-IN', { maximumFractionDigits: 0 });
