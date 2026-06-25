@@ -10,6 +10,7 @@ import AdvanceRequestsTable, { type AdvanceRequestRow } from '../../components/A
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import WorklistPager from '../../components/ui/WorklistPager';
 import { useChartTheme } from '../../hooks/useChartTheme';
+import '../../../css/expense.css';
 
 
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
@@ -23,7 +24,6 @@ const DATE_FILTER_LABELS: Record<DateFilter, string> = {
   year:  'This Year',
 };
 
-/** Returns true when the row's expense_date falls within the selected window. */
 function withinDateFilter(iso: string | null | undefined, filter: DateFilter): boolean {
   if (filter === 'all' || !iso) return filter === 'all';
   const d = new Date(iso);
@@ -33,8 +33,7 @@ function withinDateFilter(iso: string | null | undefined, filter: DateFilter): b
     return d.toDateString() === now.toDateString();
   }
   if (filter === 'week') {
-    // Monday-start week.
-    const dayIdx = (now.getDay() + 6) % 7; // 0=Mon..6=Sun
+    const dayIdx = (now.getDay() + 6) % 7;
     const start = new Date(now); start.setDate(now.getDate() - dayIdx); start.setHours(0,0,0,0);
     const end   = new Date(start); end.setDate(start.getDate() + 7);
     return d >= start && d < end;
@@ -48,12 +47,6 @@ function withinDateFilter(iso: string | null | undefined, filter: DateFilter): b
   return true;
 }
 
-/* ─────────────────────────────────────────────────────────────────
- *  KPI tile — same visual language as HrEmployeeOnboarding's cards.
- *  White surface, thin colored top stripe, label on top-left in caps,
- *  big bold number underneath, soft tinted icon tile on top-right.
- *  Matches `.onb-surface .onb-kpi-card` in the onboarding page.
- * ───────────────────────────────────────────────────────────────── */
 function KpiTile({
   label, sub, value, iconClass, strip, tint, fg,
 }: {
@@ -61,11 +54,8 @@ function KpiTile({
   sub?: string;
   value: React.ReactNode;
   iconClass: string;
-  /** Color of the top accent stripe. */
   strip: string;
-  /** Soft background of the icon tile. */
   tint: string;
-  /** Foreground color of the icon glyph. */
   fg: string;
 }) {
   return (
@@ -108,10 +98,6 @@ function KpiTile({
             width: 44, height: 44, borderRadius: 10,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             flexShrink: 0,
-            // Light values are the inline tint/fg; the dark variants derive
-            // from `strip` (the vivid accent) — a translucent wash for the
-            // tile + the vivid colour for the glyph. The [data-bs-theme]
-            // rules in the page <style> pick which pair applies.
             ['--kpi-tint' as string]: tint,
             ['--kpi-fg' as string]: fg,
             ['--kpi-tint-dark' as string]: `${strip}33`,
@@ -128,43 +114,20 @@ function KpiTile({
 export default function HrExpenseManagement() {
   const { user } = useAuth();
   const toast = useToast();
-  // Live chart palette — re-renders the spend chart when the theme toggles.
-  // Recharts can't resolve CSS vars on SVG attrs reliably, so the grid,
-  // axis ticks and tooltip take concrete colours from here.
   const chartTheme = useChartTheme();
 
   const [rows, setRows] = useState<ExpenseClaimRow[]>([]);
   const [loading, setLoading] = useState(false);
-  // Sibling state for the Advance Requests tab. `module` flips the main
-  // table between expense claims and advance requests; advance rows have
-  // their own loading flag so the two fetches don't collide. The status
-  // tabs (All / Pending / Approved / Rejected) drive both lists via the
-  // shared `filter` state.
   const [advanceRows, setAdvanceRows] = useState<AdvanceRequestRow[]>([]);
   const [advanceLoading, setAdvanceLoading] = useState(false);
   const [module, setModule] = useState<'expense' | 'advance'>('expense');
   const [filter, setFilter] = useState<StatusFilter>('all');
   const [search, setSearch] = useState('');
-  // Spend-analytics panel (Spend by Category + Policy Limits) is collapsible;
-  // open by default.
   const [analyticsOpen, setAnalyticsOpen] = useState(true);
-  // Client-side pagination — same WorklistPager (dynamic rows-per-page) the
-  // recruitment table uses, so both lists behave identically.
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  // Category + department dropdowns sit inside the filter strip below the
-  // status tabs. 'all' = no narrowing. Both reset whenever the user flips
-  // the date dropdown so they don't end up filtering against an empty set.
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
-  // Expense categories master — needed for the policy-limit panel below.
-  // Each row carries `monthly_limit` and `yearly_limit` from the master.
   const [categories, setCategories] = useState<{ id: number; name: string; monthly_limit: number | null; yearly_limit: number | null }[]>([]);
-  // Departments master — fed into the Department dropdown so the user sees
-  // every department even when no one in that department has filed a claim
-  // yet (or under the current date window).
-  const [departments, setDepartments] = useState<{ id: number; name: string }[]>([]);
   useEffect(() => {
     api.get('/master/expense_category').then((res: any) => {
       const arr = Array.isArray(res?.data) ? res.data : [];
@@ -175,17 +138,8 @@ export default function HrExpenseManagement() {
         yearly_limit:  c.yearly_limit  != null ? Number(c.yearly_limit)  : null,
       })));
     }).catch(() => setCategories([]));
-    api.get('/master/departments').then((res: any) => {
-      const arr = Array.isArray(res?.data) ? res.data : [];
-      setDepartments(arr
-        .filter((d: any) => (d.status ?? 'Active') === 'Active')
-        .map((d: any) => ({ id: Number(d.id), name: String(d.name ?? '') })));
-    }).catch(() => setDepartments([]));
   }, []);
 
-  // HR users can approve when their permission row on the `hr.expense`
-  // module includes can_approve. Super admins bypass the explicit flag —
-  // the backend mirrors this.
   const canHrApprove = useMemo(() => {
     if (!user) return false;
     if (user.user_type === 'super_admin') return true;
@@ -258,15 +212,10 @@ export default function HrExpenseManagement() {
     }
   };
 
-  // Apply the date filter first — KPI counts and the table rows both read
-  // off this windowed source so the summary stays in sync with what's shown.
   const dateFilteredRows = useMemo(
     () => rows.filter(r => withinDateFilter(r.expense_date, dateFilter)),
     [rows, dateFilter],
   );
-  // Advance sibling: date-filter on requested_date so the same dropdown
-  // narrows both lists. The status-tab counts above the table switch to
-  // these counts when `module === 'advance'`.
   const dateFilteredAdvances = useMemo(
     () => advanceRows.filter(a => withinDateFilter(a.requested_date, dateFilter)),
     [advanceRows, dateFilter],
@@ -289,7 +238,6 @@ export default function HrExpenseManagement() {
     .filter(r => r.status === 'approved')
     .reduce((sum, r) => sum + Number(r.amount || 0), 0);
 
-  /** Compact rupee formatter — turns 65800 → "₹66K", 1234567 → "₹12L". */
   const fmtCompact = (n: number): string => {
     if (n >= 1_00_00_000) return `₹${(n / 1_00_00_000).toFixed(1).replace(/\.0$/, '')}Cr`;
     if (n >= 1_00_000)    return `₹${(n / 1_00_000).toFixed(1).replace(/\.0$/, '')}L`;
@@ -297,26 +245,9 @@ export default function HrExpenseManagement() {
     return `₹${Math.round(n)}`;
   };
 
-  /* ── Spend by Category + Policy Limits ─────────────────────────────────
-   * Both panels read off `dateFilteredRows` so they react to the All Dates
-   * dropdown automatically. Spend is summed from the windowed claims; the
-   * policy limit scales the master's `monthly_limit` to the selected
-   * window so the comparison stays apples-to-apples (e.g. "today" → 1/30,
-   * "year" → ×12). */
-
-  /** Stable palette — hash the category name + id into one of these slots
-   *  so the same category keeps the same colour across re-renders. */
   const CAT_PALETTE = [
-    '#3b82f6', // blue
-    '#0ab39c', // teal
-    '#7c5cfc', // purple
-    '#22c55e', // green
-    '#f97316', // orange
-    '#94a3b8', // slate
-    '#0c63b0', // deep blue
-    '#a06f00', // amber
-    '#ef4444', // red
-    '#0d9488', // dark teal
+    '#3b82f6', '#0ab39c', '#7c5cfc', '#22c55e', '#f97316',
+    '#94a3b8', '#0c63b0', '#a06f00', '#ef4444', '#0d9488',
   ];
   const colorForCat = (key: string): string => {
     let h = 0;
@@ -324,21 +255,17 @@ export default function HrExpenseManagement() {
     return CAT_PALETTE[Math.abs(h) % CAT_PALETTE.length];
   };
 
-  /** Scale the monthly policy limit to the selected date window so the
-   *  Over check makes sense regardless of the filter. */
   const periodLimit = (monthly: number | null): number => {
     if (monthly == null || monthly <= 0) return 0;
     switch (dateFilter) {
       case 'today': return monthly / 30;
-      case 'week':  return monthly / 4.345; // 30 / 7
+      case 'week':  return monthly / 4.345;
       case 'month': return monthly;
       case 'year':  return monthly * 12;
-      case 'all':   return monthly; // best-effort baseline; no over check
+      case 'all':   return monthly;
     }
   };
 
-  /** Per-category spend rollup over the windowed rows. Combines by id when
-   *  available, falls back to category_name for legacy rows. */
   const categoryRollup = useMemo(() => {
     const byKey = new Map<string, { id: number | null; name: string; spent: number }>();
     for (const r of dateFilteredRows) {
@@ -349,9 +276,6 @@ export default function HrExpenseManagement() {
       cur.spent += Number(r.amount || 0);
       byKey.set(key, cur);
     }
-    // Add categories from master that have a limit set but no spend yet —
-    // they should still appear in the Policy Limits panel so HR can see
-    // unused budgets.
     for (const c of categories) {
       const key = `id:${c.id}`;
       if (!byKey.has(key)) {
@@ -373,12 +297,6 @@ export default function HrExpenseManagement() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateFilteredRows, categories, dateFilter]);
 
-  /** Sorted views for the two panels.
-   *  Spend by Category surfaces EVERY category from the master so HR can
-   *  see which categories are unused at a glance — sort by spent desc with
-   *  zero rows pushed to the end (alphabetical inside the zero bucket).
-   *  Policy Limits keeps everyone with a limit set OR any spend so the
-   *  section doesn't go empty when no one has filed yet. */
   const spendByCategory = useMemo(
     () => [...categoryRollup].sort((a, b) => {
       if ((b.spent > 0) !== (a.spent > 0)) return b.spent > 0 ? 1 : -1;
@@ -390,7 +308,6 @@ export default function HrExpenseManagement() {
   const policyLimitRows = useMemo(
     () => categoryRollup
       .filter(c => (c.monthlyLimit ?? 0) > 0 || c.spent > 0)
-      // Overspent first, then biggest spend, so HR's eye lands on hot rows.
       .sort((a, b) => {
         if (a.over !== b.over) return a.over ? -1 : 1;
         return b.spent - a.spent;
@@ -407,40 +324,6 @@ export default function HrExpenseManagement() {
     return 'All time';
   }, [dateFilter]);
 
-  // Option lists for the Category + Department dropdowns. Both pull from
-  // the masters so HR sees every value regardless of the date window — the
-  // dropdown stays stable and the user can pick a category/department that
-  // doesn't yet have any claims in the selected period (which legitimately
-  // returns an empty table). Names from claim rows that aren't in the
-  // master (legacy data) are merged in as a safety net.
-  const categoryOptions = useMemo(() => {
-    const set = new Map<string, string>();
-    for (const c of categories) {
-      const name = c.name?.trim();
-      if (name) set.set(name.toLowerCase(), name);
-    }
-    for (const r of dateFilteredRows) {
-      const name = r.category_name?.trim();
-      if (name) set.set(name.toLowerCase(), name);
-    }
-    return Array.from(set.values()).sort((a, b) => a.localeCompare(b));
-  }, [categories, dateFilteredRows]);
-  const departmentOptions = useMemo(() => {
-    const set = new Map<string, string>();
-    for (const d of departments) {
-      const name = d.name?.trim();
-      if (name) set.set(name.toLowerCase(), name);
-    }
-    for (const r of dateFilteredRows) {
-      const name = r.department_name?.trim();
-      if (name) set.set(name.toLowerCase(), name);
-    }
-    return Array.from(set.values()).sort((a, b) => a.localeCompare(b));
-  }, [departments, dateFilteredRows]);
-
-  // Advance list filter — status tab + free-text search on top of the date
-  // window. Category/Department filters don't apply (advances aren't tied
-  // to expense categories or departments), so they're skipped here.
   const filteredAdvances = dateFilteredAdvances.filter(a => {
     if (filter !== 'all' && a.status !== filter) return false;
     if (search.trim()) {
@@ -453,15 +336,8 @@ export default function HrExpenseManagement() {
     return true;
   });
 
-  // Apply status tab + category + department + free-text search on top of
-  // the date window. Each filter is independent — clearing any one back to
-  // 'all' / '' restores those rows.
   const filtered = dateFilteredRows.filter(r => {
     if (filter !== 'all' && r.status !== filter) return false;
-    if (categoryFilter !== 'all'
-        && (r.category_name || '').toLowerCase() !== categoryFilter.toLowerCase()) return false;
-    if (departmentFilter !== 'all'
-        && (r.department_name || '').toLowerCase() !== departmentFilter.toLowerCase()) return false;
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       return [
@@ -472,20 +348,14 @@ export default function HrExpenseManagement() {
     return true;
   });
 
-  // ── Pagination — slice the active list (claims or advances) into pages.
   const activeRows = module === 'advance' ? filteredAdvances : filtered;
   const pageCount  = Math.max(1, Math.ceil(activeRows.length / pageSize));
   const safePage   = Math.min(page, pageCount);
   const sliceFrom  = (safePage - 1) * pageSize;
   const visibleClaims   = filtered.slice(sliceFrom, sliceFrom + pageSize);
   const visibleAdvances = filteredAdvances.slice(sliceFrom, sliceFrom + pageSize);
-  // Reset to page 1 whenever the filters / module / search change so the user
-  // never lands on a now-empty page.
-  useEffect(() => { setPage(1); }, [module, filter, categoryFilter, departmentFilter, search, dateFilter]);
+  useEffect(() => { setPage(1); }, [module, filter, search, dateFilter]);
 
-  // Export menu (Excel / PDF / CSV). The Export button is now a split picker
-  // instead of an immediate CSV download — users pick the format from the
-  // dropdown. All three share the same column set + filtered row source.
   const [exportOpen, setExportOpen] = useState(false);
 
   const EXPORT_HEADER = [
@@ -497,7 +367,6 @@ export default function HrExpenseManagement() {
     'Created By', 'Created At',
   ];
 
-  /** One filtered claim → an ordered array of cells aligned to EXPORT_HEADER. */
   const exportRow = (r: ExpenseClaimRow): (string | number | null)[] => [
     r.claim_no, r.employee_name, r.employee_code, r.category_name,
     r.title, r.expense_date, r.amount, r.currency,
@@ -510,7 +379,6 @@ export default function HrExpenseManagement() {
   const exportStamp = () => new Date().toISOString().slice(0, 10);
   const exportBaseName = () => `expense-claims-${dateFilter}-${exportStamp()}`;
 
-  /** Shared empty-state guard. Returns false (and toasts) when nothing matches. */
   const hasExportRows = (): boolean => {
     if (filtered.length === 0) {
       toast.error('Nothing to export', 'No claims match the current filters.');
@@ -533,29 +401,21 @@ export default function HrExpenseManagement() {
   const exportDoneToast = (fmt: string) =>
     toast.success('Export ready', `${filtered.length} claim${filtered.length === 1 ? '' : 's'} exported to ${fmt}.`);
 
-  /**
-   * CSV — UTF-8 BOM up front so non-ASCII names + the ₹ symbol render
-   * correctly when the file is opened in Excel.
-   */
   const exportCsv = () => {
     if (!hasExportRows()) return;
     const escape = (v: any): string => {
       if (v === null || v === undefined) return '';
       const s = String(v);
-      // Wrap in double quotes when the cell contains a comma, quote, or newline.
       if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
       return s;
     };
     const lines = [EXPORT_HEADER.map(escape).join(',')];
     for (const r of filtered) lines.push(exportRow(r).map(escape).join(','));
-    // BOM (﻿) makes Excel honor UTF-8 — without it, ₹ + accented names
-    // render as garbled mojibake on Windows.
     const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
     triggerDownload(blob, `${exportBaseName()}.csv`);
     exportDoneToast('CSV');
   };
 
-  /** Excel (.xlsx) — same XLSX pattern used by the Employees export. */
   const exportXlsx = () => {
     if (!hasExportRows()) return;
     try {
@@ -570,12 +430,6 @@ export default function HrExpenseManagement() {
     }
   };
 
-  /**
-   * PDF — open a printable HTML report in a new window and trigger the
-   * browser's print dialog (user picks "Save as PDF"). Mirrors the
-   * window.print() approach already used for payslips; needs no extra
-   * dependency and renders on a white sheet regardless of app theme.
-   */
   const exportPdf = () => {
     if (!hasExportRows()) return;
     const esc = (v: any) =>
@@ -623,135 +477,9 @@ export default function HrExpenseManagement() {
 
   return (
     <>
-      {/* Inject the master-form CSS so MasterSelect dropdowns on this page
-          render with the proper border/background/chevron styling instead
-          of browser defaults — without this they look like raw text. */}
       <MasterFormStyles />
-      <style>{`
-        .hrexp-surface { background: #ffffff; }
-        [data-bs-theme="dark"] .hrexp-surface { background: #1c2531; }
+      <div className="hrexp-page">
 
-        /* Hero card — purple-tinted, mirrors .onb-hero-card from the
-           Employee Onboarding Hub so the two HR landings feel like
-           siblings. */
-        .hrexp-hero-card {
-          display: flex; align-items: center; justify-content: space-between;
-          gap: 16px; flex-wrap: wrap;
-          padding: 18px 22px;
-          border-radius: 16px;
-          background: linear-gradient(135deg, #f3edff 0%, #ede4ff 100%);
-          border: 1px solid #e3d6ff;
-          box-shadow: 0 2px 12px rgba(124,92,252,0.06);
-        }
-        [data-bs-theme="dark"] .hrexp-hero-card {
-          background: linear-gradient(135deg, rgba(124,92,252,0.18) 0%, rgba(167,139,250,0.10) 100%);
-          border-color: rgba(124,92,252,0.32);
-        }
-        .hrexp-hero-pill {
-          display: inline-flex; align-items: center; gap: 6px;
-          padding: 5px 10px; border-radius: 999px;
-          font-size: 11px; font-weight: 700;
-          background: rgba(124,92,252,0.18); color: #5a3fd1;
-        }
-        .hrexp-hero-pill .dot {
-          width: 6px; height: 6px; border-radius: 50%;
-          background: #7c5cfc; box-shadow: 0 0 0 3px rgba(124,92,252,0.20);
-        }
-        /* Solid violet primary button — Export. Same as .onb-checklist-cta. */
-        .hrexp-cta {
-          padding: 10px 18px;
-          font-size: 13px; font-weight: 700;
-          color: #fff !important;
-          background: linear-gradient(135deg,#7c5cfc 0%,#5a3fd1 100%) !important;
-          border: none !important;
-          border-radius: 999px;
-          box-shadow: 0 8px 18px rgba(91,63,209,0.30) !important;
-          display: inline-flex; align-items: center;
-          cursor: pointer;
-          transition: transform .15s ease, box-shadow .15s ease;
-        }
-        .hrexp-cta:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 12px 22px rgba(91,63,209,0.38) !important;
-        }
-        /* Hero-area MasterSelect — matches the violet Export CTA border so
-           the two controls read as a paired set inside the purple card. */
-        .hrexp-hero-select .master-select-toggle {
-          border-color: rgba(124,92,252,0.45) !important;
-          color: #5a3fd1 !important;
-          font-weight: 600 !important;
-        }
-        .hrexp-hero-select .master-select-toggle:hover:not(:disabled) {
-          border-color: #7c5cfc !important;
-          box-shadow: 0 2px 8px rgba(124,92,252,0.18) !important;
-        }
-        .hrexp-hero-select.master-select-wrap.show .master-select-toggle,
-        .hrexp-hero-select .master-select-wrap.show .master-select-toggle {
-          border-color: #7c5cfc !important;
-          box-shadow: 0 0 0 3px rgba(124,92,252,0.18), 0 4px 12px rgba(124,92,252,0.18) !important;
-        }
-        .hrexp-hero-select .master-select-chev { color: #7c5cfc !important; }
-        /* Ghost button — All Dates. White surface with violet border on hover. */
-        .hrexp-ghost-btn {
-          display: inline-flex; align-items: center; gap: 8px;
-          padding: 9px 16px;
-          font-size: 13px; font-weight: 600;
-          background: #ffffff;
-          color: #5a3fd1;
-          border: 1px solid rgba(124,92,252,0.30);
-          border-radius: 999px;
-          cursor: pointer;
-          transition: all .15s ease;
-        }
-        .hrexp-ghost-btn:hover {
-          background: #faf6ff;
-          border-color: #a78bfa;
-          color: #5a3fd1;
-        }
-        [data-bs-theme="dark"] .hrexp-ghost-btn {
-          background: rgba(124,92,252,0.10);
-          color: #c4b5fd;
-        }
-        /* KPI tile icon squares. Light mode uses the soft pastel tint + dark
-           glyph passed inline as CSS vars; dark mode swaps to a translucent
-           wash of the tile's vivid accent (--kpi-*-dark) so every KPI icon
-           reads uniformly against the dark surface instead of glowing as a
-           bright pastel block. */
-        /* KPI tile hover — subtle lift + stronger shadow + accent border,
-           matching the interactive feel of the other module cards. */
-        .hrexp-kpi-card { transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
-        .hrexp-kpi-card:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(0,0,0,0.12); border-color: rgba(124,92,252,0.45); }
-        [data-bs-theme="dark"] .hrexp-kpi-card:hover { box-shadow: 0 10px 28px rgba(0,0,0,0.5); border-color: rgba(124,92,252,0.55); }
-
-        .hrexp-kpi-ic { background: var(--kpi-tint); }
-        .hrexp-kpi-ic i { color: var(--kpi-fg); }
-        [data-bs-theme="dark"] .hrexp-kpi-ic { background: var(--kpi-tint-dark); }
-        [data-bs-theme="dark"] .hrexp-kpi-ic i { color: var(--kpi-fg-dark); }
-
-        /* Card-header icon tiles ("Spend by Category" / "Policy Limits"). The
-           light pastel background + colour are set inline (fine in light
-           mode) but stayed bright on the dark surface. Override the inline
-           values in dark mode — !important is required to beat the inline
-           style attribute, same trick the row-badge dark overrides use. */
-        [data-bs-theme="dark"] .hrexp-card-ic--chart {
-          background: rgba(124,92,252,0.20) !important; color: #c4b5fd !important;
-        }
-        [data-bs-theme="dark"] .hrexp-card-ic--policy {
-          background: rgba(240,101,72,0.20) !important; color: #ffa78f !important;
-        }
-        /* "Over" badge on the Policy Limits panel — light pastel set inline,
-           so override it in dark mode to a danger-tinted dark chip with a
-           legible light-red label (same !important inline-beating trick). */
-        [data-bs-theme="dark"] .hrexp-over-badge,
-        [data-layout-mode="dark"] .hrexp-over-badge {
-          background: rgba(239,68,68,0.22) !important; color: #fca5a5 !important;
-        }
-      `}</style>
-
-        {/* ── Hero header — purple-tinted card mirroring the Employee
-             Onboarding Hub. Violet icon tile on the left, title + small
-             "Live" pill + subtitle, and the All Dates filter + violet
-             gradient Export CTA on the right. */}
         <div className="frm-cstrip mb-3">
           <span className="frm-cstrip-accent" />
           <div className="frm-cstrip-left">
@@ -802,9 +530,8 @@ export default function HrExpenseManagement() {
           </div>
         </div>
 
-        {/* ── KPI tiles — five cards mirroring the onboarding list view ── */}
         <Row className="g-3 mb-3 align-items-stretch">
-          <Col xl={true} md={4} sm={6} xs={12}>
+          <Col xl={true} md={4} sm={6} xs={6}>
             <KpiTile
               label="Total Claims"
               sub={dateSubLabel}
@@ -815,7 +542,7 @@ export default function HrExpenseManagement() {
               fg="#7c5cfc"
             />
           </Col>
-          <Col xl={true} md={4} sm={6} xs={12}>
+          <Col xl={true} md={4} sm={6} xs={6}>
             <KpiTile
               label="Total Amount"
               sub={dateSubLabel}
@@ -826,7 +553,7 @@ export default function HrExpenseManagement() {
               fg="#a06f00"
             />
           </Col>
-          <Col xl={true} md={4} sm={6} xs={12}>
+          <Col xl={true} md={4} sm={6} xs={6}>
             <KpiTile
               label="Approved"
               sub="Disbursable"
@@ -837,7 +564,7 @@ export default function HrExpenseManagement() {
               fg="#108548"
             />
           </Col>
-          <Col xl={true} md={4} sm={6} xs={12}>
+          <Col xl={true} md={4} sm={6} xs={6}>
             <KpiTile
               label="Pending Review"
               sub="Awaiting approval"
@@ -848,7 +575,7 @@ export default function HrExpenseManagement() {
               fg="#0c63b0"
             />
           </Col>
-          <Col xl={true} md={4} sm={6} xs={12}>
+          <Col xl={true} md={4} sm={6} xs={6}>
             <KpiTile
               label="Rejected"
               sub="This cycle"
@@ -861,8 +588,6 @@ export default function HrExpenseManagement() {
           </Col>
         </Row>
 
-        {/* ── Spend by Category + Policy Limits — one collapsible container,
-            open by default, with a header toggle to show / hide both. ── */}
         <div
           className="hrexp-surface mb-3"
           style={{
@@ -896,7 +621,7 @@ export default function HrExpenseManagement() {
           {analyticsOpen && (
           <div style={{ padding: '0 14px 14px' }}>
         <Row className="g-3 align-items-stretch">
-          <Col xl={8} lg={7}>
+          <Col xl={8} lg={7} xs={12}>
             <div
               className="hrexp-surface"
               style={{
@@ -926,10 +651,6 @@ export default function HrExpenseManagement() {
                 </div>
               ) : (
                 <>
-                  {/* Recharts vertical bar chart — every category from the
-                      master is plotted, even ones with zero spend, so HR can
-                      see unused buckets at a glance. Bar colour matches the
-                      category's stable palette colour from `colorForCat`. */}
                   <div style={{ width: '100%', height: 280 }}>
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart
@@ -986,9 +707,6 @@ export default function HrExpenseManagement() {
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
-                  {/* Legend strip — colored dot + name + amount; surfaces
-                      zero-spend categories as "—" so they remain visible
-                      without a bar in the chart above. */}
                   <div className="d-flex flex-wrap" style={{ gap: '6px 16px', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--vz-border-color)' }}>
                     {spendByCategory.map(c => (
                       <div key={`leg:${c.id}:${c.name}`} className="d-inline-flex align-items-center gap-2" style={{ fontSize: 11 }}>
@@ -1005,7 +723,7 @@ export default function HrExpenseManagement() {
             </div>
           </Col>
 
-          <Col xl={4} lg={5}>
+          <Col xl={4} lg={5} xs={12}>
             <div
               className="hrexp-surface"
               style={{
@@ -1090,15 +808,8 @@ export default function HrExpenseManagement() {
           )}
         </div>
 
-        {/* ── Primary navigation card — Expense Claims / Advance Requests
-            module switcher + search. Kept in its OWN card, visually separate
-            from the status-filter tabs below, so the primary navigation reads
-            as a distinct section from the secondary status filtering. */}
         <Card className="border-0 mb-3" style={{ borderRadius: 14 }}>
           <CardBody className="py-3">
-            {/* Module switcher — flips the status tabs + table between
-                Expense Claims and Advance Requests. Counts come from the
-                date-windowed source (so they react to the All Dates dropdown). */}
             <Row className="g-2 align-items-center">
               <Col xs={12}>
                 <div className="d-flex align-items-center justify-content-between gap-3 flex-wrap">
@@ -1152,8 +863,6 @@ export default function HrExpenseManagement() {
                     );
                   })}
                 </div>
-                {/* Search shares the module-tabs row, filling the space to the
-                    right of the Expense Claims / Advance Requests toggle. */}
                 <div className="rec-req-search search-box" style={{ flex: '1 1 280px', maxWidth: 440, minWidth: 220 }}>
                   <input
                     type="text"
@@ -1170,15 +879,8 @@ export default function HrExpenseManagement() {
           </CardBody>
         </Card>
 
-        {/* ── Main card — secondary status tabs + table. Separate container
-            from the primary module switcher above for clear visual hierarchy. ── */}
         <Card className="border-0" style={{ borderRadius: 14 }}>
           <CardBody>
-            {/* Status tabs — pill-style, mirrors the Active/Disabled tabs on
-                the HrEmployees page. Active tab gets the violet gradient with
-                white text + count chip; inactive tabs sit transparent with
-                muted text inside the same rounded gray bar. Counts switch to
-                the advance source when the module pill is on Advance. */}
             <Row className="g-2 align-items-center mb-3">
               <Col xs={12}>
                 <div className="rec-tab-track">
@@ -1228,8 +930,6 @@ export default function HrExpenseManagement() {
               />
             )}
 
-            {/* Pagination — same WorklistPager (dynamic rows-per-page) as the
-                recruitment table. */}
             <WorklistPager
               total={activeRows.length}
               page={safePage}
@@ -1240,6 +940,7 @@ export default function HrExpenseManagement() {
             </div>
           </CardBody>
         </Card>
+      </div>
     </>
   );
 }
