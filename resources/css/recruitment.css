@@ -5845,7 +5845,7 @@
    visual language stays consistent. */
 .ev-kpis {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   padding: 12px 20px;
   background: #ffffff;
@@ -9674,3 +9674,77 @@
   background: rgba(255,255,255,0.10) !important;
   color: var(--vz-secondary-color) !important;
 }
+
+/* Exit Management page — extracted from inline <style> in HrExitManagement.tsx.
+   Serial-number column + .ep-* form-control overrides (rounded, themed, dark-aware). */
+.hr-exit-srno { color: var(--vz-secondary-color); font-weight: 600; }
+[data-bs-theme="dark"] .hr-exit-srno,
+[data-layout-mode="dark"] .hr-exit-srno { color: #d0d4dc; }
+
+.ep-input,
+.ep-textarea,
+.ep-select {
+  background: var(--vz-card-bg) !important;
+  color: var(--vz-heading-color, var(--vz-body-color)) !important;
+  border: 1px solid var(--vz-border-color) !important;
+  border-radius: 10px !important;
+  padding: 8px 12px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04) !important;
+  transition: border-color .18s ease, box-shadow .18s ease !important;
+  width: 100%;
+}
+.ep-input { height: 38px; }
+.ep-textarea { min-height: 64px; resize: vertical; }
+.ep-select {
+  height: 38px;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23878a99' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 10px center !important;
+  padding-right: 34px !important;
+}
+.ep-input::placeholder,
+.ep-textarea::placeholder {
+  color: var(--vz-secondary-color);
+  opacity: 0.65;
+}
+.ep-input:hover:not(:disabled),
+.ep-textarea:hover:not(:disabled),
+.ep-select:hover:not(:disabled) {
+  border-color: rgba(99,102,241,0.55) !important;
+  box-shadow: 0 2px 6px rgba(99,102,241,0.08) !important;
+}
+.ep-input:focus,
+.ep-textarea:focus,
+.ep-select:focus {
+  outline: none !important;
+  border-color: #6366f1 !important;
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.15), 0 4px 12px rgba(99,102,241,0.12) !important;
+}
+.ep-input:disabled,
+.ep-textarea:disabled,
+.ep-select:disabled {
+  background: var(--vz-secondary-bg) !important;
+  color: var(--vz-secondary-color) !important;
+  cursor: not-allowed;
+  opacity: 0.85;
+  box-shadow: none !important;
+}
+[data-bs-theme="dark"] .ep-select option,
+[data-layout-mode="dark"] .ep-select option {
+  background: #1c2531;
+  color: #e6e8ec;
+}
+.ep-field-label {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  color: var(--vz-secondary-color) !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+  margin-bottom: 6px !important;
+}
+[data-bs-theme="dark"] .ep-field-label,
+[data-layout-mode="dark"] .ep-field-label { color: #b0b4bd !important; }
