@@ -9748,3 +9748,88 @@
 }
 [data-bs-theme="dark"] .ep-field-label,
 [data-layout-mode="dark"] .ep-field-label { color: #b0b4bd !important; }
+
+/* ── Payroll page (HrPayroll) ───────────────────────────────────────────────
+   Moved out of the HrPayroll.tsx inline <style> block. Most of the page uses
+   theme tokens (var(--vz-*)) and the .onb-* classes from HrEmployeeOnboarding;
+   these are the hardcoded pastel surfaces that need a dark-mode variant. */
+.pay-hero-select .master-select-toggle {
+  border: 1px solid #5a3fd1 !important;
+  background: #fff !important;
+  box-shadow: 0 4px 12px rgba(90,63,209,0.18) !important;
+}
+[data-bs-theme="dark"] .pay-hero-select .master-select-toggle {
+  background: var(--vz-card-bg) !important;
+  border-color: #a78bfa !important;
+}
+.pay-hero-run:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 22px rgba(90,63,209,0.42) !important;
+}
+.pay-hero-export:hover {
+  background: #f5f1ff !important;
+  box-shadow: 0 6px 14px rgba(90,63,209,0.20) !important;
+}
+[data-bs-theme="dark"] .pay-hero-export {
+  color: #c4b5fd !important;
+  border-color: #a78bfa !important;
+}
+[data-bs-theme="dark"] .pay-hero-export:hover {
+  background: rgba(124,92,252,0.16) !important;
+}
+
+.pay-cycle-icon { background: #ece6ff; color: #5a3fd1; }
+[data-bs-theme="dark"] .pay-cycle-icon { background: rgba(124,92,252,0.20); color: #c4b5fd; }
+
+.pay-cycle-chip { background: var(--vz-card-bg); border: 1px solid var(--vz-border-color); }
+.pay-cycle-chip.is-selected {
+  background: linear-gradient(135deg,#f5f1ff,#ece6ff);
+  border-color: #7c5cfc;
+  box-shadow: 0 4px 12px rgba(124,92,252,0.18);
+}
+.pay-cycle-chip-label { color: var(--vz-heading-color, var(--vz-body-color)); }
+.pay-cycle-chip.is-selected .pay-cycle-chip-label { color: #5a3fd1; }
+[data-bs-theme="dark"] .pay-cycle-chip.is-selected {
+  background: linear-gradient(135deg, rgba(124,92,252,0.22), rgba(124,92,252,0.10));
+  border-color: #a78bfa;
+  box-shadow: 0 4px 14px rgba(124,92,252,0.30);
+}
+[data-bs-theme="dark"] .pay-cycle-chip.is-selected .pay-cycle-chip-label { color: #c4b5fd; }
+
+.pay-banner { background: #e6f7f0; border: 1px solid #b6e4c8; color: #0a716a; }
+[data-bs-theme="dark"] .pay-banner {
+  background: rgba(10,113,106,0.18);
+  border-color: rgba(10,179,156,0.34);
+  color: #4dd4be;
+}
+
+.pay-mini-tile { border-radius: 12px; padding: 14px 16px; border: 1px solid; }
+.pay-mini-tile--green  { background: #e6f7ed; border-color: #b6e4c8; }
+.pay-mini-tile--red    { background: #fde7e3; border-color: #f5c0b5; }
+.pay-mini-tile--amber  { background: #fdf3d6; border-color: #f0d990; }
+.pay-mini-tile--blue   { background: #dceefe; border-color: #b8d6f7; }
+.pay-mini-tile--purple { background: #ece6ff; border-color: #d6c9ff; }
+.pay-mini-tile-num--green  { color: #108548; }
+.pay-mini-tile-num--red    { color: #b1401d; }
+.pay-mini-tile-num--amber  { color: #a06f00; }
+.pay-mini-tile-num--blue   { color: #0c63b0; }
+.pay-mini-tile-num--purple { color: #5a3fd1; }
+[data-bs-theme="dark"] .pay-mini-tile--green  { background: rgba(16,133,72,0.18);  border-color: rgba(16,179,108,0.36); }
+[data-bs-theme="dark"] .pay-mini-tile--red    { background: rgba(177,64,29,0.18);  border-color: rgba(240,101,72,0.38); }
+[data-bs-theme="dark"] .pay-mini-tile--amber  { background: rgba(160,111,0,0.18);  border-color: rgba(245,158,11,0.38); }
+[data-bs-theme="dark"] .pay-mini-tile--blue   { background: rgba(12,99,176,0.18);  border-color: rgba(59,130,246,0.38); }
+[data-bs-theme="dark"] .pay-mini-tile--purple { background: rgba(90,63,209,0.18);  border-color: rgba(124,92,252,0.38); }
+[data-bs-theme="dark"] .pay-mini-tile-num--green  { color: #6ee7b7; }
+[data-bs-theme="dark"] .pay-mini-tile-num--red    { color: #fda192; }
+[data-bs-theme="dark"] .pay-mini-tile-num--amber  { color: #fcd34d; }
+[data-bs-theme="dark"] .pay-mini-tile-num--blue   { color: #93c5fd; }
+[data-bs-theme="dark"] .pay-mini-tile-num--purple { color: #c4b5fd; }
+
+[data-bs-theme="dark"] .pay-cycle-status-pill { filter: brightness(1.05); }
+
+[data-bs-theme="dark"] .onb-pill { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); }
+
+[data-bs-theme="dark"] .pay-tab-count-inactive {
+  background: rgba(255,255,255,0.08) !important;
+  color: var(--vz-secondary-color) !important;
+}
