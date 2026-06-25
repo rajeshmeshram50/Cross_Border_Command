@@ -4,7 +4,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import PdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url';
 import { useToast } from '../../../contexts/ToastContext';
 import { useAuth } from '../../../contexts/AuthContext';
-import { echo } from '../../../echo';
+import { getEcho } from '../../../echo';
 import { useTyping } from '../../../hooks/useTyping';
 import { TypingIndicator } from '../../../components/TypingIndicator';
 import api from '../../../api';
@@ -76,6 +76,7 @@ export default function ClmAgreementsToApprovePage() {
   // Real-time: refetch the moment any approval event lands for this tenant
   // (Reverb private channel) + on tab focus as a dropped-socket safety net.
   useEffect(() => {
+    const echo = getEcho();
     const cid = user?.client_id;
     const onFocus = () => load();
     window.addEventListener('focus', onFocus);

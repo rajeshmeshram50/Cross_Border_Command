@@ -1167,7 +1167,7 @@ function EditEmployeeModal({ isOpen, onClose, emp }: { isOpen: boolean; onClose:
 // the Onboarding page passes 'onboarding'; pass null to list every template
 // matched to the employee regardless of trigger point.
 export function VaultModal({
-  isOpen, onClose, emp, tab, onTabChange, triggerKeyword = 'onboarding',
+  isOpen, onClose, emp, tab, onTabChange, triggerKeyword = 'onboarding', signedOnly = false,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -1175,6 +1175,11 @@ export function VaultModal({
   tab: 'employee' | 'organizational';
   onTabChange: (t: 'employee' | 'organizational') => void;
   triggerKeyword?: string | null;
+  // When true (the standalone Employee Evidence Vault) the Organizational tab
+  // becomes a read-only archive of FULLY-SIGNED documents only, exposing just
+  // View + Download. When false (Onboarding / Exit workflow pages) it lists
+  // every matched template with the full Generate / Send / track workflow.
+  signedOnly?: boolean;
 }) {
   const { theme: vaultTheme } = useTheme();
   const vaultDark = vaultTheme === 'dark';
@@ -1503,19 +1508,17 @@ export function VaultModal({
     return out;
   }, [empDocs, prevCompanies]);
 
-  // Org tab shows EVERY matching template the rule engine surfaced for
-  // this employee's (department × category × role-type), so HR can
-  // see what's pending and act on it (Send / Generate) — not just the
-  // already-Completed archive. Mirrors HrExitManagement, which lists
-  // every matching exit template with its own per-row workflow status.
-  // Previously this was filtered to status === 'Completed', which hid
-  // every template until it was signed — making the tab look empty
-  // even when the "Matched Templates" banner above said matches existed.
-  const signedTemplates = orgTemplates;
-  const completedCount = useMemo(
-    () => orgTemplates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed').length,
+  // The Org tab adapts to the caller. In the standalone Employee Evidence Vault
+  // (signedOnly) it's a read-only archive of FULLY-SIGNED documents only — a
+  // template surfaces once its signing run is Completed, with just View +
+  // Download per row. In the Onboarding / Exit workflow pages it lists every
+  // matched template so HR can Generate / Send / track in-flight signings.
+  const completedTemplates = useMemo(
+    () => orgTemplates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed'),
     [orgTemplates, runByTemplateId],
   );
+  const completedCount = completedTemplates.length;
+  const signedTemplates = signedOnly ? completedTemplates : orgTemplates;
 
   const allDocs = employeeSections.flatMap(s => s.docs);
   const counts = {
@@ -2072,15 +2075,14 @@ export function VaultModal({
 
                   <div className="d-flex align-items-center justify-content-between mb-2">
                     <div>
-                      {/* Heading was "Signed Company Documents", which implied
-                          the list only carried Completed signings. The tab now
-                          lists every matched template (mirrors HrExitManagement)
-                          with each row's per-workflow status visible, so the
-                          heading + sub-copy reflect that wider scope. */}
-                      <div className="fw-bold" style={{ fontSize: 14 }}>Company Documents</div>
+                      {/* Title + sub-copy adapt to the caller: a signed-only
+                          archive in the Employee Evidence Vault, or the full
+                          matched-template list on the workflow pages. */}
+                      <div className="fw-bold" style={{ fontSize: 14 }}>{signedOnly ? 'Signed Documents' : 'Company Documents'}</div>
                       <div className="text-muted" style={{ fontSize: 11.5 }}>
-                        {orgLoading ? 'Loading matching templates…'
-                          : signedTemplates.length === 0 ? 'No templates matched this employee’s department / category.'
+                        {orgLoading ? (signedOnly ? 'Loading signed documents…' : 'Loading matching templates…')
+                          : signedTemplates.length === 0 ? (signedOnly ? 'No signed documents yet.' : 'No templates matched this employee’s department / category.')
+                          : signedOnly ? `${signedTemplates.length} signed document${signedTemplates.length === 1 ? '' : 's'}`
                           : `${signedTemplates.length} template${signedTemplates.length === 1 ? '' : 's'} · ${completedCount} signed`}
                       </div>
                     </div>
@@ -2101,10 +2103,17 @@ export function VaultModal({
                     <div className="vault-org-empty" style={{ padding: 22, textAlign: 'center', borderRadius: 10 }}>
                       <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 8 }} />
                       <div style={{ fontSize: 13 }}>
-                        No HR Document Templates matched this employee’s
-                        <strong> Department / Category </strong> rule. Configure
-                        templates under <strong>HR &rsaquo; Document Templates</strong>
-                        and they will surface here automatically.
+                        {signedOnly ? (
+                          <>No fully-signed documents yet. A document appears here once
+                          its signing workflow is <strong>Completed</strong>. Send a
+                          template for signing from <strong>HR &rsaquo; Document Templates</strong>
+                          and it will surface here automatically.</>
+                        ) : (
+                          <>No HR Document Templates matched this employee’s
+                          <strong> Department / Category </strong> rule. Configure
+                          templates under <strong>HR &rsaquo; Document Templates</strong>
+                          and they will surface here automatically.</>
+                        )}
                       </div>
                     </div>
                   )}
@@ -2160,11 +2169,12 @@ export function VaultModal({
                           <span className={`badge rounded-pill bg-${tplStatusColor}-subtle text-${tplStatusColor} fw-semibold px-3 py-2 fs-13`}>
                             {tpl.status}
                           </span>
-                          {/* Once fully signed, the row collapses to a single
-                              Download action — View/Send/Sign are hidden. */}
-                          {run?.status !== 'Completed' && (
+                          {/* View — workflow pages hide it once a run is Completed
+                              (Download takes over); the signed-only Employee
+                              Evidence Vault always shows it (opens the signed copy). */}
+                          {(signedOnly || run?.status !== 'Completed') && (
                             <button type="button" className="vault-action-view" onClick={() => handleView(tpl)}
-                              data-tooltip="Preview with this employee's data" data-tooltip-pos="bottom" aria-label="Preview document">
+                              data-tooltip={signedOnly ? 'View the signed document' : "Preview with this employee's data"} data-tooltip-pos="bottom" aria-label="View document">
                               <i className="ri-eye-line" /> View
                             </button>
                           )}
@@ -2233,7 +2243,10 @@ export function VaultModal({
                             );
                           })()}
 
-                          {/* 3-dot menu — audit trail + cancel (when a run exists) */}
+                          {/* 3-dot menu (audit trail + cancel). Hidden in the
+                              signed-only Employee Evidence Vault, which exposes
+                              just View + Download. */}
+                          {!signedOnly && (
                           <div style={{ position: 'relative' }}>
                             <button type="button" className="vault-kebab-btn" onClick={() => setOpenMenuId(openMenuId === tpl.id ? null : tpl.id)}
                               data-tooltip="More actions" data-tooltip-pos="left" aria-label="More actions"
@@ -2261,6 +2274,7 @@ export function VaultModal({
                               </div>
                             )}
                           </div>
+                          )}
                         </div>
 
                         {/* Signing Workflow stepper — renders the same
