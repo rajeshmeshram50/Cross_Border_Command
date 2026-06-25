@@ -33,6 +33,12 @@ export default function MappedSuppliersModal({ product, recordId, recordSource, 
   const [suppliers, setSuppliers] = useState<Sup[]>([]);
   const [loading, setLoading] = useState(true);
   const { pulse, guardOverlay } = useModalGuard();
+  // Lock background page scroll while the modal is open.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
   useEffect(() => {
     if (!targetId || productId == null) { setLoading(false); return; }
     setLoading(true);

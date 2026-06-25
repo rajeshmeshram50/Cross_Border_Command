@@ -34,6 +34,13 @@ export default function ProductListModal({ row, onClose }: { row: PLRow; onClose
   const [loading, setLoading] = useState(true);
   const { pulse, guardOverlay } = useModalGuard();
 
+  // Lock background page scroll while the modal is open.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
   useEffect(() => {
     setLoading(true);
     api.get<{ data: { products: PLProduct[] } }>(`/p2p/sourcing-targets/${row.id}/report`)

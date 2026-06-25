@@ -380,18 +380,24 @@ class SourcingController extends Controller
     public function suppliers(Request $request)
     {
         $user = $request->user();
+        // Pull the vendor's primary contact person from its primary address
+        // (contact_name / contact_no / email) — `addresses` is ordered
+        // is_primary-first, so first() is the primary (or the only) one.
         $rows = Vendor::where('client_id', $user->client_id)
-            ->with('segment:id,name')
+            ->with(['segment:id,name', 'addresses'])
             ->orderBy('company_name')
             ->get()
-            ->map(fn($v) => [
-                'id'      => (string) $v->id,
-                'name'    => $v->company_name,
-                'segment' => $v->segment->name ?? '',
-                'contact' => '',
-                'mobile'  => '',
-                'email'   => $v->primary_email ?? '',
-            ]);
+            ->map(function ($v) {
+                $addr = $v->addresses->first();
+                return [
+                    'id'      => (string) $v->id,
+                    'name'    => $v->company_name,
+                    'segment' => $v->segment->name ?? '',
+                    'contact' => $addr->contact_name ?? '',
+                    'mobile'  => $addr->contact_no ?? '',
+                    'email'   => ($addr->email ?? '') ?: ($v->primary_email ?? ''),
+                ];
+            });
 
         return $this->ok($rows);
     }
@@ -495,7 +501,7 @@ class SourcingController extends Controller
 
         if ($request->filled('supplier_id')) {
             $v = Vendor::where('client_id', $user->client_id)
-                ->with('segment:id,name')
+                ->with(['segment:id,name', 'addresses'])
                 ->findOrFail($request->input('supplier_id'));
 
             // A product can't have the same vendor mapped twice.
@@ -503,12 +509,17 @@ class SourcingController extends Controller
                 return response()->json(['status' => false, 'message' => "“{$v->company_name}” is already mapped to this product."], 422);
             }
 
+            // Snapshot the vendor's primary contact person (from its primary
+            // address) so the mapped-supplier card shows real contact details.
+            $addr = $v->addresses->first();
             $p->suppliers()->create([
                 'supplier_id' => $v->id,
                 'source'      => 'master',
                 'name'        => $v->company_name,
                 'segment'     => $v->segment->name ?? null,
-                'email'       => $v->primary_email,
+                'contact'     => $addr->contact_name ?? null,
+                'mobile'      => $addr->contact_no ?? null,
+                'email'       => ($addr->email ?? '') ?: $v->primary_email,
             ]);
         } elseif ($request->filled('new_supplier')) {
             $n    = $request->input('new_supplier');
