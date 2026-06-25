@@ -5914,6 +5914,11 @@ export default function HrEmployees() {
             transition: transform .15s ease, box-shadow .15s ease;
           }
           .assign-save-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(99,102,241,0.38); }
+          /* Top-right close X — matches the system-standard gradient-header
+             close button (see .emp-close-btn on the Add/Edit Employee modal). */
+          .assign-close-x { transition: background .15s ease, transform .15s ease; }
+          .assign-close-x:hover { background: rgba(255,255,255,0.34) !important; transform: scale(1.08); }
+          .assign-close-x:active { transform: scale(0.95); }
         `}</style>
 
         <ModalBody className="p-0">
@@ -5933,7 +5938,23 @@ export default function HrEmployees() {
               position: 'absolute', top: -50, right: -40, width: 220, height: 220,
               borderRadius: '50%', background: 'rgba(255,255,255,0.10)',
             }} />
-            <div className="d-flex align-items-center gap-3" style={{ position: 'relative' }}>
+            {/* Top-right close X — consistent with other system popups. */}
+            <button
+              type="button"
+              onClick={closeAssign}
+              aria-label="Close"
+              className="assign-close-x btn p-0 d-inline-flex align-items-center justify-content-center"
+              style={{
+                position: 'absolute', top: 16, right: 18, zIndex: 2,
+                width: 30, height: 30, borderRadius: 10,
+                background: 'rgba(255,255,255,0.18)',
+                border: '1px solid rgba(255,255,255,0.30)',
+                color: '#fff',
+              }}
+            >
+              <i className="ri-close-line" style={{ fontSize: 18 }} />
+            </button>
+            <div className="d-flex align-items-center gap-3" style={{ position: 'relative', paddingRight: 44 }}>
               <div className="d-flex align-items-center gap-3 min-w-0">
                 <span
                   className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
@@ -5958,7 +5979,6 @@ export default function HrEmployees() {
                   </div>
                 </div>
               </div>
-              {/* No top-right X — footer has Cancel; one dismiss path. */}
             </div>
           </div>
 

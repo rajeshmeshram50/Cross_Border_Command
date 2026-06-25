@@ -172,7 +172,10 @@ class BranchController extends Controller
 
             // Branch user login credentials
             'user_name' => 'required|string|max:255',
-            'user_email' => ['required', 'email', Rule::unique('users', 'email')->whereNull('deleted_at')],
+            // Email is unique PER TENANT — scope the dup check to THIS branch's
+            // client so the same email used in a different client doesn't block
+            // creation here. Matches the users_email_client_unique DB index.
+            'user_email' => ['required', 'email', Rule::unique('users', 'email')->where(fn ($q) => $q->where('client_id', $clientId))->whereNull('deleted_at')],
             'user_phone' => ['nullable', 'string', 'max:20', 'regex:/^[+\d\s\-()]{7,20}$/'],
             'user_designation' => 'nullable|string|max:100',
             'user_password' => 'required|string|min:6',
@@ -464,7 +467,7 @@ class BranchController extends Controller
             'primary_color' => 'nullable|string|max:7',
             'secondary_color' => 'nullable|string|max:7',
             'user_name' => 'nullable|string|max:255',
-            'user_email' => ['nullable', 'email', Rule::unique('users', 'email')->ignore($branchUser?->id)->whereNull('deleted_at')],
+            'user_email' => ['nullable', 'email', Rule::unique('users', 'email')->ignore($branchUser?->id)->where(fn ($q) => $q->where('client_id', $branch->client_id))->whereNull('deleted_at')],
             'user_phone' => ['nullable', 'string', 'max:20', 'regex:/^[+\d\s\-()]{7,20}$/'],
             'user_designation' => 'nullable|string|max:100',
             'user_password' => 'nullable|string|min:6',

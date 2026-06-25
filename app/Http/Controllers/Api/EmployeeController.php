@@ -645,7 +645,7 @@ class EmployeeController extends Controller
             // friendly field error instead of a 500.
             if ($e->getCode() === '23505') {
                 throw ValidationException::withMessages([
-                    'email' => ['This email is already linked to another account in the system. Email is the login ID, so it must be unique across all branches — use a different email.'],
+                    'email' => ['This email already has an account in this organization. Each email can be used only once per organization — use a different email.'],
                 ]);
             }
             throw $e;
@@ -1201,9 +1201,16 @@ class EmployeeController extends Controller
 
         
         $emailRule = $isUpdate ? ['nullable', 'email', 'max:191'] : ['required', 'email', 'max:191'];
+        // Email is unique PER TENANT (not globally) — the same email may belong
+        // to another client. Scope the dup check to the creator's client_id so a
+        // collision in a DIFFERENT client no longer blocks creation here. Mirrors
+        // the pan_number rule above and the users_email_client_unique DB index.
+        $emailClientId = optional($request->user())->client_id;
         $emailRule[] = Rule::unique('users', 'email')
             ->whereNull('deleted_at')
-            ->where(fn($q) => $q->whereRaw('LOWER(email) = ?', [mb_strtolower((string) $request->input('email'))]))
+            ->where(fn($q) => $q
+                ->whereRaw('LOWER(email) = ?', [mb_strtolower((string) $request->input('email'))])
+                ->when($emailClientId, fn($qq) => $qq->where('client_id', $emailClientId)))
             ->ignore($ignoreUserId);
 
         
@@ -1366,7 +1373,7 @@ class EmployeeController extends Controller
             // branch/client) — it can't be branch-scoped without making login
             // ambiguous. Spell that out so an admin who can only see their own
             // branch doesn't read this as a false positive.
-            'email.unique'                 => 'This email is already linked to another account in the system. Email is the login ID, so it must be unique across all branches — use a different email.',
+            'email.unique'                 => 'This email already has an account in this organization. Each email can be used only once per organization — use a different email.',
         ]);
     }
 

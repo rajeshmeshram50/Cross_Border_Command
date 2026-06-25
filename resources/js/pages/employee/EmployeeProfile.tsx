@@ -95,13 +95,29 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       ? (employee?.ancillaryRole as string[]).filter(Boolean)
       : (employee?.ancillaryRole ? [employee.ancillaryRole as string] : []);
 
+  // A disabled employee must read "Inactive" here regardless of the raw
+  // `status` field — fixing the mismatch where the list showed "Disabled" but
+  // the profile, going by status alone, still showed "Active". This must work
+  // for BOTH entry paths:
+  //   • navigated from the list → carries the computed `enabled` flag
+  //   • deep-link / refresh → carries the raw backend record (no `enabled`,
+  //     and status may be 'terminated'/'resigned' or it may be soft-deleted).
+  // So we treat any of those signals as disabled (mirrors HrEmployees
+  // apiToUiRow's `enabled` derivation).
+  const rawStatus = String((employee as any)?.status ?? '').toLowerCase();
+  const isDisabled =
+    employee?.enabled === false
+    || (employee as any)?.deleted_at != null
+    || ['inactive', 'terminated', 'resigned'].includes(rawStatus);
+
   const statusTone =
-      employee?.status === 'active'         ? { bg: 'rgba(255,255,255,0.18)', dot: '#22c55e', label: 'Active' }
+      isDisabled                            ? { bg: 'rgba(255,255,255,0.18)', dot: '#94a3b8', label: 'Inactive' }
+    : employee?.status === 'active'         ? { bg: 'rgba(255,255,255,0.18)', dot: '#22c55e', label: 'Active' }
     : employee?.status === 'on_leave'       ? { bg: 'rgba(255,255,255,0.18)', dot: '#f59e0b', label: 'On Leave' }
     : employee?.status === 'high_attention' ? { bg: 'rgba(255,255,255,0.18)', dot: '#ef4444', label: 'High Attention' }
     : employee?.status === 'probation'      ? { bg: 'rgba(255,255,255,0.18)', dot: '#3b82f6', label: 'Probation' }
     : employee?.status === 'inactive'       ? { bg: 'rgba(255,255,255,0.18)', dot: '#94a3b8', label: 'Inactive' }
-    :                                          { bg: 'rgba(255,255,255,0.18)', dot: '#22c55e', label: employee?.enabled === false ? 'Disabled' : 'Active' };
+    :                                          { bg: 'rgba(255,255,255,0.18)', dot: '#22c55e', label: 'Active' };
 
   const [tab, setTab] = useState<TabKey>('profile');
   const [payrollTab, setPayrollTab] = useState<PayrollTab>('summary');

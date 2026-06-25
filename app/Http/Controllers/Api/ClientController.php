@@ -175,7 +175,12 @@ class ClientController extends Controller
             // ask. soft-deleted rows excluded so a removed admin can
             // be re-added cleanly.
             'admin_name' => 'required|string|max:255',
-            'admin_email' => ['required', 'email', Rule::unique('users', 'email')->whereNull('deleted_at')],
+            // Email is unique PER TENANT now. A brand-new client is an empty
+            // tenant bucket, so its admin email only needs to be unique WITHIN
+            // this (about-to-be-created) client — which has no users yet. An
+            // email already used in a DIFFERENT client must NOT block creating
+            // this one. The users_email_client_unique DB index is the backstop.
+            'admin_email' => ['required', 'email'],
             'admin_phone' => [
                 'nullable', 'string', 'max:20',
                 Rule::unique('users', 'phone')->whereNull('deleted_at'),
@@ -484,7 +489,9 @@ class ClientController extends Controller
             'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
             'notes' => 'nullable|string',
             'admin_name' => 'nullable|string|max:255',
-            'admin_email' => ['nullable', 'email', Rule::unique('users', 'email')->ignore($adminUser?->id)->whereNull('deleted_at')],
+            // Per-tenant email: scope the dup check to THIS client so the same
+            // email used by another client doesn't block updating this admin.
+            'admin_email' => ['nullable', 'email', Rule::unique('users', 'email')->ignore($adminUser?->id)->where(fn ($q) => $q->where('client_id', $client->id))->whereNull('deleted_at')],
             'admin_phone' => [
                 'nullable', 'string', 'max:20',
                 Rule::unique('users', 'phone')->ignore($adminUser?->id)->whereNull('deleted_at'),
