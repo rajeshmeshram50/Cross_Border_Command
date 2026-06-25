@@ -2,15 +2,6 @@ import { useEffect, useState } from 'react';
 import { Modal, ModalBody } from 'reactstrap';
 import { leaveRequestsApi, ApiLeaveRequest, ApiLeaveApprover } from '../hrms/leavePlansApi';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// LeaveRequestDetailsModal — read-only view that opens when an employee
-// clicks one of their own leave-request rows. Matches the Keka layout:
-//   - Header (Requested by + timestamp)
-//   - Big date cards (JAN 27 TUE — JAN 28 WED) with summary line
-//   - "No teammates are on leave on this day"
-//   - Notified To: list of CC'd colleagues
-//   - Comment thread (the requester's note, then any approver comments)
-// ─────────────────────────────────────────────────────────────────────────────
 interface Props {
   isOpen: boolean;
   requestId: number | null;
@@ -76,10 +67,6 @@ export default function LeaveRequestDetailsModal({ isOpen, requestId, onClose }:
   const from = parts(detail?.from_date);
   const to = parts(detail?.to_date);
 
-  // Notified colleagues — stored on the request's `notify` JSON.
-  // Shape: { employee_ids: number[], manager: bool, hr: bool, ... }
-  // We don't have a bulk lookup endpoint, so we fall back to the chain
-  // approvers + a "+ N more" hint when there's a list of employee_ids.
   const notifyIds: number[] = Array.isArray((detail?.notify as any)?.employee_ids)
     ? ((detail?.notify as any).employee_ids as number[])
     : [];
@@ -91,15 +78,11 @@ export default function LeaveRequestDetailsModal({ isOpen, requestId, onClose }:
       centered
       size="lg"
       backdrop="static"
-      // See RequestLeaveModal — zIndex prop is required to override
-      // reactstrap's inline-style default of 1050 (below the
-      // EmployeeProfile fullscreen overlay at 1080).
       zIndex={2100}
       modalClassName="ep-leave-modal"
       backdropClassName="ep-leave-backdrop"
     >
       <ModalBody className="p-0">
-        {/* Header */}
         <div className="d-flex align-items-center justify-content-between" style={{ padding: '20px 24px 16px', borderBottom: '1px solid #e5e7eb' }}>
           <h5 className="fw-bold mb-0" style={{ fontSize: 18 }}>Leave Request Details</h5>
           <button type="button" className="btn-close" onClick={onClose} aria-label="Close" />
@@ -112,7 +95,6 @@ export default function LeaveRequestDetailsModal({ isOpen, requestId, onClose }:
           </div>
         ) : (
           <div style={{ padding: '20px 24px' }}>
-            {/* Requester row */}
             <div className="d-flex align-items-center gap-2 mb-4">
               <span
                 className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
@@ -128,7 +110,6 @@ export default function LeaveRequestDetailsModal({ isOpen, requestId, onClose }:
               </div>
             </div>
 
-            {/* Date cards + summary */}
             <div className="d-flex align-items-center gap-3 mb-4 pb-3" style={{ borderBottom: '1px solid #f1f3f5' }}>
               <DateCard mon={from.mon} day={from.day} dow={from.dow} />
               <span className="fw-bold" style={{ fontSize: 22, color: '#9ca3af' }}>–</span>
@@ -143,7 +124,6 @@ export default function LeaveRequestDetailsModal({ isOpen, requestId, onClose }:
               </div>
             </div>
 
-            {/* Status banner if decided */}
             {detail.status !== 'Pending' && (
               <div className="mb-3" style={{
                 background:
@@ -163,13 +143,10 @@ export default function LeaveRequestDetailsModal({ isOpen, requestId, onClose }:
               </div>
             )}
 
-            {/* Teammates on leave on these days — placeholder until we wire a
-                team-overlap endpoint. Matches the Keka empty-state text. */}
             <div className="mb-4 text-muted" style={{ fontSize: 13 }}>
               No teammates are on leave on this day
             </div>
 
-            {/* Notified To list */}
             <h6 className="fw-bold mb-2" style={{ fontSize: 14 }}>Notified To:</h6>
             {chain.length === 0 && notifyIds.length === 0 ? (
               <div className="text-muted mb-3" style={{ fontSize: 12 }}>Nobody else was notified.</div>
@@ -190,8 +167,6 @@ export default function LeaveRequestDetailsModal({ isOpen, requestId, onClose }:
               </div>
             )}
 
-            {/* Comment thread — show the requester's note as the first
-                comment, then any approver comments from the chain. */}
             {detail.reason && (
               <div className="d-flex gap-2 mb-3 pt-3" style={{ borderTop: '1px solid #f1f3f5' }}>
                 <span
@@ -234,8 +209,6 @@ export default function LeaveRequestDetailsModal({ isOpen, requestId, onClose }:
               </div>
             ))}
 
-            {/* Add comment placeholder — not wired to a backend endpoint
-                yet, so we render the input but it's read-only for now. */}
             <div className="d-flex align-items-center gap-2 mt-3" style={{
               border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 14px',
             }}>

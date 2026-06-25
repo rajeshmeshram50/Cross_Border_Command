@@ -12,17 +12,14 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────────────────────
 type CalendarStart = 'fixed_month' | 'joining_date';
 
 interface LeaveTypeRow {
   id: string;
   name: string;
   color: string;
-  quotaLabel: string;        // "12 days/year" once configured, "Not Setup" otherwise
-  endOfYearLabel: string;    // "Carry forward 5 / Encash 5" or "Not Setup"
+  quotaLabel: string;
+  endOfYearLabel: string;
   configured: boolean;
 }
 
@@ -32,20 +29,13 @@ interface LeavePlan {
   description?: string;
   isDefault: boolean;
   calendarStart: CalendarStart;
-  startDate?: string;        // when calendarStart === 'fixed_month'
+  startDate?: string;
   showSystemPolicy: boolean;
   customPolicyFile?: string;
   employees: PlanEmployee[];
   leaveTypes: LeaveTypeRow[];
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Leave Type Setup config — the wide popup that opens from the Setup button
-// on each row. Shape mirrors the six side-tab sections in the screenshots
-// (Accrual / Leave Application / Approval / Year End / Probation / Notice
-// Period). Backend will eventually persist this per (plan_id, leave_type_id);
-// for now it lives in component state so the demo flow is end-to-end.
-// ─────────────────────────────────────────────────────────────────────────────
 interface AccrualConfig {
   unit: 'days' | 'hours';
   unlimited: boolean;
@@ -54,13 +44,11 @@ interface AccrualConfig {
   frequency: 'monthly' | 'quarterly' | 'half_yearly' | 'yearly';
   dayOfMonth: number;
   variesEachMonth: boolean;
-  // Accrual Restrictions
   leaveExpires: { enabled: boolean; unit: 'day' | 'month' | 'year'; days: number };
   restrictByAttendance: boolean;
   noAccrualIfOnLeaveFor: { enabled: boolean; days: number };
   noAccrualIfBalanceExceeds: { enabled: boolean; days: number };
   noAccrualIfJoiningAfter: { enabled: boolean; day: number };
-  // Extra Leave
   managersCanGrantExtra: boolean;
   employeeOverdraft: { enabled: boolean; days: number };
   accrueByTenure: boolean;
@@ -82,22 +70,12 @@ interface LeaveAppConfig {
   minIfBalanceMore: { enabled: boolean; balance: number; minDays: number };
 }
 
-// Multi-level approval chain. Each entry describes who acts at that
-// level — `reporting_manager` resolves to the employee's RM at submit
-// time, `role` matches a named role (HR / branch_admin), `user` /
-// `employee` reference a specific person. Backend snapshots this on
-// the leave_request so changing the chain doesn't reroute in-flight
-// approvals.
 interface ApprovalLevel {
   approver_kind: 'reporting_manager' | 'role' | 'user' | 'employee';
   approver_role?: string | null;
   approver_user_id?: number | null;
   approver_employee_id?: number | null;
   label?: string | null;
-  // Optional auto-skip rule evaluated at submission time. When the
-  // request's day count matches the rule, this level is marked
-  // Skipped without anyone having to act. Supported keys:
-  //   days_lt / days_lte / days_gt / days_gte
   skip_if?: {
     days_lt?: number;
     days_lte?: number;
@@ -111,8 +89,6 @@ interface ApprovalConfig {
   approverRole: string;
   autoApproveIfMissing: boolean;
   doNotEmailEveryRequest: boolean;
-  // New optional chain — when empty/missing the backend falls back to a
-  // single Reporting Manager level so old plans keep working.
   chain?: ApprovalLevel[];
 }
 
@@ -201,14 +177,6 @@ const defaultLeaveTypeConfig = (): LeaveTypeConfig => ({
   },
 });
 
-/**
- * Deep-merge an incoming (possibly partial) config_json blob with the
- * default. Loaded rows from the DB may pre-date a section (e.g. an
- * older config without `yearEnd`) — passing it raw to the section
- * views crashes them when they read `cfg.something` on undefined.
- * One-level deep merge is enough — the inner shapes never change
- * without a code-side type update.
- */
 function mergeWithDefaultConfig(raw: Partial<LeaveTypeConfig> | undefined | null): LeaveTypeConfig {
   const def = defaultLeaveTypeConfig();
   if (!raw || typeof raw !== 'object') return def;
@@ -235,11 +203,6 @@ interface PlanEmployee {
   accent: string;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Visual constants — accent palette + job-title tone presets used by the
-// API adapters when rendering employee avatars and pills. Demo-data builders
-// from the page's pre-API era were removed; only these helpers remain.
-// ─────────────────────────────────────────────────────────────────────────────
 const ACCENTS = ['#7c5cfc', '#0ab39c', '#f7b84b', '#f06548', '#0ea5e9', '#e83e8c', '#0c63b0', '#22c55e'];
 const accent = (i: number) => ACCENTS[i % ACCENTS.length];
 
@@ -252,11 +215,6 @@ const JOB_TITLE_TONES = [
   { bg: '#fee2e2', fg: '#b91c1c' },
 ];
 
-// ─────────────────────────────────────────────────────────────────────────────
-// API → frontend adapters. The page was originally built against in-memory
-// demo data with hand-crafted shapes; the backend talks in raw rows. These
-// helpers convert between the two so the JSX downstream stays untouched.
-// ─────────────────────────────────────────────────────────────────────────────
 const TYPE_PALETTE: Array<{ bg: string; fg: string; color: string }> = [
   { bg: '#fee2e2', fg: '#b91c1c', color: '#dc2626' },
   { bg: '#fde8c4', fg: '#a4661c', color: '#f59e0b' },
@@ -306,9 +264,6 @@ function apiTypeToAssigned(api: ApiLeaveType): LeaveTypeRow {
 function apiEmployeeToPlanEmployee(api: ApiPlanEmployee, idx: number): PlanEmployee {
   const fullName = api.display_name?.trim() || `${api.first_name} ${api.last_name ?? ''}`.trim();
   const initials = fullName.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase() || '?';
-  /* Reporting manager name — try the Employee-side relation first, then
-   * fall back to the User-side relation (Branch/Client admin assigned
-   * as manager but not onboarded as an Employee). */
   const rmName = api.reporting_manager
     ? (api.reporting_manager.display_name?.trim() || `${api.reporting_manager.first_name} ${api.reporting_manager.last_name ?? ''}`.trim())
     : (api.reporting_manager_user?.name?.trim() || '');
@@ -330,10 +285,6 @@ function apiEmployeeToPlanEmployee(api: ApiPlanEmployee, idx: number): PlanEmplo
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 function apiPlanToFrontend(api: ApiLeavePlan): LeavePlan {
-  // Reconstruct a YYYY-MM-01 string for the <input type="date"> from the
-  // separately-stored from_month + calendar_year. The original adapter
-  // shoved calendar_year ("2025") straight into the date input, which
-  // browsers reject and silently render as empty.
   let startDate: string | undefined;
   if (api.from_month && api.calendar_year) {
     const monthIdx = MONTH_NAMES.indexOf(api.from_month);
@@ -355,12 +306,6 @@ function apiPlanToFrontend(api: ApiLeavePlan): LeavePlan {
   };
 }
 
-/**
- * Convert the frontend Add Leave Plan modal payload into the shape
- * LeavePlanController::store expects. The modal carries `calendarStart`
- * + `startDate` (a calendar string); the API splits this into
- * from_month_type + from_month + calendar_year.
- */
 function frontendPlanToApi(p: Partial<LeavePlan>): Partial<ApiLeavePlan> {
   let from_month: string | null = null;
   let calendar_year: string | null = null;
@@ -370,7 +315,6 @@ function frontendPlanToApi(p: Partial<LeavePlan>): Partial<ApiLeavePlan> {
       from_month = MONTH_NAMES[d.getMonth()] ?? null;
       calendar_year = String(d.getFullYear());
     } else {
-      // Already in YYYY-MM-DD or just a year — store as-is.
       calendar_year = p.startDate;
     }
   }
@@ -387,16 +331,10 @@ function frontendPlanToApi(p: Partial<LeavePlan>): Partial<ApiLeavePlan> {
   };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Component
-// ─────────────────────────────────────────────────────────────────────────────
 type TopTab = 'plans' | 'types' | 'balances';
 
 export default function HrLeavePlans() {
   const navigate = useNavigate();
-  // Permission gating — keyed by the `hr.leave` leaf (Leave Plans has no
-  // separate leaf). A view-only grant must not expose create / edit / delete
-  // of plans or types. Super admin bypasses.
   const { user } = useAuth();
   const toast = useToast();
   const isSuperAdmin = user?.user_type === 'super_admin';
@@ -409,46 +347,24 @@ export default function HrLeavePlans() {
   const [activePlanId, setActivePlanId] = useState<string>('');
   const [planSearch, setPlanSearch] = useState('');
   const [showAddPlan, setShowAddPlan] = useState(false);
-  // Null = create mode. A plan id = edit that plan.
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
   const [showAssignTypes, setShowAssignTypes] = useState(false);
-  // Setup modal — `setupTypeId` is the leave-type id whose configuration
-  // popup is currently open. Null when closed. Each (plan, type) pair has
-  // its own config, so configs are keyed by `${planId}::${typeId}`.
   const [setupTypeId, setSetupTypeId] = useState<string | null>(null);
   const [typeConfigs, setTypeConfigs] = useState<Record<string, LeaveTypeConfig>>({});
-  // 3-dot menu on the active plan header
   const [planMenuOpen, setPlanMenuOpen] = useState(false);
-  // Add / Edit Leave Type popup — `editingTypeId` is null for "create" mode
-  // and the row id when editing an existing entry. Same modal handles both.
   const [showAddType, setShowAddType] = useState(false);
   const [editingTypeId, setEditingTypeId] = useState<string | null>(null);
-  // Read-only View popup for a leave type (eye icon).
   const [viewingTypeId, setViewingTypeId] = useState<string | null>(null);
-  // "Need help configuring?" guidance modal.
   const [showGuide, setShowGuide] = useState(false);
-  // Catalog of leave types for this branch — fetched from /master/leave_type.
   const [catalog, setCatalog] = useState<CatalogType[]>([]);
 
-  // ──────────────────────────────────────────────────────────────────────
-  // API loaders
-  // ──────────────────────────────────────────────────────────────────────
   const loadPlans = useCallback(async () => {
     try {
       const list = await leavePlansApi.list();
-      // Hydrate each plan's full detail so the Configuration table has
-      // data without needing a follow-up click. Promise.allSettled so a
-      // single bad row doesn't blank the whole sidebar.
       const settled = await Promise.allSettled(list.map(p => leavePlansApi.show(p.id)));
       const detailed = settled.flatMap(s => s.status === 'fulfilled' ? [s.value] : []);
       const mapped = detailed.map(apiPlanToFrontend);
       setPlans(mapped);
-      // Seed typeConfigs from the persisted pivot rows so the Setup popup
-      // opens with the saved values instead of the empty default. Deep-
-      // merge each loaded config with defaultLeaveTypeConfig() so any
-      // missing section (e.g. an old row that was saved before YearEnd
-      // existed) gets defaulted instead of crashing the section view
-      // when it reads `cfg.unit` on undefined.
       const seeded: Record<string, LeaveTypeConfig> = {};
       detailed.forEach(p => {
         (p.leave_types ?? []).forEach(t => {
@@ -458,8 +374,6 @@ export default function HrLeavePlans() {
         });
       });
       setTypeConfigs(seeded);
-      // Functional updater so we don't need activePlanId in the dep array
-      // — clicking the sidebar shouldn't trigger a full refetch.
       setActivePlanId(curr => curr || mapped[0]?.id || '');
     } catch (err) {
       console.warn('[HrLeavePlans] failed to load plans', err);
@@ -480,12 +394,6 @@ export default function HrLeavePlans() {
 
   const editingType = catalog.find(t => t.id === editingTypeId) ?? null;
 
-  // ──────────────────────────────────────────────────────────────────────
-  // Mutation handlers — each calls the API then refetches the affected
-  // collection. Optimistic updates were tempting but the source of truth
-  // for quota_summary / eoy_summary lives on the pivot row, so a refetch
-  // keeps the Configuration table consistent with the backend.
-  // ──────────────────────────────────────────────────────────────────────
   const onSaveLeaveType = async (t: Omit<CatalogType, 'id' | 'initials' | 'bg' | 'fg' | 'accent'>) => {
     const apiType = (() => {
       if (t.type === 'Compensatory offs') return 'Compoff' as const;
@@ -536,8 +444,6 @@ export default function HrLeavePlans() {
     try {
       await leaveTypesApi.remove(Number(id));
       await loadCatalog();
-      // Plans may have referenced this type — refetch so the Configuration
-      // table for any open plan reflects the removal.
       await loadPlans();
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Delete failed';
@@ -652,7 +558,6 @@ export default function HrLeavePlans() {
       <Row>
         <Col xs={12}>
           <div className="lp-shell">
-            {/* Header strip — same shape as the Clients / Branches headers. */}
             <div className="frm-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
@@ -668,7 +573,6 @@ export default function HrLeavePlans() {
               </button>
             </div>
 
-            {/* Top tabs + Add Leave Plan */}
             <div className="lp-top-tabs">
               <div className="lp-tabs-row">
                 {([
@@ -708,7 +612,6 @@ export default function HrLeavePlans() {
 
             {topTab === 'plans' ? (
               <div className="lp-body">
-                {/* Sidebar — list of plans */}
                 <aside className="lp-sidebar">
                   <div className="lp-search-box">
                     <i className="ri-search-line" />
@@ -751,7 +654,6 @@ export default function HrLeavePlans() {
                   )}
                 </aside>
 
-                {/* Main panel */}
                 <main className="lp-main">
                   {!activePlan ? (
                     <div className="text-muted text-center py-5">No plans yet. Click "+ Add Leave Plan" to create one.</div>
@@ -765,8 +667,6 @@ export default function HrLeavePlans() {
                             Apr – Mar
                           </div>
                         </div>
-                        {/* Plan actions — each gated by the matching hr.leave
-                            flag. Hidden entirely for view-only users. */}
                         {(canEdit || canDelete || canAdd) && (
                         <Dropdown isOpen={planMenuOpen} toggle={() => setPlanMenuOpen(o => !o)}>
                           <DropdownToggle tag="button" type="button" className="lp-icon-btn" aria-label="More options">
@@ -864,8 +764,6 @@ export default function HrLeavePlans() {
         onClose={() => setSetupTypeId(null)}
         onChange={(next) => {
           if (!setupTypeId || !activePlan) return;
-          // 1) Optimistically update local state so the popup reflects edits
-          //    immediately without waiting for a round-trip.
           setTypeConfigs(prev => ({
             ...prev,
             [`${activePlan.id}::${setupTypeId}`]: next,
@@ -887,9 +785,6 @@ export default function HrLeavePlans() {
                 }
               : p
           ));
-          // 2) Persist to backend. Fire-and-forget — the optimistic update
-          //    above keeps the UI responsive; failure is logged and the
-          //    next loadPlans() will reconcile if needed.
           leavePlansApi
             .saveTypeConfig(Number(activePlan.id), Number(setupTypeId), next as any, quotaLabel, eoyLabel)
             .catch(err => console.error('[HrLeavePlans] save type config failed', err));
@@ -912,9 +807,6 @@ export default function HrLeavePlans() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Configuration tab — leave-type table with Setup buttons
-// ─────────────────────────────────────────────────────────────────────────────
 function ConfigurationTab({
   plan, onAssignTypes, onSetupType, onShowGuide, canEdit,
 }: {
@@ -1006,22 +898,16 @@ function ConfigurationTab({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Leave Types tab — master catalog. Two visual groups: Regular leave-types
-// (Sick, Casual, Paid, Comp Off, Unpaid) and Statutory / Incidental ones
-// (Floater, Special, Maternity, Paternity, Bereavement). Each row exposes an
-// "is paid" pill, a short code badge, and view/edit actions.
-// ─────────────────────────────────────────────────────────────────────────────
 type CatalogType = {
   id: string;
   name: string;
-  type: string;            // Regular / Compensatory offs / Unpaid / Incident based
+  type: string;
   isPaid: 'Paid' | 'Unpaid';
   code: string;
-  initials: string;        // small badge text (e.g. SL)
+  initials: string;
   bg: string;
   fg: string;
-  accent: string;          // vivid mid-tone — used for the dark-theme badge
+  accent: string;
   group: 'regular' | 'incidental';
 };
 
@@ -1171,20 +1057,10 @@ function CatalogRow({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Leave Balances tab — every employee × every leave-type, fetched live from
-// /api/leave-balances. Columns are dynamic (driven by what's actually
-// assigned across plans), so HR sees only the leave types that matter for
-// their branch. `used` is currently always 0 because we don't have a
-// leave_requests table yet; once requests exist the backend joins them in.
-// ─────────────────────────────────────────────────────────────────────────────
 function LeaveBalancesTab() {
   const [data, setData] = useState<ApiLeaveBalancesResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  // `debouncedSearch` lags `search` by 350ms so each keystroke doesn't fire
-  // a backend request. The dropdown filters fire immediately because they
-  // change one value at a time.
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [department, setDepartment] = useState('All');
   const [location, setLocation] = useState('All');
@@ -1353,11 +1229,6 @@ function LeaveBalancesTab() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ViewLeaveTypeModal — read-only details popup opened from the eye icon on
-// the Leave Types catalog row. Surfaces every persisted attribute and a
-// shortcut into Edit so HR doesn't need to close → reopen via the pencil.
-// ─────────────────────────────────────────────────────────────────────────────
 function ViewLeaveTypeModal({
   isOpen, leaveType, onClose, onEdit, canEdit,
 }: {
@@ -1437,11 +1308,6 @@ function ViewLeaveTypeModal({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GuidanceModal — quick reference triggered by the "Here's a quick guide…" /
-// "Check the guide here" links scattered through the page. Opening the same
-// modal from every entry point keeps the help surface consistent.
-// ─────────────────────────────────────────────────────────────────────────────
 function GuidanceModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   return (
     <Modal isOpen={isOpen} toggle={onClose} centered size="md" backdrop="static" modalClassName="rec-form-modal" contentClassName="rec-form-content border-0">
@@ -1511,9 +1377,6 @@ function GuidanceModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => vo
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Add Leave Plan modal — right-side drawer
-// ─────────────────────────────────────────────────────────────────────────────
 function AddLeavePlanModal({
   isOpen, editing, onClose, onSave,
 }: {
@@ -1537,9 +1400,6 @@ function AddLeavePlanModal({
     setShowSystemPolicy(true); setUploadCustom(false); setIsDefault(false);
   };
 
-  // Hydrate from the row being edited every time the modal opens. When
-  // `editing` is null we reset to a clean create-mode form. Mirrors the
-  // pattern AddLeaveTypeModal already uses.
   useEffect(() => {
     if (!isOpen) return;
     if (editing) {
@@ -1582,7 +1442,6 @@ function AddLeavePlanModal({
       contentClassName="rec-form-content border-0"
     >
       <ModalBody className="p-0">
-        {/* Header — purple gradient with glossy overlay (rec-form-header). */}
         <div className="rec-form-header" style={{ padding: '14px 22px 12px' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-2">
@@ -1615,9 +1474,7 @@ function AddLeavePlanModal({
           </div>
         </div>
 
-        {/* Body — sectioned form using the shared rec-form-section primitives. */}
         <div className="rec-form-body">
-          {/* Section 1 — Plan Identity */}
           <div className="rec-form-section">
             <div className="rec-form-section-head">
               <span
@@ -1672,7 +1529,6 @@ function AddLeavePlanModal({
             </Row>
           </div>
 
-          {/* Section 2 — Calendar Year */}
           <div className="rec-form-section">
             <div className="rec-form-section-head">
               <span
@@ -1732,7 +1588,6 @@ function AddLeavePlanModal({
             </Row>
           </div>
 
-          {/* Section 3 — Policy Explanation + Plan Settings */}
           <div className="rec-form-section">
             <div className="rec-form-section-head">
               <span
@@ -1799,7 +1654,6 @@ function AddLeavePlanModal({
           </div>
         </div>
 
-        {/* Footer — shared rec-form-footer chrome. */}
         <div className="rec-form-footer">
           <span className="hint" />
           <div className="d-flex gap-2">
@@ -1820,12 +1674,6 @@ function AddLeavePlanModal({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AddLeaveTypeModal — centered popup opened from the Leave Types tab. One
-// modal handles two modes: create (when `editing` is null) and edit
-// (when `editing` carries the row to update). The form fields hydrate from
-// `editing` on open so HR sees the current values, not blanks.
-// ─────────────────────────────────────────────────────────────────────────────
 function AddLeaveTypeModal({
   isOpen, editing, onClose, onSave,
 }: {
@@ -1839,8 +1687,6 @@ function AddLeaveTypeModal({
   const [isPaid, setIsPaid] = useState<'Paid' | 'Unpaid'>('Paid');
   const [code, setCode]   = useState('');
 
-  // Hydrate from the row being edited each time the popup opens. When
-  // `editing` is null we reset to a clean create-mode form.
   useEffect(() => {
     if (!isOpen) return;
     if (editing) {
@@ -1857,9 +1703,6 @@ function AddLeaveTypeModal({
   const handleClose = () => { reset(); onClose(); };
 
   const TYPE_OPTIONS = ['Regular', 'Compensatory offs', 'Unpaid', 'Incident based'];
-  // Statutory/Incidental types group under the second table section; everything
-  // else lives under Regular. Driven by the chosen `type` so HR doesn't have
-  // to think about it.
   const group: CatalogType['group'] = type === 'Incident based' ? 'incidental' : 'regular';
 
   const canSave = name.trim().length > 0 && code.trim().length > 0;
@@ -1920,7 +1763,6 @@ function AddLeaveTypeModal({
         </div>
 
         <div className="rec-form-body">
-          {/* Section 1 — Identity */}
           <div className="rec-form-section">
             <div className="rec-form-section-head">
               <span
@@ -1973,7 +1815,6 @@ function AddLeaveTypeModal({
             </Row>
           </div>
 
-          {/* Section 2 — Compensation */}
           <div className="rec-form-section">
             <div className="rec-form-section-head">
               <span
@@ -2049,13 +1890,6 @@ function AddLeaveTypeModal({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AssignLeaveTypesModal — categorised picker. Opens from the Configuration
-// tab's "Add leave type" button. Each category carries its own accent so the
-// chosen rows read at a glance (Regular = purple, Incident = teal, Unpaid =
-// red, Comp Off = green). The progress strip at the top reflects how many
-// of the available types HR has picked.
-// ─────────────────────────────────────────────────────────────────────────────
 type AssignableType = {
   id: string;
   name: string;
@@ -2084,8 +1918,6 @@ function AssignLeaveTypesModal({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const visibleSelectedCount = selected.size;
 
-  // Derive AssignableType[] from the live catalog (master_leave_types) so
-  // newly-added types in the master catalog show up here without a code change.
   const assignableTypes: AssignableType[] = useMemo(() => catalog.map(c => {
     const category: AssignableType['category'] =
       c.type === 'Compensatory offs' ? 'compoff'
@@ -2101,7 +1933,7 @@ function AssignLeaveTypesModal({
   }), [catalog]);
 
   const toggle = (id: string) => {
-    if (existingTypeIds.has(id)) return; // already on the plan
+    if (existingTypeIds.has(id)) return;
     setSelected(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
@@ -2130,9 +1962,6 @@ function AssignLeaveTypesModal({
   const grouped = (cat: AssignableType['category']) =>
     assignableTypes.filter(t => t.category === cat);
 
-  // Progress: out of the *assignable* (not-yet-on-plan) types, how many
-  // selected. Caps at 100% so the bar reads correctly when the plan already
-  // owns most types.
   const assignablePool = assignableTypes.filter(t => !existingTypeIds.has(t.id)).length || assignableTypes.length || 1;
   const progressPct = Math.min(100, Math.round((visibleSelectedCount / assignablePool) * 100));
 
@@ -2221,9 +2050,6 @@ function AssignLeaveTypesModal({
                       <label
                         key={t.id}
                         className={`alt-row ${isSelected ? 'is-selected' : ''} ${isExisting ? 'is-locked' : ''}`}
-                        // Drive the selected tint from the category accent via a
-                        // CSS var so dark mode can re-derive a themed fill
-                        // (light pastel inline styles stayed light in dark mode).
                         style={{ ['--alt-accent' as string]: meta.color } as CSSProperties}
                       >
                         <input
@@ -2271,17 +2097,8 @@ function AssignLeaveTypesModal({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// LeaveTypeSetupModal — wide popup that opens from the Setup button on each
-// row. Six side-tab sections, each with its own card-based form. State is
-// owned by the parent (plan-scoped) so closing the popup never loses work.
-// ─────────────────────────────────────────────────────────────────────────────
 type SetupSection = 'accrual' | 'leaveApp' | 'approval' | 'yearEnd' | 'probation' | 'noticePeriod';
 
-// Year End Processing / Probation / Notice Period removed at user request —
-// their underlying types + section views remain in the file (and the
-// config_json still tracks them via defaults) so they can be re-introduced
-// without a schema change, but they no longer appear in the sidebar.
 const SETUP_SECTIONS: { key: SetupSection; label: string; icon: string; tone: string }[] = [
   { key: 'accrual',      label: 'Accrual',           icon: 'ri-time-line',           tone: '#7c5cfc' },
   { key: 'leaveApp',     label: 'Leave Application', icon: 'ri-file-list-3-line',    tone: '#0ea5e9' },
@@ -2301,8 +2118,6 @@ function LeaveTypeSetupModal({
   const sectionIndex = SETUP_SECTIONS.findIndex(s => s.key === active);
   const sectionMeta = SETUP_SECTIONS[sectionIndex] ?? SETUP_SECTIONS[0];
 
-  // Helpers — produce a slice updater that doesn't trample the rest of the
-  // config when an inner field changes.
   const updateAccrual      = (patch: Partial<AccrualConfig>)      => onChange({ ...config, accrual:      { ...config.accrual,      ...patch } });
   const updateLeaveApp     = (patch: Partial<LeaveAppConfig>)     => onChange({ ...config, leaveApp:     { ...config.leaveApp,     ...patch } });
   const updateApproval     = (patch: Partial<ApprovalConfig>)     => onChange({ ...config, approval:     { ...config.approval,     ...patch } });
@@ -2331,7 +2146,6 @@ function LeaveTypeSetupModal({
     >
       <ModalBody className="p-0">
         <div className="lts-shell">
-          {/* Header */}
           <div className="lts-header">
             <div className="d-flex align-items-center gap-2 min-w-0">
               <span className="lts-type-icon" style={{ background: `${leaveType.color}20` }}>
@@ -2349,7 +2163,6 @@ function LeaveTypeSetupModal({
             </div>
           </div>
 
-          {/* Body */}
           <div className="lts-body">
             <aside className="lts-sidebar">
               <div className="lts-section-label">CONFIGURATION</div>
@@ -2382,7 +2195,6 @@ function LeaveTypeSetupModal({
             </main>
           </div>
 
-          {/* Footer */}
           <div className="lts-footer">
             <span className="text-muted" style={{ fontSize: 12 }}>
               Section <strong className="text-body">{sectionIndex + 1}</strong> of {SETUP_SECTIONS.length}
@@ -2402,10 +2214,6 @@ function LeaveTypeSetupModal({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Reusable building blocks — small primitives that keep each section's JSX
-// readable without dragging in a full form library.
-// ─────────────────────────────────────────────────────────────────────────────
 function SectionCard({
   icon, iconBg, title, children,
 }: {
@@ -2473,9 +2281,6 @@ function RadioRow({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Section: Accrual
-// ─────────────────────────────────────────────────────────────────────────────
 function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: Partial<AccrualConfig>) => void }) {
   return (
     <>
@@ -2732,9 +2537,6 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Section: Leave Application
-// ─────────────────────────────────────────────────────────────────────────────
 function LeaveAppSectionView({ cfg, update }: { cfg: LeaveAppConfig; update: (p: Partial<LeaveAppConfig>) => void }) {
   return (
     <>
@@ -2845,10 +2647,6 @@ function LeaveAppSectionView({ cfg, update }: { cfg: LeaveAppConfig; update: (p:
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Section: Approval
-// ─────────────────────────────────────────────────────────────────────────────
-// Kind labels + accent colours for the chain editor pills.
 const APPROVER_KIND_META: Record<ApprovalLevel['approver_kind'], { label: string; bg: string; fg: string; initials: string }> = {
   reporting_manager: { label: 'Reporting Manager', bg: '#d3f0ee', fg: '#0a716a', initials: 'RM' },
   role:              { label: 'Role',              bg: '#ece6ff', fg: '#5a3fd1', initials: 'RL' },
@@ -2863,22 +2661,12 @@ const ROLE_OPTIONS: Array<{ value: string; label: string }> = [
 ];
 
 function ApprovalSectionView({ cfg, update }: { cfg: ApprovalConfig; update: (p: Partial<ApprovalConfig>) => void }) {
-  // Always operate on a real array — old plans that haven't been edited
-  // since the chain field was introduced have an undefined `chain`, so
-  // default to a single Reporting Manager level. Editing it triggers a
-  // save via the parent's onChange.
   const chain: ApprovalLevel[] = Array.isArray(cfg.chain) && cfg.chain.length > 0
     ? cfg.chain
     : [{ approver_kind: 'reporting_manager' }];
 
-  // Local cache of full PickedEmployee objects keyed by level index — the
-  // chain entry only stores ID + label, so on first render we hydrate
-  // photos/designations by calling /api/employees once with all stored
-  // IDs in scope. The user gets nice chips immediately on reload instead
-  // of bare "Employee #12" placeholders.
   const [chainPicked, setChainPicked] = useState<Record<number, PickedEmployee | null>>({});
   useEffect(() => {
-    // Only hydrate the entries we haven't already resolved this session.
     const needIds = chain
       .map((l, idx) => ({ idx, l }))
       .filter(({ idx, l }) =>
@@ -2887,14 +2675,7 @@ function ApprovalSectionView({ cfg, update }: { cfg: ApprovalConfig; update: (p:
         && (l.approver_user_id || l.approver_employee_id)
       );
     if (needIds.length === 0) return;
-    // The employees endpoint supports a numeric search but not a bulk
-    // id-in filter, so fall back to per-row fetches. Batched in a single
-    // Promise.all so we only pay one render cycle. Keep this minimal —
-    // most chains are 1-3 levels.
     Promise.all(needIds.map(({ idx, l }) => {
-      // For `user` kind we have a user_id, not an employee_id. The
-      // employees endpoint accepts ?user_id=N as part of the standard
-      // filters. For `employee` kind we have the id directly.
       const params = l.approver_kind === 'employee'
         ? { id: l.approver_employee_id }
         : { user_id: l.approver_user_id };
@@ -2931,7 +2712,7 @@ function ApprovalSectionView({ cfg, update }: { cfg: ApprovalConfig; update: (p:
   };
   const addLevel = () => setChain([...chain, { approver_kind: 'role', approver_role: 'hr' }]);
   const removeLevel = (idx: number) => {
-    if (chain.length <= 1) return; // keep at least one level
+    if (chain.length <= 1) return;
     setChain(chain.filter((_, i) => i !== idx));
   };
   const moveLevel = (idx: number, dir: -1 | 1) => {
@@ -3022,8 +2803,6 @@ function ApprovalSectionView({ cfg, update }: { cfg: ApprovalConfig; update: (p:
                         value={level.approver_kind}
                         onChange={v => updateLevel(idx, {
                           approver_kind: v as ApprovalLevel['approver_kind'],
-                          // Clear secondary fields when changing kind so stale
-                          // values don't get persisted into a mismatched shape.
                           approver_role: null, approver_user_id: null, approver_employee_id: null,
                         })}
                         options={[
@@ -3108,10 +2887,6 @@ function ApprovalSectionView({ cfg, update }: { cfg: ApprovalConfig; update: (p:
                     </span>
                   </div>
 
-                  {/* Skip-rule editor — auto-skip this level when the
-                      request's day count matches the rule. The backend
-                      evaluates skip_if at snapshot time so this level
-                      gets status='Skipped' and never blocks the chain. */}
                   <SkipRuleEditor
                     rule={level.skip_if ?? null}
                     onChange={(next) => updateLevel(idx, { skip_if: next })}
@@ -3149,11 +2924,6 @@ function ApprovalSectionView({ cfg, update }: { cfg: ApprovalConfig; update: (p:
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SkipRuleEditor — per-level "Skip this level when…" condition. Wires
-// into the chain entry's skip_if blob; backend evaluates at submission
-// time and marks the level Skipped right away.
-// ─────────────────────────────────────────────────────────────────────────────
 type SkipOp = '' | 'days_lt' | 'days_lte' | 'days_gt' | 'days_gte';
 const SKIP_OP_LABELS: Record<SkipOp, string> = {
   '':         'No auto-skip',
@@ -3169,8 +2939,6 @@ function SkipRuleEditor({
   rule: ApprovalLevel['skip_if'] | null;
   onChange: (next: ApprovalLevel['skip_if'] | null) => void;
 }) {
-  // Surface only the first defined op for the simple editor — multi-op
-  // composites can be hand-edited via tinker for advanced cases.
   const activeOp: SkipOp = (() => {
     if (!rule) return '';
     if (rule.days_lt  != null) return 'days_lt';
@@ -3183,8 +2951,6 @@ function SkipRuleEditor({
 
   const setOp = (op: SkipOp) => {
     if (op === '') { onChange(null); return; }
-    // Preserve the current value when toggling operators so user doesn't
-    // re-type the threshold.
     const v = typeof activeValue === 'number' ? activeValue : 1;
     onChange({ [op]: v });
   };
@@ -3238,9 +3004,6 @@ function SkipRuleEditor({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Section: Year End Processing
-// ─────────────────────────────────────────────────────────────────────────────
 function YearEndSectionView({ cfg, update }: { cfg: YearEndConfig; update: (p: Partial<YearEndConfig>) => void }) {
   return (
     <>
@@ -3311,9 +3074,6 @@ function YearEndSectionView({ cfg, update }: { cfg: YearEndConfig; update: (p: P
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Section: Probation
-// ─────────────────────────────────────────────────────────────────────────────
 function ProbationSectionView({ cfg, update }: { cfg: ProbationConfig; update: (p: Partial<ProbationConfig>) => void }) {
   return (
     <>
@@ -3441,9 +3201,6 @@ function ProbationSectionView({ cfg, update }: { cfg: ProbationConfig; update: (
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Section: Notice Period
-// ─────────────────────────────────────────────────────────────────────────────
 function NoticePeriodSectionView({ cfg, update }: { cfg: NoticePeriodConfig; update: (p: Partial<NoticePeriodConfig>) => void }) {
   return (
     <>
