@@ -9951,3 +9951,23 @@
     justify-content: center;
   }
 }
+
+/* ── Holiday page (HrHoliday) — mobile / tablet (≤ 767.98px) ───────────────
+   Scoped to .holiday-page (also a .rec-page, so the header + search already
+   restack). Group/Type/Year filters flow 2-per-row; the action buttons take a
+   full-width row, two-per-row. */
+@media (max-width: 767.98px) {
+  .holiday-page .rec-req-filter-row { row-gap: 8px; }
+  .holiday-page .hol-filter { flex: 1 1 calc(50% - 8px); min-width: 0; }
+  .holiday-page .hol-filter-sel { flex: 1 1 auto; min-width: 0 !important; }
+  .holiday-page .hol-actions {
+    width: 100%;
+    margin-left: 0 !important;
+    flex-wrap: wrap;
+  }
+  .holiday-page .hol-actions .rec-btn-ghost,
+  .holiday-page .hol-actions .rec-btn-primary {
+    flex: 1 1 calc(50% - 8px);
+    justify-content: center;
+  }
+}

@@ -240,7 +240,7 @@ export default function HrHoliday() {
       <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleFilePicked} />
       <Row>
         <Col xs={12}>
-          <div className="rec-page">
+          <div className="rec-page holiday-page">
             <div className="frm-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
@@ -265,23 +265,29 @@ export default function HrHoliday() {
                       <Input type="text" className="form-control" placeholder="Search holidays…" value={search} onChange={e => setSearch(e.target.value)} />
                       <i className="ri-search-line search-icon"></i>
                     </div>
-                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Group</span>
-                    <div style={{ minWidth: 170 }}>
-                      <MasterSelect value={groupFilter} onChange={setGroupFilter}
-                        options={[{ value: 'All', label: 'All Groups' }, ...groups.map(g => ({ value: String(g.id), label: g.name }))]} placeholder="All Groups" />
+                    <div className="hol-filter d-flex align-items-center gap-2">
+                      <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Group</span>
+                      <div className="hol-filter-sel" style={{ minWidth: 170 }}>
+                        <MasterSelect value={groupFilter} onChange={setGroupFilter}
+                          options={[{ value: 'All', label: 'All Groups' }, ...groups.map(g => ({ value: String(g.id), label: g.name }))]} placeholder="All Groups" />
+                      </div>
                     </div>
-                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Type</span>
-                    <div style={{ minWidth: 140 }}>
-                      <MasterSelect value={typeFilter} onChange={setTypeFilter}
-                        options={[{ value: 'All', label: 'All Types' }, ...TYPE_OPTIONS]} placeholder="All Types" />
+                    <div className="hol-filter d-flex align-items-center gap-2">
+                      <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Type</span>
+                      <div className="hol-filter-sel" style={{ minWidth: 140 }}>
+                        <MasterSelect value={typeFilter} onChange={setTypeFilter}
+                          options={[{ value: 'All', label: 'All Types' }, ...TYPE_OPTIONS]} placeholder="All Types" />
+                      </div>
                     </div>
-                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Year</span>
-                    <div style={{ minWidth: 100 }}>
-                      <MasterSelect value={yearFilter} onChange={setYearFilter}
-                        options={[{ value: 'All', label: 'All Years' }, ...years.map(y => ({ value: y, label: y }))]} placeholder="All Years" />
+                    <div className="hol-filter d-flex align-items-center gap-2">
+                      <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Year</span>
+                      <div className="hol-filter-sel" style={{ minWidth: 100 }}>
+                        <MasterSelect value={yearFilter} onChange={setYearFilter}
+                          options={[{ value: 'All', label: 'All Years' }, ...years.map(y => ({ value: y, label: y }))]} placeholder="All Years" />
+                      </div>
                     </div>
 
-                    <div className="d-flex align-items-center gap-2 ms-auto">
+                    <div className="hol-actions d-flex align-items-center gap-2 ms-auto">
                       <Tooltip label="Create & manage holiday groups (types)">
                         <button type="button" className="rec-btn-ghost" onClick={() => setManageGroupsOpen(true)}>
                           <i className="ri-folder-settings-line" />Groups
