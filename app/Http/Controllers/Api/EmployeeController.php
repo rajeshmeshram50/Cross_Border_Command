@@ -645,7 +645,7 @@ class EmployeeController extends Controller
             // friendly field error instead of a 500.
             if ($e->getCode() === '23505') {
                 throw ValidationException::withMessages([
-                    'email' => ['This email is already registered.'],
+                    'email' => ['This email already has an account in this organization. Each email can be used only once per organization — use a different email.'],
                 ]);
             }
             throw $e;
@@ -666,16 +666,21 @@ class EmployeeController extends Controller
         // by the admin themselves. Delete still preserves the guard since
         // it's destructive.
 
-        // Block any mutation on a disabled (soft-deleted) employee. The
-        // row is still resolvable via withTrashed() so the admin can
-        // restore it, but business-data updates — especially the
-        // onboarding wizard's PUTs — must not proceed against a
-        // disabled record. Otherwise an admin could advance an account
-        // that can't even sign in. Restore the employee first, then
-        // edit.
-        if ($row->trashed()) {
+        // Block any mutation on a disabled employee. "Disabled" means EITHER
+        // soft-deleted (the Remove action) OR a terminal status set via the
+        // edit form (Inactive / Resigned / Terminated) — both kill the login,
+        // so neither should accept further profile changes. The row is still
+        // resolvable (withTrashed) so the admin can restore it, but business
+        // updates — especially the onboarding wizard's PUTs — must not proceed
+        // against a disabled record. Restore/re-activate first, then edit.
+        // (Exception: a PUT whose ONLY effect is flipping status back to an
+        // active value is allowed through so re-activation still works.)
+        $incomingStatus = (string) $request->input('status', '');
+        $reactivating   = $incomingStatus !== ''
+            && !in_array(strtolower($incomingStatus), ['inactive', 'resigned', 'terminated'], true);
+        if ($row->isDisabled() && !$reactivating) {
             return response()->json([
-                'message' => 'This employee is disabled — restore them from the HR Employees page before editing or continuing onboarding.',
+                'message' => 'This employee is disabled — restore/re-activate them from the HR Employees page before editing or continuing onboarding.',
             ], 422);
         }
 
@@ -738,12 +743,26 @@ class EmployeeController extends Controller
             // Keep the linked user in sync — name + email + phone changes here
             // should land on the login account too.
             if ($row->user) {
+                $newEmail = $data['email'] ?? $row->user->email;
+                // Changing the login email is an identity-level change, so the
+                // OLD password must stop working: flag a forced reset and revoke
+                // any live tokens. The user can't sign in again until they set a
+                // new password via Forgot Password (OTP goes to the NEW email),
+                // which clears the flag. Compared case-insensitively so a pure
+                // casing edit doesn't needlessly lock the account.
+                $emailChanged = strcasecmp((string) $newEmail, (string) $row->user->email) !== 0;
+
                 $row->user->update([
                     'name'        => $row->display_name,
-                    'email'       => $data['email'] ?? $row->user->email,
+                    'email'       => $newEmail,
                     'phone'       => $data['mobile'] ?? $row->user->phone,
                     'designation' => $data['designation_name'] ?? $row->user->designation,
                 ]);
+
+                if ($emailChanged) {
+                    $row->user->update(['must_reset_password' => true]);
+                    $row->user->tokens()->delete();
+                }
 
                 // Cascade employee.status → users.status when it actually
                 // changes. Inactive/Resigned/Terminated must block login;
@@ -1182,9 +1201,16 @@ class EmployeeController extends Controller
 
         
         $emailRule = $isUpdate ? ['nullable', 'email', 'max:191'] : ['required', 'email', 'max:191'];
+        // Email is unique PER TENANT (not globally) — the same email may belong
+        // to another client. Scope the dup check to the creator's client_id so a
+        // collision in a DIFFERENT client no longer blocks creation here. Mirrors
+        // the pan_number rule above and the users_email_client_unique DB index.
+        $emailClientId = optional($request->user())->client_id;
         $emailRule[] = Rule::unique('users', 'email')
             ->whereNull('deleted_at')
-            ->where(fn($q) => $q->whereRaw('LOWER(email) = ?', [mb_strtolower((string) $request->input('email'))]))
+            ->where(fn($q) => $q
+                ->whereRaw('LOWER(email) = ?', [mb_strtolower((string) $request->input('email'))])
+                ->when($emailClientId, fn($qq) => $qq->where('client_id', $emailClientId)))
             ->ignore($ignoreUserId);
 
         
@@ -1343,6 +1369,11 @@ class EmployeeController extends Controller
             'perm_address_line1.not_regex' => 'Address cannot contain < or > characters.',
             'perm_address_line2.not_regex' => 'Address cannot contain < or > characters.',
             'location.not_regex'           => 'Location cannot contain < or > characters.',
+            // Email is the login ID and is unique system-wide (across every
+            // branch/client) — it can't be branch-scoped without making login
+            // ambiguous. Spell that out so an admin who can only see their own
+            // branch doesn't read this as a false positive.
+            'email.unique'                 => 'This email already has an account in this organization. Each email can be used only once per organization — use a different email.',
         ]);
     }
 

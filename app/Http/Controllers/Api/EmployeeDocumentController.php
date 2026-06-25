@@ -45,6 +45,12 @@ class EmployeeDocumentController extends Controller
     public function store(Request $request, Employee $employee)
     {
         $this->authorizeEmployeeAccess($request, $employee);
+        // Don't accept document uploads for a disabled employee (soft-deleted
+        // or terminal status). Restore/re-activate them first. Mirrors the
+        // EmployeeController edit guard so the whole profile is frozen.
+        if ($employee->isDisabled()) {
+            abort(422, 'This employee is disabled — restore/re-activate them before adding documents.');
+        }
 
         $data = $request->validate([
             'document_key' => 'required|string|max:60',

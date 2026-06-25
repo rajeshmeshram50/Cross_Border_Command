@@ -18,6 +18,32 @@ import 'swiper/css/navigation';
 import 'swiper/css/pagination';
 import '../../../css/plans-card.css';
 
+// Lazy-load Razorpay's checkout.js on demand — only when the user actually
+// starts a payment — instead of eagerly (and render-blocking) in every page's
+// <head>. Resolves once window.Razorpay is available; rejects if the script
+// fails to load. The promise is memoised so concurrent/repeat clicks reuse the
+// same in-flight load.
+let razorpayLoader: Promise<void> | null = null;
+function loadRazorpayCheckout(): Promise<void> {
+  if ((window as any).Razorpay) return Promise.resolve();
+  if (razorpayLoader) return razorpayLoader;
+  razorpayLoader = new Promise<void>((resolve, reject) => {
+    const SRC = 'https://checkout.razorpay.com/v1/checkout.js';
+    let el = document.querySelector<HTMLScriptElement>(`script[src="${SRC}"]`);
+    if (!el) {
+      el = document.createElement('script');
+      el.src = SRC;
+      el.async = true;
+      document.head.appendChild(el);
+    }
+    el.addEventListener('load', () => resolve());
+    el.addEventListener('error', () => { razorpayLoader = null; reject(new Error('Razorpay failed to load')); });
+    // Already cached/loaded between the guard above and now.
+    if ((window as any).Razorpay) resolve();
+  });
+  return razorpayLoader;
+}
+
 interface Plan {
   id: number; name: string; price: number; period: string;
   max_branches: number | null; max_users: number | null; storage_limit: string | null;
@@ -174,6 +200,16 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
       setProcessing(false);
       paySubmittingRef.current = false;
       toast.success('Plan Activated', `${selectedPlan.name} plan activated!`);
+      return;
+    }
+
+    // Pull in the checkout script now (it's no longer in the page <head>).
+    try {
+      await loadRazorpayCheckout();
+    } catch {
+      toast.error('Payment unavailable', 'Razorpay checkout could not load. Check your connection and try again.');
+      setProcessing(false);
+      paySubmittingRef.current = false;
       return;
     }
 

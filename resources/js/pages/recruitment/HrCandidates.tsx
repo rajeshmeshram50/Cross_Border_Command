@@ -10,7 +10,6 @@ import WorklistPager from '../../components/ui/WorklistPager';
 import { ShimmerTableRows } from '../../components/ui/Shimmer';
 import '../../../css/recruitment.css';
 
-// ── Types ────────────────────────────────────────────────────────────────────
 type CandidateStatus =
   | 'Applied' | 'Shortlisted' | 'In Interview' | 'Final Interview'
   | 'Selected' | 'Offered' | 'Rejected' | 'On Hold';
@@ -60,16 +59,10 @@ interface RecruitmentInfo {
   status: string;
 }
 
-const STATUSES: CandidateStatus[] = [
-  'Applied', 'Shortlisted', 'In Interview', 'Final Interview',
-  'Selected', 'Offered', 'Rejected', 'On Hold',
-];
-
 const SOURCES = ['LinkedIn', 'Naukri', 'Indeed', 'Referral', 'Company Website', 'Walk-in', 'Recruitment Agency', 'Internal', 'Other'];
 const NOTICE_PERIODS = ['Immediate', '15 Days', '30 Days', '45 Days', '60 Days', '90 Days'];
 const TRANSPORT_MODES = ['Walk', 'Bicycle', 'Two-wheeler', 'Four-wheeler', 'Public Transport', 'Other'];
 
-// Pretty-print dates as 05-Apr-2026
 const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatDate(raw: any): string {
   if (raw == null || raw === '') return '—';
@@ -79,11 +72,6 @@ function formatDate(raw: any): string {
   return `${dd}-${MONTH_ABBR[d.getMonth()]}-${d.getFullYear()}`;
 }
 
-// Each candidate status maps to one of Bootstrap's badge colors so the
-// pill renders with the same `bg-{color}-subtle text-{color}` classes the
-// Clients table uses for its Status column. Two statuses can legally share
-// a color (Selected + Offered both `success`, In Interview + Final
-// Interview both `primary`) — the label text keeps them readable.
 const CANDIDATE_STATUS_COLOR: Record<CandidateStatus, 'success' | 'danger' | 'warning' | 'info' | 'primary' | 'secondary'> = {
   'Applied':         'warning',
   'Shortlisted':     'info',
@@ -100,17 +88,14 @@ export default function HrCandidates() {
   const navigate = useNavigate();
   const toast = useToast();
   const { theme } = useTheme();
-  const dark = theme === 'dark';   // priority/status pills use inline colours
+  const dark = theme === 'dark';
 
   const [recruitment, setRecruitment] = useState<RecruitmentInfo | null>(null);
   const [candidates, setCandidates]   = useState<CandidateRow[]>([]);
   const [loading, setLoading]         = useState(true);
   const [tab, setTab]                 = useState<'all' | 'final' | 'selected' | 'rejected'>('final');
   const [search, setSearch]           = useState('');
-  const [sourceFilter, setSourceFilter] = useState<string>('All');
-  const [statusFilter, setStatusFilter] = useState<string>('All');
 
-  // Pagination
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -120,7 +105,6 @@ export default function HrCandidates() {
   const [importOpen, setImportOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
 
-  // Selection / Rejection confirmation
   const [confirming, setConfirming] = useState<{ row: CandidateRow; mode: 'select' | 'reject' } | null>(null);
 
   const fetchAll = async () => {
@@ -141,7 +125,7 @@ export default function HrCandidates() {
       setLoading(false);
     }
   };
-  useEffect(() => { fetchAll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [recruitmentId]);
+  useEffect(() => { fetchAll();  }, [recruitmentId]);
 
   const totals = useMemo(() => {
     const t = candidates.length;
@@ -150,16 +134,9 @@ export default function HrCandidates() {
     const selected = candidates.filter(c => c.status === 'Selected').length;
     const rejected = candidates.filter(c => c.status === 'Rejected').length;
     const offered = candidates.filter(c => c.status === 'Offered').length;
-    // "Active" = anyone still in the pipeline (everything except Selected /
-    // Offered / Rejected). Drives the "Active Candidates" tab's badge so
-    // newly-added Applied / Shortlisted / On Hold rows show up immediately.
     const active = candidates.filter(c =>
       c.status !== 'Selected' && c.status !== 'Offered' && c.status !== 'Rejected'
     ).length;
-    // "Final" = ONLY candidates whose status is Final Interview. The tab
-    // label is "Final Round Selected" so it must literally mean that —
-    // used to be `active` which (correctly) showed Applied rows too, but
-    // that contradicted the label and surprised users.
     const finalRound = candidates.filter(c => c.status === 'Final Interview').length;
     return { total: t, applied, inInterview, selected, rejected, offered, active, finalRound };
   }, [candidates]);
@@ -168,21 +145,12 @@ export default function HrCandidates() {
     const needle = search.trim().toLowerCase();
     return candidates
       .filter(c => {
-        // "all" → entire active pipeline (Applied / Shortlisted / In
-        //   Interview / On Hold / Final Interview). Everything except
-        //   the terminal states.
-        // "final" → ONLY candidates whose status is Final Interview. The
-        //   tab label is "Final Round Selected" so it must literally mean
-        //   that; otherwise an Applied row leaks into Final Round which
-        //   confused users.
         if (tab === 'all')      return c.status !== 'Selected' && c.status !== 'Offered' && c.status !== 'Rejected';
         if (tab === 'final')    return c.status === 'Final Interview';
         if (tab === 'selected') return c.status === 'Selected' || c.status === 'Offered';
         if (tab === 'rejected') return c.status === 'Rejected';
         return true;
       })
-      .filter(c => sourceFilter === 'All' || c.source === sourceFilter)
-      .filter(c => statusFilter === 'All' || c.status === statusFilter)
       .filter(c => {
         if (!needle) return true;
         return (
@@ -192,19 +160,13 @@ export default function HrCandidates() {
           (c.recruitment_code || '').toLowerCase().includes(needle)
         );
       });
-  }, [candidates, tab, sourceFilter, statusFilter, search]);
+  }, [candidates, tab, search]);
 
-  // Reset to page 1 whenever filters change so the user never sits on an
-  // empty page after the result set shrinks.
-  useEffect(() => { setPage(1); }, [tab, sourceFilter, statusFilter, search]);
+  useEffect(() => { setPage(1); }, [tab, search]);
 
-  // A closed recruitment (Cancelled / Completed / Expired) no longer accepts
-  // new candidates — the server rejects Add/Import with a 422, so we also grey
-  // out the entry points here to match. Existing candidates stay editable.
   const recClosed = ['Cancelled', 'Completed', 'Expired'].includes(recruitment?.status || '');
   const recClosedMsg = `Cannot add candidates — this recruitment is ${(recruitment?.status || '').toLowerCase()}`;
 
-  // Page slice
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage  = Math.min(page, pageCount);
   const sliceFrom = (safePage - 1) * pageSize;
@@ -219,8 +181,6 @@ export default function HrCandidates() {
   ];
 
   const handleStatusUpdate = async (c: CandidateRow, next: CandidateStatus, reasonOrNote?: string) => {
-    // Build the status payload — when rejecting, the Confirm modal sends
-    // "<reason> — <notes>" which we split back into the two backend fields.
     const payload: Record<string, any> = { status: next };
     if (reasonOrNote) {
       if (next === 'Rejected') {
@@ -238,9 +198,6 @@ export default function HrCandidates() {
       setCandidates(prev => prev.map(r => r.id === c.id ? data : r));
       toast.success(next, `${data.name} → ${next}`);
     } catch (err: any) {
-      // The backend rejects a 6th selection on a 5-opening recruitment with
-      // a 422 + message attached to the `status` field. Surface that verbatim
-      // so the recruiter knows exactly why it was blocked.
       const fieldErr = err?.response?.data?.errors?.status?.[0];
       const message  = fieldErr || err?.response?.data?.message || 'Please try again.';
       toast.error(next === 'Selected' ? 'Cannot mark as Selected' : 'Could not update', message);
@@ -253,7 +210,6 @@ export default function HrCandidates() {
       <Row>
         <Col xs={12}>
           <div className="rec-page">
-            {/* Header */}
             <div className="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-2">
               <div className="d-flex align-items-center gap-3 min-w-0">
                 <span
@@ -292,7 +248,6 @@ export default function HrCandidates() {
               </div>
             </div>
 
-            {/* Recruitment context card */}
             {recruitment && (
               <div className="cand-rec-card mb-2">
                 <div className="cand-rec-head">
@@ -308,10 +263,6 @@ export default function HrCandidates() {
                       <span
                         className="rec-pill"
                         style={{
-                          // Same per-priority palette as the Priority field
-                          // pill further down — used to be a hardcoded red
-                          // here, which looked wrong for Medium/Low and
-                          // disagreed with the field-level pill below.
                           background: dark
                             ? (recruitment.priority === 'High' ? 'rgba(239,68,68,.18)' : recruitment.priority === 'Medium' ? 'rgba(245,158,11,.18)' : 'rgba(59,130,246,.18)')
                             : (recruitment.priority === 'High' ? '#ffe4e1' : recruitment.priority === 'Medium' ? '#fef3c7' : '#dbeafe'),
@@ -332,7 +283,6 @@ export default function HrCandidates() {
                   </div>
                 </div>
                 <div className="cand-rec-divider" />
-                {/* Top half — 5 fields */}
                 <div className="cand-rec-grid cand-rec-grid--top">
                   <Field label="Department"      value={recruitment.department} />
                   <Field label="Designation"     value={recruitment.designation} />
@@ -340,7 +290,6 @@ export default function HrCandidates() {
                   <Field label="Openings"        value={recruitment.openings ? `${recruitment.openings} positions` : null} />
                   <Field label="Experience Req"  value={recruitment.experience} />
                 </div>
-                {/* Bottom half — 5 fields including Priority + Start · TAT + HR pair */}
                 <div className="cand-rec-grid">
                   <Field label="Work Mode" value={recruitment.workMode} />
                   <div className="cand-field">
@@ -375,7 +324,6 @@ export default function HrCandidates() {
               </div>
             )}
 
-            {/* KPI strip */}
             <Row className="g-2 mb-2 align-items-stretch rec-page-kpis">
               {KPI_CARDS.map(k => (
                 <Col key={k.key} xl={3} md={6} sm={6} xs={12}>
@@ -393,7 +341,6 @@ export default function HrCandidates() {
               ))}
             </Row>
 
-            {/* Tabs + search — one row */}
             <div className="d-flex align-items-center gap-2 mb-2 flex-wrap">
               <div className="rec-tab-track">
                 {([
@@ -423,7 +370,6 @@ export default function HrCandidates() {
               </span>
             </div>
 
-            {/* Search + Filter + Table — inside ONE card frame */}
             <Card className="border-0 shadow-none mb-0 bg-transparent">
               <CardBody className="p-0">
                 <div className="rec-list-frame">
@@ -432,8 +378,6 @@ export default function HrCandidates() {
                     <thead>
                       <tr>
                         <th className="ps-3 text-center" style={{ width: 56 }}>Sr No</th>
-                        {/* "Name" to stay consistent with the Sample Import
-                            template + import validation, which both use "Name". */}
                         <th>Name</th>
                         <th>Email</th>
                         <th>Mobile</th>
@@ -492,9 +436,6 @@ export default function HrCandidates() {
                             </td>
                             <td className="pe-3">
                               <div className="rec-row-actions justify-content-center">
-                                {/* Edit hidden for rejected candidates — a
-                                    rejected record is read-only and shouldn't
-                                    be modifiable further. */}
                                 {c.status !== 'Rejected' && (
                                   <Tooltip label="Edit Candidate">
                                     <button
@@ -507,10 +448,6 @@ export default function HrCandidates() {
                                     </button>
                                   </Tooltip>
                                 )}
-                                {/* Approve / Reject buttons hide once the candidate
-                                    is already in that terminal state — no point
-                                    re-selecting an already-selected row, or
-                                    re-rejecting an already-rejected one. */}
                                 {c.status !== 'Selected' && c.status !== 'Offered' && c.status !== 'Rejected' && (
                                   <Tooltip label="Mark Selected">
                                     <button
@@ -543,7 +480,6 @@ export default function HrCandidates() {
                     </tbody>
                   </table>
                 </div>
-                  {/* Pagination footer */}
                   <WorklistPager
                     total={filtered.length}
                     page={safePage}
@@ -562,7 +498,6 @@ export default function HrCandidates() {
         open={modalOpen}
         editing={editing}
         recruitmentId={recruitmentId ? Number(recruitmentId) : null}
-        recruitment={recruitment}
         onClose={() => { setModalOpen(false); setEditing(null); }}
         onSaved={(row) => {
           setCandidates(prev => {
@@ -589,9 +524,6 @@ export default function HrCandidates() {
             toast.error('Cannot import', 'No recruitment selected.');
             return;
           }
-          // POST the file to /candidates/import with the parent recruitment id.
-          // The backend validates each row and returns a per-row error list
-          // so the user sees exactly what's wrong with which line.
           const fd = new FormData();
           fd.append('file', file);
           fd.append('recruitment_id', String(recruitmentId));
@@ -606,12 +538,10 @@ export default function HrCandidates() {
 
             if (created > 0) {
               toast.success('Import complete', `${created} candidate${created === 1 ? '' : 's'} added${skipped ? ` · ${skipped} skipped` : ''}.`);
-              // Refresh the list so the new rows appear immediately.
               fetchAll();
             } else {
               toast.error('Nothing imported', skipped > 0 ? `${skipped} row${skipped === 1 ? '' : 's'} skipped — see errors below.` : 'No valid rows found in the file.');
             }
-            // Surface the first few row-level errors so users know what to fix.
             if (errors.length > 0) {
               const sample = errors.slice(0, 3).map((e: any) => `Row ${e.row}: ${e.message}`).join('\n');
               console.warn('[Candidate import] errors:\n' + errors.map((e: any) => `Row ${e.row}: ${e.message}`).join('\n'));
@@ -632,10 +562,6 @@ export default function HrCandidates() {
         filteredCount={filtered.length}
         onClose={() => setExportOpen(false)}
         onExport={async (scope: 'all' | 'view') => {
-          // 'all' → entire candidate list scoped to this recruitment.
-          // 'view' → just the rows currently visible after filters/tabs;
-          //          we send the id list explicitly so the backend exports
-          //          exactly what the SPA is showing.
           const params: Record<string, string> = {};
           if (recruitmentId) params.recruitment_id = String(recruitmentId);
           if (scope === 'view') {
@@ -659,16 +585,10 @@ export default function HrCandidates() {
         onConfirm={async (reasonOrNote: string) => {
           if (!confirming) return;
           const next: CandidateStatus = confirming.mode === 'select' ? 'Selected' : 'Rejected';
-          // Forward the reason/notes so the backend can stash them in
-          // rejection_reason + status_notes for the audit trail.
-          // Await so the modal can keep its spinner up until the API
-          // call finishes, then close ONLY on success — failures keep
-          // the modal open so the user can retry.
           try {
             await handleStatusUpdate(confirming.row, next, reasonOrNote);
             setConfirming(null);
           } catch {
-            // Error toast is surfaced inside handleStatusUpdate.
           }
         }}
       />
@@ -676,7 +596,6 @@ export default function HrCandidates() {
   );
 }
 
-// ─── Export Candidates modal ────────────────────────────────────────────────
 function ExportCandidatesModal({
   open, totalCount, filteredCount, onClose, onExport,
 }: {
@@ -684,26 +603,17 @@ function ExportCandidatesModal({
   totalCount: number;
   filteredCount: number;
   onClose: () => void;
-  // Now returns the parent's Promise so the modal can show a spinner
-  // for the duration of the download and only auto-close when the
-  // file has actually streamed back successfully.
   onExport: (scope: 'all' | 'view') => Promise<void> | void;
 }) {
   const [scope, setScope]         = useState<'all' | 'view'>('all');
   const [exporting, setExporting] = useState(false);
 
-  // Reset to "all" each time the modal opens so a previous "view-only" choice
-  // doesn't carry over silently. Also clear the in-flight flag.
   useEffect(() => { if (open) { setScope('all'); setExporting(false); } }, [open]);
 
   const handleExport = async () => {
     if (exporting) return;
     setExporting(true);
     try {
-      // Parent awaits the API call; we just gate the button until
-      // the promise resolves. The parent already closes the modal
-      // on success, but if it forgets we'll still flip the flag off
-      // here so the user can click Close manually.
       await onExport(scope);
     } finally {
       setExporting(false);
@@ -713,7 +623,6 @@ function ExportCandidatesModal({
   return (
     <Modal isOpen={open} toggle={onClose} centered size="md" backdrop="static" contentClassName="border-0 cand-export-modal">
       <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
-        {/* Header */}
         <div className="cand-export-head">
           <span className="cand-export-head-icon">
             <i className="ri-external-link-line" />
@@ -724,7 +633,6 @@ function ExportCandidatesModal({
           </div>
         </div>
 
-        {/* Body */}
         <div className="cand-export-body">
           <div className="cand-export-section-label">Scope</div>
 
@@ -770,7 +678,6 @@ function ExportCandidatesModal({
           </div>
         </div>
 
-        {/* Footer */}
         <div className="cand-export-footer">
           <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={exporting}>Close</button>
           <button
@@ -791,9 +698,6 @@ function ExportCandidatesModal({
   );
 }
 
-// Trigger a browser download for an arbitrary Blob (CSV, XLSX, …) from an
-// authenticated API response. Used by the Sample / Export endpoints so the
-// generated file is always whatever the backend returned.
 function triggerBlobDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a   = document.createElement('a');
@@ -805,16 +709,12 @@ function triggerBlobDownload(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-// ─── Import Candidates modal ────────────────────────────────────────────────
 function ImportCandidatesModal({
   open, recruitment, onClose, onImport,
 }: {
   open: boolean;
   recruitment: RecruitmentInfo | null;
   onClose: () => void;
-  // Returns a promise so the parent can await the upload (the modal stays
-  // open so the user can see in-flight state, but right now we just close it
-  // when the parent finishes).
   onImport: (file: File) => Promise<void> | void;
 }) {
   const [file, setFile] = useState<File | null>(null);
@@ -822,9 +722,6 @@ function ImportCandidatesModal({
   const [importing, setImporting]   = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Reset on each open and prefill the linked recruitment to the currently
-  // viewed one — the dropdown is read-only because the import is always
-  // scoped to the recruitment whose page the user is on.
   useEffect(() => {
     if (open) {
       setFile(null);
@@ -851,86 +748,13 @@ function ImportCandidatesModal({
     }
   };
 
-  // The dropdown only knows the currently-loaded recruitment. The user can
-  // type-in another code if they want to redirect this batch elsewhere — the
-  // input is editable.
   const recruitmentOptions = recruitment
     ? [{ value: recruitment.code, label: `${recruitment.code} — ${recruitment.jobTitle}` }]
     : [];
 
   return (
     <Modal isOpen={open} toggle={onClose} centered size="md" backdrop="static" modalClassName="cand-form-clientstyle" contentClassName="border-0 cand-import-modal">
-      {/* Reuse the candidate-form aesthetic for inputs + dropdowns
-          (Client form recipe — 38px height, 10px radius, 13px font,
-          sentence-case labels). Same overrides as CandidateFormModal
-          so the two modals look like a single design system. */}
-      <style>{`
-        .cand-form-clientstyle .rec-form-label,
-        .cand-form-clientstyle .cand-import-label {
-          font-size: 11.5px;
-          font-weight: 600;
-          letter-spacing: 0.01em;
-          text-transform: none;
-          margin-bottom: 5px;
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          line-height: 1.2;
-          background: none;
-          -webkit-background-clip: initial;
-          background-clip: initial;
-          -webkit-text-fill-color: var(--vz-body-color);
-          color: var(--vz-body-color);
-        }
-        [data-bs-theme="dark"] .cand-form-clientstyle .rec-form-label,
-        [data-bs-theme="dark"] .cand-form-clientstyle .cand-import-label,
-        [data-layout-mode="dark"] .cand-form-clientstyle .rec-form-label,
-        [data-layout-mode="dark"] .cand-form-clientstyle .cand-import-label {
-          color: var(--vz-body-color);
-          -webkit-text-fill-color: var(--vz-body-color);
-          background: none;
-        }
-        .cand-form-clientstyle .rec-form-label i,
-        .cand-form-clientstyle .cand-import-label i {
-          color: var(--vz-secondary-color);
-          -webkit-text-fill-color: var(--vz-secondary-color);
-          font-size: 13px;
-        }
-        .cand-form-clientstyle .rec-input,
-        .cand-form-clientstyle .cand-import-input,
-        .cand-form-clientstyle .master-select-wrap .master-select-toggle,
-        .cand-form-clientstyle .master-datepicker-wrap .master-datepicker-toggle {
-          height: 38px;
-          padding: 7px 11px;
-          font-size: 13px;
-          border-radius: 10px;
-          background: var(--vz-card-bg);
-          color: var(--vz-body-color);
-          border: 1px solid var(--vz-border-color);
-          box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04);
-        }
-        .cand-form-clientstyle .rec-input::placeholder,
-        .cand-form-clientstyle .cand-import-input::placeholder {
-          color: var(--vz-secondary-color);
-          opacity: 0.65;
-        }
-        .cand-form-clientstyle .rec-input:hover:not(:disabled),
-        .cand-form-clientstyle .cand-import-input:hover:not(:disabled),
-        .cand-form-clientstyle .master-select-wrap .master-select-toggle:hover:not(:disabled),
-        .cand-form-clientstyle .master-datepicker-wrap .master-datepicker-toggle:hover:not(:disabled) {
-          border-color: rgba(99,102,241,0.55);
-          box-shadow: 0 2px 6px rgba(99,102,241,0.08);
-        }
-        .cand-form-clientstyle .rec-input:focus,
-        .cand-form-clientstyle .cand-import-input:focus,
-        .cand-form-clientstyle .master-select-wrap.show .master-select-toggle {
-          outline: none;
-          border-color: #6366f1;
-          box-shadow: 0 0 0 3px rgba(99,102,241,0.15), 0 4px 12px rgba(99,102,241,0.12);
-        }
-      `}</style>
       <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
-        {/* Header */}
         <div className="cand-import-head">
           <span className="cand-import-head-icon">
             <i className="ri-upload-cloud-2-line" />
@@ -941,7 +765,6 @@ function ImportCandidatesModal({
           </div>
         </div>
 
-        {/* Body */}
         <div className="cand-import-body">
           <div className="cand-import-field">
             <label className="cand-import-label">
@@ -997,7 +820,6 @@ function ImportCandidatesModal({
           </div>
         </div>
 
-        {/* Footer */}
         <div className="cand-import-footer">
           <button type="button" className="rec-btn-ghost" onClick={onClose}>Close</button>
           <button type="button" className="cand-import-submit" onClick={handleSubmit} disabled={!file || !linkedCode || importing}>
@@ -1010,18 +832,11 @@ function ImportCandidatesModal({
   );
 }
 
-// ─── Sample Import Format modal ──────────────────────────────────────────────
 function SampleImportFormatModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const toast = useToast();
-  // Loader state for the Download button — spins while the blob is in
-  // flight; the modal auto-closes once the file hits the disk so the
-  // user doesn't have to click Close after each download.
   const [downloading, setDownloading] = useState(false);
   useEffect(() => { if (!open) setDownloading(false); }, [open]);
 
-  // Display-only preview shown inside the modal — the actual file the user
-  // downloads is generated by the backend (`GET /candidates/sample`) so
-  // there's a single source of truth for the column names + dummy row.
   const COLUMNS = [
     'Name', 'Email', 'Mobile', 'Experience',
     'Current Salary', 'Expected Salary', 'Notice Period', 'Source', 'Status',
@@ -1048,7 +863,6 @@ function SampleImportFormatModal({ open, onClose }: { open: boolean; onClose: ()
   return (
     <Modal isOpen={open} toggle={onClose} centered size="lg" backdrop="static" contentClassName="border-0 cand-sample-modal">
       <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
-        {/* Header */}
         <div className="cand-sample-head">
           <span className="cand-sample-head-icon">
             <i className="ri-download-cloud-2-line" />
@@ -1059,7 +873,6 @@ function SampleImportFormatModal({ open, onClose }: { open: boolean; onClose: ()
           </div>
         </div>
 
-        {/* Body */}
         <div className="cand-sample-body">
           <p className="cand-sample-desc">
             The template contains the following columns. Fill each row with one candidate's
@@ -1090,7 +903,6 @@ function SampleImportFormatModal({ open, onClose }: { open: boolean; onClose: ()
           </div>
         </div>
 
-        {/* Footer */}
         <div className="cand-sample-footer">
           <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={downloading}>Close</button>
           <button
@@ -1111,18 +923,6 @@ function SampleImportFormatModal({ open, onClose }: { open: boolean; onClose: ()
   );
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-/* ── CV cell ─────────────────────────────────────────────────────────────────
- * Renders one of two states inside the table's CV column:
- *
- *   - Upload chip (↑ arrow) when the candidate has no CV — clicking it opens
- *     a hidden <input type="file"> and PATCHes the row with the chosen file.
- *   - Download chip (↓ arrow) once a CV is on file — links straight to the
- *     server-rendered cv_url.
- *
- * Upload state is local to the cell so two rows can upload in parallel
- * without one cell's spinner bleeding into another.
- */
 function CvCell({
   candidate, onUploaded,
 }: {
@@ -1134,12 +934,6 @@ function CvCell({
   const [uploading, setUploading] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
-  // Already-uploaded → render the green download chip. We swap the
-  // anchor for a button that pulls the blob via axios (so the request
-  // carries the sanctum bearer header instead of relying on a `?token=`
-  // URL param) and shows an inline spinner until the file is in hand.
-  // Without the explicit loader the user sometimes clicked twice
-  // because the network round-trip felt invisible.
   if (candidate.cv_url) {
     const handleDownload = async () => {
       if (downloading) return;
@@ -1147,9 +941,6 @@ function CvCell({
       try {
         const resp = await api.get(`/candidates/${candidate.id}/cv`, { responseType: 'blob' });
         const blob = resp.data as Blob;
-        // Try to honour the server's Content-Disposition filename;
-        // fall back to `<candidate>-cv.<ext>` so the saved file is
-        // identifiable.
         const cd: string = String(resp.headers?.['content-disposition'] || '');
         const m  = /filename\*?=(?:UTF-8'')?["']?([^"';]+)/i.exec(cd);
         const fallbackExt = (blob.type === 'application/pdf') ? 'pdf'
@@ -1194,7 +985,6 @@ function CvCell({
     }
     setUploading(true);
     try {
-      // FormData + _method=PUT is Laravel's pattern for multipart updates.
       const fd = new FormData();
       fd.append('_method', 'PUT');
       fd.append('cv', file);
@@ -1215,8 +1005,6 @@ function CvCell({
 
   return (
     <label
-      // --upload swaps the green "downloaded" tone for an indigo dashed
-      // call-to-action; themed in CSS so it follows dark mode too.
       className={`cand-cv-chip cand-cv-chip--upload${uploading ? ' is-uploading' : ''}`}
       style={{ cursor: uploading ? 'progress' : 'pointer' }}
       title="Upload CV"
@@ -1246,14 +1034,12 @@ function Field({ label, value }: { label: string; value: any }) {
   );
 }
 
-// ─── Add / Edit Candidate modal ──────────────────────────────────────────────
 function CandidateFormModal({
-  open, editing, recruitmentId, recruitment, onClose, onSaved,
+  open, editing, recruitmentId, onClose, onSaved,
 }: {
   open: boolean;
   editing: CandidateRow | null;
   recruitmentId: number | null;
-  recruitment: RecruitmentInfo | null;
   onClose: () => void;
   onSaved: (row: CandidateRow) => void;
 }) {
@@ -1271,19 +1057,14 @@ function CandidateFormModal({
   const [expectedSalary, setExpectedSalary]   = useState('');
   const [noticePeriod, setNoticePeriod]       = useState('');
   const [source, setSource]                   = useState('');
-  // Referral capture (HRMS-BUG-057) — only used when source === 'Referral'.
   const [referredById, setReferredById]       = useState('');
   const [employeeOpts, setEmployeeOpts]       = useState<{ value: string; label: string }[]>([]);
   const [status, setStatus]                   = useState<CandidateStatus | ''>('');
   const [cvFile, setCvFile]                   = useState<File | null>(null);
-  // Holds the previously-uploaded CV's URL when editing, so the form can
-  // show "current CV" instead of looking like nothing was ever attached.
   const [existingCvUrl, setExistingCvUrl]     = useState<string | null>(null);
   const [errors, setErrors]                   = useState<Record<string, string>>({});
   const [saving, setSaving]                   = useState(false);
 
-  /** Validate a salary-style LPA input. Returns the error string or null.
-   *  Mirrors the backend rule `nullable|numeric|min:0|max:9999.99`. */
   const validateSalaryLpa = (raw: string, label: string): string | null => {
     if (!raw.trim()) return null;
     const n = Number(raw);
@@ -1293,9 +1074,6 @@ function CandidateFormModal({
     return null;
   };
 
-  /** Set or clear a single field's error without touching the rest. Used
-   *  by per-field onBlur handlers so the input goes red + shows its inline
-   *  message immediately, instead of waiting for the Save button. */
   const setFieldError = (key: string, msg: string | null) => {
     setErrors(prev => {
       if (msg) {
@@ -1338,9 +1116,6 @@ function CandidateFormModal({
     setErrors({});
   }, [open, editing]);
 
-  // Load employees for the "Referred By" picker (shown when Source = Referral).
-  // onboarded_only mirrors the Recruitment dropdowns so only active, fully
-  // onboarded staff can be credited with a referral.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -1366,11 +1141,6 @@ function CandidateFormModal({
   }, [open]);
 
   const handleSubmit = async () => {
-    // Client-side validation — surface every problem inline so the user
-    // doesn't need to round-trip to the backend to learn what's wrong.
-    // Constraints mirror the EmployeeController/CandidateController rules
-    // (max:9999.99 on salary, max:50 on experience, etc.) so what passes
-    // here also passes the server validator.
     const errs: Record<string, string> = {};
 
     if (!name.trim()) errs.name = 'Name is required';
@@ -1389,9 +1159,6 @@ function CandidateFormModal({
     if (!mobile.trim()) {
       errs.mobile = 'Mobile number is required';
     } else {
-      // 7–15 digits — count digits only so user can type with spaces /
-      // dashes / a leading + and still pass. Covers India (10), most EU
-      // formats with country code, and longer international variants.
       const digitsOnly = mobile.replace(/\D/g, '');
       if (digitsOnly.length < 7 || digitsOnly.length > 15) {
         errs.mobile = 'Enter a valid mobile number (7–15 digits)';
@@ -1401,10 +1168,6 @@ function CandidateFormModal({
     if (!qualification.trim()) {
       errs.qualification = 'Qualification is required';
     } else {
-      // Allow letters, digits, spaces and the punctuation that legitimately
-      // appears in qualification names (e.g. "B.Tech", "B.Sc (Hons)",
-      // "B.E. / M.E.", "MBA - Finance"). Must contain at least one letter so
-      // junk like "!@#$%^TGBFv67" or pure numbers is rejected (HRMS-BUG).
       const qual = qualification.trim();
       if (!/[A-Za-z]/.test(qual)) {
         errs.qualification = 'Qualification must contain letters';
@@ -1430,24 +1193,17 @@ function CandidateFormModal({
       else if (dNum > 9999) errs.distance_km = 'Distance cannot exceed 9999 KM';
     }
 
-    // Use the same helper the per-field onBlur uses — guarantees the
-    // submit-time error matches what's already on screen and lives on the
-    // exact same `errors.current_salary_lpa` key so the input picks up
-    // `.is-invalid` immediately.
     const curErr = validateSalaryLpa(currentSalary, 'Current salary');
     if (curErr) errs.current_salary_lpa = curErr;
     const expErr = validateSalaryLpa(expectedSalary, 'Expected salary');
     if (expErr) errs.expected_salary_lpa = expErr;
 
     if (!source.trim()) errs.source = 'Source is required';
-    // When the application came via Referral, the referring employee must be
-    // captured (HRMS-BUG-057).
     if (source === 'Referral' && !referredById) {
       errs.referred_by_id = 'Please select the referring employee';
     }
     if (!status) errs.status = 'Status is required';
 
-    // CV is required on create, optional on edit (existing CV stays unless replaced).
     if (!editing && !cvFile) errs.cv = 'Please attach a CV';
     if (cvFile) {
       const okExt = /\.(pdf|doc|docx)$/i.test(cvFile.name);
@@ -1477,8 +1233,6 @@ function CandidateFormModal({
     if (expectedSalary) fd.append('expected_salary_lpa', expectedSalary);
     if (noticePeriod)   fd.append('notice_period', noticePeriod);
     if (source)         fd.append('source', source);
-    // Referral details — only sent when the source is Referral. Include a
-    // name snapshot so the referrer stays legible in lists/exports.
     if (source === 'Referral' && referredById) {
       fd.append('referred_by_id', referredById);
       const refLabel = employeeOpts.find(o => o.value === referredById)?.label || '';
@@ -1491,7 +1245,6 @@ function CandidateFormModal({
     try {
       const isEdit = editing != null;
       const url = isEdit ? `/candidates/${editing!.id}` : '/candidates';
-      // FormData requires POST + _method=PUT for Laravel updates with files.
       if (isEdit) fd.append('_method', 'PUT');
       const { data } = await api.post(url, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success(isEdit ? 'Candidate updated' : 'Candidate added', `${data.name} saved successfully.`);
@@ -1516,78 +1269,6 @@ function CandidateFormModal({
 
   return (
     <Modal isOpen={open} toggle={onClose} centered size="lg" backdrop="static" modalClassName="rec-form-modal cand-form-clientstyle" contentClassName="rec-form-content border-0">
-      {/* Adopt the Client form's field aesthetic — sentence-case label
-          @11.5px / 600, 38px input with 10px radius / 13px text — by
-          overriding the candidate-form's recruitment-themed defaults
-          under this single scope. Keeps the rest of the recruitment
-          modals (Create Recruitment, etc.) untouched. */}
-      <style>{`
-        .cand-form-clientstyle .rec-form-label {
-          font-size: 11.5px;
-          font-weight: 600;
-          letter-spacing: 0.01em;
-          text-transform: none;
-          margin-bottom: 5px;
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          line-height: 1.2;
-          background: none;
-          -webkit-background-clip: initial;
-          background-clip: initial;
-          -webkit-text-fill-color: var(--vz-body-color);
-          color: var(--vz-body-color);
-        }
-        [data-bs-theme="dark"] .cand-form-clientstyle .rec-form-label,
-        [data-layout-mode="dark"] .cand-form-clientstyle .rec-form-label {
-          color: var(--vz-body-color);
-          -webkit-text-fill-color: var(--vz-body-color);
-          background: none;
-        }
-        .cand-form-clientstyle .rec-form-label i {
-          color: var(--vz-secondary-color);
-          -webkit-text-fill-color: var(--vz-secondary-color);
-          font-size: 13px;
-        }
-        .cand-form-clientstyle .rec-input,
-        .cand-form-clientstyle .master-select-wrap .master-select-toggle,
-        .cand-form-clientstyle .master-datepicker-wrap .master-datepicker-toggle {
-          height: 38px;
-          padding: 7px 11px;
-          font-size: 13px;
-          border-radius: 10px;
-          background: var(--vz-card-bg);
-          color: var(--vz-body-color);
-          border: 1px solid var(--vz-border-color);
-          box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04);
-        }
-        .cand-form-clientstyle textarea.rec-input,
-        .cand-form-clientstyle .rec-input.rec-textarea {
-          height: auto;
-          min-height: 64px;
-          resize: vertical;
-        }
-        .cand-form-clientstyle .rec-input::placeholder {
-          color: var(--vz-secondary-color);
-          opacity: 0.65;
-        }
-        .cand-form-clientstyle .rec-input:hover:not(:disabled),
-        .cand-form-clientstyle .master-select-wrap .master-select-toggle:hover:not(:disabled),
-        .cand-form-clientstyle .master-datepicker-wrap .master-datepicker-toggle:hover:not(:disabled) {
-          border-color: rgba(99,102,241,0.55);
-          box-shadow: 0 2px 6px rgba(99,102,241,0.08);
-        }
-        .cand-form-clientstyle .rec-input:focus,
-        .cand-form-clientstyle .master-select-wrap.show .master-select-toggle {
-          outline: none;
-          border-color: #6366f1;
-          box-shadow: 0 0 0 3px rgba(99,102,241,0.15), 0 4px 12px rgba(99,102,241,0.12);
-        }
-        /* Field row spacing matches the client form's tighter Row(g-2)
-           cadence — section padding pulled in so columns aren't pushed
-           right by the legacy purple sidebar. */
-        .cand-form-clientstyle .rec-form-section > .row { padding-left: 0; }
-      `}</style>
       <ModalBody className="p-0">
         <div className="rec-form-header">
           <div className="d-flex align-items-center justify-content-between gap-3">
@@ -1607,7 +1288,6 @@ function CandidateFormModal({
          
 
           <div className="rec-form-card">
-            {/* Section 1: Candidate Basic Details */}
             <div className="rec-form-section">
               <div className="rec-form-section-head">
                 <span className="cand-step">1</span>
@@ -1632,11 +1312,6 @@ function CandidateFormModal({
                     placeholder="9XXXXXXXXX"
                     value={mobile}
                     inputMode="tel"
-                    /* Hard-cap the keystroke count so the user can't keep
-                     * typing past 15 digits and then bounce on submit.
-                     * Counted in characters (not digits) to leave room for
-                     * an optional + / spaces / dashes the validator still
-                     * strips before counting. */
                     maxLength={20}
                     onChange={e => setMobile(e.target.value)}
                   />
@@ -1668,7 +1343,6 @@ function CandidateFormModal({
               </Row>
             </div>
 
-            {/* Section 2: Compensation Details */}
             <div className="rec-form-section">
               <div className="rec-form-section-head">
                 <span className="cand-step cand-step-2">2</span>
@@ -1683,13 +1357,10 @@ function CandidateFormModal({
                     placeholder="e.g. 10"
                     value={currentSalary}
                     onChange={e => {
-                      // Block negatives and clamp to the 9999.99 LPA cap as the
-                      // user types, so the field can't hold an invalid value.
                       let v = e.target.value;
                       if (v && Number(v) < 0) v = '';
                       if (v && Number(v) > 9999.99) v = '9999.99';
                       setCurrentSalary(v);
-                      // Clear any prior error as the user types; revalidate on blur.
                       if (errors.current_salary_lpa) setFieldError('current_salary_lpa', null);
                     }}
                     onBlur={e => setFieldError('current_salary_lpa', validateSalaryLpa(e.target.value, 'Current salary'))}
@@ -1704,7 +1375,6 @@ function CandidateFormModal({
                     placeholder="e.g. 15"
                     value={expectedSalary}
                     onChange={e => {
-                      // Block negatives and clamp to the 9999.99 LPA cap.
                       let v = e.target.value;
                       if (v && Number(v) < 0) v = '';
                       if (v && Number(v) > 9999.99) v = '9999.99';
@@ -1722,7 +1392,6 @@ function CandidateFormModal({
               </Row>
             </div>
 
-            {/* Section 3 + 4 + 5 in one row */}
             <Row className="g-2 mt-1">
               <Col md={4}>
                 <div className="rec-form-section h-100" style={{ marginTop: 0, paddingTop: 0, borderTop: 0 }}>
@@ -1735,7 +1404,6 @@ function CandidateFormModal({
                     value={source}
                     onChange={(v) => {
                       setSource(v);
-                      // Drop any selected referrer when switching away from Referral.
                       if (v !== 'Referral') { setReferredById(''); }
                       if (errors.source) setFieldError('source', null);
                       if (errors.referred_by_id) setFieldError('referred_by_id', null);
@@ -1765,26 +1433,14 @@ function CandidateFormModal({
                     <span className="cand-step cand-step-4">4</span>
                     <p className="rec-form-section-title">Attachment Details</p>
                   </div>
-                  {/* Label line mirrors Source / Candidate Status so the upload
-                      box aligns with the dropdowns in the other two columns, and
-                      the required * matches the CV-required validation. */}
                   <label className="rec-form-label">Attach CV<span className="req">*</span></label>
                   <label className="cand-cv-drop" style={errors.cv ? { borderColor: '#f06548' } : undefined}>
-                    {/* Validate at file-selection time, not just submit.
-                        The native `accept` attribute is a soft hint — users
-                        can override it via "All Files" and end up with a
-                        PNG/JPG that then fails on Submit (frustrating
-                        round-trip). Catching it inline gives instant
-                        feedback and prevents the bad file from sitting in
-                        state at all. */}
                     <input
                       type="file"
                       accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                       style={{ display: 'none' }}
                       onChange={e => {
                         const f = e.target.files?.[0] ?? null;
-                        // Allow the same file to be re-picked after a reject
-                        // by clearing the input value.
                         e.target.value = '';
                         if (!f) { setCvFile(null); return; }
                         const okExt = /\.(pdf|doc|docx)$/i.test(f.name);
@@ -1798,7 +1454,6 @@ function CandidateFormModal({
                           toast.error('File too large', 'CV must be under 2 MB.');
                           return;
                         }
-                        // Valid pick — accept it and clear any previous error.
                         setErrors(prev => { const n = { ...prev }; delete n.cv; return n; });
                         setCvFile(f);
                       }}
@@ -1809,17 +1464,12 @@ function CandidateFormModal({
                       <span>PDF, DOC, DOCX · Max 2 MB</span>
                     </span>
                   </label>
-                  {/* Show the previously-uploaded CV when editing so it's clear
-                      one already exists (HRMS-BUG-066). Picking a new file
-                      above replaces it on save. */}
                   {!cvFile && existingCvUrl && editing && (
                     <button
                       type="button"
                       className="btn btn-link p-0 d-inline-flex align-items-center gap-1 mt-1 fs-13"
                       style={{ color: 'var(--vz-link-color, #4458fe)', textDecoration: 'none' }}
                       onClick={async () => {
-                        // CV is auth-protected — pull the blob via the API
-                        // (carries the bearer token) and open it in a new tab.
                         try {
                           const resp = await api.get(`/candidates/${editing.id}/cv`, { responseType: 'blob' });
                           const url = URL.createObjectURL(resp.data as Blob);
@@ -1843,16 +1493,6 @@ function CandidateFormModal({
                     <p className="rec-form-section-title">Recruitment Status</p>
                   </div>
                   <label className="rec-form-label">Candidate Status<span className="req">*</span></label>
-                  {/* The form only exposes the two lifecycle states a
-                      recruiter actually picks on create / edit:
-                      Final Round Selected (shortlist through interviews —
-                      stored as the existing "Final Interview" enum so
-                      historical rows keep working) and Selected (offer
-                      extended). Other states (Rejected, On Hold, Offered,
-                      etc.) still exist in the type union and continue to
-                      be set programmatically by the Confirm Selection /
-                      Reject modal — they're just not user-selectable
-                      from this dropdown. */}
                   <MasterSelect
                     value={status}
                     onChange={(v) => setStatus(v as CandidateStatus)}
@@ -1885,7 +1525,6 @@ function CandidateFormModal({
   );
 }
 
-// ─── Confirm Selection / Confirm Rejection modal ────────────────────────────
 const REJECTION_REASONS = [
   { value: 'Not a culture fit',                  label: 'Not a culture fit' },
   { value: 'Skills mismatch',                    label: 'Skills mismatch' },
@@ -1902,8 +1541,6 @@ function CandidateConfirmModal({
 }: {
   target: { row: CandidateRow; mode: 'select' | 'reject' } | null;
   onClose: () => void;
-  // Returns a Promise so the modal can spin the confirm button until
-  // the parent's status update finishes (and close cleanly on success).
   onConfirm: (reasonOrNote: string) => Promise<void> | void;
 }) {
   const [notes, setNotes] = useState('');
@@ -1911,7 +1548,6 @@ function CandidateConfirmModal({
   const [reasonErr, setReasonErr] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // Reset form whenever a new candidate / mode is targeted.
   useEffect(() => {
     if (target) { setNotes(''); setReason(''); setReasonErr(false); setSubmitting(false); }
   }, [target]);
@@ -1928,9 +1564,6 @@ function CandidateConfirmModal({
     setSubmitting(true);
     try {
       await onConfirm(payload);
-      // Parent closes the modal on success; if it doesn't (e.g. an
-      // error is thrown), we flip the flag back so the button is
-      // clickable again.
     } finally {
       setSubmitting(false);
     }
@@ -1938,44 +1571,7 @@ function CandidateConfirmModal({
 
   return (
     <Modal isOpen={!!target} toggle={submitting ? undefined : onClose} centered size="lg" backdrop="static" contentClassName={`border-0 cand-confirm-modal cand-confirm-modal--${isReject ? 'reject' : 'select'}`}>
-      {/* While the status update is in flight we paint a soft shimmer
-          over the candidate summary card so the user can tell the
-          modal is "working", and we disable every input + button.
-          Keyframes scoped via a <style> block so the effect only kicks
-          in inside this modal. */}
-      <style>{`
-        @keyframes cand-cf-shimmer {
-          0%   { background-position: -120% 0; }
-          100% { background-position: 220% 0; }
-        }
-        .cand-confirm-modal .cand-confirm-summary.is-loading {
-          position: relative;
-          overflow: hidden;
-          pointer-events: none;
-        }
-        .cand-confirm-modal .cand-confirm-summary.is-loading::after {
-          content: '';
-          position: absolute; inset: 0;
-          background: linear-gradient(90deg,
-            rgba(255,255,255,0) 0%,
-            rgba(255,255,255,0.45) 50%,
-            rgba(255,255,255,0) 100%);
-          background-size: 50% 100%;
-          background-repeat: no-repeat;
-          animation: cand-cf-shimmer 1.4s linear infinite;
-        }
-        [data-bs-theme="dark"] .cand-confirm-modal .cand-confirm-summary.is-loading::after,
-        [data-layout-mode="dark"] .cand-confirm-modal .cand-confirm-summary.is-loading::after {
-          background: linear-gradient(90deg,
-            rgba(255,255,255,0) 0%,
-            rgba(255,255,255,0.10) 50%,
-            rgba(255,255,255,0) 100%);
-          background-size: 50% 100%;
-          background-repeat: no-repeat;
-        }
-      `}</style>
       <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
-        {/* Header */}
         <div className="cand-confirm-head">
           <span className="cand-confirm-head-icon">
             <i className={isReject ? 'ri-close-line' : 'ri-check-line'} />
@@ -1988,13 +1584,9 @@ function CandidateConfirmModal({
                 : 'This will mark the candidate as Selected'}
             </div>
           </div>
-          {/* HRMS-BUG-072: corner X removed — the footer "Cancel" is the
-              single cancel affordance for this dialog. */}
         </div>
 
-        {/* Body */}
         <div className="cand-confirm-body">
-          {/* Candidate summary card */}
           <div className={`cand-confirm-summary${submitting ? ' is-loading' : ''}`}>
             <div
               className="cand-confirm-avatar"
@@ -2056,7 +1648,6 @@ function CandidateConfirmModal({
           </div>
         </div>
 
-        {/* Footer */}
         <div className="cand-confirm-footer">
           <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={submitting}>Cancel</button>
           <button

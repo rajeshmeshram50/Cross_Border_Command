@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { echo } from '../echo';
+import { getEcho } from '../echo';
 import { useAuth } from '../contexts/AuthContext';
 
 /*
@@ -28,6 +28,7 @@ export function useTyping(contractId: string | number | null | undefined) {
 
   // Listen for the OTHER party's typing whispers on the shared channel.
   useEffect(() => {
+    const echo = getEcho();
     if (!echo || !channelName || contractId == null) return;
     const ch = echo.private(channelName);
     const onWhisper = (e: { contractId: string | number; userId: number; name: string; typing: boolean }) => {
@@ -56,6 +57,7 @@ export function useTyping(contractId: string | number | null | undefined) {
   // Call on every keystroke. Sends typing:true now, then a typing:false ~2s
   // after the last keystroke (debounced).
   const notifyTyping = useCallback(() => {
+    const echo = getEcho();
     if (!echo || !channelName || contractId == null) return;
     const ch = echo.private(channelName);
     ch.whisper('typing', { contractId, userId: me, name: myName, typing: true });
@@ -67,6 +69,7 @@ export function useTyping(contractId: string | number | null | undefined) {
 
   // Explicit stop — call on submit / close so the indicator clears immediately.
   const stopTyping = useCallback(() => {
+    const echo = getEcho();
     if (!echo || !channelName || contractId == null) return;
     if (stopTimer.current) clearTimeout(stopTimer.current);
     echo.private(channelName).whisper('typing', { contractId, userId: me, name: myName, typing: false });

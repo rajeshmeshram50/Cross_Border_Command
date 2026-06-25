@@ -2,13 +2,28 @@ import { createContext, useContext, useState, useEffect, type ReactNode } from '
 import type { AuthUser } from '../types';
 import api from '../api';
 
+/** One organization choice returned when an email exists in multiple clients. */
+export interface LoginOrg { client_id: number | null; name: string; }
+/**
+ * Login result. When the same email exists in more than one client, the API
+ * returns needsOrgSelection + organizations instead of a token; the caller
+ * shows a picker and retries the same login with the chosen clientId.
+ */
+export interface LoginResult {
+  success: boolean;
+  error?: string;
+  needsOrgSelection?: boolean;
+  organizations?: LoginOrg[];
+  message?: string;
+}
+
 interface AuthCtx {
   user: AuthUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  googleLogin: (idToken: string) => Promise<{ success: boolean; error?: string }>;
+  login: (email: string, password: string, clientId?: number | null) => Promise<LoginResult>;
+  googleLogin: (idToken: string, clientId?: number | null) => Promise<LoginResult>;
   /** Face-based login: email + 128-d face descriptor → Sanctum token. */
-  faceLogin: (email: string, descriptor: number[]) => Promise<{ success: boolean; error?: string }>;
+  faceLogin: (email: string, descriptor: number[], clientId?: number | null) => Promise<LoginResult>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   // Toggle for tenant theme override. When false, the sidebar/topbar render
@@ -215,16 +230,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return clearTenantVars;
   }, [user?.primary_color, user?.secondary_color, tenantThemeEnabled]);
 
-  const login = async (email: string, password: string) => {
+  // Maps a 409 "needs_org_selection" response into a LoginResult the caller
+  // can use to render an organization picker. Returns null when the error
+  // isn't an org-selection prompt (so the caller falls through to its normal
+  // error handling).
+  const orgSelectionResult = (err: any): LoginResult | null => {
+    if (err.response?.status === 409 && err.response?.data?.needs_org_selection) {
+      return {
+        success: false,
+        needsOrgSelection: true,
+        organizations: err.response.data.organizations || [],
+        message: err.response.data.message,
+      };
+    }
+    return null;
+  };
+
+  const login = async (email: string, password: string, clientId?: number | null) => {
     setLoading(true);
     try {
-      const res = await api.post('/login', { email, password });
+      const res = await api.post('/login', { email, password, ...(clientId != null ? { client_id: clientId } : {}) });
       const { token, user: userData } = res.data;
       localStorage.setItem('cbc_token', token);
       writeCachedUser(userData);
       setUser(userData);
       return { success: true };
     } catch (err: any) {
+      const org = orgSelectionResult(err);
+      if (org) return org;
       const msg = err.response?.data?.errors?.email?.[0]
         || err.response?.data?.message
         || 'Login failed';
@@ -234,16 +267,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const googleLogin = async (idToken: string) => {
+  const googleLogin = async (idToken: string, clientId?: number | null) => {
     setLoading(true);
     try {
-      const res = await api.post('/google-login', { id_token: idToken });
+      const res = await api.post('/google-login', { id_token: idToken, ...(clientId != null ? { client_id: clientId } : {}) });
       const { token, user: userData } = res.data;
       localStorage.setItem('cbc_token', token);
       writeCachedUser(userData);
       setUser(userData);
       return { success: true };
     } catch (err: any) {
+      const org = orgSelectionResult(err);
+      if (org) return org;
       const msg = err.response?.data?.message
         || err.response?.data?.errors?.id_token?.[0]
         || 'Google sign-in failed';
@@ -253,16 +288,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const faceLogin = async (email: string, descriptor: number[]) => {
+  const faceLogin = async (email: string, descriptor: number[], clientId?: number | null) => {
     setLoading(true);
     try {
-      const res = await api.post('/login/face', { email, descriptor });
+      const res = await api.post('/login/face', { email, descriptor, ...(clientId != null ? { client_id: clientId } : {}) });
       const { token, user: userData } = res.data;
       localStorage.setItem('cbc_token', token);
       writeCachedUser(userData);
       setUser(userData);
       return { success: true };
     } catch (err: any) {
+      const org = orgSelectionResult(err);
+      if (org) return org;
       const msg = err.response?.data?.errors?.email?.[0]
         || err.response?.data?.message
         || 'Face login failed';

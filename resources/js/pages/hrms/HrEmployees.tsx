@@ -450,12 +450,14 @@ export default function HrEmployees() {
   const [mHolidayGroups, setMHolidayGroups] = useState<any[]>([]);
 
   // Pre-built options derived from the masters above. Only ACTIVE holiday
-  // groups are selectable — Inactive groups must not appear when assigning a
-  // group to an employee. (`status` defaults to Active for legacy rows that
-  // predate the column.)
+  // groups are offered when assigning one to an employee — Inactive groups
+  // must not appear. They stay in mHolidayGroups (so a saved group's name
+  // still resolves on edit) but are filtered out of the selectable list.
+  // Status is compared case-insensitively; legacy rows with no status
+  // default to Active.
   const holidayGroupOptions = useMemo(
     () => mHolidayGroups
-      .filter(g => (g.status ?? 'Active') === 'Active')
+      .filter(g => String(g.status ?? 'Active').toLowerCase() !== 'inactive')
       .map(g => ({ value: String(g.id), label: g.name })),
     [mHolidayGroups],
   );
@@ -2629,23 +2631,18 @@ export default function HrEmployees() {
   const [exporting, setExporting] = useState(false);
   const handleExportEmployees = () => {
     if (exporting) return;
-    // Active-only source, independent of the current tab/status dropdown.
-    const s  = q.trim().toLowerCase();
-    const df = deptFilter.trim().toLowerCase();
-    const activeRows = apiRows.filter(e => {
-      if (!e.enabled) return false; // never export disabled employees
-      if (df && df !== 'all depts' && String(e.department || '').trim().toLowerCase() !== df) return false;
-      if (!s) return true;
-      return [e.name, e.id, e.department, e.designation, e.primaryRole, e.email]
-        .some(v => (v || '').toLowerCase().includes(s));
-    });
-    if (activeRows.length === 0) {
-      toast.info('Nothing to export', 'No active employees match the current filters.');
+    // Export exactly what the list currently shows — honours the Active /
+    // Disabled tab, the Status dropdown, the department filter and the search
+    // box. Previously this was hard-coded to active-only, so Disabled
+    // employees could never be exported even while viewing the Disabled tab.
+    const exportRows = filtered;
+    if (exportRows.length === 0) {
+      toast.info('Nothing to export', 'No employees match the current filters.');
       return;
     }
     setExporting(true);
     try {
-      const sheetRows = activeRows.map((e, i) => ({
+      const sheetRows = exportRows.map((e, i) => ({
         'Sr No':          i + 1,
         'Employee':       e.name,
         'Email':          e.email || '',
@@ -5917,6 +5914,11 @@ export default function HrEmployees() {
             transition: transform .15s ease, box-shadow .15s ease;
           }
           .assign-save-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(99,102,241,0.38); }
+          /* Top-right close X — matches the system-standard gradient-header
+             close button (see .emp-close-btn on the Add/Edit Employee modal). */
+          .assign-close-x { transition: background .15s ease, transform .15s ease; }
+          .assign-close-x:hover { background: rgba(255,255,255,0.34) !important; transform: scale(1.08); }
+          .assign-close-x:active { transform: scale(0.95); }
         `}</style>
 
         <ModalBody className="p-0">
@@ -5936,7 +5938,23 @@ export default function HrEmployees() {
               position: 'absolute', top: -50, right: -40, width: 220, height: 220,
               borderRadius: '50%', background: 'rgba(255,255,255,0.10)',
             }} />
-            <div className="d-flex align-items-center gap-3" style={{ position: 'relative' }}>
+            {/* Top-right close X — consistent with other system popups. */}
+            <button
+              type="button"
+              onClick={closeAssign}
+              aria-label="Close"
+              className="assign-close-x btn p-0 d-inline-flex align-items-center justify-content-center"
+              style={{
+                position: 'absolute', top: 16, right: 18, zIndex: 2,
+                width: 30, height: 30, borderRadius: 10,
+                background: 'rgba(255,255,255,0.18)',
+                border: '1px solid rgba(255,255,255,0.30)',
+                color: '#fff',
+              }}
+            >
+              <i className="ri-close-line" style={{ fontSize: 18 }} />
+            </button>
+            <div className="d-flex align-items-center gap-3" style={{ position: 'relative', paddingRight: 44 }}>
               <div className="d-flex align-items-center gap-3 min-w-0">
                 <span
                   className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
@@ -5961,7 +5979,6 @@ export default function HrEmployees() {
                   </div>
                 </div>
               </div>
-              {/* No top-right X — footer has Cancel; one dismiss path. */}
             </div>
           </div>
 
@@ -6077,6 +6094,7 @@ export default function HrEmployees() {
         tab={vaultTab}
         onTabChange={setVaultTab}
         triggerKeyword={null}
+        signedOnly
       />
 
       {/* Face Registration modal — opened from the row action. Posts the

@@ -1508,3 +1508,44 @@
     flex: 1 1 100% !important;
   }
 }
+
+/* ============================================================
+   Initiate Onboarding modal — responsive (mobile / tablet)
+   ------------------------------------------------------------
+   The modal is portalled to <body>, so these rules are global
+   (not .onb-page scoped). The body is a fixed two-column flex
+   (270px stages rail + flexible detail); on a phone the detail
+   column was crushed to a sliver with overlapping text. Below
+   768px the columns stack: the stages rail on top (capped +
+   scrollable), the stage detail beneath, with the modal's own
+   scroll handling the overflow.
+   ============================================================ */
+@media (max-width: 991.98px) {
+  /* Tablet — trim the rail so the detail column keeps usable width. */
+  .onb-init-side { width: 230px; }
+}
+@media (max-width: 767.98px) {
+  .onb-init-modal .modal-dialog { max-width: 100%; margin: 10px; }
+  .onb-init-body {
+    flex-direction: column;
+    max-height: none;
+    overflow: visible;
+  }
+  .onb-init-side {
+    width: 100%;
+    flex-shrink: 0;
+    border-right: none;
+    border-bottom: 1px solid #ece9f6;
+    max-height: 200px;
+    padding: 12px 14px;
+  }
+  [data-bs-theme="dark"] .onb-init-side { border-bottom-color: var(--vz-border-color); }
+  /* Detail column flows naturally and the modal body scrolls the whole thing
+     (drop the nested auto-scroll so there's no double scrollbar). */
+  .onb-init-main { width: 100%; padding: 14px; overflow: visible; }
+
+  /* The salary breakup row (value → value → value) is a fixed 5-column grid
+     that overflows on a phone — stack it into one column. The Basic-Details
+     form fields already use responsive reactstrap Cols, so they reflow. */
+  .onb-init-breakup-grid { grid-template-columns: 1fr; }
+}

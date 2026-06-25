@@ -58,12 +58,18 @@ class OnboardingController extends Controller
         // EmployeeController uses for stamp-time ownership.
         [$clientId, $branchId] = $this->resolveOwnership($user);
 
-        // Fail fast if the email is already on a real user account — no
-        // point inviting someone whose login already exists.
-        $existingUser = User::where('email', $data['invitee_email'])->whereNull('deleted_at')->first();
+        // Fail fast if the email is already on a real user account IN THIS
+        // TENANT — no point inviting someone whose login already exists here.
+        // Email is unique PER CLIENT now (not globally), so we scope the check
+        // to this invite's client_id: the same email living in a DIFFERENT
+        // client must NOT block an invite here. Case-insensitive so "RD@x.com"
+        // and "rd@x.com" are treated as the same login within the tenant.
+        $existingUser = User::whereRaw('LOWER(email) = ?', [mb_strtolower($data['invitee_email'])])
+            ->where('client_id', $clientId)
+            ->whereNull('deleted_at')->first();
         if ($existingUser) {
             throw ValidationException::withMessages([
-                'invitee_email' => ['This email already has an account. Use the regular Add Employee flow.'],
+                'invitee_email' => ['This email already has an account in this organization. Use the regular Add Employee flow instead.'],
             ]);
         }
 
@@ -304,8 +310,10 @@ class OnboardingController extends Controller
             ]);
         } catch (QueryException $e) {
             if ($e->getCode() === '23505') {
+                // Per-tenant unique index — this only fires when the email is
+                // already a login WITHIN this invite's client.
                 throw ValidationException::withMessages([
-                    'email' => ['This email already has an account.'],
+                    'email' => ['This email already has an account in this organization. Each email can be used only once per organization.'],
                 ]);
             }
             throw $e;
@@ -454,6 +462,12 @@ class OnboardingController extends Controller
         // parameter binding, so we deliberately do NOT blacklist SQL keywords,
         // which would wrongly reject legitimate values like "123 Drop Lane".
         $noTags = ['not_regex:/[<>]/'];
+        // A real street address contains at least one letter AND at least one
+        // digit or whitespace (a house/building number, or multiple words).
+        // This rejects meaningless input like "@@@@@", "#####", "12345",
+        // "asdfgh", "@@@123" while still accepting "12 MG Road" /
+        // "Flat 4B, Park Lane". Paired with $noTags (XSS) below.
+        $addressRule = ['regex:/^(?=.*[A-Za-z])(?=.*[\s\d]).{5,}$/'];
 
         // OB-01 fix: every FK below must reference a master that belongs to THIS
         // invite's tenant (or a global/null-client row), so a public submitter
@@ -463,7 +477,7 @@ class OnboardingController extends Controller
         });
 
         return $request->validate([
-            'first_name'   => array_merge(['required', 'string', 'max:100'], $nameRule),
+            'first_name'   => array_merge(['required', 'string', 'min:3', 'max:100'], $nameRule),
             'middle_name'  => array_merge(['nullable', 'string', 'max:100'], $nameRule),
             'last_name'    => array_merge(['nullable', 'string', 'max:100'], $nameRule),
             'gender'       => 'nullable|in:Male,Female,Other',
@@ -477,17 +491,17 @@ class OnboardingController extends Controller
             // Current address
             'country_id'   => ['nullable', 'integer', $tenantFk('master_countries')],
             'state_id'     => ['nullable', 'integer', $tenantFk('master_states')],
-            'city'         => array_merge(['nullable', 'string', 'max:100'], $noTags),
-            'address_line1' => array_merge(['nullable', 'string', 'max:255'], $noTags),
-            'address_line2' => array_merge(['nullable', 'string', 'max:255'], $noTags),
+            'city'         => array_merge(['nullable', 'string', 'max:100'], $nameRule),
+            'address_line1' => array_merge(['nullable', 'string', 'max:255'], $noTags, $addressRule),
+            'address_line2' => array_merge(['nullable', 'string', 'max:255'], $noTags, $addressRule),
             'pincode'      => array_merge(['nullable', 'string', 'max:20'], $pincodeRule),
 
             // Permanent address
             'perm_country_id'    => ['nullable', 'integer', $tenantFk('master_countries')],
             'perm_state_id'      => ['nullable', 'integer', $tenantFk('master_states')],
-            'perm_city'          => array_merge(['nullable', 'string', 'max:100'], $noTags),
-            'perm_address_line1' => array_merge(['nullable', 'string', 'max:255'], $noTags),
-            'perm_address_line2' => array_merge(['nullable', 'string', 'max:255'], $noTags),
+            'perm_city'          => array_merge(['nullable', 'string', 'max:100'], $nameRule),
+            'perm_address_line1' => array_merge(['nullable', 'string', 'max:255'], $noTags, $addressRule),
+            'perm_address_line2' => array_merge(['nullable', 'string', 'max:255'], $noTags, $addressRule),
             'perm_pincode'       => array_merge(['nullable', 'string', 'max:20'], $pincodeRule),
 
             // Job — defaults from invite when omitted
@@ -503,13 +517,18 @@ class OnboardingController extends Controller
             // ahead (covers scheduled future starts).
             'date_of_joining' => 'nullable|date|after_or_equal:' . now()->subYear()->toDateString() . '|before_or_equal:' . now()->addYears(2)->toDateString(),
         ], [
-            'city.not_regex'               => 'City cannot contain < or > characters.',
+            'city.regex'                   => 'Enter a valid city name (letters only — no numbers or special characters).',
             'address_line1.not_regex'      => 'Address cannot contain < or > characters.',
             'address_line2.not_regex'      => 'Address cannot contain < or > characters.',
-            'perm_city.not_regex'          => 'City cannot contain < or > characters.',
+            'address_line1.regex'          => 'Enter a valid address — include a house/building number and street name.',
+            'address_line2.regex'          => 'Enter a valid address — include a house/building number and street name.',
+            'perm_city.regex'              => 'Enter a valid city name (letters only — no numbers or special characters).',
             'perm_address_line1.not_regex' => 'Address cannot contain < or > characters.',
             'perm_address_line2.not_regex' => 'Address cannot contain < or > characters.',
+            'perm_address_line1.regex'     => 'Enter a valid address — include a house/building number and street name.',
+            'perm_address_line2.regex'     => 'Enter a valid address — include a house/building number and street name.',
             'location.not_regex'           => 'Location cannot contain < or > characters.',
+            'first_name.min'     => 'First name must be at least 3 characters.',
             'first_name.regex'   => 'First name cannot contain numbers.',
             'middle_name.regex'  => 'Middle name cannot contain numbers.',
             'last_name.regex'    => 'Last name cannot contain numbers.',
