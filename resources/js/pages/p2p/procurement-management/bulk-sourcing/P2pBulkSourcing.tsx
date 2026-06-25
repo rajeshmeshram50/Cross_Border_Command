@@ -14,6 +14,9 @@ import './bulk-sourcing.css';
 type SourcingRow = {
   id: string;
   source: 'Product Master' | 'Manual Entry';
+  // Actual source mix from the target's products — a target can hold both
+  // Product Master and Manual Entry rows, so this drives 1 or 2 badges.
+  sources?: ('Product Master' | 'Manual Entry')[];
   start: string;
   due: string;
   createdBy: string;
@@ -91,7 +94,8 @@ export default function P2pBulkSourcing() {
     if (!q) return allRows;
     return allRows.filter(r => {
       const status = (r.completed >= r.products && r.products > 0) ? 'completed' : 'in progress';
-      return [r.id, r.source, r.createdBy, r.assignee, status].join(' ').toLowerCase().includes(q);
+      const src = (r.sources?.length ? r.sources : [r.source]).join(' ');
+      return [r.id, src, r.createdBy, r.assignee, status].join(' ').toLowerCase().includes(q);
     });
   }, [allRows, query]);
 
@@ -260,7 +264,13 @@ export default function P2pBulkSourcing() {
                       <div className="bst-row" key={r.id}>
                         <span className="bst-sr">{startIdx + i + 1}</span>
                         <span><span className="bst-idpill">{r.id}</span></span>
-                        <span><span className={`bst-src ${r.source === 'Manual Entry' ? 'bst-src--manual' : 'bst-src--master'}`}>{r.source}</span></span>
+                        <span>
+                          <span className="bst-src-wrap">
+                            {(r.sources?.length ? r.sources : [r.source]).map(s => (
+                              <span key={s} className={`bst-src ${s === 'Manual Entry' ? 'bst-src--manual' : 'bst-src--master'}`}>{s}</span>
+                            ))}
+                          </span>
+                        </span>
                         <span className="bst-due">{fmtDate(r.start)}</span>
                         <span className="bst-due">{fmtDate(r.due)}</span>
                         <span><Person name={r.createdBy} /></span>

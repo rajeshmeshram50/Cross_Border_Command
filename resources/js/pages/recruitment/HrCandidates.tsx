@@ -229,7 +229,7 @@ export default function HrCandidates() {
                   </div>
                 </div>
               </div>
-              <div className="d-flex align-items-center gap-2 flex-wrap">
+              <div className="cand-actions d-flex align-items-center gap-2 flex-wrap">
                 <button type="button" className="cand-pill-btn cand-pill-btn--violet" onClick={() => navigate('/hr/recruitment')}>
                   <i className="ri-arrow-left-line" />Back to Recruitment List
                 </button>
@@ -341,7 +341,7 @@ export default function HrCandidates() {
               ))}
             </Row>
 
-            <div className="d-flex align-items-center gap-2 mb-2 flex-wrap">
+            <div className="cand-toolbar d-flex align-items-center gap-2 mb-2 flex-wrap">
               <div className="rec-tab-track">
                 {([
                   { key: 'final' as const,    label: 'Final Round Selected', count: totals.finalRound,                icon: 'ri-user-search-line',     variant: 'in-progress' },

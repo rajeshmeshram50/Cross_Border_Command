@@ -9484,6 +9484,73 @@
   }
 }
 
+/* ============================================================
+   Candidate Management page — tablet / mobile responsive
+   ------------------------------------------------------------
+   The candidate page uses its OWN markup (cand-pill-btn action
+   buttons, .cand-toolbar tab+search row, .cand-page-table) so
+   the recruitment-list block above doesn't reach it. These
+   rules are scoped to candidate-only classes so nothing leaks
+   into the recruitment list (which shares .rec-tab-track /
+   .rec-req-search). The wide list table keeps the app-wide
+   horizontal-scroll pattern (.rec-list-scroll + table-nowrap).
+   ============================================================ */
+
+/* ── Tablet (≤ 991px) — header title stacks above the actions,
+   and the action buttons spread evenly instead of clumping. */
+@media (max-width: 991.98px) {
+  .cand-actions {
+    width: 100%;
+  }
+  .cand-actions .cand-pill-btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
+/* ── Mobile (≤ 767.98px) ── */
+@media (max-width: 767.98px) {
+  /* Action buttons flow two-per-row at full width. */
+  .cand-actions .cand-pill-btn {
+    flex: 1 1 calc(50% - 8px);
+  }
+  /* "Back to Recruitment List" is the longest label — give it its
+     own full-width row so it never truncates awkwardly. */
+  .cand-actions .cand-pill-btn--violet:first-child {
+    flex: 1 1 100%;
+  }
+
+  /* Toolbar: status tabs and the search box each take a full row.
+     Overrides the inline flex set on the search box in the JSX. */
+  .cand-toolbar .rec-tab-track,
+  .cand-toolbar .rec-req-search {
+    flex: 1 1 100% !important;
+    max-width: none !important;
+    min-width: 0;
+    width: 100%;
+    margin-left: 0 !important;
+  }
+  /* Three status tabs share the row evenly rather than scrolling. */
+  .cand-toolbar .rec-tab-track {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .cand-toolbar .rec-tab {
+    flex: 1 1 calc(33.333% - 4px);
+    justify-content: center;
+    white-space: nowrap;
+  }
+  .cand-toolbar .cand-result-chip {
+    margin-left: 0;
+  }
+
+  /* Tighten the recruitment summary card + table padding so the
+     content gets more usable width on a phone. */
+  .cand-rec-card { padding: 14px; }
+  .rec-page .rec-list-scroll { padding: 8px 6px; }
+}
+
 /* Candidate form/import modal field overrides (Client-form aesthetic).
    Extracted from inline <style> blocks in HrCandidates.tsx; applies to
    both CandidateFormModal and ImportCandidatesModal via .cand-form-clientstyle. */
