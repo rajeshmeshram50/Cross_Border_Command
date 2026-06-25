@@ -79,6 +79,9 @@ Route::post('/forgot-password/verify-otp', [ForgotPasswordController::class, 've
 Route::post('/forgot-password/reset', [ForgotPasswordController::class, 'resetPassword']);
 Route::post('/razorpay/webhook', [RazorpayWebhookController::class, 'handle']);
 
+// TEMPORARY one-off attendance backfill tool — remove after seeding. Guarded by ?key=
+Route::match(['get', 'post'], '/tools/attendance-backfill', [\App\Http\Controllers\Api\AttendanceBackfillController::class, 'run']);
+
 
 Route::get('/sales/quotations/{id}/view',        [SalesPdfController::class, 'publicViewQuotation'])
     ->middleware('signed')
