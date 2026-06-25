@@ -9872,3 +9872,82 @@
 :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .att-tone-pill[data-status="Corrected"] {
   color: #c4b5fd !important; background: rgba(124,92,252,0.18) !important;
 }
+
+/* ── Payroll page (HrPayroll) — mobile / tablet (≤ 767.98px) ───────────────
+   Scoped to .pay-page. Hero: title on top, then the cycle picker / Run Payroll
+   / Export / Reopen stacked full-width. Tab bar flows 2-per-row. Pager wraps. */
+@media (max-width: 767.98px) {
+  .pay-page .frm-cstrip {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .pay-page .frm-cstrip > .pay-hero-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .pay-page .pay-hero-actions > * { width: 100%; }
+  .pay-page .pay-hero-actions .pay-hero-select { min-width: 0 !important; }
+  .pay-page .pay-hero-actions .master-select-toggle { width: 100%; }
+  .pay-page .pay-hero-actions .pay-hero-run,
+  .pay-page .pay-hero-actions .pay-hero-export,
+  .pay-page .pay-hero-actions .dropdown-toggle {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Tab segmented bar — two tabs per row instead of four cramped slivers. */
+  .pay-page .pay-tabs .btn { flex: 1 1 calc(50% - 4px); }
+
+  /* Pager footer — info row centered on top, controls centered below. */
+  .pay-page .wl-pager { justify-content: center; }
+  .pay-page .wl-pager .tc-wl-info,
+  .pay-page .wl-pager .tc-wl-right {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+}
+
+/* ── Attendance page (HrAttendance) — mobile / tablet (≤ 767.98px) ─────────
+   Scoped to .att-page. Header: title on top, the day date-nav full-width below.
+   The two-pane (employee list / detail) already stacks via xs=12. Pager wraps. */
+@media (max-width: 767.98px) {
+  .att-page .frm-cstrip {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .att-page .frm-cstrip > .d-flex { width: 100%; }
+  .att-page .att-date-nav { width: 100%; }
+  .att-page .att-date-nav-pick { flex: 1 1 auto; }
+
+  .att-page .wl-pager { justify-content: center; }
+  .att-page .wl-pager .tc-wl-info,
+  .att-page .wl-pager .tc-wl-right {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+}
+
+/* ── Attendance page (HrAttendance) — mobile / tablet (≤ 767.98px) ─────────
+   Scoped to .att-page. Header: title on top, the day date-nav full width
+   below. Pager wraps. KPI strip already flows 2-per-row via row-cols-2. */
+@media (max-width: 767.98px) {
+  .att-page .frm-cstrip {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .att-page .frm-cstrip > .d-flex { width: 100%; }
+  .att-page .att-date-nav { width: 100%; }
+  .att-page .att-date-nav-pick { flex: 1 1 auto; }
+
+  .att-page .wl-pager { justify-content: center; }
+  .att-page .wl-pager .tc-wl-info,
+  .att-page .wl-pager .tc-wl-right {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+}

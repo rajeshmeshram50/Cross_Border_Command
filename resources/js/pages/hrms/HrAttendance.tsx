@@ -260,7 +260,7 @@ export default function HrAttendance() {
         <Row>
           <Col xs={12}>
             <div
-              className="hr-employees-surface"
+              className="hr-employees-surface att-page"
               style={{
                 borderRadius: 18,
                 border: '1px solid var(--vz-border-color)',
@@ -309,7 +309,7 @@ export default function HrAttendance() {
                     </div>
                   </div>
 
-                  <Row className="g-2 mb-2 row-cols-xl-4 row-cols-md-2 row-cols-1">
+                  <Row className="g-2 mb-2 row-cols-xl-4 row-cols-md-2 row-cols-2">
                     {Array.from({ length: 4 }).map((_, i) => (
                       <Col key={i}><Shimmer height={84} radius={12} /></Col>
                     ))}
@@ -369,7 +369,7 @@ export default function HrAttendance() {
       <Row>
         <Col xs={12}>
           <div
-            className="hr-employees-surface"
+            className="hr-employees-surface att-page"
             style={{
               borderRadius: 18,
               border: '1px solid var(--vz-border-color)',
@@ -490,7 +490,7 @@ export default function HrAttendance() {
                   </div>
                 </div>
 
-                <Row className="g-2 mb-2 align-items-stretch row-cols-xl-4 row-cols-md-2 row-cols-1">
+                <Row className="g-2 mb-2 align-items-stretch row-cols-xl-4 row-cols-md-2 row-cols-2">
                   {([
                     { key: 'pres', label: 'Present Days',   sub: 'This month',     value: selected.presentDays,        icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c,#22c8a9)', deep: '#0ab39c' },
                     { key: 'late', label: 'Late Marks',     sub: 'This month',     value: selected.lateMarks,          icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)', deep: '#92400e' },

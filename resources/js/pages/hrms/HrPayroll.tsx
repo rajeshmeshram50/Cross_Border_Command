@@ -760,6 +760,7 @@ export default function HrPayroll() {
   return (
     <>
       <MasterFormStyles />
+      <div className="pay-page">
 
       <div className="frm-cstrip mb-3">
         <span className="frm-cstrip-accent" />
@@ -1026,7 +1027,7 @@ export default function HrPayroll() {
                                          'Blocked — resolve first';
 
           return (
-            <Col key={k.key} xl={3} md={6} sm={6} xs={12}>
+            <Col key={k.key} xl={3} md={6} sm={6} xs={6}>
               <div
                 className="onb-surface onb-kpi-card"
                 style={{
@@ -1063,7 +1064,7 @@ export default function HrPayroll() {
       <Row className="g-2 align-items-center mb-3">
         <Col xs={12}>
           <div
-            className="d-flex flex-wrap"
+            className="d-flex flex-wrap pay-tabs"
             style={{
               background: 'var(--vz-secondary-bg)',
               border: '1px solid var(--vz-border-color)',
@@ -1286,7 +1287,7 @@ export default function HrPayroll() {
                   { key: 'mismatchCases',     label: 'Mismatch Cases',      n: counts.mismatchCases,     tone: 'red'   as const },
                   { key: 'unpaidLeaveCases',  label: 'Unpaid Leave Cases',  n: counts.unpaidLeaveCases,  tone: 'amber' as const },
                 ].map(t => (
-                  <Col key={t.key} xl={3} md={6} sm={6} xs={12}>
+                  <Col key={t.key} xl={3} md={6} sm={6} xs={6}>
                     <div className={`pay-mini-tile pay-mini-tile--${t.tone}`}>
                       <div className={`fw-bold pay-mini-tile-num--${t.tone}`} style={{ fontSize: 22, lineHeight: 1 }}>
                         {loading ? <Shimmer height={20} width={40} radius={6} /> : t.n}
@@ -1398,7 +1399,7 @@ export default function HrPayroll() {
                   { key: 'totalTds',    label: 'Total TDS',      n: counts.totalTds,    tone: 'amber'  as const },
                   { key: 'totalLop',    label: 'Total LOP Ded.', n: counts.totalLop,    tone: 'red'    as const },
                 ].map(t => (
-                  <Col key={t.key} xl={true} md={4} sm={6} xs={12}>
+                  <Col key={t.key} xl={true} md={4} sm={6} xs={6}>
                     <div className={`pay-mini-tile pay-mini-tile--${t.tone}`}>
                       <div className={`fw-bold pay-mini-tile-num--${t.tone}`} style={{ fontSize: 20, lineHeight: 1 }}>
                         {loading ? <Shimmer height={18} width={70} radius={6} /> : `₹${fmtINR(t.n)}`}
@@ -1586,6 +1587,7 @@ export default function HrPayroll() {
           )}
         </CardBody>
       </Card>
+      </div>
 
       <PaymentDisbursementModal
         open={paymentOpen}
