@@ -5,6 +5,7 @@ import { useConfirm } from '../../../../contexts/ConfirmContext';
 import api from '../../../../api';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import { MasterMultiSelect } from '../../../../components/ui/MasterMultiSelect';
+import { SegmentTags } from './SegmentTags';
 import { useModalGuard } from './useModalGuard';
 import './bulk-sourcing.css';
 
@@ -99,7 +100,11 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
   const uploadCard = (f: File) => {
     const fd = new FormData(); fd.append('file', f); fd.append('kind', 'card');
     setCardUploading(true);
-    api.post<{ data: { path: string; name: string } }>('/p2p/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    // Don't set a bare 'multipart/form-data' — it strips the boundary and PHP
+    // can't parse the body (file never arrives → "file is required"). Override
+    // the api default of application/json with undefined so axios emits the
+    // proper `multipart/form-data; boundary=...`. (Same fix as onboarding.)
+    api.post<{ data: { path: string; name: string } }>('/p2p/upload', fd, { headers: { 'Content-Type': undefined as unknown as string } })
       .then(r => { setCard(r.data?.data?.path ?? ''); setCardName(r.data?.data?.name ?? f.name); })
       .catch((err) => toast.error('Upload failed', err?.response?.data?.message || 'Could not upload the file.'))
       .finally(() => setCardUploading(false));
@@ -192,7 +197,7 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
               <MasterSelect
                 value={sel}
                 placeholder="Select supplier..."
-                options={suppliers.map(s => ({ value: s.id, label: `${s.id} — ${s.name} (${s.segment})` }))}
+                options={suppliers.map(s => ({ value: s.id, label: `${s.id} — ${s.name}` }))}
                 onChange={setSel}
               />
             </div>
@@ -202,7 +207,7 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
                 <div className="smp-sc-main">
                   <div className="smp-sc-top">
                     <div className="smp-sc-name">{supplier.name}</div>
-                    <div className="smp-sc-tags"><span className="smp-sc-tag id-tag">{supplier.id}</span><span className="smp-sc-tag seg-tag">{supplier.segment}</span></div>
+                    <div className="smp-sc-tags"><span className="smp-sc-tag id-tag">{supplier.id}</span><SegmentTags segment={supplier.segment} tagClassName="smp-sc-tag seg-tag" /></div>
                   </div>
                   <div className="smp-sc-contacts">
                     {[['Contact', supplier.contact], ['Mobile', supplier.mobile], ['Email', supplier.email]].map(([l, v]) => (

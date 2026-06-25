@@ -245,6 +245,19 @@
   background: #fff;
   box-shadow: 0 0 0 3px rgba(34,211,238,.16);
 }
+/* Dark mode: keep the cyan focus ring but DON'T flip the field to white. */
+[data-bs-theme="dark"] .ast-field input:focus,
+[data-bs-theme="dark"] .ast-field select:focus,
+[data-bs-theme="dark"] .ast-pl-price:focus,
+[data-bs-theme="dark"] .ast-clarity-body textarea:focus,
+[data-bs-theme="dark"] .ast-clarity-body input[type=text]:focus,
+[data-bs-theme="dark"] .snf-inp:focus,
+[data-bs-theme="dark"] .snf-sel:focus {
+  border-color: #22d3ee;
+  background: rgba(255,255,255,.07);
+  color: #e2e8f0;
+  box-shadow: 0 0 0 3px rgba(34,211,238,.18);
+}
 [data-bs-theme="dark"] .ast-radio,
 [data-bs-theme="dark"] .asrc-picker,
 [data-bs-theme="dark"] .astp-row {
@@ -808,6 +821,12 @@
   padding: 3px 7px;
   font-family: ui-monospace,Menlo,Consolas,monospace;
   letter-spacing: .01em;
+}
+.bst-src-wrap {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
 }
 .bst-src {
   display: inline-block;
@@ -3028,6 +3047,41 @@
   font-weight: 500;
   letter-spacing: .05em;
 }
+.srpt-clarity-text {
+  display: inline-block;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  font-size: 11.5px;
+  color: #475569;
+}
+.srpt-clarity-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 7px;
+  border: 1.5px solid #b2ebf2;
+  background: #f0fdff;
+  color: #0e7490;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background .15s, border-color .15s;
+}
+.srpt-clarity-link:hover {
+  background: #cffafe;
+  border-color: #67e8f9;
+}
+[data-bs-theme="dark"] .srpt-clarity-text { color: #cbd5e1; }
+[data-bs-theme="dark"] .srpt-clarity-link {
+  background: rgba(8, 145, 178, .15);
+  border-color: rgba(103, 232, 249, .3);
+  color: #67e8f9;
+}
 .srpt-sup-count {
   min-width: 26px;
   height: 26px;
@@ -4775,4 +4829,88 @@
   .pl-stat--prog { flex: none; width: 100%; }
   .pl-stat-lbl { font-size: 8px; }
   .pl-stat-val { font-size: 19px; }
+}
+
+/* ============================================================================
+   SegmentTags — first segment badge + "+N" pill with a popover (SegmentTags.tsx)
+   ============================================================================ */
+.seg-tags {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.seg-more-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 19px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid #bdf0f7;
+  background: #e0fbff;
+  color: #0e7490;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1;
+  transition: background .15s, border-color .15s;
+}
+.seg-more-pill:hover {
+  background: #cffafe;
+  border-color: #67e8f9;
+}
+.seg-more-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  min-width: 150px;
+  max-width: 240px;
+  padding: 8px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .18);
+}
+.seg-more-pop-hdr {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+.seg-more-pop-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.seg-more-pop-item {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #0e7490;
+  background: #f0fdff;
+  border: 1px solid #bdf0f7;
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+[data-bs-theme="dark"] .seg-more-pill {
+  background: rgba(8, 145, 178, .18);
+  border-color: rgba(103, 232, 249, .3);
+  color: #67e8f9;
+}
+[data-bs-theme="dark"] .seg-more-pop {
+  background: #0f1e2e;
+  border-color: rgba(255, 255, 255, .12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+}
+[data-bs-theme="dark"] .seg-more-pop-hdr { color: #94a3b8; }
+[data-bs-theme="dark"] .seg-more-pop-item {
+  background: rgba(8, 145, 178, .15);
+  border-color: rgba(103, 232, 249, .25);
+  color: #a5f3fc;
 }

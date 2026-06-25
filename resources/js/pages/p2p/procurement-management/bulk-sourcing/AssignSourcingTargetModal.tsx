@@ -121,7 +121,10 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
   const uploadClarity = (f: File) => {
     const fd = new FormData(); fd.append('file', f); fd.append('kind', 'clarity');
     setClUploading(true);
-    api.post<{ data: { path: string } }>('/p2p/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    // Override the api default of application/json with undefined so axios emits
+    // the proper `multipart/form-data; boundary=...`. A bare 'multipart/form-data'
+    // strips the boundary and PHP can't parse the upload (esp. on mobile).
+    api.post<{ data: { path: string } }>('/p2p/upload', fd, { headers: { 'Content-Type': undefined as unknown as string } })
       .then(r => setClVal(r.data?.data?.path ?? ''))
       .catch((err) => toast.error('Upload failed', err?.response?.data?.message || 'Could not upload the PDF.'))
       .finally(() => setClUploading(false));

@@ -5,6 +5,7 @@ import api from '../../../../api';
 import MapSupplierModal from './MapSupplierModal';
 import MappedSuppliersModal from './MappedSuppliersModal';
 import { useModalGuard } from './useModalGuard';
+import { resolveFileUrl, downloadFile } from '../../../../utils/resolveFileUrl';
 import './bulk-sourcing.css';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -14,7 +15,8 @@ import './bulk-sourcing.css';
 
 export type ReportRow = { id: string; source: string; start: string; due: string; createdBy: string; assignee: string; products: number; completed: number };
 
-type ReportProduct = { id?: number | string; type: 'master' | 'manual'; code: string; name: string; segment?: string; hsn?: string; price: string; status: 'Completed' | 'In Progress'; supplierCount?: number };
+type Clarity = { type: 'text' | 'link' | 'pdf'; val: string } | null;
+type ReportProduct = { id?: number | string; type: 'master' | 'manual'; code: string; name: string; segment?: string; hsn?: string; price: string; status: 'Completed' | 'In Progress'; supplierCount?: number; clarity?: Clarity };
 
 const fmt = (s: string) => { if (!s) return '—'; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
 /* Always show Target Price in INR. Product Master rows already carry the ₹;
@@ -36,6 +38,34 @@ const REF_ICO = {
   user: I(<><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>),
   users: I(<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>),
 };
+
+/* Product Clarity cell — text shows inline; link/pdf are clickable.
+   A PDF downloads on click; a link opens in a new tab. */
+function ClarityCell({ clarity }: { clarity?: Clarity }) {
+  if (!clarity || !clarity.type || !clarity.val) return <span className="srpt-attach-dash">—</span>;
+
+  if (clarity.type === 'text') {
+    return <span className="srpt-clarity-text" title={clarity.val}>{clarity.val}</span>;
+  }
+
+  const url = resolveFileUrl(clarity.val);
+  if (clarity.type === 'pdf') {
+    return (
+      <button type="button" className="srpt-clarity-link" title="Download clarity PDF"
+        onClick={() => downloadFile(url, url.split('/').pop() || 'clarity.pdf')}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+        PDF
+      </button>
+    );
+  }
+  // link
+  return (
+    <a className="srpt-clarity-link" href={url} target="_blank" rel="noreferrer" title={clarity.val}>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
+      Link
+    </a>
+  );
+}
 
 export default function SourcingReportModal({ row, onClose }: { row: ReportRow; onClose: () => void }) {
   const toast = useToast();
@@ -191,7 +221,7 @@ export default function SourcingReportModal({ row, onClose }: { row: ReportRow; 
                       {tab === 'master' && <td style={{ textAlign: 'center' }}><span className={`srpt-seg ${(p.segment || 'General').replace(/ /g, '-')}`}>{p.segment}</span></td>}
                       {tab === 'master' && <td style={{ textAlign: 'center', fontFamily: 'monospace', fontSize: 11, color: '#475569' }}>{p.hsn}</td>}
                       <td style={{ textAlign: 'center' }} className="srpt-price">{fmtPrice(p.price)}</td>
-                      <td style={{ textAlign: 'center' }}><span className="srpt-attach-dash">—</span></td>
+                      <td style={{ textAlign: 'center' }}><ClarityCell clarity={p.clarity} /></td>
                       <td style={{ textAlign: 'center' }}><span className={`srpt-status ${doneP ? 'done' : 'prog'}`} onClick={() => toggle(gi)} title="Click to toggle status" style={{ cursor: 'pointer' }}><span className="srpt-sdot" />{doneP ? 'Completed' : 'In Progress'}</span></td>
                       <td style={{ textAlign: 'center' }}>{supCount > 0
                         ? <span className="srpt-sup-count has-sup srpt-sup-clickable" title="View mapped suppliers" onClick={() => setViewIdx(gi)}>{supCount}</span>
