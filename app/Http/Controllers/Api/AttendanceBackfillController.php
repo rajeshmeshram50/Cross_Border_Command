@@ -112,7 +112,7 @@ class AttendanceBackfillController extends Controller
             ->whereBetween('attendance_date', [$startStr, $endStr])
             ->count();
 
-        DB::transaction(function () use ($rows) {
+        DB::transaction(function () use ($rows, $idList, $clientId, $branchId, $startStr, $endStr) {
             // insertOrIgnore -> Postgres ON CONFLICT DO NOTHING, so the
             // UNIQUE(employee_id, attendance_date) makes re-runs non-destructive.
             foreach (array_chunk($rows, 500) as $chunk) {
