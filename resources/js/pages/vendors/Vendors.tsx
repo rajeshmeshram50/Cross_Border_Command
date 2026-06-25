@@ -85,6 +85,10 @@ type ApiVendor = {
   primary_address?: {
     city: string | null;
     state_id: number | null;
+    state_code: string | null;
+    /* Resolved state name from the master_states relation (VendorController
+       index eager-loads primaryAddress.state:id,name). Falls back to code. */
+    state?: { id: number; name: string | null } | null;
     contact_name: string | null;
     email: string | null;
     contact_no: string | null;
@@ -172,11 +176,15 @@ export default function Vendors() {
       .sort((x, y) => Number(y.isPrimary) - Number(x.isPrimary));
     return {
       id:          row.id,
-      code:        row.vendor_code ?? `V-${row.id}`,
+      code:        row.vendor_code ?? `SUP-${row.id}`,
       companyName: row.company_name ?? 'Untitled Supplier',
       legalName:   row.legal_name ?? row.company_name ?? '—',
       type:        row.vendor_type?.name ?? 'Pending',
-      state:       String(row.primary_address?.state_id ?? '—'),
+      /* Show the state NAME (e.g. "Maharashtra"), not the raw state_id.
+         Fall back to the state code, then a dash. */
+      state:       row.primary_address?.state?.name
+                     || row.primary_address?.state_code
+                     || '—',
       city:        row.primary_address?.city ?? '—',
       contactName: contacts[0]?.name || row.primary_address?.contact_name || '—',
       designation: '—',
@@ -219,12 +227,15 @@ export default function Vendors() {
       const el = scrollRef.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      const THEAD = 42, ROW = 56, FOOTER = 96;
-      const avail = window.innerHeight - top - THEAD - FOOTER;
+      const THEAD = 42, ROW = 56;
+      // Page size fills the SAME stretched card height as fillH, so the rows
+      // actually use the visible card (no big empty gap under a half-full table,
+      // and short lists — e.g. 6 — fit on one page instead of spilling to 2).
+      const cardH = Math.max(0, window.innerHeight - top - 64);
+      const avail = cardH - THEAD;
       const fit = Math.max(4, Math.floor(avail / ROW));
       setRpp(prev => (prev === fit ? prev : fit));
-      const fh = Math.max(0, window.innerHeight - top - 64);
-      setFillH(prev => (prev === fh ? prev : fh));
+      setFillH(prev => (prev === cardH ? prev : cardH));
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
@@ -945,7 +956,8 @@ useEffect(() => {
                                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
                                 </button>
                                 </Tooltip>
-                                {/* Zoho Entry — UI only for now; ledger-style entry wiring comes later. */}
+                                {/* Zoho Entry — HIDDEN for now (UI only, not wired up yet).
+                                    Un-comment this block to bring the button back.
                                 <Tooltip label="Zoho Entry">
                                 <button
                                   type="button"
@@ -955,6 +967,7 @@ useEffect(() => {
                                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /><path d="M9 7h7" /><path d="M9 11h7" /></svg>
                                 </button>
                                 </Tooltip>
+                                */}
                                 <button
                                   type="button"
                                   className="sl-evault-btn"

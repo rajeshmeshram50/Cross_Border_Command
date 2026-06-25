@@ -110,7 +110,7 @@ class ClmRegulatoryDefenseFileController extends Controller
                     $out[] = [
                         'id'    => (int) $v->id,
                         'name'  => (string) $v->company_name,
-                        'code'  => $v->vendor_code ?: ('V-' . str_pad((string) $v->id, 2, '0', STR_PAD_LEFT)),
+                        'code'  => $v->vendor_code ?: ('SUP-' . str_pad((string) $v->id, 2, '0', STR_PAD_LEFT)),
                     ];
                 }
             }
