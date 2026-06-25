@@ -10,7 +10,6 @@ import Tooltip from '../../components/ui/Tooltip';
 import WorklistPager from '../../components/ui/WorklistPager';
 import '../../../css/recruitment.css';
 
-// ── Types ────────────────────────────────────────────────────────────────────
 type HolidayType = 'Public' | 'Restricted' | 'Company' | 'Regional' | 'Optional';
 
 interface HolidayGroup {
@@ -26,7 +25,7 @@ interface HolidayRow {
   id: number;
   code: string | null;
   name: string;
-  date: string;            // YYYY-MM-DD
+  date: string;
   type: HolidayType;
   is_recurring: boolean;
   description: string | null;
@@ -51,8 +50,7 @@ const TYPE_TONES: Record<string, { bg: string; fg: string }> = {
   Optional:   { bg: '#f1f1f4', fg: '#5b6270' },
 };
 
-// ── Date helpers ──────────────────────────────────────────────────────────────
-const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTH_ABBR =['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const WEEKDAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
 function formatDate(raw: any): string {
@@ -69,7 +67,6 @@ function weekdayName(raw: any): string {
   return WEEKDAYS[d.getDay()];
 }
 
-// ── Page ────────────────────────────────────────────────────────────────────
 export default function HrHoliday() {
   const toast = useToast();
   const confirmDialog = useConfirm();
@@ -78,22 +75,18 @@ export default function HrHoliday() {
   const [groups, setGroups] = useState<HolidayGroup[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Filters / search
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
   const [yearFilter, setYearFilter] = useState('All');
-  const [groupFilter, setGroupFilter] = useState('All'); // 'All' | group id (string)
+  const [groupFilter, setGroupFilter] = useState('All');
 
-  // Pagination
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  // Modals
   const [createOpen, setCreateOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<HolidayRow | null>(null);
   const [manageGroupsOpen, setManageGroupsOpen] = useState(false);
 
-  // Excel import
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [importing, setImporting] = useState(false);
 
@@ -152,9 +145,7 @@ export default function HrHoliday() {
   const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
   const goto = (p: number) => setPage(Math.max(1, Math.min(pageCount, p)));
 
-  // The group new holidays / imports are filed under: the active filter when a
-  // specific group is chosen, else none (ungrouped).
-  const targetGroupId = groupFilter !== 'All' ? Number(groupFilter) : null;
+  const targetGroupId =groupFilter !== 'All' ? Number(groupFilter) : null;
 
   const handleDelete = async (row: HolidayRow) => {
     const ok = await confirmDialog({
@@ -175,7 +166,6 @@ export default function HrHoliday() {
     }
   };
 
-  // ── Excel template download ────────────────────────────────────────────────
   const downloadTemplate = () => {
     const sample = [
       { Name: 'Republic Day',           Date: '2026-01-26', Type: 'Public',   Recurring: 'Yes', Description: 'National holiday' },
@@ -190,7 +180,6 @@ export default function HrHoliday() {
     toast.success('Template downloaded', 'Fill in the Holidays sheet and import it.');
   };
 
-  // ── Excel import ───────────────────────────────────────────────────────────
   const handleFilePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (fileRef.current) fileRef.current.value = '';
@@ -252,7 +241,6 @@ export default function HrHoliday() {
       <Row>
         <Col xs={12}>
           <div className="rec-page">
-            {/* Header strip — same shape as the Clients / Branches headers. */}
             <div className="frm-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
@@ -269,7 +257,6 @@ export default function HrHoliday() {
               </div>
             </div>
 
-            {/* Filters + table */}
             <Card className="border-0 shadow-none mb-0 bg-transparent">
               <CardBody className="p-0">
                 <div className="rec-list-frame">
@@ -422,7 +409,6 @@ export default function HrHoliday() {
   );
 }
 
-// ── Add / Edit holiday modal ────────────────────────────────────────────────
 function HolidayModal({
   isOpen, editing, groups, defaultGroupId, onClose, onSaved,
 }: {
@@ -444,6 +430,13 @@ function HolidayModal({
 
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const groupOptions = useMemo(
+    () => groups
+      .filter(g => g.status === 'Active' || String(g.id) === groupId)
+      .map(g => ({ value: String(g.id), label: g.name })),
+    [groups, groupId],
+  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -536,8 +529,8 @@ function HolidayModal({
             <Col md={6}>
               <label className="rec-form-label">Holiday Group</label>
               <MasterSelect value={groupId} onChange={setGroupId}
-                options={[{ value: '', label: 'Ungrouped' }, ...groups.map(g => ({ value: String(g.id), label: g.name }))]}
-                placeholder={groups.length ? 'Select group' : 'No groups — create one via Groups'} />
+                options={[{ value: '', label: 'Ungrouped' }, ...groupOptions]}
+                placeholder={groupOptions.length ? 'Select group' : 'No active groups — create one via Groups'} />
               <div className="text-muted mt-1" style={{ fontSize: 11.5 }}>The group decides which employees get this holiday.</div>
             </Col>
 
@@ -579,7 +572,6 @@ function HolidayModal({
   );
 }
 
-// ── Manage holiday groups modal ─────────────────────────────────────────────
 function ManageGroupsModal({
   isOpen, groups, onClose, onChanged,
 }: {
@@ -673,7 +665,6 @@ function ManageGroupsModal({
         </div>
 
         <div style={{ padding: '16px 20px', maxHeight: '70vh', overflowY: 'auto' }}>
-          {/* Add / edit form */}
           <Row className="g-2 align-items-end mb-3">
             <Col md={4}>
               <label className="rec-form-label">Group Name<span className="req">*</span></label>
@@ -697,7 +688,6 @@ function ManageGroupsModal({
             </Col>
           </Row>
 
-          {/* Group list */}
           <div className="rec-list-scroll" style={{ maxHeight: 320 }}>
             <table className="rec-list-table align-middle table-nowrap mb-0">
               <thead>
