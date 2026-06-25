@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
+import { SegmentTags } from './SegmentTags';
 import { useModalGuard } from './useModalGuard';
 import './bulk-sourcing.css';
 
@@ -105,7 +106,7 @@ export default function MappedSuppliersModal({ product, recordId, recordSource, 
                   <div className="sv-card-av">{tInit(sup.name)}</div>
                   <div className="sv-card-info">
                     <div className="sv-card-name">{sup.name}</div>
-                    <div className="sv-card-tags"><span className="sv-card-tag id">{sup.id}</span><span className="sv-card-tag seg">{sup.segment}</span><span className="sv-card-tag src">{sup.source === 'New Supplier' ? 'New Supplier' : 'Master'}</span></div>
+                    <div className="sv-card-tags"><span className="sv-card-tag id">{sup.id}</span><SegmentTags segment={sup.segment} tagClassName="sv-card-tag seg" /><span className="sv-card-tag src">{sup.source === 'New Supplier' ? 'New Supplier' : 'Master'}</span></div>
                   </div>
                 </div>
                 <div className="sv-card-contacts">
