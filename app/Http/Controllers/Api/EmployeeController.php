@@ -119,6 +119,13 @@ class EmployeeController extends Controller
 
     public function show(Request $request, $id)
     {
+        $row = $this->resolveRow($request, $this->resolveIdParam($id));
+        // An employee may always view their OWN profile (the self-service
+        // /profile page) without holding the master.employees can_view grant.
+        // Viewing anyone else's record still requires the module permission.
+        if ((int) ($row->user_id ?? 0) !== (int) $request->user()->id) {
+            $this->authorize($request, 'can_view');
+        }
         $empId = $this->resolveIdParam($id);
         $this->authorizeViewOrSelf($request, $empId);
         $row = $this->resolveRow($request, $empId);

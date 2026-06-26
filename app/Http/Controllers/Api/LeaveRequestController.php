@@ -222,10 +222,15 @@ class LeaveRequestController extends Controller
             }
         }
 
-        // Find the employee's current leave plan (if any) for stamping.
+        // Find the employee's current leave plan (if any) for stamping. Prefer
+        // the pivot; fall back to the plan stamped on the employee record
+        // (onboarding wizard / employee form) so either assignment path works.
         $planId = DB::table('leave_plan_employees')
             ->where('employee_id', $employee->id)
             ->value('leave_plan_id');
+        if (!$planId && is_numeric($employee->leave_plan)) {
+            $planId = (int) $employee->leave_plan;
+        }
 
         // Plan + leave-type sanity. Without a plan there are no quotas
         // and no approval chain config, so let HR fix the assignment
@@ -609,7 +614,16 @@ class LeaveRequestController extends Controller
         $row->approval_chain = $chain;
 
         if ($next === 'Rejected') {
-            // Reject at any level terminates immediately.
+            // Reject at any level terminates the workflow immediately. Mark
+            // every downstream level Skipped so a later approver (e.g. HR) no
+            // longer shows as Pending once the request has been rejected.
+            for ($i = $level; $i < count($chain); $i++) {
+                $st = $chain[$i]['status'] ?? 'Pending';
+                if (!in_array($st, ['Approved', 'Rejected'], true)) {
+                    $chain[$i]['status'] = 'Skipped';
+                }
+            }
+            $row->approval_chain = $chain;
             $row->status = 'Rejected';
             $row->approved_by = $user->id;
             $row->approved_at = now();

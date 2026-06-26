@@ -5,6 +5,7 @@ import { MasterFormStyles, MasterSelect, MasterDatePicker } from '../master/mast
 import Tooltip from '../../components/ui/Tooltip';
 import WorklistPager from '../../components/ui/WorklistPager';
 import { useAuth } from '../../contexts/AuthContext';
+import api from '../../api';
 import { leaveRequestsApi, ApiLeaveRequest } from './leavePlansApi';
 import '../../../css/recruitment.css';
 import '../../../css/leave.css';
@@ -359,6 +360,7 @@ export default function HrLeave() {
   const [pageSize, setPageSize] = useState(10);
 
   const [detail, setDetail] = useState<LeaveRequest | null>(null);
+  const [holidaysOpen, setHolidaysOpen] = useState(false);
   const [todayOpen, setTodayOpen] = useState(true);
   const [onLeaveDate, setOnLeaveDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
 
@@ -484,7 +486,7 @@ export default function HrLeave() {
                 </div>
               </div>
               <div className="d-flex align-items-center gap-2 flex-wrap">
-                <button type="button" className="rec-btn-ghost">
+                <button type="button" className="rec-btn-ghost" onClick={() => setHolidaysOpen(true)}>
                   <i className="ri-calendar-event-line" />Holidays
                 </button>
                 <button
@@ -947,12 +949,105 @@ export default function HrLeave() {
       </Row>
 
       <LeaveDetailsModal row={detail} onClose={() => setDetail(null)} />
+      <HolidayListModal open={holidaysOpen} onClose={() => setHolidaysOpen(false)} />
       <ConfirmActionModal
         state={confirmAction}
         onClose={() => setConfirmAction(null)}
         onConfirm={applyAction}
       />
     </>
+  );
+}
+
+function HolidayListModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    api.get('/holidays')
+      .then(res => setRows(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false));
+  }, [open]);
+
+  const WK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const fmt = (raw: any) => {
+    const d = new Date(String(raw));
+    if (isNaN(d.getTime())) return String(raw ?? '—');
+    return `${String(d.getDate()).padStart(2, '0')} ${MONTH_ABBR[d.getMonth()]} ${d.getFullYear()}`;
+  };
+  const weekday = (raw: any) => {
+    const d = new Date(String(raw));
+    return isNaN(d.getTime()) ? '—' : WK[d.getDay()];
+  };
+  const sorted = [...rows].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+  return (
+    <Modal isOpen={open} toggle={onClose} centered size="lg" scrollable contentClassName="border-0">
+      <ModalBody className="p-0">
+        <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #6d28d9 0%, #8b5cf6 60%, #a78bfa 100%)' }}>
+          <div className="d-flex align-items-center justify-content-between gap-3">
+            <div className="d-flex align-items-center gap-2">
+              <span style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <i className="ri-calendar-event-line" style={{ fontSize: 18, color: '#fff' }} />
+              </span>
+              <div>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 16 }}>Holidays</h5>
+                <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>
+                  {loading ? 'Loading…' : `${sorted.length} holiday${sorted.length === 1 ? '' : 's'} configured`}
+                </div>
+              </div>
+            </div>
+            <button type="button" onClick={onClose} aria-label="Close" style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 32, height: 32 }}>
+              <i className="ri-close-line" style={{ fontSize: 18 }} />
+            </button>
+          </div>
+        </div>
+
+        <div style={{ padding: '14px 18px', maxHeight: '65vh', overflowY: 'auto' }}>
+          {loading ? (
+            <div className="text-center py-5 text-muted">
+              <i className="ri-loader-4-line" style={{ fontSize: 26, animation: 'spin 1s linear infinite' }} />
+              <div style={{ fontSize: 13, marginTop: 8 }}>Loading holidays…</div>
+            </div>
+          ) : sorted.length === 0 ? (
+            <div className="text-center py-5 text-muted">
+              <i className="ri-calendar-2-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+              No holidays configured yet.
+            </div>
+          ) : (
+            <div className="table-responsive">
+              <table className="table align-middle table-nowrap mb-0">
+                <thead className="table-light">
+                  <tr>
+                    <th className="text-center" style={{ width: 50 }}>#</th>
+                    <th>Holiday</th>
+                    <th style={{ width: 135 }}>Date</th>
+                    <th style={{ width: 110 }}>Day</th>
+                    <th style={{ width: 120 }}>Type</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sorted.map((h, i) => (
+                    <tr key={h.id ?? i}>
+                      <td className="text-center text-muted" style={{ fontSize: 12.5 }}>{i + 1}</td>
+                      <td>
+                        <div className="fw-semibold" style={{ fontSize: 13 }}>{h.name}</div>
+                        {h.group?.name && <div className="text-muted" style={{ fontSize: 11 }}>{h.group.name}</div>}
+                      </td>
+                      <td style={{ fontSize: 13 }}>{fmt(h.date)}</td>
+                      <td className="text-muted" style={{ fontSize: 13 }}>{weekday(h.date)}</td>
+                      <td><span className="rec-pill" style={{ background: '#ede9fe', color: '#5b3fd1', fontSize: 11 }}>{h.type || '—'}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </ModalBody>
+    </Modal>
   );
 }
 
