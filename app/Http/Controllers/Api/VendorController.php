@@ -77,6 +77,9 @@ class VendorController extends Controller
                 'addresses:id,vendor_id,is_primary,contact_name,designation,contact_no,email',
                 'vendorType:id,name',
                 'segment:id,name',
+                // All mapped segments (vendor_segments pivot) so the list can
+                // render the Segment column + "+N" badge, not just the scalar one.
+                'segments:id,name',
                 'riskLevel:id,name',
             ])
             ->withCount('productMappings')
