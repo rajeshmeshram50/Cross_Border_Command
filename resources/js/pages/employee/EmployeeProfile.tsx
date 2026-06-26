@@ -259,7 +259,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           company: d.company,
           month: MONTH_ABBR_FULL[mAbbr] || mAbbr || 'March',
           year: y || String(new Date().getFullYear()),
-          working: d.workingDays, present: d.present, paid: d.paidDays, lop: d.lopDays,
+          working: d.totalMonthDays ?? d.workingDays, present: d.present, paid: d.paidDays, lop: d.lopDays,
         });
       })
       .catch(() => { /* keep prior */ });

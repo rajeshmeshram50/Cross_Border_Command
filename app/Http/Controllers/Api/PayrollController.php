@@ -852,6 +852,9 @@ class PayrollController extends Controller
             'year'                 => $p->year,
             'label'                => $p->label,
             'working_days'         => $p->working_days,
+            // Total calendar days of the month — the basis salary & loss-of-pay
+            // are computed on (÷30/31), so the payslip shows it as the day count.
+            'total_month_days'     => Carbon::create((int) $p->year, (int) $p->month, 1)->daysInMonth,
             'attendance_finalized' => (bool) $p->attendance_finalized,
             'status'               => $p->status,
             'run_status'           => $run?->status,
@@ -895,6 +898,7 @@ class PayrollController extends Controller
             'netPay'      => (float) $p->net_pay,
             'attendance'  => (float) $p->paid_days,
             'workingDays' => (float) $p->working_days,
+            'lop_days'    => (float) $p->lop_days,
             'status'      => $p->status,
             'present'     => (float) $p->present_days,
             'absent'      => (float) max(0, (float) $p->working_days - (float) $p->present_days - (float) $p->paid_leave_days),
@@ -923,6 +927,11 @@ class PayrollController extends Controller
             $row['exceptions']        = $p->exceptions ?: [];
             $row['paidDays']          = (float) $p->paid_days;
             $row['lopDays']           = (float) $p->lop_days;
+            // Total calendar days of the month — salary & LOP are computed on
+            // this basis (÷30/31), so the payslip shows it as the day count.
+            $row['totalMonthDays']    = $p->period
+                ? Carbon::create((int) $p->period->year, (int) $p->period->month, 1)->daysInMonth
+                : null;
             $row['bank_verified']     = (bool) $p->bank_verified;
             // Rule 16 — a payslip is "final" (officially downloadable) only
             // once its run is approved/paid; otherwise it's provisional.

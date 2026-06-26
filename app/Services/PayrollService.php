@@ -269,7 +269,13 @@ class PayrollService
         $structure = $this->activeStructure($employee, $lwd);
         $monthlyGross = $structure ? (float) $structure->monthly_gross
             : ($employee->annual_salary ? round((float) $employee->annual_salary / 12, 2) : 0);
-        $perDay = $period->working_days > 0 ? round($monthlyGross / $period->working_days, 2) : 0;
+        // Leave encashment is paid on BASIC monthly salary (not total gross),
+        // at a per-day rate over the month's total calendar days (÷30/31) — the
+        // same daily basis the salary engine uses.
+        $monthlyBasic = $structure ? (float) $structure->basicAmount()
+            : ($employee->annual_salary ? round((float) $employee->annual_salary / 12 * 0.5, 2) : 0);
+        $fnfMonthDays = max(1, $period->period_start->diffInDays($period->period_end) + 1);
+        $perDay = round($monthlyBasic / $fnfMonthDays, 2);
 
         // HR-decided components.
         $encashDays = max(0, (float) ($opts['leave_encashment_days'] ?? 0));
@@ -644,15 +650,26 @@ class PayrollService
         $proratedGross = round($gross * $proration, 2);
         $proratedBasic = round($basic * $proration, 2);
 
-        // Earned factor — the share of the active window that is actually paid
-        // (present + paid leave, after LOP). Statutory deductions are computed
-        // on EARNED pay, not full pay, so a heavily-absent month never produces
-        // a negative net by stacking PT/PF on top of a wiped-out salary.
-        $earnedFactor = $effectiveWorkingDays > 0 ? min(1, $paidDays / $effectiveWorkingDays) : 0;
-        $earnedGross  = round($proratedGross * $earnedFactor, 2);
-        $earnedBasic  = round($proratedBasic * $earnedFactor, 2);
-        // LOP is the gap between full (pro-rated) gross and what was earned.
-        $lopAmount    = round($proratedGross - $earnedGross, 2);
+        // Daily salary is computed on the TOTAL CALENDAR DAYS of the month
+        // (e.g. ÷30 or ÷31), NOT on working days (÷26). So one loss-of-pay day
+        // always costs the same regardless of how many Sundays the month has.
+        $totalMonthDays = max(1, $calDays);
+
+        // Loss-of-pay is charged on the BASIC monthly salary — NOT on the total
+        // monthly earning (gross). Per-day = basic ÷ total month days, times the
+        // absent working days. Allowances (HRA / special / etc.) are not clawed
+        // back for an absence. The deduction is capped at the pro-rated basic so
+        // it can never exceed the basic actually payable this cycle.
+        $lopAmount = round(($basic / $totalMonthDays) * $lopDays, 2);
+        $lopAmount = min($lopAmount, $proratedBasic);
+
+        // Earned pay = pro-rated gross minus the basic-based LOP. earnedBasic
+        // drops by the same amount (LOP is entirely basic) so PF rides on the
+        // reduced basic. earnedFactor = share of pro-rated gross actually earned,
+        // used to scale other fixed deductions onto an absent month.
+        $earnedGross  = round($proratedGross - $lopAmount, 2);
+        $earnedBasic  = round(max(0, $proratedBasic - $lopAmount), 2);
+        $earnedFactor = $proratedGross > 0 ? min(1, $earnedGross / $proratedGross) : 0;
 
         // Build earnings JSON from structure components (pro-rated for join/exit).
         $earnings = [];
