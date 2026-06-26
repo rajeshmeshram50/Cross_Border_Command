@@ -945,13 +945,6 @@ function ConfigurationTab({
           </tbody>
         </table>
       </div>
-
-      {plan.isDefault && plan.leaveTypes.length > 0 && (
-        <div className="lp-info-banner">
-          <i className="ri-information-line" />
-          This is the default plan — showing {plan.leaveTypes.length} of 7 leave types.
-        </div>
-      )}
     </div>
   );
 }

@@ -179,6 +179,10 @@ export interface ApiLeaveRequest {
   approved_by: number | null;
   approved_at: string | null;
   approver_comment: string | null;
+  current_approval_level?: number | null;
+  // Whether the logged-in user may Approve/Reject this row right now (it's
+  // pending AND they're the approver for the current level). Server-computed.
+  can_act_now?: boolean;
   created_at: string;
   updated_at: string;
   leave_type?: { id: number; name: string; short_code: string; type: string | null };

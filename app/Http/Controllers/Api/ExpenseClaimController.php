@@ -35,7 +35,8 @@ class ExpenseClaimController extends Controller
         // way store() does.
         $employeeId = $this->resolveEmployeeId(
             $request->input('employee_id'),
-            $request->input('employee_code')
+            $request->input('employee_code'),
+            $user
         ) ?: $this->currentEmployeeId($user);
 
         if ($employeeId && $cats->isNotEmpty()) {
@@ -121,7 +122,8 @@ class ExpenseClaimController extends Controller
 
         $employeeIdFilter = $this->resolveEmployeeId(
             $request->query('employee_id'),
-            $request->query('employee_code')
+            $request->query('employee_code'),
+            $user
         );
 
         $q = ExpenseClaim::query()
@@ -190,7 +192,8 @@ class ExpenseClaimController extends Controller
         //   3. the current user's linked Employee row
         $employeeId = $this->resolveEmployeeId(
             $request->input('employee_id'),
-            $request->input('employee_code')
+            $request->input('employee_code'),
+            $user
         ) ?: $this->currentEmployeeId($user);
 
         if (!$employeeId) {
@@ -556,7 +559,7 @@ class ExpenseClaimController extends Controller
      * frontend often only knows the EMP- code from the URL slug, so the
      * controller takes responsibility for the lookup.
      */
-    private function resolveEmployeeId($idInput, $codeInput): ?int
+    private function resolveEmployeeId($idInput, $codeInput, $user = null): ?int
     {
         // Numeric path — accept ints and all-digit strings.
         if ($idInput !== null && $idInput !== '') {
@@ -568,7 +571,18 @@ class ExpenseClaimController extends Controller
             $codeInput = $codeInput ?: $idInput;
         }
         if ($codeInput) {
-            $found = Employee::where('emp_code', $codeInput)->value('id');
+            // emp_code is unique PER CLIENT only (see the
+            // `employees_client_emp_code_unique` index), so resolving it
+            // without a tenant scope can match a DIFFERENT client's employee
+            // that happens to share the same EMP-#### code. That wrong row
+            // then fails the "your own employee record" ownership guard with a
+            // confusing 403. Scope the lookup to the caller's client (super
+            // admins stay unscoped — they legitimately act across tenants).
+            $q = Employee::where('emp_code', $codeInput);
+            if ($user && $user->user_type !== 'super_admin' && $user->client_id) {
+                $q->where('client_id', $user->client_id);
+            }
+            $found = $q->value('id');
             if ($found) return (int) $found;
         }
         return null;
