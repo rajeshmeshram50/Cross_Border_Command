@@ -6,6 +6,7 @@ import MapSupplierModal from './MapSupplierModal';
 import MappedSuppliersModal from './MappedSuppliersModal';
 import { useModalGuard } from './useModalGuard';
 import { resolveFileUrl, downloadFile } from '../../../../utils/resolveFileUrl';
+import Tooltip from '../../../../components/ui/Tooltip';
 import './bulk-sourcing.css';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -49,9 +50,9 @@ function ClarityCell({ clarity }: { clarity?: Clarity }) {
   if (clarity.type === 'text') {
     return (
       <>
-        <button type="button" className="srpt-clarity-text" title="Click to view full text" onClick={() => setOpen(true)}>
+        <Tooltip label="Click to view full text"><button type="button" className="srpt-clarity-text" onClick={() => setOpen(true)}>
           {clarity.val}
-        </button>
+        </button></Tooltip>
         {open && createPortal(
           <div className="srpt-clarity-ov" onMouseDown={e => { if (e.target === e.currentTarget) setOpen(false); }}>
             <div className="srpt-clarity-modal">
@@ -72,19 +73,19 @@ function ClarityCell({ clarity }: { clarity?: Clarity }) {
   const url = resolveFileUrl(clarity.val);
   if (clarity.type === 'pdf') {
     return (
-      <button type="button" className="srpt-clarity-link" title="Download clarity PDF"
+      <Tooltip label="Download clarity PDF"><button type="button" className="srpt-clarity-link"
         onClick={() => downloadFile(url, url.split('/').pop() || 'clarity.pdf')}>
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
         PDF
-      </button>
+      </button></Tooltip>
     );
   }
   // link
   return (
-    <a className="srpt-clarity-link" href={url} target="_blank" rel="noreferrer" title={clarity.val}>
+    <Tooltip label={clarity.val}><a className="srpt-clarity-link" href={url} target="_blank" rel="noreferrer">
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
       Link
-    </a>
+    </a></Tooltip>
   );
 }
 
@@ -122,19 +123,6 @@ export default function SourcingReportModal({ row, onClose }: { row: ReportRow; 
   const done = statuses.filter(s => s === 'Completed').length;
   const pct = total ? Math.round((done / total) * 100) : 0;
   const allDone = total > 0 && done === total;
-
-  // Persist the status flip via PATCH; optimistic update, revert on failure.
-  const toggle = (gi: number) => {
-    const next: 'Completed' | 'In Progress' = statuses[gi] === 'Completed' ? 'In Progress' : 'Completed';
-    setStatuses(s => s.map((x, i) => i === gi ? next : x));
-    const pid = products[gi]?.id;
-    if (pid == null) return;
-    api.patch(`/p2p/sourcing-targets/${row.id}/products/${pid}/status`, { status: next })
-      .catch(() => {
-        setStatuses(s => s.map((x, i) => i === gi ? (next === 'Completed' ? 'In Progress' : 'Completed') : x));
-        toast.error('Update failed', 'Could not change the sourcing status.');
-      });
-  };
 
   // rows for the active tab, carrying their global index (for status toggle)
   const tabRows = products.map((p, gi) => ({ p, gi })).filter(x => x.p.type === tab);
@@ -250,9 +238,9 @@ export default function SourcingReportModal({ row, onClose }: { row: ReportRow; 
                       {tab === 'master' && <td style={{ textAlign: 'center' }}><span className="srpt-hsncode">{p.hsn}</span></td>}
                       <td style={{ textAlign: 'center' }} className="srpt-price">{fmtPrice(p.price)}</td>
                       <td style={{ textAlign: 'center' }}><ClarityCell clarity={p.clarity} /></td>
-                      <td style={{ textAlign: 'center' }}><span className={`srpt-status ${doneP ? 'done' : 'prog'}`} onClick={() => toggle(gi)} title="Click to toggle status" style={{ cursor: 'pointer' }}><span className="srpt-sdot" />{doneP ? 'Completed' : 'In Progress'}</span></td>
+                      <td style={{ textAlign: 'center' }}><span className={`srpt-status ${doneP ? 'done' : 'prog'}`}><span className="srpt-sdot" />{doneP ? 'Completed' : 'In Progress'}</span></td>
                       <td style={{ textAlign: 'center' }}>{supCount > 0
-                        ? <span className="srpt-sup-count has-sup srpt-sup-clickable" title="View mapped suppliers" onClick={() => setViewIdx(gi)}>{supCount}</span>
+                        ? <Tooltip label="View mapped suppliers"><span className="srpt-sup-count has-sup srpt-sup-clickable" onClick={() => setViewIdx(gi)}>{supCount}</span></Tooltip>
                         : <span className="srpt-sup-count">0</span>}</td>
                       <td style={{ textAlign: 'center' }}><button className="srpt-map-btn" onClick={() => setMapIdx(gi)}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>Map Supplier Directory</button></td>
                     </tr>

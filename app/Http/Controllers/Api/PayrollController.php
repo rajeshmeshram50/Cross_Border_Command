@@ -141,7 +141,13 @@ class PayrollController extends Controller
     {
         if ($period) {
             $run = $period->runs()->latest('id')->first();
-            if ($run && $run->status === 'paid')    return 'Completed';
+            // A finished cycle is COMPLETED. Full disbursement both flips the run
+            // to 'paid' AND locks the period — checking the locked period (not
+            // just the latest run) keeps a settled month showing Completed even
+            // if a later draft/empty run was created on top of the paid one.
+            if ($period->status === 'locked' || ($run && $run->status === 'paid')) {
+                return 'Completed';
+            }
             if ($period->status === 'processing' || ($run && in_array($run->status, ['generated', 'approved']))) return 'In Progress';
             if ($period->attendance_finalized)       return 'In Progress';
         }
@@ -565,6 +571,15 @@ class PayrollController extends Controller
             return response()->json(['message' => 'You can only download your own payslip.'], 403);
         }
 
+        // A payslip with an unresolved status must not be generated — On Hold
+        // (blocking issue) and Pending Review (needs HR verification) slips are
+        // not final figures, so producing a PDF would hand out a wrong slip.
+        if (in_array($slip->status, ['On Hold', 'Pending Review'], true)) {
+            return response()->json([
+                'message' => "Payslip can't be generated while the status is \"{$slip->status}\". Resolve the issue and set the payroll to Ready first.",
+            ], 422);
+        }
+
         $bytes = $this->pdf->render($slip);
         $disposition = $request->boolean('download') ? 'attachment' : 'inline';
         $this->audit($request, 'payslip_pdf', $slip, "Payslip PDF for {$slip->employee_name}");
@@ -595,6 +610,9 @@ class PayrollController extends Controller
             ->when($run, fn ($q) => $q->where('payroll_run_id', $run->id))
             ->when($request->query('department'), fn ($q, $d) => $q->where('department', $d))
             ->when($request->query('status'), fn ($q, $s) => $q->where('status', $s))
+            // Unresolved slips (On Hold / Pending Review) aren't final, so they
+            // are excluded from bulk generation just like the single download.
+            ->whereNotIn('status', ['On Hold', 'Pending Review'])
             ->with('run:id,status')
             ->orderBy('employee_name')
             ->get();
@@ -638,6 +656,11 @@ class PayrollController extends Controller
         }
         if (!$this->isFinalSlip($slip)) {
             return response()->json(['message' => 'Approve the payroll before emailing payslips.'], 422);
+        }
+        if (in_array($slip->status, ['On Hold', 'Pending Review'], true)) {
+            return response()->json([
+                'message' => "Payslip can't be emailed while the status is \"{$slip->status}\". Resolve the issue first.",
+            ], 422);
         }
 
         $result = $this->sendPayslipMail($slip);
@@ -852,6 +875,9 @@ class PayrollController extends Controller
             'year'                 => $p->year,
             'label'                => $p->label,
             'working_days'         => $p->working_days,
+            // Total calendar days of the month — the basis salary & loss-of-pay
+            // are computed on (÷30/31), so the payslip shows it as the day count.
+            'total_month_days'     => Carbon::create((int) $p->year, (int) $p->month, 1)->daysInMonth,
             'attendance_finalized' => (bool) $p->attendance_finalized,
             'status'               => $p->status,
             'run_status'           => $run?->status,
@@ -895,12 +921,14 @@ class PayrollController extends Controller
             'netPay'      => (float) $p->net_pay,
             'attendance'  => (float) $p->paid_days,
             'workingDays' => (float) $p->working_days,
+            'lop_days'    => (float) $p->lop_days,
             'status'      => $p->status,
             'present'     => (float) $p->present_days,
             'absent'      => (float) max(0, (float) $p->working_days - (float) $p->present_days - (float) $p->paid_leave_days),
             'lateMarks'   => (int) $p->late_marks,
             'missingPunch'=> (int) $p->missing_punches,
             'unpaidLeave' => (float) $p->unpaid_leave_days,
+            'paidLeave'   => (float) $p->paid_leave_days,
             'attSource'   => $p->att_source,
             'mismatch'    => $p->missing_punches > 0 ? 'Missing punches' : null,
             'attMismatch' => $p->att_source === 'Review',
@@ -923,6 +951,11 @@ class PayrollController extends Controller
             $row['exceptions']        = $p->exceptions ?: [];
             $row['paidDays']          = (float) $p->paid_days;
             $row['lopDays']           = (float) $p->lop_days;
+            // Total calendar days of the month — salary & LOP are computed on
+            // this basis (÷30/31), so the payslip shows it as the day count.
+            $row['totalMonthDays']    = $p->period
+                ? Carbon::create((int) $p->period->year, (int) $p->period->month, 1)->daysInMonth
+                : null;
             $row['bank_verified']     = (bool) $p->bank_verified;
             // Rule 16 — a payslip is "final" (officially downloadable) only
             // once its run is approved/paid; otherwise it's provisional.

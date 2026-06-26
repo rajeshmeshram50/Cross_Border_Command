@@ -5,10 +5,22 @@ import { useEmployeeProfile } from '../EmployeeProfileContext';
 
 export default function PayrollTab() {
   const {
-    employee, fmtRupee, payrollTab, setPayrollTab,
+    employee, fmtRupee, fmtDate, empDetail, payrollTab, setPayrollTab,
     salaryStruct, realMonthlyGross, realAnnualCtc, realTimeline,
     openLatestPayslip, setSalaryModalOpen, setBreakdownOpen, setBreakdownRowId,
   } = useEmployeeProfile();
+
+  // Mask a sensitive number, keeping the last `visible` characters.
+  const mask = (val: any, visible = 4): string => {
+    const s = String(val ?? '').replace(/\s+/g, '');
+    if (!s) return '—';
+    if (s.length <= visible) return s;
+    return 'X'.repeat(Math.max(4, s.length - visible)) + s.slice(-visible);
+  };
+  const fullAddress = [empDetail?.address_line1, empDetail?.address_line2, empDetail?.city]
+    .filter(Boolean).join(', ') || '—';
+  const paymentMode = empDetail?.salary_payment_mode === 'bank' ? 'Bank Transfer'
+    : empDetail?.salary_payment_mode ? String(empDetail.salary_payment_mode) : '—';
 
   return (
         <>
@@ -114,21 +126,21 @@ export default function PayrollTab() {
                     </div>
                     <div className="px-3 py-3 flex-grow-1">
                       <p className="mb-3 pyt-text-12-5">
-                        Salary Payment Mode: <strong className="pyt-strong-heading">Bank Transfer</strong>
+                        Salary Payment Mode: <strong className="pyt-strong-heading">{paymentMode}</strong>
                       </p>
                       <Row className="g-3">
-                        <Col md={6}><div className="ep-field-label">Bank Name</div><div className="ep-field-value">Kotak Mahindra Bank</div></Col>
+                        <Col md={6}><div className="ep-field-label">Bank Name</div><div className="ep-field-value">{empDetail?.bank_name || '—'}</div></Col>
                         <Col md={6}>
                           <div className="ep-field-label">Account Number</div>
-                          <span className="font-monospace fw-semibold pyt-mono-chip">XXXXXXXX36</span>
+                          <span className="font-monospace fw-semibold pyt-mono-chip">{mask(empDetail?.bank_account_number)}</span>
                         </Col>
                         <Col md={6}>
                           <div className="ep-field-label">IFSC Code</div>
-                          <span className="font-monospace fw-semibold pyt-mono-chip">KKBK0000823</span>
+                          <span className="font-monospace fw-semibold pyt-mono-chip">{empDetail?.ifsc_code || '—'}</span>
                         </Col>
-                        <Col md={6}><div className="ep-field-label">Name on Account</div><div className="ep-field-value">{employee?.name || 'Aarav Kale'}</div></Col>
-                        <Col md={6}><div className="ep-field-label">Branch</div><div className="ep-field-value">Silvaasa</div></Col>
-                        <Col md={6}><div className="ep-field-label">Account Type</div><div className="ep-field-value">Salary</div></Col>
+                        <Col md={6}><div className="ep-field-label">Name on Account</div><div className="ep-field-value">{empDetail?.account_holder_name || employee?.name || '—'}</div></Col>
+                        <Col md={6}><div className="ep-field-label">Branch</div><div className="ep-field-value">{empDetail?.bank_branch || '—'}</div></Col>
+                        <Col md={6}><div className="ep-field-label">Account Type</div><div className="ep-field-value">{empDetail?.bank_account_type || '—'}</div></Col>
                       </Row>
                     </div>
                   </div>
@@ -154,11 +166,11 @@ export default function PayrollTab() {
                       <Row className="g-3 mb-3">
                         <Col md={3}>
                           <div className="ep-field-label">PAN Number</div>
-                          <span className="font-monospace fw-semibold pyt-mono-chip">XXXXXX89K</span>
+                          <span className="font-monospace fw-semibold pyt-mono-chip">{mask(empDetail?.pan_number)}</span>
                         </Col>
-                        <Col md={3}><div className="ep-field-label">Name</div><div className="ep-field-value">{employee?.name || 'Aarav Kale'}</div></Col>
-                        <Col md={3}><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">02-Nov-1985</div></Col>
-                        <Col md={3}><div className="ep-field-label">Parent Name</div><div className="ep-field-value">Kiran Kale</div></Col>
+                        <Col md={3}><div className="ep-field-label">Name</div><div className="ep-field-value">{empDetail?.account_holder_name || employee?.name || '—'}</div></Col>
+                        <Col md={3}><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">{fmtDate(empDetail?.date_of_birth)}</div></Col>
+                        <Col md={3}><div className="ep-field-label">PAN Holder Name</div><div className="ep-field-value">{empDetail?.account_holder_name || '—'}</div></Col>
                       </Row>
 
                       {/* Aadhaar Card sub-header */}
@@ -171,11 +183,11 @@ export default function PayrollTab() {
                       <Row className="g-3">
                         <Col md={3}>
                           <div className="ep-field-label">Aadhaar Number</div>
-                          <span className="font-monospace fw-semibold pyt-mono-chip">XXXX-XXXX-2821</span>
+                          <span className="font-monospace fw-semibold pyt-mono-chip">{mask(empDetail?.aadhaar_number)}</span>
                         </Col>
-                        <Col md={3}><div className="ep-field-label">Enrollment No</div><div className="ep-field-value">147</div></Col>
-                        <Col md={3}><div className="ep-field-label">Address</div><div className="ep-field-value">21 Jay Mahalar…</div></Col>
-                        <Col md={3}><div className="ep-field-label">Gender</div><div className="ep-field-value">Male</div></Col>
+                        <Col md={3}><div className="ep-field-label">Nationality</div><div className="ep-field-value">{empDetail?.nationality_country?.name || '—'}</div></Col>
+                        <Col md={3}><div className="ep-field-label">Address</div><div className="ep-field-value">{fullAddress}</div></Col>
+                        <Col md={3}><div className="ep-field-label">Gender</div><div className="ep-field-value">{empDetail?.gender || '—'}</div></Col>
                       </Row>
                     </div>
                   </div>
@@ -203,11 +215,11 @@ export default function PayrollTab() {
                       <Row className="g-3">
                         <Col md={6}>
                           <div className="ep-field-label">Aadhaar Number</div>
-                          <span className="font-monospace fw-semibold pyt-mono-chip">XXXX-XXXX-2821</span>
+                          <span className="font-monospace fw-semibold pyt-mono-chip">{mask(empDetail?.aadhaar_number)}</span>
                         </Col>
-                        <Col md={6}><div className="ep-field-label">Enrollment No</div><div className="ep-field-value">147</div></Col>
-                        <Col md={6}><div className="ep-field-label">Address</div><div className="ep-field-value">21 Jay Mahalar, Pune</div></Col>
-                        <Col md={6}><div className="ep-field-label">Verification</div><div className="ep-field-value font-monospace">01-Jan-2024</div></Col>
+                        <Col md={6}><div className="ep-field-label">Pincode</div><div className="ep-field-value">{empDetail?.pincode || '—'}</div></Col>
+                        <Col md={6}><div className="ep-field-label">Address</div><div className="ep-field-value">{fullAddress}</div></Col>
+                        <Col md={6}><div className="ep-field-label">City</div><div className="ep-field-value">{empDetail?.city || '—'}</div></Col>
                       </Row>
                     </div>
                   </div>
@@ -224,13 +236,13 @@ export default function PayrollTab() {
                     </div>
                     <div className="px-3 py-3 flex-grow-1">
                       <span className="d-inline-flex align-items-center fw-semibold mb-3 pyt-pill-amber-pt">
-                        PT Details
+                        Statutory IDs
                       </span>
                       <Row className="g-3">
-                        <Col md={6}><div className="ep-field-label">State</div><div className="ep-field-value">Maharashtra</div></Col>
-                        <Col md={6}><div className="ep-field-label">Registered Location</div><div className="ep-field-value">Maharashtra</div></Col>
-                        <Col md={6}><div className="ep-field-label">PT Applicable</div><div className="ep-field-value">Yes</div></Col>
-                        <Col md={6}><div className="ep-field-label">Professional Tax</div><div className="ep-field-value">₹200/month</div></Col>
+                        <Col md={6}><div className="ep-field-label">PAN Number</div><div className="ep-field-value font-monospace">{mask(empDetail?.pan_number)}</div></Col>
+                        <Col md={6}><div className="ep-field-label">UAN Number</div><div className="ep-field-value font-monospace">{empDetail?.uan_number || '—'}</div></Col>
+                        <Col md={6}><div className="ep-field-label">PF Eligible</div><div className="ep-field-value">{empDetail?.pf_eligible ? 'Yes' : 'No'}</div></Col>
+                        <Col md={6}><div className="ep-field-label">ESI Applicable</div><div className="ep-field-value">{empDetail?.esi_applicable || '—'}</div></Col>
                       </Row>
                     </div>
                   </div>
@@ -282,12 +294,12 @@ export default function PayrollTab() {
                     </div>
                     <div className="px-3 py-3 flex-grow-1">
                       <Row className="g-3">
-                        <Col md={4}><div className="ep-field-label">Legal Entity</div><div className="ep-field-value">INORBVICT Healthcare India Pvt. Ltd.</div></Col>
-                        <Col md={4}><div className="ep-field-label">Remuneration Type</div><div className="ep-field-value">Annual</div></Col>
+                        <Col md={4}><div className="ep-field-label">Legal Entity</div><div className="ep-field-value">{empDetail?.legal_entity?.entity_name || '—'}</div></Col>
+                        <Col md={4}><div className="ep-field-label">Remuneration Type</div><div className="ep-field-value">{empDetail?.salary_frequency || '—'}</div></Col>
                         <Col md={4}><div className="ep-field-label">Pay Cycle</div><div className="ep-field-value">Monthly</div></Col>
-                        <Col md={4}><div className="ep-field-label">Payroll Status</div><div className="ep-field-value">Active</div></Col>
-                        <Col md={4}><div className="ep-field-label">Tax Regime</div><div className="ep-field-value">New Regime (115BAC)</div></Col>
-                        <Col md={4}><div className="ep-field-label">Pay Group</div><div className="ep-field-value">Default</div></Col>
+                        <Col md={4}><div className="ep-field-label">Payroll Status</div><div className="ep-field-value">{empDetail?.enable_payroll ? 'Active' : 'Inactive'}</div></Col>
+                        <Col md={4}><div className="ep-field-label">Tax Regime</div><div className="ep-field-value">{empDetail?.tax_regime || '—'}</div></Col>
+                        <Col md={4}><div className="ep-field-label">Pay Group</div><div className="ep-field-value">{empDetail?.pay_group || '—'}</div></Col>
                       </Row>
                     </div>
                   </div>

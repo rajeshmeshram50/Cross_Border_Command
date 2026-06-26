@@ -4,12 +4,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
+use App\Models\Employee;
 use App\Models\HolidayGroup;
 use App\Models\Module;
 use App\Models\Permission;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 /**
  * HRMS Holiday Groups — named holiday calendars ("types") that own a set of
@@ -39,7 +41,9 @@ class HolidayGroupController extends Controller
             $q->where('status', $status);
         }
 
-        return response()->json($q->orderBy('name')->get());
+        // Order by code (creation sequence) so the auto-generated IDs read as a
+        // clean ascending series instead of a name-scrambled order.
+        return response()->json($q->orderBy('code')->get());
     }
 
     public function show(Request $request, $id)
@@ -87,11 +91,23 @@ class HolidayGroupController extends Controller
         $this->authorizeAction($request, 'can_delete');
         $row = $this->resolveRow($request, (int) $id);
 
-        // Detach holidays from the group (keep the holidays, just ungroup them)
-        // and clear it off any employee so we never leave dangling references.
+        // Block deletion while employees are still assigned to this group.
+        // Deleting it would silently strip the holiday list off those employees
+        // (and the paid days payroll credits from it). The admin must reassign
+        // them to another group first. (Soft-deleted employees don't count —
+        // the Employee model's SoftDeletes scope excludes them.)
+        $assigned = Employee::where('holiday_group_id', $row->id)->count();
+        if ($assigned > 0) {
+            throw ValidationException::withMessages([
+                'group' => "This holiday group is assigned to {$assigned} employee" . ($assigned === 1 ? '' : 's')
+                    . '. Reassign them to another group before deleting it.',
+            ]);
+        }
+
+        // No employees use it — safe to remove. Keep its holidays but ungroup
+        // them so the dates aren't lost.
         DB::transaction(function () use ($row) {
             DB::table('holidays')->where('holiday_group_id', $row->id)->update(['holiday_group_id' => null]);
-            DB::table('employees')->where('holiday_group_id', $row->id)->update(['holiday_group_id' => null]);
             $row->delete();
         });
 
@@ -100,11 +116,31 @@ class HolidayGroupController extends Controller
 
     private function validatePayload(Request $request, ?int $id = null): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'name'        => 'required|string|max:191',
             'description' => 'nullable|string|max:1000',
             'status'      => ['nullable', Rule::in(['Active', 'Inactive'])],
         ]);
+
+        // Block duplicate group names within the same tenant scope. Match is
+        // case-insensitive (ilike) on the trimmed name; on update the row being
+        // edited is excluded so re-saving it without a rename is allowed.
+        [$clientId, $branchId] = $this->resolveOwnership($request);
+        $name = trim($data['name']);
+        $data['name'] = $name;
+        $duplicate = HolidayGroup::query()
+            ->when($clientId === null, fn ($q) => $q->whereNull('client_id'), fn ($q) => $q->where('client_id', $clientId))
+            ->when($branchId === null, fn ($q) => $q->whereNull('branch_id'), fn ($q) => $q->where('branch_id', $branchId))
+            ->where('name', 'ilike', $name)
+            ->when($id !== null, fn ($q) => $q->where('id', '!=', $id))
+            ->exists();
+        if ($duplicate) {
+            throw ValidationException::withMessages([
+                'name' => 'Holiday Group already exists.',
+            ]);
+        }
+
+        return $data;
     }
 
     private function resolveRow(Request $request, int $id): HolidayGroup

@@ -79,6 +79,7 @@ class LeavePlanController extends Controller
         ]);
 
         [$clientId, $branchId] = $this->resolveOwnership($user, $request);
+        $this->assertUniquePlanName($clientId, $branchId, $data['plan_name'], null);
 
         $data['client_id'] = $clientId;
         $data['branch_id'] = $branchId;
@@ -119,6 +120,10 @@ class LeavePlanController extends Controller
             'status' => ['nullable', Rule::in(['Active', 'Inactive'])],
             'is_default' => ['nullable', 'boolean'],
         ]);
+
+        if (array_key_exists('plan_name', $data)) {
+            $this->assertUniquePlanName($plan->client_id, $plan->branch_id, $data['plan_name'], $plan->id);
+        }
 
         DB::transaction(function () use ($plan, $data) {
             if (array_key_exists('is_default', $data) && (bool) $data['is_default']) {
@@ -400,12 +405,22 @@ class LeavePlanController extends Controller
             abort(403, 'You do not have access to this employee.');
         }
 
-        // Resolve the employee's current leave plan via the pivot.
-        $planRow = DB::table('leave_plan_employees as lpe')
-            ->join('master_leave_plans as p', 'p.id', '=', 'lpe.leave_plan_id')
-            ->where('lpe.employee_id', $employeeId)
-            ->select('p.id', 'p.plan_name', 'p.from_month', 'p.calendar_year')
-            ->first();
+        // Resolve the employee's current leave plan. Prefer the explicit
+        // leave_plan_employees pivot; fall back to the plan stamped on the
+        // employee record (set via the onboarding wizard / employee form) so an
+        // employee assigned that way still resolves a plan + balances.
+        $planId = DB::table('leave_plan_employees')
+            ->where('employee_id', $employeeId)
+            ->value('leave_plan_id');
+        if (!$planId && is_numeric($employee->leave_plan)) {
+            $planId = (int) $employee->leave_plan;
+        }
+        $planRow = $planId
+            ? DB::table('master_leave_plans')
+                ->where('id', $planId)
+                ->select('id', 'plan_name', 'from_month', 'calendar_year')
+                ->first()
+            : null;
 
         if (!$planRow) {
             return response()->json([
@@ -738,6 +753,21 @@ class LeavePlanController extends Controller
         $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
         if ($exceptId !== null) $q->where('id', '!=', $exceptId);
         $q->update(['is_default' => false]);
+    }
+
+    private function assertUniquePlanName(?int $clientId, ?int $branchId, string $name, ?int $exceptId): void
+    {
+        $exists = LeavePlans::query()
+            ->where(fn ($q) => $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId))
+            ->where(fn ($q) => $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId))
+            ->when($exceptId, fn ($q) => $q->where('id', '!=', $exceptId))
+            ->whereRaw('LOWER(plan_name) = LOWER(?)', [trim($name)])
+            ->exists();
+        if ($exists) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'plan_name' => ['A leave plan with this name already exists.'],
+            ]);
+        }
     }
 
     /**

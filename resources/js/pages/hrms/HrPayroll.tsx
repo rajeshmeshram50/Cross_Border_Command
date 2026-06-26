@@ -49,6 +49,7 @@ interface PayrollRow {
   lateMarks: number;
   missingPunch: number;
   unpaidLeave: number;
+  paidLeave: number;
   attSource: AttSource;
   mismatch?: string;
   pfEmp: number;
@@ -56,6 +57,7 @@ interface PayrollRow {
   pt: number;
   tds: number;
   lopDeducted: number;
+  lop_days?: number;
   advanceRec: number;
   holdReason?: string | null;
   reasons?: string[];
@@ -126,17 +128,6 @@ const ROW_TONES: Record<string, { bg: string; fg: string; dot: string }> = {
 
 const toneFor = (status: string) => ROW_TONES[status] ?? ROW_TONES['Processed'];
 
-const DEPT_OPTIONS = [
-  { value: 'All',          label: 'All' },
-  { value: 'Engineering',  label: 'Engineering' },
-  { value: 'Finance',      label: 'Finance' },
-  { value: 'HR',           label: 'HR' },
-  { value: 'Sales',        label: 'Sales' },
-  { value: 'Marketing',    label: 'Marketing' },
-  { value: 'Design',       label: 'Design' },
-  { value: 'Product',      label: 'Product' },
-  { value: 'Operations',   label: 'Operations' },
-];
 
 const STATUS_OPTIONS: { value: 'All' | RowStatus; label: string }[] = [
   { value: 'All',            label: 'All' },
@@ -218,7 +209,7 @@ export default function HrPayroll() {
   }, [rawCycles, selectedYear, today]);
 
   const [rows, setRows] = useState<PayrollRow[]>([]);
-  const [periodMeta, setPeriodMeta] = useState<{ attendance_finalized: boolean; status: string; run_status: string | null; working_days?: number } | null>(null);
+  const [periodMeta, setPeriodMeta] = useState<{ attendance_finalized: boolean; status: string; run_status: string | null; working_days?: number; total_month_days?: number } | null>(null);
   const [runMeta, setRunMeta] = useState<{ id: number; status: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -245,21 +236,56 @@ export default function HrPayroll() {
   const [q, setQ] = useState('');
   const [deptFilter, setDeptFilter]     = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<'All' | RowStatus>('All');
+  const [departments, setDepartments]   = useState<string[]>([]);
+
+  useEffect(() => {
+    api.get('/master/departments')
+      .then((res: any) => {
+        const arr = Array.isArray(res?.data) ? res.data : [];
+        setDepartments(arr
+          .filter((d: any) => (d.status ?? 'Active') === 'Active')
+          .map((d: any) => String(d.name ?? '').trim())
+          .filter(Boolean));
+      })
+      .catch(() => setDepartments([]));
+  }, []);
+
+  const deptOptions = useMemo(() => {
+    const set = new Set<string>();
+    departments.forEach(n => { if (n) set.add(n); });
+    rows.forEach(r => { const n = (r.department || '').trim(); if (n) set.add(n); });
+    return [
+      { value: 'All', label: 'All' },
+      ...Array.from(set).sort((a, b) => a.localeCompare(b)).map(n => ({ value: n, label: n })),
+    ];
+  }, [departments, rows]);
 
   const [paySlipRow, setPaySlipRow] = useState<PayrollRow | null>(null);
   const [payslipBreakup, setPayslipBreakup] = useState<{ earnings: PayslipLine[]; deductions: PayslipLine[] } | null>(null);
   const [payslipFinal, setPayslipFinal] = useState<boolean | undefined>(undefined);
   const [payslipRecent, setPayslipRecent] = useState<{ label: string; now?: boolean; payslipId?: number; status?: string }[]>([]);
   const [payslipCompany, setPayslipCompany] = useState<{ name: string; meta: string; initials: string; hrEmail: string } | null>(null);
+  // The payslip currently shown in the viewer. Starts as the opened row's slip
+  // but switches when the user picks a different Month/Year (or Recent Payslip),
+  // so View PDF / the day chips always reflect the SELECTED period — not the
+  // period the modal was first opened on.
+  const [activePayslipId, setActivePayslipId] = useState<number | undefined>(undefined);
+  const [payslipDays, setPayslipDays] = useState<{ present?: number; lopDays?: number; totalMonthDays?: number } | null>(null);
 
   const loadPayslipDetail = (payslipId?: number) => {
     if (!payslipId) return;
+    setActivePayslipId(payslipId);
     api.get(`/payroll/payslip/${payslipId}`)
       .then(res => {
         const d = res.data?.data ?? {};
         const e = (d.earningsBreakup ?? []).map((c: any) => ({ label: c.label, amount: Number(c.amount) || 0 }));
         const ded = (d.deductionsBreakup ?? []).map((c: any) => ({ label: c.label, amount: Number(c.amount) || 0 }));
         setPayslipBreakup(e.length || ded.length ? { earnings: e, deductions: ded } : null);
+        setPayslipDays({
+          present: typeof d.present === 'number' ? d.present : undefined,
+          lopDays: typeof d.lopDays === 'number' ? d.lopDays : undefined,
+          totalMonthDays: typeof d.totalMonthDays === 'number' ? d.totalMonthDays : undefined,
+        });
         setPayslipFinal(typeof d.is_final === 'boolean' ? d.is_final : undefined);
         if (d.company) {
           setPayslipCompany({
@@ -278,6 +304,8 @@ export default function HrPayroll() {
     setPayslipBreakup(null);
     setPayslipFinal(undefined);
     setPayslipCompany(null);
+    setActivePayslipId(row.payslip_id);
+    setPayslipDays(null);
     setPayslipRecent(row.payslip_id ? [{ label: cycle.label, now: true, payslipId: row.payslip_id, status: row.status }] : []);
     loadPayslipDetail(row.payslip_id);
     if (row.employee_id) {
@@ -297,7 +325,7 @@ export default function HrPayroll() {
     }
   };
   const selectRecent = (entry: { payslipId?: number }) => loadPayslipDetail(entry.payslipId);
-  const closePayslip = () => { setPaySlipRow(null); setPayslipBreakup(null); setPayslipFinal(undefined); setPayslipRecent([]); setPayslipCompany(null); };
+  const closePayslip = () => { setPaySlipRow(null); setPayslipBreakup(null); setPayslipFinal(undefined); setPayslipRecent([]); setPayslipCompany(null); setActivePayslipId(undefined); setPayslipDays(null); };
 
   const [runOpen, setRunOpen] = useState(false);
 
@@ -699,6 +727,7 @@ export default function HrPayroll() {
     const missingPunchCases  = rows.filter(r => r.missingPunch > 0).length;
     const mismatchCases      = rows.filter(r => r.attSource === 'Review').length;
     const unpaidLeaveCases   = rows.filter(r => r.unpaidLeave > 0).length;
+    const paidLeaveCases     = rows.filter(r => r.paidLeave > 0).length;
     const totalGross    = rows.reduce((s, r) => s + r.earnings, 0);
     const totalNetPay   = rows.reduce((s, r) => s + r.netPay, 0);
     const totalPf       = rows.reduce((s, r) => s + r.pfEmp, 0);
@@ -718,6 +747,7 @@ export default function HrPayroll() {
       missingPunchCases,
       mismatchCases,
       unpaidLeaveCases,
+      paidLeaveCases,
       totalGross,
       totalNetPay,
       totalPf,
@@ -1138,7 +1168,7 @@ export default function HrPayroll() {
                   <MasterSelect
                     value={deptFilter}
                     onChange={setDeptFilter}
-                    options={DEPT_OPTIONS}
+                    options={deptOptions}
                     placeholder="All"
                   />
                 </div>
@@ -1282,12 +1312,13 @@ export default function HrPayroll() {
 
               <Row className="g-3 mb-3 align-items-stretch">
                 {[
-                  { key: 'syncedEmployees',   label: 'Synced Employees',    n: counts.syncedEmployees,   tone: 'green' as const },
-                  { key: 'missingPunchCases', label: 'Missing Punch Cases', n: counts.missingPunchCases, tone: 'red'   as const },
-                  { key: 'mismatchCases',     label: 'Mismatch Cases',      n: counts.mismatchCases,     tone: 'red'   as const },
-                  { key: 'unpaidLeaveCases',  label: 'Unpaid Leave Cases',  n: counts.unpaidLeaveCases,  tone: 'amber' as const },
+                  { key: 'syncedEmployees',   label: 'Synced Employees',    n: counts.syncedEmployees,   tone: 'green'  as const },
+                  { key: 'missingPunchCases', label: 'Missing Punch Cases', n: counts.missingPunchCases, tone: 'red'    as const },
+                  { key: 'mismatchCases',     label: 'Mismatch Cases',      n: counts.mismatchCases,     tone: 'red'    as const },
+                  { key: 'paidLeaveCases',    label: 'Paid Leave Cases',    n: counts.paidLeaveCases,    tone: 'blue'   as const },
+                  { key: 'unpaidLeaveCases',  label: 'Unpaid Leave Cases',  n: counts.unpaidLeaveCases,  tone: 'amber'  as const },
                 ].map(t => (
-                  <Col key={t.key} xl={3} md={6} sm={6} xs={6}>
+                  <Col key={t.key} xl={true} md={4} sm={6} xs={6}>
                     <div className={`pay-mini-tile pay-mini-tile--${t.tone}`}>
                       <div className={`fw-bold pay-mini-tile-num--${t.tone}`} style={{ fontSize: 22, lineHeight: 1 }}>
                         {loading ? <Shimmer height={20} width={40} radius={6} /> : t.n}
@@ -1448,6 +1479,9 @@ export default function HrPayroll() {
                       const totalDeductions = r.pfEmp + r.esi + r.pt + r.tds + r.lopDeducted + r.advanceRec;
                       const netPayable      = r.earnings - totalDeductions;
                       const tone            = toneFor(r.status);
+                      // A payslip can't be generated until the payroll status is
+                      // resolved — On Hold / Pending Review slips are blocked.
+                      const payslipBlocked  = r.status === 'On Hold' || r.status === 'Pending Review';
                       const dim = (n: number) => n === 0
                         ? <span className="text-muted">—</span>
                         : <span style={{ color: '#b1401d' }}>−₹{fmtINR(n)}</span>;
@@ -1495,10 +1529,12 @@ export default function HrPayroll() {
                             <button
                               type="button"
                               className="onb-vault-btn"
-                              title="Download payslip"
-                              onClick={() => openPayslip(r)}
+                              title={payslipBlocked ? `Payslip unavailable while status is ${r.status}` : 'Download payslip'}
+                              disabled={payslipBlocked}
+                              style={payslipBlocked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                              onClick={() => { if (!payslipBlocked) openPayslip(r); }}
                             >
-                              <i className="ri-file-download-line" style={{ fontSize: 14 }} />
+                              <i className={`${payslipBlocked ? 'ri-lock-line' : 'ri-file-download-line'}`} style={{ fontSize: 14 }} />
                               Payslip
                             </button>
                           </td>
@@ -1658,14 +1694,14 @@ export default function HrPayroll() {
             defaultYear={yStr}
             earnings={earnings}
             deductions={deductions}
-            workingDays={periodMeta?.working_days || 26}
-            daysPresent={r.present}
-            lossOfPay={Math.max(0, (periodMeta?.working_days || 26) - r.attendance)}
-            paidDays={r.attendance}
+            workingDays={payslipDays?.totalMonthDays ?? periodMeta?.total_month_days ?? 30}
+            daysPresent={payslipDays?.present ?? r.present}
+            lossOfPay={payslipDays?.lopDays ?? r.lop_days ?? Math.max(0, (periodMeta?.working_days || 26) - r.attendance)}
+            paidDays={Math.max(0, (payslipDays?.totalMonthDays ?? periodMeta?.total_month_days ?? 30) - (payslipDays?.lopDays ?? r.lop_days ?? Math.max(0, (periodMeta?.working_days || 26) - r.attendance)))}
             isFinal={payslipFinal}
             onSelectRecent={selectRecent}
             recentMonths={payslipRecent}
-            payslipId={r.payslip_id}
+            payslipId={activePayslipId ?? r.payslip_id}
             companyName={payslipCompany?.name || undefined}
             companyMeta={payslipCompany?.meta || undefined}
             companyInitials={payslipCompany?.initials || undefined}

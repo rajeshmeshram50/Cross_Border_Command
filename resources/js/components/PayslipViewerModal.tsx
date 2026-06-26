@@ -95,6 +95,17 @@ export default function PayslipViewerModal({
   // Sync defaults when the modal is reopened with a different cycle/employee.
   useEffect(() => { if (open) { setYear(defaultYear); setMonth(defaultMonth); } }, [open, defaultYear, defaultMonth]);
 
+  // Lock background scroll while the viewer is open so the underlying page
+  // can't scroll behind it; restore the previous values on close/unmount.
+  useEffect(() => {
+    if (!open) return;
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
+  }, [open]);
+
   if (!open) return null;
 
   // Header action handlers. When a payslipId is supplied they hit the real
@@ -106,6 +117,20 @@ export default function PayslipViewerModal({
   const fetchPdfBlob = async () => {
     const res = await api.get(`/payroll/payslip/${payslipId}/pdf`, { responseType: 'blob' });
     return new Blob([res.data], { type: 'application/pdf' });
+  };
+
+  // Month/Year filter → load that period's payslip. We match the chosen
+  // full-month + year against the Recent Payslips list (labelled "Mon YYYY")
+  // and ask the parent to switch to it. Without this the filters only changed
+  // the labels while View PDF kept opening the originally-opened payslip.
+  const selectPeriod = (fullMonth: string, yr: string) => {
+    const abbr = Object.keys(MONTH_ABBR_TO_FULL).find(k => MONTH_ABBR_TO_FULL[k] === fullMonth) || fullMonth.slice(0, 3);
+    const entry = recentMonths.find(p => p.label === `${abbr} ${yr}`);
+    if (entry) {
+      onSelectRecent?.(entry);
+    } else {
+      toast.error('No payslip', `No payslip found for ${fullMonth} ${yr}.`);
+    }
   };
 
   const handleDownload = async () => {
@@ -249,7 +274,7 @@ export default function PayslipViewerModal({
                 <MasterSelect
                   value={year}
                   options={['2026','2025','2024'].map(y => ({ value: y, label: y }))}
-                  onChange={setYear}
+                  onChange={(y) => { setYear(y); selectPeriod(month, y); }}
                 />
               </div>
               <div className="mb-3">
@@ -257,7 +282,7 @@ export default function PayslipViewerModal({
                 <MasterSelect
                   value={month}
                   options={MONTH_FULL.map(m => ({ value: m, label: m }))}
-                  onChange={setMonth}
+                  onChange={(m) => { setMonth(m); selectPeriod(m, year); }}
                 />
               </div>
               <button type="button" className="ep-pay-side-btn" onClick={handleViewPdf} disabled={!!busyAction} style={busyAction ? { opacity: 0.7 } : undefined}>
@@ -325,7 +350,7 @@ export default function PayslipViewerModal({
               {/* 4 KPI strip */}
               <div className="ep-pay-kpis">
                 {[
-                  { label: 'Working Days', value: workingDays, tint: 'rgba(99,102,241,0.10)',  fg: '#4338ca' },
+                  { label: 'Total Days', value: workingDays, tint: 'rgba(99,102,241,0.10)',  fg: '#4338ca' },
                   { label: 'Days Present', value: daysPresent, tint: 'rgba(10,179,156,0.10)',  fg: '#0a8a78' },
                   { label: 'Loss of Pay',  value: lossOfPay,   tint: 'rgba(245,158,11,0.10)',  fg: '#a16207' },
                   { label: 'Paid Days',    value: paidDays,    tint: 'rgba(10,179,156,0.10)',  fg: '#0a8a78' },

@@ -259,7 +259,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           company: d.company,
           month: MONTH_ABBR_FULL[mAbbr] || mAbbr || 'March',
           year: y || String(new Date().getFullYear()),
-          working: d.workingDays, present: d.present, paid: d.paidDays, lop: d.lopDays,
+          working: d.totalMonthDays ?? d.workingDays, present: d.present, paid: d.paidDays, lop: d.lopDays,
         });
       })
       .catch(() => { /* keep prior */ });
@@ -645,10 +645,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       })
       .catch(() => setClaimCurrencies([]));
   }, [claimOpen]);
-  const currencyOptions = claimCurrencies.map(c => ({
-    value: c.code,
-    label: c.symbol ? `${c.symbol} ${c.code}` : c.code,
-  }));
 
   // Multi-draft tab support — every form-render reads/writes the active draft
   // in `claimDrafts`. "Save & Add Another" appends a fresh draft and switches
@@ -907,6 +903,25 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const setClaimVendor = (v: string) => updateDraft({ vendor: v });
   const claimPurpose = draft.purpose;
   const setClaimPurpose = (v: string) => updateDraft({ purpose: v });
+
+  // Symbol that prefixes the Amount field — follows the selected currency
+  // (master symbol first, then a fallback for common codes), so picking USD
+  // shows "$" instead of always "₹".
+  const claimCurrencySymbol =
+    claimCurrencies.find(c => c.code === claimCurrency)?.symbol
+    || ({ INR: '₹', USD: '$', EUR: '€', GBP: '£', JPY: '¥', AUD: 'A$', CAD: 'C$', AED: 'AED', SGD: 'S$' } as Record<string, string>)[claimCurrency]
+    || (claimCurrency || '₹');
+  // Selected category's configured budget, surfaced on the form so the user
+  // sees the cap before they exceed it (the submit-time validation blocks it).
+  const claimCategoryMeta = categoryById(claimCategory);
+  // Live monthly-limit check — flips true as soon as the typed amount goes
+  // past the selected category's monthly cap, so the form shows "exceeded"
+  // before the user even submits.
+  const claimAmountNum = Number(String(claimAmount).replace(/[^0-9.]/g, ''));
+  const monthlyLimitExceeded =
+    claimCategoryMeta?.monthly_limit != null &&
+    Number.isFinite(claimAmountNum) && claimAmountNum > 0 &&
+    claimAmountNum > claimCategoryMeta.monthly_limit;
 
   // Per-field error map for the active expense draft — wired to red
   // borders + inline error messages on every input, same pattern the
@@ -2157,7 +2172,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
            the file for now in case we want to re-introduce a "detailed
            application" entry point later. */}
       {tab === 'apply_leave' && (
-        <LeaveSummaryPanel employeeId={employeeId} canRequest={isOwnProfile} />
+        <LeaveSummaryPanel
+          employeeId={empDetail?.id != null ? String(empDetail.id) : (profileEmpIdNum != null ? String(profileEmpIdNum) : '')}
+          canRequest={isOwnProfile}
+        />
       )}
 
       {/* ── Holidays tab — read-only view of the employee's assigned Holiday
@@ -2600,13 +2618,21 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       invalid={!!claimErrors.category}
                     />
                     {claimErrors.category && <div className="ep-claim-err"><i className="ri-error-warning-line" />{claimErrors.category}</div>}
+                    {claimCategoryMeta && (claimCategoryMeta.monthly_limit != null || claimCategoryMeta.yearly_limit != null) && (
+                      <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 4 }}>
+                        <i className="ri-information-line me-1" />
+                        {claimCategoryMeta.monthly_limit != null && <>Monthly limit: ₹{claimCategoryMeta.monthly_limit.toLocaleString('en-IN')}</>}
+                        {claimCategoryMeta.monthly_limit != null && claimCategoryMeta.yearly_limit != null && ' · '}
+                        {claimCategoryMeta.yearly_limit != null && <>Yearly: ₹{claimCategoryMeta.yearly_limit.toLocaleString('en-IN')}</>}
+                      </div>
+                    )}
                   </Col>
                   <Col md={6}>
                     <div className="ep-claim-label">Currency</div>
                     <MasterSelect
                       value={claimCurrency}
-                      placeholder={claimCurrencies.length ? 'Select currency' : 'Loading…'}
-                      options={currencyOptions.length ? currencyOptions : [{ value: 'INR', label: '₹ INR' }, { value: 'USD', label: '$ USD' }, { value: 'EUR', label: '€ EUR' }]}
+                      placeholder="Select currency"
+                      options={[{ value: 'INR', label: '₹ INR' }]}
                       onChange={setClaimCurrency}
                     />
                   </Col>
@@ -2647,9 +2673,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 </div>
                 <Row className="g-3 mb-3">
                   <Col md={6}>
-                    <div className="ep-claim-label">Amount (₹) <span className="ep-claim-req">*</span></div>
+                    <div className="ep-claim-label">Amount ({claimCurrencySymbol}) <span className="ep-claim-req">*</span></div>
                     <div className="position-relative">
-                      <span className="ep-claim-amount-prefix">₹</span>
+                      <span className="ep-claim-amount-prefix">{claimCurrencySymbol}</span>
                       <input
                         className={`ep-claim-input ep-pl-28${claimErrors.amount ? ' is-invalid' : ''}`}
                         placeholder="0.00"
@@ -2676,6 +2702,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       />
                     </div>
                     {claimErrors.amount && <div className="ep-claim-err"><i className="ri-error-warning-line" />{claimErrors.amount}</div>}
+                    {!claimErrors.amount && monthlyLimitExceeded && (
+                      <div className="ep-claim-err"><i className="ri-error-warning-line" />Monthly limit exceeded — max ₹{claimCategoryMeta!.monthly_limit!.toLocaleString('en-IN')}</div>
+                    )}
                   </Col>
                   <Col md={6}>
                     <div className="ep-claim-label">Expense Date <span className="ep-claim-req">*</span></div>

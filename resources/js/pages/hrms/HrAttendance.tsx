@@ -65,6 +65,10 @@ interface AttendanceEmployee {
   firstIn?: string;
   lastOut?: string | null;
   workedMinutes: number;
+  workedSeconds?: number;
+  workedCompletedSeconds?: number;
+  openInAt?: string | null;
+  autoCutoffAt?: string | null;
   expectedMinutes: number;
   lateByMinutes: number;
   punches: PunchEvent[];
@@ -564,6 +568,34 @@ function TodayRecordCard({
   const effectiveStatus: DayStatus = employee.status;
   const tone = STATUS_TONE[effectiveStatus];
 
+  // Live WORKED total — ticks every second while the employee is still on the
+  // clock (an open 'in' with no matching 'out'), mirroring the employee's own
+  // Clock-In screen so the same record reads the same in both portals. The
+  // open pair is extended only up to a 9 PM auto-checkout (autoCutoffAt): the
+  // timer runs to min(now, 9 PM) and then freezes — no phantom hours past 9 PM.
+  // Past/closed days have no open punch, so the value is the static server
+  // figure (which the model already capped at 9 PM for a missing out-punch).
+  const openInMs = !isPast && employee.openInAt ? new Date(employee.openInAt).getTime() : null;
+  const cutoffMs = employee.autoCutoffAt ? new Date(employee.autoCutoffAt).getTime() : null;
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (openInMs == null) return;
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [openInMs]);
+  // For an open (today) record, build from the COMPLETED-pairs baseline and add
+  // the open stretch capped at 9 PM. Otherwise use the full server figure.
+  const liveWorkedSecs = (() => {
+    if (openInMs == null) {
+      return typeof employee.workedSeconds === 'number' ? employee.workedSeconds : employee.workedMinutes * 60;
+    }
+    const base = typeof employee.workedCompletedSeconds === 'number'
+      ? employee.workedCompletedSeconds
+      : (typeof employee.workedSeconds === 'number' ? employee.workedSeconds : employee.workedMinutes * 60);
+    const boundary = cutoffMs != null ? Math.min(nowMs, cutoffMs) : nowMs;
+    return base + Math.max(0, Math.floor((boundary - openInMs) / 1000));
+  })();
+
   const dateLabel = `${WEEK_LABELS[parseISO(viewDate).getDay()].slice(0,3)}, ${parseISO(viewDate).getDate()}-${monthOf(viewDate)}-${yearOf(viewDate)}`;
 
   return (
@@ -636,7 +668,7 @@ function TodayRecordCard({
             <div className="att-stat-label">PUNCHES</div>
           </div>
           <div className="att-stat">
-            <div className="att-stat-num" style={{ color: '#0d9488' }}>{fmtMinutes(employee.workedMinutes)}</div>
+            <div className="att-stat-num" style={{ color: '#0d9488' }}>{fmtMinutes(Math.floor(liveWorkedSecs / 60))}</div>
             <div className="att-stat-label">WORKED</div>
           </div>
           <div className="att-stat">

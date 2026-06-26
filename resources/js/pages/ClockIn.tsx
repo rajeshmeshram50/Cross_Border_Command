@@ -230,11 +230,16 @@ export default function ClockIn() {
   const punches0 = record0?.punches || [];
   const nextDir0 = today?.next_direction ?? 'in';
 
-  // Live total worked seconds — server snapshot + delta from the open 'in'
-  // (if any) to "now" so the timer ticks every second the user is on the
-  // clock without re-hitting the API.
+  // Live total worked seconds — completed pairs plus the open 'in' (if any)
+  // extended only up to a 9 PM auto-checkout, so the timer ticks until 9 PM
+  // and then freezes (no hours counted past 9 PM). Matches the model + branch
+  // logic so the same record reads the same everywhere.
   const liveWorkedSeconds = useMemo(() => {
     if (!record0) return 0;
+    // 9 PM local today — the auto-checkout boundary for an open punch.
+    const cutoff = new Date();
+    cutoff.setHours(21, 0, 0, 0);
+    const cutoffMs = cutoff.getTime();
     let total = 0;
     let openInIso: string | null = null;
     for (const p of punches0) {
@@ -245,7 +250,8 @@ export default function ClockIn() {
       }
     }
     if (openInIso) {
-      total += Math.max(0, Math.floor((nowTick - new Date(openInIso).getTime()) / 1000));
+      const boundary = Math.min(nowTick, cutoffMs);
+      total += Math.max(0, Math.floor((boundary - new Date(openInIso).getTime()) / 1000));
     }
     return total;
   }, [record0, punches0, nowTick]);

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../../../api';
 import WorklistPager from '../../../../components/ui/WorklistPager';
+import Tooltip from '../../../../components/ui/Tooltip';
 import AssignSourcingTargetModal from './AssignSourcingTargetModal';
 import SourcingReportModal from './SourcingReportModal';
 import ProductListModal from './ProductListModal';
@@ -131,7 +132,7 @@ export default function P2pBulkSourcing() {
   const switchTab = (t: 'assigned' | 'created') => { setTab(t); setPage(1); setQuery(''); };
 
   return (
-    <div className="bsm-teal" ref={rootRef} style={{ padding: '0 4px 8px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div className="bsm-teal" ref={rootRef} style={{ margin: '-6px 0 0', display: 'flex', flexDirection: 'column', gap: 6 }}>
 
         {/* HEADER STRIP */}
         <div className="bsm-headstrip" style={{ flexShrink: 0, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 14px', minHeight: 56, border: '1px solid rgba(6,182,212,.28)', borderRadius: 12, background: 'linear-gradient(110deg,#e0f9fd 0%,#cef8ff 20%,#d4f4f9 50%,#bff0f7 80%,#a5e9f3 100%)', boxShadow: '0 2px 0 rgba(255,255,255,.85) inset,0 4px 16px rgba(6,182,212,.15)' }}>
@@ -239,13 +240,13 @@ export default function P2pBulkSourcing() {
                   ))}
                 </div>
               ) : error ? (
-                <div className="bst-empty">
+                <div className="bst-empty" style={{ minHeight: fillH }}>
                   <div className="bst-empty-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg></div>
                   <div className="bst-empty-t">Couldn’t load sourcing targets</div>
                   <div className="bst-empty-s">Please try again.</div>
                 </div>
               ) : total === 0 ? (
-                <div className="bst-empty">
+                <div className="bst-empty" style={{ minHeight: fillH }}>
                   <div className="bst-empty-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg></div>
                   <div className="bst-empty-t">{query ? 'No results found' : (tab === 'created' ? 'No sourcing targets created yet' : 'No sourcing targets assigned to you')}</div>
                   <div className="bst-empty-s">{query ? 'Try a different search term.' : (tab === 'created' ? 'Use “Assign Sourcing Target” to create your first one.' : 'Targets assigned to you will appear here.')}</div>
@@ -275,7 +276,7 @@ export default function P2pBulkSourcing() {
                         <span className="bst-due">{fmtDate(r.due)}</span>
                         <span><Person name={r.createdBy} /></span>
                         <span><Person name={r.assignee} /></span>
-                        <span className="bst-c-center"><span className="bst-pcount" title="View Products" style={{ cursor: 'pointer' }} onClick={() => setProductsRow(r)}>{r.products}</span></span>
+                        <span className="bst-c-center"><Tooltip label="View Products"><span className="bst-pcount" style={{ cursor: 'pointer' }} onClick={() => setProductsRow(r)}>{r.products}</span></Tooltip></span>
                         <span className="bst-c-center"><Progress products={r.products} completed={r.completed} /></span>
                         <span className="bst-c-center">
                           <span className="bst-actions">
@@ -283,7 +284,7 @@ export default function P2pBulkSourcing() {
                                 A target merely assigned to you isn't yours to re-edit
                                 — you work it through the Sourcing Report instead. */}
                             {tab === 'created' && (
-                              <button type="button" className="bst-act bst-act--edit" title="Edit Sourcing Target" onClick={() => setEditRow(r)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg></button>
+                              <Tooltip label="Edit Sourcing Target"><button type="button" className="bst-act bst-act--edit" onClick={() => setEditRow(r)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg></button></Tooltip>
                             )}
                             <button type="button" className="bst-report-btn" onClick={() => setReportRow(r)}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M18 20V10" /><path d="M12 20V4" /><path d="M6 20v-6" /><path d="M3 20h18" /></svg>Sourcing Report</button>
                           </span>

@@ -27,6 +27,10 @@ class HolidayController extends Controller
     /** Module slug used for permission checks — matches ModuleSeeder. */
     private const MODULE_SLUG = 'hr.holiday';
 
+    /** Tenant-facing timezone used to resolve "today" when freezing past
+     *  holidays. The app runs in UTC; holiday dates are entered/read in IST. */
+    private const DISPLAY_TZ = 'Asia/Kolkata';
+
     /** Allowed holiday categories. */
     private const TYPES = ['Public', 'Restricted', 'Company', 'Regional', 'Optional'];
 
@@ -58,7 +62,9 @@ class HolidayController extends Controller
             $q->whereYear('date', (int) $year);
         }
 
-        return response()->json($q->orderBy('date')->get());
+        // Date-wise, with id as a stable tie-breaker so same-date holidays keep
+        // a deterministic order (the SPA prints a continuous Sr. No. over this).
+        return response()->json($q->orderBy('date')->orderBy('id')->get());
     }
 
     public function show(Request $request, $id)
@@ -93,6 +99,7 @@ class HolidayController extends Controller
     {
         $this->authorizeAction($request, 'can_edit');
         $row = $this->resolveRow($request, (int) $id);
+        $this->assertGroupNotInUse($row, 'edited');
 
         $data = $this->validatePayload($request, $row->id);
         $data['updated_by'] = $request->user()?->id;
@@ -106,6 +113,7 @@ class HolidayController extends Controller
     {
         $this->authorizeAction($request, 'can_delete');
         $row = $this->resolveRow($request, (int) $id);
+        $this->assertGroupNotInUse($row, 'removed');
 
         $row->delete();
 
@@ -326,6 +334,27 @@ class HolidayController extends Controller
     }
 
     /**
+     * Block edits/deletes on a holiday whose group is assigned to employees.
+     * Once a group is somebody's holiday list, its dates feed that employee's
+     * attendance/payroll, so changing or removing a holiday inside it would
+     * silently rewrite a calendar people depend on. The admin must first
+     * unassign the group from all employees. Un-grouped holidays are exempt.
+     */
+    private function assertGroupNotInUse(Holiday $row, string $verb): void
+    {
+        if (!$row->holiday_group_id) return;
+
+        $assigned = Employee::where('holiday_group_id', $row->holiday_group_id)->count();
+        if ($assigned > 0) {
+            throw ValidationException::withMessages([
+                'holiday_group_id' => "This holiday's group is assigned to {$assigned} employee"
+                    . ($assigned === 1 ? '' : 's')
+                    . ", so its holidays can't be {$verb}. Reassign those employees to another group first.",
+            ]);
+        }
+    }
+
+    /**
      * Fetch a row enforcing tenant scope so one tenant can't read/edit
      * another's holiday by guessing an id.
      */
@@ -383,6 +412,6 @@ class HolidayController extends Controller
                 if ($n > $max) $max = $n;
             }
         }
-        return 'HOL-' . str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
+        return 'HOL-' . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
     }
 }

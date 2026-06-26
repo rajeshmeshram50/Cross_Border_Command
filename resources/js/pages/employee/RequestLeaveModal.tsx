@@ -3,7 +3,8 @@ import { Modal, ModalBody } from 'reactstrap';
 import Swal from 'sweetalert2';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
-import { MasterDatePicker } from '../master/masterFormKit';
+import { useAuth } from '../../contexts/AuthContext';
+import { MasterDatePicker, MasterSelect } from '../master/masterFormKit';
 import {
   employeeBalancesApi,
   leaveRequestsApi,
@@ -106,7 +107,21 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
 
   const totalDays = useMemo(() => diffDaysInclusive(fromDate, toDate), [fromDate, toDate]);
 
+  const { user } = useAuth();
+  // Admins (client/super) may file a genuine same-day absence on behalf of an
+  // employee, exactly as the backend allows. Self-service employees cannot.
+  const isAdmin = user?.user_type === 'client_admin' || user?.user_type === 'super_admin';
+
   const today = new Date().toISOString().slice(0, 10);
+  const tomorrow = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  })();
+  // Earliest start date the picker offers / the form accepts. Employees must
+  // pick tomorrow onward (no same-day leave); admins may pick today. Mirrors
+  // the backend rule in LeaveRequestController::store.
+  const minStartDate = isAdmin ? today : tomorrow;
 
   const isSelected = useCallback(
     (id: number) => selectedNotify.some(s => s.id === id),
@@ -122,6 +137,19 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
 
   const submit = async () => {
     if (!canSubmit) return;
+    // Same-day / past guard — leave must start on/after the minimum (tomorrow
+    // for employees, today for admins). Mirrors the backend rule so a
+    // hand-typed or stale date is caught before the API call.
+    if (fromDate < minStartDate) {
+      await Swal.fire({
+        title: 'Same-day leave not allowed',
+        text: 'Leave cannot be applied for today. Please select a date from tomorrow onward.',
+        icon: 'warning',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#f06548',
+      });
+      return;
+    }
     const selectedBalance = balanceTypes.find(t => String(t.leave_type_id) === String(leaveTypeId));
     if (selectedBalance && !selectedBalance.unlimited) {
       const remaining = selectedBalance.available ?? 0;
@@ -208,7 +236,7 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
                     setFromDate(v);
                     if (toDate && new Date(toDate) < new Date(v)) setToDate(v);
                   }}
-                  minDate={today}
+                  minDate={minStartDate}
                   placeholder="Select date"
                 />
               </div>
@@ -223,7 +251,7 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
                 <MasterDatePicker
                   value={toDate}
                   onChange={setToDate}
-                  minDate={fromDate || today}
+                  minDate={fromDate || minStartDate}
                   placeholder="Select date"
                 />
               </div>
@@ -241,23 +269,15 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
                 <span>No leave plan / types assigned yet. Ask HR to add you to a plan.</span>
               </div>
             ) : (
-              <select
-                className="lvr-input"
+              <MasterSelect
                 value={leaveTypeId}
-                onChange={e => setLeaveTypeId(e.target.value)}
-              >
-                <option value="">Select a leave type…</option>
-                {balanceTypes.map(t => {
-                  const availLabel = t.unlimited
-                    ? 'Unlimited days available'
-                    : `${t.available ?? 0} days available`;
-                  return (
-                    <option key={t.leave_type_id} value={String(t.leave_type_id)}>
-                      {t.name} — {availLabel}
-                    </option>
-                  );
-                })}
-              </select>
+                onChange={(v) => setLeaveTypeId(String(v))}
+                placeholder="Select a leave type…"
+                options={balanceTypes.map(t => ({
+                  value: String(t.leave_type_id),
+                  label: `${t.name} — ${t.unlimited ? 'Unlimited days available' : `${t.available ?? 0} days available`}`,
+                }))}
+              />
             )}
           </div>
 
