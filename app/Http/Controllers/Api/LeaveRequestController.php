@@ -609,7 +609,16 @@ class LeaveRequestController extends Controller
         $row->approval_chain = $chain;
 
         if ($next === 'Rejected') {
-            // Reject at any level terminates immediately.
+            // Reject at any level terminates the workflow immediately. Mark
+            // every downstream level Skipped so a later approver (e.g. HR) no
+            // longer shows as Pending once the request has been rejected.
+            for ($i = $level; $i < count($chain); $i++) {
+                $st = $chain[$i]['status'] ?? 'Pending';
+                if (!in_array($st, ['Approved', 'Rejected'], true)) {
+                    $chain[$i]['status'] = 'Skipped';
+                }
+            }
+            $row->approval_chain = $chain;
             $row->status = 'Rejected';
             $row->approved_by = $user->id;
             $row->approved_at = now();

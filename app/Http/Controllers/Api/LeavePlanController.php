@@ -79,6 +79,7 @@ class LeavePlanController extends Controller
         ]);
 
         [$clientId, $branchId] = $this->resolveOwnership($user, $request);
+        $this->assertUniquePlanName($clientId, $branchId, $data['plan_name'], null);
 
         $data['client_id'] = $clientId;
         $data['branch_id'] = $branchId;
@@ -119,6 +120,10 @@ class LeavePlanController extends Controller
             'status' => ['nullable', Rule::in(['Active', 'Inactive'])],
             'is_default' => ['nullable', 'boolean'],
         ]);
+
+        if (array_key_exists('plan_name', $data)) {
+            $this->assertUniquePlanName($plan->client_id, $plan->branch_id, $data['plan_name'], $plan->id);
+        }
 
         DB::transaction(function () use ($plan, $data) {
             if (array_key_exists('is_default', $data) && (bool) $data['is_default']) {
@@ -738,6 +743,21 @@ class LeavePlanController extends Controller
         $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
         if ($exceptId !== null) $q->where('id', '!=', $exceptId);
         $q->update(['is_default' => false]);
+    }
+
+    private function assertUniquePlanName(?int $clientId, ?int $branchId, string $name, ?int $exceptId): void
+    {
+        $exists = LeavePlans::query()
+            ->where(fn ($q) => $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId))
+            ->where(fn ($q) => $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId))
+            ->when($exceptId, fn ($q) => $q->where('id', '!=', $exceptId))
+            ->whereRaw('LOWER(plan_name) = LOWER(?)', [trim($name)])
+            ->exists();
+        if ($exists) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'plan_name' => ['A leave plan with this name already exists.'],
+            ]);
+        }
     }
 
     /**

@@ -901,6 +901,7 @@ class PayrollController extends Controller
             'lateMarks'   => (int) $p->late_marks,
             'missingPunch'=> (int) $p->missing_punches,
             'unpaidLeave' => (float) $p->unpaid_leave_days,
+            'paidLeave'   => (float) $p->paid_leave_days,
             'attSource'   => $p->att_source,
             'mismatch'    => $p->missing_punches > 0 ? 'Missing punches' : null,
             'attMismatch' => $p->att_source === 'Review',

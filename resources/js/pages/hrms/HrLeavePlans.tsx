@@ -10,6 +10,7 @@ import EmployeePicker, { PickedEmployee } from '../../components/ui/EmployeePick
 import Tooltip from '../../components/ui/Tooltip';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
+import { useConfirm } from '../../contexts/ConfirmContext';
 import api from '../../api';
 
 type CalendarStart = 'fixed_month' | 'joining_date';
@@ -337,6 +338,7 @@ export default function HrLeavePlans() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const toast = useToast();
+  const confirmDialog = useConfirm();
   const isSuperAdmin = user?.user_type === 'super_admin';
   const leavePerm = user?.permissions?.['hr.leave'];
   const canAdd    = isSuperAdmin || !!leavePerm?.can_add;
@@ -420,13 +422,22 @@ export default function HrLeavePlans() {
         isEdit ? 'Leave type updated' : 'Leave type added',
         `"${t.name}" has been saved.`,
       );
-    } catch (err: any) {
-      console.error('[HrLeavePlans] save leave type failed', err);
-      const msg = err?.response?.data?.message || err?.message || 'Please try again.';
-      toast.error(isEdit ? 'Could not update leave type' : 'Could not add leave type', msg);
-    } finally {
       setShowAddType(false);
       setEditingTypeId(null);
+      return null;
+    } catch (err: any) {
+      // 422 → return field errors so the form shows "already exists" inline
+      // instead of silently closing.
+      if (err?.response?.status === 422 && err?.response?.data?.errors) {
+        const out: Record<string, string> = {};
+        for (const [k, v] of Object.entries(err.response.data.errors as Record<string, string | string[]>)) {
+          out[k] = Array.isArray(v) ? String(v[0]) : String(v);
+        }
+        return out;
+      }
+      const msg = err?.response?.data?.message || err?.message || 'Please try again.';
+      toast.error(isEdit ? 'Could not update leave type' : 'Could not add leave type', msg);
+      return {};
     }
   };
 
@@ -439,15 +450,22 @@ export default function HrLeavePlans() {
   };
   const onDeleteLeaveType = async (id: string) => {
     const row = catalog.find(c => c.id === id);
-    const label = row ? `"${row.name}"` : 'this leave type';
-    if (!window.confirm(`Delete ${label}? This cannot be undone. The type will also be removed from any leave plan it's assigned to.`)) return;
+    const ok = await confirmDialog({
+      title: 'Delete leave type?',
+      message: <>Delete <strong>{row ? row.name : 'this leave type'}</strong>? This cannot be undone. The type will also be removed from any leave plan it's assigned to.</>,
+      tone: 'danger',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      icon: 'delete-bin-line',
+    });
+    if (!ok) return;
     try {
       await leaveTypesApi.remove(Number(id));
       await loadCatalog();
       await loadPlans();
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Delete failed';
-      alert(msg);
+      toast.error('Delete failed', msg);
     }
   };
   const onCloseTypeModal = () => {
@@ -469,6 +487,17 @@ export default function HrLeavePlans() {
 
   const onDeletePlan = async () => {
     if (!activePlanId) return;
+    setPlanMenuOpen(false);
+    const plan = plans.find(p => p.id === activePlanId);
+    const ok = await confirmDialog({
+      title: 'Delete leave plan?',
+      message: <>Delete <strong>{plan?.name || 'this plan'}</strong>? This cannot be undone.</>,
+      tone: 'danger',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      icon: 'delete-bin-line',
+    });
+    if (!ok) return;
     try {
       await leavePlansApi.remove(Number(activePlanId));
       const remaining = plans.filter(p => p.id !== activePlanId);
@@ -476,9 +505,7 @@ export default function HrLeavePlans() {
       await loadPlans();
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Delete failed';
-      alert(msg);
-    } finally {
-      setPlanMenuOpen(false);
+      toast.error('Delete failed', msg);
     }
   };
 
@@ -517,7 +544,10 @@ export default function HrLeavePlans() {
 
   const activePlan = plans.find(p => p.id === activePlanId) ?? plans[0];
 
-  const onSavePlan = async (plan: Omit<LeavePlan, 'id' | 'employees' | 'leaveTypes'>) => {
+  const onSavePlan = async (
+    plan: Omit<LeavePlan, 'id' | 'employees' | 'leaveTypes'>,
+  ): Promise<Record<string, string> | null> => {
+    const isEdit = !!editingPlanId;
     try {
       if (editingPlanId) {
         await leavePlansApi.update(Number(editingPlanId), frontendPlanToApi(plan));
@@ -527,13 +557,26 @@ export default function HrLeavePlans() {
         await loadPlans();
         setActivePlanId(String(created.id));
       }
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Save failed';
-      alert(msg);
-      return;
-    } finally {
+      toast.success(
+        isEdit ? 'Leave plan updated' : 'Leave plan created',
+        `"${plan.name}" has been saved.`,
+      );
       setShowAddPlan(false);
       setEditingPlanId(null);
+      return null;
+    } catch (err: any) {
+      // 422 → hand the field errors back so the form shows them inline
+      // (e.g. a duplicate plan name highlights the Name field).
+      if (err?.response?.status === 422 && err?.response?.data?.errors) {
+        const out: Record<string, string> = {};
+        for (const [k, v] of Object.entries(err.response.data.errors as Record<string, string | string[]>)) {
+          const key = k === 'plan_name' ? 'name' : k;
+          out[key] = Array.isArray(v) ? String(v[0]) : String(v);
+        }
+        return out;
+      }
+      toast.error('Save failed', err?.response?.data?.message || err?.message || 'Save failed');
+      return {};
     }
   };
 
@@ -1383,7 +1426,7 @@ function AddLeavePlanModal({
   isOpen: boolean;
   editing: LeavePlan | null;
   onClose: () => void;
-  onSave: (plan: Omit<LeavePlan, 'id' | 'employees' | 'leaveTypes'>) => void;
+  onSave: (plan: Omit<LeavePlan, 'id' | 'employees' | 'leaveTypes'>) => Promise<Record<string, string> | null | void>;
 }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -1393,15 +1436,20 @@ function AddLeavePlanModal({
   const [showSystemPolicy, setShowSystemPolicy] = useState(true);
   const [uploadCustom, setUploadCustom] = useState(false);
   const [isDefault, setIsDefault] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const clearErr = (k: string) => setErrors(prev => { if (!prev[k]) return prev; const n = { ...prev }; delete n[k]; return n; });
 
   const reset = () => {
     setName(''); setDescription(''); setShowDescription(false);
     setCalendarStart('fixed_month'); setStartDate('');
     setShowSystemPolicy(true); setUploadCustom(false); setIsDefault(false);
+    setErrors({}); setSaving(false);
   };
 
   useEffect(() => {
     if (!isOpen) return;
+    setErrors({}); setSaving(false);
     if (editing) {
       setName(editing.name);
       setDescription(editing.description ?? '');
@@ -1416,9 +1464,14 @@ function AddLeavePlanModal({
     }
   }, [isOpen, editing]);
 
-  const handleSave = () => {
-    if (!name.trim()) return;
-    onSave({
+  const handleSave = async () => {
+    const errs: Record<string, string> = {};
+    if (!name.trim()) errs.name = 'Leave plan name is required';
+    if (calendarStart === 'fixed_month' && !startDate) errs.startDate = 'Start date is required';
+    if (Object.keys(errs).length) { setErrors(errs); return; }
+
+    setSaving(true);
+    const serverErrs = await onSave({
       name: name.trim(),
       description: description.trim() || undefined,
       calendarStart,
@@ -1426,6 +1479,8 @@ function AddLeavePlanModal({
       showSystemPolicy,
       isDefault,
     });
+    setSaving(false);
+    if (serverErrs && Object.keys(serverErrs).length) { setErrors(serverErrs); return; }
     reset();
   };
 
@@ -1497,11 +1552,12 @@ function AddLeavePlanModal({
                 <label className="rec-form-label">Leave Plan Name<span className="req">*</span></label>
                 <input
                   type="text"
-                  className="rec-input"
+                  className={`rec-input${errors.name ? ' is-invalid' : ''}`}
                   placeholder="e.g. Leave plan for Executives"
                   value={name}
-                  onChange={e => setName(e.target.value)}
+                  onChange={e => { setName(e.target.value); clearErr('name'); }}
                 />
+                {errors.name && <div className="rec-error"><i className="ri-error-warning-line" />{errors.name}</div>}
               </Col>
               <Col md={12}>
                 {showDescription ? (
@@ -1561,9 +1617,11 @@ function AddLeavePlanModal({
                       <div className="mt-2" style={{ maxWidth: 240 }}>
                         <MasterDatePicker
                           value={startDate}
-                          onChange={setStartDate}
+                          onChange={(v) => { setStartDate(v); clearErr('startDate'); }}
                           placeholder="Select start date"
+                          invalid={!!errors.startDate}
                         />
+                        {errors.startDate && <div className="rec-error"><i className="ri-error-warning-line" />{errors.startDate}</div>}
                       </div>
                     )}
                   </div>
@@ -1662,9 +1720,9 @@ function AddLeavePlanModal({
               type="button"
               className="rec-btn-primary"
               onClick={handleSave}
-              disabled={!name.trim()}
+              disabled={saving}
             >
-              <i className={editing ? 'ri-save-line' : 'ri-save-3-line'} />
+              <i className={saving ? 'ri-loader-4-line' : (editing ? 'ri-save-line' : 'ri-save-3-line')} style={saving ? { animation: 'spin 1s linear infinite' } : undefined} />
               {editing ? 'Update Plan' : 'Save Plan'}
             </button>
           </div>
@@ -1680,15 +1738,19 @@ function AddLeaveTypeModal({
   isOpen: boolean;
   editing: CatalogType | null;
   onClose: () => void;
-  onSave: (t: Omit<CatalogType, 'id' | 'initials' | 'bg' | 'fg' | 'accent'>) => void;
+  onSave: (t: Omit<CatalogType, 'id' | 'initials' | 'bg' | 'fg' | 'accent'>) => Promise<Record<string, string> | null | void>;
 }) {
   const [name, setName]   = useState('');
   const [type, setType]   = useState<string>('Regular');
   const [isPaid, setIsPaid] = useState<'Paid' | 'Unpaid'>('Paid');
   const [code, setCode]   = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const clearErr = (k: string) => setErrors(prev => { if (!prev[k]) return prev; const n = { ...prev }; delete n[k]; return n; });
 
   useEffect(() => {
     if (!isOpen) return;
+    setErrors({}); setSaving(false);
     if (editing) {
       setName(editing.name);
       setType(editing.type);
@@ -1699,23 +1761,28 @@ function AddLeaveTypeModal({
     }
   }, [isOpen, editing]);
 
-  const reset = () => { setName(''); setType('Regular'); setIsPaid('Paid'); setCode(''); };
+  const reset = () => { setName(''); setType('Regular'); setIsPaid('Paid'); setCode(''); setErrors({}); setSaving(false); };
   const handleClose = () => { reset(); onClose(); };
 
   const TYPE_OPTIONS = ['Regular', 'Compensatory offs', 'Unpaid', 'Incident based'];
   const group: CatalogType['group'] = type === 'Incident based' ? 'incidental' : 'regular';
 
-  const canSave = name.trim().length > 0 && code.trim().length > 0;
+  const handleSave = async () => {
+    const errs: Record<string, string> = {};
+    if (!name.trim()) errs.name = 'Leave type name is required';
+    if (!code.trim()) errs.short_code = 'Code is required';
+    if (Object.keys(errs).length) { setErrors(errs); return; }
 
-  const handleSave = () => {
-    if (!canSave) return;
-    onSave({
+    setSaving(true);
+    const serverErrs = await onSave({
       name: name.trim(),
       type,
       isPaid: type === 'Unpaid' ? 'Unpaid' : isPaid,
       code: code.trim().toUpperCase(),
       group,
     });
+    setSaving(false);
+    if (serverErrs && Object.keys(serverErrs).length) { setErrors(serverErrs); return; }
     reset();
   };
 
@@ -1785,23 +1852,25 @@ function AddLeaveTypeModal({
                 <label className="rec-form-label">Leave Type Name<span className="req">*</span></label>
                 <input
                   type="text"
-                  className="rec-input"
+                  className={`rec-input${errors.name ? ' is-invalid' : ''}`}
                   placeholder="e.g. Bereavement Leave"
                   value={name}
-                  onChange={e => setName(e.target.value)}
+                  onChange={e => { setName(e.target.value); clearErr('name'); }}
                 />
+                {errors.name && <div className="rec-error"><i className="ri-error-warning-line" />{errors.name}</div>}
               </Col>
               <Col md={5}>
                 <label className="rec-form-label">Code<span className="req">*</span></label>
                 <input
                   type="text"
-                  className="rec-input"
+                  className={`rec-input${errors.short_code ? ' is-invalid' : ''}`}
                   placeholder="e.g. BL"
                   maxLength={4}
                   value={code}
-                  onChange={e => setCode(e.target.value.toUpperCase())}
+                  onChange={e => { setCode(e.target.value.toUpperCase()); clearErr('short_code'); }}
                   style={{ textTransform: 'uppercase' }}
                 />
+                {errors.short_code && <div className="rec-error"><i className="ri-error-warning-line" />{errors.short_code}</div>}
               </Col>
               <Col md={12}>
                 <label className="rec-form-label">Type Category</label>
@@ -1878,9 +1947,9 @@ function AddLeaveTypeModal({
               type="button"
               className="rec-btn-primary"
               onClick={handleSave}
-              disabled={!canSave}
+              disabled={saving}
             >
-              <i className={editing ? 'ri-save-line' : 'ri-add-line'} />
+              <i className={saving ? 'ri-loader-4-line' : (editing ? 'ri-save-line' : 'ri-add-line')} style={saving ? { animation: 'spin 1s linear infinite' } : undefined} />
               {editing ? 'Update Leave Type' : 'Save Leave Type'}
             </button>
           </div>
@@ -1913,10 +1982,12 @@ function AssignLeaveTypesModal({
   existingTypeIds: Set<string>;
   catalog: CatalogType[];
   onClose: () => void;
-  onSave: (types: LeaveTypeRow[]) => void;
+  onSave: (types: LeaveTypeRow[]) => void | Promise<void>;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
   const visibleSelectedCount = selected.size;
+  useEffect(() => { if (isOpen) setSaving(false); }, [isOpen]);
 
   const assignableTypes: AssignableType[] = useMemo(() => catalog.map(c => {
     const category: AssignableType['category'] =
@@ -1941,8 +2012,8 @@ function AssignLeaveTypesModal({
     });
   };
 
-  const handleSave = () => {
-    if (selected.size === 0) return;
+  const handleSave = async () => {
+    if (saving || selected.size === 0) return;
     const rows: LeaveTypeRow[] = assignableTypes
       .filter(t => selected.has(t.id))
       .map(t => ({
@@ -1953,11 +2024,16 @@ function AssignLeaveTypesModal({
         endOfYearLabel: 'Not Setup',
         configured: false,
       }));
-    onSave(rows);
-    setSelected(new Set());
+    setSaving(true);
+    try {
+      await onSave(rows);
+      setSelected(new Set());
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleClose = () => { setSelected(new Set()); onClose(); };
+  const handleClose = () => { setSelected(new Set()); setSaving(false); onClose(); };
 
   const grouped = (cat: AssignableType['category']) =>
     assignableTypes.filter(t => t.category === cat);
@@ -2086,9 +2162,10 @@ function AssignLeaveTypesModal({
               type="button"
               className="rec-btn-primary"
               onClick={handleSave}
-              disabled={visibleSelectedCount === 0}
+              disabled={visibleSelectedCount === 0 || saving}
             >
-              <i className="ri-save-3-line" />Save ({visibleSelectedCount})
+              <i className={saving ? 'ri-loader-4-line' : 'ri-save-3-line'} style={saving ? { animation: 'spin 1s linear infinite' } : undefined} />
+              {saving ? 'Saving…' : `Save (${visibleSelectedCount})`}
             </button>
           </div>
         </div>

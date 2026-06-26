@@ -13,12 +13,14 @@ const STATUS_TONE: Record<string, { bg: string; fg: string }> = {
   Approved:  { bg: '#d1fae5', fg: '#065f46' },
   Rejected:  { bg: '#fee2e2', fg: '#b91c1c' },
   Cancelled: { bg: '#eef2f6', fg: '#374151' },
+  Skipped:   { bg: '#eef2f6', fg: '#64748b' },
 };
 const STATUS_TONE_DARK: Record<string, { bg: string; fg: string }> = {
   Pending:   { bg: 'rgba(245,158,11,0.18)', fg: '#fcd34d' },
   Approved:  { bg: 'rgba(16,185,129,0.18)', fg: '#6ee7b7' },
   Rejected:  { bg: 'rgba(239,68,68,0.18)',  fg: '#fca5a5' },
   Cancelled: { bg: 'rgba(255,255,255,0.08)', fg: '#cbd5e1' },
+  Skipped:   { bg: 'rgba(255,255,255,0.06)', fg: '#94a3b8' },
 };
 
 function fmtDate(raw: string | null | undefined): string {

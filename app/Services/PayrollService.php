@@ -381,6 +381,11 @@ class PayrollService
     {
         $q = Employee::query()
             ->whereNotIn('status', ['Inactive', 'Resigned', 'Terminated'])
+            // Only fully-onboarded staff belong in payroll. Half-onboarded /
+            // in-progress employees (onboarding_stage_completed < 6) don't have
+            // their org-side context settled yet, so they're excluded — same
+            // "fully onboarded" gate the manager picker and Exit Management use.
+            ->where('onboarding_stage_completed', '>=', 6)
             ->where(function ($w) use ($period) {
                 // Not yet joined after the period? Excluded.
                 $w->whereNull('date_of_joining')
