@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
+use App\Models\Employee;
 use App\Models\HolidayGroup;
 use App\Models\Module;
 use App\Models\Permission;
@@ -90,11 +91,23 @@ class HolidayGroupController extends Controller
         $this->authorizeAction($request, 'can_delete');
         $row = $this->resolveRow($request, (int) $id);
 
-        // Detach holidays from the group (keep the holidays, just ungroup them)
-        // and clear it off any employee so we never leave dangling references.
+        // Block deletion while employees are still assigned to this group.
+        // Deleting it would silently strip the holiday list off those employees
+        // (and the paid days payroll credits from it). The admin must reassign
+        // them to another group first. (Soft-deleted employees don't count —
+        // the Employee model's SoftDeletes scope excludes them.)
+        $assigned = Employee::where('holiday_group_id', $row->id)->count();
+        if ($assigned > 0) {
+            throw ValidationException::withMessages([
+                'group' => "This holiday group is assigned to {$assigned} employee" . ($assigned === 1 ? '' : 's')
+                    . '. Reassign them to another group before deleting it.',
+            ]);
+        }
+
+        // No employees use it — safe to remove. Keep its holidays but ungroup
+        // them so the dates aren't lost.
         DB::transaction(function () use ($row) {
             DB::table('holidays')->where('holiday_group_id', $row->id)->update(['holiday_group_id' => null]);
-            DB::table('employees')->where('holiday_group_id', $row->id)->update(['holiday_group_id' => null]);
             $row->delete();
         });
 

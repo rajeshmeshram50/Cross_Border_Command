@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useCallback, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Col, Row, Modal, ModalBody, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
-import { MasterFormStyles, MasterDatePicker, MasterSelect } from '../master/masterFormKit';
+import { MasterFormStyles, MasterSelect } from '../master/masterFormKit';
 import '../../../css/recruitment.css';
 import '../../../css/leave.css';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
@@ -425,13 +425,15 @@ export default function HrLeavePlans() {
       } else {
         await leaveTypesApi.create(payload);
       }
-      await loadCatalog();
+      // Close instantly + toast; refresh the catalog in the BACKGROUND so the
+      // modal doesn't sit blank for 2-3s while the (slow) re-fetch runs.
+      setShowAddType(false);
+      setEditingTypeId(null);
       toast.success(
         isEdit ? 'Leave type updated' : 'Leave type added',
         `"${t.name}" has been saved.`,
       );
-      setShowAddType(false);
-      setEditingTypeId(null);
+      void loadCatalog();
       return null;
     } catch (err: any) {
       // 422 → return field errors so the form shows "already exists" inline
@@ -469,6 +471,7 @@ export default function HrLeavePlans() {
     if (!ok) return;
     try {
       await leaveTypesApi.remove(Number(id));
+      toast.success('Leave type deleted', `"${row ? row.name : 'Leave type'}" deleted successfully!`);
       await loadCatalog();
       await loadPlans();
     } catch (err: any) {
@@ -510,6 +513,7 @@ export default function HrLeavePlans() {
       await leavePlansApi.remove(Number(activePlanId));
       const remaining = plans.filter(p => p.id !== activePlanId);
       setActivePlanId(remaining[0]?.id ?? '');
+      toast.success('Leave plan deleted', 'Leave plan deleted successfully!');
       await loadPlans();
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Delete failed';
@@ -559,18 +563,19 @@ export default function HrLeavePlans() {
     try {
       if (editingPlanId) {
         await leavePlansApi.update(Number(editingPlanId), frontendPlanToApi(plan));
-        await loadPlans();
       } else {
         const created = await leavePlansApi.create(frontendPlanToApi(plan));
-        await loadPlans();
         setActivePlanId(String(created.id));
       }
+      // Close instantly + toast; refresh the plan list in the BACKGROUND so the
+      // modal doesn't sit blank for 2-3s while the (slow N+1) re-fetch runs.
+      setShowAddPlan(false);
+      setEditingPlanId(null);
       toast.success(
         isEdit ? 'Leave plan updated' : 'Leave plan created',
         `"${plan.name}" has been saved.`,
       );
-      setShowAddPlan(false);
-      setEditingPlanId(null);
+      void loadPlans();
       return null;
     } catch (err: any) {
       // 422 → hand the field errors back so the form shows them inline
@@ -874,7 +879,7 @@ function ConfigurationTab({
       <div className="lp-config-actions">
         {canEdit && (
         <button type="button" className="rec-btn-primary" onClick={onAssignTypes}>
-          <i className="ri-add-line" />Add leave type
+          <i className="ri-add-line" />Assign Leave Type
         </button>
         )}
         <span className="lp-help-chip">
@@ -907,7 +912,7 @@ function ConfigurationTab({
                 <td colSpan={4} className="text-center py-5">
                   <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.35 }} />
                   <div className="fw-semibold">No leave types added yet</div>
-                  <div className="text-muted fs-13 mt-1">Click <strong>+ Add leave type</strong> to configure leave categories for this plan.</div>
+                  <div className="text-muted fs-13 mt-1">Click <strong>+ Assign Leave Type</strong> to configure leave categories for this plan.</div>
                 </td>
               </tr>
             ) : plan.leaveTypes.map(t => (
@@ -941,7 +946,7 @@ function ConfigurationTab({
         </table>
       </div>
 
-      {plan.isDefault && (
+      {plan.isDefault && plan.leaveTypes.length > 0 && (
         <div className="lp-info-banner">
           <i className="ri-information-line" />
           This is the default plan — showing {plan.leaveTypes.length} of 7 leave types.
@@ -1440,7 +1445,7 @@ function GuidanceModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => vo
             <li className="mb-3">
               <div className="fw-bold" style={{ fontSize: 13 }}>3. Assign types and configure each one</div>
               <div className="text-muted" style={{ fontSize: 12.5 }}>
-                Inside a plan, click <strong>+ Add leave type</strong> to attach types from your catalog. Then click <strong>Setup</strong> on each row to configure quota, accrual, application rules, approval chain, year-end behaviour, probation rules and notice-period handling.
+                Inside a plan, click <strong>+ Assign Leave Type</strong> to attach types from your catalog. Then click <strong>Setup</strong> on each row to configure quota, accrual, application rules, approval chain, year-end behaviour, probation rules and notice-period handling.
               </div>
             </li>
             <li className="mb-3">
@@ -1478,10 +1483,8 @@ function AddLeavePlanModal({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [showDescription, setShowDescription] = useState(false);
-  const [calendarStart, setCalendarStart] = useState<CalendarStart>('fixed_month');
-  const [startDate, setStartDate] = useState('');
+  const [calendarStart, setCalendarStart] = useState<CalendarStart>('joining_date');
   const [showSystemPolicy, setShowSystemPolicy] = useState(true);
-  const [uploadCustom, setUploadCustom] = useState(false);
   const [isDefault, setIsDefault] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -1489,8 +1492,8 @@ function AddLeavePlanModal({
 
   const reset = () => {
     setName(''); setDescription(''); setShowDescription(false);
-    setCalendarStart('fixed_month'); setStartDate('');
-    setShowSystemPolicy(true); setUploadCustom(false); setIsDefault(false);
+    setCalendarStart('joining_date');
+    setShowSystemPolicy(true); setIsDefault(false);
     setErrors({}); setSaving(false);
   };
 
@@ -1502,9 +1505,7 @@ function AddLeavePlanModal({
       setDescription(editing.description ?? '');
       setShowDescription(!!editing.description);
       setCalendarStart(editing.calendarStart);
-      setStartDate(editing.startDate ?? '');
       setShowSystemPolicy(editing.showSystemPolicy);
-      setUploadCustom(!!editing.customPolicyFile);
       setIsDefault(!!editing.isDefault);
     } else {
       reset();
@@ -1514,7 +1515,6 @@ function AddLeavePlanModal({
   const handleSave = async () => {
     const errs: Record<string, string> = {};
     if (!name.trim()) errs.name = 'Leave plan name is required';
-    if (calendarStart === 'fixed_month' && !startDate) errs.startDate = 'Start date is required';
     if (Object.keys(errs).length) { setErrors(errs); return; }
 
     setSaving(true);
@@ -1522,7 +1522,7 @@ function AddLeavePlanModal({
       name: name.trim(),
       description: description.trim() || undefined,
       calendarStart,
-      startDate: calendarStart === 'fixed_month' ? startDate : undefined,
+      startDate: undefined,
       showSystemPolicy,
       isDefault,
     });
@@ -1651,30 +1651,6 @@ function AddLeavePlanModal({
             </div>
             <Row className="g-2">
               <Col md={12}>
-                <label className={`lp-radio-card ${calendarStart === 'fixed_month' ? 'is-active' : ''}`}>
-                  <input
-                    type="radio"
-                    name="calendar-start"
-                    checked={calendarStart === 'fixed_month'}
-                    onChange={() => setCalendarStart('fixed_month')}
-                  />
-                  <div className="flex-grow-1">
-                    <div className="fw-semibold" style={{ fontSize: 13 }}>Starts from a particular month</div>
-                    {calendarStart === 'fixed_month' && (
-                      <div className="mt-2" style={{ maxWidth: 240 }}>
-                        <MasterDatePicker
-                          value={startDate}
-                          onChange={(v) => { setStartDate(v); clearErr('startDate'); }}
-                          placeholder="Select start date"
-                          invalid={!!errors.startDate}
-                        />
-                        {errors.startDate && <div className="rec-error"><i className="ri-error-warning-line" />{errors.startDate}</div>}
-                      </div>
-                    )}
-                  </div>
-                </label>
-              </Col>
-              <Col md={12}>
                 <label className={`lp-radio-card ${calendarStart === 'joining_date' ? 'is-active' : ''}`}>
                   <input
                     type="radio"
@@ -1693,70 +1669,6 @@ function AddLeavePlanModal({
             </Row>
           </div>
 
-          <div className="rec-form-section">
-            <div className="rec-form-section-head">
-              <span
-                className="rec-form-section-icon"
-                style={{
-                  background: 'linear-gradient(135deg,#0c63b0 0%,#3b82f6 50%,#60a5fa 100%)',
-                  color: '#fff',
-                  boxShadow: '0 4px 12px rgba(59,130,246,0.35), inset 0 1px 0 rgba(255,255,255,0.30)',
-                }}
-              >
-                <i className="ri-settings-3-line" style={{ fontSize: 18 }} />
-              </span>
-              <div>
-                <p className="rec-form-section-title">Section 3 · Policy &amp; Settings</p>
-                <p className="rec-form-section-sub">How the plan explains itself, and whether it's the org default.</p>
-              </div>
-            </div>
-            <Row className="g-2">
-              <Col md={12}>
-                <label className="lp-checkbox-row">
-                  <input
-                    type="checkbox"
-                    className="form-check-input"
-                    checked={showSystemPolicy}
-                    onChange={e => setShowSystemPolicy(e.target.checked)}
-                  />
-                  <span className="flex-grow-1">Show leave policy explanation generated by system</span>
-                  <Tooltip label="Auto-generated from configured leave types" position="left">
-                    <i className="ri-information-line text-muted" style={{ cursor: 'help' }} />
-                  </Tooltip>
-                </label>
-              </Col>
-              <Col md={12}>
-                <label className="lp-checkbox-row">
-                  <input
-                    type="checkbox"
-                    className="form-check-input"
-                    checked={uploadCustom}
-                    onChange={e => setUploadCustom(e.target.checked)}
-                  />
-                  <span>Upload custom leave policy document</span>
-                </label>
-              </Col>
-              <Col md={12}>
-                <div className="lp-toggle-row" style={{ marginTop: 8 }}>
-                  <div>
-                    <div className="fw-semibold" style={{ fontSize: 13 }}>Set as default plan</div>
-                    <div className="text-muted" style={{ fontSize: 11.5, marginTop: 2 }}>
-                      All new employees will be assigned this plan
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className={`lp-switch ${isDefault ? 'is-on' : ''}`}
-                    onClick={() => setIsDefault(v => !v)}
-                    role="switch"
-                    aria-checked={isDefault}
-                  >
-                    <span className="lp-switch-thumb" />
-                  </button>
-                </div>
-              </Col>
-            </Row>
-          </div>
         </div>
 
         <div className="rec-form-footer">
@@ -1770,7 +1682,7 @@ function AddLeavePlanModal({
               disabled={saving}
             >
               <i className={saving ? 'ri-loader-4-line' : (editing ? 'ri-save-line' : 'ri-save-3-line')} style={saving ? { animation: 'spin 1s linear infinite' } : undefined} />
-              {editing ? 'Update Plan' : 'Save Plan'}
+              {saving ? (editing ? 'Updating…' : 'Saving…') : (editing ? 'Update Plan' : 'Save Plan')}
             </button>
           </div>
         </div>
@@ -1997,7 +1909,7 @@ function AddLeaveTypeModal({
               disabled={saving}
             >
               <i className={saving ? 'ri-loader-4-line' : (editing ? 'ri-save-line' : 'ri-add-line')} style={saving ? { animation: 'spin 1s linear infinite' } : undefined} />
-              {editing ? 'Update Leave Type' : 'Save Leave Type'}
+              {saving ? (editing ? 'Updating…' : 'Saving…') : (editing ? 'Update Leave Type' : 'Save Leave Type')}
             </button>
           </div>
         </div>

@@ -99,7 +99,7 @@ class HolidayController extends Controller
     {
         $this->authorizeAction($request, 'can_edit');
         $row = $this->resolveRow($request, (int) $id);
-        $this->assertNotPast($row, 'edited');
+        $this->assertGroupNotInUse($row, 'edited');
 
         $data = $this->validatePayload($request, $row->id);
         $data['updated_by'] = $request->user()?->id;
@@ -113,7 +113,7 @@ class HolidayController extends Controller
     {
         $this->authorizeAction($request, 'can_delete');
         $row = $this->resolveRow($request, (int) $id);
-        $this->assertNotPast($row, 'removed');
+        $this->assertGroupNotInUse($row, 'removed');
 
         $row->delete();
 
@@ -334,27 +334,22 @@ class HolidayController extends Controller
     }
 
     /**
-     * Freeze past holidays. Once a holiday's date is before today it is
-     * read-only — it can no longer be edited or removed, since changing or
-     * deleting a holiday that already happened would rewrite history that
-     * payroll/attendance have already credited against.
-     *
-     * Recurring (yearly) holidays are exempt: their next occurrence is always
-     * upcoming, so the stored origin-year date is not "in the past" in any
-     * meaningful sense. "Today" is resolved in IST (the app runs in UTC).
+     * Block edits/deletes on a holiday whose group is assigned to employees.
+     * Once a group is somebody's holiday list, its dates feed that employee's
+     * attendance/payroll, so changing or removing a holiday inside it would
+     * silently rewrite a calendar people depend on. The admin must first
+     * unassign the group from all employees. Un-grouped holidays are exempt.
      */
-    private function assertNotPast(Holiday $row, string $verb): void
+    private function assertGroupNotInUse(Holiday $row, string $verb): void
     {
-        if ($row->is_recurring) return;
+        if (!$row->holiday_group_id) return;
 
-        $todayStr = now(self::DISPLAY_TZ)->toDateString();
-        $rowDate  = $row->date instanceof \Carbon\Carbon
-            ? $row->date->toDateString()
-            : Carbon::parse((string) $row->date)->toDateString();
-
-        if ($rowDate < $todayStr) {
+        $assigned = Employee::where('holiday_group_id', $row->holiday_group_id)->count();
+        if ($assigned > 0) {
             throw ValidationException::withMessages([
-                'date' => "This holiday has already passed and can no longer be {$verb}.",
+                'holiday_group_id' => "This holiday's group is assigned to {$assigned} employee"
+                    . ($assigned === 1 ? '' : 's')
+                    . ", so its holidays can't be {$verb}. Reassign those employees to another group first.",
             ]);
         }
     }
@@ -417,6 +412,6 @@ class HolidayController extends Controller
                 if ($n > $max) $max = $n;
             }
         }
-        return 'HOL-' . str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
+        return 'HOL-' . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
     }
 }

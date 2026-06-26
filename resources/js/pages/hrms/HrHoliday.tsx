@@ -19,6 +19,7 @@ interface HolidayGroup {
   description: string | null;
   status: string;
   holidays_count?: number;
+  employees_count?: number;
 }
 
 interface HolidayRow {
@@ -70,14 +71,6 @@ function weekdayName(raw: any): string {
 // A holiday is "past" (frozen / read-only) once its date is before today.
 // Recurring (yearly) holidays are never frozen — their next occurrence is
 // always upcoming. Mirrors the backend guard in HolidayController.
-function isPastHoliday(row: HolidayRow): boolean {
-  if (row.is_recurring) return false;
-  const raw = String(row.date || '').slice(0, 10);
-  if (!raw) return false;
-  const todayStr = new Date().toLocaleDateString('en-CA'); // local YYYY-MM-DD
-  return raw < todayStr;
-}
-
 export default function HrHoliday() {
   const toast = useToast();
   const confirmDialog = useConfirm();
@@ -135,6 +128,14 @@ export default function HrHoliday() {
   const groupName = (id: number | null | undefined) =>
     id ? (groups.find(g => g.id === id)?.name || '—') : '—';
 
+  // Groups that are assigned to at least one employee. Holidays inside such a
+  // group are locked (no edit/delete) — changing them would rewrite the
+  // calendar those employees depend on. Mirrors the backend guard.
+  const inUseGroupIds = useMemo(
+    () => new Set(groups.filter(g => (g.employees_count ?? 0) > 0).map(g => g.id)),
+    [groups],
+  );
+
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return rows.filter(r => {
@@ -173,7 +174,9 @@ export default function HrHoliday() {
       toast.success('Deleted', `${row.name} removed.`);
       refreshAll();
     } catch (err: any) {
-      toast.error('Could not delete', err?.response?.data?.message || 'Please try again.');
+      const data = err?.response?.data;
+      const msg = data?.errors?.holiday_group_id?.[0] || data?.message || 'Please try again.';
+      toast.error('Could not delete', msg);
     }
   };
 
@@ -252,6 +255,109 @@ export default function HrHoliday() {
       <Row>
         <Col xs={12}>
           <div className="rec-page holiday-page">
+            <style>{`
+              /* ── Holiday Calendar — visual polish (scoped to this page only) ── */
+              .holiday-page .rec-list-frame{
+                background: linear-gradient(180deg,#ffffff 0%, #fcfbff 100%);
+                border: 1px solid #efeafd;
+                border-radius: 18px;
+                box-shadow: 0 12px 32px rgba(124,58,237,.08), 0 2px 6px rgba(17,24,39,.04);
+                overflow: hidden;
+              }
+              .holiday-page .rec-req-filter-row{
+                padding: 16px 16px 14px;
+                border-bottom: 1px solid #f1ecfb;
+                margin-bottom: 0;
+                background: linear-gradient(180deg,#faf8ff, #ffffff);
+              }
+              .holiday-page .rec-list-scroll{ overflow-x: auto; }
+
+              /* table header — gradient lavender band, rounded top */
+              .holiday-page .rec-list-table thead tr{
+                background: linear-gradient(135deg,#f3eefe 0%, #ece5fd 100%);
+              }
+              .holiday-page .rec-list-table thead th{
+                font-family: 'DM Sans', sans-serif;
+                font-size: 10.5px;
+                font-weight: 800;
+                letter-spacing: .07em;
+                text-transform: uppercase;
+                color: #7c5cc4 !important;
+                background: transparent !important;
+                border-bottom: 1.5px solid #e4d9fb !important;
+                padding: 13px 14px;
+              }
+              .holiday-page .rec-list-table thead th:first-child{ border-top-left-radius: 14px; }
+              .holiday-page .rec-list-table thead th:last-child{ border-top-right-radius: 14px; }
+
+              /* rows — breathing room, zebra, smooth violet hover with accent rail */
+              .holiday-page .rec-list-table tbody td{
+                padding: 15px 14px;
+                border-bottom: 1px solid #f4f0fc;
+                vertical-align: middle;
+              }
+              .holiday-page .rec-list-table tbody tr{ transition: background .16s ease, box-shadow .16s ease; }
+              .holiday-page .rec-list-table tbody tr:nth-child(even){ background: #fcfaff; }
+              .holiday-page .rec-list-table tbody tr:hover{
+                background: linear-gradient(90deg,#f6f1ff,#fbf9ff);
+                box-shadow: inset 3px 0 0 #7c3aed;
+              }
+
+              /* Holiday ID pill — gradient chip */
+              .holiday-page .rec-id-pill{
+                background: linear-gradient(135deg,#efe9fe,#e6ddfc);
+                color: #6d28d9;
+                border: 1px solid #ddd0f7;
+                font-weight: 800;
+                letter-spacing: .02em;
+                border-radius: 8px;
+                padding: 4px 10px;
+                font-size: 11.5px;
+              }
+
+              /* action icons — subtle lift on hover */
+              .holiday-page .rec-act{ transition: transform .12s ease, background .15s ease; }
+              .holiday-page .rec-act:hover{ transform: translateY(-1px); }
+
+              /* responsive — toolbar wraps cleanly, table scrolls instead of squashing */
+              @media (max-width: 992px){
+                .holiday-page .rec-req-filter-row{ gap: 8px; }
+                .holiday-page .hol-actions{ margin-left: 0 !important; width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+              }
+              @media (max-width: 640px){
+                .holiday-page .hol-filter{ flex: 1 1 calc(50% - 8px); }
+                .holiday-page .hol-filter .hol-filter-sel{ min-width: 0 !important; width: 100%; flex: 1; }
+              }
+
+              /* ── dark mode — translucent violet, no harsh light panels ── */
+              [data-bs-theme="dark"] .holiday-page .rec-list-frame{
+                background: linear-gradient(180deg, rgba(124,58,237,.07), rgba(124,58,237,.02));
+                border-color: rgba(167,139,250,.18);
+                box-shadow: 0 12px 32px rgba(0,0,0,.38);
+              }
+              [data-bs-theme="dark"] .holiday-page .rec-req-filter-row{
+                background: linear-gradient(180deg, rgba(124,58,237,.06), transparent);
+                border-bottom-color: rgba(167,139,250,.16);
+              }
+              [data-bs-theme="dark"] .holiday-page .rec-list-table thead tr{
+                background: linear-gradient(135deg, rgba(124,58,237,.24), rgba(124,58,237,.12));
+              }
+              [data-bs-theme="dark"] .holiday-page .rec-list-table thead th{
+                color: #c4b5fd !important;
+                border-bottom-color: rgba(167,139,250,.22) !important;
+              }
+              [data-bs-theme="dark"] .holiday-page .rec-list-table tbody td{ border-bottom-color: rgba(255,255,255,.05); }
+              [data-bs-theme="dark"] .holiday-page .rec-list-table tbody tr:nth-child(even){ background: rgba(255,255,255,.02); }
+              [data-bs-theme="dark"] .holiday-page .rec-list-table tbody tr:hover{
+                background: rgba(124,58,237,.13);
+                box-shadow: inset 3px 0 0 #a78bfa;
+              }
+              [data-bs-theme="dark"] .holiday-page .rec-id-pill{
+                background: rgba(124,58,237,.18);
+                color: #c4b5fd;
+                border-color: rgba(167,139,250,.28);
+              }
+            `}</style>
             <div className="frm-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
@@ -351,7 +457,9 @@ export default function HrHoliday() {
                           </td></tr>
                         ) : visible.map((r, idx) => {
                           const tone = TYPE_TONES[r.type] || TYPE_TONES.Public;
-                          const frozen = isPastHoliday(r);
+                          // Locked when the holiday's group is assigned to employees —
+                          // edit/delete would rewrite a calendar people depend on.
+                          const locked = r.holiday_group_id != null && inUseGroupIds.has(r.holiday_group_id);
                           return (
                             <tr key={r.id}>
                               <td className="ps-3 text-center text-muted fs-13">{sliceFrom + idx + 1}</td>
@@ -371,29 +479,28 @@ export default function HrHoliday() {
                               <td className="fs-13">
                                 {r.is_recurring
                                   ? <span className="rec-pill" style={{ background: '#d8f5e6', color: '#0f8a4d', ['--pill-fg' as any]: '#0f8a4d' }}>Yearly</span>
-                                  : <span className="text-muted">—</span>}
+                                  : <span className="rec-pill rec-pill--na" style={{ background: '#eef0f4', color: '#8a93a6', ['--pill-fg' as any]: '#8a93a6' }}>N/A</span>}
                               </td>
                               <td className="pe-3 text-center">
-                                {frozen ? (
-                                  <Tooltip label="Past holiday — locked">
-                                    <span className="rec-pill" style={{ background: '#f1f1f4', color: '#5b6270' }}>
-                                      <i className="ri-lock-line me-1" />Locked
-                                    </span>
+                                {/* When the holiday's group is assigned to employees the
+                                    row is locked — both icons greyed/disabled with a
+                                    tooltip explaining why (mirrors the backend guard). */}
+                                <div className="rec-row-actions justify-content-center">
+                                  <Tooltip label={locked ? 'Group in use by employees' : 'Edit'}>
+                                    <button type="button" className="rec-act rec-act-view rec-act--icon" aria-label="Edit" aria-disabled={locked}
+                                      onClick={() => { if (locked) return; setEditingRow(r); setCreateOpen(true); }}
+                                      style={locked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}>
+                                      <i className="ri-pencil-line" />
+                                    </button>
                                   </Tooltip>
-                                ) : (
-                                  <div className="rec-row-actions justify-content-center">
-                                    <Tooltip label="Edit">
-                                      <button type="button" className="rec-act rec-act-view rec-act--icon" aria-label="Edit" onClick={() => { setEditingRow(r); setCreateOpen(true); }}>
-                                        <i className="ri-pencil-line" />
-                                      </button>
-                                    </Tooltip>
-                                    <Tooltip label="Delete">
-                                      <button type="button" className="rec-act rec-act-reject rec-act--icon" aria-label="Delete" onClick={() => handleDelete(r)}>
-                                        <i className="ri-delete-bin-line" />
-                                      </button>
-                                    </Tooltip>
-                                  </div>
-                                )}
+                                  <Tooltip label={locked ? 'Group in use by employees' : 'Delete'}>
+                                    <button type="button" className="rec-act rec-act-reject rec-act--icon" aria-label="Delete" aria-disabled={locked}
+                                      onClick={() => { if (locked) return; handleDelete(r); }}
+                                      style={locked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}>
+                                      <i className="ri-delete-bin-line" />
+                                    </button>
+                                  </Tooltip>
+                                </div>
                               </td>
                             </tr>
                           );
@@ -457,6 +564,13 @@ function HolidayModal({
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Today (browser-local) as YYYY-MM-DD — the earliest selectable holiday date.
+  // A holiday can only be today or in the future; past dates are disabled.
+  const todayStr = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }, []);
+
   const groupOptions = useMemo(
     () => groups
       .filter(g => g.status === 'Active' || String(g.id) === groupId)
@@ -485,6 +599,7 @@ function HolidayModal({
   const handleSubmit = async () => {
     const local: Record<string, string> = {};
     if (!name.trim()) local.name = 'Holiday name is required';
+    if (!groupId) local.group = 'Holiday group is required';
     if (!date) local.date = 'Date is required';
     if (Object.keys(local).length) { setErrors(local); return; }
 
@@ -526,7 +641,7 @@ function HolidayModal({
     <Modal isOpen={isOpen} toggle={onClose} centered size="lg" backdrop="static" keyboard={false}
       modalClassName="rec-form-modal" contentClassName="rec-form-content border-0">
       <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
-        <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #0ea5e9 0%, #38bdf8 60%, #7dd3fc 100%)' }}>
+        <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #6d28d9 0%, #8b5cf6 60%, #a78bfa 100%)' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-2">
               <span style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -547,17 +662,21 @@ function HolidayModal({
           <Row className="g-3">
             <Col md={12}>
               <label className="rec-form-label">Holiday Name<span className="req">*</span></label>
+              {/* Letters, numbers, spaces and basic name punctuation only — strips
+                  special chars (@, #, $, …) as the user types/pastes. */}
               <input type="text" className={`rec-input${errors.name ? ' is-invalid' : ''}`} placeholder="e.g. Republic Day"
-                value={name} onChange={e => setName(e.target.value)} maxLength={191} />
+                value={name} onChange={e => setName(e.target.value.replace(/[^a-zA-Z0-9 .'\-]/g, ''))} maxLength={191} />
               {errors.name && <div className="rec-error"><i className="ri-error-warning-line" />{errors.name}</div>}
             </Col>
 
             <Col md={6}>
-              <label className="rec-form-label">Holiday Group</label>
-              <MasterSelect value={groupId} onChange={setGroupId}
-                options={[{ value: '', label: 'Ungrouped' }, ...groupOptions]}
+              <label className="rec-form-label">Holiday Group<span className="req">*</span></label>
+              <MasterSelect value={groupId} onChange={(v) => { setGroupId(v); setErrors(e => ({ ...e, group: '' })); }}
+                options={groupOptions} invalid={!!errors.group}
                 placeholder={groupOptions.length ? 'Select group' : 'No active groups — create one via Groups'} />
-              <div className="text-muted mt-1" style={{ fontSize: 11.5 }}>The group decides which employees get this holiday.</div>
+              {errors.group
+                ? <div className="rec-error"><i className="ri-error-warning-line" />{errors.group}</div>
+                : <div className="text-muted mt-1" style={{ fontSize: 11.5 }}>The group decides which employees get this holiday.</div>}
             </Col>
 
             <Col md={6}>
@@ -567,13 +686,17 @@ function HolidayModal({
 
             <Col md={6}>
               <label className="rec-form-label">Date<span className="req">*</span></label>
-              <MasterDatePicker value={date} onChange={setDate} invalid={!!errors.date} />
+              <MasterDatePicker value={date} onChange={setDate} invalid={!!errors.date} minDate={todayStr} />
               {date && <div className="text-muted mt-1" style={{ fontSize: 11.5 }}>{weekdayName(date)}</div>}
               {errors.date && <div className="rec-error"><i className="ri-error-warning-line" />{errors.date}</div>}
             </Col>
 
-            <Col md={6} className="d-flex align-items-end">
-              <label className="d-inline-flex align-items-center gap-2 mb-2" style={{ cursor: 'pointer', fontSize: 13 }}>
+            <Col md={6} className="d-flex flex-column">
+              {/* Hidden spacer matches the DATE label's height so the checkbox
+                  lines up with the date INPUT — not the column bottom, which
+                  grows when the weekday hint appears under a picked date. */}
+              <label className="rec-form-label" aria-hidden="true" style={{ visibility: 'hidden' }}>Repeats</label>
+              <label className="d-inline-flex align-items-center gap-2" style={{ cursor: 'pointer', fontSize: 13, minHeight: 38 }}>
                 <input type="checkbox" className="form-check-input mt-0" checked={isRecurring} onChange={e => setIsRecurring(e.target.checked)} />
                 <span>Repeats every year on this date</span>
               </label>
@@ -652,7 +775,7 @@ function ManageGroupsModal({
   const remove = async (g: HolidayGroup) => {
     const ok = await confirmDialog({
       title: 'Delete group?',
-      message: <>Delete group <strong>{g.name}</strong>? Its holidays are kept but become ungrouped, and any employee on this group is unassigned.</>,
+      message: <>Delete group <strong>{g.name}</strong>? Its holidays are kept but become ungrouped. A group that is still assigned to employees can’t be deleted — reassign them first.</>,
       tone: 'danger',
       confirmLabel: 'Delete',
       cancelLabel: 'Cancel',
@@ -665,7 +788,9 @@ function ManageGroupsModal({
       if (editing?.id === g.id) resetForm();
       onChanged();
     } catch (err: any) {
-      toast.error('Could not delete', err?.response?.data?.message || 'Please try again.');
+      const data = err?.response?.data;
+      const msg = data?.errors?.group?.[0] || data?.message || 'Please try again.';
+      toast.error('Could not delete', msg);
     }
   };
 
