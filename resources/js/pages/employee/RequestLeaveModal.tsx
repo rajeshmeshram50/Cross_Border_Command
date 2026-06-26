@@ -4,7 +4,7 @@ import Swal from 'sweetalert2';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { MasterDatePicker } from '../master/masterFormKit';
+import { MasterDatePicker, MasterSelect } from '../master/masterFormKit';
 import {
   employeeBalancesApi,
   leaveRequestsApi,
@@ -269,23 +269,15 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
                 <span>No leave plan / types assigned yet. Ask HR to add you to a plan.</span>
               </div>
             ) : (
-              <select
-                className="lvr-input"
+              <MasterSelect
                 value={leaveTypeId}
-                onChange={e => setLeaveTypeId(e.target.value)}
-              >
-                <option value="">Select a leave type…</option>
-                {balanceTypes.map(t => {
-                  const availLabel = t.unlimited
-                    ? 'Unlimited days available'
-                    : `${t.available ?? 0} days available`;
-                  return (
-                    <option key={t.leave_type_id} value={String(t.leave_type_id)}>
-                      {t.name} — {availLabel}
-                    </option>
-                  );
-                })}
-              </select>
+                onChange={(v) => setLeaveTypeId(String(v))}
+                placeholder="Select a leave type…"
+                options={balanceTypes.map(t => ({
+                  value: String(t.leave_type_id),
+                  label: `${t.name} — ${t.unlimited ? 'Unlimited days available' : `${t.available ?? 0} days available`}`,
+                }))}
+              />
             )}
           </div>
 

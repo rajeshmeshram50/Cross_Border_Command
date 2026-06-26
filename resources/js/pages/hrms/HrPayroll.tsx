@@ -49,6 +49,7 @@ interface PayrollRow {
   lateMarks: number;
   missingPunch: number;
   unpaidLeave: number;
+  paidLeave: number;
   attSource: AttSource;
   mismatch?: string;
   pfEmp: number;
@@ -726,6 +727,7 @@ export default function HrPayroll() {
     const missingPunchCases  = rows.filter(r => r.missingPunch > 0).length;
     const mismatchCases      = rows.filter(r => r.attSource === 'Review').length;
     const unpaidLeaveCases   = rows.filter(r => r.unpaidLeave > 0).length;
+    const paidLeaveCases     = rows.filter(r => r.paidLeave > 0).length;
     const totalGross    = rows.reduce((s, r) => s + r.earnings, 0);
     const totalNetPay   = rows.reduce((s, r) => s + r.netPay, 0);
     const totalPf       = rows.reduce((s, r) => s + r.pfEmp, 0);
@@ -745,6 +747,7 @@ export default function HrPayroll() {
       missingPunchCases,
       mismatchCases,
       unpaidLeaveCases,
+      paidLeaveCases,
       totalGross,
       totalNetPay,
       totalPf,
@@ -1309,12 +1312,13 @@ export default function HrPayroll() {
 
               <Row className="g-3 mb-3 align-items-stretch">
                 {[
-                  { key: 'syncedEmployees',   label: 'Synced Employees',    n: counts.syncedEmployees,   tone: 'green' as const },
-                  { key: 'missingPunchCases', label: 'Missing Punch Cases', n: counts.missingPunchCases, tone: 'red'   as const },
-                  { key: 'mismatchCases',     label: 'Mismatch Cases',      n: counts.mismatchCases,     tone: 'red'   as const },
-                  { key: 'unpaidLeaveCases',  label: 'Unpaid Leave Cases',  n: counts.unpaidLeaveCases,  tone: 'amber' as const },
+                  { key: 'syncedEmployees',   label: 'Synced Employees',    n: counts.syncedEmployees,   tone: 'green'  as const },
+                  { key: 'missingPunchCases', label: 'Missing Punch Cases', n: counts.missingPunchCases, tone: 'red'    as const },
+                  { key: 'mismatchCases',     label: 'Mismatch Cases',      n: counts.mismatchCases,     tone: 'red'    as const },
+                  { key: 'paidLeaveCases',    label: 'Paid Leave Cases',    n: counts.paidLeaveCases,    tone: 'blue'   as const },
+                  { key: 'unpaidLeaveCases',  label: 'Unpaid Leave Cases',  n: counts.unpaidLeaveCases,  tone: 'amber'  as const },
                 ].map(t => (
-                  <Col key={t.key} xl={3} md={6} sm={6} xs={6}>
+                  <Col key={t.key} xl={true} md={4} sm={6} xs={6}>
                     <div className={`pay-mini-tile pay-mini-tile--${t.tone}`}>
                       <div className={`fw-bold pay-mini-tile-num--${t.tone}`} style={{ fontSize: 22, lineHeight: 1 }}>
                         {loading ? <Shimmer height={20} width={40} radius={6} /> : t.n}
