@@ -213,14 +213,6 @@ export default function PayrollRunModal({
                 {warnings.length} Warning{warnings.length === 1 ? '' : 's'}
               </span>
               <span className="text-muted" style={{ fontSize: 12 }}>{totalEmployees} employees total</span>
-              <a
-                href="#"
-                className="ms-auto fw-semibold"
-                onClick={e => e.preventDefault()}
-                style={{ fontSize: 12, color: '#5a3fd1', textDecoration: 'none' }}
-              >
-                View in Execution Panel →
-              </a>
             </div>
 
             {/* Progress steps */}
