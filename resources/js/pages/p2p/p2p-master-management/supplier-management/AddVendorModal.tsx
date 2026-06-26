@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import api from '../../api';
-import { resolveFileUrl } from '../../utils/resolveFileUrl';
-import { useToast } from '../../contexts/ToastContext';
-import { MasterSelect } from '../../components/ui/MasterSelect';
-import Tooltip from '../../components/ui/Tooltip';
-import { MasterMultiSelect } from '../master/masterFormKit';
-import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
+import api from '../../../../api';
+import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
+import { useToast } from '../../../../contexts/ToastContext';
+import { MasterSelect } from '../../../../components/ui/MasterSelect';
+import Tooltip from '../../../../components/ui/Tooltip';
+import { MasterMultiSelect } from '../../../master/masterFormKit';
+import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import {
   validateEmail, validatePincode, validateWebsite,
   validateGstin, validateIfsc, validateAccountNumber,
-} from '../../utils/fieldValidators';
-import SalesCustomerSendForSignatureModal from '../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
+} from '../../../../utils/fieldValidators';
+import SalesCustomerSendForSignatureModal from '../../../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
 import {
   readVendorMasterBundle,
   writeVendorMasterBundle,
