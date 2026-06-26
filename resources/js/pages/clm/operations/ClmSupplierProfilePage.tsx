@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, type CSSProperties } from 'react';
 import api from '../../../api';
-import SupplierEvidenceVaultModal, { type SupplierVaultTarget } from '../../vendors/SupplierEvidenceVaultModal';
+import SupplierEvidenceVaultModal, { type SupplierVaultTarget } from '../../p2p/p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 import ClmDocsPopup, { type DocCategory } from '../shared/ClmDocsPopup';
 
 /*

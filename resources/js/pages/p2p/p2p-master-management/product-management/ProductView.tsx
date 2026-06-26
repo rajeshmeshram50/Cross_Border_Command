@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import api from '../../api';
-import { resolveFileUrl } from '../../utils/resolveFileUrl';
-import { useToast } from '../../contexts/ToastContext';
-import Tooltip from '../../components/ui/Tooltip';
+import api from '../../../../api';
+import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
+import { useToast } from '../../../../contexts/ToastContext';
+import Tooltip from '../../../../components/ui/Tooltip';
 import AddProductModal from './AddProductModal';
 
 /* ────────────────────────────────────────────────────────────────────────────

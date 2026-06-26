@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import api from '../../api';
-import { resolveFileUrl, viewFile, downloadFile } from '../../utils/resolveFileUrl';
-import { useToast } from '../../contexts/ToastContext';
-import { MasterSelect } from '../../components/ui/MasterSelect';
-import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
-import Tooltip from '../../components/ui/Tooltip';
-import { SegmentModal, type SegmentForm } from '../clm/compliance/ClmSegmentPage';
-import { CLM_CSS } from '../clm/shared/clmShared';
+import api from '../../../../api';
+import { resolveFileUrl, viewFile, downloadFile } from '../../../../utils/resolveFileUrl';
+import { useToast } from '../../../../contexts/ToastContext';
+import { MasterSelect } from '../../../../components/ui/MasterSelect';
+import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
+import Tooltip from '../../../../components/ui/Tooltip';
+import { SegmentModal, type SegmentForm } from '../../../clm/compliance/ClmSegmentPage';
+import { CLM_CSS } from '../../../clm/shared/clmShared';
 import {
   readProductMasterBundle,
   writeProductMasterBundle,

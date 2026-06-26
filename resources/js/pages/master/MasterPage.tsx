@@ -23,8 +23,8 @@ import {
 import { MasterSelect, MasterDatePicker, MasterFileInput, MasterFormStyles } from './masterFormKit';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { bustCustomerMasterBundle } from '../sales/core-masters/customer/customerBundleCache';
-import { bustProductMasterBundle } from '../products/productBundleCache';
-import { bustVendorMasterBundle } from '../vendors/vendorBundleCache';
+import { bustProductMasterBundle } from '../p2p/p2p-master-management/product-management/productBundleCache';
+import { bustVendorMasterBundle } from '../p2p/p2p-master-management/supplier-management/vendorBundleCache';
 import { bustClientFormBundle } from '../client/clientFormBundleCache';
 import { bustBranchFormBundle } from '../branch/branchFormBundleCache';
 import '../../../css/master.css';

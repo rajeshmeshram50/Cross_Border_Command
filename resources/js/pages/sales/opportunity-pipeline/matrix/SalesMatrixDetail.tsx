@@ -8,7 +8,7 @@ import EntityPickerModal, { type PickerOption } from '../EntityPickerModal';
 import AddCustomerModal, { type EditCustomer } from '../../core-masters/customer/AddCustomerModal';
 import CustomerConsigneesModal, { type CustomerLite } from '../../core-masters/customer/CustomerConsigneesModal';
 import LeadEvidenceVaultModal, { type LeadVaultTarget } from '../LeadEvidenceVaultModal';
-import AddProductModal from '../../../products/AddProductModal';
+import AddProductModal from '../../../p2p/p2p-master-management/product-management/AddProductModal';
 import ProductDirectoryModal from './ProductDirectoryModal';
 import StageEmbedModal from './StageEmbedModal';
 import ChangeOwnerModal from './ChangeOwnerModal';

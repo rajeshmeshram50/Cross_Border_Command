@@ -1,20 +1,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, Col, Row } from 'reactstrap';
-import { useToast } from '../../contexts/ToastContext';
-import { useAuth } from '../../contexts/AuthContext';
-import api from '../../api';
+import { useToast } from '../../../../contexts/ToastContext';
+import { useAuth } from '../../../../contexts/AuthContext';
+import api from '../../../../api';
 import AddVendorModal from './AddVendorModal';
 import SupplierEvidenceVaultModal, { type SupplierVaultTarget } from './SupplierEvidenceVaultModal';
-import { ShimmerTable, ShimmerClmMaster } from '../../components/ui/Shimmer';
-import Tooltip from '../../components/ui/Tooltip';
-import WorklistPager from '../../components/ui/WorklistPager';
+import { ShimmerTable, ShimmerClmMaster } from '../../../../components/ui/Shimmer';
+import Tooltip from '../../../../components/ui/Tooltip';
+import WorklistPager from '../../../../components/ui/WorklistPager';
 import {
   readVendorMasterBundle,
   writeVendorMasterBundle,
 } from './vendorBundleCache';
-import '../../../css/supplier-management.css';
+import './supplier-management.css';
 
-
+/* ────────────────────────────────────────────────────────────────────────────
+ * Vendors — front-end only master list
+ *
+ * Mirrors the Clients master shell:
+ *   • White surface card wrapping the page (no purple gradient hero)
+ *   • Active / Inactive status filter pills
+ *   • Velzon table chrome (table-card border rounded, table-light thead)
+ *   • Add Vendor button → opens a 4-step wizard modal
+ *
+ * No API: vendors live in component state. When the backend ships, swap
+ * SEED + the modal's submit handler for real fetch / POST calls.
+ * ──────────────────────────────────────────────────────────────────────── */
 
 export type Vendor = {
   id: number;
