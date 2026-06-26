@@ -7,6 +7,7 @@ import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import { MasterMultiSelect } from '../../../../components/ui/MasterMultiSelect';
 import { SegmentTags } from './SegmentTags';
 import { useModalGuard } from './useModalGuard';
+import Tooltip from '../../../../components/ui/Tooltip';
 import './bulk-sourcing.css';
 
 /* Map Supplier Directory — 2-step.
@@ -258,13 +259,13 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
                 <div className="ast-pdf-file">
                   <div className="ast-pdf-file-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></div>
                   <span className="ast-pdf-file-name">{cardName || 'Business Card'}</span>
-                  <button type="button" className="ast-pdf-del" title="Remove document" onClick={async () => {
+                  <Tooltip label="Remove document"><button type="button" className="ast-pdf-del" onClick={async () => {
                     const ok = await confirmDialog({ title: 'Remove document?', message: <>Remove <strong>{cardName || 'this document'}</strong> from the supplier? You can upload a new one after.</>, tone: 'danger', confirmLabel: 'Remove', cancelLabel: 'Keep' });
                     if (!ok) return;
                     const removed = cardName || 'Business Card';
                     setCard(''); setCardName('');
                     toast.success('Document removed', `${removed} removed.`);
-                  }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button>
+                  }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button></Tooltip>
                 </div>
               ) : (
                 <label className="snf-upload">

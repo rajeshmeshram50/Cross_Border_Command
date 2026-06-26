@@ -4517,7 +4517,8 @@
 }
 /* Product List header/table type — matched to Figma (bolder + larger than the
    shared srpt-* defaults). Scoped to .pl-box so the Sourcing Report is untouched. */
-.pl-box .srpt-title { font-size: 16px; font-weight: 700; }
+/* Product List title matches the Figma .bpm-title-text h3 — DM Sans 15/900. */
+.pl-box .srpt-title { font-family: 'DM Sans', system-ui, sans-serif; font-size: 15px; font-weight: 900; letter-spacing: -.2px; text-shadow: 0 2px 8px rgba(0,0,0,.4); }
 /* Plain white sourcing ID — no pill chrome, same size/weight as the title */
 .pl-box .srpt-id-pill {
   background: none;
@@ -4824,7 +4825,7 @@
   .pl-stat { flex: 1 1 100%; }
   /* Tighter modal chrome */
   .srpt-title { font-size: 15px; }
-  .pl-box .srpt-title { font-size: 16px; }
+  .pl-box .srpt-title { font-size: 13px; }
   .pl-stat-val { font-size: 22px; }
   .pl-box, .srpt-box { border-radius: 16px; }
 }
