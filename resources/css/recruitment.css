@@ -1773,23 +1773,47 @@
 .cand-step-5 { background: linear-gradient(135deg, #ec4899 0%, #f472b6 100%); box-shadow: 0 2px 6px rgba(236,72,153,0.30); }
 
 /* CV upload drop zone in the form */
+/* Hiring Manager / Assigned HR availability flag in the recruitment list —
+   surfaces a disabled (removed) or inactive (resigned) person right in the
+   list so it's obvious before opening the edit form. */
+.rec-mgr-flag {
+  display: inline-flex; align-items: center;
+  font-size: 9px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 999px; line-height: 1; flex-shrink: 0;
+}
+.rec-mgr-flag--disabled { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+.rec-mgr-flag--inactive { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+[data-bs-theme="dark"] .rec-mgr-flag--disabled { background: rgba(239,68,68,.18); color: #fca5a5; border-color: rgba(248,113,113,.35); }
+[data-bs-theme="dark"] .rec-mgr-flag--inactive { background: rgba(217,119,6,.20); color: #fcd34d; border-color: rgba(251,191,36,.35); }
+
+/* Candidate form header close (X) — hover feedback: brighter pill + a quick
+   quarter-turn so the button reacts to the cursor. */
+.cand-head-close { transition: background .16s ease, transform .16s ease, box-shadow .16s ease; }
+.cand-head-close:hover {
+  background: rgba(255,255,255,0.32) !important;
+  transform: rotate(90deg);
+  box-shadow: 0 3px 10px rgba(0,0,0,0.22);
+}
+.cand-head-close:active { transform: rotate(90deg) scale(0.92); }
+
 .cand-cv-drop {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 12px; min-height: 60px;
+  display: flex; align-items: center; gap: 9px;
+  padding: 6px 12px; min-height: 40px; height: 40px;
   background: linear-gradient(180deg, #fffbeb 0%, #fef3c7 100%);
   border: 1.5px dashed #f59e0b;
   border-radius: 9px;
   cursor: pointer;
+  overflow: hidden;
   transition: background .15s ease, border-color .15s ease;
 }
 .cand-cv-drop:hover {
   background: linear-gradient(180deg, #fef3c7 0%, #fde68a 100%);
   border-color: #d97706;
 }
-.cand-cv-drop i { font-size: 18px; color: #d97706; flex-shrink: 0; }
-.cand-cv-text { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; }
-.cand-cv-text strong { font-size: 12.5px; color: var(--vz-body-color); font-weight: 700; word-break: break-all; }
-.cand-cv-text span { font-size: 10.5px; color: var(--vz-secondary-color); }
+.cand-cv-drop i { font-size: 16px; color: #d97706; flex-shrink: 0; }
+.cand-cv-text { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
+.cand-cv-text strong { font-size: 12px; color: var(--vz-body-color); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cand-cv-text span { font-size: 9.5px; color: var(--vz-secondary-color); white-space: nowrap; }
 [data-bs-theme="dark"] .cand-cv-drop {
   background: rgba(245,158,11,0.10);
   border-color: rgba(245,158,11,0.50);
