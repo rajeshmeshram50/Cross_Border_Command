@@ -126,17 +126,6 @@ const ROW_TONES: Record<string, { bg: string; fg: string; dot: string }> = {
 
 const toneFor = (status: string) => ROW_TONES[status] ?? ROW_TONES['Processed'];
 
-const DEPT_OPTIONS = [
-  { value: 'All',          label: 'All' },
-  { value: 'Engineering',  label: 'Engineering' },
-  { value: 'Finance',      label: 'Finance' },
-  { value: 'HR',           label: 'HR' },
-  { value: 'Sales',        label: 'Sales' },
-  { value: 'Marketing',    label: 'Marketing' },
-  { value: 'Design',       label: 'Design' },
-  { value: 'Product',      label: 'Product' },
-  { value: 'Operations',   label: 'Operations' },
-];
 
 const STATUS_OPTIONS: { value: 'All' | RowStatus; label: string }[] = [
   { value: 'All',            label: 'All' },
@@ -245,6 +234,29 @@ export default function HrPayroll() {
   const [q, setQ] = useState('');
   const [deptFilter, setDeptFilter]     = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<'All' | RowStatus>('All');
+  const [departments, setDepartments]   = useState<string[]>([]);
+
+  useEffect(() => {
+    api.get('/master/departments')
+      .then((res: any) => {
+        const arr = Array.isArray(res?.data) ? res.data : [];
+        setDepartments(arr
+          .filter((d: any) => (d.status ?? 'Active') === 'Active')
+          .map((d: any) => String(d.name ?? '').trim())
+          .filter(Boolean));
+      })
+      .catch(() => setDepartments([]));
+  }, []);
+
+  const deptOptions = useMemo(() => {
+    const set = new Set<string>();
+    departments.forEach(n => { if (n) set.add(n); });
+    rows.forEach(r => { const n = (r.department || '').trim(); if (n) set.add(n); });
+    return [
+      { value: 'All', label: 'All' },
+      ...Array.from(set).sort((a, b) => a.localeCompare(b)).map(n => ({ value: n, label: n })),
+    ];
+  }, [departments, rows]);
 
   const [paySlipRow, setPaySlipRow] = useState<PayrollRow | null>(null);
   const [payslipBreakup, setPayslipBreakup] = useState<{ earnings: PayslipLine[]; deductions: PayslipLine[] } | null>(null);
@@ -1138,7 +1150,7 @@ export default function HrPayroll() {
                   <MasterSelect
                     value={deptFilter}
                     onChange={setDeptFilter}
-                    options={DEPT_OPTIONS}
+                    options={deptOptions}
                     placeholder="All"
                   />
                 </div>
