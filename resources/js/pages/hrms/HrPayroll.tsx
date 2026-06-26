@@ -1479,6 +1479,9 @@ export default function HrPayroll() {
                       const totalDeductions = r.pfEmp + r.esi + r.pt + r.tds + r.lopDeducted + r.advanceRec;
                       const netPayable      = r.earnings - totalDeductions;
                       const tone            = toneFor(r.status);
+                      // A payslip can't be generated until the payroll status is
+                      // resolved — On Hold / Pending Review slips are blocked.
+                      const payslipBlocked  = r.status === 'On Hold' || r.status === 'Pending Review';
                       const dim = (n: number) => n === 0
                         ? <span className="text-muted">—</span>
                         : <span style={{ color: '#b1401d' }}>−₹{fmtINR(n)}</span>;
@@ -1526,10 +1529,12 @@ export default function HrPayroll() {
                             <button
                               type="button"
                               className="onb-vault-btn"
-                              title="Download payslip"
-                              onClick={() => openPayslip(r)}
+                              title={payslipBlocked ? `Payslip unavailable while status is ${r.status}` : 'Download payslip'}
+                              disabled={payslipBlocked}
+                              style={payslipBlocked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                              onClick={() => { if (!payslipBlocked) openPayslip(r); }}
                             >
-                              <i className="ri-file-download-line" style={{ fontSize: 14 }} />
+                              <i className={`${payslipBlocked ? 'ri-lock-line' : 'ri-file-download-line'}`} style={{ fontSize: 14 }} />
                               Payslip
                             </button>
                           </td>

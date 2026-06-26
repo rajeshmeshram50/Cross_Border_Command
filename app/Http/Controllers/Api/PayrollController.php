@@ -141,7 +141,13 @@ class PayrollController extends Controller
     {
         if ($period) {
             $run = $period->runs()->latest('id')->first();
-            if ($run && $run->status === 'paid')    return 'Completed';
+            // A finished cycle is COMPLETED. Full disbursement both flips the run
+            // to 'paid' AND locks the period — checking the locked period (not
+            // just the latest run) keeps a settled month showing Completed even
+            // if a later draft/empty run was created on top of the paid one.
+            if ($period->status === 'locked' || ($run && $run->status === 'paid')) {
+                return 'Completed';
+            }
             if ($period->status === 'processing' || ($run && in_array($run->status, ['generated', 'approved']))) return 'In Progress';
             if ($period->attendance_finalized)       return 'In Progress';
         }
@@ -565,6 +571,15 @@ class PayrollController extends Controller
             return response()->json(['message' => 'You can only download your own payslip.'], 403);
         }
 
+        // A payslip with an unresolved status must not be generated — On Hold
+        // (blocking issue) and Pending Review (needs HR verification) slips are
+        // not final figures, so producing a PDF would hand out a wrong slip.
+        if (in_array($slip->status, ['On Hold', 'Pending Review'], true)) {
+            return response()->json([
+                'message' => "Payslip can't be generated while the status is \"{$slip->status}\". Resolve the issue and set the payroll to Ready first.",
+            ], 422);
+        }
+
         $bytes = $this->pdf->render($slip);
         $disposition = $request->boolean('download') ? 'attachment' : 'inline';
         $this->audit($request, 'payslip_pdf', $slip, "Payslip PDF for {$slip->employee_name}");
@@ -595,6 +610,9 @@ class PayrollController extends Controller
             ->when($run, fn ($q) => $q->where('payroll_run_id', $run->id))
             ->when($request->query('department'), fn ($q, $d) => $q->where('department', $d))
             ->when($request->query('status'), fn ($q, $s) => $q->where('status', $s))
+            // Unresolved slips (On Hold / Pending Review) aren't final, so they
+            // are excluded from bulk generation just like the single download.
+            ->whereNotIn('status', ['On Hold', 'Pending Review'])
             ->with('run:id,status')
             ->orderBy('employee_name')
             ->get();
@@ -638,6 +656,11 @@ class PayrollController extends Controller
         }
         if (!$this->isFinalSlip($slip)) {
             return response()->json(['message' => 'Approve the payroll before emailing payslips.'], 422);
+        }
+        if (in_array($slip->status, ['On Hold', 'Pending Review'], true)) {
+            return response()->json([
+                'message' => "Payslip can't be emailed while the status is \"{$slip->status}\". Resolve the issue first.",
+            ], 422);
         }
 
         $result = $this->sendPayslipMail($slip);
