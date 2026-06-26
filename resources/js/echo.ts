@@ -16,10 +16,24 @@ import Pusher from 'pusher-js';
 
 const key = import.meta.env.VITE_REVERB_APP_KEY as string | undefined;
 
-// Only construct Echo when a key is configured, so unconfigured environments
-// don't spew connection errors.
-export const echo: Echo<'reverb'> | null = key
-  ? new Echo({
+// Lazily-constructed singleton. We do NOT build Echo at module-eval time:
+// doing so opened the WebSocket on EVERY page load (and retried in a loop when
+// Reverb wasn't reachable, spamming the console). Only the few realtime
+// features — the CLM agreement approval pages and the typing indicator — need
+// it, so they call getEcho() from their effects and the socket opens only then.
+let _echo: Echo<'reverb'> | null = null;
+let _constructed = false;
+
+/**
+ * Get the shared Echo client, constructing (and connecting) it on first call.
+ * Returns null when broadcasting isn't configured (no VITE_REVERB_APP_KEY) so
+ * callers can degrade gracefully to their manual/focus-refresh fallback.
+ */
+export function getEcho(): Echo<'reverb'> | null {
+  if (!key) return null;
+  if (!_constructed) {
+    _constructed = true;
+    _echo = new Echo({
       broadcaster: 'reverb',
       key,
       wsHost: import.meta.env.VITE_REVERB_HOST,
@@ -35,5 +49,7 @@ export const echo: Echo<'reverb'> | null = key
           },
         },
       },
-    })
-  : null;
+    });
+  }
+  return _echo;
+}

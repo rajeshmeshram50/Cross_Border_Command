@@ -46,9 +46,19 @@ class SourcingController extends Controller
         $total = $t->products->count();
         $done  = $t->products->where('status', 'Completed')->count();
 
+        // A target's actual source mix comes from its products, not just the
+        // `source` chosen at creation — it can hold BOTH master and manual rows.
+        // Surface every source present so the list can render 1 or 2 badges.
+        $present = $t->products->pluck('source')->filter()->unique();
+        $sources = [];
+        if ($present->contains('master')) $sources[] = 'Product Master';
+        if ($present->contains('manual')) $sources[] = 'Manual Entry';
+        if (empty($sources)) $sources[] = $this->sourceLabel($t->source);
+
         return [
             'id'        => $t->code,
             'source'    => $this->sourceLabel($t->source),
+            'sources'   => $sources,
             'start'     => optional($t->start_date)->format('Y-m-d') ?? '',
             'due'       => optional($t->due_date)->format('Y-m-d') ?? '',
             'createdBy' => $t->created_by_name ?: '—',
@@ -66,7 +76,7 @@ class SourcingController extends Controller
         if (!$user || !$user->client_id) return $this->ok(['assigned' => [], 'created' => []]);
 
         $targets = SourcingTarget::where('client_id', $user->client_id)
-            ->with('products:id,sourcing_target_id,status')
+            ->with('products:id,sourcing_target_id,status,source')
             ->latest()
             ->get();
 
@@ -323,6 +333,10 @@ class SourcingController extends Controller
         $t = $this->target($request, $target);
         $t->load(['products' => fn($q) => $q->withCount('suppliers')]);
 
+        $clarity = fn($p) => $p->clarity_type
+            ? ['type' => $p->clarity_type, 'val' => $p->clarity_value]
+            : null;
+
         $products = $t->products->map(fn($p) => [
             'id'            => $p->id,
             'type'          => $p->source,
@@ -333,6 +347,7 @@ class SourcingController extends Controller
             'price'         => $p->target_price ?? '',
             'status'        => $p->status,
             'supplierCount' => $p->suppliers_count,
+            'clarity'       => $clarity($p),
         ])->values();
 
         return $this->ok([
@@ -365,18 +380,24 @@ class SourcingController extends Controller
     public function suppliers(Request $request)
     {
         $user = $request->user();
+        // Pull the vendor's primary contact person from its primary address
+        // (contact_name / contact_no / email) — `addresses` is ordered
+        // is_primary-first, so first() is the primary (or the only) one.
         $rows = Vendor::where('client_id', $user->client_id)
-            ->with('segment:id,name')
+            ->with(['segment:id,name', 'addresses'])
             ->orderBy('company_name')
             ->get()
-            ->map(fn($v) => [
-                'id'      => (string) $v->id,
-                'name'    => $v->company_name,
-                'segment' => $v->segment->name ?? '',
-                'contact' => '',
-                'mobile'  => '',
-                'email'   => $v->primary_email ?? '',
-            ]);
+            ->map(function ($v) {
+                $addr = $v->addresses->first();
+                return [
+                    'id'      => (string) $v->id,
+                    'name'    => $v->company_name,
+                    'segment' => $v->segment->name ?? '',
+                    'contact' => $addr->contact_name ?? '',
+                    'mobile'  => $addr->contact_no ?? '',
+                    'email'   => ($addr->email ?? '') ?: ($v->primary_email ?? ''),
+                ];
+            });
 
         return $this->ok($rows);
     }
@@ -480,7 +501,7 @@ class SourcingController extends Controller
 
         if ($request->filled('supplier_id')) {
             $v = Vendor::where('client_id', $user->client_id)
-                ->with('segment:id,name')
+                ->with(['segment:id,name', 'addresses'])
                 ->findOrFail($request->input('supplier_id'));
 
             // A product can't have the same vendor mapped twice.
@@ -488,12 +509,17 @@ class SourcingController extends Controller
                 return response()->json(['status' => false, 'message' => "“{$v->company_name}” is already mapped to this product."], 422);
             }
 
+            // Snapshot the vendor's primary contact person (from its primary
+            // address) so the mapped-supplier card shows real contact details.
+            $addr = $v->addresses->first();
             $p->suppliers()->create([
                 'supplier_id' => $v->id,
                 'source'      => 'master',
                 'name'        => $v->company_name,
                 'segment'     => $v->segment->name ?? null,
-                'email'       => $v->primary_email,
+                'contact'     => $addr->contact_name ?? null,
+                'mobile'      => $addr->contact_no ?? null,
+                'email'       => ($addr->email ?? '') ?: $v->primary_email,
             ]);
         } elseif ($request->filled('new_supplier')) {
             $n    = $request->input('new_supplier');

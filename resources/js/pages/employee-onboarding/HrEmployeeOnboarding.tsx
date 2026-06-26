@@ -1,7 +1,6 @@
 import { Fragment, forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
 import { useNavigate } from 'react-router-dom';
-import Swal from 'sweetalert2';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -1168,7 +1167,7 @@ function EditEmployeeModal({ isOpen, onClose, emp }: { isOpen: boolean; onClose:
 // the Onboarding page passes 'onboarding'; pass null to list every template
 // matched to the employee regardless of trigger point.
 export function VaultModal({
-  isOpen, onClose, emp, tab, onTabChange, triggerKeyword = 'onboarding',
+  isOpen, onClose, emp, tab, onTabChange, triggerKeyword = 'onboarding', signedOnly = false,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -1176,6 +1175,11 @@ export function VaultModal({
   tab: 'employee' | 'organizational';
   onTabChange: (t: 'employee' | 'organizational') => void;
   triggerKeyword?: string | null;
+  // When true (the standalone Employee Evidence Vault) the Organizational tab
+  // becomes a read-only archive of FULLY-SIGNED documents only, exposing just
+  // View + Download. When false (Onboarding / Exit workflow pages) it lists
+  // every matched template with the full Generate / Send / track workflow.
+  signedOnly?: boolean;
 }) {
   const { theme: vaultTheme } = useTheme();
   const vaultDark = vaultTheme === 'dark';
@@ -1504,19 +1508,17 @@ export function VaultModal({
     return out;
   }, [empDocs, prevCompanies]);
 
-  // Org tab shows EVERY matching template the rule engine surfaced for
-  // this employee's (department × category × role-type), so HR can
-  // see what's pending and act on it (Send / Generate) — not just the
-  // already-Completed archive. Mirrors HrExitManagement, which lists
-  // every matching exit template with its own per-row workflow status.
-  // Previously this was filtered to status === 'Completed', which hid
-  // every template until it was signed — making the tab look empty
-  // even when the "Matched Templates" banner above said matches existed.
-  const signedTemplates = orgTemplates;
-  const completedCount = useMemo(
-    () => orgTemplates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed').length,
+  // The Org tab adapts to the caller. In the standalone Employee Evidence Vault
+  // (signedOnly) it's a read-only archive of FULLY-SIGNED documents only — a
+  // template surfaces once its signing run is Completed, with just View +
+  // Download per row. In the Onboarding / Exit workflow pages it lists every
+  // matched template so HR can Generate / Send / track in-flight signings.
+  const completedTemplates = useMemo(
+    () => orgTemplates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed'),
     [orgTemplates, runByTemplateId],
   );
+  const completedCount = completedTemplates.length;
+  const signedTemplates = signedOnly ? completedTemplates : orgTemplates;
 
   const allDocs = employeeSections.flatMap(s => s.docs);
   const counts = {
@@ -2073,15 +2075,14 @@ export function VaultModal({
 
                   <div className="d-flex align-items-center justify-content-between mb-2">
                     <div>
-                      {/* Heading was "Signed Company Documents", which implied
-                          the list only carried Completed signings. The tab now
-                          lists every matched template (mirrors HrExitManagement)
-                          with each row's per-workflow status visible, so the
-                          heading + sub-copy reflect that wider scope. */}
-                      <div className="fw-bold" style={{ fontSize: 14 }}>Company Documents</div>
+                      {/* Title + sub-copy adapt to the caller: a signed-only
+                          archive in the Employee Evidence Vault, or the full
+                          matched-template list on the workflow pages. */}
+                      <div className="fw-bold" style={{ fontSize: 14 }}>{signedOnly ? 'Signed Documents' : 'Company Documents'}</div>
                       <div className="text-muted" style={{ fontSize: 11.5 }}>
-                        {orgLoading ? 'Loading matching templates…'
-                          : signedTemplates.length === 0 ? 'No templates matched this employee’s department / category.'
+                        {orgLoading ? (signedOnly ? 'Loading signed documents…' : 'Loading matching templates…')
+                          : signedTemplates.length === 0 ? (signedOnly ? 'No signed documents yet.' : 'No templates matched this employee’s department / category.')
+                          : signedOnly ? `${signedTemplates.length} signed document${signedTemplates.length === 1 ? '' : 's'}`
                           : `${signedTemplates.length} template${signedTemplates.length === 1 ? '' : 's'} · ${completedCount} signed`}
                       </div>
                     </div>
@@ -2102,10 +2103,17 @@ export function VaultModal({
                     <div className="vault-org-empty" style={{ padding: 22, textAlign: 'center', borderRadius: 10 }}>
                       <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 8 }} />
                       <div style={{ fontSize: 13 }}>
-                        No HR Document Templates matched this employee’s
-                        <strong> Department / Category </strong> rule. Configure
-                        templates under <strong>HR &rsaquo; Document Templates</strong>
-                        and they will surface here automatically.
+                        {signedOnly ? (
+                          <>No fully-signed documents yet. A document appears here once
+                          its signing workflow is <strong>Completed</strong>. Send a
+                          template for signing from <strong>HR &rsaquo; Document Templates</strong>
+                          and it will surface here automatically.</>
+                        ) : (
+                          <>No HR Document Templates matched this employee’s
+                          <strong> Department / Category </strong> rule. Configure
+                          templates under <strong>HR &rsaquo; Document Templates</strong>
+                          and they will surface here automatically.</>
+                        )}
                       </div>
                     </div>
                   )}
@@ -2161,11 +2169,12 @@ export function VaultModal({
                           <span className={`badge rounded-pill bg-${tplStatusColor}-subtle text-${tplStatusColor} fw-semibold px-3 py-2 fs-13`}>
                             {tpl.status}
                           </span>
-                          {/* Once fully signed, the row collapses to a single
-                              Download action — View/Send/Sign are hidden. */}
-                          {run?.status !== 'Completed' && (
+                          {/* View — workflow pages hide it once a run is Completed
+                              (Download takes over); the signed-only Employee
+                              Evidence Vault always shows it (opens the signed copy). */}
+                          {(signedOnly || run?.status !== 'Completed') && (
                             <button type="button" className="vault-action-view" onClick={() => handleView(tpl)}
-                              data-tooltip="Preview with this employee's data" data-tooltip-pos="bottom" aria-label="Preview document">
+                              data-tooltip={signedOnly ? 'View the signed document' : "Preview with this employee's data"} data-tooltip-pos="bottom" aria-label="View document">
                               <i className="ri-eye-line" /> View
                             </button>
                           )}
@@ -2234,7 +2243,10 @@ export function VaultModal({
                             );
                           })()}
 
-                          {/* 3-dot menu — audit trail + cancel (when a run exists) */}
+                          {/* 3-dot menu (audit trail + cancel). Hidden in the
+                              signed-only Employee Evidence Vault, which exposes
+                              just View + Download. */}
+                          {!signedOnly && (
                           <div style={{ position: 'relative' }}>
                             <button type="button" className="vault-kebab-btn" onClick={() => setOpenMenuId(openMenuId === tpl.id ? null : tpl.id)}
                               data-tooltip="More actions" data-tooltip-pos="left" aria-label="More actions"
@@ -2262,6 +2274,7 @@ export function VaultModal({
                               </div>
                             )}
                           </div>
+                          )}
                         </div>
 
                         {/* Signing Workflow stepper — renders the same
@@ -4879,9 +4892,43 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 </Row>
 
                 <div className="onb-init-breakup">
-                  <div className="onb-init-breakup-head">
-                    <i className="ri-grid-line" style={{ color: '#7c3aed' }} />
-                    Salary Breakup
+                  <div className="onb-init-breakup-head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <i className="ri-grid-line" style={{ color: '#7c3aed' }} />
+                      Salary Breakup
+                    </span>
+                    {/* Detailed Breakup toggle — when on, the monthly component
+                        split (Basic / HRA / Special + PF) replaces the simple
+                        Regular + Bonus summary. Bound to s1.detailed_breakup,
+                        which round-trips through the saveStage1 payload. */}
+                    <span className="d-inline-flex align-items-center gap-2" style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--vz-secondary-color)' }}>
+                      <button
+                        type="button"
+                        aria-pressed={s1.detailed_breakup}
+                        onClick={() => setS1(p => ({ ...p, detailed_breakup: !p.detailed_breakup }))}
+                        className="btn p-0 border-0 d-inline-flex align-items-center"
+                        style={{
+                          width: 36, height: 20, borderRadius: 999,
+                          background: s1.detailed_breakup ? '#0ab39c' : '#e5e7eb',
+                          position: 'relative', transition: 'background .15s ease', cursor: 'pointer',
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 14, height: 14, borderRadius: '50%', background: '#fff',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                            position: 'absolute', top: 3,
+                            left: s1.detailed_breakup ? 19 : 3, transition: 'left .15s ease',
+                          }}
+                        />
+                      </button>
+                      <span
+                        onClick={() => setS1(p => ({ ...p, detailed_breakup: !p.detailed_breakup }))}
+                        style={{ cursor: 'pointer', userSelect: 'none' }}
+                      >
+                        Detailed breakup
+                      </span>
+                    </span>
                   </div>
                   <div className="onb-init-breakup-body">
                     <p className="onb-init-breakup-sub">Salary Effective From</p>
@@ -4901,13 +4948,65 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       const regular = annual - bonus;
                       const total = regular + bonus;
                       const fmt = (n: number) => `INR ${(Number.isFinite(n) ? n : 0).toLocaleString('en-IN')}`;
+
+                      // Simple view — Regular + Bonus = Total CTC (annual).
+                      if (!s1.detailed_breakup) {
+                        return (
+                          <div className="onb-init-breakup-grid">
+                            <div className="onb-init-breakup-cell"><div className="l">Regular Salary</div><div className="v">{fmt(regular)}</div></div>
+                            <span className="onb-init-breakup-op">+</span>
+                            <div className="onb-init-breakup-cell"><div className="l">Bonus</div><div className="v">{fmt(bonus)}</div></div>
+                            <span className="onb-init-breakup-op">=</span>
+                            <div className="onb-init-breakup-cell total"><div className="l">Total CTC</div><div className="v">{fmt(total)}</div></div>
+                          </div>
+                        );
+                      }
+
+                      // Detailed view — monthly component split seeded 50/30/20
+                      // (Basic / HRA / Special) from the monthly regular salary,
+                      // the same split HrEmployees uses. PF (12% of Basic) shows
+                      // as a deduction when the employee is PF-eligible.
+                      const monthlyGross = Math.round(regular / 12);
+                      const basic   = Math.round(monthlyGross * 0.5);
+                      const hra     = Math.round(monthlyGross * 0.3);
+                      const special = Math.max(0, monthlyGross - basic - hra);
+                      const pf      = s1.pf_eligible ? Math.round(basic * 0.12) : 0;
+                      const net     = monthlyGross - pf;
+                      const Line = ({ label, value, strong }: { label: string; value: number; strong?: boolean }) => (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px dashed var(--vz-border-color, #e5e7eb)' }}>
+                          <span style={{ fontSize: 12.5, fontWeight: strong ? 700 : 500 }}>{label}</span>
+                          <span style={{ fontSize: 13, fontWeight: strong ? 800 : 600 }}>{fmt(value)}</span>
+                        </div>
+                      );
                       return (
-                        <div className="onb-init-breakup-grid">
-                          <div className="onb-init-breakup-cell"><div className="l">Regular Salary</div><div className="v">{fmt(regular)}</div></div>
-                          <span className="onb-init-breakup-op">+</span>
-                          <div className="onb-init-breakup-cell"><div className="l">Bonus</div><div className="v">{fmt(bonus)}</div></div>
-                          <span className="onb-init-breakup-op">=</span>
-                          <div className="onb-init-breakup-cell total"><div className="l">Total CTC</div><div className="v">{fmt(total)}</div></div>
+                        <div>
+                          <p className="text-muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                            Monthly component breakup (auto-split from the annual salary).
+                          </p>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20 }}>
+                            <div style={{ flex: '1 1 240px', minWidth: 220 }}>
+                              <div style={{ fontSize: 11.5, fontWeight: 700, color: '#108548', textTransform: 'uppercase', letterSpacing: .4, marginBottom: 2 }}>Earnings</div>
+                              <Line label="Basic Salary" value={basic} />
+                              <Line label="House Rent Allowance" value={hra} />
+                              <Line label="Special Allowance" value={special} />
+                              <Line label="Gross (Monthly)" value={monthlyGross} strong />
+                            </div>
+                            <div style={{ flex: '1 1 240px', minWidth: 220 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                                <span style={{ fontSize: 11.5, fontWeight: 700, color: '#b91c1c', textTransform: 'uppercase', letterSpacing: .4 }}>Deductions</span>
+                                <label className="d-flex align-items-center gap-1 mb-0" style={{ fontSize: 12, cursor: 'pointer' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={s1.pf_eligible}
+                                    onChange={e => setS1(p => ({ ...p, pf_eligible: e.target.checked }))}
+                                  /> PF (12%)
+                                </label>
+                              </div>
+                              <Line label="Provident Fund (PF)" value={pf} />
+                              <Line label="Net Pay (Monthly)" value={net} strong />
+                              <Line label="Total CTC (Annual)" value={total} strong />
+                            </div>
+                          </div>
                         </div>
                       );
                     })()}

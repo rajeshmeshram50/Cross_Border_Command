@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
 import { useAuth } from '../../../contexts/AuthContext';
-import { echo } from '../../../echo';
+import { getEcho } from '../../../echo';
 import { useTyping } from '../../../hooks/useTyping';
 import { TypingIndicator } from '../../../components/TypingIndicator';
 import api from '../../../api';
@@ -70,6 +70,7 @@ export default function ClmAgreementsSentPage() {
 
   // Real-time refetch on any approval event for this tenant + focus fallback.
   useEffect(() => {
+    const echo = getEcho();
     const cid = user?.client_id;
     const onFocus = () => load();
     window.addEventListener('focus', onFocus);

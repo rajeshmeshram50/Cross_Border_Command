@@ -105,6 +105,9 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
   };
   const saveClarity = () => {
     if (!clarity) return;
+    // Block saving while the PDF is still uploading — otherwise clVal is empty
+    // and the clarity silently saves as "none".
+    if (clUploading) { toast.warning('Upload in progress', 'Please wait for the file to finish uploading.'); return; }
     if (clType === 'link' && clVal.trim() && !/^https?:\/\/.+/i.test(clVal.trim())) {
       toast.warning('Invalid link', 'Links must start with http:// or https://');
       return;
@@ -121,7 +124,10 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
   const uploadClarity = (f: File) => {
     const fd = new FormData(); fd.append('file', f); fd.append('kind', 'clarity');
     setClUploading(true);
-    api.post<{ data: { path: string } }>('/p2p/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    // Override the api default of application/json with undefined so axios emits
+    // the proper `multipart/form-data; boundary=...`. A bare 'multipart/form-data'
+    // strips the boundary and PHP can't parse the upload (esp. on mobile).
+    api.post<{ data: { path: string } }>('/p2p/upload', fd, { headers: { 'Content-Type': undefined as unknown as string } })
       .then(r => setClVal(r.data?.data?.path ?? ''))
       .catch((err) => toast.error('Upload failed', err?.response?.data?.message || 'Could not upload the PDF.'))
       .finally(() => setClUploading(false));
@@ -449,7 +455,11 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 9, marginTop: 14 }}>
                 <button className="ast-btn ast-btn-ghost" onClick={() => setClarity(null)}>Cancel</button>
-                <button className="ast-btn ast-btn-primary" onClick={saveClarity}>Save Clarity</button>
+                <button className="ast-btn ast-btn-primary" onClick={saveClarity} disabled={clUploading}>
+                  {clUploading
+                    ? <><svg className="ast-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> Uploading…</>
+                    : 'Save Clarity'}
+                </button>
               </div>
             </div>
           </div>

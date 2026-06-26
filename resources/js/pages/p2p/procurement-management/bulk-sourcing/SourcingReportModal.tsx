@@ -5,6 +5,7 @@ import api from '../../../../api';
 import MapSupplierModal from './MapSupplierModal';
 import MappedSuppliersModal from './MappedSuppliersModal';
 import { useModalGuard } from './useModalGuard';
+import { resolveFileUrl, downloadFile } from '../../../../utils/resolveFileUrl';
 import './bulk-sourcing.css';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -14,7 +15,8 @@ import './bulk-sourcing.css';
 
 export type ReportRow = { id: string; source: string; start: string; due: string; createdBy: string; assignee: string; products: number; completed: number };
 
-type ReportProduct = { id?: number | string; type: 'master' | 'manual'; code: string; name: string; segment?: string; hsn?: string; price: string; status: 'Completed' | 'In Progress'; supplierCount?: number };
+type Clarity = { type: 'text' | 'link' | 'pdf'; val: string } | null;
+type ReportProduct = { id?: number | string; type: 'master' | 'manual'; code: string; name: string; segment?: string; hsn?: string; price: string; status: 'Completed' | 'In Progress'; supplierCount?: number; clarity?: Clarity };
 
 const fmt = (s: string) => { if (!s) return '—'; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
 /* Always show Target Price in INR. Product Master rows already carry the ₹;
@@ -37,6 +39,55 @@ const REF_ICO = {
   users: I(<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>),
 };
 
+/* Product Clarity cell — text is clickable (opens a themed popup with the full
+   note); link/pdf are clickable. A PDF downloads on click; a link opens in a
+   new tab. */
+function ClarityCell({ clarity }: { clarity?: Clarity }) {
+  const [open, setOpen] = useState(false);
+  if (!clarity || !clarity.type || !clarity.val) return <span className="srpt-attach-dash">—</span>;
+
+  if (clarity.type === 'text') {
+    return (
+      <>
+        <button type="button" className="srpt-clarity-text" title="Click to view full text" onClick={() => setOpen(true)}>
+          {clarity.val}
+        </button>
+        {open && createPortal(
+          <div className="srpt-clarity-ov" onMouseDown={e => { if (e.target === e.currentTarget) setOpen(false); }}>
+            <div className="srpt-clarity-modal">
+              <div className="srpt-clarity-modal-head">
+                <span className="srpt-clarity-modal-ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg></span>
+                <span className="srpt-clarity-modal-title">Product Clarity</span>
+                <button type="button" className="srpt-clarity-modal-close" onClick={() => setOpen(false)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+              </div>
+              <div className="srpt-clarity-modal-body">{clarity.val}</div>
+            </div>
+          </div>,
+          document.body,
+        )}
+      </>
+    );
+  }
+
+  const url = resolveFileUrl(clarity.val);
+  if (clarity.type === 'pdf') {
+    return (
+      <button type="button" className="srpt-clarity-link" title="Download clarity PDF"
+        onClick={() => downloadFile(url, url.split('/').pop() || 'clarity.pdf')}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+        PDF
+      </button>
+    );
+  }
+  // link
+  return (
+    <a className="srpt-clarity-link" href={url} target="_blank" rel="noreferrer" title={clarity.val}>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
+      Link
+    </a>
+  );
+}
+
 export default function SourcingReportModal({ row, onClose }: { row: ReportRow; onClose: () => void }) {
   const toast = useToast();
   const [products, setProducts] = useState<ReportProduct[]>([]);
@@ -48,6 +99,13 @@ export default function SourcingReportModal({ row, onClose }: { row: ReportRow; 
   const [mapIdx, setMapIdx] = useState<number | null>(null);
   const [viewIdx, setViewIdx] = useState<number | null>(null);
   const { pulse, guardOverlay } = useModalGuard();
+
+  // Lock background page scroll while the report modal is open.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -189,9 +247,9 @@ export default function SourcingReportModal({ row, onClose }: { row: ReportRow; 
                       {tab === 'master' && <td style={{ textAlign: 'center' }}><span className="srpt-code">{p.code}</span></td>}
                       <td style={{ textAlign: 'left' }}><div className="srpt-pname">{p.name}</div></td>
                       {tab === 'master' && <td style={{ textAlign: 'center' }}><span className={`srpt-seg ${(p.segment || 'General').replace(/ /g, '-')}`}>{p.segment}</span></td>}
-                      {tab === 'master' && <td style={{ textAlign: 'center', fontFamily: 'monospace', fontSize: 11, color: '#475569' }}>{p.hsn}</td>}
+                      {tab === 'master' && <td style={{ textAlign: 'center' }}><span className="srpt-hsncode">{p.hsn}</span></td>}
                       <td style={{ textAlign: 'center' }} className="srpt-price">{fmtPrice(p.price)}</td>
-                      <td style={{ textAlign: 'center' }}><span className="srpt-attach-dash">—</span></td>
+                      <td style={{ textAlign: 'center' }}><ClarityCell clarity={p.clarity} /></td>
                       <td style={{ textAlign: 'center' }}><span className={`srpt-status ${doneP ? 'done' : 'prog'}`} onClick={() => toggle(gi)} title="Click to toggle status" style={{ cursor: 'pointer' }}><span className="srpt-sdot" />{doneP ? 'Completed' : 'In Progress'}</span></td>
                       <td style={{ textAlign: 'center' }}>{supCount > 0
                         ? <span className="srpt-sup-count has-sup srpt-sup-clickable" title="View mapped suppliers" onClick={() => setViewIdx(gi)}>{supCount}</span>

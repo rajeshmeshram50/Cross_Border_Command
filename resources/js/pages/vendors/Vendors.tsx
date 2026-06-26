@@ -43,6 +43,7 @@ export type Vendor = {
      products have been pulled into. 0 → Fresh, ≥1 → Recurring. */
   opportunityCount: number;
   segment?: string;
+  segments?: string[];
   risk?: string;
   website?: string;
   address?: string;
@@ -77,6 +78,7 @@ type ApiVendor = {
   primary_email: string | null;
   vendor_type?: { id: number; name: string | null } | null;
   segment?: { id: number; title: string | null } | null;
+  segments?: { id: number; name: string | null }[] | null;
   risk_level?: { id: number; name: string | null } | null;
   /* Correlated-subquery count from VendorController::index — drives the
      Fresh / Recurring split. May arrive as a number or a numeric string
@@ -85,6 +87,10 @@ type ApiVendor = {
   primary_address?: {
     city: string | null;
     state_id: number | null;
+    state_code: string | null;
+    /* Resolved state name from the master_states relation (VendorController
+       index eager-loads primaryAddress.state:id,name). Falls back to code. */
+    state?: { id: number; name: string | null } | null;
     contact_name: string | null;
     email: string | null;
     contact_no: string | null;
@@ -134,6 +140,9 @@ export default function Vendors() {
   const [vaultTarget, setVaultTarget] = useState<SupplierVaultTarget | null>(null);
   /* When set, the Contact Persons popup lists all of this supplier's contacts. */
   const [contactsTarget, setContactsTarget] = useState<Vendor | null>(null);
+  /* Segment "+N" popover — fixed-positioned card anchored to the clicked badge
+     so the table's overflow can't clip it. */
+  const [segPop, setSegPop] = useState<{ segments: string[]; x: number; y: number } | null>(null);
   /* Contact Persons popup paginates 5 per page. Resets whenever it opens. */
   const CONTACTS_PER_PAGE = 5;
   const [contactsPage, setContactsPage] = useState(1);
@@ -172,11 +181,15 @@ export default function Vendors() {
       .sort((x, y) => Number(y.isPrimary) - Number(x.isPrimary));
     return {
       id:          row.id,
-      code:        row.vendor_code ?? `V-${row.id}`,
+      code:        row.vendor_code ?? `SUP-${row.id}`,
       companyName: row.company_name ?? 'Untitled Supplier',
       legalName:   row.legal_name ?? row.company_name ?? '—',
       type:        row.vendor_type?.name ?? 'Pending',
-      state:       String(row.primary_address?.state_id ?? '—'),
+      /* Show the state NAME (e.g. "Maharashtra"), not the raw state_id.
+         Fall back to the state code, then a dash. */
+      state:       row.primary_address?.state?.name
+                     || row.primary_address?.state_code
+                     || '—',
       city:        row.primary_address?.city ?? '—',
       contactName: contacts[0]?.name || row.primary_address?.contact_name || '—',
       designation: '—',
@@ -185,6 +198,7 @@ export default function Vendors() {
       status:      row.status === 'active' ? 'Active' : 'Inactive',
       opportunityCount: Number(row.opportunity_count ?? 0) || 0,
       segment:     row.segment?.title ?? undefined,
+      segments:    (row.segments ?? []).map(s => s.name ?? '').filter(Boolean),
       risk:        row.risk_level?.name ?? undefined,
       contacts,
     };
@@ -219,12 +233,15 @@ export default function Vendors() {
       const el = scrollRef.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      const THEAD = 42, ROW = 56, FOOTER = 96;
-      const avail = window.innerHeight - top - THEAD - FOOTER;
+      const THEAD = 42, ROW = 56;
+      // Page size fills the SAME stretched card height as fillH, so the rows
+      // actually use the visible card (no big empty gap under a half-full table,
+      // and short lists — e.g. 6 — fit on one page instead of spilling to 2).
+      const cardH = Math.max(0, window.innerHeight - top - 64);
+      const avail = cardH - THEAD;
       const fit = Math.max(4, Math.floor(avail / ROW));
       setRpp(prev => (prev === fit ? prev : fit));
-      const fh = Math.max(0, window.innerHeight - top - 64);
-      setFillH(prev => (prev === fh ? prev : fh));
+      setFillH(prev => (prev === cardH ? prev : cardH));
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
@@ -435,6 +452,17 @@ useEffect(() => {
         .sup-fig .sl-contact-wrap{display:inline-flex;align-items:center;gap:6px;}
         .sup-fig .sl-contact-more{font-family:inherit;font-size:10px;font-weight:800;color:#7c3aed;background:#f1eafe;border:1px solid #ddd0f7;border-radius:999px;padding:2px 7px;cursor:pointer;line-height:1;transition:all .15s;}
         .sup-fig .sl-contact-more:hover{background:#e6d9fb;transform:translateY(-1px);}
+        .sup-fig .sl-seg.sl-trunc{max-width:120px;}
+        .sup-fig .sl-seg{font-weight:600;color:#475569;}
+        .sup-fig .sl-seg-wrap{display:inline-flex;align-items:center;gap:6px;}
+        .sup-fig .sl-seg-more{font-family:inherit;font-size:10px;font-weight:800;color:#7c3aed;background:#f1eafe;border:1px solid #ddd0f7;border-radius:999px;padding:2px 7px;cursor:pointer;line-height:1;transition:all .15s;}
+        .sup-fig .sl-seg-more:hover{background:#e6d9fb;transform:translateY(-1px);}
+        /* Segment "+N" floating card */
+        .sup-fig .sl-seg-pop-ov{position:fixed;inset:0;z-index:1090;}
+        .sup-fig .sl-seg-pop{position:fixed;z-index:1091;min-width:150px;max-width:280px;background:#fff;border:1px solid #e2d4fa;border-radius:12px;box-shadow:0 12px 30px rgba(15,23,42,.18);padding:11px 13px;}
+        .sup-fig .sl-seg-pop-head{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#7c3aed;margin-bottom:9px;}
+        .sup-fig .sl-seg-pop-body{display:flex;flex-wrap:wrap;gap:6px;}
+        .sup-fig .sl-seg-chip{font-size:11px;font-weight:600;color:#4338ca;background:#f1eafe;border:1px solid #ddd0f7;border-radius:999px;padding:3px 11px;}
 
         /* Contact Persons popup */
         .sc-ov{position:fixed;inset:0;z-index:1200;background:rgba(49,22,99,.42);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px;font-family: var(--font-sans);}
@@ -716,6 +744,11 @@ useEffect(() => {
         [data-bs-theme="dark"] .sup-fig .sl-phone{color:#9a93b3;}
         [data-bs-theme="dark"] .sup-fig .sl-code{background:rgba(124,58,237,.18);color:#c4b5fd;border-color:rgba(167,139,250,.3);}
         [data-bs-theme="dark"] .sup-fig .sl-contact-more{background:rgba(124,58,237,.2);color:#c4b5fd;border-color:rgba(167,139,250,.3);}
+        [data-bs-theme="dark"] .sup-fig .sl-seg{color:#adb5bd;}
+        [data-bs-theme="dark"] .sup-fig .sl-seg-more{background:rgba(124,58,237,.2);color:#c4b5fd;border-color:rgba(167,139,250,.3);}
+        [data-bs-theme="dark"] .sup-fig .sl-seg-pop{background:#1a1430;border-color:#3b2a6b;box-shadow:0 12px 30px rgba(0,0,0,.5);}
+        [data-bs-theme="dark"] .sup-fig .sl-seg-pop-head{color:#c4b5fd;}
+        [data-bs-theme="dark"] .sup-fig .sl-seg-chip{background:rgba(124,58,237,.2);color:#c4b5fd;border-color:rgba(167,139,250,.3);}
         /* Type + WhatsApp pills — translucent dark-tinted variants so they read
            crisp on the dark surface instead of washing out in their light bg. */
         [data-bs-theme="dark"] .sup-fig .sl-pill--material{color:#c4b5fd;background:rgba(124,58,237,.20);border-color:rgba(167,139,250,.38);}
@@ -888,6 +921,7 @@ useEffect(() => {
                         <th>Supplier Code</th>
                         <th>Supplier Name</th>
                         <th>Supplier Type</th>
+                        <th>Segment</th>
                         <th>Supplier State</th>
                         <th>Country</th>
                         <th>Contact Person</th>
@@ -899,7 +933,7 @@ useEffect(() => {
                     </thead>
                     <tbody>
                       {pageRows.length === 0 ? (
-                        <tr><td colSpan={11} className="sl-empty">No suppliers found.</td></tr>
+                        <tr><td colSpan={12} className="sl-empty">No suppliers found.</td></tr>
                       ) : pageRows.map((v, i) => {
                         const kind = typeKind(v.type);
                         const hasWa = !!v.phone && v.phone !== '—';
@@ -909,6 +943,27 @@ useEffect(() => {
                             <td><span className="sl-code">{v.code}</span></td>
                             <td><Tooltip label={v.companyName}><span className="sl-name sl-trunc">{v.companyName}</span></Tooltip></td>
                             <td><span className={`sl-pill sl-pill--${kind}`}><span className="sl-pill-dot" />{v.type}</span></td>
+                            <td>
+                              <span className="sl-seg-wrap">
+                                {v.segments && v.segments.length > 0 ? (
+                                  <>
+                                    <Tooltip label={v.segments[0]}><span className="sl-seg sl-trunc">{v.segments[0]}</span></Tooltip>
+                                    {v.segments.length > 1 && (
+                                      <button
+                                        type="button"
+                                        className="sl-seg-more"
+                                        onClick={(e) => {
+                                          const r = e.currentTarget.getBoundingClientRect();
+                                          setSegPop({ segments: v.segments ?? [], x: r.left, y: r.bottom + 6 });
+                                        }}
+                                      >
+                                        +{v.segments.length - 1}
+                                      </button>
+                                    )}
+                                  </>
+                                ) : <span className="sl-seg">—</span>}
+                              </span>
+                            </td>
                             <td><span className="sl-state">{v.state}</span></td>
                             <td><span className="sl-country">{v.country || 'India'}</span></td>
                             <td>
@@ -945,7 +1000,8 @@ useEffect(() => {
                                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
                                 </button>
                                 </Tooltip>
-                                {/* Zoho Entry — UI only for now; ledger-style entry wiring comes later. */}
+                                {/* Zoho Entry — HIDDEN for now (UI only, not wired up yet).
+                                    Un-comment this block to bring the button back.
                                 <Tooltip label="Zoho Entry">
                                 <button
                                   type="button"
@@ -955,6 +1011,7 @@ useEffect(() => {
                                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /><path d="M9 7h7" /><path d="M9 11h7" /></svg>
                                 </button>
                                 </Tooltip>
+                                */}
                                 <button
                                   type="button"
                                   className="sl-evault-btn"
@@ -964,6 +1021,7 @@ useEffect(() => {
                                     company: v.companyName,
                                     risk: v.risk,
                                     segment: v.segment,
+                                    segments: v.segments,
                                     country: v.country,
                                     contact: v.contactName,
                                     contactCity: v.city,
@@ -999,6 +1057,21 @@ useEffect(() => {
           onClose={() => { setAddOpen(false); setEditingId(null); setEditingStep(null); }}
           onSubmit={handleSave}
         />
+      )}
+
+      {/* Segment "+N" popover — small floating card listing every segment. */}
+      {segPop && (
+        <div className="sup-fig">
+          <div className="sl-seg-pop-ov" onClick={() => setSegPop(null)} />
+          <div className="sl-seg-pop" style={{ left: segPop.x, top: segPop.y }} role="dialog">
+            <div className="sl-seg-pop-head">Segments ({segPop.segments.length})</div>
+            <div className="sl-seg-pop-body">
+              {segPop.segments.map((s, idx) => (
+                <span key={`${s}-${idx}`} className="sl-seg-chip">{s}</span>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Contact Persons popup — lists every contact for the chosen supplier

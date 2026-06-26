@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
+import { Card, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
 import Tooltip from '../../components/ui/Tooltip';
 import WorklistPager from '../../components/ui/WorklistPager';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
@@ -12,29 +12,13 @@ import { useConfirm } from '../../contexts/ConfirmContext';
 import api from '../../api';
 import * as XLSX from 'xlsx';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
-// Reuse the Onboarding page's fully wired Evidence Vault (live employee
-// uploads + matched HR Document Templates) so the directory's vault shows
-// real documents instead of the old ComingSoon mock. Its CSS lives in the
-// onboarding stylesheet, imported here so the vault renders identically.
 import { VaultModal } from '../employee-onboarding/HrEmployeeOnboarding';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import { leavePlansApi } from './leavePlansApi';
-// Borrow the polished pill-button styles used by the recruitment / hiring
-// request modal so the Add Employee wizard footer matches the same design
-// language (gradient primary CTA + soft outlined secondary).
 import '../../../css/recruitment.css';
 
-// The per-employee Evidence Vault is now the shared VaultModal imported from
-// the Onboarding page (live uploads + matched HR Document Templates). The old
-// mock VAULT_EMPLOYEE_DOCS / VAULT_ORG_DOCS catalogues that used to live here
-// were removed when the directory's vault was wired to real data.
 
-// Static option lists. Country / nationality / state / department /
-// designation / role / legal-entity dropdowns are now sourced from the
-// master tables (countryOptions, designationOptions, …) inside the
-// component, so the only constants kept here are the ones that have no
-// master backing.
 const GENDER_OPTIONS = [
   { value: 'Male',              label: 'Male' },
   { value: 'Female',            label: 'Female' },
@@ -42,7 +26,6 @@ const GENDER_OPTIONS = [
   { value: 'Prefer not to say', label: 'Prefer not to say' },
 ];
 const WORK_TYPE_OPTIONS = ['Full Time','Part Time','Contract','Intern','Consultant'].map(w => ({ value: w, label: w }));
-// Sentinel values used by the dropdowns to flag "open the custom field below".
 const CUSTOM_PROBATION_VALUE = '__custom_probation__';
 const CUSTOM_NOTICE_VALUE    = '__custom_notice__';
 const PROBATION_POLICY_OPTIONS = [
@@ -56,32 +39,19 @@ const NOTICE_PERIOD_OPTIONS = [
   { value: CUSTOM_NOTICE_VALUE, label: 'Set Custom Notice Period…' },
 ];
 
-// Step 3 — Work Details option lists. LEAVE_PLAN_OPTIONS was hardcoded
-// to three plan names; it's now fetched live from /api/leave-plans into
-// component state (see leavePlanOptions inside the component below).
 const SHIFT_OPTIONS         = ['General Shift','Morning Shift','Evening Shift','Night Shift','Flexible'].map(v => ({ value: v, label: v }));
 const WEEKLY_OFF_OPTIONS    = ['Week Off Policy','Saturday & Sunday','Sunday Only','Rotational'].map(v => ({ value: v, label: v }));
 const TIME_TRACKING_OPTIONS = ['Manual','Biometric'].map(v => ({ value: v, label: v }));
 const PENALIZATION_OPTIONS  = ['Tracking Policy','Strict Policy','Lenient Policy','No Penalty'].map(v => ({ value: v, label: v }));
 const OVERTIME_OPTIONS      = ['Not applicable','Hourly Pay','Compensation Off','Time and a Half'].map(v => ({ value: v, label: v }));
 const EXPENSE_POLICY_OPTIONS= ['Select policy','Standard Expense Policy','Manager Approval','No Expenses'].map((v, i) => ({ value: i === 0 ? '' : v, label: v }));
-const LAPTOP_OPTIONS        = ['Yes','No','Pending'].map(v => ({ value: v, label: v }));
 
-// Step 4 — Compensation option lists
-const PAY_GROUP_OPTIONS         = ['Default pay group','Senior Pay Group','Intern Pay Group','Contractor Pay Group'].map(v => ({ value: v, label: v }));
 const SALARY_FREQUENCY_OPTIONS  = ['Per annum','Per month','Per hour','Per day'].map(v => ({ value: v, label: v }));
 const SALARY_STRUCTURE_OPTIONS  = ['Range Based','Fixed','Component Based'].map(v => ({ value: v, label: v }));
 const TAX_REGIME_OPTIONS        = ['New Regime (115BAC)','Old Regime'].map(v => ({ value: v, label: v }));
 
-// Detailed salary-breakup component shape — mirrors the JSON stored on the
-// versioned `salary_structures` table ({code,label,amount}) so the wizard
-// persists through the same /salary-structures endpoint the Payroll → Salary
-// Setup tab (SalaryStructureModal) uses. Amounts are MONTHLY.
 interface SalBreakComp { code: string; label: string; amount: number }
 
-// Seed a fresh 50 / 30 / 20 monthly split (Basic / HRA / Special) from a
-// monthly gross — the same default the Salary Setup modal applies when an
-// employee has no structure yet.
 const seedBreakup = (monthlyGross: number): SalBreakComp[] => {
   const g = Math.max(0, Math.round(monthlyGross));
   const basic = Math.round(g * 0.5);
@@ -94,14 +64,9 @@ const seedBreakup = (monthlyGross: number): SalBreakComp[] => {
   ];
 };
 
-// Per-component validation bounds — kept in lockstep with the
-// /salary-structures backend rules (amount decimal(10,2)-ish cap, label max).
 const MAX_COMP_AMOUNT = 99999999.99;
 const MAX_COMP_LABEL  = 120;
 
-// Stable signature of a breakup (earnings + deductions + statutory toggles)
-// used to detect whether the user actually changed anything before POSTing a
-// new salary-structure version — avoids spamming versions on every Save.
 const breakupSignature = (
   earnings: SalBreakComp[],
   deductions: SalBreakComp[],
@@ -112,23 +77,14 @@ const breakupSignature = (
   pf, esi, pt,
 });
 
-// HR → Employee directory page. KPI tiles, tabs, filter row and table follow
-// the same surface/card pattern used on Clients.tsx so the look stays
-// consistent across modules.
 
 interface EmployeeRow {
   id: string;
-  /** URL-safe encrypted handle for navigation. Used in profile +
-   *  permission links so the real emp_code never sits in the browser
-   *  bar. Falls back to `id` when the API hasn't populated it. */
   encryptedId?: string | null;
   name: string;
   email: string;
   initials: string;
   accent: string;
-  /** Passport-size photo from onboarding (employee_documents,
-   *  document_key='photo') — surfaced via the Employee model's `photo_url`
-   *  accessor. Used as the row avatar when present. */
   photoUrl: string | null;
   department: string;
   designation: string;
@@ -142,10 +98,6 @@ interface EmployeeRow {
   enabled: boolean;
 }
 
-// API-shaped row returned by /api/employees. Kept loose ('any' on relations)
-// so we don't have to mirror every nested model — only the fields the page
-// actually reads. Frontend EmployeeRow stays for the legacy display helpers
-// below; the page now bridges between the two with `apiToRow()`.
 interface ApiEmployee {
   id: number;
   emp_code: string | null;
@@ -158,17 +110,8 @@ interface ApiEmployee {
   gender: string | null;
   date_of_birth: string | null;
   status: string | null;
-  /** Server-tracked wizard progress (0-4). 0 = no save yet,
-   *  4 = all 4 steps completed. Used by openEditEmployee to resume
-   *  at the first unfilled step. */
   wizard_step_completed: number | null;
-  /** Macro-stage watermark for the 6-stage onboarding flow (0-6). 0
-   *  = nothing done, 1 = Stage 1 (Setup) done, … 6 = Stage 6 (Final
-   *  Verification) done. Drives the profile % across all six stages. */
   onboarding_stage_completed: number | null;
-  /** Soft-delete timestamp. Non-null means the row was disabled via
-   *  the per-row toggle. We surface these in the API's `withTrashed`
-   *  list so the SPA's Disabled Employees tab can render them. */
   deleted_at: string | null;
   date_of_joining: string | null;
   department_id: number | null;
@@ -182,11 +125,6 @@ interface ApiEmployee {
   legal_entity_id: number | null;
   location: string | null;
   user_id: number | null;
-  // Laravel serializes relations to snake_case. Keep these aligned with the
-  // wire format — using camelCase names here would silently drop into the
-  // `[k: string]: any` index signature and resolve to `undefined`, which is
-  // what made Primary Role / Ancillary Role / Manager render as "—" in the
-  // list even when the backend had values.
   department?: { id: number; name: string; code?: string } | null;
   designation?: { id: number; name: string } | null;
   primary_role?: { id: number; name: string } | null;
@@ -202,8 +140,6 @@ interface ApiEmployee {
   [k: string]: any;
 }
 
-// Map a server-side ApiEmployee into the existing UI row shape so the legacy
-// list/render code keeps working while we cut over.
 const accentFromName = (name: string): string => {
   const palette = ['#0ab39c','#7c5cfc','#f7b84b','#0ea5e9','#e83e8c','#299cdb','#f06548','#405189','#d63384'];
   let h = 0;
@@ -213,8 +149,6 @@ const accentFromName = (name: string): string => {
 const initialsFromName = (name: string): string =>
   name.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]?.toUpperCase() || '').join('') || '?';
 
-// ISO (YYYY-MM-DD) for the same calendar day, N years before today. Used as
-// the DOB upper bound (18 years) to enforce minimum employee age in the picker.
 const isoYearsAgo = (n: number): string => {
   const t = new Date();
   const pad = (x: number) => String(x).padStart(2, '0');
@@ -223,17 +157,11 @@ const isoYearsAgo = (n: number): string => {
 
 const apiToRow = (e: ApiEmployee): EmployeeRow => {
   const name = (e.display_name || `${e.first_name} ${e.last_name || ''}`).trim();
-  // Disabled = soft-deleted (deleted_at non-null) OR status reads as
-  // inactive/terminated/resigned. The per-row toggle path soft-deletes,
-  // so deleted_at is the primary signal — we still honour the legacy
-  // status strings for any rows that were flipped via PUT alone.
   const isTrashed = !!e.deleted_at;
   const enabled = !isTrashed
     && (e.status || 'Active').toLowerCase() !== 'inactive'
     && (e.status || 'Active').toLowerCase() !== 'terminated'
     && (e.status || 'Active').toLowerCase() !== 'resigned';
-  // Map server status → UI status bucket. Anything not in the mapping falls
-  // back to 'active' so the row still renders cleanly.
   const statusMap: Record<string, EmployeeRow['status']> = {
     'Active': 'active', 'Inactive': 'inactive',
     'On Leave': 'on_leave', 'Probation': 'probation',
@@ -241,9 +169,6 @@ const apiToRow = (e: ApiEmployee): EmployeeRow => {
   };
   return {
     id: e.emp_code || `EMP-${e.id}`,
-    // Opaque, URL-safe handle the SPA puts into profile/permission URLs
-    // so the address bar never displays the real emp_code. Served by
-    // Employee::getEncryptedIdAttribute on the API row.
     encryptedId: (e as any).encrypted_id || null,
     name,
     email: e.email || '',
@@ -254,41 +179,20 @@ const apiToRow = (e: ApiEmployee): EmployeeRow => {
     designation: e.designation?.name || '—',
     primaryRole: e.primary_role?.name || '—',
     ancillaryRole: e.ancillary_role?.name || null,
-    // Prefer the server-resolved array of roles so the table can render the
-    // chip + "+N" pattern. Falls back to the legacy single role for rows
-    // saved before the multi-role migration.
     ancillaryRoles: (e.ancillary_roles_resolved && e.ancillary_roles_resolved.length > 0)
       ? e.ancillary_roles_resolved.map(r => r.name)
       : (e.ancillary_role?.name ? [e.ancillary_role.name] : []),
-    /* Manager column — prefer the Employee-side relation (canonical),
-     * fall back to the User-side relation when the picker stored a
-     * login User (Client/Branch admin) instead of an Employee row. */
     manager: e.reporting_manager?.display_name
       || (e.reporting_manager
           ? [e.reporting_manager.first_name, e.reporting_manager.last_name].filter(Boolean).join(' ').trim()
           : '')
       || e.reporting_manager_user?.name
       || '—',
-    // Profile % is weighted so the Add Employee wizard (Stage 1 — Basic,
-    // Job, Work, Compensation) counts for 40% of the bar; the five remaining
-    // onboarding macro stages share the other 60% (12% each). Previously
-    // each macro stage was treated equally (1/6 = 17%) which made admins
-    // who'd filled the entire 4-step Add wizard see only 17% complete,
-    // even though they'd captured the bulk of the HR record. Curve:
-    //   wizard step 1 done = 10%, step 2 = 20%, step 3 = 30%, step 4 = 40%
-    //   stage 2 = 52%, stage 3 = 64%, stage 4 = 76%, stage 5 = 88%, stage 6 = 100%
     profile: ((): number => {
-      // Prefer the backend's blended `profile_completion` — it's the single
-      // source of truth (50% actual data fields filled + 50% HR onboarding
-      // stages) and, crucially, COUNTS data captured via the onboarding LINK.
-      // The wizard-step-only curve below ignored that: a candidate who
-      // self-filled the entire onboarding form still showed 0% because no HR
-      // wizard step had advanced. Only fall back to the local curve when the
-      // backend field is missing.
       const backend = Number(e.profile_completion);
       if (Number.isFinite(backend)) return Math.max(0, Math.min(100, Math.round(backend)));
       const STAGE1_WEIGHT = 0.40;
-      const OTHER_WEIGHT  = 0.60 / 5; // 5 remaining macro stages
+      const OTHER_WEIGHT  = 0.60 / 5;
       const step  = Math.max(0, Math.min(4, Number(e.wizard_step_completed ?? 0)));
       const macro = Math.max(0, Math.min(6, Number(e.onboarding_stage_completed ?? 0)));
       const stage1Pct = macro >= 1 ? STAGE1_WEIGHT : STAGE1_WEIGHT * (step / 4);
@@ -297,8 +201,6 @@ const apiToRow = (e: ApiEmployee): EmployeeRow => {
                        + (macro >= 6 ? 1 : 0);
       return Math.round((stage1Pct + othersDone * OTHER_WEIGHT) * 100);
     })(),
-    // Onboarding pill: Completed once macro stage hits 6, In Progress
-    // while the admin is partway through, Pending if nothing started.
     onboarding: ((): 'Completed' | 'In Progress' | 'Pending' => {
       const macro = Number(e.onboarding_stage_completed ?? 0);
       const step  = Number(e.wizard_step_completed ?? 0);
@@ -308,19 +210,13 @@ const apiToRow = (e: ApiEmployee): EmployeeRow => {
     })(),
     status: statusMap[e.status || 'Active'] || 'active',
     enabled,
-    // Face-biometric enrolment status — surfaced as a green dot on the
-    // Register Face row action so admins can see at a glance which
-    // employees are already enrolled.
     faceRegistered: !!e.face_registered,
-    // Smuggle the DB id + raw row through so handlers can act on the API row
-    // without re-fetching.
     _dbId: e.id,
     _raw: e,
   } as any;
 };
 
 
-// Soft tonal palette for the role pills.
 const ROLE_TONES: Record<string, { bg: string; fg: string }> = {
   'Associate':            { bg: '#fdf3d6', fg: '#a06f00' },
   'Training Coordinator': { bg: '#dceefe', fg: '#0c63b0' },
@@ -332,7 +228,6 @@ const ROLE_TONES: Record<string, { bg: string; fg: string }> = {
   'QA Testing Lead':      { bg: '#fde8c4', fg: '#a4661c' },
   'QA Engineer':          { bg: '#fde8c4', fg: '#a4661c' },
   'Team Lead':            { bg: '#fdf3d6', fg: '#a06f00' },
-  // Disabled-list roles
   'Executive':            { bg: '#fdf3d6', fg: '#a06f00' },
   'Software Engineer':    { bg: '#dceefe', fg: '#0c63b0' },
   'Mentor':               { bg: '#dceefe', fg: '#0c63b0' },
@@ -354,17 +249,13 @@ const ROLE_TONES: Record<string, { bg: string; fg: string }> = {
   'Developer':            { bg: '#fdf3d6', fg: '#a06f00' },
   'Design Head':          { bg: '#fdf3d6', fg: '#a06f00' },
 };
-// Dark-mode equivalents keyed by the light tone's ink (fg) — every role maps
-// to one of a handful of base hues, so converting by fg keeps one dark variant
-// per hue instead of restating the whole table. Translucent tint + bright ink
-// stays legible on the dark card surface (the light pastel bgs clashed badly).
 const DARK_BY_FG: Record<string, { bg: string; fg: string }> = {
-  '#a06f00': { bg: 'rgba(160,111,0,0.28)', fg: '#fcd34d' }, // amber
-  '#0c63b0': { bg: 'rgba(12,99,176,0.28)', fg: '#7cc4ff' }, // blue
-  '#a4661c': { bg: 'rgba(164,102,28,0.30)', fg: '#fdba74' }, // orange
-  '#108548': { bg: 'rgba(16,133,72,0.26)', fg: '#6ee7b7' }, // green
-  '#0a716a': { bg: 'rgba(10,113,106,0.28)', fg: '#5eead4' }, // teal
-  '#a02960': { bg: 'rgba(160,41,96,0.26)', fg: '#f9a8d4' }, // pink
+  '#a06f00': { bg: 'rgba(160,111,0,0.28)', fg: '#fcd34d' },
+  '#0c63b0': { bg: 'rgba(12,99,176,0.28)', fg: '#7cc4ff' },
+  '#a4661c': { bg: 'rgba(164,102,28,0.30)', fg: '#fdba74' },
+  '#108548': { bg: 'rgba(16,133,72,0.26)', fg: '#6ee7b7' },
+  '#0a716a': { bg: 'rgba(10,113,106,0.28)', fg: '#5eead4' },
+  '#a02960': { bg: 'rgba(160,41,96,0.26)', fg: '#f9a8d4' },
 };
 const tone = (role: string, dark = false) => {
   const light = ROLE_TONES[role] || { bg: '#eef2f6', fg: '#475569' };
@@ -372,26 +263,14 @@ const tone = (role: string, dark = false) => {
   return DARK_BY_FG[light.fg] || { bg: 'rgba(148,163,184,0.20)', fg: '#cbd5e1' };
 };
 
-// Onboarding-status pill recipe — soft tinted background + bold dot accent.
-// Each tone carries a light background, a darker foreground for the label,
-// and a dot colour that pops a notch above the foreground for emphasis.
 const ONBOARDING_TONES: Record<EmployeeRow['onboarding'], { bg: string; fg: string; dot: string }> = {
   'Completed':   { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' },
   'In Progress': { bg: '#fde8c4', fg: '#a4661c', dot: '#f59e0b' },
   'Pending':     { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' },
 };
 
-// Reporting-manager options are computed inside the component now (from the
-// fetched employee list) so they stay in sync with whatever's persisted.
 
-// Reuse the Clients KPI card recipe — gradient strip on top + 44×44 icon box,
-// 11px uppercase label, 26px value. Keep gradients distinct per status so the
-// 10 tiles read at a glance.
 const KPI_CARDS = [
-  // `accent` is the dominant brand colour for each card — fed into the
-  // dark-mode `--card-accent` CSS variable so the panel can render its
-  // own tinted glow + accent-coloured shadow (same recipe as the Plan
-  // cards). Light mode ignores it and just uses the gradient strip.
   { key: 'total',                 label: 'Total Employees',          icon: 'ri-team-line',            gradient: 'linear-gradient(135deg,#405189,#6691e7)', accent: '#6691e7' },
   { key: 'active',                label: 'Active Employees',         icon: 'ri-user-follow-fill',     gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)', accent: '#0ab39c' },
   { key: 'disabled',              label: 'Disabled Employees',       icon: 'ri-user-unfollow-fill',   gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)', accent: '#878a99' },
@@ -403,9 +282,6 @@ type ExpiryDays = 3 | 7 | 15;
 
 export default function HrEmployees() {
   const [tab, setTab] = useState<'active' | 'disabled'>('active');
-  // Brief skeleton flash when the Active/Disabled tab changes. The data is
-  // already in memory (client-side filter), so the switch is instant — this
-  // shimmer just gives the change a smooth, "loading new view" feel.
   const [tabSwitching, setTabSwitching] = useState(false);
   useEffect(() => {
     setTabSwitching(true);
@@ -415,32 +291,17 @@ export default function HrEmployees() {
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState<'Active' | 'Disabled' | 'All'>('Active');
 
-  // Keep the Active/Disabled tabs in sync with the Status dropdown so the
-  // user never lands on a filter combination that returns zero rows
-  // (Status=Disabled on the Active tab and vice-versa). Picking "All"
-  // leaves whatever tab the user is currently on — that's the only state
-  // where the two controls can legitimately diverge.
   useEffect(() => {
     if (statusFilter === 'Active'   && tab !== 'active')   setTab('active');
     if (statusFilter === 'Disabled' && tab !== 'disabled') setTab('disabled');
-    // statusFilter === 'All' is intentionally a no-op
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter]);
   const [deptFilter, setDeptFilter] = useState<string>('All Depts');
 
-  // ── Server-backed state ─────────────────────────────────────────────
-  // employees:  raw API rows + a UI-shaped projection. We keep the raw
-  //             rows around so handlers can read foreign-key ids without
-  //             reverse-mapping label strings.
   const [apiEmployees, setApiEmployees] = useState<ApiEmployee[]>([]);
   const [saving, setSaving] = useState(false);
-  // True until the first /employees response lands — drives the table
-  // shimmer skeleton so the page never shows the "No employees" empty
-  // state while the network call is still in flight.
   const [loadingEmployees, setLoadingEmployees] = useState(true);
 
-  // Master dropdown rows — fetched once on mount, reused across the wizard.
-  // Each is the raw API row; option-mapping happens at render-time.
   const [mDepts, setMDepts] = useState<any[]>([]);
   const [mDesignations, setMDesignations] = useState<any[]>([]);
   const [mRoles, setMRoles] = useState<any[]>([]);
@@ -449,13 +310,9 @@ export default function HrEmployees() {
   const [mStates, setMStates] = useState<any[]>([]);
   const [mHolidayGroups, setMHolidayGroups] = useState<any[]>([]);
 
-  // Pre-built options derived from the masters above. Only ACTIVE holiday
-  // groups are selectable — Inactive groups must not appear when assigning a
-  // group to an employee. (`status` defaults to Active for legacy rows that
-  // predate the column.)
   const holidayGroupOptions = useMemo(
     () => mHolidayGroups
-      .filter(g => (g.status ?? 'Active') === 'Active')
+      .filter(g => String(g.status ?? 'Active').toLowerCase() !== 'inactive')
       .map(g => ({ value: String(g.id), label: g.name })),
     [mHolidayGroups],
   );
@@ -480,12 +337,6 @@ export default function HrEmployees() {
     () => mCountries.map(c => ({ value: String(c.id), label: c.name })),
     [mCountries],
   );
-  // States filtered by a chosen country id. Country must be picked first;
-  // until then the picker is empty, which makes the "country before state"
-  // ordering a hard requirement (UX matches GST/address forms across the app).
-  // The two memoized lists (currentAddressStates / permanentAddressStates)
-  // are computed below, AFTER the eCurCountry / ePermCountry state vars are
-  // declared.
   const statesForCountry = useCallback((countryId: string) => {
     if (!countryId) return [] as { value: string; label: string }[];
     return mStates
@@ -503,10 +354,6 @@ export default function HrEmployees() {
     }
   }, []);
 
-  // Re-fetchable so we can refresh the source lists when a dropdown opens
-  // (covers the case where a new master row is added in another modal/tab
-  // during this session). Fire-and-forget; failures fall back to whatever
-  // is already in state.
   const reloadMasters = useCallback(() => {
     Promise.allSettled([
       api.get('/master/departments').then(r => setMDepts(Array.isArray(r.data) ? r.data : [])),
@@ -527,11 +374,6 @@ export default function HrEmployees() {
     reloadMasters();
   }, [reloadEmployees, reloadMasters]);
 
-  // Auto-refresh the list when the HR returns to this tab/window. A candidate
-  // finishing the public onboarding link does so on THEIR device, so the HR's
-  // open page can't know about it — without this they had to hit browser
-  // refresh to see the new joiner. Refetching on focus/visibility makes the
-  // new entry appear the moment HR switches back to the tab.
   useEffect(() => {
     const refresh = () => { if (document.visibilityState === 'visible') reloadEmployees().catch(() => {}); };
     window.addEventListener('focus', refresh);
@@ -542,30 +384,18 @@ export default function HrEmployees() {
     };
   }, [reloadEmployees]);
 
-  // UI-shaped rows derived from `apiEmployees`. Carries `_dbId` + `_raw` so
-  // edit/delete handlers can act on the server row without re-fetching.
   const apiRows = useMemo(() => apiEmployees.map(apiToRow), [apiEmployees]);
 
-  // Onboarding link modal state
   const [onboardOpen, setOnboardOpen] = useState(false);
   const [onbName, setOnbName] = useState('');
   const [onbEmail, setOnbEmail] = useState('');
   const [onbDept, setOnbDept] = useState('');
   const [onbDate, setOnbDate] = useState('');
   const [onbExpiry, setOnbExpiry] = useState<ExpiryDays>(15);
-  // After a successful invite the URL is stashed here so the modal can
-  // show the copy-link panel instead of immediately closing. `null` = the
-  // modal is still in "fill in candidate details" mode.
   const [generatedInviteUrl, setGeneratedInviteUrl] = useState<string | null>(null);
   const [copiedAt, setCopiedAt] = useState<number>(0);
-  // True while the POST is in flight. Disables the submit button and
-  // swaps its icon to a spinner so impatient admins don't fire the same
-  // invite multiple times.
   const [generatingInvite, setGeneratingInvite] = useState(false);
 
-  // Onboarding form — inline validation. Mirrors the pattern used by the
-  // master/client forms: per-field error map cleared as the user fixes the
-  // field, with a summary toast on submit if anything is still invalid.
   const toast = useToast();
   const confirmDialog = useConfirm();
   const { theme } = useTheme();
@@ -590,10 +420,6 @@ export default function HrEmployees() {
     return errs;
   };
   const handleGenerateOnboarding = async () => {
-    // Idempotency guard — clicking the button while a request is already
-    // in flight would otherwise create duplicate invites + duplicate
-    // emails. The disabled+spinner styling on the button is a UX hint;
-    // this early return is the actual safety belt.
     if (generatingInvite) return;
 
     const errs = validateOnboarding();
@@ -602,8 +428,6 @@ export default function HrEmployees() {
       toast.error('Please fix the highlighted fields', `${Object.keys(errs).length} field${Object.keys(errs).length === 1 ? '' : 's'} need${Object.keys(errs).length === 1 ? 's' : ''} attention.`);
       return;
     }
-    // The dropdown now binds directly to the master id (was previously the
-    // department name). Coerce to int so the FK survives null vs ''.
     const deptId = onbDept ? Number(onbDept) : null;
     setGeneratingInvite(true);
     try {
@@ -613,11 +437,6 @@ export default function HrEmployees() {
         department_id:      deptId ?? null,
         expected_join_date: onbDate || null,
         expiry_days:        onbExpiry,
-        // Pin the link to the SPA the admin is using right now, regardless
-        // of what APP_URL is set to in .env. Without this, links open
-        // whatever URL the .env points at — typically the Apache path,
-        // which serves a different bundle and bounces the candidate back
-        // to the login screen.
         app_origin:         typeof window !== 'undefined' ? window.location.origin : undefined,
       });
       const inviteUrl = r?.data?.invite?.url;
@@ -625,15 +444,11 @@ export default function HrEmployees() {
         'Onboarding link sent',
         `${onbExpiry}-day link emailed to ${onbEmail}.`,
       );
-      // Hold the modal open and show a copy-link panel — the admin can
-      // copy the URL and share it elsewhere (Slack, WhatsApp, etc.) or
-      // close. The form is hidden once the link is generated.
       if (inviteUrl) setGeneratedInviteUrl(inviteUrl);
       else closeOnboard();
     } catch (err: any) {
       const apiErrors = err?.response?.data?.errors;
       if (apiErrors) {
-        // Map backend keys back onto the modal's local error map.
         const next: OnbErrors = {};
         if (apiErrors.invitee_email) next.email = apiErrors.invitee_email[0];
         if (apiErrors.invitee_name)  next.name  = apiErrors.invitee_name[0];
@@ -660,9 +475,6 @@ export default function HrEmployees() {
     setCopiedAt(0);
   };
 
-  /** Copy the generated invite URL to the clipboard. Falls back to a
-   *  programmatic textarea-select when the modern Clipboard API isn't
-   *  available (older browsers / non-secure contexts). */
   const copyGeneratedUrl = async () => {
     if (!generatedInviteUrl) return;
     try {
@@ -683,14 +495,9 @@ export default function HrEmployees() {
     }
   };
 
-  // Triggered from the disabled-tab person icon — pre-fills the onboarding link
-  // modal with the row's data so the recruiter can issue a fresh signed link
-  // without retyping the basics.
   const openOnboardingForEmployee = (row: EmployeeRow) => {
     setOnbName(row.name);
     setOnbEmail(row.email);
-    // Map the row's department label back to its master id since the
-    // dropdown now binds to id, not name.
     const matchedDeptId = mDepts.find(d => d.name === row.department)?.id;
     setOnbDept(matchedDeptId ? String(matchedDeptId) : '');
     setOnbDate('');
@@ -698,18 +505,10 @@ export default function HrEmployees() {
     setOnboardOpen(true);
   };
 
-  // Permanent-delete confirmation (Disabled tab only). Holds the row pending
-  // confirmation so the modal can show the name + emp_code; null when closed.
   const [confirmDelete, setConfirmDelete] = useState<EmployeeRow | null>(null);
-  // Face-biometric enrolment for an employee. Admin clicks the face icon
-  // on a row → modal opens with that employee's DB id so the descriptor is
-  // POSTed against `/api/face/register` with `employee_id: <that row>`.
   const [faceRegEmployeeId, setFaceRegEmployeeId] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  /** Force-delete the row currently held in `confirmDelete`. Hits the
-   *  /employees/{id}/force endpoint which only accepts already-trashed rows
-   *  server-side, then refreshes the list. */
   const handleForceDelete = async () => {
     const row = confirmDelete;
     if (!row || deleting) return;
@@ -732,48 +531,27 @@ export default function HrEmployees() {
     }
   };
 
-  // Add / Edit employee modal state
   const [empOpen, setEmpOpen] = useState(false);
   const [empMode, setEmpMode] = useState<'add' | 'edit'>('add');
   const [empEditingName, setEmpEditingName] = useState<string>('');
   const [empStep, setEmpStep] = useState<1 | 2 | 3 | 4>(1);
-  // Highest step the user has reached via "Next". The stepper allows
-  // jumping back to any step <= empMaxStep, but blocks forward jumps so
-  // users can't skip the per-step validation gate.
   const [empMaxStep, setEmpMaxStep] = useState<1 | 2 | 3 | 4>(1);
-  // Step 1 — Employee Details
-  // Country/state state holds the master-row ID (as a string) so the API
-  // payload can ship `work_country_id` / `country_id` / `state_id` directly.
-  // Empty string = "not yet picked".
   const [eWorkCountry, setEWorkCountry]   = useState('');
   const [eFirstName, setEFirstName]       = useState('');
   const [eMiddleName, setEMiddleName]     = useState('');
   const [eLastName, setELastName]         = useState('');
   const [eDisplayName, setEDisplayName]   = useState('');
-  // Tracks whether the user has manually edited Display Name. Until they do,
-  // typing in First/Last Name auto-fills it as "First Last".
   const [eDisplayNameTouched, setEDisplayNameTouched] = useState(false);
   const [eActualName, setEActualName]     = useState('');
-  /* True once the user has typed in Actual Name directly OR triggered
-   * "Copy from Display Name". While false, Actual Name stays blank as
-   * First / Middle / Last are typed — the previous auto-mirror caused
-   * admins to submit names they never reviewed. */
   const [eActualNameTouched, setEActualNameTouched] = useState(false);
-  // True once the form has been hydrated from an existing employee row.
-  // While locked, the legal "Actual Name" stays pinned to the saved value
-  // — typing into first/middle/last only moves the Display Name preview.
-  // For a fresh Add (locked=false), Actual Name mirrors Display Name so
-  // both fields show the same composed value until the row is saved.
   const [eActualNameLocked, setEActualNameLocked] = useState(false);
   const [eGender, setEGender]             = useState('');
   const [eDob, setEDob]                   = useState('');
   const [eNationality, setENationality]   = useState('');
-  // Step 1 — Contact & Identity
   const [eWorkEmail, setEWorkEmail]       = useState('');
   const [eMobile, setEMobile]             = useState('');
   const [eEmpId, setEEmpId]               = useState('');
   const [eStatus, setEStatus]             = useState('Active');
-  // Step 1 — Address (current + permanent).
   const [eCurAddr1, setECurAddr1]   = useState('');
   const [eCurAddr2, setECurAddr2]   = useState('');
   const [eCurCity, setECurCity]     = useState('');
@@ -786,12 +564,9 @@ export default function HrEmployees() {
   const [ePermCity, setEPermCity]   = useState('');
   const [ePermState, setEPermState] = useState('');
   const [ePermCountry, setEPermCountry] = useState('');
-  // Country-filtered state lists for the two address rows. Compute here,
-  // after the country state vars have been declared.
   const currentAddressStates   = useMemo(() => statesForCountry(eCurCountry),  [statesForCountry, eCurCountry]);
   const permanentAddressStates = useMemo(() => statesForCountry(ePermCountry), [statesForCountry, ePermCountry]);
   const [ePermPin, setEPermPin]     = useState('');
-  // Step 2 — Job Details
   const [eJoinDate, setEJoinDate]                = useState('');
   const [eDept, setEDept]                        = useState('');
   const [eDesignation, setEDesignation]          = useState('');
@@ -801,44 +576,22 @@ export default function HrEmployees() {
   const [eLegalEntity, setELegalEntity]          = useState('');
   const [eLocation, setELocation]                = useState('');
   const [eReportingMgr, setEReportingMgr]        = useState('');
-  // The manager saved on the row being edited, projected as a ready-to-use
-  // picker option. Injected into the options list even when that manager is
-  // no longer a live candidate (resigned / onboarding incomplete / outside
-  // the current branch scope) so the field renders the saved value instead
-  // of looking empty — which read as "the manager didn't save".
   const [savedMgrOption, setSavedMgrOption] = useState<{ value: string; label: string } | null>(null);
   const [eProbationPolicy, setEProbationPolicy]  = useState('');
   const [eNoticePeriod, setENoticePeriod]        = useState('');
-  // Custom values that appear below their dropdowns when "Set Custom…" is picked.
   const [eCustomProbation, setECustomProbation]  = useState('');
   const [eCustomNotice, setECustomNotice]        = useState('');
-  // Step 3 — Work Details
-  // eLeavePlan stores the LeavePlan id as a string (the legacy column is
-  // string(100); the new normalized pivot stores numeric leave_plan_id).
-  // Dropdown options are fetched live from /api/leave-plans so HR sees the
-  // actual plans configured for the branch instead of three hardcoded names.
   const [eLeavePlan, setELeavePlan]              = useState('');
   const [leavePlanOptions, setLeavePlanOptions]  = useState<Array<{ value: string; label: string }>>([]);
   useEffect(() => {
     leavePlansApi.list()
       .then(plans => {
         setLeavePlanOptions(plans.map(p => ({ value: String(p.id), label: p.plan_name })));
-        // No auto-selection — admin picks the plan explicitly. Previously
-        // we pre-filled the branch's default plan, but QA flagged that as
-        // silently choosing a value the user didn't actively select.
       })
       .catch(err => console.warn('[HrEmployees] failed to load leave plans', err));
   }, []);
-  // Step-3 dropdowns all start empty — the admin must explicitly pick a
-  // value instead of having silent defaults pre-selected (which used to
-  // result in admins accidentally saving "General Shift" / "Manual" etc.
-  // without realising they hadn't actually chosen).
   const [eHolidayList, setEHolidayList]          = useState('');
   const [eAttendanceTracking, setEAttendanceTracking] = useState(true);
-  // Options shown in the Holiday Group dropdown: the active groups, plus — when
-  // EDITING an employee already assigned to a group that has since been set
-  // Inactive — that group too (flagged), so the existing selection isn't
-  // silently cleared. New (Add) employees only ever see active groups.
   const holidayGroupSelectOptions = useMemo(() => {
     const opts = [...holidayGroupOptions];
     if (eHolidayList && !opts.some(o => o.value === String(eHolidayList))) {
@@ -858,16 +611,10 @@ export default function HrEmployees() {
   const [eLaptopAssetId, setELaptopAssetId]      = useState('');
   const [eMobileDevice, setEMobileDevice]        = useState('');
   const [eOtherAssets, setEOtherAssets]          = useState('');
-  // Asset FK pickers (Step 3). Replace the legacy free-text fields above
-  // — those still hydrate for backwards-compat but the UI now writes to
-  // these. Uniqueness across employees is enforced by the backend.
   const [eLaptopMasterAssetId, setELaptopMasterAssetId] = useState('');
   const [eMobileAssigned,      setEMobileAssigned]      = useState('No');
   const [eMobileMasterAssetId, setEMobileMasterAssetId] = useState('');
   const [eOtherMasterAssetIds, setEOtherMasterAssetIds] = useState<string[]>([]);
-  // Available-asset pools per category. Refilled when the wizard opens
-  // and excludes assets booked by other employees (the row being edited
-  // is excluded from the booked-set so the admin can keep their pick).
   type AssetOpt = { value: string; label: string };
   const [laptopAssetOpts, setLaptopAssetOpts] = useState<AssetOpt[]>([]);
   const [mobileAssetOpts, setMobileAssetOpts] = useState<AssetOpt[]>([]);
@@ -875,29 +622,12 @@ export default function HrEmployees() {
   const [eAadharFile, setEAadharFile]            = useState<File | null>(null);
   const [ePanFile, setEPanFile]                  = useState<File | null>(null);
   const [ePhotoFile, setEPhotoFile]              = useState<File | null>(null);
-  // Server-side documents already on this employee. Keyed by
-  // document_key ('aadhaar' | 'pan' | 'photo') so the Documents row
-  // can show the saved file name + a view link instead of an empty
-  // "Choose file" tile when re-opening Edit. Matches the keys used
-  // by the bigger Stage 2 onboarding modal.
   type ServerDoc = { id: number; document_key: string; original_name: string | null; status: string; url: string | null };
   const [eExistingDocs, setEExistingDocs] = useState<Record<string, ServerDoc>>({});
-  // Ref mirror of eExistingDocs. The Step-3 validator (and any caller that
-  // runs in an async handler) reads from this ref so it ALWAYS sees the
-  // latest server-doc map regardless of when the validator's closure was
-  // created. Without the ref, the user could see a green "Uploaded" tile
-  // (state has hydrated) yet still hit "Aadhar Card upload is required"
-  // because handleSaveEmployee captured the validator from an earlier
-  // render where eExistingDocs was still {} (e.g. clicked Save quickly
-  // after opening Edit, before the GET /documents response landed).
   const eExistingDocsRef = useRef<Record<string, ServerDoc>>({});
   useEffect(() => { eExistingDocsRef.current = eExistingDocs; }, [eExistingDocs]);
   const [eDocBusy, setEDocBusy]           = useState<Record<string, boolean>>({});
 
-  // Assign Assets modal (opened by the per-row Workstation icon).
-  // Single-purpose now: pick laptop / mobile / other assets and persist
-  // them onto the employee row. Security + HR Record tabs were removed
-  // — those flows belong elsewhere.
   const [assignOpen, setAssignOpen]   = useState(false);
   const [assignEmp, setAssignEmp]     = useState<EmployeeRow | null>(null);
   const [aLaptopAssigned, setALaptopAssigned]           = useState('No');
@@ -906,9 +636,6 @@ export default function HrEmployees() {
   const [aMobileMasterAssetId, setAMobileMasterAssetId] = useState('');
   const [aOtherMasterAssetIds, setAOtherMasterAssetIds] = useState<string[]>([]);
   const [aSaving, setASaving] = useState(false);
-  // Available-asset pools for the Assign modal. Refilled when the modal
-  // opens; current employee is excluded from the booked-set so the
-  // admin can keep their own pre-existing pick.
   const [aLaptopOpts, setALaptopOpts] = useState<AssetOpt[]>([]);
   const [aMobileOpts, setAMobileOpts] = useState<AssetOpt[]>([]);
   const [aOtherOpts,  setAOtherOpts]  = useState<AssetOpt[]>([]);
@@ -916,7 +643,6 @@ export default function HrEmployees() {
   const openAssignAssets = (row: EmployeeRow) => {
     setAssignEmp(row);
     const raw = (row as any)._raw || {};
-    // Hydrate from the row so already-issued assets are pre-selected.
     setALaptopAssigned(raw.laptop_master_asset_id ? 'Yes' : 'No');
     setALaptopMasterAssetId(raw.laptop_master_asset_id ? String(raw.laptop_master_asset_id) : '');
     setAMobileAssigned(raw.mobile_master_asset_id ? 'Yes' : 'No');
@@ -927,7 +653,6 @@ export default function HrEmployees() {
     setAssignOpen(true);
   };
 
-  // Fetch the available pools whenever the Assign modal opens.
   useEffect(() => {
     if (!assignOpen) return;
     const dbId = (assignEmp as any)?._dbId as number | undefined;
@@ -966,13 +691,8 @@ export default function HrEmployees() {
       });
       toast.success('Assets saved', `Updated assignments for ${assignEmp.name}.`);
       closeAssign();
-      // Refresh the list so the row reflects the new assets next time
-      // the user opens the modal.
       try { await reloadEmployees(); } catch { /* best-effort */ }
     } catch (err: any) {
-      // Backend's assertAssetsNotDoubleBooked() returns 422 with the
-      // conflicting employee's name — surface that verbatim so the
-      // admin knows which device clashed.
       const errors = err?.response?.data?.errors;
       const firstMsg = errors ? Object.values(errors).flat()[0] : null;
       toast.error('Could not save', String(firstMsg || err?.response?.data?.message || err?.message || 'Try again'));
@@ -986,44 +706,26 @@ export default function HrEmployees() {
     setAssignEmp(null);
   };
 
-  // Manage Permissions — opens a dedicated page (not a modal) so the matrix
-  // gets full screen real estate. The route reads the row from navigation
-  // state; falling back to just the id if landed on directly.
   const navigate = useNavigate();
   const location = useLocation();
 
-  // ── Cross-page Edit hand-off ────────────────────────────────────────
-  // Other pages (e.g. HrEmployeeOnboarding) push the full 4-step wizard
-  // open by navigating here with state.openEditEmpCode. We watch for it
-  // once the API rows are loaded, find the matching row by emp_code, pop
-  // the wizard, and clear the state so a subsequent re-render or refresh
-  // doesn't keep re-opening it.
   useEffect(() => {
     const incoming = (location.state as any)?.openEditEmpCode as string | undefined;
     if (!incoming) return;
-    if (apiRows.length === 0) return; // wait for fetch to land
+    if (apiRows.length === 0) return;
     const match = apiRows.find(r => r.id === incoming);
     if (match) {
-      // Stash the originating URL so closing the wizard (after save or
-      // manual close) bounces the user back to it. Without this they'd
-      // be stranded on /hr/employees after editing from the onboarding
-      // page.
       const back = (location.state as any)?.returnTo as string | undefined;
       if (back) setReturnToOnClose(back);
       openEditEmployee(match);
     }
-    // Clear state so the modal isn't reopened on the next render.
     navigate(location.pathname, { replace: true, state: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiRows, location.state]);
   const openPermissions = (row: EmployeeRow) => {
-    // Prefer the encrypted handle (server-issued) so the address bar
-    // doesn't expose the real EMP-code. `row.id` stays as the legacy
-    // fallback for rows the API hasn't re-surfaced yet.
     navigate(`/hr/employees/${encodeURIComponent(row.encryptedId || row.id)}/permissions`, { state: { employee: row } });
   };
 
-  // Evidence Vault modal (opened by the per-row Documents/PDF icon)
   const [vaultOpen, setVaultOpen] = useState(false);
   const [vaultEmp, setVaultEmp]   = useState<EmployeeRow | null>(null);
   const [vaultTab, setVaultTab]   = useState<'employee' | 'organizational'>('employee');
@@ -1034,15 +736,11 @@ export default function HrEmployees() {
   };
   const closeVault = () => { setVaultOpen(false); setVaultEmp(null); };
 
-  // Toggle confirmation — clicking the per-row enable/disable switch first
-  // pops a confirm modal; on Confirm the row's local toggle commits.
   const [togglePending, setTogglePending] = useState<{
     employee: EmployeeRow;
-    next: boolean;          // the state the user is asking to switch to
-    commit: () => void;     // callback into the ToggleSwitch's local setter
+    next: boolean;
+    commit: () => void;
   } | null>(null);
-  // Tracks whether the enable/disable network call is mid-flight so the
-  // confirm button can show a spinner + disable Cancel until it settles.
   const [toggling, setToggling] = useState(false);
 
   const requestToggle = (employee: EmployeeRow, next: boolean, commit: () => void) => {
@@ -1056,11 +754,8 @@ export default function HrEmployees() {
     setToggling(true);
     try {
       if (pending.next === false) {
-        // Disable = soft-delete on the server (employee + linked user).
         if (dbId) await handleDeleteEmployee(dbId, pending.employee.name);
       } else {
-        // Enable = restore the row + flip status back to Active +
-        // re-enable the paired login user. PATCH /employees/{id}/restore.
         if (dbId) {
           try {
             await api.patch(`/employees/${dbId}/restore`);
@@ -1069,7 +764,7 @@ export default function HrEmployees() {
           } catch (err: any) {
             toast.error('Could not enable employee', err?.response?.data?.message || err?.message || 'Try again');
             setTogglePending(null);
-            return;  // bail before commit so the row's local toggle stays disabled
+            return;
           }
         }
       }
@@ -1079,10 +774,7 @@ export default function HrEmployees() {
       setToggling(false);
     }
   };
-  // Step 4 — Compensation
   const [eEnablePayroll, setEEnablePayroll]      = useState(true);
-  // Step-4 dropdowns also start empty — admin picks pay group / salary
-  // frequency / structure / tax regime explicitly.
   const [ePayGroup, setEPayGroup]                = useState('');
   const [eAnnualSalary, setEAnnualSalary]        = useState('');
   const [eSalaryFreq, setESalaryFreq]            = useState('');
@@ -1092,17 +784,11 @@ export default function HrEmployees() {
   const [eBonusInAnnual, setEBonusInAnnual]      = useState(false);
   const [ePfEligible, setEPfEligible]            = useState(false);
   const [eDetailedBreakup, setEDetailedBreakup]  = useState(false);
-  // Detailed monthly salary breakup — earnings/deductions component lists
-  // persisted to the versioned salary_structures table. Loaded from the
-  // active structure on edit, seeded from annual_salary/12 when first enabled.
   const [eEarnings, setEEarnings]                = useState<SalBreakComp[]>([]);
   const [eDeductions, setEDeductions]            = useState<SalBreakComp[]>([]);
   const [eEsiApplicable, setEEsiApplicable]      = useState(false);
   const [ePtApplicable, setEPtApplicable]        = useState(true);
   const [eBreakupLoading, setEBreakupLoading]    = useState(false);
-  // Which employee dbId we've already hydrated the breakup for (guards the
-  // load effect from re-fetching/overwriting in-progress edits) + a baseline
-  // signature so Save only POSTs a new structure version when it changed.
   const breakupLoadedForRef = useRef<number | 'new' | null>(null);
   const breakupBaselineRef  = useRef<string | null>(null);
 
@@ -1118,17 +804,11 @@ export default function HrEmployees() {
     setECurAddr1(''); setECurAddr2(''); setECurCity(''); setECurState(''); setECurCountry(''); setECurPin('');
     setESameAsCurrent(false);
     setEPermAddr1(''); setEPermAddr2(''); setEPermCity(''); setEPermState(''); setEPermCountry(''); setEPermPin('');
-    // Step 2
     setEJoinDate(''); setEDept(''); setEDesignation('');
-    // Empty defaults — these dropdowns must be picked explicitly by the
-    // admin on Add Employee instead of being silently pre-selected.
     setEPrimaryRole(''); setEAncillaryRole([]); setEWorkType('');
     setELegalEntity(''); setELocation(''); setEReportingMgr(''); setSavedMgrOption(null);
     setEProbationPolicy(''); setENoticePeriod('');
     setECustomProbation(''); setECustomNotice('');
-    // Step 3 — all dropdowns reset to empty so admin must pick on every
-    // new employee (no silent defaults). Toggles + Yes/No flags keep
-    // sensible defaults (Attendance ON, no laptop, etc).
     setELeavePlan(''); setEHolidayList('');
     setEAttendanceTracking(true); setEShift('');
     setEWeeklyOff(''); setEAttendanceNumber('');
@@ -1138,8 +818,6 @@ export default function HrEmployees() {
     setELaptopMasterAssetId(''); setEMobileAssigned('No'); setEMobileMasterAssetId(''); setEOtherMasterAssetIds([]);
     setEAadharFile(null); setEPanFile(null); setEPhotoFile(null);
     setEExistingDocs({}); setEDocBusy({});
-    // Step 4 — dropdowns reset to empty too; toggles keep their defaults
-    // (Payroll ON, bonus/PF/breakup OFF until explicitly enabled).
     setEEnablePayroll(true); setEPayGroup('');
     setEAnnualSalary(''); setESalaryFreq(''); setESalaryFrom('');
     setESalaryStructure(''); setETaxRegime('');
@@ -1151,9 +829,6 @@ export default function HrEmployees() {
     setEErrors({});
   };
 
-  // When the wizard was popped from another page (e.g. /hr/employee-onboarding),
-  // closing it sends the user back to that page so they don't get stranded
-  // on the HR Employees list. Cleared after consumption.
   const [returnToOnClose, setReturnToOnClose] = useState<string | null>(null);
   const closeEmp = () => {
     setEmpOpen(false);
@@ -1165,32 +840,15 @@ export default function HrEmployees() {
     }
   };
 
-  // Db id of the employee currently being edited. Null in add mode. Stored
-  // on the row by apiToRow() as `_dbId`.
   const [editingDbId, setEditingDbId] = useState<number | null>(null);
-  // Mirror the editing ID into a ref so persistCurrentStep can read the
-  // freshly-allocated ID inside the SAME async function call. Without
-  // this, the React state closure on step 2 still saw editingDbId=null
-  // (state update from step 1 hadn't propagated yet) and each Next click
-  // POST'ed a fresh employee row — producing the duplicate-row bug the
-  // user saw in the list.
   const editingDbIdRef = useRef<number | null>(null);
   useEffect(() => { editingDbIdRef.current = editingDbId; }, [editingDbId]);
 
-  // Monthly gross implied by the entered salary + frequency. The salary_structures
-  // model is monthly, so an annual figure is divided by 12; "Per month" is taken
-  // as-is. Used to seed the detailed breakup and to annualise the CTC display.
   const monthlyGrossFromSalary = useCallback((): number => {
     const amt = Number(eAnnualSalary) || 0;
     return eSalaryFreq === 'Per month' ? amt : amt / 12;
   }, [eAnnualSalary, eSalaryFreq]);
 
-  // ── Detailed salary breakup: load (edit) or seed (new) ──
-  // Runs when the user is on Step 4 with "Detailed breakup" enabled. For an
-  // existing employee we pull their active salary_structures row and prefill the
-  // editable component tables; otherwise we seed a 50/30/20 monthly split from
-  // the entered salary. breakupLoadedForRef makes this fire once per target so
-  // re-renders (and the user's own in-progress edits) are never clobbered.
   useEffect(() => {
     if (!empOpen || empStep !== 4 || !eDetailedBreakup) return;
     const target: number | 'new' = editingDbId ?? 'new';
@@ -1203,7 +861,7 @@ export default function HrEmployees() {
       setEDeductions([]);
       setEEsiApplicable(monthlyGross > 0 && monthlyGross <= 21000);
       setEPtApplicable(true);
-      breakupBaselineRef.current = null; // no server version yet → treat as dirty
+      breakupBaselineRef.current = null;
     };
 
     if (typeof target === 'number') {
@@ -1234,15 +892,9 @@ export default function HrEmployees() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empOpen, empStep, eDetailedBreakup, editingDbId]);
 
-  // Running monthly totals for the detailed breakup sheet.
   const breakupGross = useMemo(() => eEarnings.reduce((s, c) => s + (Number(c.amount) || 0), 0), [eEarnings]);
   const breakupDed   = useMemo(() => eDeductions.reduce((s, c) => s + (Number(c.amount) || 0), 0), [eDeductions]);
 
-  // Full validation of the detailed breakup. Returns a per-row error map for
-  // earnings + deductions (keyed by index) plus a form-level message for
-  // whole-sheet problems. A completely blank row is treated as "not yet
-  // filled" (it's stripped on save) so freshly-added empty rows don't flash
-  // red; only partially-filled / out-of-bounds / duplicate rows are flagged.
   const breakupErrors = useMemo(() => {
     const earnings: Record<number, string> = {};
     const deductions: Record<number, string> = {};
@@ -1253,7 +905,7 @@ export default function HrEmployees() {
       const label = c.label.trim();
       const amt = Number(c.amount);
       const blank = !label && (!Number.isFinite(amt) || amt === 0);
-      if (blank && treatEmptyAsBlank) return null; // stripped on save → ignore
+      if (blank && treatEmptyAsBlank) return null;
       if (!label) return 'Component name is required';
       if (label.length > MAX_COMP_LABEL) return `Name must be ≤ ${MAX_COMP_LABEL} characters`;
       if (!Number.isFinite(amt) || amt <= 0) return 'Amount must be greater than 0';
@@ -1286,15 +938,11 @@ export default function HrEmployees() {
     return { earnings, deductions, form };
   }, [eDetailedBreakup, eEarnings, eDeductions, breakupGross, breakupDed]);
 
-  // Component-table row mutators shared by the Earnings + Deductions lists.
   const updateBreakRow = (which: 'earn' | 'ded', i: number, field: 'label' | 'amount', value: string) => {
     const list = which === 'earn' ? eEarnings : eDeductions;
     const setList = which === 'earn' ? setEEarnings : setEDeductions;
     const next = [...list];
     if (field === 'amount') {
-      // Salary components are never negative — block a negative / non-numeric
-      // keystroke outright (the value stays unchanged) rather than storing it
-      // and flagging later. Empty maps to 0.
       if (value === '') {
         next[i] = { ...next[i], amount: 0 };
       } else {
@@ -1312,9 +960,6 @@ export default function HrEmployees() {
     if (which === 'earn') setEEarnings([...eEarnings, { code: `comp_${eEarnings.length + 1}`, label: '', amount: 0 }]);
     else setEDeductions([...eDeductions, { code: `ded_${eDeductions.length + 1}`, label: '', amount: 0 }]);
   };
-  // Confirm before dropping a component — routes through the app's themed
-  // confirm dialog (SweetAlert-style, renders above the wizard modal). The
-  // removal only persists when the employee is saved, so the copy says so.
   const removeBreakRow = async (which: 'earn' | 'ded', i: number) => {
     const list = which === 'earn' ? eEarnings : eDeductions;
     const name = list[i]?.label?.trim() || 'this component';
@@ -1332,9 +977,6 @@ export default function HrEmployees() {
     clearEErr('salary_breakup');
   };
 
-  // Editable component table (Earnings / Deductions) for the detailed breakup
-  // sheet. Mirrors the layout of SalaryStructureModal so the wizard and the
-  // Payroll → Salary Setup modal read identically.
   const renderBreakTable = (which: 'earn' | 'ded', accent: string, heading: string) => {
     const list = which === 'earn' ? eEarnings : eDeductions;
     const errs = which === 'earn' ? breakupErrors.earnings : breakupErrors.deductions;
@@ -1388,22 +1030,17 @@ export default function HrEmployees() {
     );
   };
 
-  // Persist the detailed monthly breakup to the versioned salary_structures
-  // table — only when the toggle is on AND the components changed since they
-  // were loaded (breakupBaselineRef), so re-saving an unchanged employee won't
-  // spawn a redundant structure version. The /salary-structures endpoint
-  // supersedes the prior active row and recomputes any draft payslips.
   const persistBreakup = async (empId: number): Promise<void> => {
     if (!eDetailedBreakup) return;
     const earn = eEarnings
       .filter(c => c.label.trim() && Number(c.amount) >= 0)
       .map((c, i) => ({ code: (c.code || `comp_${i + 1}`).trim(), label: c.label.trim(), amount: Number(c.amount) || 0 }));
-    if (!earn.length) return; // validateStep4 blocks a payroll-enabled empty breakup
+    if (!earn.length) return;
     const ded = eDeductions
       .filter(c => c.label.trim())
       .map((c, i) => ({ code: (c.code || `ded_${i + 1}`).trim(), label: c.label.trim(), amount: Number(c.amount) || 0 }));
     const sig = breakupSignature(earn, ded, ePfEligible, eEsiApplicable, ePtApplicable);
-    if (breakupBaselineRef.current === sig) return; // unchanged → no new version
+    if (breakupBaselineRef.current === sig) return;
 
     await api.post('/salary-structures', {
       employee_id: empId,
@@ -1417,19 +1054,8 @@ export default function HrEmployees() {
     breakupBaselineRef.current = sig;
   };
 
-  // Token used to ignore stale uniqueness-check responses if the user
-  // edits the mobile field again before the previous request returns.
   const mobileCheckTokenRef = useRef(0);
 
-  /**
-   * Probe the backend for mobile-number uniqueness in this tenant.
-   * Returns true when the value is available (no conflict). On a
-   * confirmed duplicate, sets `eErrors.mobile` to the server-supplied
-   * message so the inline field error renders immediately — without
-   * waiting for the user to click Next and round-trip a full save.
-   * Skips when the number isn't a valid shape yet (let the format
-   * validator own that error first).
-   */
   const checkMobileUnique = useCallback(async (value: string): Promise<boolean> => {
     const v = (value || '').trim();
     const digits = v.replace(/\D/g, '');
@@ -1441,7 +1067,7 @@ export default function HrEmployees() {
       const excludeId = editingDbIdRef.current;
       if (excludeId) params.set('exclude_employee_id', String(excludeId));
       const r = await api.get(`/employees/check-mobile?${params.toString()}`);
-      if (token !== mobileCheckTokenRef.current) return true; // stale
+      if (token !== mobileCheckTokenRef.current) return true;
       if (r?.data?.available === false) {
         const msg = r.data.message || 'This mobile number is already in use.';
         setEErrors(prev => ({ ...prev, mobile: msg }));
@@ -1449,17 +1075,10 @@ export default function HrEmployees() {
       }
       return true;
     } catch {
-      // Network / auth blip — don't block the user; the backend's
-      // guardDuplicate on save will still catch a real duplicate.
       return true;
     }
   }, []);
 
-  // ── Step 3 asset pools — laptop / mobile / other. Refetched whenever
-  //    the wizard opens (add or edit). The backend filter excludes
-  //    devices booked by other employees, so each select only shows
-  //    free hardware. The current row is excluded from the booked-set
-  //    so the admin can keep their existing pick on edit.
   useEffect(() => {
     if (!empOpen) return;
     let cancelled = false;
@@ -1476,11 +1095,6 @@ export default function HrEmployees() {
     return () => { cancelled = true; };
   }, [empOpen, editingDbId]);
 
-  // ── Documents — hydrate already-uploaded files when editing. The
-  //    Stage 2 / public-onboarding flows use the same /documents
-  //    endpoints, so the keys here ('aadhaar' / 'pan' / 'photo') match
-  //    what those flows already write. Add-mode (no employee id yet)
-  //    starts with an empty map.
   useEffect(() => {
     if (!empOpen) return;
     if (!editingDbId) { setEExistingDocs({}); return; }
@@ -1496,17 +1110,6 @@ export default function HrEmployees() {
     return () => { cancelled = true; };
   }, [empOpen, editingDbId]);
 
-  /** Upload a chosen file straight to the document catalogue endpoint
-   *  and refresh `eExistingDocs` with the server's row. Used for both
-   *  first-time upload and replace — the backend already deletes the
-   *  prior file when the same key is uploaded again. */
-  /**
-   *  Match a File against an `accept`-style spec (e.g. `.pdf,.jpg,image/png`).
-   *  The HTML `accept` attribute only filters the OS picker — drag-drop and
-   *  files renamed to a permitted extension still slip through. This helper
-   *  is the real gate: callers must run it before storing or uploading the
-   *  file so `.php` / `.xss` / scripts can't be saved into employee state.
-   */
   const isAcceptedFile = (file: File, accept: string): boolean => {
     if (!accept || !accept.trim()) return true;
     const name = file.name.toLowerCase();
@@ -1548,8 +1151,6 @@ export default function HrEmployees() {
     }
   };
 
-  // Inline field-level validation. Keyed by API payload name so the same map
-  // can drive both red borders on inputs and the toast summary on submit.
   const [eErrors, setEErrors] = useState<Record<string, string>>({});
   const clearEErr = (key: string) => {
     setEErrors(prev => {
@@ -1560,46 +1161,22 @@ export default function HrEmployees() {
     });
   };
 
-  // Wizard scroll viewport — used to bring the first highlighted field into
-  // view after a failed validation.
   const empScrollRef = useRef<HTMLDivElement>(null);
 
-  // After validation fails we don't just toast — we scroll the FIRST errored
-  // field into view (and focus native inputs) so the red highlight is
-  // actually visible. Required fields like the Aadhar / PAN tiles sit at the
-  // bottom of a step, off-screen, so previously the toast fired while the
-  // highlighted field stayed below the fold and the user couldn't tell which
-  // field needed attention. Every errored control either carries `.is-invalid`
-  // / `.has-error` (inputs, doc tiles) or the MasterSelect `.invalid` wrapper,
-  // and renders a trailing `.emp-err` message — so the first match of any of
-  // those, in DOM order, anchors us to the first problem field.
   const scrollToFirstError = () => {
-    // Double rAF: the submit path can jump the wizard to an earlier step
-    // first (firstStepWithErrors), so we wait for that re-render to commit
-    // before querying the freshly-rendered fields.
     requestAnimationFrame(() => requestAnimationFrame(() => {
       const root = empScrollRef.current;
       if (!root) return;
       const el = root.querySelector('.is-invalid, .has-error, .master-select-wrap.invalid, .emp-err');
       if (!el) return;
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      // Focus only native text inputs/areas (not file inputs or custom
-      // selects, which could pop a dropdown on focus). preventScroll keeps
-      // the smooth scroll above from being overridden.
       const focusable = (el.closest('[class*="col"]') || el.parentElement)
         ?.querySelector('input:not([type="file"]), textarea') as HTMLElement | null;
       focusable?.focus?.({ preventScroll: true });
     }));
   };
 
-  // ── Add Employee — partial save persistence ──────────────────────────
-  // Drafts are NOT cached client-side anymore. Instead, every Next click
-  // calls `persistCurrentStep()` which writes the row to the backend as a
-  // soft-deleted employee. Closing the wizard mid-flow leaves that row in
-  // the Disabled tab, where the user can re-open it to continue. Add
-  // Employee therefore always opens with a clean form.
 
-  /** Pull the next EMP-### code so the new-row preview is populated. */
   const proceedFresh = async () => {
     try {
       const r = await api.get('/employees/next-code');
@@ -1626,24 +1203,16 @@ export default function HrEmployees() {
     setEditingDbId(dbId ?? null);
     editingDbIdRef.current = dbId ?? null;
 
-    // Hydrate from the raw API row when present so step-2 selects map back
-    // to ids (not labels). Falls back to the projected row when not.
     if (raw) {
       setEFirstName(raw.first_name || '');
       setEMiddleName(raw.middle_name || '');
       setELastName(raw.last_name || '');
-      // Display Name continues to live-update from first/middle/last
-      // (eDisplayNameTouched stays false). The legal "Actual Name", in
-      // contrast, locks to whatever the server has saved — editing the
-      // name fields after this point should move only the Display Name.
       setEDisplayName(raw.display_name || row.name);
       setEDisplayNameTouched(false);
       const savedActual = [raw.first_name, raw.middle_name, raw.last_name]
         .filter(Boolean).join(' ').trim() || raw.display_name || row.name;
       setEActualName(savedActual);
       setEActualNameLocked(true);
-      // Server-hydrated value counts as "touched" so the field doesn't
-      // get treated as blank-but-mirrored on subsequent name edits.
       setEActualNameTouched(true);
       setEWorkEmail(raw.email || '');
       setEMobile(raw.mobile || '');
@@ -1651,17 +1220,14 @@ export default function HrEmployees() {
       setEStatus(raw.status || 'Active');
       setEGender(raw.gender || '');
       setEDob(raw.date_of_birth ? String(raw.date_of_birth).slice(0, 10) : '');
-      // Identity FKs — country master ids
       setEWorkCountry(raw.work_country_id ? String(raw.work_country_id) : '');
       setENationality(raw.nationality_country_id ? String(raw.nationality_country_id) : '');
-      // Current address — saved on the employees row
       setECurAddr1(raw.address_line1 || '');
       setECurAddr2(raw.address_line2 || '');
       setECurCity(raw.city || '');
       setECurCountry(raw.country_id ? String(raw.country_id) : '');
       setECurState(raw.state_id ? String(raw.state_id) : '');
       setECurPin(raw.pincode || '');
-      // Job
       setEJoinDate(raw.date_of_joining ? String(raw.date_of_joining).slice(0, 10) : '');
       setEDept(raw.department_id ? String(raw.department_id) : '');
       setEDesignation(raw.designation_id ? String(raw.designation_id) : '');
@@ -1674,31 +1240,20 @@ export default function HrEmployees() {
       setEWorkType(raw.work_type || '');
       setELegalEntity(raw.legal_entity_id ? String(raw.legal_entity_id) : '');
       setELocation(raw.location || '');
-      /* Hydrate the manager picker. Two columns can hold the manager:
-       *   - reporting_manager_id      → an Employee row (kind 'employee')
-       *   - reporting_manager_user_id → a login User (kind === user_type)
-       * The picker value is "kind:id"; rebuild it from whichever side the
-       * backend saved. The reporting_manager_user relation carries the
-       * user_type so we know which kind prefix to use. */
       const mgrUserId   = raw.reporting_manager_user_id;
       const mgrUserType = raw.reporting_manager_user?.user_type;
-      if (raw.reporting_manager_id) {
+      if (raw.reporting_manager_id && raw.reporting_manager) {
         setEReportingMgr(`employee:${raw.reporting_manager_id}`);
         const m = raw.reporting_manager;
-        const nm = m?.display_name
-          || [m?.first_name, m?.last_name].filter(Boolean).join(' ').trim()
+        const nm = m.display_name
+          || [m.first_name, m.last_name].filter(Boolean).join(' ').trim()
           || `Employee #${raw.reporting_manager_id}`;
-        // Label by the manager's designation (e.g. "Anushka Bakde (HOD)");
-        // fall back to the generic "(Employee)" only when none is set.
-        const desig = m?.designation?.name?.trim() || 'Employee';
+        const desig = m.designation?.name?.trim() || 'Employee';
         setSavedMgrOption({ value: `employee:${raw.reporting_manager_id}`, label: `${nm} (${desig})` });
-      } else if (mgrUserId && mgrUserType) {
+      } else if (mgrUserId && mgrUserType && raw.reporting_manager_user) {
         setEReportingMgr(`${mgrUserType}:${mgrUserId}`);
         const u = raw.reporting_manager_user;
         const nm = u?.name || u?.email || `User #${mgrUserId}`;
-        // Label as "Name (Designation)" to match the dropdown options. Falls
-        // back to a readable user type (e.g. "Branch User") when the login
-        // user has no designation set — same shape as the managers() endpoint.
         const desig = u?.designation?.trim()
           || mgrUserType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
         setSavedMgrOption({ value: `${mgrUserType}:${mgrUserId}`, label: `${nm} (${desig})` });
@@ -1706,34 +1261,22 @@ export default function HrEmployees() {
         setEReportingMgr('');
         setSavedMgrOption(null);
       }
-      // Edit hydration — show whatever the admin actually saved. Earlier
-      // code special-cased the old "Default Probation Policy" / "Default
-      // Notice Period" placeholder strings and cleared them, but that
-      // wiped legitimate saves too. Trust the data; admins can re-pick if
-      // they want.
       setEProbationPolicy(raw.probation_policy || '');
       setENoticePeriod(raw.notice_period || '');
 
-      // Permanent address
       setEPermAddr1(raw.perm_address_line1 || '');
       setEPermAddr2(raw.perm_address_line2 || '');
       setEPermCity(raw.perm_city || '');
       setEPermCountry(raw.perm_country_id ? String(raw.perm_country_id) : '');
       setEPermState(raw.perm_state_id ? String(raw.perm_state_id) : '');
       setEPermPin(raw.perm_pincode || '');
-      // If the saved permanent address mirrors the current address, pre-tick
-      // the "Same as Current" checkbox so the UI reflects the original intent.
       setESameAsCurrent(
         !!raw.perm_address_line1 && raw.perm_address_line1 === raw.address_line1
         && raw.perm_pincode === raw.pincode
         && String(raw.perm_country_id ?? '') === String(raw.country_id ?? '')
       );
 
-      // Step 3 — Work Details. Plain hydration — load whatever was saved.
       if (raw.leave_plan !== undefined && raw.leave_plan !== null) setELeavePlan(raw.leave_plan);
-      // eHolidayList now holds the holiday GROUP id (the dropdown lists groups).
-      // Prefer the new holiday_group_id; fall back to the legacy string only so
-      // pre-migration rows don't blow up (they just won't pre-select a group).
       if (raw.holiday_group_id) setEHolidayList(String(raw.holiday_group_id));
       else setEHolidayList('');
       if (raw.attendance_tracking !== undefined && raw.attendance_tracking !== null) setEAttendanceTracking(!!raw.attendance_tracking);
@@ -1748,9 +1291,6 @@ export default function HrEmployees() {
       if (raw.laptop_asset_id !== undefined && raw.laptop_asset_id !== null) setELaptopAssetId(raw.laptop_asset_id);
       if (raw.mobile_device !== undefined && raw.mobile_device !== null) setEMobileDevice(raw.mobile_device);
       if (raw.other_assets !== undefined && raw.other_assets !== null) setEOtherAssets(raw.other_assets);
-      // Asset FK assignments. Treat presence-of-id as "Yes" for the
-      // mobile toggle — there's no separate `mobile_assigned` column
-      // since the legacy schema didn't have one.
       setELaptopMasterAssetId(raw.laptop_master_asset_id ? String(raw.laptop_master_asset_id) : '');
       setEMobileAssigned(raw.mobile_master_asset_id ? 'Yes' : (raw.mobile_device ? 'Yes' : 'No'));
       setEMobileMasterAssetId(raw.mobile_master_asset_id ? String(raw.mobile_master_asset_id) : '');
@@ -1758,7 +1298,6 @@ export default function HrEmployees() {
         ? raw.other_master_asset_ids.map((n: any) => String(n))
         : []);
 
-      // Step 4 — Compensation. Plain hydration — load whatever was saved.
       if (raw.enable_payroll !== undefined && raw.enable_payroll !== null) setEEnablePayroll(!!raw.enable_payroll);
       if (raw.pay_group !== undefined && raw.pay_group !== null) setEPayGroup(raw.pay_group);
       if (raw.annual_salary !== undefined && raw.annual_salary !== null) setEAnnualSalary(String(raw.annual_salary));
@@ -1781,18 +1320,10 @@ export default function HrEmployees() {
       setEStatus(row.enabled ? 'Active' : 'Inactive');
     }
 
-    // Resume at the next-unfilled step. The server tracks the highest
-    // step the user completed; we land on `last + 1` (capped at 4).
-    // wizard_step_completed of 0 (no progress yet) and 4 (fully filled)
-    // both fall through to step 1 — for 4 the user is now editing a
-    // completed row and step 1 is the natural starting point.
     const lastStep = Math.max(0, Math.min(4, Number((raw as any)?.wizard_step_completed ?? 0)));
     const resumeAt: 1 | 2 | 3 | 4 =
       lastStep === 0 || lastStep === 4 ? 1 : (((lastStep + 1) as 1 | 2 | 3 | 4));
     setEmpStep(resumeAt);
-    // A fully-filled row (lastStep === 4) means every step is editable;
-    // a partially-filled row unlocks up to the resume step (one past the
-    // last completed step); a brand-new wizard locks everything past 1.
     const maxStep: 1 | 2 | 3 | 4 =
       lastStep === 4 ? 4 : lastStep === 0 ? 1 : (((lastStep + 1) as 1 | 2 | 3 | 4));
     setEmpMaxStep(maxStep);
@@ -1800,28 +1331,12 @@ export default function HrEmployees() {
     setEmpOpen(true);
   };
 
-  /**
-   * POST or PUT the wizard's accumulated state to the server. All known fields
-   * are mapped to API-shaped keys; ones the API doesn't yet accept (work
-   * details, compensation) are sent through but ignored by the controller.
-   */
-  // Per-step validators. Each returns a (key → message) map for the fields
-  // owned by that step. Keys are the API payload names so server-side 422
-  // errors and client-side errors share the same key space and the same
-  // red-border rendering path.
   const validateStep1 = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
    
     const emailRe = /^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/;
-    // Identity
     if (!eWorkCountry)        e.work_country_id = 'Work country is required';
 
-    // Name fields (per QA CBC-HR test cases): letters + spaces only,
-    // 2–50 characters. First & Last are mandatory; Middle is optional but
-    // must satisfy the same alpha + length rules when it IS filled. The
-    // alpha check runs first so "John123@" reports "letters only" rather
-    // than a length message; the length checks then catch the 1-char and
-    // 51-char boundaries.
     const NAME_RE = /^[A-Za-z ]+$/;
     const nameError = (val: string, label: string): string | null => {
       const v = val.trim();
@@ -1841,8 +1356,6 @@ export default function HrEmployees() {
     if (!eDob) {
       e.date_of_birth = 'Date of birth is required';
     } else {
-      // 18+ employability check — reject anyone whose birth date is
-      // either in the future or less than 18 full years ago.
       const dob = new Date(eDob);
       if (isNaN(dob.getTime())) {
         e.date_of_birth = 'Enter a valid date of birth';
@@ -1853,7 +1366,6 @@ export default function HrEmployees() {
         } else {
           let age = today.getFullYear() - dob.getFullYear();
           const monthDiff = today.getMonth() - dob.getMonth();
-          // Adjust down if the birthday hasn't occurred yet this year.
           if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
             age--;
           }
@@ -1866,7 +1378,6 @@ export default function HrEmployees() {
       }
     }
     if (!eNationality)        e.nationality_country_id = 'Nationality is required';
-    // Contact
     if (!eWorkEmail.trim()) {
       e.email = 'Email is required';
     } else {
@@ -1878,14 +1389,11 @@ export default function HrEmployees() {
     if (!eMobile.trim()) {
       e.mobile = 'Mobile is required';
     } else {
-      // Catch invalid mobile shapes before the backend does. 6–15 digits
-      // covers every reasonable international format (E.164 max is 15).
       const digits = eMobile.replace(/\D/g, '');
       if (digits.length < 6 || digits.length > 15) {
         e.mobile = 'Mobile must be 6–15 digits';
       }
     }
-    // Address (current)
     if (!eCurAddr1.trim())    e.address_line1   = 'Address Line 1 is required';
     if (!eCurCity.trim())     e.city            = 'City is required';
     if (!eCurCountry)         e.country_id      = 'Country is required';
@@ -1916,29 +1424,13 @@ export default function HrEmployees() {
   }, [eJoinDate, eDept, eDesignation, ePrimaryRole, eLegalEntity, eReportingMgr,
       eProbationPolicy, eCustomProbation, eNoticePeriod, eCustomNotice]);
 
-  // Step 3 — Documents section requires Aadhar + PAN. A document counts
-  // as supplied if EITHER (a) the admin just picked a file in this
-  // session (eAadharFile / ePanFile) OR (b) a prior upload already lives
-  // on the server. The server-doc lookup reads from `eExistingDocsRef`
-  // (not state) so the validator always sees the latest hydrated map even
-  // when called inside an async handler that captured an earlier closure
-  // — fixed the "Aadhar Card upload is required" false positive on edit.
-  // The Passport-size photo is intentionally optional.
   const validateStep3 = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
     const existing = eExistingDocsRef.current;
 
-    // Leave & Attendance — the fields marked with a red * in the form are
-    // genuinely required. Leave Plan is the one exception: it can only be
-    // required when at least one plan exists for the branch, otherwise a
-    // tenant with zero leave plans could never create an employee. The rest
-    // always have selectable options, so they're unconditionally required.
     if (leavePlanOptions.length > 0 && !eLeavePlan) {
       e.leave_plan = 'Leave plan is required';
     }
-    // Holiday Group mirrors the Leave Plan rule — only required once at least
-    // one group exists, so a tenant with zero holiday groups can still
-    // onboard employees (and assign a group later from HR › Holiday).
     if (holidayGroupOptions.length > 0 && !eHolidayList) {
       e.holiday_list = 'Holiday group is required';
     }
@@ -1954,9 +1446,6 @@ export default function HrEmployees() {
     if (!ePanFile && !existing['pan']) {
       e.doc_pan = 'PAN Card upload is required';
     }
-    // Pairing rule: if the user opted into a laptop/mobile assignment they
-    // must also pick which device — otherwise the assignment toggle saves
-    // a true intent with no actual booked asset, defeating the toggle.
     if (eLaptopAssigned === 'Yes' && !eLaptopMasterAssetId) {
       e.laptop_master_asset_id = 'Laptop Device is required';
     }
@@ -1967,10 +1456,6 @@ export default function HrEmployees() {
   }, [eAadharFile, ePanFile, eLaptopAssigned, eLaptopMasterAssetId, eMobileAssigned, eMobileMasterAssetId,
       leavePlanOptions, holidayGroupOptions, eLeavePlan, eHolidayList, eShift, eWeeklyOff, eTimeTracking, ePenalizationPolicy, eExpensePolicy]);
 
-  // Latest realistic salary-effective date: 6 months after the joining date.
-  // Empty when no joining date is set yet. Drives both the Step-4 validation
-  // and the date picker's maxDate so an unrealistic future date (the QA bug:
-  // joining 15 Jun 2026, effective 09 Mar 2029) can't be entered or saved.
   const salaryEffectiveCap = useMemo(() => {
     if (!eJoinDate) return '';
     const d = new Date(eJoinDate);
@@ -1979,12 +1464,6 @@ export default function HrEmployees() {
     return `${cap.getFullYear()}-${pad(cap.getMonth() + 1)}-${pad(cap.getDate())}`;
   }, [eJoinDate]);
 
-  // Step 4 — Compensation. Salary is mandatory whenever payroll is enabled
-  // for the employee (the default). The "Enable payroll" toggle is the
-  // explicit opt-out: when an admin turns it OFF they're declaring this
-  // hire isn't on our payroll (contractor, intern paid externally, etc.)
-  // so the salary fields stop applying. Without this check the wizard was
-  // saving employees with a blank annual salary — flagged by QA.
   const validateStep4 = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
     if (!eEnablePayroll) return e;
@@ -1992,9 +1471,6 @@ export default function HrEmployees() {
     if (eAnnualSalary === '' || !Number.isFinite(amt) || amt <= 0) {
       e.annual_salary = 'Annual salary is required';
     } else if (amt > 999999999999.99) {
-      // Cap matches the DB column type (decimal(14, 2)). Without this
-      // guard the wizard used to submit numbers that overflowed the
-      // column and surfaced as a generic 500.
       e.annual_salary = 'Annual salary must be ≤ 999,999,999,999.99';
     }
     if (!eSalaryFreq) {
@@ -2003,26 +1479,10 @@ export default function HrEmployees() {
     if (!eSalaryFrom) {
       e.salary_effective_from = 'Effective-from date is required';
     } else if (eJoinDate && eSalaryFrom < eJoinDate) {
-      /* Salary can't start paying out before the employee has even
-       * joined. Both values are ISO YYYY-MM-DD strings emitted by
-       * MasterDatePicker, so the lexical < compare matches a
-       * chronological compare exactly. The error pins to Step 4 so
-       * firstStepWithErrors() jumps the user back to the compensation
-       * step where the picker lives, not Step 2 where the joining
-       * date lives — the picker on this step is what they need to
-       * change. */
       e.salary_effective_from = `Salary effective date can't be before the joining date (${eJoinDate})`;
     } else if (eJoinDate && eSalaryFrom > salaryEffectiveCap) {
-      /* Realistic window: the salary can take effect any time from the
-       * joining date up to 6 months after it. Anything further out is
-       * almost always a typo (e.g. 2029 instead of 2026) — flag it
-       * instead of silently saving an unrealistic future date. */
       e.salary_effective_from = `Salary effective date must be within 6 months of joining (on or before ${salaryEffectiveCap})`;
     }
-    // Detailed breakup — surface per-row problems first (the row inputs go
-    // red), falling back to the whole-sheet message (no earnings / deductions
-    // exceed gross). Either way Step 4 carries a salary_breakup error so submit
-    // jumps back here.
     if (eDetailedBreakup) {
       const hasRowErrors = Object.keys(breakupErrors.earnings).length > 0
         || Object.keys(breakupErrors.deductions).length > 0;
@@ -2035,8 +1495,6 @@ export default function HrEmployees() {
     return e;
   }, [eEnablePayroll, eAnnualSalary, eSalaryFreq, eSalaryFrom, eJoinDate, salaryEffectiveCap, eDetailedBreakup, breakupErrors]);
 
-  // First step that contains any of the given error keys. Used to jump-back
-  // when a deeper step's submit surfaces a problem in an earlier step.
   const firstStepWithErrors = (errs: Record<string, string>): 1 | 2 | 3 | 4 | null => {
     if (Object.keys(errs).length === 0) return null;
     const k = Object.keys(errs);
@@ -2052,11 +1510,6 @@ export default function HrEmployees() {
     return 1;
   };
 
-  /** "Next" button → validate the CURRENT step; advance only when clean. */
-  /** Compose the full API payload from current state. Used by both per-step
-   *  PATCH and final submit — backend accepts partials, so sending all
-   *  known fields every time is harmless and lets a step-3 PATCH still
-   *  ship step-1 corrections the user made on the way back. */
   const buildEmployeePayload = (stepCompleted: number): Record<string, any> => {
     const intOrNull = (s: string | null | undefined) => {
       const n = parseInt(String(s ?? ''), 10);
@@ -2090,21 +1543,10 @@ export default function HrEmployees() {
       department_id:   intOrNull(eDept),
       designation_id:  intOrNull(eDesignation),
       primary_role_id: intOrNull(ePrimaryRole),
-      // Send the full multi-select array. Backend mirrors the first item
-      // into the legacy ancillary_role_id column for SQL/report compat.
       ancillary_role_ids: eAncillaryRole.map(v => Number(v)).filter(n => Number.isFinite(n)),
       work_type: eWorkType || null,
       legal_entity_id: intOrNull(eLegalEntity),
       location:        eLocation || null,
-      /* The picker stores "kind:id" where kind is either 'employee'
-       * (an existing Employee row) or one of 'client_admin' /
-       * 'client_user' / 'branch_user' (a login User who hasn't been
-       * onboarded as an Employee yet). The backend has two columns —
-       * reporting_manager_id (FK → employees) and
-       * reporting_manager_user_id (FK → users) — only one of which is
-       * populated per record. Send the right one and explicit-null the
-       * other so a re-assignment from User → Employee (or back) wipes
-       * the previous side. */
       reporting_manager_id: (() => {
         if (!eReportingMgr) return null;
         const [kind, idStr] = String(eReportingMgr).split(':');
@@ -2123,9 +1565,6 @@ export default function HrEmployees() {
       designation_name: mDesignations.find(d => String(d.id) === String(eDesignation))?.name,
 
       leave_plan:           eLeavePlan || null,
-      // eHolidayList carries the selected holiday GROUP id. Persist it as the
-      // FK payroll reads, and mirror the group name into the legacy
-      // holiday_list string so existing displays keep working.
       holiday_group_id:     eHolidayList ? Number(eHolidayList) : null,
       holiday_list:         mHolidayGroups.find(g => String(g.id) === String(eHolidayList))?.name || null,
       attendance_tracking:  !!eAttendanceTracking,
@@ -2140,8 +1579,6 @@ export default function HrEmployees() {
       laptop_asset_id:      eLaptopAssetId.trim() || null,
       mobile_device:        eMobileDevice.trim() || null,
       other_assets:         eOtherAssets.trim() || null,
-      // Asset FK assignments. Skip the laptop / mobile id when the
-      // Yes/No flag is "No" so an explicit unassign actually clears it.
       laptop_master_asset_id: eLaptopAssigned === 'Yes' ? intOrNull(eLaptopMasterAssetId) : null,
       mobile_master_asset_id: eMobileAssigned === 'Yes' ? intOrNull(eMobileMasterAssetId) : null,
       other_master_asset_ids: eOtherMasterAssetIds.map(v => parseInt(v, 10)).filter(n => Number.isFinite(n)),
@@ -2157,27 +1594,15 @@ export default function HrEmployees() {
       pf_eligible:           !!ePfEligible,
       detailed_breakup:      !!eDetailedBreakup,
 
-      // Wizard-created rows always start Inactive — admin flips Active
-      // explicitly via the row toggle. Status from the form is ignored
-      // here on purpose; backend also forces Inactive on store.
       status: eStatus || 'Inactive',
 
-      // Server uses this to track resume-on-edit + workflow state.
       wizard_step_completed: stepCompleted,
     };
   };
 
-  /** Inner save — does the actual PUT/POST without managing the saving
-   *  state flag. Callers are responsible for wrapping in setSaving(true/false).
-   *  Extracted so handleNextStep can flip the loading state BEFORE the
-   *  mobile-uniqueness pre-check, not after. */
   const persistCurrentStepInner = async (stepCompleted: number): Promise<boolean> => {
     try {
       const payload = buildEmployeePayload(stepCompleted);
-      // Read the ID from the ref instead of state — the ref is updated
-      // synchronously via the useEffect mirror, so when step 2 clicks
-      // Next within the same render cycle as step 1's POST returning,
-      // we still see the freshly-allocated ID.
       const currentId = editingDbIdRef.current ?? editingDbId;
       if (currentId) {
         await api.put(`/employees/${currentId}`, payload);
@@ -2185,21 +1610,10 @@ export default function HrEmployees() {
         const r = await api.post('/employees', payload);
         const newId: number | undefined = r?.data?.employee?.id;
         if (newId) {
-          // Flip into edit mode so the next Next/Save patches the same
-          // row instead of creating a duplicate. Mode stays visually
-          // "Add" in the header — the user is mid-wizard, not done yet.
-          // Write the ref FIRST so any subsequent persistCurrentStep
-          // call within the same tick sees it immediately.
           editingDbIdRef.current = newId;
           setEditingDbId(newId);
         }
       }
-      // Mirror the Leave Plan selection into the leave_plan_employees pivot
-      // so the Leave Balances tab + employee Leave summary have data. The
-      // legacy `leave_plan` string column on employees is updated in the
-      // same PUT/POST above; this normalized assignment is what new code
-      // (LeavePlanController::leaveBalances) reads. Fire-and-forget so a
-      // backend hiccup doesn't block the wizard.
       const empId = editingDbIdRef.current;
       if (empId && eLeavePlan) {
         const planId = Number(eLeavePlan);
@@ -2208,12 +1622,6 @@ export default function HrEmployees() {
             .catch(err => console.warn('[HrEmployees] leave plan assign failed', err));
         }
       }
-      // Refresh background lists so the half-filled row appears in the
-      // disabled directory — fire-and-forget so the wizard can advance
-      // immediately instead of waiting for a full /employees roundtrip
-      // (used to be `await`ed here, which made every Next click feel
-      // stuck for the duration of the list refetch even though the
-      // step's own save had already returned).
       reloadEmployees().catch(() => { /* swallow — table just stays stale */ });
       return true;
     } catch (err: any) {
@@ -2232,12 +1640,6 @@ export default function HrEmployees() {
     }
   };
 
-  /** Persist the wizard's current state. First save creates the row +
-   *  switches the modal to "edit" mode silently so subsequent step PATCHes
-   *  hit the same id. Returns true on success, false otherwise.
-   *
-   *  Manages the `saving` flag itself — used by callers (e.g. partial-save
-   *  on close) that don't need to wrap multiple awaits in one loading state. */
   const persistCurrentStep = async (stepCompleted: number): Promise<boolean> => {
     if (saving) return false;
     setSaving(true);
@@ -2249,7 +1651,7 @@ export default function HrEmployees() {
   };
 
   const handleNextStep = async () => {
-    if (saving) return; // guard against double-clicks while a step is in flight
+    if (saving) return;
     const errs = empStep === 1 ? validateStep1()
                : empStep === 2 ? validateStep2()
                : empStep === 3 ? validateStep3()
@@ -2264,16 +1666,8 @@ export default function HrEmployees() {
       );
       return;
     }
-    // Flip the loading state IMMEDIATELY so the Next button + stepper
-    // shimmer light up the moment the user clicks — previously the state
-    // only flipped after the mobile-uniqueness check completed (~300ms),
-    // which made the button look unresponsive.
     setSaving(true);
     try {
-      // Belt-and-suspenders mobile uniqueness check on step 1 — covers the
-      // edge case where the user types/pastes a duplicate and hits Next
-      // without ever blurring the field. Without this, the duplicate only
-      // surfaces after a full save round-trip.
       if (empStep === 1) {
         const mobileOk = await checkMobileUnique(eMobile);
         if (!mobileOk) {
@@ -2281,11 +1675,6 @@ export default function HrEmployees() {
           return;
         }
       }
-      // Persist this step BEFORE advancing so the row exists in the
-      // disabled list even if the user closes the tab on step 2/3.
-      // We've already flipped saving=true, so persistCurrentStep's own
-      // `if (saving) return false` guard is satisfied via a different
-      // path — call its inner work without re-entering it.
       const ok = await persistCurrentStepInner(empStep);
       if (!ok) return;
       setEErrors({});
@@ -2302,8 +1691,6 @@ export default function HrEmployees() {
 
   const handleSaveEmployee = async () => {
     if (saving) return;
-    // Run validators for every step so submit catches problems anywhere,
-    // not just the current step.
     const errs: Record<string, string> = {
       ...validateStep1(),
       ...validateStep2(),
@@ -2324,25 +1711,15 @@ export default function HrEmployees() {
       return;
     }
 
-    // Build payload via the shared helper. Step 4 = full wizard done.
-    // Backend keeps employee status as "Inactive" — admin must toggle
-    // Active manually after onboarding wraps up.
     const payload = buildEmployeePayload(4);
 
     setSaving(true);
     try {
-      // Same stale-state guard as persistCurrentStep — read from the
-      // ref so we never POST a 5th duplicate row when state hasn't
-      // propagated yet from the last Next click.
       const currentId = editingDbIdRef.current ?? editingDbId;
       if (currentId) {
         await api.put(`/employees/${currentId}`, payload);
         toast.success('Employee saved', `${eFirstName} ${eLastName}`.trim() + ' · marked complete.');
       } else {
-        // Edge case: somehow Submit was clicked without any prior step
-        // saving (e.g. user filled all 4 steps offline then clicked
-        // Save before any Next click — old behavior). Treat as a fresh
-        // create at step 4.
         const r = await api.post('/employees', payload);
         const emp = r?.data?.employee;
         if (emp?.id) {
@@ -2354,10 +1731,6 @@ export default function HrEmployees() {
           `${emp?.display_name || eFirstName} · welcome email queued to ${payload.email}.`,
         );
       }
-      // Mirror Leave Plan into the normalized pivot — same logic as
-      // persistCurrentStep above. Done on final Submit too so a user that
-      // changes the plan dropdown right before clicking Save still has
-      // their assignment recorded.
       const finalEmpId = editingDbIdRef.current;
       if (finalEmpId && eLeavePlan) {
         const planId = Number(eLeavePlan);
@@ -2366,22 +1739,13 @@ export default function HrEmployees() {
             .catch(err => console.warn('[HrEmployees] leave plan assign failed', err));
         }
       }
-      // Persist the detailed salary breakup as a salary_structures version.
-      // Awaited (not fire-and-forget) so a failure keeps the modal open and is
-      // surfaced — this is core compensation data, not a best-effort mirror.
       if (finalEmpId) {
         await persistBreakup(finalEmpId);
       }
-      // Same fire-and-forget treatment as persistCurrentStep — the modal
-      // closes immediately and the table refreshes in the background, so
-      // the user isn't held by the network roundtrip on the final Save.
       reloadEmployees().catch(() => { /* swallow */ });
       reloadManagers().catch(() => { /* swallow */ });
       closeEmp();
     } catch (err: any) {
-      // Surface server-side 422 errors as inline field errors so the same
-      // red-border treatment applies. Falls back to a top-level toast if
-      // the response is shaped differently.
       const fieldErrors = err?.response?.data?.errors;
       if (fieldErrors && typeof fieldErrors === 'object') {
         const flat: Record<string, string> = {};
@@ -2400,11 +1764,6 @@ export default function HrEmployees() {
     }
   };
 
-  /**
-   * Soft-delete an employee row + disable their login account. Wired to the
-   * existing toggle-confirm modal: clicking "Confirm" on a row's enable
-   * switch fires this when the action is "disable".
-   */
   const handleDeleteEmployee = async (dbId: number, name: string) => {
     try {
       await api.delete(`/employees/${dbId}`);
@@ -2416,9 +1775,6 @@ export default function HrEmployees() {
     }
   };
 
-  // When "Same as Current Address" is checked, mirror the current address;
-  // when unchecked, clear the permanent fields so the user starts fresh
-  // instead of editing the mirrored copy left behind.
   const onToggleSameAsCurrent = (checked: boolean) => {
     setESameAsCurrent(checked);
     if (checked) {
@@ -2438,9 +1794,6 @@ export default function HrEmployees() {
     }
   };
 
-  // While "Same as Current Address" stays checked, keep the permanent
-  // address mirrored to the current address live — so edits to the
-  // current address flow through instead of leaving a stale snapshot.
   useEffect(() => {
     if (!eSameAsCurrent) return;
     setEPermAddr1(eCurAddr1);
@@ -2451,11 +1804,6 @@ export default function HrEmployees() {
     setEPermPin(eCurPin);
   }, [eSameAsCurrent, eCurAddr1, eCurAddr2, eCurCity, eCurState, eCurCountry, eCurPin]);
 
-  // Filter options pull straight from the Departments master (mDepts).
-  // Earlier we derived this from existing employees' departments, which
-  // hid any newly-created master row that didn't yet have an employee
-  // assigned. Fall back to employee-derived names if the master hasn't
-  // loaded yet so the dropdown is never empty on first paint.
   const departments = useMemo(() => {
     const fromMaster = mDepts.map((d: any) => d.name).filter(Boolean);
     const fromRows   = apiRows.map(e => e.department).filter(d => d && d !== '—');
@@ -2465,14 +1813,6 @@ export default function HrEmployees() {
     return ['All Depts', ...merged];
   }, [mDepts, apiRows]);
 
-  // KPI counts derived from real data. Probation buckets are computed
-  // from `date_of_joining + probation_months` since the schema has no
-  // explicit "probation completed" flag — anyone whose probation window
-  // has elapsed counts as Completed, anyone still inside it as In Progress.
-  // On-Leave today is currently sourced from the `status` enum; once the
-  // Leave module starts writing daily attendance rows the comment beside
-  // the card ("Daily basis count will change") becomes a query against
-  // that table instead.
   const counts = useMemo(() => {
     const todayMs = Date.now();
     const MONTH_MS = 30.44 * 24 * 60 * 60 * 1000;
@@ -2518,12 +1858,6 @@ export default function HrEmployees() {
     };
   }, [apiRows]);
 
-  // Reporting-manager dropdown — fetched from the backend so brand-new
-  // tenants (with zero employees yet) still get a non-empty list: the
-  // backend falls back to client/branch admins. The picker stores a
-  // composite "kind:id" string so the API payload can split it into either
-  // `reporting_manager_id` (employee FK) or `reporting_manager_user_id`
-  // (login-user reference) at submit time.
   const [managerCandidates, setManagerCandidates] = useState<{ id: number; kind: string; label: string }[]>([]);
   const reloadManagers = useCallback(async () => {
     try {
@@ -2541,17 +1875,8 @@ export default function HrEmployees() {
   const reportingManagerOptions = useMemo(
     () => {
       const base = managerCandidates
-        // An employee can't report to themselves — strip the row currently
-        // being edited out of the manager list. `editingDbId` is the DB id
-        // of the open employee row; kind === 'employee' is the candidate
-        // kind that corresponds to a row in the employees table (the other
-        // kind, 'login_users', is a separate user account and never
-        // collides with the employee id space).
         .filter(m => !(editingDbId && m.kind === 'employee' && m.id === editingDbId))
         .map(m => ({ value: `${m.kind}:${m.id}`, label: m.label }));
-      // Guarantee the saved manager is selectable/visible even when they're
-      // no longer a live candidate, so editing an existing employee always
-      // shows who their manager is (and doesn't silently blank the field).
       if (savedMgrOption && !base.some(o => o.value === savedMgrOption.value)) {
         return [savedMgrOption, ...base];
       }
@@ -2564,10 +1889,6 @@ export default function HrEmployees() {
     const s = q.trim().toLowerCase();
     const df = deptFilter.trim().toLowerCase();
     return apiRows.filter(e => {
-      // When the Status dropdown is set to "All", we intentionally skip
-      // the tab filter so the user actually sees every employee — picking
-      // "All" while the Active tab is highlighted otherwise still hides
-      // disabled rows, which is what made the dropdown feel broken.
       if (statusFilter !== 'All') {
         if (tab === 'active' && !e.enabled) return false;
         if (tab === 'disabled' && e.enabled) return false;
@@ -2579,16 +1900,8 @@ export default function HrEmployees() {
       return [e.name, e.id, e.department, e.designation, e.primaryRole, e.email]
         .some(v => (v || '').toLowerCase().includes(s));
     });
-    // `apiRows` MUST be in the dep list — without it, the memo holds the
-    // initial empty-array filter result forever and only re-runs when one of
-    // the other deps (q / tab / deptFilter) changes. That's why the table
-    // looked empty on first load and only populated after a tab switch.
   }, [q, tab, deptFilter, statusFilter, apiRows]);
 
-  /* Client-side pagination — 5 rows per page (matches the Customers /
-   * Consignees lists). Reset to page 1 whenever any of the filters or
-   * the source data change so the user never lands on an empty page
-   * past the new last page. */
   const ROWS_PER_PAGE = 5;
   const [page, setPage] = useState(1);
   const totalPages = Math.max(1, Math.ceil(filtered.length / ROWS_PER_PAGE));
@@ -2596,10 +1909,6 @@ export default function HrEmployees() {
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
   const pageRows = filtered.slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE);
 
-  // ── Dynamic fill height — stretch the list body to the bottom of the
-  //    viewport so the pagination footer pins to the bottom of the card
-  //    (same mechanism as the Onboarding / Recruitment / CLM lists) instead
-  //    of floating right under the last row.
   const listRootRef   = useRef<HTMLDivElement | null>(null);
   const listScrollRef = useRef<HTMLDivElement | null>(null);
   const [listFillH, setListFillH] = useState<number | undefined>(undefined);
@@ -2619,33 +1928,17 @@ export default function HrEmployees() {
     return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
   }, [filtered.length]);
 
-  // ── Export to Excel ────────────────────────────────────────────────────────
-  // Exports ACTIVE employees only (disabled employees are never included),
-  // across all pages and respecting the department filter + search — but NOT
-  // the Active/Disabled tab, so the file is always the active roster even if
-  // the user is viewing the Disabled tab. Data is the server-loaded list
-  // (auto-refreshed on focus), so the file reflects the real backend records.
-  // Same xlsx approach the Clients / Branches pages use, for consistency.
   const [exporting, setExporting] = useState(false);
   const handleExportEmployees = () => {
     if (exporting) return;
-    // Active-only source, independent of the current tab/status dropdown.
-    const s  = q.trim().toLowerCase();
-    const df = deptFilter.trim().toLowerCase();
-    const activeRows = apiRows.filter(e => {
-      if (!e.enabled) return false; // never export disabled employees
-      if (df && df !== 'all depts' && String(e.department || '').trim().toLowerCase() !== df) return false;
-      if (!s) return true;
-      return [e.name, e.id, e.department, e.designation, e.primaryRole, e.email]
-        .some(v => (v || '').toLowerCase().includes(s));
-    });
-    if (activeRows.length === 0) {
-      toast.info('Nothing to export', 'No active employees match the current filters.');
+    const exportRows = filtered;
+    if (exportRows.length === 0) {
+      toast.info('Nothing to export', 'No employees match the current filters.');
       return;
     }
     setExporting(true);
     try {
-      const sheetRows = activeRows.map((e, i) => ({
+      const sheetRows = exportRows.map((e, i) => ({
         'Sr No':          i + 1,
         'Employee':       e.name,
         'Email':          e.email || '',
@@ -2675,617 +1968,11 @@ export default function HrEmployees() {
 
   return (
     <>
-      <style>{`
-        .hr-employees-surface { background: #ffffff; }
-        [data-bs-theme="dark"] .hr-employees-surface { background: #1c2531; }
-
-        /* Onboarding Link button — light mode: clean white pill with a
-           purple outline + text so it pairs with the Add Employee CTA.
-           Dark mode: tinted-glass purple surface with a light lavender
-           text + glow so it doesn't look like a stark white sticker on
-           the dark canvas (was using #fff + var(--vz-secondary), which
-           resolves to red in dark mode and clashed with the page). */
-        .hr-emp-onboard-btn.btn {
-          background: #ffffff;
-          color: #6d28d9;
-          border: 1px solid #d8ccff;
-          font-weight: 700;
-          transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .25s ease, transform .15s ease;
-        }
-        .hr-emp-onboard-btn.btn:hover,
-        .hr-emp-onboard-btn.btn:focus {
-          background: #f5f1ff;
-          border-color: #c4b5fd;
-          color: #5b21b6;
-          box-shadow: 0 4px 12px rgba(124,58,237,.22);
-          transform: translateY(-1px);
-        }
-        [data-bs-theme="dark"] .hr-emp-onboard-btn.btn {
-          background: rgba(124,58,237,0.18);
-          color: #ddd6fe;
-          border: 1px solid rgba(167,139,250,0.45);
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
-        }
-        [data-bs-theme="dark"] .hr-emp-onboard-btn.btn:hover,
-        [data-bs-theme="dark"] .hr-emp-onboard-btn.btn:focus {
-          background: rgba(124,58,237,0.32);
-          border-color: #a78bfa;
-          color: #f5f3ff;
-          box-shadow: 0 6px 18px rgba(124,58,237,0.45);
-        }
-        .hr-emp-onboard-btn.btn i { color: inherit; }
-
-        /* Pagination — same purple aesthetic as the Customers /
-           Consignees footers. Uniform 32×32 boxes so the row reads as
-           one tidy strip. */
-        .hr-emp-pag { display: inline-flex; align-items: center; gap: 4px; }
-        .hr-emp-pag-btn {
-          height: 32px; min-width: 32px; padding: 0;
-          border-radius: 8px;
-          border: 1px solid #e0d9f7;
-          background: #fff;
-          color: #6d28d9;
-          font-size: 12.5px; font-weight: 700;
-          font-family: inherit;
-          display: inline-flex; align-items: center; justify-content: center;
-          cursor: pointer;
-          transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .22s ease;
-        }
-        .hr-emp-pag-btn:hover:not(:disabled):not(.is-active) {
-          background: #f5f3ff; border-color: #c4b5fd; color: #5b21b6;
-        }
-        .hr-emp-pag-btn.is-active {
-          background: linear-gradient(135deg, #7c3aed, #6d28d9);
-          border-color: #7c3aed; color: #fff;
-          box-shadow: 0 2px 6px rgba(109,40,217,.30);
-          cursor: default;
-        }
-        .hr-emp-pag-btn:disabled { opacity: .4; cursor: not-allowed; }
-        [data-bs-theme="dark"] .hr-emp-pag-btn {
-          background: rgba(255,255,255,0.04);
-          border-color: rgba(167,139,250,0.30);
-          color: #c4b5fd;
-        }
-        [data-bs-theme="dark"] .hr-emp-pag-btn:hover:not(:disabled):not(.is-active) {
-          background: rgba(124,58,237,0.20);
-          border-color: rgba(167,139,250,0.50);
-          color: #ede9fe;
-        }
-        [data-bs-theme="dark"] .hr-emp-pag-btn.is-active {
-          background: linear-gradient(135deg, #6d28d9, #4c1d95);
-          border-color: #7c3aed; color: #fff;
-          box-shadow: 0 2px 8px rgba(124,58,237,.45);
-        }
-
-        /* Unify table typography — every cell + header reads at the same
-           13px size so the table looks like a single grid (matches the
-           Clients / Branches lists). */
-        .hr-employees-surface .table thead th,
-        .hr-employees-surface .table tbody td {
-          font-size: 13px;
-          vertical-align: middle;
-        }
-        .hr-employees-surface .table thead th {
-          font-weight: 600;
-          letter-spacing: 0.01em;
-        }
-        /* KPI strip — auto-scrolling marquee. The viewport is .hr-emp-kpi-grid
-           (overflow hidden, no scrollbar). The .hr-emp-kpi-track inside it
-           contains the cards rendered TWICE and animates from 0 → -50%
-           over 40s, so the loop reads as continuous and seamless. Hovering
-           anywhere on the strip pauses the animation so the user can
-           actually read a card. Soft fade-out masks at the left/right
-           edges hide the seam where the duplicate set joins. */
-        /* Marquee viewport — overflow hidden by default so cards march
-           past via the CSS animation. On hover the animation pauses AND
-           overflow-x switches to auto so the user can scroll-wheel
-           through the cards manually (the wheel listener in the
-           component converts vertical wheel into horizontal scroll). */
-        /* Outer wrapper holds the side-gutter prev/next arrow buttons
-           (same affordance as the Plans page swiper). The arrows sit
-           absolutely-positioned at the left/right edges and are wired to
-           Swiper's navigation module via kpiPrevRef / kpiNextRef. */
-        .hr-emp-kpi-outer {
-          position: relative;
-          padding: 0 48px;
-        }
-        /* Swiper defaults to overflow:hidden on its viewport, which
-           clipped the card's hover lift (-4px translateY) and its
-           expanded box-shadow so each card looked half-rendered while
-           hovering. Letting the swiper's overflow be visible vertically
-           but clipped horizontally (overflow: clip + clip-path) lets
-           the hover lift breathe without breaking the slide window.
-           Padding adds room so the lift + shadow don't bleed into
-           adjacent UI either. */
-        .hr-emp-kpi-swiper {
-          overflow: visible !important;
-          padding: 10px 0 22px !important;
-          /* Re-impose horizontal clipping with clip-path so off-screen
-             slides don't show through (Swiper relied on overflow:hidden
-             for this). The vertical inset is wide enough to fit the
-             hover lift + shadow comfortably. */
-          clip-path: inset(-32px 0 -32px 0);
-        }
-        .hr-emp-kpi-nav {
-          position: absolute;
-          top: 50%;
-          transform: translateY(-50%);
-          z-index: 10;
-          width: 36px;
-          height: 36px;
-          border-radius: 50%;
-          border: 1.5px solid var(--vz-border-color);
-          background: var(--vz-card-bg, #fff);
-          color: var(--vz-primary, #405189);
-          font-size: 20px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.10);
-          transition: background .2s ease, color .2s ease, box-shadow .2s ease, transform .2s ease, border-color .2s ease;
-          outline: none;
-        }
-        .hr-emp-kpi-nav:hover {
-          background: var(--vz-primary, #405189);
-          color: #fff;
-          border-color: var(--vz-primary, #405189);
-          box-shadow: 0 6px 20px rgba(64, 81, 137, 0.35);
-          transform: translateY(-50%) scale(1.08);
-        }
-        .hr-emp-kpi-nav-prev { left: 4px; }
-        .hr-emp-kpi-nav-next { right: 4px; }
-        [data-bs-theme="dark"] .hr-emp-kpi-nav,
-        [data-layout-mode="dark"] .hr-emp-kpi-nav {
-          background: var(--vz-card-bg);
-          border-color: var(--vz-border-color);
-          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-          color: #c4b5fd;
-        }
-        /* Hide nav arrows on narrow phones — finger-swipe is the natural
-           gesture there and the side-gutter eats too much width. */
-        @media (max-width: 575.98px) {
-          .hr-emp-kpi-outer { padding: 0; }
-          .hr-emp-kpi-nav { display: none; }
-        }
-
-        /* ──────────────────────────────────────────────────────────────
-           RESPONSIVE BREAKPOINTS — Employees page
-
-           Approach: pure CSS. The JSX already uses Bootstrap's grid
-           (Col md=6, flex-wrap, etc.) but several spots need tighter
-           rules to keep the page usable on tablets + phones:
-             - Header buttons (Onboarding Link / Add Employee) must
-               grow to full-width when the page header wraps.
-             - Filter row's Department label hides on narrow widths so
-               the dropdown gets the full column.
-             - Tabs shrink padding + drop the text label below 480px,
-               keeping just the icon + count badge.
-             - Table parent gets explicit overflow-x: auto so the
-               12-column grid never spills outside the card.
-             - Profile %% cell shrinks from 120 → 88px on phones.
-             - Pagination footer stacks vertically so the "Showing X–Y"
-               line and the page buttons each get their own row.
-           ────────────────────────────────────────────────────────────── */
-
-        /* Always allow the wide table to scroll horizontally inside its
-           wrapper rather than overflow the card edge. */
-        .hr-employees-surface .table-responsive {
-          overflow-x: auto;
-          -webkit-overflow-scrolling: touch;
-        }
-
-        /* Unified list frame (search + table + pagination) — mirrors the
-           Recruitment page's .rec-list-frame so the list reads as one clean
-           bordered panel now that the whole-page card container is gone. */
-        .hr-emp-list-frame {
-          background: #ffffff;
-          border: 1px solid #ececf2;
-          border-radius: 14px;
-          overflow: hidden;
-          box-shadow: 0 1px 0 rgba(15,23,42,0.04), 0 4px 14px rgba(15,23,42,0.05);
-        }
-        .hr-emp-list-frame .hr-emp-frame-filter {
-          border-bottom: 1px solid var(--vz-border-color);
-        }
-        [data-bs-theme="dark"] .hr-emp-list-frame,
-        [data-layout-mode="dark"] .hr-emp-list-frame {
-          background: var(--vz-card-bg);
-          border-color: var(--vz-border-color);
-          box-shadow: 0 6px 18px rgba(0,0,0,0.30);
-        }
-
-        /* Tablet portrait — ≤ 991.98px */
-        @media (max-width: 991.98px) {
-          /* Header buttons keep their width but the whole right-side
-             group can wrap below the title on narrow widths. */
-          .hr-emp-onboard-btn.btn,
-          .hr-employees-surface .btn-label {
-            font-size: 12.5px;
-          }
-          /* Filter row — let the Department label / dropdown wrap
-             cleanly under the search box. */
-          .hr-employees-surface .search-box + .col-md-6,
-          .hr-employees-surface [class*="col-md-6"] {
-            margin-top: 8px;
-          }
-        }
-
-        /* Tablet portrait + small landscape — ≤ 767.98px */
-        @media (max-width: 767.98px) {
-          /* Page-header title text shrinks slightly so the header row
-             still has room for the action buttons. */
-          .hr-employees-surface h4,
-          .hr-employees-surface h5 { font-size: 17px; }
-
-          /* Onboarding Link / Add Employee buttons grow to fill their
-             half of the wrapping flex row so they don't look stranded. */
-          .hr-emp-onboard-btn.btn,
-          .hr-employees-surface .btn-label {
-            flex: 1 1 auto;
-            min-width: 0;
-          }
-
-          /* Active / Disabled tab buttons — tighter padding so both fit
-             on one row even on small screens. */
-          .hr-employees-surface .btn.flex-grow-1 {
-            padding: 7px 10px !important;
-            font-size: 12px !important;
-            gap: 6px !important;
-          }
-
-          /* Department filter — stack label above the dropdown to avoid
-             squeezing the dropdown into a narrow stub. */
-          .hr-employees-surface .col-md-6.d-flex.justify-content-md-end {
-            justify-content: flex-start !important;
-          }
-        }
-
-        /* Phone — ≤ 575.98px */
-        @media (max-width: 575.98px) {
-          /* Header CTAs go full-width and stack so the tap target is
-             obvious and the labels never truncate. */
-          .hr-emp-onboard-btn.btn,
-          .hr-employees-surface .btn-label {
-            width: 100%;
-            justify-content: center;
-          }
-
-          /* Hide the inline "DEPARTMENT" caption — the placeholder text
-             inside the picker already says what the field is and the
-             label was eating half the row's width. */
-          .hr-employees-surface .col-md-6.d-flex .text-uppercase.fw-semibold {
-            display: none;
-          }
-          .hr-employees-surface .col-md-6.d-flex > div[style*="minWidth"],
-          .hr-employees-surface .col-md-6.d-flex > div:has(> .master-select-wrap) {
-            width: 100%;
-            min-width: 0 !important;
-          }
-          .hr-employees-surface .col-md-6.d-flex .d-flex.align-items-center.gap-2 {
-            width: 100%;
-          }
-
-          /* Profile-% bar shrinks so the column doesn't push the table
-             too wide. The 120-px badge container is set via inline style
-             on the cell — override via the wrapper. */
-          .hr-employees-surface .table tbody td > div[style*="width: 120px"],
-          .hr-employees-surface .table tbody td > div[style*="width:120px"] {
-            width: 88px !important;
-          }
-
-          /* Active / Disabled tab buttons — drop the inline label below
-             480px so the icon + count chip alone show. Keeps the
-             dual-tab strip readable on the smallest screens. */
-          .hr-employees-surface .btn.flex-grow-1 > i + * { font-size: 11px; }
-
-          /* Pagination footer — stack the "Showing …" text above the
-             button row instead of cramming them side-by-side. */
-          .hr-employees-surface .border-top.mt-3.pt-2 {
-            flex-direction: column;
-            align-items: stretch !important;
-            gap: 12px !important;
-          }
-          .hr-employees-surface .border-top.mt-3.pt-2 > .text-muted {
-            justify-content: center;
-            text-align: center;
-            min-height: 0 !important;
-          }
-          .hr-emp-pag { justify-content: center; flex-wrap: wrap; }
-        }
-
-        /* Very narrow phones — ≤ 380px */
-        @media (max-width: 380px) {
-          /* Hide the tab label text entirely on the very narrowest
-             devices so the icon + count badge fit cleanly. */
-          .hr-employees-surface .btn.flex-grow-1 > :not(i):not(.badge) {
-            display: none;
-          }
-        }
-
-        .hr-emp-kpi-grid {
-          position: relative;
-          /* scrollLeft-based auto-scroll runs all the time — overflow-x:auto
-             so arrow buttons + wheel + drag also work naturally without
-             fighting the animation. */
-          overflow-x: auto;
-          padding: 8px 0 14px;
-          mask-image: linear-gradient(90deg, transparent 0%, #000 1.5%, #000 98.5%, transparent 100%);
-          -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 1.5%, #000 98.5%, transparent 100%);
-          scrollbar-width: none;
-          scroll-behavior: smooth;
-        }
-        .hr-emp-kpi-grid::-webkit-scrollbar { display: none; }
-        .hr-emp-kpi-grid:hover { cursor: grab; }
-        .hr-emp-kpi-grid:active { cursor: grabbing; }
-        .hr-emp-kpi-grid::after {
-          content: '';
-          position: absolute; inset: 0;
-          pointer-events: none;
-          background: linear-gradient(90deg,
-            rgba(255,255,255,0.55) 0%,
-            rgba(255,255,255,0) 30%,
-            rgba(255,255,255,0) 70%,
-            rgba(255,255,255,0.55) 100%);
-        }
-        [data-bs-theme="dark"] .hr-emp-kpi-grid::after {
-          background: linear-gradient(90deg,
-            rgba(28,37,49,0.65) 0%,
-            rgba(28,37,49,0) 30%,
-            rgba(28,37,49,0) 70%,
-            rgba(28,37,49,0.65) 100%);
-        }
-        /* Track is just a flex row — auto-scroll is now driven by JS
-           (requestAnimationFrame on scrollLeft) so arrow buttons, wheel,
-           and drag all work naturally without fighting a CSS transform. */
-        .hr-emp-kpi-track {
-          display: flex;
-          gap: 14px;
-          width: max-content;
-        }
-        .hr-emp-kpi-card {
-          flex: 0 0 250px;
-          /* Fixed height keeps every card the same — labels that wrap to
-             2 lines no longer make their card taller than its neighbours. */
-          height: 104px;
-          transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
-          /* Richer base shadow — replaces the original 0 2px 10px rgba(0,0,0,0.04) */
-          box-shadow:
-            0 6px 16px -4px rgba(15, 23, 42, 0.10),
-            0 2px 4px rgba(15, 23, 42, 0.06) !important;
-        }
-        /* Reserve space for 2 lines on every label so the value sits at
-           the same vertical position whether the label is one line
-           ("NEW JOINERS") or two ("ONBOARDING COMPLETED"). */
-        .hr-emp-kpi-label {
-          min-height: 28px;
-          line-height: 1.25;
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
-          overflow: hidden;
-        }
-        [data-bs-theme="dark"] .hr-emp-kpi-card {
-          /* Match the Recruitment KPI card background in dark mode — a soft
-             theme card surface (var(--vz-card-bg)) instead of the deep-black
-             accent-glow "Plan card" recipe, so both pages read the same. The
-             per-card top accent ribbon is kept for colour identity. */
-          background: var(--vz-card-bg) !important;
-          border-color: var(--vz-border-color) !important;
-          color: rgba(255, 255, 255, 0.96);
-          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.30) !important;
-        }
-        /* Top ribbon — bump to 4px in dark mode so the accent stripe
-           reads as a clean lit edge against the deep black surface
-           (no drop-shadow filter — that's what made it look hazy). */
-        [data-bs-theme="dark"] .hr-emp-kpi-card > div:first-child {
-          height: 4px !important;
-        }
-        /* Inline styles on the JSX set these to var(--vz-secondary-color)
-           and var(--vz-heading-color) — which are barely visible on the
-           dark KPI surface. Override with !important so the label reads
-           clearly and the value stays high-contrast white. */
-        [data-bs-theme="dark"] .hr-emp-kpi-label {
-          color: #cbd5e1 !important;
-        }
-        [data-bs-theme="dark"] .hr-emp-kpi-value {
-          color: #f8fafc !important;
-        }
-        [data-bs-theme="dark"] .hr-emp-kpi-card:hover {
-          /* Hover keeps the recruitment-style surface; just lift the border
-             toward the card accent so it reads as "leaning in". */
-          background: var(--vz-card-bg) !important;
-          border-color: color-mix(in srgb, var(--card-accent, #7c5cfc) 55%, var(--vz-border-color)) !important;
-        }
-        /* Page-level text legibility in dark mode — the page subtitle and
-           any other text-muted body copy under this surface default to a
-           gray that disappears against the dark page background. Brighten
-           it scoped to this page so we do not change text-muted globally. */
-        [data-bs-theme="dark"] .hr-employees-surface .text-muted,
-        [data-bs-theme="dark"] .hr-employees-surface .text-secondary {
-          color: #94a3b8 !important;
-        }
-        /* Table row chrome in dark mode — give the rows a subtle alternating
-           tint plus a clear hover state so the eye can track across columns.
-           Without this every row sits on the same flat dark surface and the
-           table reads as one big slab. */
-        [data-bs-theme="dark"] .hr-employees-surface .table tbody tr:nth-child(odd) > * {
-          background: rgba(255,255,255,0.015);
-        }
-        [data-bs-theme="dark"] .hr-employees-surface .table tbody tr:hover > * {
-          background: rgba(124,92,252,0.10) !important;
-        }
-        [data-bs-theme="dark"] .hr-employees-surface .table thead th {
-          color: #e2e8f0;
-          background: #1c2531;
-          border-bottom-color: rgba(255,255,255,0.10);
-        }
-        [data-bs-theme="dark"] .hr-employees-surface .table tbody td {
-          border-bottom-color: rgba(255,255,255,0.06);
-        }
-
-        /* ── Row pills — premium dark-mode treatment ──────────────────
-           In light mode the role/onboarding pills use pastel
-           backgrounds that look great. In dark mode those same pastels
-           wash out into a dull grey, so each pill loses identity. The
-           rules below convert every row pill in dark mode to a glassy
-           translucent accent + a bright tinted text — same recipe as
-           the EMP ID badge that already reads as the most premium chip
-           on the row. Inline style props from the JSX are beaten with
-           !important because the JSX sets background and color per row. */
-        [data-bs-theme="dark"] .hr-emp-id-pill {
-          background: linear-gradient(135deg, rgba(124,92,252,0.22) 0%, rgba(124,92,252,0.42) 100%) !important;
-          color: #ffffff !important;
-          border: 1px solid rgba(124,92,252,0.45) !important;
-          box-shadow: none;
-        }
-        /* Primary role + first ancillary chip — share a unified glassy
-           violet look so the table chips all read as one family with
-           EMP ID. (Per-role colour tinting still happens in light mode
-           via the inline styles; this override only kicks in on dark.) */
-        [data-bs-theme="dark"] .hr-emp-row-pill {
-          background: rgba(124, 92, 252, 0.18) !important;
-          color: #c4b5fd !important;
-          box-shadow: inset 0 0 0 1px rgba(124, 92, 252, 0.28);
-        }
-        /* Onboarding pill keeps its per-status accent in dark mode
-           (Completed = green, In Progress = amber, Pending = grey) but
-           with translucent backgrounds + brighter text instead of the
-           washed-out pastels. data-status drives the colour. */
-        [data-bs-theme="dark"] .hr-emp-onboarding-pill[data-status="Completed"] {
-          background: rgba(16, 185, 129, 0.18) !important;
-          color: #6ee7b7 !important;
-          box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.30);
-        }
-        [data-bs-theme="dark"] .hr-emp-onboarding-pill[data-status="In Progress"] {
-          background: rgba(245, 158, 11, 0.18) !important;
-          color: #fcd34d !important;
-          box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.30);
-        }
-        [data-bs-theme="dark"] .hr-emp-onboarding-pill[data-status="Pending"] {
-          background: rgba(148, 163, 184, 0.18) !important;
-          color: #cbd5e1 !important;
-          box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.30);
-        }
-        /* Action-button icons — the ActionBtn JSX uses inline var(--vz-secondary-color)
-           which is too dim against the dark cell. Bump to a brighter slate. */
-        [data-bs-theme="dark"] .hr-employees-surface .btn[aria-label] i {
-          color: #cbd5e1;
-        }
-        [data-bs-theme="dark"] .hr-employees-surface .btn[aria-label] {
-          background: rgba(255,255,255,0.05) !important;
-          border-color: rgba(255,255,255,0.12) !important;
-        }
-        [data-bs-theme="dark"] .hr-employees-surface .btn[aria-label]:hover {
-          background: rgba(124,92,252,0.18) !important;
-        }
-        .hr-emp-kpi-card:hover {
-          transform: translateY(-4px);
-          box-shadow:
-            0 16px 32px -8px rgba(15, 23, 42, 0.18),
-            0 4px 10px rgba(124, 92, 252, 0.10) !important;
-          border-color: rgba(124, 92, 252, 0.45);
-        }
-        [data-bs-theme="dark"] .hr-emp-kpi-card:hover {
-          box-shadow:
-            0 18px 36px -8px rgba(0, 0, 0, 0.65),
-            0 4px 12px rgba(124, 92, 252, 0.25) !important;
-        }
-        .hr-emp-kpi-card:hover .hr-emp-kpi-icon {
-          transform: scale(1.06);
-          box-shadow: 0 8px 18px rgba(0,0,0,0.18);
-        }
-        .hr-emp-kpi-icon { transition: transform .18s ease, box-shadow .18s ease; }
-
-        /* Serial-number column — must read against both themes. The default
-           Bootstrap text-muted drops to ~30% opacity in dark mode and
-           the digits disappeared against the dark card surface. */
-        .hr-emp-srno { color: var(--vz-secondary-color); font-weight: 600; }
-        [data-bs-theme="dark"] .hr-emp-srno,
-        [data-layout-mode="dark"] .hr-emp-srno { color: #d0d4dc; }
-
-        /* Active/Inactive pill toggle — crisp, solid colours (no blurry glow).
-           ON = brand purple, OFF = clearly visible track in both themes. */
-        .emp-toggle { background: #cbd5e1; transition: background .18s ease; }
-        .emp-toggle.is-on { background: #7c5cfc; }
-        .emp-toggle:hover { filter: brightness(1.05); }
-        [data-bs-theme="dark"] .emp-toggle,
-        [data-layout-mode="dark"] .emp-toggle { background: #3f4654; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14); }
-        [data-bs-theme="dark"] .emp-toggle.is-on,
-        [data-layout-mode="dark"] .emp-toggle.is-on { background: #8b6dff; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18); }
-
-        /* Search box — placeholder and field both need extra contrast in
-           dark mode. The default placeholder is rendered with
-           secondary-color at ~50% opacity which reads as pure grey on
-           the dark surface. */
-        .hr-employees-surface .search-box .form-control::placeholder {
-          color: var(--vz-secondary-color);
-          opacity: 0.75;
-        }
-        /* Glassy search field with a visible border + purple focus halo —
-           mirrors the shared .rec-req-search look used on Exit / Leave /
-           Recruitment so the Employee search reads the same. */
-        .hr-employees-surface .search-box .form-control {
-          border-radius: 8px;
-          background: linear-gradient(180deg, #ffffff 0%, #fbfaff 100%);
-          border: 1px solid #e2e1f3;
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 1px 2px rgba(15,23,42,0.03);
-          transition: border-color .15s ease, box-shadow .15s ease;
-        }
-        .hr-employees-surface .search-box .form-control:focus {
-          border-color: #7c5cfc;
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.85), 0 0 0 3px rgba(124,92,252,0.16);
-        }
-        .hr-employees-surface .search-box .search-icon {
-          color: #7c5cfc;
-        }
-        [data-bs-theme="dark"] .hr-employees-surface .search-box .form-control,
-        [data-layout-mode="dark"] .hr-employees-surface .search-box .form-control {
-          background: var(--vz-card-bg);
-          color: #e6e8ec;
-          border-color: var(--vz-border-color);
-        }
-        [data-bs-theme="dark"] .hr-employees-surface .search-box .form-control::placeholder,
-        [data-layout-mode="dark"] .hr-employees-surface .search-box .form-control::placeholder {
-          color: #b0b4bd;
-          opacity: 1;
-        }
-        [data-bs-theme="dark"] .hr-employees-surface .search-box .search-icon,
-        [data-layout-mode="dark"] .hr-employees-surface .search-box .search-icon {
-          color: #b0b4bd;
-        }
-
-        /* KPI cards looked flat — the card surface was the same colour as
-           the page surface so only the 3px gradient strip carried any
-           identity. Tint each card with a soft theme-coloured wash that
-           matches its gradient so the labels pop a little and the cards
-           feel less uniform. */
-        .hr-emp-kpi-card {
-          background-image: linear-gradient(180deg, rgba(124,92,252,0.04) 0%, rgba(124,92,252,0) 60%);
-        }
-        [data-bs-theme="dark"] .hr-emp-kpi-card,
-        [data-layout-mode="dark"] .hr-emp-kpi-card {
-          background-image: linear-gradient(180deg, rgba(124,92,252,0.10) 0%, rgba(124,92,252,0) 70%);
-        }
-        .hr-emp-kpi-label { color: var(--vz-secondary-color); }
-        [data-bs-theme="dark"] .hr-emp-kpi-label,
-        [data-layout-mode="dark"] .hr-emp-kpi-label { color: #c4c8d0; }
-        [data-bs-theme="dark"] .hr-emp-kpi-value,
-        [data-layout-mode="dark"] .hr-emp-kpi-value { color: #f4f5f7 !important; }
-      `}</style>
       <MasterFormStyles />
-
-      
 
       <Row>
         <Col xs={12}>
-          {/* Whole-page card container removed — content sits flush on the
-              page background (matches the Recruitment page layout). The
-              `hr-employees-surface` class is kept (many descendant styles —
-              table, search box, dark mode — are scoped to it) but its card
-              chrome (border / shadow / padding / white fill) is stripped. */}
           <div className="hr-employees-surface" style={{ background: 'transparent' }}>
-            {/* ── Header strip — same shape as the Clients / Branches headers. ── */}
             <div className="frm-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
@@ -3322,23 +2009,6 @@ export default function HrEmployees() {
               </div>
             </div>
 
-            {/* ── KPI cards — auto-scrolling marquee.
-                Cards are rendered TWICE (with aria-hidden on the second
-                copy so screen readers don't double-read them) so the
-                CSS animation can wrap from translateX(0) → -50% and
-                read as a single, infinite, seamless scroll. The strip
-                ref + wheel handler below let the user scroll the strip
-                horizontally with a vertical mouse wheel while the
-                animation is paused on hover. */}
-            {/* Wrap viewport in a relative container so prev/next arrows
-                can sit on the side gutters like Plans page's swiper nav.
-                Arrows scroll the marquee viewport by ~280px (~one card)
-                with smooth behavior. Auto-marquee animation continues as
-                before — the buttons just give the user explicit control
-                if they don't want to wait for the strip to cycle around. */}
-            {/* KPI strip — static grid (no carousel / nav arrows), same as
-                the recruitment page. The four cards spread evenly across the
-                row and wrap on smaller screens. */}
             <Row className="g-2 mb-0 align-items-stretch">
               {KPI_CARDS.map(k => (
                 <Col key={k.key} xl md={4} sm={6} xs={12}>
@@ -3350,9 +2020,6 @@ export default function HrEmployees() {
                       padding: '16px 18px',
                       position: 'relative',
                       overflow: 'hidden',
-                      // Per-card accent — the dark-mode rule below uses
-                      // this variable to mix the tinted shadow + faint
-                      // accent wash on the panel surface.
                       ['--card-accent' as any]: k.accent,
                     }}
                   >
@@ -3377,16 +2044,9 @@ export default function HrEmployees() {
               ))}
             </Row>
 
-            {/* ── Tabs + Search + Table — one bordered frame. The Active /
-                Disabled tabs and the search share the toolbar row (tabs left,
-                search filling the rest to the right edge); the Department
-                dropdown was removed. The pagination footer pins to the bottom
-                of the card via the dynamic fill height. ── */}
             <div className="hr-emp-list-frame" ref={listRootRef}>
             <div className="hr-emp-frame-filter p-3">
               <div className="d-flex align-items-center gap-3 flex-wrap">
-                {/* Tabs — take the left 50% of the toolbar. Shared rec-tab
-                    style used by the Recruitment / Exit Management lists. */}
                 <div className="rec-tab-track" style={{ marginBottom: 0, flex: '1 1 0', minWidth: 0 }}>
                   {([
                     { key: 'active'   as const, label: 'Active Employees',   count: counts.activeTab,   icon: 'ri-user-follow-line',   variant: 'in-progress' },
@@ -3397,8 +2057,6 @@ export default function HrEmployees() {
                       type="button"
                       onClick={() => {
                         setTab(t.key);
-                        // Keep the dropdown in lockstep with the tab —
-                        // they represent the same enabled/disabled axis.
                         setStatusFilter(t.key === 'active' ? 'Active' : 'Disabled');
                       }}
                       className={`rec-tab ${tab === t.key ? `is-active ${t.variant}` : ''}`}
@@ -3410,7 +2068,6 @@ export default function HrEmployees() {
                     </button>
                   ))}
                 </div>
-                {/* Search — takes the right 50% of the toolbar. */}
                 <div className="search-box rec-req-search" style={{ flex: '1 1 0', minWidth: 0 }}>
                   <Input
                     type="text"
@@ -3424,8 +2081,6 @@ export default function HrEmployees() {
               </div>
             </div>
 
-            {/* ── Table — fills to the viewport bottom so the pager pins to the
-                card footer; the table grows to take the slack above it. ── */}
             <div className="p-3 d-flex flex-column" ref={listScrollRef} style={{ minHeight: listFillH }}>
                 <div className="table-responsive flex-grow-1">
                   <table className="table align-middle table-nowrap mb-0">
@@ -3458,14 +2113,11 @@ export default function HrEmployees() {
                         const primary = tone(e.primaryRole, isDark);
                         return (
                           <tr
-                            // Use the DB primary key for React's reconciliation
-                            // key — emp_code can collide when a code is reused
-                            // after a soft-delete (the live + trashed rows then
-                            // shared the same `e.id` and React rendered the
-                            // newer row in BOTH active and disabled tabs).
                             key={(e as any)._dbId ?? e.id}
-                            onClick={() => navigate(`/hr/employees/${encodeURIComponent(e.encryptedId || e.id)}/profile`, { state: { employee: e } })}
-                            style={{ cursor: 'pointer' }}
+                            onClick={tab === 'disabled'
+                              ? undefined
+                              : () => navigate(`/hr/employees/${encodeURIComponent(e.encryptedId || e.id)}/profile`, { state: { employee: e } })}
+                            style={{ cursor: tab === 'disabled' ? 'default' : 'pointer' }}
                           >
                             <td className="ps-3 text-center fs-13 hr-emp-srno">{(page - 1) * ROWS_PER_PAGE + idx + 1}</td>
                             <td>
@@ -3557,22 +2209,17 @@ export default function HrEmployees() {
                             </td>
                             <td>
                               {(() => {
-                                // Tier-based colour pair (dark → light). Bar uses a horizontal
-                                // gradient between the two with a diagonal stripe overlay, and a
-                                // circular badge with the percent floats above the fill end.
                                 const p = e.profile;
                                 const TIER = p >= 90 ? { dark: '#0ab39c', light: '#4dd4be' }
                                           : p >= 75 ? { dark: '#3b82f6', light: '#93c5fd' }
                                           : p >= 60 ? { dark: '#f59e0b', light: '#fcd34d' }
                                           :           { dark: '#f06548', light: '#fda192' };
-                                // Clamp badge position so it never spills past the track ends.
                                 const badgeLeft = Math.max(11, Math.min(89, p));
                                 return (
                                   <div
                                     style={{ position: 'relative', width: 120, paddingTop: 30 }}
                                     title={`Profile ${p}% complete`}
                                   >
-                                    {/* Floating badge + downward pointer */}
                                     <div
                                       style={{
                                         position: 'absolute',
@@ -3603,7 +2250,6 @@ export default function HrEmployees() {
                                       />
                                     </div>
 
-                                    {/* Track + striped fill */}
                                     <div
                                       style={{
                                         width: '100%', height: 8,
@@ -3646,22 +2292,10 @@ export default function HrEmployees() {
                               })()}
                             </td>
                             <td className="pe-3" onClick={(ev) => ev.stopPropagation()}>
-                              {/* Disabled employees are inactive, so the per-row
-                                  operational actions (Edit / Asset / Face /
-                                  Permissions / Documents) are greyed out and
-                                  non-clickable. Only the re-enable toggle and the
-                                  permanent-delete stay usable so the record can
-                                  still be managed. */}
                               {(() => { const rowDisabled = !e.enabled; return (
                               <div className="d-flex gap-1 justify-content-center align-items-center">
                                 <ActionBtn title="Edit"        icon="ri-pencil-line"      color="info"      onClick={() => openEditEmployee(e)} disabled={rowDisabled} />
                                 <ActionBtn title="Asset" icon="ri-computer-line"    color="primary"   onClick={() => openAssignAssets(e)} disabled={rowDisabled} />
-                                {/* Face biometric — enrols (or re-enrols) the employee's face
-                                    so they can clock in / sign in via face match. A small
-                                    green dot in the corner of the button signals "already
-                                    enrolled" so admins can tell which rows still need work
-                                    without clicking each one. Tooltip flips Re-register
-                                    when a face is already on file. */}
                                 <ActionBtn
                                   title={(e as any).faceRegistered ? 'Re-register Face (already enrolled)' : 'Register Face'}
                                   icon="ri-user-smile-line"
@@ -3672,8 +2306,6 @@ export default function HrEmployees() {
                                 />
                                 <ActionBtn title="Permissions" icon="ri-lock-2-line"      color="warning"   onClick={() => openPermissions(e)} disabled={rowDisabled} />
                                 <ActionBtn title="Documents"   icon="ri-file-text-line"   color="success"   onClick={() => openVault(e)} disabled={rowDisabled} />
-                                {/* Permanent-delete is only offered on the Disabled tab so
-                                    an admin can't wipe an active employee in one click. */}
                                 {tab === 'disabled' && (
                                   <ActionBtn title="Delete permanently" icon="ri-delete-bin-line" color="danger" onClick={() => setConfirmDelete(e)} />
                                 )}
@@ -3691,12 +2323,6 @@ export default function HrEmployees() {
                   </table>
                 </div>
 
-                {/* Footer count + pagination — matches the rhythm of the
-                    Customers / Consignees lists. The "Showing X–Y of N"
-                    range moves with the page; the pagination strip is
-                    always visible (chevrons go disabled when there's
-                    only one page) so the affordance never disappears
-                    on lists with few rows. */}
                 <WorklistPager total={filtered.length} page={page} pageSize={ROWS_PER_PAGE} onPage={setPage} />
             </div>
             </div>
@@ -3704,7 +2330,6 @@ export default function HrEmployees() {
         </Col>
       </Row>
 
-      {/* ── Permanent-delete confirmation (Disabled tab only) ─────────── */}
       <DeleteConfirmModal
         open={!!confirmDelete}
         title="Delete Employee"
@@ -3715,7 +2340,6 @@ export default function HrEmployees() {
         onConfirm={handleForceDelete}
       />
 
-      {/* ── Generate Onboarding Link modal ── */}
       <Modal
         isOpen={onboardOpen}
         toggle={closeOnboard}
@@ -3726,85 +2350,8 @@ export default function HrEmployees() {
         backdrop="static"
         keyboard={false}
       >
-        <style>{`
-          .onb-modal-wide .modal-dialog { max-width: min(900px, 92vw); }
-          .onb-modal-content { border-radius: 24px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
-          .onb-input { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px 16px; font-size: 14px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; width: 100%; height: 50px; }
-          .onb-input::placeholder { color: #9ca3af; font-weight: 400; }
-          .onb-input:focus { outline: none; border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(124,92,252,0.15); }
-          .onb-input.is-invalid { border-color: #f06548 !important; box-shadow: 0 0 0 3px rgba(240,101,72,0.15) !important; }
-          .onb-error { display: flex; align-items: center; gap: 4px; color: #f06548; font-size: 12px; margin-top: 6px; }
-          .onb-error i { font-size: 13px; }
-          [data-bs-theme="dark"] .onb-input { background: #1c2531; border-color: var(--vz-border-color); color: var(--vz-body-color); }
-          [data-bs-theme="dark"] .onb-input::placeholder { color: var(--vz-secondary-color); }
-          .onb-label { font-size: 12px; font-weight: 700; color: #374151; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 8px; display: block; }
-          [data-bs-theme="dark"] .onb-label { color: var(--vz-body-color); }
-          .onb-label .onb-req { color: #f06548; margin-left: 2px; font-weight: 700; }
-          .onb-expiry-pill { display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 999px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all .15s ease; background: #fff; border: 1px solid #e5e7eb; color: #6b7280; }
-          .onb-expiry-pill:hover { border-color: #c4b5fd; color: #7c5cfc; }
-          .onb-expiry-pill.is-active { background: #f5f0ff; border-color: #a78bfa; color: #7c5cfc; }
-          [data-bs-theme="dark"] .onb-expiry-pill { background: var(--vz-secondary-bg); border-color: var(--vz-border-color); color: var(--vz-secondary-color); }
-          [data-bs-theme="dark"] .onb-expiry-pill.is-active { background: rgba(124,92,252,0.18); border-color: #a78bfa; color: #c4b5fd; }
-          .onb-submit-btn { padding: 16px 22px; border-radius: 16px; font-size: 15px; color: #fff; border: none; background: linear-gradient(90deg, #a78bfa 0%, #8b5cf6 50%, #7c3aed 100%); box-shadow: 0 10px 22px rgba(124,58,237,0.32); transition: transform .15s ease, box-shadow .15s ease; }
-          .onb-submit-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 14px 28px rgba(124,58,237,0.38); }
-          .onb-submit-btn:disabled { transform: none; box-shadow: 0 6px 14px rgba(124,58,237,0.20); }
-          @keyframes onb-spin { to { transform: rotate(360deg); } }
-          .onb-close-btn { width: 32px; height: 32px; border-radius: 10px; background: transparent; border: none; color: #6b7280; cursor: pointer; transition: background .15s ease, color .15s ease, transform .18s ease; }
-          .onb-close-btn:hover { background: #fee2e2; color: #dc2626; transform: rotate(90deg); }
-          .onb-close-btn:active { transform: rotate(90deg) scale(0.92); }
-          [data-bs-theme="dark"] .onb-close-btn { color: var(--vz-secondary-color); }
-          [data-bs-theme="dark"] .onb-close-btn:hover { background: rgba(239,68,68,0.18); color: #fca5a5; }
-          .onb-header-title { font-size: 19px; letter-spacing: -0.01em; color: #1f2937; }
-          .onb-header-sub   { font-size: 13.5px; color: #6b7280; }
-          .onb-header-icon  { width: 52px; height: 52px; border-radius: 14px; background: #f3edff; }
-          .onb-header-divider { height: 1px; background: #eef0f4; margin: 0 28px; }
-          [data-bs-theme="dark"] .onb-header-title   { color: var(--vz-heading-color, #fff) !important; }
-          [data-bs-theme="dark"] .onb-header-sub     { color: var(--vz-secondary-color) !important; }
-          [data-bs-theme="dark"] .onb-header-icon    { background: rgba(124,92,252,0.18) !important; }
-          [data-bs-theme="dark"] .onb-header-divider { background: var(--vz-border-color) !important; }
-
-          /* Success state — the banner, URL field and helper text all
-             ship with hard-coded light palette values (white bg, light
-             grey copy). In dark mode they read as a bright slab; tone
-             them down so the green stays semantic but everything else
-             matches the surrounding card. */
-          .onb-success-banner       { background: linear-gradient(135deg,#ecfaf3,#d6f4e3); border: 1px solid #b6e9d9; }
-          .onb-success-title        { color: #0a8a78; }
-          .onb-success-sub          { color: #0a6e5d; }
-          .onb-url-input            { background: #f7f8fc !important; }
-          .onb-helper-text          { color: #6b7280; }
-          .onb-secondary-btn        { background: #fff; color: #475569; border: 1px solid #e5e7eb; }
-          [data-bs-theme="dark"] .onb-success-banner,
-          [data-layout-mode="dark"] .onb-success-banner {
-            background: linear-gradient(135deg, rgba(10,179,156,0.18), rgba(10,179,156,0.08)) !important;
-            border-color: rgba(10,179,156,0.40) !important;
-          }
-          [data-bs-theme="dark"] .onb-success-title,
-          [data-layout-mode="dark"] .onb-success-title { color: #6ee7c7 !important; }
-          [data-bs-theme="dark"] .onb-success-sub,
-          [data-layout-mode="dark"] .onb-success-sub   { color: #a3e3cf !important; }
-          [data-bs-theme="dark"] .onb-url-input,
-          [data-layout-mode="dark"] .onb-url-input {
-            background: var(--vz-secondary-bg) !important;
-            border-color: var(--vz-border-color) !important;
-            color: var(--vz-body-color) !important;
-          }
-          [data-bs-theme="dark"] .onb-helper-text,
-          [data-layout-mode="dark"] .onb-helper-text { color: var(--vz-secondary-color) !important; }
-          [data-bs-theme="dark"] .onb-secondary-btn,
-          [data-layout-mode="dark"] .onb-secondary-btn {
-            background: var(--vz-secondary-bg) !important;
-            color: var(--vz-body-color) !important;
-            border-color: var(--vz-border-color) !important;
-          }
-          [data-bs-theme="dark"] .onb-secondary-btn:hover,
-          [data-layout-mode="dark"] .onb-secondary-btn:hover {
-            background: var(--vz-tertiary-bg, rgba(255,255,255,0.06)) !important;
-          }
-        `}</style>
 
         <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
-          {/* Header */}
           <div className="d-flex align-items-start justify-content-between" style={{ padding: '24px 28px 18px' }}>
             <div className="d-flex align-items-center gap-3">
               <div className="onb-header-icon d-flex align-items-center justify-content-center flex-shrink-0">
@@ -3829,11 +2376,9 @@ export default function HrEmployees() {
             </button>
           </div>
 
-          {/* Divider */}
           <div className="onb-header-divider" />
 
           {generatedInviteUrl ? (
-            // ── Success state — invite created, show copy panel ──
             <>
               <div style={{ padding: '24px 28px 6px' }}>
                 <div className="onb-success-banner" style={{
@@ -3889,8 +2434,6 @@ export default function HrEmployees() {
                 <button
                   type="button"
                   onClick={() => {
-                    // Reset to the form so admin can issue another invite
-                    // without leaving the modal.
                     setGeneratedInviteUrl(null);
                     setCopiedAt(0);
                     setOnbName(''); setOnbEmail(''); setOnbDept(''); setOnbDate(''); setOnbExpiry(15); setOnbErrors({});
@@ -3917,7 +2460,6 @@ export default function HrEmployees() {
             </>
           ) : (
             <>
-              {/* Form body */}
               <div style={{ padding: '22px 28px 10px' }}>
                 <Row className="g-3">
                   <Col md={6}>
@@ -3954,11 +2496,6 @@ export default function HrEmployees() {
                       value={onbDept}
                       onChange={(v) => { setOnbDept(v); clearOnbError('dept'); }}
                       placeholder="Select department"
-                      // Pull straight from the Departments master so newly
-                      // created departments (with no employees yet) show up.
-                      // The previous implementation derived options from
-                      // existing employees' departments, which excluded any
-                      // unused master row.
                       options={departmentOptions}
                       onOpen={() => reloadMasters()}
                       invalid={!!onbErrors.dept}
@@ -3973,8 +2510,6 @@ export default function HrEmployees() {
                       value={onbDate}
                       onChange={(v) => { setOnbDate(v); clearOnbError('date'); }}
                       placeholder="dd-mm-yyyy"
-                      // Expected joining date can't be in the past — lock the
-                      // calendar to today onward so prior dates aren't selectable.
                       minDate={isoYearsAgo(0)}
                       invalid={!!onbErrors.date}
                     />
@@ -3984,7 +2519,6 @@ export default function HrEmployees() {
                   </Col>
                 </Row>
 
-                {/* Link expiry */}
                 <div className="mt-4">
                   <label className="onb-label">Link Expiry</label>
                   <div className="d-flex flex-wrap gap-2">
@@ -4006,7 +2540,6 @@ export default function HrEmployees() {
                 </div>
               </div>
 
-              {/* Footer / submit */}
               <div style={{ padding: '20px 28px 26px' }}>
                 <button
                   type="button"
@@ -4034,7 +2567,6 @@ export default function HrEmployees() {
         </ModalBody>
       </Modal>
 
-      {/* ── Confirm Status Change (per-row toggle) ── */}
       <Modal
         isOpen={!!togglePending}
         toggle={cancelToggle}
@@ -4044,73 +2576,6 @@ export default function HrEmployees() {
         backdrop="static"
         keyboard={false}
       >
-        <style>{`
-          .toggle-confirm-content { border-radius: 20px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.22); }
-          /* Dark-mode override pass. Inline styles inside this modal hard-
-             code light colors so the cream / mint header would sit on top
-             of a dark body in dark mode — visually broken. These rules
-             swap the inner surfaces to translucent washes over #222831
-             so the popup reads coherently end-to-end. !important is
-             needed because the source styles are inline. */
-          [data-bs-theme="dark"] .toggle-confirm-content { background: #222831 !important; }
-          [data-bs-theme="dark"] .toggle-confirm-header {
-            background: linear-gradient(135deg, rgba(245,158,11,0.20) 0%, rgba(245,158,11,0.10) 100%) !important;
-          }
-          [data-bs-theme="dark"] .toggle-confirm-header.is-enable {
-            background: linear-gradient(135deg, rgba(10,179,156,0.20) 0%, rgba(10,179,156,0.08) 100%) !important;
-          }
-          [data-bs-theme="dark"] .toggle-confirm-title    { color: rgba(255,255,255,0.95) !important; }
-          [data-bs-theme="dark"] .toggle-confirm-subtitle { color: rgba(255,255,255,0.68) !important; }
-          [data-bs-theme="dark"] .toggle-confirm-x {
-            background: rgba(255,255,255,0.10) !important;
-            border-color: rgba(255,255,255,0.15) !important;
-            color: rgba(255,255,255,0.85) !important;
-          }
-          [data-bs-theme="dark"] .toggle-confirm-emp-card {
-            /* Opaque, not translucent — the card overlaps the tinted header
-               band (marginTop:-22), so a see-through fill let the green/amber
-               header bleed through and tint the card. A solid blackish
-               surface keeps it neutral on both the enable + disable paths. */
-            background: #2a313c !important;
-            border-color: rgba(255,255,255,0.12) !important;
-          }
-          [data-bs-theme="dark"] .toggle-confirm-emp-name { color: rgba(255,255,255,0.95) !important; }
-          [data-bs-theme="dark"] .toggle-confirm-emp-sub  { color: rgba(255,255,255,0.62) !important; }
-          [data-bs-theme="dark"] .toggle-confirm-id-pill {
-            background: rgba(124,92,252,0.22) !important;
-            color: #d8b4fe !important;
-          }
-          [data-bs-theme="dark"] .toggle-confirm-pill-inactive {
-            background: rgba(255,255,255,0.08) !important;
-            color: rgba(255,255,255,0.65) !important;
-          }
-          [data-bs-theme="dark"] .toggle-confirm-pill-active-green {
-            background: rgba(16,185,129,0.20) !important;
-            color: #6ee7b7 !important;
-          }
-          [data-bs-theme="dark"] .toggle-confirm-pill-active-amber {
-            background: rgba(245,158,11,0.22) !important;
-            color: #fcd34d !important;
-          }
-          [data-bs-theme="dark"] .toggle-confirm-banner {
-            background: rgba(245,158,11,0.12) !important;
-            border-color: rgba(245,158,11,0.30) !important;
-            color: #fcd34d !important;
-          }
-          [data-bs-theme="dark"] .toggle-confirm-banner.is-enable {
-            background: rgba(10,179,156,0.12) !important;
-            border-color: rgba(10,179,156,0.30) !important;
-            color: #6ee7b7 !important;
-          }
-          [data-bs-theme="dark"] .toggle-confirm-cancel-btn {
-            background: rgba(255,255,255,0.06) !important;
-            color: rgba(255,255,255,0.85) !important;
-            border-color: rgba(255,255,255,0.14) !important;
-          }
-          [data-bs-theme="dark"] .toggle-confirm-cancel-btn:hover {
-            background: rgba(255,255,255,0.10) !important;
-          }
-        `}</style>
         <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
           {(() => {
             if (!togglePending) return null;
@@ -4118,7 +2583,6 @@ export default function HrEmployees() {
             const emp = togglePending.employee;
             const tone = enabling
               ? {
-                  // Tones for the "enable" path — teal/green family.
                   headerGrad: 'linear-gradient(135deg,#d6f4e3 0%, #c1eed8 100%)',
                   iconBg:     '#0ab39c',
                   iconShadow: '0 8px 22px rgba(10,179,156,0.35)',
@@ -4136,7 +2600,6 @@ export default function HrEmployees() {
                   ctaShadow:  '0 8px 18px rgba(10,179,156,0.30)',
                 }
               : {
-                  // Tones for the "disable" path — amber/warning family.
                   headerGrad: 'linear-gradient(135deg,#fff4dd 0%, #ffe8c2 100%)',
                   iconBg:     '#f59e0b',
                   iconShadow: '0 8px 22px rgba(245,158,11,0.35)',
@@ -4155,7 +2618,6 @@ export default function HrEmployees() {
                 };
             return (
               <>
-                {/* Tinted header band with the action icon and close button */}
                 <div
                   className={`toggle-confirm-header${enabling ? ' is-enable' : ''}`}
                   style={{
@@ -4202,9 +2664,6 @@ export default function HrEmployees() {
                   </div>
                 </div>
 
-                {/* Employee identity card — needs an explicit stacking context
-                    (position + z-index) so it paints over the header band, whose
-                    position:relative (set for the X button) creates its own context. */}
                 <div style={{ padding: '0 24px', marginTop: -22, position: 'relative', zIndex: 2 }}>
                   <div
                     className="d-flex align-items-center gap-3 toggle-confirm-emp-card"
@@ -4248,7 +2707,6 @@ export default function HrEmployees() {
                   </div>
                 </div>
 
-                {/* State transition strip (Active → Disabled visual) */}
                 <div className="d-flex align-items-center justify-content-center gap-2" style={{ padding: '18px 24px 4px' }}>
                   <span
                     className={`d-inline-flex align-items-center fw-semibold ${enabling ? 'toggle-confirm-pill-inactive' : 'toggle-confirm-pill-active-green'}`}
@@ -4291,7 +2749,6 @@ export default function HrEmployees() {
                   </span>
                 </div>
 
-                {/* Info banner explaining the consequence */}
                 <div style={{ padding: '14px 24px 0' }}>
                   <div
                     className={`d-flex align-items-start gap-2 toggle-confirm-banner${enabling ? ' is-enable' : ''}`}
@@ -4310,7 +2767,6 @@ export default function HrEmployees() {
                   </div>
                 </div>
 
-                {/* Footer with full-width action buttons */}
                 <div
                   className="d-flex align-items-center gap-2"
                   style={{ padding: '18px 24px 22px' }}
@@ -4368,7 +2824,6 @@ export default function HrEmployees() {
         </ModalBody>
       </Modal>
 
-      {/* ── Add / Edit Employee modal (4-step wizard) ── */}
       <Modal
         isOpen={empOpen}
         toggle={closeEmp}
@@ -4380,283 +2835,8 @@ export default function HrEmployees() {
         backdrop="static"
         keyboard={false}
       >
-        <style>{`
-          .emp-modal-wide .modal-dialog { max-width: min(1280px, 95vw); }
-          .emp-modal-wide .modal-content { border-radius: 22px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
-          /* Spinning loader for the Next / Save button when the step is
-             persisting. Uses ri-loader-4-line which already looks like a
-             circular spinner — we just rotate it. */
-          @keyframes emp-spin-rotate {
-            from { transform: rotate(0deg); }
-            to   { transform: rotate(360deg); }
-          }
-          .emp-spin {
-            display: inline-block;
-            animation: emp-spin-rotate 0.7s linear infinite;
-            font-size: 16px;
-          }
-          /* Top progress bar — slim animated stripe across the very top
-             of the modal when a step save is in flight. Mirrors the
-             feedback pattern used on iOS Safari + GitHub's command bar:
-             a thin indeterminate sweep tells the user "something is
-             happening" without blocking the form. */
-          .emp-modal-wide .modal-content {
-            position: relative;
-          }
-          .emp-modal-wide.is-saving .modal-content::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0;
-            height: 3px;
-            background: linear-gradient(90deg,
-              transparent 0%,
-              #a78bfa 20%,
-              #f5b06f 50%,
-              #a78bfa 80%,
-              transparent 100%);
-            background-size: 200% 100%;
-            animation: emp-progress-sweep 1.1s linear infinite;
-            z-index: 100;
-          }
-          @keyframes emp-progress-sweep {
-            from { background-position:  100% 0; }
-            to   { background-position: -100% 0; }
-          }
-          /* Repaint the borrowed recruitment buttons to match the Add
-             Employee header palette (deep indigo → violet → lavender)
-             instead of the recruitment form's pink-purple. Keeps the
-             button feel identical but the colour family in sync. */
-          .emp-modal-wide .rec-btn-primary {
-            background: linear-gradient(120deg, #5a3fd1 0%, #7c5cfc 55%, #a78bfa 100%) !important;
-            box-shadow:
-              0 6px 16px rgba(124,92,252,0.40),
-              0 2px 4px rgba(90,63,209,0.22),
-              inset 0 1px 0 rgba(255,255,255,0.28),
-              inset 0 -1px 0 rgba(0,0,0,0.08) !important;
-          }
-          .emp-modal-wide .rec-btn-primary:hover {
-            box-shadow:
-              0 10px 22px rgba(124,92,252,0.50),
-              0 3px 6px rgba(90,63,209,0.28),
-              inset 0 1px 0 rgba(255,255,255,0.35),
-              inset 0 -1px 0 rgba(0,0,0,0.08) !important;
-          }
-          /* Back button — same purple family as the Next CTA so the two
-             read as a matched pair. White background with purple border +
-             purple text by default, deeper purple on hover. */
-          .emp-modal-wide .rec-btn-ghost {
-            background: #ffffff !important;
-            border: 1px solid #d6c9ff !important;
-            color: #5a3fd1 !important;
-          }
-          .emp-modal-wide .rec-btn-ghost:hover {
-            background: #f5f1ff !important;
-            border-color: #a78bfa !important;
-            color: #4c3fb1 !important;
-          }
-          [data-bs-theme="dark"] .emp-modal-wide .rec-btn-ghost {
-            background: rgba(124,92,252,0.10) !important;
-            border-color: rgba(124,92,252,0.35) !important;
-            color: #c4b5fd !important;
-          }
-          [data-bs-theme="dark"] .emp-modal-wide .rec-btn-ghost:hover {
-            background: rgba(124,92,252,0.18) !important;
-            border-color: rgba(124,92,252,0.55) !important;
-          }
-          .emp-input { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 9px 11px; font-size: 13px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; width: 100%; }
-          .emp-input::placeholder { color: #9ca3af; }
-          .emp-input:focus { outline: none; border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,0.15); }
-          /* Read-only auto-generated fields (Display Name, Employee ID,
-             Location) keep the same background and border as regular inputs
-             so the form reads as one uniform grid. Only cursor: not-allowed
-             signals that the field is not editable. */
-          .emp-input.is-readonly { background: #fff; border-color: #e5e7eb; color: #1f2937; font-weight: 500; cursor: not-allowed; }
-          .emp-input.is-invalid { border-color: #f06548; box-shadow: 0 0 0 3px rgba(240,101,72,0.12); }
-          .emp-err { display: block; color: #c43d20; font-size: 11px; font-weight: 500; margin-top: 4px; }
-          [data-bs-theme="dark"] .emp-input { background: #1c2531; border-color: var(--vz-border-color); color: var(--vz-body-color); }
-          [data-bs-theme="dark"] .emp-input::placeholder { color: var(--vz-secondary-color); }
-          /* Dark-mode invalid override — the plain dark .emp-input rule
-             above has the same specificity as .emp-input.is-invalid and
-             comes later in source order, so it wins and wipes out the
-             red border. Scoping the invalid state to the dark selector
-             bumps specificity (attr + 2 classes) so the warning ring
-             survives. */
-          [data-bs-theme="dark"] .emp-input.is-invalid { border-color: #f06548; box-shadow: 0 0 0 3px rgba(240,101,72,0.18); }
-
-          /* Document upload tiles — used by Aadhar / PAN / Photo slots.
-             Light defaults stay close to the original pastel look; dark
-             mode uses translucent tints over the dark card so the bright
-             pastel boxes don't punch holes through the dark surface. */
-          .emp-doc-tile-uploaded { border: 1.5px solid #c4eedc; background: #e6f7f1; color: #065f46; }
-          .emp-doc-tile-uploaded .emp-doc-check { color: #10b981; }
-          .emp-doc-tile-uploaded .emp-doc-fname { color: #065f46; }
-          .emp-doc-tile-empty { border: 1.5px dashed #a78bfa; background: #f5f0ff; color: #7c5cfc; }
-          .emp-doc-tile-empty.has-error { border-color: #f06548; background: #fff1ee; color: #b1401d; }
-          [data-bs-theme="dark"] .emp-doc-tile-uploaded {
-            border-color: rgba(16,185,129,0.35);
-            background: rgba(16,185,129,0.10);
-            color: #6ee7b7;
-          }
-          [data-bs-theme="dark"] .emp-doc-tile-uploaded .emp-doc-check { color: #34d399; }
-          [data-bs-theme="dark"] .emp-doc-tile-uploaded .emp-doc-fname { color: #6ee7b7; }
-          [data-bs-theme="dark"] .emp-doc-tile-empty {
-            border-color: rgba(167,139,250,0.45);
-            background: rgba(124,92,252,0.10);
-            color: #c4b5fd;
-          }
-          [data-bs-theme="dark"] .emp-doc-tile-empty.has-error {
-            border-color: rgba(240,101,72,0.55);
-            background: rgba(240,101,72,0.12);
-            color: #fda993;
-          }
-          .emp-label { font-size: 10.5px; font-weight: 700; color: #5a3fd1; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 5px; display: block; }
-          [data-bs-theme="dark"] .emp-label { color: #c4b5fd; }
-          .emp-close-btn { background: rgba(255,255,255,0.18); transition: background 0.15s ease, transform 0.15s ease; }
-          .emp-close-btn:hover { background: rgba(255,255,255,0.34); transform: scale(1.08); }
-          .emp-close-btn:active { transform: scale(0.95); }
-          .emp-label .req { color: #f06548; margin-left: 4px; font-size: 13px; font-weight: 800; line-height: 1; vertical-align: middle; }
-          .emp-label .hint { color: #9ca3af; font-weight: 600; text-transform: none; letter-spacing: 0; margin-left: 4px; font-size: 10px; }
-          .emp-section {
-            background: #fff;
-            border: 1px solid #eef0f4;
-            border-radius: 12px;
-            padding: 16px 18px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.03);
-          }
-          [data-bs-theme="dark"] .emp-section { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-          .emp-section + .emp-section { margin-top: 14px; }
-          .emp-section-title { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 700; color: var(--vz-heading-color, var(--vz-body-color)); margin-bottom: 14px; }
-          .emp-section-title i { color: #7c5cfc; font-size: 16px; }
-          .emp-subsection-title { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: #0ab39c; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 10px; }
-          .emp-subsection-title i { font-size: 13px; }
-          .emp-stepper-circle {
-            width: 32px; height: 32px; border-radius: 50%;
-            display: inline-flex; align-items: center; justify-content: center;
-            font-weight: 700; font-size: 13px;
-            background: #f1f3f7; color: #9ca3af; border: 2px solid #e5e7eb;
-            transition: all .2s ease;
-          }
-          .emp-stepper-circle.is-active { background: linear-gradient(135deg,#7c5cfc,#a78bfa); color: #fff; border-color: transparent; box-shadow: 0 4px 12px rgba(124,92,252,0.30); }
-          .emp-stepper-circle.is-done { background: #0ab39c; color: #fff; border-color: transparent; }
-          .emp-stepper-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #9ca3af; margin-top: 6px; text-align: center; }
-          .emp-stepper-label.is-active { color: #5a3fd1; }
-          .emp-stepper-label.is-done { color: #0ab39c; }
-          .emp-stepper-line { flex: 1; height: 2px; background: #e5e7eb; margin: 0 6px; align-self: flex-start; margin-top: 16px; transition: background .2s ease; }
-          .emp-stepper-line.is-done { background: #0ab39c; }
-
-          /* Shimmer overlay used on the stepper while saving / hydrating —
-             the entire bar gets a soft moving sheen so the user sees that
-             the form is doing work (the Next button alone can feel slow). */
-          @keyframes emp-stepper-shimmer {
-            0%   { background-position: -200% 0; }
-            100% { background-position: 200% 0; }
-          }
-          .emp-stepper-bar.is-loading .emp-stepper-circle:not(.is-active):not(.is-done),
-          .emp-stepper-bar.is-loading .emp-stepper-line:not(.is-done) {
-            background: linear-gradient(90deg, #eef2f7 0%, #f8f9fc 50%, #eef2f7 100%);
-            background-size: 200% 100%;
-            animation: emp-stepper-shimmer 1.2s linear infinite;
-          }
-          .emp-stepper-bar.is-loading .emp-stepper-circle.is-active {
-            animation: emp-stepper-pulse 1s ease-in-out infinite;
-          }
-          .emp-stepper-bar.is-loading .emp-stepper-label.is-active::after {
-            content: '';
-            display: inline-block;
-            width: 10px; height: 10px;
-            border: 2px solid rgba(124,92,252,0.30);
-            border-top-color: #7c5cfc;
-            border-radius: 50%;
-            margin-left: 6px;
-            vertical-align: middle;
-            animation: emp-stepper-spin 0.7s linear infinite;
-          }
-          @keyframes emp-stepper-pulse {
-            0%, 100% { box-shadow: 0 4px 12px rgba(124,92,252,0.30); transform: scale(1); }
-            50%      { box-shadow: 0 6px 20px rgba(124,92,252,0.55); transform: scale(1.06); }
-          }
-          @keyframes emp-stepper-spin {
-            to { transform: rotate(360deg); }
-          }
-          [data-bs-theme="dark"] .emp-stepper-bar.is-loading .emp-stepper-circle:not(.is-active):not(.is-done),
-          [data-bs-theme="dark"] .emp-stepper-bar.is-loading .emp-stepper-line:not(.is-done) {
-            background: linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.04) 100%);
-            background-size: 200% 100%;
-            animation: emp-stepper-shimmer 1.2s linear infinite;
-          }
-          /* Make the stepper item itself act as a click target so the user can
-             jump between steps. The button is unstyled — child .emp-stepper-circle
-             and .emp-stepper-label keep all visual responsibility. */
-          .emp-stepper-btn {
-            background: transparent; border: none; padding: 0;
-            cursor: pointer; display: flex; flex-direction: column; align-items: center;
-            min-width: 92px;
-            transition: transform .15s ease;
-          }
-          .emp-stepper-btn:focus-visible { outline: 2px solid #7c5cfc; outline-offset: 4px; border-radius: 8px; }
-          .emp-stepper-btn:hover .emp-stepper-circle:not(.is-active):not(.is-done) {
-            border-color: #c4b5fd; color: #7c5cfc; background: #f5f3ff;
-          }
-          .emp-stepper-btn:hover .emp-stepper-label:not(.is-active):not(.is-done) {
-            color: #7c5cfc;
-          }
-          .emp-stepper-btn:hover { transform: translateY(-1px); }
-          /* Locked steps — user hasn't unlocked them yet by completing
-             the prior step via "Next". Disabled state, no hover lift. */
-          .emp-stepper-btn.is-locked { cursor: not-allowed; }
-          .emp-stepper-btn.is-locked:hover { transform: none; }
-          .emp-stepper-btn.is-locked .emp-stepper-circle:not(.is-active):not(.is-done) { opacity: 0.55; }
-          .emp-stepper-btn.is-locked .emp-stepper-label:not(.is-active):not(.is-done) { opacity: 0.55; }
-          .emp-stepper-btn.is-locked:hover .emp-stepper-circle:not(.is-active):not(.is-done) {
-            background: rgba(124,92,252,0.04); border-color: #e5e7eb; color: #9ca3af;
-          }
-          .emp-stepper-btn.is-locked:hover .emp-stepper-label:not(.is-active):not(.is-done) {
-            color: #9ca3af;
-          }
-
-          /* Dark-mode adapters for the wizard chrome — stepper, footer and
-             accent surfaces. The light theme keeps its hardcoded #fff /
-             pastel mints since that's the brand look; dark theme remaps
-             them to Velzon's card / border tokens so contrast stays
-             readable. */
-          .emp-stepper-bar { background: #fff; }
-          [data-bs-theme="dark"] .emp-stepper-bar { background: var(--vz-card-bg); border-bottom-color: var(--vz-border-color); }
-          [data-bs-theme="dark"] .emp-stepper-circle { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.55); border-color: rgba(255,255,255,0.12); }
-          [data-bs-theme="dark"] .emp-stepper-label { color: rgba(255,255,255,0.55); }
-          [data-bs-theme="dark"] .emp-stepper-label.is-active { color: #c4b5fd; }
-          [data-bs-theme="dark"] .emp-stepper-line { background: rgba(255,255,255,0.10); }
-          [data-bs-theme="dark"] .emp-stepper-btn:hover .emp-stepper-circle:not(.is-active):not(.is-done) { background: rgba(124,92,252,0.18); border-color: rgba(124,92,252,0.45); color: #c4b5fd; }
-          [data-bs-theme="dark"] .emp-input.is-readonly { background: #1c2531; border-color: var(--vz-border-color); color: var(--vz-body-color); }
-          .emp-footer-bar { background: #fff; border-top: 1px solid var(--vz-border-color); }
-          [data-bs-theme="dark"] .emp-footer-bar { background: var(--vz-card-bg); border-top-color: var(--vz-border-color); }
-          .emp-ghost-btn { background: #fff; color: var(--vz-secondary-color); border: 1px solid var(--vz-border-color); }
-          [data-bs-theme="dark"] .emp-ghost-btn { background: rgba(255,255,255,0.04); color: var(--vz-body-color); border-color: var(--vz-border-color); }
-          .emp-ghost-btn:hover { background: var(--vz-light, #f3f4f6); color: var(--vz-body-color); }
-          [data-bs-theme="dark"] .emp-ghost-btn:hover { background: rgba(255,255,255,0.08); }
-          .emp-ctc-card { background: #f8fafc; border: 1px solid #eef0f4; }
-          [data-bs-theme="dark"] .emp-ctc-card { background: rgba(255,255,255,0.03); border-color: var(--vz-border-color); }
-          .emp-ctc-num { color: #1f2937; }
-          [data-bs-theme="dark"] .emp-ctc-num { color: #ffffff; }
-          .emp-ctc-plus { color: #9ca3af; }
-          [data-bs-theme="dark"] .emp-ctc-plus { color: rgba(255,255,255,0.45); }
-          .emp-ctc-total { background: #f5f0ff; }
-          [data-bs-theme="dark"] .emp-ctc-total { background: rgba(124,92,252,0.18); }
-          .emp-ctc-total .emp-label, .emp-ctc-total .emp-ctc-num { color: #5a3fd1; }
-          [data-bs-theme="dark"] .emp-ctc-total .emp-label, [data-bs-theme="dark"] .emp-ctc-total .emp-ctc-num { color: #c4b5fd; }
-          .emp-payroll-banner { background: linear-gradient(135deg, #ece6ff, #ddd6fe); border: 1px solid #c7bdf5; }
-          [data-bs-theme="dark"] .emp-payroll-banner { background: linear-gradient(135deg, rgba(124,92,252,0.18), rgba(124,92,252,0.10)); border-color: rgba(124,92,252,0.35); }
-          .emp-payroll-banner-text { color: #5a3fd1; }
-          [data-bs-theme="dark"] .emp-payroll-banner-text { color: #c4b5fd; }
-          .emp-attn-text { color: #374151; }
-          [data-bs-theme="dark"] .emp-attn-text { color: var(--vz-body-color); }
-          .emp-dashed-btn-violet { background: #fff; color: #7c5cfc; border: 1px dashed #a78bfa; }
-          [data-bs-theme="dark"] .emp-dashed-btn-violet { background: rgba(124,92,252,0.10); color: #c4b5fd; border-color: rgba(167,139,250,0.50); }
-          .emp-dashed-btn-teal { background: #fff; color: #0ab39c; border: 1px dashed #2dd4bf; }
-          [data-bs-theme="dark"] .emp-dashed-btn-teal { background: rgba(10,179,156,0.10); color: #5eead4; border-color: rgba(45,212,191,0.50); }
-        `}</style>
 
         <ModalBody className="p-0" style={{ background: 'var(--vz-secondary-bg, #f7f8fc)', borderRadius: 'var(--bs-modal-border-radius, 12px)', overflow: 'hidden' }}>
-          {/* Gradient header */}
           <div
             style={{
               padding: '18px 22px',
@@ -4713,9 +2893,6 @@ export default function HrEmployees() {
             </div>
           </div>
 
-          {/* Stepper — flips to `is-loading` while a step save is in
-              flight so the entire bar shimmers + the active circle pulses
-              and grows a spinner next to its label. */}
           <div className={`emp-stepper-bar${saving ? ' is-loading' : ''}`} style={{ padding: '16px 28px', borderBottom: '1px solid var(--vz-border-color)' }}>
             <div className="d-flex align-items-start">
               {[
@@ -4726,10 +2903,6 @@ export default function HrEmployees() {
               ].map((s, idx, arr) => {
                 const active = empStep === s.n;
                 const done = empStep > s.n;
-                // Forward jumps are blocked: a step is only reachable
-                // via the stepper once the user has actually advanced
-                // past it via "Next". Steps already reached stay
-                // freely clickable so users can go back to edit.
                 const locked = s.n > empMaxStep;
                 return (
                   <div key={s.n} className="d-flex align-items-start" style={{ flex: idx === arr.length - 1 ? '0 0 auto' : '1 1 0' }}>
@@ -4756,11 +2929,9 @@ export default function HrEmployees() {
             </div>
           </div>
 
-          {/* Body — scrollable */}
           <div ref={empScrollRef} style={{ padding: '18px 22px', maxHeight: 'calc(100vh - 320px)', overflowY: 'auto' }}>
             {empStep === 1 && (
               <>
-                {/* Employee Details */}
                 <div className="emp-section">
                   <div className="emp-section-title">
                     <i className="ri-user-line" /> Employee Details
@@ -4783,8 +2954,6 @@ export default function HrEmployees() {
                           setEFirstName(v);
                           const composed = `${v} ${eMiddleName} ${eLastName}`.replace(/\s+/g,' ').trim();
                           if (!eDisplayNameTouched) setEDisplayName(composed);
-                          // Actual Name is read-only + always auto-generated from
-                          // First / Middle / Last, so keep it in sync on every edit.
                           setEActualName(composed);
                           clearEErr('first_name');
                           clearEErr('display_name');
@@ -4800,7 +2969,7 @@ export default function HrEmployees() {
                         setEMiddleName(v);
                         const composed = `${eFirstName} ${v} ${eLastName}`.replace(/\s+/g,' ').trim();
                         if (!eDisplayNameTouched) setEDisplayName(composed);
-                        setEActualName(composed);   // read-only, always auto-generated
+                        setEActualName(composed);
                         clearEErr('middle_name');
                         clearEErr('actual_name');
                       }} />
@@ -4818,7 +2987,7 @@ export default function HrEmployees() {
                           setELastName(v);
                           const composed = `${eFirstName} ${eMiddleName} ${v}`.replace(/\s+/g,' ').trim();
                           if (!eDisplayNameTouched) setEDisplayName(composed);
-                          setEActualName(composed);   // read-only, always auto-generated
+                          setEActualName(composed);
                           clearEErr('last_name');
                           clearEErr('display_name');
                           clearEErr('actual_name');
@@ -4846,9 +3015,6 @@ export default function HrEmployees() {
                         Employee Actual Name<span className="req">*</span>
                         <span className="hint">(auto-generated)</span>
                       </label>
-                      {/* Read-only — auto-filled from First / Middle / Last name
-                          (kept in sync by the name fields' onChange above). Not
-                          manually editable, same as Display Name. */}
                       <input
                         className={`emp-input is-readonly${eErrors.actual_name ? ' is-invalid' : ''}`}
                         type="text"
@@ -4883,7 +3049,6 @@ export default function HrEmployees() {
                   </Row>
                 </div>
 
-                {/* Contact & Identity */}
                 <div className="emp-section">
                   <div className="emp-section-title">
                     <i className="ri-mail-line" /> Contact &amp; Identity
@@ -4899,12 +3064,6 @@ export default function HrEmployees() {
                         placeholder="name@enterprise.com"
                         value={eWorkEmail}
                         onChange={e => {
-                          // Emails are case-insensitive per RFC 5321 but
-                          // many auth flows (and our login table) compare
-                          // them exactly — normalise to lowercase and
-                          // strip whitespace at the input boundary so a
-                          // stray capital or pasted leading space never
-                          // creates a duplicate-looking account.
                           const v = e.target.value.replace(/\s+/g, '').toLowerCase();
                           setEWorkEmail(v);
                           clearEErr('email');
@@ -4922,10 +3081,6 @@ export default function HrEmployees() {
                         maxLength={15}
                         value={eMobile}
                         onChange={e => {
-                          // Allow only digits + leading +. Caps at 15 chars
-                          // (E.164 international max). Without this, users
-                          // could paste 20–30 chars and trigger a backend
-                          // 500 when the DB length limit kicked in.
                           const cleaned = e.target.value.replace(/[^\d+]/g, '').slice(0, 15);
                           setEMobile(cleaned);
                           clearEErr('mobile');
@@ -4944,13 +3099,11 @@ export default function HrEmployees() {
                   </Row>
                 </div>
 
-                {/* Address Details */}
                 <div className="emp-section">
                   <div className="emp-section-title">
                     <i className="ri-map-pin-line" /> Address Details
                   </div>
 
-                  {/* Current address */}
                   <div className="emp-subsection-title">
                     <i className="ri-checkbox-circle-fill" /> Current Address
                   </div>
@@ -4987,8 +3140,6 @@ export default function HrEmployees() {
                         value={eCurCountry}
                         onChange={(v) => {
                           setECurCountry(v);
-                          // Clear state when country changes — keeps the
-                          // state value valid against the new country list.
                           if (eCurState) setECurState('');
                           clearEErr('country_id');
                           clearEErr('state_id');
@@ -5020,15 +3171,12 @@ export default function HrEmployees() {
                         maxLength={6}
                         placeholder="6-digit pincode"
                         value={eCurPin}
-                        // Strip non-digits and cap at 6 so the field can never
-                        // hold more/less than a 6-digit pincode.
                         onChange={e => { setECurPin(e.target.value.replace(/\D/g, '').slice(0, 6)); clearEErr('pincode'); }}
                       />
                       {eErrors.pincode && <small className="emp-err">{eErrors.pincode}</small>}
                     </Col>
                   </Row>
 
-                  {/* Permanent address */}
                   <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2 mt-2 pt-3" style={{ borderTop: '1px dashed var(--vz-border-color)' }}>
                     <div className="emp-subsection-title mb-0">
                       <i className="ri-checkbox-circle-fill" /> Permanent Address
@@ -5087,7 +3235,6 @@ export default function HrEmployees() {
 
             {empStep === 2 && (
               <>
-                {/* Employment Details */}
                 <div className="emp-section">
                   <div className="emp-section-title">
                     <i className="ri-briefcase-line" /> Employment Details
@@ -5129,7 +3276,6 @@ export default function HrEmployees() {
                   </Row>
                 </div>
 
-                {/* Organisational Details */}
                 <div className="emp-section">
                   <div className="emp-section-title">
                     <i className="ri-building-2-line" /> Organisational Details
@@ -5141,7 +3287,6 @@ export default function HrEmployees() {
                         value={eLegalEntity}
                         onChange={(v) => {
                           setELegalEntity(v);
-                          // Default Location to the entity's city — user can edit.
                           const entity = mLegalEntities.find(le => String(le.id) === String(v));
                           setELocation(entity?.city || entity?.address_line1 || '');
                           clearEErr('legal_entity_id');
@@ -5179,7 +3324,6 @@ export default function HrEmployees() {
                   </Row>
                 </div>
 
-                {/* Employment Terms */}
                 <div className="emp-section">
                   <div className="emp-section-title">
                     <i className="ri-file-list-3-line" /> Employment Terms
@@ -5222,7 +3366,6 @@ export default function HrEmployees() {
 
             {empStep === 3 && (
               <>
-                {/* Leave & Attendance */}
                 <div className="emp-section">
                   <div className="emp-section-title" style={{ color: '#0a8a78' }}>
                     <i className="ri-calendar-2-line" style={{ color: '#0ab39c' }} /> Leave &amp; Attendance
@@ -5290,10 +3433,6 @@ export default function HrEmployees() {
                         inputMode="numeric"
                         placeholder="Attendance number"
                         value={eAttendanceNumber}
-                        // Numeric-only — biometric / swipe-in systems issue
-                        // integer IDs, so letters are never valid. Strip
-                        // non-digits as the user types instead of rejecting
-                        // the keystroke (paste-friendly).
                         onChange={e => setEAttendanceNumber(e.target.value.replace(/\D/g, ''))}
                         maxLength={20}
                       />
@@ -5320,16 +3459,6 @@ export default function HrEmployees() {
                   </Row>
                 </div>
 
-                {/* Assets & Security — Step 3.
-                    Laptop / Mobile work in two stages:
-                      1. Yes/No flag (always shown).
-                      2. When Yes, a category-scoped picker appears
-                         showing "Serial Number — Asset Name" only for
-                         devices that aren't currently issued to another
-                         employee. Flipping back to No clears the FK on
-                         save.
-                    Other Assets is a multi-select over every remaining
-                    master asset and is optional. */}
                 <div className="emp-section">
                   <div className="emp-section-title" style={{ color: '#0c63b0' }}>
                     <i className="ri-computer-line" style={{ color: '#299cdb' }} /> Assets &amp; Security
@@ -5406,12 +3535,6 @@ export default function HrEmployees() {
                   </Row>
                 </div>
 
-                {/* Documents — keyed by `aadhaar` / `pan` / `photo` so
-                    they match the catalogue used by the public
-                    onboarding flow + Stage 2 modal. Files upload
-                    immediately on selection; on edit-open we hydrate
-                    the tiles from /api/employees/{id}/documents so the
-                    admin can see what's already there. */}
                 <div className="emp-section">
                   <div className="emp-section-title">
                     <i className="ri-file-text-line" /> Documents
@@ -5425,8 +3548,6 @@ export default function HrEmployees() {
                       const srv = eExistingDocs[d.key];
                       const busy = !!eDocBusy[d.key];
                       const hasUpload = !!srv;
-                      // Validation error key for this tile (only the
-                      // required ones map to keys; photo never errors).
                       const errKey = d.key === 'aadhaar' ? 'doc_aadhaar'
                                    : d.key === 'pan'     ? 'doc_pan'
                                    : null;
@@ -5485,8 +3606,6 @@ export default function HrEmployees() {
                                       toast.error('Unsupported file type', `${d.label} accepts ${d.accept}`);
                                       return;
                                     }
-                                    // Size guard BEFORE d.set so an oversized
-                                    // file never shows in the tile as "accepted".
                                     if (f.size > 2 * 1024 * 1024) {
                                       toast.error('File too large', `${d.label} must be ≤ 2 MB (this file is ${(f.size / 1048576).toFixed(1)} MB)`);
                                       return;
@@ -5524,8 +3643,6 @@ export default function HrEmployees() {
                                     toast.error('Unsupported file type', `${d.label} accepts ${d.accept}`);
                                     return;
                                   }
-                                  // Size guard BEFORE d.set so an oversized
-                                  // file never shows in the tile as "accepted".
                                   if (f.size > 2 * 1024 * 1024) {
                                     toast.error('File too large', `${d.label} must be ≤ 2 MB (this file is ${(f.size / 1048576).toFixed(1)} MB)`);
                                     return;
@@ -5548,7 +3665,6 @@ export default function HrEmployees() {
 
             {empStep === 4 && (
               <>
-                {/* Payroll Configuration */}
                 <div className="emp-section">
                   <div className="emp-section-title">
                     <i className="ri-money-dollar-circle-line" /> Payroll Configuration
@@ -5595,23 +3711,12 @@ export default function HrEmployees() {
                           type="number"
                           placeholder="Enter amount"
                           value={eAnnualSalary}
-                          // Hard caps:
-                          //   - max  = 999,999,999,999.99 (decimal(14,2))
-                          //   - step = 0.01 (1 paisa)
-                          //   - 12 integer digits + 2 decimals enforced
-                          //     by a regex so the field never carries a
-                          //     value the backend would reject as overflow.
                           max={999999999999.99}
                           step="0.01"
                           inputMode="decimal"
                           onChange={e => {
                             const raw = e.target.value;
-                            // Allow blank so the user can clear the field.
                             if (raw === '') { setEAnnualSalary(''); clearEErr('annual_salary'); return; }
-                            // Reject anything that doesn't look like a
-                            // bounded decimal (up to 12 integer digits,
-                            // optional 2 decimals). Silently ignore the
-                            // bad keystroke instead of mutating state.
                             if (!/^\d{0,12}(\.\d{0,2})?$/.test(raw)) return;
                             setEAnnualSalary(raw);
                             clearEErr('annual_salary');
@@ -5627,12 +3732,6 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Salary Effective From{eEnablePayroll && <span className="req">*</span>}</label>
-                      {/* minDate locks the calendar so dates before the
-                          Step-2 joining date are visually disabled —
-                          the user can't even pick an invalid value.
-                          validateStep4 still re-checks at submit time
-                          for the case where a joining date is changed
-                          AFTER the salary date was picked. */}
                       <MasterDatePicker
                         value={eSalaryFrom}
                         onChange={(v) => { setESalaryFrom(v); clearEErr('salary_effective_from'); }}
@@ -5654,18 +3753,11 @@ export default function HrEmployees() {
                   </Row>
                 </div>
 
-                {/* Salary Breakup */}
                 <div className="emp-section">
                   <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
                     <div className="emp-section-title mb-0">
                       <i className="ri-calculator-line" style={{ color: '#0c63b0' }} /> Salary Breakup
                     </div>
-                    {/* The toggle was previously wrapped in a <label>, which
-                        was eating the click — a label re-fires its click on
-                        the implicit form control inside it (the <button>),
-                        so the state flipped on then off in the same gesture
-                        and never visually changed. Using a <span> keeps the
-                        same layout without the label-relay behavior. */}
                     <span className="d-inline-flex align-items-center gap-2 mb-0" style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)' }}>
                       <button
                         type="button"
@@ -5704,7 +3796,6 @@ export default function HrEmployees() {
                   </div>
 
                   {!eDetailedBreakup ? (
-                    /* Simple view — Regular + Bonus = Total CTC (annual figures). */
                     <div
                       className="emp-ctc-card d-flex align-items-center justify-content-between flex-wrap"
                       style={{
@@ -5737,8 +3828,6 @@ export default function HrEmployees() {
                       <i className="ri-loader-4-line emp-spin" /> Loading breakup…
                     </div>
                   ) : (
-                    /* Detailed view — editable monthly earnings + deductions,
-                       persisted as a versioned salary_structures row on Save. */
                     <>
                       <div className="text-muted mb-3" style={{ fontSize: 12 }}>
                         Monthly component breakup. Saved as the employee's active salary
@@ -5760,7 +3849,6 @@ export default function HrEmployees() {
                         <Col md={6}>{renderBreakTable('ded', '#b91c1c', 'Fixed Deductions (optional)')}</Col>
                       </Row>
 
-                      {/* Totals — monthly gross + net, with annualised CTC. */}
                       <div className="d-flex align-items-center justify-content-between mt-3 p-2 px-3"
                         style={{ background: 'var(--vz-secondary-bg)', borderRadius: 10, border: '1px solid var(--vz-border-color)' }}>
                         <div>
@@ -5793,12 +3881,10 @@ export default function HrEmployees() {
             )}
           </div>
 
-          {/* Footer */}
           <div
             className="emp-footer-bar d-flex align-items-center justify-content-between gap-2 flex-wrap"
             style={{ padding: '14px 22px' }}
           >
-            {/* Left side — Back button (steps 2+) */}
             {empStep > 1 ? (
               <button
                 type="button"
@@ -5811,14 +3897,6 @@ export default function HrEmployees() {
               <span />
             )}
 
-            {/* Right side — Next (steps 1-3) or Save (step 4).
-                The "Skip this Step" ghost button that used to sit
-                next to Save was removed: it called the same
-                handleSaveEmployee handler as the primary Save button,
-                so it didn't actually skip anything — clicking it
-                still persisted Step 4 just like Save did. Having two
-                buttons that do the same thing while one of them
-                implies "discard" was confusing users. */}
             <div className="d-flex align-items-center gap-2">
               {empStep < 4 ? (
                 <button
@@ -5873,7 +3951,6 @@ export default function HrEmployees() {
         </ModalBody>
       </Modal>
 
-      {/* ── Assign Assets modal (per-row Workstation icon) — master-form style ── */}
       <Modal
         isOpen={assignOpen}
         toggle={closeAssign}
@@ -5884,44 +3961,8 @@ export default function HrEmployees() {
         backdrop="static"
         keyboard={false}
       >
-        <style>{`
-          .assign-tabs { display: flex; gap: 24px; padding: 0 24px; border-bottom: 1px solid var(--vz-border-color); }
-          .assign-tab-btn {
-            background: transparent; border: none; padding: 12px 0; cursor: pointer;
-            display: inline-flex; align-items: center; gap: 6px;
-            font-size: 13px; font-weight: 600; color: var(--vz-secondary-color);
-            border-bottom: 2px solid transparent;
-            transition: color .15s ease, border-color .15s ease;
-          }
-          .assign-tab-btn:hover { color: #6366f1; }
-          .assign-tab-btn.is-active { color: #6366f1; border-bottom-color: #6366f1; }
-          .assign-section-title {
-            display: inline-flex; align-items: center; gap: 10px;
-            font-size: 13.5px; font-weight: 700;
-            color: var(--vz-heading-color, var(--vz-body-color));
-            letter-spacing: 0.02em;
-          }
-          .assign-section-title i { color: #6366f1; font-size: 16px; }
-          .assign-error {
-            display: flex; align-items: center; gap: 4px;
-            color: #f06548; font-size: 12px; margin-top: 6px;
-          }
-          .assign-error i { font-size: 13px; }
-          .assign-save-btn {
-            display: inline-flex; align-items: center; gap: 8px;
-            padding: 10px 22px; border-radius: 999px;
-            font-size: 13.5px; font-weight: 600; color: #fff;
-            border: none;
-            background: linear-gradient(135deg, #4f46e5 0%, #6366f1 50%, #7c5cfc 100%);
-            box-shadow: 0 8px 18px rgba(99,102,241,0.30);
-            transition: transform .15s ease, box-shadow .15s ease;
-          }
-          .assign-save-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(99,102,241,0.38); }
-        `}</style>
 
         <ModalBody className="p-0">
-          {/* Header — indigo/violet gradient with white icon & text. Mirrors the
-              "Add Department" recipe shared by the user. */}
           <div
             style={{
               padding: '22px 26px',
@@ -5931,12 +3972,26 @@ export default function HrEmployees() {
               overflow: 'hidden',
             }}
           >
-            {/* Decorative bubble (top-right) */}
             <div style={{
               position: 'absolute', top: -50, right: -40, width: 220, height: 220,
               borderRadius: '50%', background: 'rgba(255,255,255,0.10)',
             }} />
-            <div className="d-flex align-items-center gap-3" style={{ position: 'relative' }}>
+            <button
+              type="button"
+              onClick={closeAssign}
+              aria-label="Close"
+              className="assign-close-x btn p-0 d-inline-flex align-items-center justify-content-center"
+              style={{
+                position: 'absolute', top: 16, right: 18, zIndex: 2,
+                width: 30, height: 30, borderRadius: 10,
+                background: 'rgba(255,255,255,0.18)',
+                border: '1px solid rgba(255,255,255,0.30)',
+                color: '#fff',
+              }}
+            >
+              <i className="ri-close-line" style={{ fontSize: 18 }} />
+            </button>
+            <div className="d-flex align-items-center gap-3" style={{ position: 'relative', paddingRight: 44 }}>
               <div className="d-flex align-items-center gap-3 min-w-0">
                 <span
                   className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
@@ -5961,14 +4016,9 @@ export default function HrEmployees() {
                   </div>
                 </div>
               </div>
-              {/* No top-right X — footer has Cancel; one dismiss path. */}
             </div>
           </div>
 
-          {/* Body — single IT Assets section. Same picker design as
-              Step 3 of the Add/Edit wizard, hydrated from the selected
-              employee's row on open. Devices already booked by other
-              employees are filtered out by the backend. */}
           <div style={{ padding: '20px 24px 8px' }}>
             <div className="assign-section-title mb-3">
               <i className="ri-computer-line" /> Assets &amp; Security
@@ -6035,7 +4085,6 @@ export default function HrEmployees() {
             </Row>
           </div>
 
-          {/* Footer — required-fields hint on the left, action buttons on the right */}
           <div
             className="d-flex align-items-center justify-content-between gap-2 flex-wrap"
             style={{ padding: '14px 24px 18px', borderTop: '1px solid var(--vz-border-color)' }}
@@ -6054,15 +4103,6 @@ export default function HrEmployees() {
         </ModalBody>
       </Modal>
 
-      {/* ── Evidence Vault modal (per-row Documents / PDF icon) ──
-          Reuses the Onboarding page's fully wired vault so the directory
-          shows THIS employee's real uploaded documents + the HR Document
-          Templates matched to their department / designation (with the
-          signing workflow), instead of the old ComingSoon mock catalogue.
-          The table's EmployeeRow is adapted to the OnboardRow shape the
-          vault reads (id / name / department / designation / dbId).
-          triggerKeyword={null} lists every matched template, not just
-          onboarding-triggered ones, since this is the full directory. */}
       <VaultModal
         isOpen={vaultOpen}
         onClose={closeVault}
@@ -6077,12 +4117,9 @@ export default function HrEmployees() {
         tab={vaultTab}
         onTabChange={setVaultTab}
         triggerKeyword={null}
+        signedOnly
       />
 
-      {/* Face Registration modal — opened from the row action. Posts the
-          128-d descriptor (with consent flag) to /api/face/register, with
-          employee_id set to the row's DB id so the admin enrols another
-          employee's face (not their own). */}
       <FaceRegistrationModal
         open={faceRegEmployeeId !== null}
         onClose={() => setFaceRegEmployeeId(null)}
@@ -6093,16 +4130,6 @@ export default function HrEmployees() {
   );
 }
 
-/**
- * Multi-role chip for the Ancillary Role column.
- *
- * Shows the FIRST role as a coloured pill, plus a "+N" badge if the
- * employee has more. Click the +N → floating popover lists every
- * remaining role. The popover uses `position: fixed` + a Portal so it
- * escapes the table cell's overflow clipping and z-index stacking,
- * and aligns itself to the button via getBoundingClientRect(). Closes
- * on outside-click, Esc, scroll, or window resize. Empty list = "—".
- */
 function AncillaryRolesChip({ names }: { names: string[] }) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -6111,8 +4138,6 @@ function AncillaryRolesChip({ names }: { names: string[] }) {
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
 
-  // Recompute the popover anchor whenever it opens. Clamp to the viewport
-  // so it never falls off the edge on the right.
   const place = () => {
     const b = btnRef.current?.getBoundingClientRect();
     if (!b) return;
@@ -6249,8 +4274,6 @@ function AncillaryRolesChip({ names }: { names: string[] }) {
   );
 }
 
-// Outline icon-pill action button — same recipe as Clients.tsx ActionBtn so
-// the table actions read identically across both pages.
 function ActionBtn({
   title, icon, color, onClick, disabled, badge,
 }: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean; badge?: 'dot' }) {
@@ -6285,10 +4308,6 @@ function ActionBtn({
         onClick={() => { if (!disabled) onClick(); }}
       >
         <i className={`${icon} fs-14`} />
-        {/* Small "already enrolled" indicator — green dot in the top-right
-            corner. Currently only used by the Register Face action to signal
-            an existing enrolment, but the prop is generic so other actions
-            can reuse the same dot later. */}
         {badge === 'dot' && (
           <span
             aria-hidden
@@ -6306,11 +4325,6 @@ function ActionBtn({
   );
 }
 
-// Animated KPI counter — same recipe as the admin / client / branch dashboards
-// so the HR Employee KPIs count up on first paint instead of snapping to value.
-// Multi-select chips — toggle-style dropdown that shows the selected values
-// as removable pills inside the toggle, and a checkbox list when opened.
-// Used by the Ancillary Role field in Step 2 of the Add/Edit Employee form.
 function MultiSelectChips({
   value,
   onChange,
@@ -6329,7 +4343,6 @@ function MultiSelectChips({
   const wrapRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Close on outside click / ESC.
   useEffect(() => {
     if (!open) return;
     const onClick = (e: MouseEvent) => {
@@ -6344,8 +4357,6 @@ function MultiSelectChips({
     };
   }, [open]);
 
-  // Reset the query when the menu closes, and auto-focus the search input
-  // when it opens so the user can start typing immediately.
   useEffect(() => {
     if (open) {
       setTimeout(() => searchRef.current?.focus(), 0);
@@ -6366,96 +4377,6 @@ function MultiSelectChips({
 
   return (
     <div ref={wrapRef} style={{ position: 'relative', width: '100%' }}>
-      <style>{`
-        .mschips-toggle {
-          width: 100%; min-height: 38px;
-          padding: 5px 36px 5px 10px;
-          border: 1px solid var(--vz-border-color);
-          border-radius: 10px;
-          background: var(--vz-card-bg);
-          font-size: 13px;
-          color: var(--vz-heading-color, var(--vz-body-color));
-          cursor: pointer;
-          display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
-          position: relative;
-          transition: border-color .15s ease, box-shadow .15s ease;
-        }
-        .mschips-toggle:hover:not(.is-disabled) { border-color: rgba(99,102,241,0.55); }
-        .mschips-toggle.is-open { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
-        .mschips-toggle.is-disabled { background: var(--vz-secondary-bg); cursor: not-allowed; opacity: 0.85; }
-        .mschips-placeholder { color: var(--vz-secondary-color); opacity: 0.65; font-weight: 400; padding: 3px 0; }
-        .mschips-chev { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--vz-secondary-color); font-size: 16px; pointer-events: none; transition: transform .2s ease; }
-        .mschips-toggle.is-open .mschips-chev { transform: translateY(-50%) rotate(180deg); color: #6366f1; }
-        .mschips-chip {
-          display: inline-flex; align-items: center; gap: 4px;
-          padding: 3px 8px; border-radius: 999px;
-          background: rgba(99,102,241,0.10);
-          color: #6366f1;
-          font-size: 12px; font-weight: 600;
-        }
-        .mschips-chip-x {
-          border: none; background: transparent; padding: 0;
-          color: #6366f1; cursor: pointer; line-height: 1;
-          display: inline-flex; align-items: center;
-        }
-        .mschips-chip-x:hover { color: #f06548; }
-        .mschips-menu {
-          position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 1500;
-          background-color: #ffffff !important;
-          background-image: none !important;
-          backdrop-filter: none !important;
-          -webkit-backdrop-filter: none !important;
-          opacity: 1 !important;
-          border: 1px solid var(--vz-border-color);
-          border-radius: 10px;
-          box-shadow: 0 14px 30px rgba(18,38,63,0.18), 0 2px 8px rgba(18,38,63,0.06);
-          padding: 6px;
-          max-height: 260px; display: flex; flex-direction: column;
-        }
-        .mschips-search-wrap {
-          position: relative; flex-shrink: 0;
-          padding: 2px 2px 6px 2px;
-          margin-bottom: 6px;
-          border-bottom: 1px solid var(--vz-border-color);
-        }
-        .mschips-search-icon {
-          position: absolute; left: 11px; top: 50%;
-          transform: translateY(calc(-50% - 3px));
-          font-size: 14px; color: var(--vz-secondary-color);
-          pointer-events: none;
-        }
-        .mschips-search {
-          width: 100%; height: 32px;
-          padding: 6px 10px 6px 32px;
-          border: 1px solid var(--vz-border-color);
-          border-radius: 7px;
-          background: var(--vz-card-bg);
-          color: var(--vz-body-color);
-          font-size: 12.5px;
-          outline: none;
-          transition: border-color .15s ease, box-shadow .15s ease;
-        }
-        .mschips-search:focus {
-          border-color: #6366f1;
-          box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
-        }
-        .mschips-list { overflow-y: auto; flex: 1 1 auto; }
-        [data-bs-theme="dark"] .mschips-menu,
-        [data-layout-mode="dark"] .mschips-menu {
-          background-color: #2a2f34 !important;
-          border-color: rgba(255,255,255,0.08);
-        }
-        .mschips-item {
-          display: flex; align-items: center; gap: 8px;
-          padding: 7px 10px; border-radius: 6px;
-          font-size: 13px; cursor: pointer;
-          transition: background .15s ease;
-        }
-        .mschips-item:hover { background: var(--vz-secondary-bg); }
-        .mschips-item.is-on { background: rgba(99,102,241,0.10); color: #6366f1; font-weight: 600; }
-        .mschips-check { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--vz-border-color); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .mschips-item.is-on .mschips-check { background: #6366f1; border-color: #6366f1; color: #fff; }
-      `}</style>
 
       <div
         role="button"
@@ -6546,10 +4467,6 @@ function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; pr
   return <>{prefix}{display.toLocaleString()}{suffix}</>;
 }
 
-// Local toggle — simple, controlled per row. Bound only to mock state for now.
-// `onRequestToggle` lets the parent gate the change behind a confirmation: it
-// receives the desired next state and a `commit` callback that flips the local
-// state when (and only when) the parent says so.
 function ToggleSwitch({
   initial,
   onRequestToggle,

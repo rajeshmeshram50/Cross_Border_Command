@@ -10,9 +10,6 @@ import Tooltip from '../../components/ui/Tooltip';
 import DocGenerateModal from './doc-templates/DocGenerateModal';
 import '../../../css/recruitment.css';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────────────────────
 type ExitStatus = 'Active' | 'Exit In Progress' | 'Exited' | 'Missing Details';
 type DesigLevel = 'all' | 'hod' | 'lead' | 'exec' | 'employee' | 'intern';
 type EmpType    = 'all' | 'it' | 'nonit';
@@ -31,38 +28,19 @@ interface EmployeeRow {
   name: string;
   initials: string;
   accent: string;
-  /** Public URL of the employee's passport-size photo (document_key='photo').
-   *  Same `photo_url` accessor the HR Employees + Onboarding tables read,
-   *  so the avatar stays in sync across all three pages. Optional — falls
-   *  back to the initials gradient avatar when null. */
   photoUrl?: string | null;
   department: string;
   designation: string;
   primaryRole: string;
   ancillaryRole: string;
-  /** Full list of ancillary role names (multi-select on the employee).
-   *  Hydrated from `ancillary_roles_resolved` on the API row. Optional
-   *  so the local seed array below doesn't need to be touched; the
-   *  table cell falls back to `[ancillaryRole]`. */
   ancillaryRoles?: string[];
   managerName: string;
   managerInitials: string;
   managerAccent: string;
-  exitReadiness: number;          // 0–100
+  exitReadiness: number;
   status: ExitStatus;
-  // True once an exit has been initiated (exit row has a type or a last
-  // working day). Used to label the action button "Continue" even while the
-  // row is still in the Active tab — e.g. a future-dated notice that hasn't
-  // started yet, so the exit is scheduled but not yet "In Progress".
   exitInitiated: boolean;
-  // Notice start date (ISO yyyy-mm-dd, '' if none). When this is in the
-  // future the employee stays Active and only enters "In Progress" on/after
-  // this date — the notice window hasn't begun yet.
   noticeStartIso: string;
-  // Asset assignments (Stage 2). Pulled from the eager-loaded
-  // laptopAsset / mobileAsset relations + the resolved JSON array
-  // accessor on the Employee model so Stage 2's "Asset Return
-  // Tracking" list can render the actual devices the employee holds.
   laptopAsset:  AssetMini | null;
   mobileAsset:  AssetMini | null;
   otherAssets:  AssetMini[];
@@ -72,9 +50,9 @@ interface ChecklistItem {
   name: string;
   sub: string;
   owner: RoleOwner;
-  desig: DesigLevel[] | 'all';    // designations this item applies to
-  type: EmpType;                  // 'all' | 'it' | 'nonit'
-  tag?: string;                   // optional badge text (ALL / HOD / TL / Intern / IT …)
+  desig: DesigLevel[] | 'all';
+  type: EmpType;
+  tag?: string;
 }
 
 interface ChecklistStage {
@@ -83,38 +61,17 @@ interface ChecklistStage {
   items: ChecklistItem[];
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HrExitManagement — page component
-// ─────────────────────────────────────────────────────────────────────────────
 export default function HrExitManagement() {
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
-  // Loading flag for the initial GET /employees call. Drives the KPI
-  // tile + table shimmer so the user gets a visible placeholder instead
-  // of zero counts and an empty table during the first roundtrip.
   const [listLoading, setListLoading] = useState(true);
   const [tab, setTab]             = useState<'active' | 'in-progress' | 'exited'>('active');
   const [search, setSearch]       = useState('');
-  const [deptFilter, setDeptFilter]     = useState<string>('All');
-  const [statusFilter, setStatusFilter] = useState<string>('All');
   const [page, setPage]           = useState(1);
   const [pageSize, setPageSize]   = useState(10);
   const [checklistOpen, setChecklistOpen] = useState(false);
-  // Currently-processing employee for the 7-stage Exit Process modal.
   const [processing, setProcessing] = useState<EmployeeRow | null>(null);
-  // Evidence Vault — opens for an Exited employee to view all archived docs.
   const [vault, setVault] = useState<EmployeeRow | null>(null);
 
-  // ── Initial load — pulls every employee in the tenant scope from
-  //    /api/employees (the same endpoint the HR list / onboarding pages
-  //    use). Soft-deleted rows are surfaced as "Exited" so all three
-  //    tabs stay populated without a separate exit endpoint.
-  // Exit Management only handles employees that have actually finished
-  // onboarding (all 6 macro stages). Anyone still in the wizard isn't a
-  // candidate for the exit flow yet — they belong on the Onboarding page.
-  // KPIs, tabs, search and the table all derive from `employees`, so
-  // filtering here keeps every count and bucket honest in one place.
-  // `silent` skips the shimmer for background refreshes (e.g. after the
-  // exit modal saves/completes) so the table doesn't flash on every close.
   const loadEmployees = useCallback((silent = false) => {
     if (!silent) setListLoading(true);
     api.get('/employees')
@@ -129,10 +86,8 @@ export default function HrExitManagement() {
   }, []);
   useEffect(() => { loadEmployees(); }, [loadEmployees]);
 
-  // Reset page when filters change
-  useEffect(() => { setPage(1); }, [tab, search, deptFilter, statusFilter]);
+  useEffect(() => { setPage(1); }, [tab, search]);
 
-  // ── Counts derived from full list (KPI strip + tab badges) ──────────────
   const counts = useMemo(() => {
     const total       = employees.length;
     const active      = employees.filter(e => e.status === 'Active').length;
@@ -142,7 +97,6 @@ export default function HrExitManagement() {
     return { total, active, inProgress, exited, missing };
   }, [employees]);
 
-  // ── Filter pipeline ─────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return employees
@@ -152,8 +106,6 @@ export default function HrExitManagement() {
         if (tab === 'exited')      return e.status === 'Exited';
         return true;
       })
-      .filter(e => deptFilter === 'All' || e.department === deptFilter)
-      .filter(e => statusFilter === 'All' || e.status === statusFilter)
       .filter(e => {
         if (!needle) return true;
         return (
@@ -163,19 +115,14 @@ export default function HrExitManagement() {
           e.designation.toLowerCase().includes(needle)
         );
       });
-  }, [employees, tab, search, deptFilter, statusFilter]);
+  }, [employees, tab, search]);
 
-  // ── Pagination slice ────────────────────────────────────────────────────
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage  = Math.min(page, pageCount);
   const sliceFrom = (safePage - 1) * pageSize;
   const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
   const goto = (p: number) => setPage(Math.max(1, Math.min(pageCount, p)));
 
-  // ── Dynamic fill height — stretch the list body to the bottom of the
-  //    viewport so the pagination footer pins to the bottom of the card
-  //    (same mechanism as the Onboarding / Recruitment / Employee lists)
-  //    instead of floating right under the last row.
   const listRootRef   = useRef<HTMLDivElement | null>(null);
   const listScrollRef = useRef<HTMLDivElement | null>(null);
   const [listFillH, setListFillH] = useState<number | undefined>(undefined);
@@ -195,33 +142,7 @@ export default function HrExitManagement() {
     return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
   }, [filtered.length]);
 
-  /* Department filter options — sourced from the master so the
-   * dropdown shows every department the org has set up, not just the
-   * ones with at least one employee currently in the loaded list.
-   * Fallback to the distinct set derived from `employees` if the
-   * master fetch fails, so the filter still works on an unreachable
-   * backend. */
-  const [masterDepartments, setMasterDepartments] = useState<string[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    api.get<Array<{ name?: string | null; status?: string | null }>>('/master/departments')
-      .then(({ data }) => {
-        if (cancelled) return;
-        const names = (Array.isArray(data) ? data : [])
-          .filter(r => String(r?.status ?? 'Active').toLowerCase() !== 'inactive')
-          .map(r => String(r?.name ?? '').trim())
-          .filter(Boolean);
-        setMasterDepartments(Array.from(new Set(names)).sort());
-      })
-      .catch(() => { /* keep fallback */ });
-    return () => { cancelled = true; };
-  }, []);
-  const departments = useMemo(() => {
-    if (masterDepartments.length > 0) return masterDepartments;
-    return Array.from(new Set(employees.map(e => e.department).filter(d => d && d !== '—'))).sort();
-  }, [masterDepartments, employees]);
 
-  // ── KPI tile config ─────────────────────────────────────────────────────
   const KPI_CARDS = [
     { key: 'total',      label: 'Total Employees',     value: counts.total,      icon: 'ri-team-line',          gradient: 'linear-gradient(135deg, #4338ca 0%, #6366f1 60%, #818cf8 100%)', deep: '#4338ca' },
     { key: 'active',     label: 'Active Employees',    value: counts.active,     icon: 'ri-user-line',          gradient: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
@@ -230,14 +151,6 @@ export default function HrExitManagement() {
     { key: 'missing',    label: 'Missing Exit Details',value: counts.missing,    icon: 'ri-error-warning-line', gradient: 'linear-gradient(135deg, #be123c 0%, #ef4444 60%, #fb7185 100%)', deep: '#be123c' },
   ];
 
-  // ── Status badge colour map ─────────────────────────────────────────────
-  // Mirrors the Clients table pattern (badge rounded-pill bg-{c}-subtle
-  // text-{c}) so the visual language is consistent across modules. Map
-  // each ExitStatus onto a Bootstrap semantic colour:
-  //   Active            → success (green)
-  //   Exit In Progress  → warning (amber)
-  //   Exited            → secondary (grey)
-  //   Missing Details   → danger (red)
   const STATUS_COLOR: Record<ExitStatus, string> = {
     'Active':           'success',
     'Exit In Progress': 'warning',
@@ -248,98 +161,10 @@ export default function HrExitManagement() {
   return (
     <>
       <MasterFormStyles />
-      <style>{`
-        /* Serial-number column — same recipe as the Employees list so the
-           digits stay legible against the dark surface (default text-muted
-           drops to ~30% opacity and disappears). */
-        .hr-exit-srno { color: var(--vz-secondary-color); font-weight: 600; }
-        [data-bs-theme="dark"] .hr-exit-srno,
-        [data-layout-mode="dark"] .hr-exit-srno { color: #d0d4dc; }
 
-        /* Promote the legacy native-select / plain-input look of the exit
-           modal to the same theming the rest of the HR forms use. The old
-           .ep-select / .ep-input rules sit in recruitment.css; these
-           overrides take precedence and bring rounded corners, the
-           consistent border + focus ring, and proper dark-mode colours. */
-        .ep-input,
-        .ep-textarea,
-        .ep-select {
-          background: var(--vz-card-bg) !important;
-          color: var(--vz-heading-color, var(--vz-body-color)) !important;
-          border: 1px solid var(--vz-border-color) !important;
-          border-radius: 10px !important;
-          padding: 8px 12px !important;
-          font-size: 13px !important;
-          font-weight: 500 !important;
-          box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04) !important;
-          transition: border-color .18s ease, box-shadow .18s ease !important;
-          width: 100%;
-        }
-        .ep-input { height: 38px; }
-        .ep-textarea { min-height: 64px; resize: vertical; }
-        .ep-select {
-          height: 38px;
-          appearance: none;
-          -webkit-appearance: none;
-          background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23878a99' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>") !important;
-          background-repeat: no-repeat !important;
-          background-position: right 10px center !important;
-          padding-right: 34px !important;
-        }
-        .ep-input::placeholder,
-        .ep-textarea::placeholder {
-          color: var(--vz-secondary-color);
-          opacity: 0.65;
-        }
-        .ep-input:hover:not(:disabled),
-        .ep-textarea:hover:not(:disabled),
-        .ep-select:hover:not(:disabled) {
-          border-color: rgba(99,102,241,0.55) !important;
-          box-shadow: 0 2px 6px rgba(99,102,241,0.08) !important;
-        }
-        .ep-input:focus,
-        .ep-textarea:focus,
-        .ep-select:focus {
-          outline: none !important;
-          border-color: #6366f1 !important;
-          box-shadow: 0 0 0 3px rgba(99,102,241,0.15), 0 4px 12px rgba(99,102,241,0.12) !important;
-        }
-        .ep-input:disabled,
-        .ep-textarea:disabled,
-        .ep-select:disabled {
-          background: var(--vz-secondary-bg) !important;
-          color: var(--vz-secondary-color) !important;
-          cursor: not-allowed;
-          opacity: 0.85;
-          box-shadow: none !important;
-        }
-        /* Native option list inside .ep-select doesn't pick up the parent's
-           dark background — force the dropdown body itself. */
-        [data-bs-theme="dark"] .ep-select option,
-        [data-layout-mode="dark"] .ep-select option {
-          background: #1c2531;
-          color: #e6e8ec;
-        }
-        /* Field label — match the .emp-label recipe used in the Employees
-           form (uppercase, semibold, secondary-color) instead of the
-           bolder dark-grey of the legacy .ep-field-label. */
-        .ep-field-label {
-          font-size: 11px !important;
-          font-weight: 700 !important;
-          color: var(--vz-secondary-color) !important;
-          letter-spacing: 0.06em !important;
-          text-transform: uppercase !important;
-          margin-bottom: 6px !important;
-        }
-        [data-bs-theme="dark"] .ep-field-label,
-        [data-layout-mode="dark"] .ep-field-label { color: #b0b4bd !important; }
-      `}</style>
       <Row>
         <Col xs={12}>
           <div className="rec-page">
-            {/* ── Header — Exit-themed banner card (red accent), distinct from
-                 Recruitment's purple. Uses the original .exit-page-head /
-                 .exit-head-icon / .exit-head-badge / .exit-checklist-btn CSS. ── */}
             <div className="frm-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
@@ -354,9 +179,6 @@ export default function HrExitManagement() {
               </button>
             </div>
 
-            {/* ── KPI cards — 5 across at xl, reflowing to 3 / 2 / 1 at smaller
-                 breakpoints. row-cols-* divides the row evenly regardless of
-                 card count, so all 5 always fill the full width. ── */}
             <Row className="g-3 mb-3 align-items-stretch rec-page-kpis row-cols-xl-5 row-cols-md-3 row-cols-sm-2 row-cols-1">
               {KPI_CARDS.map(k => (
                 <Col key={k.key}>
@@ -376,16 +198,10 @@ export default function HrExitManagement() {
               ))}
             </Row>
 
-            {/* ── Tabs + Search + Table — one card frame. The tabs and the
-                 search share the toolbar row (tabs left, search filling the
-                 rest to the right edge); the Department / Status dropdowns
-                 were removed. The pagination footer pins to the bottom of the
-                 card via the dynamic fill height. ── */}
             <Card className="border-0 shadow-none mb-0 bg-transparent">
               <CardBody className="p-0">
                 <div className="rec-list-frame" ref={listRootRef}>
                   <div className="rec-req-filter-row d-flex align-items-center gap-3 flex-wrap">
-                    {/* Tabs — take the left 50% of the toolbar */}
                     <div className="rec-tab-track" style={{ marginBottom: 0, flex: '1 1 0', minWidth: 0 }}>
                       {([
                         { key: 'active' as const,      label: 'Active Employees',  count: counts.active + counts.missing, icon: 'ri-user-line',           variant: 'in-progress' },
@@ -405,15 +221,12 @@ export default function HrExitManagement() {
                         </button>
                       ))}
                     </div>
-                    {/* Search — takes the right 50% of the toolbar */}
                     <div className="rec-req-search search-box" style={{ flex: '1 1 0', minWidth: 0 }}>
                       <Input type="text" className="form-control" placeholder="Search name, ID, department…" value={search} onChange={e => setSearch(e.target.value)} />
                       <i className="ri-search-line search-icon"></i>
                     </div>
                   </div>
 
-                  {/* Body fills to the viewport bottom so the pager pins to the
-                      card footer; the table grows to take the slack above it. */}
                   <div className="d-flex flex-column" ref={listScrollRef} style={{ minHeight: listFillH }}>
                   <div className="p-2 rec-list-scroll flex-grow-1">
                     <table className="rec-list-table cand-page-table align-middle table-nowrap mb-0">
@@ -446,9 +259,6 @@ export default function HrExitManagement() {
                           const statusColor = STATUS_COLOR[e.status];
                           const isExited = e.status === 'Exited';
                           const isInProgress = e.status === 'Exit In Progress';
-                          // Exit initiated but the notice period hasn't begun
-                          // yet (future notice start) — sits in Active, but the
-                          // case already exists so we let HR re-open it.
                           const isScheduled = e.status === 'Active' && e.exitInitiated;
                           const noticeFromLabel = e.noticeStartIso
                             ? new Date(e.noticeStartIso + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
@@ -506,11 +316,6 @@ export default function HrExitManagement() {
                               </td>
                               <td>
                                 {(() => {
-                                  // Tier-based colour pair (dark → light). Bar uses a horizontal
-                                  // gradient between the two with a diagonal stripe overlay, and a
-                                  // circular badge with the percent floats above the fill end —
-                                  // same pattern as Profile % on the Employees page so the visuals
-                                  // stay consistent across HR modules.
                                   const p = e.exitReadiness;
                                   const TIER = p >= 90 ? { dark: '#0ab39c', light: '#4dd4be' }
                                             : p >= 75 ? { dark: '#3b82f6', light: '#93c5fd' }
@@ -522,7 +327,6 @@ export default function HrExitManagement() {
                                     <div
                                       style={{ position: 'relative', width: 120, paddingTop: 30 }}
                                     >
-                                      {/* Floating badge + downward pointer */}
                                       <div
                                         style={{
                                           position: 'absolute',
@@ -553,7 +357,6 @@ export default function HrExitManagement() {
                                         />
                                       </div>
 
-                                      {/* Track + striped fill */}
                                       <div
                                         style={{
                                           width: '100%', height: 8,
@@ -610,8 +413,6 @@ export default function HrExitManagement() {
                     </table>
                   </div>
 
-                  {/* Pagination footer — pinned to the bottom of the fill
-                      container so it sits at the card footer. */}
                   <WorklistPager
                     total={filtered.length}
                     page={safePage}
@@ -638,17 +439,11 @@ export default function HrExitManagement() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Exit Process Checklist modal
-// ─────────────────────────────────────────────────────────────────────────────
 function ExitChecklistModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [desig, setDesig] = useState<DesigLevel>('all');
   const [type, setType]   = useState<EmpType>('all');
-  // Per-stage open state — Stage 1 starts open, others collapsed.
   const [openStages, setOpenStages] = useState<Record<number, boolean>>({ 1: true });
 
-  // Reset filters and stage state every time the modal opens so the user
-  // gets a fresh, predictable view.
   useEffect(() => {
     if (open) {
       setDesig('all');
@@ -657,9 +452,6 @@ function ExitChecklistModal({ open, onClose }: { open: boolean; onClose: () => v
     }
   }, [open]);
 
-  // Filter logic — an item shows when its `desig` includes the selected
-  // designation (or is 'all') AND its `type` matches the selected type
-  // (or either side is 'all').
   const matches = (item: ChecklistItem) => {
     const desigOk = item.desig === 'all' || desig === 'all' || item.desig.includes(desig);
     const typeOk  = item.type === 'all' || type === 'all' || item.type === type;
@@ -671,7 +463,6 @@ function ExitChecklistModal({ open, onClose }: { open: boolean; onClose: () => v
       ...s,
       visibleItems: s.items.filter(matches),
     })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [desig, type]
   );
 
@@ -707,7 +498,6 @@ function ExitChecklistModal({ open, onClose }: { open: boolean; onClose: () => v
   return (
     <Modal isOpen={open} toggle={onClose} centered size="lg" backdrop="static" contentClassName="border-0 ecl-modal">
       <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
-        {/* Header */}
         <div className="ecl-head">
           <div className="ecl-head-left">
             <span className="ecl-head-icon"><i className="ri-clipboard-line" /></span>
@@ -717,7 +507,6 @@ function ExitChecklistModal({ open, onClose }: { open: boolean; onClose: () => v
                 6 stages · {CHECKLIST_TOTAL} checkpoints · Filtered by Designation &amp; Employee Type
               </div>
 
-              {/* Designation Level tabs */}
               <div style={{ marginTop: 6 }}>
                 <div className="ecl-head-section-label">Designation Level</div>
                 <div className="ecl-desig-tabs">
@@ -734,7 +523,6 @@ function ExitChecklistModal({ open, onClose }: { open: boolean; onClose: () => v
                 </div>
               </div>
 
-              {/* Employee Type toggle */}
               <div className="ecl-type-row">
                 <div className="ecl-head-section-label" style={{ marginBottom: 0 }}>Employee Type:</div>
                 <div className="ecl-type-toggle">
@@ -759,7 +547,6 @@ function ExitChecklistModal({ open, onClose }: { open: boolean; onClose: () => v
           </div>
         </div>
 
-        {/* Info bar */}
         <div className="ecl-info-bar">
           <div className="ecl-info-msg">
             <i className="ri-information-line" />
@@ -773,7 +560,6 @@ function ExitChecklistModal({ open, onClose }: { open: boolean; onClose: () => v
           </div>
         </div>
 
-        {/* Body */}
         <div className="ecl-body">
           {filteredStages.map(stage => {
             const isOpen = !!openStages[stage.num];
@@ -815,7 +601,6 @@ function ExitChecklistModal({ open, onClose }: { open: boolean; onClose: () => v
           })}
         </div>
 
-        {/* Footer */}
         <div className="ecl-footer">
           <div className="ecl-footer-note">
             <i className="ri-shield-check-line" />
@@ -837,16 +622,8 @@ const OWNER_LABEL: Record<RoleOwner, string> = {
   mgr: 'Manager',
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Employee Exit Process modal — 7-stage wizard
-// ─────────────────────────────────────────────────────────────────────────────
 type StageStatus = 'Completed' | 'In Progress' | 'Pending';
 
-// Trimmed to 4 stages per product call:
-//   - Asset Recovery merged INTO Clearance & Handover (assets listed
-//     at the top of that stage now)
-//   - Full & Final Settlement removed entirely
-//   - Notice Period Management was already removed in an earlier pass
 const EXIT_STAGES = [
   { num: 1, title: 'Exit Initiation & Approval', short: 'Exit Initiation & Approval', sub: 'Record exit details, reason, dates, and collect approvals.',           icon: 'ri-clipboard-line' },
   { num: 2, title: 'Clearance & Handover',       short: 'Clearance & Handover',       sub: 'Confirm asset handover then collect every departmental clearance.',     icon: 'ri-checkbox-line' },
@@ -858,11 +635,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const [stage, setStage] = useState<number>(1);
   const [stageStatus, setStageStatus] = useState<Record<number, StageStatus>>({});
 
-  // Stage 1 form state. All fields ride along on `saveStage1()` —
-  // hydrated from /api/employees/{id}/exit on modal open and persisted
-  // on every Save Draft + Next Stage click. `reportingManagerName` is
-  // read-only (auto-fetched from the employee's reporting_manager
-  // relation); `reportingManagerId` carries the FK we PUT back.
   const [exitType, setExitType]           = useState('');
   const [reasonForExit, setReasonForExit] = useState('');
   const [noticeDate, setNoticeDate]       = useState('');
@@ -873,36 +645,18 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const [businessImpact, setBusinessImpact] = useState('Low');
   const [replacementNeeded, setReplacementNeeded] = useState('Yes — Immediate');
   const [stage1Saving, setStage1Saving] = useState(false);
-  /* Per-field error map for Stage 1's required-field guard. Lit up by
-   * saveStage1() when the user clicks Next Stage with blanks; each
-   * field's onChange wipes its own entry so the red ring drops the
-   * moment the user starts fixing it. Keys mirror the field names. */
   type Stage1FieldKey = 'exitType' | 'reasonForExit' | 'noticeDate' | 'lwd';
   const [s1Errors, setS1Errors] = useState<Set<Stage1FieldKey>>(new Set());
   const clearS1Err = (k: Stage1FieldKey) => setS1Errors(prev => {
     if (!prev.has(k)) return prev;
     const n = new Set(prev); n.delete(k); return n;
   });
-  // Brief "advancing" flag for stages 2+ where Next Stage doesn't hit the
-  // network but still benefits from a visual ack so the user doesn't
-  // double-click. Cleared in the requestAnimationFrame callback after
-  // the stage flip lands.
   const [advancingStage, setAdvancingStage] = useState(false);
 
-  // Date guards. Notice START may be today or later (the notice period can
-  // begin now). The Last Working Day must be strictly in the future AND on
-  // or after the notice start — the window between the two is the notice
-  // period during which the employee stays "Exit In Progress". ISO
-  // yyyy-mm-dd compares lexicographically so a string compare is enough.
   const todayIso = new Date().toISOString().slice(0, 10);
   const noticeDateInvalid = !!noticeDate && noticeDate < todayIso;
   const lwdInvalid        = !!lwd && (lwd <= todayIso || (!!noticeDate && lwd < noticeDate));
 
-  // Stage 2 — Clearance & Handover. Asset Recovery used to be its own
-  // stage; we now surface the asset handover dropdown at the TOP of
-  // this stage so the manager confirms hardware return before the rest
-  // of the clearances run. `assetReturns` is keyed by master_asset_id
-  // so it grows / shrinks with whatever the employee actually holds.
   const [clearances, setClearances] = useState<{ checked: boolean; status: string }[]>([
     { checked: false, status: 'Pending' },
     { checked: false, status: 'Pending' },
@@ -913,17 +667,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const [handoverNotes, setHandoverNotes] = useState('');
   const [assetReturns, setAssetReturns]   = useState<Record<number, { checked: boolean; status: string }>>({});
 
-  // Stage 5 used to render a hardcoded checklist (Relieving Letter, Experience
-  // Letter, …) with a per-row "generated?" boolean. That list now comes from
-  // the HR Document Templates master (matched on department × designation
-  // level × trigger=Exit Management), so the local generated-state and
-  // accordion-expansion state were retired.
 
-  // Templates whose trigger point is "Exit Management" — pulled from the
-  // HR Document Templates master so anything the admin creates against
-  // that trigger surfaces inside the exit flow automatically. Filtered
-  // server-side by the employee's department × designation level, same
-  // matching rules the onboarding vault uses.
   type TplSigner = { role_name?: string | null; designation_name?: string | null; action?: string | null; days?: number | null };
   type ExitTemplate = {
     id: number;
@@ -937,11 +681,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   };
   const [exitTemplates, setExitTemplates] = useState<ExitTemplate[]>([]);
   const [exitTplLoading, setExitTplLoading] = useState(false);
-  // Match metadata returned by the backend — surfaces WHICH category /
-  // level the controller resolved from the employee, so HR can see at a
-  // glance why a template did (or didn't) match. Without this, the
-  // empty state was a dead end ("no templates" with no clue what to
-  // create against).
   type ExitMatchMeta = {
     employee_category: string | null;
     role_type:         string | null;
@@ -954,10 +693,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     let cancelled = false;
     setExitTplLoading(true);
     api.get('/hr-document-templates/match', {
-      // Substring keyword — matches any trigger-point master row whose
-      // module_name contains "exit" ("Exit Management", "Exit process
-      // trigger point", etc.). Branch users name their trigger rows
-      // freely so we can't lock to a single literal.
       params: { employee_id: employee.id, trigger_keyword: 'exit' },
     })
       .then(({ data }) => {
@@ -975,12 +710,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     return () => { cancelled = true; };
   }, [employee?.id]);
 
-  // ── Signing-workflow runtime ─────────────────────────────────────────────
-  // Mirrors the runtime used by the onboarding vault. Each template can have
-  // at most one *active* signing run per employee; runByTemplateId surfaces
-  // the latest one so the row can show its status pill (Pending / In Progress
-  // / Completed / Rejected / Cancelled) plus the current signer awaiting
-  // action. /hr-document-signatures returns every run for this employee.
   const toast = useToast();
   type SignerState = {
     index: number; role_name: string; action: string; days: number;
@@ -1010,7 +739,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   useEffect(() => {
     if (!employee) { setRuns([]); return; }
     fetchRuns();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employee?.id]);
   const runByTemplateId = useMemo(() => {
     const m = new Map<number, SignatureRun>();
@@ -1021,11 +749,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     return m;
   }, [runs]);
 
-  // ── Generated documents ───────────────────────────────────────────────────
-  // A template counts as "Generated" once a generated-document record exists
-  // for it (saved via the Generate modal's "Save Generated"). We track the set
-  // of template_ids so the Stage-3 "Generated" KPI reflects real saved docs,
-  // not just signing runs. Re-fetched after each save.
   const [generatedTplIds, setGeneratedTplIds] = useState<Set<number>>(new Set());
   const fetchGenerated = async () => {
     if (!employee) { setGeneratedTplIds(new Set()); return; }
@@ -1040,15 +763,21 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   useEffect(() => {
     if (!employee) { setGeneratedTplIds(new Set()); return; }
     fetchGenerated();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employee?.id]);
 
-  // ── Preview modal ────────────────────────────────────────────────────────
   const [previewOpen, setPreviewOpen]     = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewTpl, setPreviewTpl]       = useState<ExitTemplate | null>(null);
   const [previewHtml, setPreviewHtml]     = useState<string>('');
   const [previewMissing, setPreviewMissing] = useState<string[]>([]);
+  const [generating, setGenerating]       = useState(false);
+  const [expandedDocs, setExpandedDocs]   = useState<Set<number>>(new Set());
+  const toggleDoc = (id: number) =>
+    setExpandedDocs(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   const handleView = async (tpl: ExitTemplate) => {
     if (!employee) return;
     setPreviewTpl(tpl);
@@ -1068,9 +797,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     }
   };
 
-  // ── Generate (download DOCX with this employee's data) ───────────────────
   const handleGenerate = async (tpl: ExitTemplate) => {
-    if (!employee) return;
+    if (!employee || generating) return;
+    setGenerating(true);
     try {
       const resp = await api.get(`/hr-document-templates/${tpl.id}/generate`, {
         params: { employee_id: employee.id },
@@ -1087,15 +816,14 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       toast.success('Document generated', `${tpl.code || tpl.name || 'Document'} downloaded.`);
     } catch (err: any) {
       toast.error('Could not generate', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setGenerating(false);
     }
   };
 
-  /* Download the fully-signed PDF once a run is Completed (all signers done).
-     Tracks the in-flight run id so the button can show a spinner + disable
-     itself, preventing the repeated-click → multiple-download problem. */
   const [downloadingRunId, setDownloadingRunId] = useState<number | null>(null);
   const downloadSignedRun = async (run: { id: number; code?: string | null }) => {
-    if (downloadingRunId !== null) return; // a download is already in flight
+    if (downloadingRunId !== null) return;
     setDownloadingRunId(run.id);
     try {
       const resp = await api.get(`/hr-document-signatures/${run.id}/download-pdf`, { responseType: 'blob' });
@@ -1115,10 +843,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     }
   };
 
-  /* Nudge the current pending signer (in-app Inbox notification). Mirrors the
-     onboarding vault reminder — the backend throttles to 1 reminder / 6 hours
-     per signer, so a 429 is surfaced as a "slow down" message rather than an
-     error. Only meaningful while a run is Pending / In Progress. */
   const [remindingRunId, setRemindingRunId] = useState<number | null>(null);
   const sendReminder = async (run: SignatureRun) => {
     if (remindingRunId !== null) return;
@@ -1137,10 +861,8 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     }
   };
 
-  // Generate modal — custom-field fill → preview → download / send for signature.
   const [genTpl, setGenTpl] = useState<ExitTemplate | null>(null);
 
-  // ── Send for signing — kicks off the configured signing workflow ────────
   const [sendForTpl, setSendForTpl] = useState<ExitTemplate | null>(null);
   const [sending, setSending] = useState(false);
   const openSend = (tpl: ExitTemplate) => setSendForTpl(tpl);
@@ -1162,9 +884,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     }
   };
 
-  // Parse the signers list off a template (can arrive as a JSON string when
-  // the DB casts haven't materialised yet — same defensive parse as the
-  // template editor).
   const parseSigners = (raw: ExitTemplate['signers']): TplSigner[] => {
     if (Array.isArray(raw)) return raw;
     if (typeof raw === 'string' && raw.trim()) {
@@ -1173,12 +892,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     return [];
   };
 
-  // Stage 7
-  // 5 entries to match the trimmed Final Validation Checklist (FnF
-  // payment row was dropped along with the FnF stage).
   const [validation, setValidation] = useState<boolean[]>([false, false, false, false, false]);
-  // Network flags for the whole-process draft save + final completion. Must
-  // live ABOVE the `if (!employee) return null` early return — they're hooks.
   const [draftSaving, setDraftSaving] = useState(false);
   const [completing, setCompleting]   = useState(false);
   const [empStatus, setEmpStatus] = useState('Active');
@@ -1186,23 +900,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const [exitCaseStatus, setExitCaseStatus] = useState('Open');
   const [hrSignOff, setHrSignOff] = useState('Pending');
 
-  // Reset everything each time the modal targets a new employee
   useEffect(() => {
     if (employee) {
       setStage(1);
       setStageStatus({ 1: 'In Progress' });
     }
-    // intentionally empty deps for the rest — we only reset on target change
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employee?.id]);
 
-  // ── Hydrate Stage 1 from the backend whenever the modal opens for a
-  //    new employee. show() always returns one row (lazily created on
-  //    first PUT) so the form pre-fills with whatever was last saved,
-  //    or with the employee's existing reporting_manager when blank.
-  //    MUST run before the `if (!employee) return null` below so the
-  //    hook count stays stable across renders (React fires "Rendered
-  //    more hooks…" otherwise).
   useEffect(() => {
     if (!employee) return;
     let cancelled = false;
@@ -1210,9 +914,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       .then(({ data }) => {
         if (cancelled || !data) return;
         setExitType(String(data.exit_type ?? ''));
-        // initiated_by + other_reason no longer ride along on the form.
-        // We still read whatever the row had so re-saves don't blank
-        // them server-side — they're just not surfaced as fields.
         setReasonForExit(String(data.reason_for_exit ?? ''));
         setNoticeDate(data.notice_date ? String(data.notice_date) : '');
         setLwd(data.last_working_day ? String(data.last_working_day) : '');
@@ -1222,9 +923,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         setBusinessImpact(String(data.business_impact ?? 'Low'));
         setReplacementNeeded(String(data.replacement_required ?? 'Yes — Immediate'));
 
-        // Stage 2 — Clearance & Handover. Restore the saved arrays/object so
-        // reopening the modal resumes exactly where HR left off instead of
-        // resetting every clearance to Pending.
         if (Array.isArray(data.clearances) && data.clearances.length) {
           setClearances(data.clearances.map((c: any) => ({
             checked: !!c?.checked,
@@ -1236,7 +934,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         }
         setHandoverNotes(String(data.handover_notes ?? ''));
 
-        // Stage 4 — Final Deactivation & Closure
         if (Array.isArray(data.validation) && data.validation.length) {
           setValidation(data.validation.map((v: any) => !!v));
         }
@@ -1245,23 +942,16 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         setExitCaseStatus(String(data.exit_case_status ?? 'Open'));
         setHrSignOff(String(data.hr_sign_off ?? 'Pending'));
 
-        // Process meta — resume on the saved stage with the saved per-stage
-        // status map so the sidebar shows completed stages on reopen.
         if (data.stage_status && typeof data.stage_status === 'object') {
           setStageStatus(data.stage_status as Record<number, StageStatus>);
         }
         const savedStage = Number(data.current_stage);
         if (savedStage >= 1 && savedStage <= EXIT_STAGES.length) setStage(savedStage);
       })
-      .catch(() => { /* keep blank state — admin will fill from scratch */ });
+      .catch(() => {  });
     return () => { cancelled = true; };
   }, [employee?.id]);
 
-  // Outstanding items that block "Complete Exit" — each named so HR sees
-  // exactly what's left (which clearance, which checklist step, sign-off).
-  // Drives both the completion gate (toast) and the live readiness box.
-  // MUST sit above the `if (!employee) return null` early-return so the hook
-  // order stays stable across renders (Rules of Hooks).
   const exitPending = useMemo(() => {
     const CLR = ['Manager', 'IT', 'Admin', 'Finance', 'Legal / Compliance'];
     const CHK = ['All clearances obtained', 'All assets handed over', 'All access revoked', 'Exit documents signed', 'Exit interview completed'];
@@ -1276,13 +966,8 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
   const statusOf = (n: number): StageStatus => stageStatus[n] || (n === stage ? 'In Progress' : 'Pending');
 
-  // Live per-stage percentage, computed purely from the stage's sub-items
-  // (independent of the stored status). One source of truth for both the
-  // sidebar % pill and the auto-complete rule below, so the colour and the
-  // number can never disagree.
   const rawStagePct = (n: number): number => {
     if (n === 1) {
-      // Stage 1 required fields (mirror what saveStage1 needs to advance).
       const items = [
         !!String(exitType).trim(),
         !!String(reasonForExit).trim(),
@@ -1307,8 +992,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       return Math.round((done / total) * 100);
     }
     if (n === 4) {
-      // 5 validation checkboxes + 4 final-action selects (each select counts
-      // once it moves off its starting default).
       const validationDone = validation.filter(Boolean).length;
       const finalsDone =
         (empStatus !== 'Active' ? 1 : 0)
@@ -1321,33 +1004,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     return 0;
   };
 
-  // Effective DISPLAY status — drives the stage card's colour, checkmark and
-  // label. A stage that's 100% done reads as Completed (green + ✓) even when
-  // the user filled every sub-item instead of clicking an explicit complete
-  // action. Previously only Stage 1 (explicitly marked by saveStage1) turned
-  // green, so a fully-filled Stage 2/3/4 stayed grey "In Progress" while its
-  // pill already showed 100% — the mismatch QA flagged. The existing
-  // In Progress / Pending behaviour is otherwise preserved.
   const effStatusOf = (n: number): StageStatus => {
     if (stageStatus[n] === 'Completed' || rawStagePct(n) === 100) return 'Completed';
     if (n === stage || rawStagePct(n) > 0 || stageStatus[n] === 'In Progress') return 'In Progress';
     return 'Pending';
   };
 
-  // Overall progress ring counts every effectively-complete stage (100% or
-  // explicitly marked) so the header ring agrees with the green stages in
-  // the sidebar.
   const completed = EXIT_STAGES.filter(s => effStatusOf(s.num) === 'Completed').length;
   const progressPct = Math.round((completed / EXIT_STAGES.length) * 100);
 
-  // Move forward without auto-completing the current stage. The
-  // previous implementation flipped every stage to 'Completed' on Next,
-  // which made the progress ring read 100% as soon as the user clicked
-  // through the wizard — even with empty forms. Each stage now keeps
-  // its prior status (most likely 'In Progress'); callers that have
-  // genuinely finished their stage (e.g. `saveStage1` after a clean
-  // save) mark the status to 'Completed' explicitly before calling
-  // advance().
   const advance = () => {
     if (stage < EXIT_STAGES.length) {
       setStage(stage + 1);
@@ -1357,9 +1022,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       }));
     }
   };
-  /** Mark the *current* stage as completed. Callers must invoke this
-   *  themselves once they've successfully persisted whatever data the
-   *  stage owns (e.g. saveStage1 → markStageCompleted(1) → advance()). */
   const markStageCompleted = (n: number) => {
     setStageStatus(prev => ({ ...prev, [n]: 'Completed' }));
   };
@@ -1369,9 +1031,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       setStageStatus(prev => ({ ...prev, [stage - 1]: 'In Progress' }));
     }
   };
-  // Full exit payload — every stage's data in one object. Draft saves and
-  // the final complete() call both send this, so nothing a stage owns is
-  // lost on close (the old wizard kept Stages 2-4 in throwaway local state).
   const buildExitPayload = () => ({
     exit_type:             exitType || null,
     reason_for_exit:       reasonForExit.trim() || null,
@@ -1381,23 +1040,17 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     comments:              comments.trim() || null,
     business_impact:       businessImpact || null,
     replacement_required:  replacementNeeded || null,
-    // Stage 2
     clearances,
     asset_returns:         assetReturns,
     handover_notes:        handoverNotes.trim() || null,
-    // Stage 4
     validation,
     final_employee_status: empStatus || null,
     profile_lock:          profileLock || null,
     hr_sign_off:           hrSignOff || null,
-    // meta
     stage_status:          stageStatus,
     current_stage:         stage,
   });
 
-  // Persist a draft of the WHOLE process (Save Draft + Next Stage on stages
-  // 2-4). Stage 1 keeps its own validated saver; here we just snapshot
-  // whatever is filled so reopening resumes exactly where HR left off.
   const persistDraft = async (opts?: { silent?: boolean }): Promise<boolean> => {
     if (!employee || draftSaving) return false;
     setDraftSaving(true);
@@ -1413,22 +1066,14 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     }
   };
 
-  // Finalise the exit. Hits the dedicated complete endpoint which closes the
-  // case, flips employees.status to the terminal value and disables the
-  // login — the ONE action that actually moves the employee to "Exited".
   const completeExit = async () => {
     if (!employee || completing) return;
 
-    // The employee only moves to "Exited" once the WHOLE process is genuinely
-    // done. Stages stay freely navigable (HR can fill data in any order), but
-    // completion is hard-gated until every requirement is met — and the gate
-    // names EXACTLY which items are still outstanding so HR knows what to fix.
     if (exitPending.length) {
       toast.error(
         `Exit can't be completed — ${exitPending.length} item${exitPending.length > 1 ? 's' : ''} pending`,
         exitPending.join('  •  '),
       );
-      // Jump to where the first pending item lives.
       setStage(clearances.some(c => c.status !== 'Approved') ? 2 : 4);
       return;
     }
@@ -1447,15 +1092,8 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     }
   };
 
-  /** Persist the Stage 1 fields. Returns true on success so the Next
-   *  Stage handler can gate the advance on a clean save. */
   const saveStage1 = async (): Promise<boolean> => {
     if (!employee || stage1Saving) return false;
-    // Required-field guard — all four are marked with a red * on the
-    // form, so we mirror that here before any network call. Empty
-    // strings previously sailed through and the PUT silently saved a
-    // row with NULL columns, leaving the wizard in a "looks completed"
-    // state without actual data.
     const missing: string[] = [];
     const errs = new Set<Stage1FieldKey>();
     if (!exitType.trim())      { missing.push('Exit Type');        errs.add('exitType'); }
@@ -1473,11 +1111,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       return false;
     }
     setS1Errors(new Set());
-    // Date-in-the-past guard runs BEFORE we flip the loading flag — no
-    // network round-trip needed and the toast fires immediately. Used to
-    // return false silently here, so clicking "Next Stage" with a past
-    // Notice Date / Last Working Day did nothing visible to the user
-    // (the field-level red text was easy to miss).
     if (noticeDateInvalid || lwdInvalid) {
       toast.error(
         'Fix the highlighted dates',
@@ -1493,9 +1126,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     try {
       await api.put(`/employees/${employee.id}/exit`, {
         exit_type:            exitType || null,
-        // initiated_by + other_reason were removed from the form; we no
-        // longer send them. The backend column stays nullable so older
-        // rows that have a value remain readable.
         reason_for_exit:      reasonForExit.trim() || null,
         notice_date:          noticeDate || null,
         last_working_day:     lwd || null,
@@ -1506,10 +1136,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       });
       return true;
     } catch (err: any) {
-      // Surface 422 field errors and any server message instead of
-      // swallowing — without this the Next Stage button looked dead
-      // when the backend rejected the PUT (missing field, permission,
-      // network blip, etc.).
       const fieldErrors = err?.response?.data?.errors;
       const firstFieldErr =
         fieldErrors && typeof fieldErrors === 'object'
@@ -1534,7 +1160,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     <>
     <Modal isOpen={!!employee} toggle={onClose} centered size="xl" backdrop="static" contentClassName="border-0 ep-modal">
       <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
-        {/* Header — onboarding-style with avatar, stage pills, status chips */}
         <div className="ep-head">
           <div className="ep-head-top">
             <span className="ep-head-avatar" style={{ background: `linear-gradient(135deg, ${employee.accent}, ${employee.accent}cc)` }}>
@@ -1547,9 +1172,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
               <div className="ep-head-sub">
                 {employee.empId} · {employee.department} · {employee.designation}
               </div>
-              {/* Stage stepper pills were removed — the left sidebar
-                  (.ep-stage-card list) already shows the same stage
-                  navigation, so the header pills duplicated it. */}
             </div>
             <div className="ep-head-right">
               <div className="ep-head-chips">
@@ -1570,14 +1192,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
           </div>
         </div>
 
-        {/* Body */}
         <div className="ep-body">
-          {/* Sidebar */}
           <aside className="ep-sidebar">
             {EXIT_STAGES.map(s => {
-              // Display status + percentage now come from the shared helpers
-              // (rawStagePct / effStatusOf) so a 100% stage turns green here
-              // exactly like Stage 1, and a Completed stage always reads 100%.
               const st = effStatusOf(s.num);
               const stagePct = st === 'Completed' ? 100 : rawStagePct(s.num);
               return (
@@ -1600,15 +1217,8 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
             })}
           </aside>
 
-          {/* Content */}
           <section className="ep-content">
-            {/* Per-stage violet banner removed — the stepper rail on the
-                left + the footer ("Stage N of M — title") already tell
-                the user which stage they're on, so the gradient bar at
-                the top of every stage was redundant and ate vertical
-                space inside the modal. */}
 
-            {/* ── STAGE 1 — Exit Initiation & Approval ── */}
             {stage === 1 && (
               <>
                 <div className="ep-section-label">Exit Details</div>
@@ -1630,9 +1240,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   </Col>
                   <Col md={6}>
                     <EpField label="Reason for Exit" required invalid={s1Errors.has('reasonForExit')}>
-                      {/* Free-text now (was a dropdown). HR rarely fits a
-                          real-world reason into a fixed enum, so the form
-                          asks them to type whatever's accurate. */}
                       <EpInput
                         value={reasonForExit}
                         onChange={(v) => { setReasonForExit(v); clearS1Err('reasonForExit'); }}
@@ -1653,9 +1260,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         type="date"
                         value={noticeDate}
                         onChange={(v) => { setNoticeDate(v); clearS1Err('noticeDate'); }}
-                        // The day the notice period begins. Browser-level guard
-                        // so the picker can't open on a past day; the inline
-                        // error catches pasted / typed values.
                         min={todayIso}
                         invalid={s1Errors.has('noticeDate') || noticeDateInvalid}
                       />
@@ -1673,7 +1277,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         type="date"
                         value={lwd}
                         onChange={(v) => { setLwd(v); clearS1Err('lwd'); }}
-                        // Must be on/after the notice start day.
                         min={noticeDate || todayIso}
                         invalid={s1Errors.has('lwd') || lwdInvalid}
                       />
@@ -1690,10 +1293,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   </Col>
                   <Col md={6}>
                     <EpField label="Reporting Manager">
-                      {/* Auto-filled from the employee's
-                          reporting_manager FK. Read-only because the
-                          employee's manager record is the source of
-                          truth — change it on the employee row first. */}
                       <EpInput
                         value={reportingManagerName || '— Not set on employee record —'}
                         onChange={() => {}}
@@ -1730,16 +1329,10 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
               </>
             )}
 
-            {/* ── STAGE 2 — Clearance & Handover (with Asset Handover at top) ── */}
             {stage === 2 && (
               <>
-                {/* Asset handover — every device / equipment currently
-                    assigned to the employee, with a "Handed Over" yes/no
-                    picker. Replaces the dedicated Asset Recovery stage. */}
                 <div className="ep-section-label">Asset Handover</div>
                 {(() => {
-                  // Compose the actual asset list from the employee row.
-                  // Laptop and Mobile first if assigned; otherAssets after.
                   const list: { id: number; label: string; code: string }[] = [];
                   if (employee.laptopAsset) {
                     const a = employee.laptopAsset;
@@ -1830,15 +1423,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
               </>
             )}
 
-            {/* ── STAGE 3 — Exit Documents Management ── */}
             {stage === 3 && (() => {
-              // KPI counts derived from real template + run data so the
-              // tiles match what's rendered below. "Generated" counts any
-              // template that has a saved generated-document record (via the
-              // Generate modal's "Save Generated") OR a signing run started
-              // (Send also produces the document); "Pending Sign" filters that
-              // down to runs still in flight; "Completed" tracks runs that have
-              // crossed the finish line.
               const totalDocs = exitTemplates.length;
               const generatedCount = exitTemplates.filter(t => generatedTplIds.has(t.id) || runByTemplateId.has(t.id)).length;
               const pendingCount = exitTemplates.filter(t => {
@@ -1854,7 +1439,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
               ];
               return (
                 <>
-                  {/* KPI tiles — same visual language as the page-level KPIs */}
                   <div className="ep-doc-kpis rec-page-kpis mb-3">
                     {KPIS.map(k => (
                       <div key={k.label} className="rec-kpi-card">
@@ -1870,20 +1454,8 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     ))}
                   </div>
 
-                  {/* Trigger-point-driven templates — every document an
-                      admin built under HR > Document Templates with
-                      trigger_point = "Exit Management" surfaces here,
-                      matched against this employee's department ×
-                      designation level. Each card shows the configured
-                      signing flow + View / Send / Generate buttons. */}
                   <div className="ep-section-label">Exit Documents</div>
 
-                  {/* Match-context banner — surfaces WHICH category /
-                      level the backend resolved from the employee row,
-                      so HR knows exactly what to set on a template if
-                      they want it to show up here. Trigger filter is a
-                      keyword substring (any trigger-point master row
-                      containing "exit" qualifies). */}
                   {exitMatchMeta && (
                     <div className="d-flex align-items-center gap-2 flex-wrap mb-3 ep-match-banner">
                       <i className="ri-magic-line ep-match-icon" />
@@ -1933,15 +1505,8 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         const signers = parseSigners(tpl.signers);
                         const run = runByTemplateId.get(tpl.id) || null;
                         const canGenerate = tpl.status === 'Active';
-                        // A run is "in flight" while it's collecting signatures.
                         const runInFlight = !!run && (run.status === 'Pending' || run.status === 'In Progress');
                         const runCompleted = run?.status === 'Completed';
-                        // Send is offered only when there's no run yet, or a prior
-                        // run was Rejected / Cancelled (re-sendable). It is NOT
-                        // shown while a run is in flight, nor once Completed — a
-                        // fully-signed document is final (BUG: Send stayed
-                        // clickable after completion). Completed rows show
-                        // Download; in-flight rows show Reminder instead.
                         const canSend = canGenerate && (!run || run.status === 'Rejected' || run.status === 'Cancelled');
                         const runTone =
                           run?.status === 'Completed'  ? { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e' }
@@ -1950,8 +1515,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                           : run?.status === 'In Progress' ? { bg: '#fef3c7', fg: '#92400e', dot: '#f59e0b' }
                           : run                          ? { bg: '#dbeafe', fg: '#1d4ed8', dot: '#3b82f6' }
                           : null;
+                        const isExpanded = expandedDocs.has(tpl.id);
                         return (
-                          <div key={`tpl-${tpl.id}`} className="ep-doc-card is-open">
+                          <div key={`tpl-${tpl.id}`} className={`ep-doc-card${isExpanded ? ' is-open' : ''}`}>
                             <div className="ep-doc-row" style={{ cursor: 'default', flexWrap: 'wrap' }}>
                               <span className="ep-doc-icon"><i className="ri-file-text-line" /></span>
                               <div className="ep-doc-info">
@@ -1982,10 +1548,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                   <i className="ri-eye-line" />View
                                 </button>
                               </Tooltip>
-                              {/* Send — only when there's no run yet, or a prior
-                                  run was Rejected / Cancelled. Hidden while a run
-                                  is in flight (Reminder takes its place) and once
-                                  Completed (Download takes its place). */}
                               {canSend && (
                                 <Tooltip label="Send through the configured signing workflow" position="bottom" themed>
                                   <button
@@ -1997,9 +1559,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                   </button>
                                 </Tooltip>
                               )}
-                              {/* Reminder — while a run is collecting signatures,
-                                  nudge the current pending signer in their Inbox.
-                                  Backend throttles to 1 / 6 hours per signer. */}
                               {runInFlight && run && (() => {
                                 const isReminding = remindingRunId === run.id;
                                 return (
@@ -2018,10 +1577,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                   </Tooltip>
                                 );
                               })()}
-                              {/* Generate — fill the template's custom fields,
-                                  preview with this employee's data, then download
-                                  the DOCX or push it into the signing workflow.
-                                  Gated like Send (hidden while a run is active). */}
                               {canSend && (
                                 <Tooltip label="Fill custom fields, preview & generate / send for signing" position="bottom" themed>
                                   <button
@@ -2033,11 +1588,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                   </button>
                                 </Tooltip>
                               )}
-                              {/* Download signed PDF — only once the run is
-                                  fully signed (all signers done). Shows a
-                                  spinner + disables while the download is in
-                                  flight so repeated clicks can't fire multiple
-                                  downloads. */}
                               {runCompleted && run && (() => {
                                 const isDownloading = downloadingRunId === run.id;
                                 return (
@@ -2056,14 +1606,23 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                   </Tooltip>
                                 );
                               })()}
+                              <button
+                                type="button"
+                                onClick={() => toggleDoc(tpl.id)}
+                                className="ep-doc-btn ep-doc-btn--ghost"
+                                aria-expanded={isExpanded}
+                                title={isExpanded ? 'Hide signing workflow' : 'Show signing workflow'}
+                              >
+                                <i className="ep-doc-chev ri-arrow-down-s-line" />
+                              </button>
                             </div>
 
-                            {/* Signing flow — render whatever the template
-                                creator configured. When there's a live run,
-                                each signer's status comes from the run; with
-                                no run yet we just preview the configured
-                                pipeline so the HR user knows who will sign. */}
-                            {(signers.length > 0 || run) && (
+                            {isExpanded && !(signers.length > 0 || run) && (
+                              <div className="ep-doc-empty">
+                                <i className="ri-information-line" />No signing workflow configured for this document.
+                              </div>
+                            )}
+                            {isExpanded && (signers.length > 0 || run) && (
                               <div className="ep-signing">
                                 <div className="ep-signing-head">
                                   <i className="ri-shield-check-line" />Signing Workflow
@@ -2117,7 +1676,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
               );
             })()}
 
-            {/* ── STAGE 4 — Final Deactivation & Closure ── */}
             {stage === 4 && (
               <>
                 <div className="ep-section-label">Final Validation Checklist</div>
@@ -2172,11 +1730,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
           </section>
         </div>
 
-        {/* Footer — Save Draft / Previous / Next Stage. Approve and
-            Reject were removed per product call: stage-level sign-off
-            now happens via the inline status pickers inside each form
-            (e.g. Manager Sign-off on Stage 4, HR Final Sign-off on
-            Stage 6) rather than a separate footer action. */}
         <div className="ep-footer">
           <div className="ep-footer-info">
             <i className="ri-information-line" />
@@ -2202,9 +1755,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                 {completing ? 'Completing…' : 'Complete Exit'}
               </button>
             ) : (() => {
-              // Loader gating: stage 1 saves via saveStage1; stages 2-3
-              // persist a draft (so clearances/handover survive) before
-              // advancing. Either way we show a spinner during the round-trip.
               const busy = stage === 1 ? stage1Saving : (advancingStage || draftSaving);
               return (
                 <button
@@ -2215,17 +1765,10 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     if (stage === 1) {
                       const ok = await saveStage1();
                       if (!ok) return;
-                      // saveStage1 just persisted real data — only NOW
-                      // is stage 1 genuinely complete. Without this the
-                      // progress ring stayed at 0% even after a clean
-                      // save (since advance() no longer auto-marks).
                       markStageCompleted(1);
                       advance();
                       return;
                     }
-                    // Stages 2-3 — persist the draft so the stage's data is
-                    // saved server-side, then advance. Gate the advance on a
-                    // clean save so a network error doesn't silently lose work.
                     setAdvancingStage(true);
                     const ok = await persistDraft({ silent: true });
                     setAdvancingStage(false);
@@ -2245,9 +1788,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       </ModalBody>
     </Modal>
 
-    {/* ── Preview modal — opens on top of the Exit Process modal. Shows the
-        configured template body with this employee's tokens resolved so HR
-        can sanity-check before generating. ── */}
     <Modal isOpen={previewOpen} toggle={() => setPreviewOpen(false)} size="lg" centered contentClassName="border-0" backdrop="static">
       <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
         <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%)', borderRadius: '6px 6px 0 0' }}>
@@ -2303,16 +1843,18 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
           </button>
           {previewTpl && (
             <button type="button" onClick={() => { handleGenerate(previewTpl); }}
+              disabled={generating}
               className="btn rounded-pill px-3 fw-semibold"
-              style={{ background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', border: 0, fontSize: 13, boxShadow: '0 4px 10px rgba(124,58,237,0.30)' }}>
-              <i className="ri-download-2-line me-1" />Generate DOCX
+              style={{ background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', border: 0, fontSize: 13, boxShadow: '0 4px 10px rgba(124,58,237,0.30)', opacity: generating ? 0.7 : 1, cursor: generating ? 'progress' : 'pointer' }}>
+              {generating
+                ? <><i className="ri-loader-4-line ri-spin me-1" />Downloading…</>
+                : <><i className="ri-download-2-line me-1" />Download DOCX</>}
             </button>
           )}
         </div>
       </ModalBody>
     </Modal>
 
-    {/* ── Generate Document — custom-field fill → preview → download / send for signature ── */}
     <DocGenerateModal
       isOpen={!!genTpl}
       onClose={() => setGenTpl(null)}
@@ -2325,7 +1867,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       onGenerated={fetchGenerated}
     />
 
-    {/* ── Send-for-signing confirmation modal ── */}
     <Modal isOpen={!!sendForTpl} toggle={() => !sending && setSendForTpl(null)} size="md" centered contentClassName="border-0" backdrop="static">
       <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)', borderRadius: 16, overflow: 'hidden' }}>
         <div style={{ padding: '20px 24px 14px' }}>
@@ -2374,22 +1915,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   );
 }
 
-// Circular progress dial — clean, minimal completion gauge inspired by
-// modern dashboard meters. The arc is a 270° partial circle (gap at the
-// bottom) with a single glowing cyan→violet stroke; an end-dot marks
-// where the fill reaches. No tick clutter, no heavy inner well — just
-// the arc, the percent, and a soft ambient glow.
 function ExitProgressDial({ value }: { value: number }) {
   const pct = Math.max(0, Math.min(100, value));
-  // 270° arc spanning from 135° (bottom-left) → 405° (bottom-right).
-  // Path is drawn clockwise via SVG arc commands so we can use
-  // strokeDasharray + strokeDashoffset on a path the same way we would
-  // on a circle.
   const RADIUS = 42;
   const ARC_LEN = (270 / 360) * (2 * Math.PI * RADIUS);
   const offset = ARC_LEN * (1 - pct / 100);
-  // End-dot position — sits at the leading edge of the fill so the arc
-  // looks "alive" even at low percentages.
   const startAngle = 135;
   const endAngle = startAngle + (270 * pct) / 100;
   const endRad = (endAngle * Math.PI) / 180;
@@ -2400,15 +1930,11 @@ function ExitProgressDial({ value }: { value: number }) {
     <div className="ep-dial" aria-label={`${pct}% complete`}>
       <svg width="80" height="80" viewBox="0 0 100 100">
         <defs>
-          {/* Mint → emerald → vivid green — complementary to the violet
-              header so the meter reads as a fresh "completion" accent
-              that pops without clashing. */}
           <linearGradient id="ep-dial-arc" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%"   stopColor="#6ee7b7" />
             <stop offset="55%"  stopColor="#34d399" />
             <stop offset="100%" stopColor="#10b981" />
           </linearGradient>
-          {/* Soft, subtle glow filter — keeps the arc HD-clean */}
           <filter id="ep-dial-glow" x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur stdDeviation="1.8" result="blur" />
             <feMerge>
@@ -2418,7 +1944,6 @@ function ExitProgressDial({ value }: { value: number }) {
           </filter>
         </defs>
 
-        {/* Track — full 270° arc behind the progress */}
         <path
           d={describeArc(50, 50, RADIUS, 135, 405)}
           fill="none"
@@ -2426,7 +1951,6 @@ function ExitProgressDial({ value }: { value: number }) {
           strokeWidth="6"
           strokeLinecap="round"
         />
-        {/* Progress arc — same path, but dashed/offset by completion */}
         <path
           d={describeArc(50, 50, RADIUS, 135, 405)}
           fill="none"
@@ -2438,8 +1962,6 @@ function ExitProgressDial({ value }: { value: number }) {
           filter="url(#ep-dial-glow)"
           style={{ transition: 'stroke-dashoffset .6s cubic-bezier(.4,0,.2,1)' }}
         />
-        {/* End-cap dot — soft mint halo with white core at the
-            leading edge of the arc. */}
         {pct > 0 && (
           <>
             <circle cx={dotX} cy={dotY} r="5.5" fill="rgba(110,231,183,0.55)" />
@@ -2455,9 +1977,6 @@ function ExitProgressDial({ value }: { value: number }) {
   );
 }
 
-// SVG helper — generate an arc path between two angles (degrees). Used
-// by the progress dial so we can stroke an open arc with the same
-// dasharray trick as a closed circle.
 function describeArc(cx: number, cy: number, r: number, startAngle: number, endAngle: number): string {
   const toRad = (a: number) => (a * Math.PI) / 180;
   const startX = cx + Math.cos(toRad(startAngle)) * r;
@@ -2468,7 +1987,6 @@ function describeArc(cx: number, cy: number, r: number, startAngle: number, endA
   return `M ${startX} ${startY} A ${r} ${r} 0 ${largeArc} 1 ${endX} ${endY}`;
 }
 
-// ─── Tiny presentational helpers used inside the Exit Process modal ─────────
 function EpField({ label, required, invalid, children }: { label: string; required?: boolean; invalid?: boolean; children: React.ReactNode }) {
   return (
     <div className={`ep-field${invalid ? ' ep-field--invalid' : ''}`}>
@@ -2512,12 +2030,6 @@ function EpInput({ value, onChange, type = 'text', disabled = false, placeholder
   );
 }
 function EpSelect({ value, onChange, options, invalid }: { value: string; onChange: (v: string) => void; options: string[]; invalid?: boolean }) {
-  // Render via MasterSelect so the modal dropdowns match the look + dark-mode
-  // behaviour of every other HR form (rounded toggle, chevron, portalled menu
-  // with proper z-index, search when the option list is long). Native
-  // <select> was previously used, which couldn't be themed past what the
-  // browser allows. The same "— Pending —" prefix is preserved for the
-  // Pending option so existing UX copy stays intact.
   const items = options.map(o => ({
     value: o,
     label: o.startsWith('— ') ? o : (o === 'Pending' ? '— Pending —' : o),
@@ -2532,18 +2044,6 @@ function EpApprovalCard({ icon, title, children }: { icon: string; title: string
     </div>
   );
 }
-function EpFnfRow({ label, amount, tone }: { label: string; amount: string; tone: 'earn' | 'ded' }) {
-  return (
-    <div className={`ep-fnf-row ep-fnf-row--${tone}`}>
-      <span>{label}</span>
-      <span>{amount}</span>
-    </div>
-  );
-}
-// Profile completion ring — clean, premium SVG meter inspired by classic
-// dashboard rings (HTML/CSS/JS skill cards). Thick emerald arc on a soft
-// white track, live percent rendered in the centre. Sits as the visual
-// anchor of the "Profile: X% complete" chip in the modal header.
 function MiniProgressRing({ value }: { value: number }) {
   const pct = Math.max(0, Math.min(100, value));
   const RADIUS = 16;
@@ -2571,37 +2071,10 @@ function MiniProgressRing({ value }: { value: number }) {
 }
 
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Evidence Vault — opens for an Exited employee to view all archived docs.
-// ─────────────────────────────────────────────────────────────────────────────
 type DocStatus = 'Verified' | 'Uploaded' | 'Signed' | 'Sent' | 'Pending' | 'Not Generated' | 'Optional' | 'Generated' | 'Completed';
-
-interface VaultDoc {
-  icon: string;
-  iconBg: string;
-  iconFg: string;
-  name: string;
-  sub: string;
-  category: string;
-  status: DocStatus;
-}
-
-interface VaultGroup {
-  title: string;
-  icon: string;
-  iconBg: string;
-  iconFg: string;
-  docs: VaultDoc[];
-}
 
 type VaultTab = 'employee' | 'organizational' | 'exit';
 
-// ── Doc-key catalogue ──────────────────────────────────────────────────────
-// employee_documents.document_key is a free-text slug (e.g. "aadhaar",
-// "pan", "p_photo"…). Map each known key to a pretty label + icon so the
-// vault renders a "Aadhaar Card" row instead of the raw key. Keys we don't
-// know about fall back to a humanised version of the slug so newly-added
-// document types don't disappear from the list.
 const DOC_KEY_CATALOGUE: Record<string, { name: string; desc: string; icon: string; iconBg: string; iconFg: string; category: string }> = {
   aadhaar:     { name: 'Aadhaar Card',           desc: 'Government issued 12-digit unique identity',     icon: 'ri-fingerprint-line',         iconBg: '#ede9fe', iconFg: '#5b3fd1', category: 'Identity'        },
   pan:         { name: 'PAN Card',               desc: 'Permanent Account Number for taxation',          icon: 'ri-bank-card-2-line',         iconBg: '#fef3c7', iconFg: '#92400e', category: 'Identity'        },
@@ -2626,7 +2099,6 @@ const labelForDocKey = (key: string) => DOC_KEY_CATALOGUE[key] || {
   category: 'Other',
 };
 
-// ── Server-shape types ────────────────────────────────────────────────────
 type EmpDocApiRow = {
   id: number;
   document_key: string;
@@ -2652,10 +2124,6 @@ type VaultRun = {
 function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | null; onClose: () => void }) {
   const [tab, setTab] = useState<VaultTab>('employee');
 
-  // Real data from the backend — replaces the previous mock VAULT_BY_TAB.
-  // Employee tab: rows from /employees/{id}/documents. Organizational +
-  // Exit tabs: HR Document Templates matched by trigger_point_name +
-  // their signing runs (so we can show the live status pill).
   const [empDocs, setEmpDocs]               = useState<EmpDocApiRow[]>([]);
   const [orgTemplates, setOrgTemplates]     = useState<VaultTemplate[]>([]);
   const [exitTemplates, setExitTemplates]   = useState<VaultTemplate[]>([]);
@@ -2687,8 +2155,6 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
     return () => { cancelled = true; };
   }, [employee?.id]);
 
-  // Latest run per template_id — same recipe as the Stage 5 grid so the
-  // vault tab can surface a "Completed / In Progress / …" pill.
   const runByTemplateId = useMemo(() => {
     const m = new Map<number, VaultRun>();
     for (const r of signingRuns) {
@@ -2700,15 +2166,12 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
 
   if (!employee) return null;
 
-  // Build a flat doc list per tab from real data. Status strings are
-  // normalised to the existing DocStatus enum so the existing CSS
-  // (.ev-doc-status--verified, etc.) keeps working.
   const empDocsView = empDocs.map(d => {
     const cat = labelForDocKey(d.document_key);
     const status: DocStatus =
       d.status === 'verified' ? 'Verified'
       : d.status === 'uploaded' ? 'Uploaded'
-      : d.status === 'rejected' ? 'Pending'      // surface rejected as Pending until reuploaded
+      : d.status === 'rejected' ? 'Pending'
       : 'Pending';
     return {
       id: d.id, key: d.document_key, name: cat.name, sub: cat.desc, icon: cat.icon, iconBg: cat.iconBg, iconFg: cat.iconFg,
@@ -2716,8 +2179,6 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
     };
   });
 
-  // Group employee docs by their catalogue category so the existing
-  // grouped-list rendering still works (Identity / Address / Education / …).
   const empGroups = (() => {
     const buckets: Record<string, typeof empDocsView> = {};
     for (const d of empDocsView) {
@@ -2764,17 +2225,9 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
     : tab === 'organizational' ? orgGroups
     : exitGroups;
 
-  // KPI counts pulled from the real, combined list so they always
-  // reconcile with what's visible across the three tabs. Cast to the
-  // wider DocStatus union so future status values added by the backend
-  // (e.g. "Signed", "Generated") are still counted correctly even though
-  // the current code path doesn't assign them.
   const allDocs: { status: DocStatus }[] = [...empDocsView, ...orgGroups.flatMap(g => g.docs), ...exitGroups.flatMap(g => g.docs)];
   const total      = allDocs.length;
   const signed     = allDocs.filter(d => d.status === 'Signed' || d.status === 'Generated' || d.status === 'Completed').length;
-  // Pending = documents genuinely awaiting action. An 'Uploaded' document is
-  // already received/present, so it must NOT inflate the Pending count — only
-  // docs still pending or sent-for-signature (awaiting) qualify.
   const pending    = allDocs.filter(d => d.status === 'Pending' || d.status === 'Sent').length;
   const notGen     = allDocs.filter(d => d.status === 'Not Generated' || d.status === 'Optional').length;
   const completionPct = total > 0 ? Math.round(((total - notGen) / total) * 100) : 0;
@@ -2783,24 +2236,17 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
   const orgCount  = orgGroups.reduce((a, g) => a + g.docs.length, 0);
   const exitCount = exitGroups.reduce((a, g) => a + g.docs.length, 0);
 
-  // View / Download handlers per row. Uploaded employee docs come back
-  // with a `url` pointing at the public disk so View opens in a new tab
-  // and Download triggers a browser save. Template rows generate a DOCX
-  // on demand using the same endpoint the Stage 5 grid uses.
   const handleViewRow = (d: { url: string | null; key: string; id: number }) => {
     if (d.url) {
       window.open(d.url, '_blank', 'noopener,noreferrer');
       return;
     }
     if (d.key.startsWith('tpl-')) {
-      // No inline preview here — defer to the Stage 5 modal's preview pane.
-      // For now open the generate endpoint in a new tab as a quick view.
       window.open(`/api/hr-document-templates/${d.id}/generate?employee_id=${employee.id}`, '_blank', 'noopener,noreferrer');
     }
   };
   const handleDownloadRow = async (d: { url: string | null; key: string; id: number; name: string }) => {
     if (d.url) {
-      // Force a download for file URLs by re-fetching as a blob.
       try {
         const resp = await fetch(d.url, { credentials: 'include' });
         const blob = await resp.blob();
@@ -2830,14 +2276,13 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
         a.click();
         a.remove();
         URL.revokeObjectURL(objUrl);
-      } catch { /* swallow — controller surfaces toast on Stage 5 path */ }
+      } catch {  }
     }
   };
 
   return (
     <Modal isOpen={!!employee} toggle={onClose} centered size="xl" backdrop="static" contentClassName="border-0 ev-modal">
       <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
-        {/* Header */}
         <div className="ev-head">
           <span className="ev-head-icon"><i className="ri-archive-2-line" /></span>
           <div className="ev-head-text">
@@ -2862,7 +2307,6 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
           </button>
         </div>
 
-        {/* KPI strip — same gradient-strip + icon-tile language as main page */}
         <div className="ev-kpis rec-page-kpis">
           {[
             { label: 'Total Docs',      value: total,    icon: 'ri-file-list-3-line',     gradient: 'linear-gradient(135deg, #4338ca 0%, #6366f1 60%, #818cf8 100%)', deep: '#4338ca' },
@@ -2882,7 +2326,6 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
           ))}
         </div>
 
-        {/* Tabs */}
         <div className="ev-tabs">
           <button type="button" className={`ev-tab${tab === 'employee' ? ' is-active' : ''}`} onClick={() => setTab('employee')}>
             <i className="ri-user-line" />Employee Documents<span className="ev-tab-badge">{empCount}</span>
@@ -2895,7 +2338,6 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
           </button>
         </div>
 
-        {/* Body — groups + docs */}
         <div className="ev-body">
           {loading ? (
             <div style={{ padding: 28, textAlign: 'center', color: 'var(--vz-secondary-color)' }}>
@@ -2922,11 +2364,6 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
               </div>
               <div className="ev-doc-list">
                 {g.docs.map(d => {
-                  // Cast to the wider DocStatus union so equality checks
-                  // against 'Generated' / 'Optional' aren't narrowed away —
-                  // the current data path only ever produces a subset, but
-                  // the CSS classes / preview switch still need to handle
-                  // the full enum from future status values.
                   const status = d.status as DocStatus;
                   const disabled = status === 'Not Generated' || status === 'Optional';
                   return (
@@ -2966,89 +2403,8 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
   );
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// ─── DUMMY DATA — REMOVE WHEN BACKEND APIs ARE READY ────────────────────────
-// ════════════════════════════════════════════════════════════════════════════
-// Placeholder employees and the static Exit Checklist content. The checklist
-// content is policy/SOP — keep it; only swap the employees over to the real
-// `/exit/employees` endpoint when the backend is ready.
-// To remove dummy employees: delete `buildDummyEmployees()` and uncomment the
-// `api.get('/exit/employees')` block in the `useEffect` near the top.
-// ════════════════════════════════════════════════════════════════════════════
 
-// ─── Vault content — onboarding, organizational, and exit documents ────────
-const VAULT_BY_TAB: Record<VaultTab, VaultGroup[]> = {
-  employee: [
-    {
-      title: 'Identity Documents', icon: 'ri-shield-user-line', iconBg: '#ede9fe', iconFg: '#5b3fd1',
-      docs: [
-        { icon: 'ri-fingerprint-line',  iconBg: '#ede9fe', iconFg: '#5b3fd1', name: 'Aadhaar Card',     sub: 'Government issued 12-digit unique identity', category: 'Identity', status: 'Verified' },
-        { icon: 'ri-bank-card-2-line',  iconBg: '#fef3c7', iconFg: '#92400e', name: 'PAN Card',         sub: 'Permanent Account Number for taxation',    category: 'Identity', status: 'Verified' },
-        { icon: 'ri-camera-line',       iconBg: '#ede9fe', iconFg: '#5b3fd1', name: 'Passport Photo',   sub: 'Recent passport-size photograph',          category: 'Identity', status: 'Uploaded' },
-      ],
-    },
-    {
-      title: 'Address Proof', icon: 'ri-home-line', iconBg: '#dcfce7', iconFg: '#15803d',
-      docs: [
-        { icon: 'ri-home-line',       iconBg: '#dcfce7', iconFg: '#15803d', name: 'Current Address Proof',   sub: 'Utility bill or bank statement (last 3 months)', category: 'Address', status: 'Uploaded' },
-        { icon: 'ri-map-pin-line',    iconBg: '#fee2e2', iconFg: '#b91c1c', name: 'Permanent Address Proof', sub: 'Aadhaar / Voter ID as permanent address proof',  category: 'Address', status: 'Verified' },
-      ],
-    },
-    {
-      title: 'Education Documents', icon: 'ri-graduation-cap-line', iconBg: '#fef3c7', iconFg: '#92400e',
-      docs: [
-        { icon: 'ri-file-text-line',      iconBg: '#fef3c7', iconFg: '#92400e', name: '10th Marksheet',             sub: 'Secondary education certificate & marksheet',    category: 'Education', status: 'Verified' },
-        { icon: 'ri-file-text-line',      iconBg: '#fef3c7', iconFg: '#92400e', name: '12th Marksheet',             sub: 'Higher secondary education certificate',         category: 'Education', status: 'Verified' },
-        { icon: 'ri-graduation-cap-line', iconBg: '#dcfce7', iconFg: '#15803d', name: 'Graduation Certificate',     sub: 'Bachelor degree certificate & transcripts',       category: 'Education', status: 'Verified' },
-        { icon: 'ri-trophy-line',         iconBg: '#fef3c7', iconFg: '#92400e', name: 'Post-graduation Certificate', sub: 'Masters / PG degree certificate (if applicable)', category: 'Education', status: 'Optional' },
-      ],
-    },
-    {
-      title: 'Previous Employment Documents', icon: 'ri-briefcase-4-line', iconBg: '#ede9fe', iconFg: '#5b3fd1',
-      docs: [
-        { icon: 'ri-file-text-line',          iconBg: '#ede9fe', iconFg: '#5b3fd1', name: 'Experience Letter',     sub: 'Experience certificate from last employer',      category: 'Prev. Employment', status: 'Verified' },
-        { icon: 'ri-file-text-line',          iconBg: '#ede9fe', iconFg: '#5b3fd1', name: 'Relieving Letter',      sub: 'Formal relieving from previous organisation',    category: 'Prev. Employment', status: 'Verified' },
-        { icon: 'ri-money-rupee-circle-line', iconBg: '#fef3c7', iconFg: '#92400e', name: 'Last 3 Salary Slips',   sub: 'Payslips for last 3 months from previous role',  category: 'Prev. Employment', status: 'Uploaded' },
-        { icon: 'ri-file-text-line',          iconBg: '#fef3c7', iconFg: '#92400e', name: 'Previous Offer Letter', sub: 'Original offer letter from last organisation',   category: 'Prev. Employment', status: 'Pending' },
-      ],
-    },
-  ],
-  organizational: [
-    {
-      title: 'Signed Company Documents', icon: 'ri-file-shield-2-line', iconBg: '#fef3c7', iconFg: '#92400e',
-      docs: [
-        { icon: 'ri-lock-2-line',         iconBg: '#1f2937', iconFg: '#ffffff', name: 'NDA',                          sub: 'Non-Disclosure Agreement — active during and post tenure',  category: 'Signed', status: 'Signed' },
-        { icon: 'ri-file-text-line',      iconBg: '#ede9fe', iconFg: '#5b3fd1', name: 'Employment Agreement',         sub: 'Appointment letter & employment terms and conditions',      category: 'Signed', status: 'Signed' },
-        { icon: 'ri-book-2-line',         iconBg: '#fef3c7', iconFg: '#92400e', name: 'Code of Conduct Policy',       sub: 'Acknowledgement of company ethical standards and behavior', category: 'Signed', status: 'Signed' },
-        { icon: 'ri-computer-line',       iconBg: '#dcfce7', iconFg: '#15803d', name: 'IT Security & Acceptable Use', sub: 'IT asset usage, data access, and acceptable use policy',    category: 'Signed', status: 'Signed' },
-        { icon: 'ri-calendar-check-line', iconBg: '#fee2e2', iconFg: '#b91c1c', name: 'Leave & Attendance Policy',    sub: 'Leave entitlements, attendance rules, and WFH policy',      category: 'Sent',   status: 'Sent' },
-        { icon: 'ri-shield-line',         iconBg: '#fee2e2', iconFg: '#b91c1c', name: 'Confidentiality Agreement',    sub: 'Confidential business information protection agreement',    category: 'Signed', status: 'Signed' },
-        { icon: 'ri-gift-2-line',         iconBg: '#fef3c7', iconFg: '#92400e', name: 'Gratuity & Benefit Policy',    sub: 'Gratuity eligibility, PF, and other employee benefit terms', category: 'Not Generated', status: 'Not Generated' },
-      ],
-    },
-  ],
-  exit: [
-    {
-      title: 'Exit Process Documents', icon: 'ri-logout-box-r-line', iconBg: '#dcfce7', iconFg: '#15803d',
-      docs: [
-        { icon: 'ri-file-text-line',          iconBg: '#ede9fe', iconFg: '#5b3fd1', name: 'Relieving Letter',     sub: 'Formal relieving from all duties and responsibilities', category: 'Exit', status: 'Signed' },
-        { icon: 'ri-graduation-cap-line',     iconBg: '#dcfce7', iconFg: '#15803d', name: 'Experience Letter',    sub: 'Detailed role, tenure, and performance summary letter', category: 'Exit', status: 'Signed' },
-        { icon: 'ri-money-rupee-circle-line', iconBg: '#fef3c7', iconFg: '#92400e', name: 'FnF Settlement Sheet', sub: 'Complete full and final payment breakdown and approval', category: 'Exit', status: 'Signed' },
-        { icon: 'ri-file-shield-2-line',      iconBg: '#fef3c7', iconFg: '#92400e', name: 'NOC Certificate',      sub: 'No Objection Certificate issued by the organization',   category: 'Exit', status: 'Generated' },
-        { icon: 'ri-chat-3-line',             iconBg: '#1f2937', iconFg: '#ffffff', name: 'Exit Interview Form',  sub: 'Exit feedback form filled and acknowledged by HR',      category: 'Exit', status: 'Completed' },
-      ],
-    },
-  ],
-};
 
-// ─── ApiEmployee → EmployeeRow projector ────────────────────────────────────
-// Pulls the same /api/employees response shape the HR list + onboarding
-// pages use, then maps it onto the row shape this page renders. Status
-// rules:
-//   - deleted_at != null            → "Exited"
-//   - status = Resigned/Notice Period → "Exit In Progress"
-//   - missing critical fields        → "Missing Details"
-//   - everything else                → "Active"
 const _exitAccentPalette = ['#7c5cfc', '#0ab39c', '#f59e0b', '#ef4444', '#3b82f6', '#a855f7', '#10b981', '#f97316', '#ec4899', '#06b6d4'];
 function _exitAccent(name: string): string {
   let h = 0;
@@ -3061,75 +2417,29 @@ function _exitInitials(name: string): string {
 
 function apiToExitRow(e: any): EmployeeRow {
   const name = (e.display_name || `${e.first_name ?? ''} ${e.last_name ?? ''}`).trim() || '—';
-  // The manager can be set EITHER as an Employee (reporting_manager_id →
-  // reporting_manager) OR as a User who isn't an employee row
-  // (reporting_manager_user_id → reporting_manager_user). Only one is ever
-  // populated, so fall through to the user relation — without this, employees
-  // whose manager is a User (e.g. a branch admin / HR) showed "—". Mirrors the
-  // HR Employees list mapping.
   const mgr  = e.reporting_manager;
   const mgrName = mgr?.display_name
     || (mgr ? [mgr.first_name, mgr.last_name].filter(Boolean).join(' ').trim() : '')
     || e.reporting_manager_user?.name
     || '—';
 
-  // Map server status → ExitStatus bucket.
-  // Priority order. "Exited" means the exit is genuinely FINALISED — never a
-  // mere date rollover, so an unfinished process is never shown as complete:
-  //   1. Soft-deleted (`deleted_at`)                        → Exited.
-  //   2. Exit case Closed / completed_at set                → Exited
-  //      (HR clicked the gated "Complete Exit" — all clearances approved,
-  //      checklist ticked, HR sign-off done).
-  //   3. Terminal employees.status (Resigned/Terminated)    → Exited
-  //      (only the complete() endpoint sets these).
-  //   4. Notice period RUNNING → Exit In Progress. Once the exit is
-  //      initiated and the notice start date has arrived the employee stays
-  //      In Progress — EVEN IF the Last Working Day has passed — until HR
-  //      actually completes the process. A passed LWD no longer auto-exits
-  //      a half-done exit (the old rule wrongly marked people Exited just
-  //      because their last day went by). A FUTURE notice start keeps them
-  //      Active until that date. (status Notice Period also counts.)
-  //   5. Required-field guards                               → Missing Details.
-  //   6. Otherwise                                           → Active
-  //      (includes a scheduled exit whose notice hasn't begun yet).
   const trashed   = !!e.deleted_at;
   const rawStatus = String(e.status ?? 'Active');
   const ex        = e?.exit ?? null;
-  // Notice start date (ISO) — surfaced on the returned row as noticeStartIso.
   const noticeRaw = ex?.notice_date ? String(ex.notice_date).slice(0, 10) : '';
   const caseClosed   = (ex?.exit_case_status === 'Closed') || !!ex?.completed_at;
-  // Terminal employees.status values (matches the DB enum — Complete Exit
-  // sets one of these). No 'Retired'/'Exited' — those aren't enum values.
   const statusExited = ['Resigned', 'Terminated'].includes(rawStatus);
   const statusNotice = rawStatus === 'Notice Period';
-  // An exit is "in progress" the moment it's been initiated/worked: an exit
-  // record exists with an exit type, a last working day, a notice date, or the
-  // wizard has advanced past stage 1. We DON'T gate on the notice-start date
-  // anymore — HR actively processing the stages of a scheduled (future-notice)
-  // exit was wrongly counted as "Active", so the Exit-In-Progress KPI read 0
-  // even with cases open. The Exited checks above still take precedence, so a
-  // finalised exit never regresses to In Progress.
   const exitInitiated = !!ex && (
     !!ex.exit_type || !!ex.last_working_day || !!ex.notice_date || Number(ex.current_stage) >= 1
   );
 
   let status: ExitStatus;
-  // "Exited" ONLY when the exit is genuinely finalised — case Closed via the
-  // gated "Complete Exit", or a terminal employees.status. A passed Last
-  // Working Day no longer auto-exits: if the process (clearances / documents /
-  // checklist) isn't done, the employee stays "Exit In Progress" so nobody is
-  // marked complete before the work actually is.
   if      (trashed || caseClosed || statusExited)                   status = 'Exited';
   else if (exitInitiated || statusNotice)                           status = 'Exit In Progress';
   else if (!e.email || !e.department_id || !e.designation_id)        status = 'Missing Details';
   else                                                              status = 'Active';
 
-  // Exit readiness — how far along the EXIT process this employee is.
-  //   • Active  → 0%. The exit hasn't been initiated, so nothing is ready.
-  //   • Exit In Progress → derived from the saved wizard stage (1-4 of 4) so
-  //     the bar reflects real progress instead of a flat placeholder. Capped
-  //     at 90% until the case is actually closed.
-  //   • Exited → 100%.
   const currentStage = Math.max(1, Math.min(EXIT_STAGES.length, Number(ex?.current_stage) || 1));
   const exitReadiness = status === 'Exited' ? 100
     : status === 'Exit In Progress' ? Math.min(90, Math.round((currentStage / EXIT_STAGES.length) * 100))
@@ -3156,9 +2466,6 @@ function apiToExitRow(e: any): EmployeeRow {
     status,
     exitInitiated,
     noticeStartIso: noticeRaw,
-    // The API returns these via eager-loaded relations + accessor on
-    // the Employee model. Project to a small shape so Stage 2 can map
-    // each into a checkbox row without re-fetching.
     laptopAsset: e.laptop_asset ? {
       id:           Number(e.laptop_asset.id),
       asset_name:   e.laptop_asset.asset_name,
@@ -3182,86 +2489,13 @@ function apiToExitRow(e: any): EmployeeRow {
   };
 }
 
-function buildDummyEmployees(): EmployeeRow[] {
-  const palette = ['#7c5cfc', '#0ab39c', '#f59e0b', '#ef4444', '#3b82f6', '#a855f7', '#10b981', '#f97316', '#ec4899', '#06b6d4'];
-  const initialsOf = (name: string) => name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase();
 
-  type Seed = {
-    empId: string; name: string;
-    department: string; designation: string;
-    primaryRole: string; ancillaryRole: string;
-    managerName: string;
-    readiness: number; status: ExitStatus;
-  };
 
-  const seeds: Seed[] = [
-    { empId: 'EMP-1031', name: 'Aditi Singh',     department: 'CNS',         designation: 'Jr. Software Engineer', primaryRole: 'Software Engineer',    ancillaryRole: 'Mentor',              managerName: 'Atharv Patekar', readiness: 79, status: 'Active' },
-    { empId: 'EMP-1063', name: 'Aarav Kale',      department: 'Accounts',    designation: 'Associate Engineer',    primaryRole: 'Associate',            ancillaryRole: 'Training Coordinator',managerName: 'Deepa Kulkarni', readiness: 83, status: 'Active' },
-    { empId: 'EMP-1045', name: 'Priya Mehta',     department: 'HR',          designation: 'HR Manager',            primaryRole: 'HR Business Partner',  ancillaryRole: 'Learning & Dev',      managerName: 'Shalini Rao',    readiness: 91, status: 'Active' },
-    { empId: 'EMP-1052', name: 'Rahul Sharma',    department: 'Engineering', designation: 'Senior Developer',      primaryRole: 'Backend Engineer',     ancillaryRole: 'Tech Lead Backup',    managerName: 'Atharv Patekar', readiness: 88, status: 'Active' },
-    { empId: 'EMP-1058', name: 'Sneha Joshi',     department: 'Finance',     designation: 'Finance Analyst',       primaryRole: 'FP&A Analyst',         ancillaryRole: 'Budget Coordinator',  managerName: 'Nikhil Mehra',   readiness: 76, status: 'Active' },
-    { empId: 'EMP-1071', name: 'Karan Malhotra',  department: 'Sales',       designation: 'Sales Executive',       primaryRole: 'Enterprise Sales Rep', ancillaryRole: 'CRM Champion',        managerName: 'Priya Iyer',     readiness: 84, status: 'Active' },
-    { empId: 'EMP-1077', name: 'Tanvi Reddy',     department: 'Design',      designation: 'UI/UX Designer',        primaryRole: 'Product Designer',     ancillaryRole: 'Brand Design Sup.',   managerName: 'Neha Kulkarni',  readiness: 72, status: 'Active' },
-    { empId: 'EMP-1082', name: 'Rohan Verma',     department: 'Marketing',   designation: 'Performance Marketer',  primaryRole: 'Digital Marketing …',  ancillaryRole: 'Content Support',     managerName: 'Ritu Khanna',    readiness: 69, status: 'Active' },
-    { empId: 'EMP-1086', name: 'Sanya Bose',      department: 'Data Science',designation: 'Data Analyst',          primaryRole: 'Analytics Engineer',   ancillaryRole: 'BI Support',          managerName: 'Shatakshi Singh',readiness: 85, status: 'Active' },
-    { empId: 'EMP-1091', name: 'Arjun Mehta',     department: 'Engineering', designation: 'Frontend Developer',    primaryRole: 'React Developer',      ancillaryRole: 'Code Reviewer',       managerName: 'Atharv Patekar', readiness: 78, status: 'Active' },
-    { empId: 'EMP-1094', name: 'Divya Nair',      department: 'Operations',  designation: 'Operations Executive',  primaryRole: 'Process Analyst',      ancillaryRole: 'Supplier Coordinator',  managerName: 'Vivek Iyer',     readiness: 81, status: 'Active' },
-    { empId: 'EMP-1098', name: 'Neel Kapoor',     department: 'Engineering', designation: 'DevOps Engineer',       primaryRole: 'Cloud Engineer',       ancillaryRole: 'On-call Backup',      managerName: 'Atharv Patekar', readiness: 87, status: 'Active' },
-    { empId: 'EMP-1102', name: 'Riya Banerjee',   department: 'HR',          designation: 'Recruiter',             primaryRole: 'Talent Acquisition',   ancillaryRole: 'Onboarding Buddy',    managerName: 'Shalini Rao',    readiness: 74, status: 'Active' },
-    { empId: 'EMP-1108', name: 'Vikram Joshi',    department: 'Legal',       designation: 'Legal Associate',       primaryRole: 'Contracts Reviewer',   ancillaryRole: 'Compliance Support',  managerName: 'Anjali Rao',     readiness: 90, status: 'Active' },
-    { empId: 'EMP-1112', name: 'Pooja Sinha',     department: 'CNS',         designation: 'QA Engineer',           primaryRole: 'QA Automation',        ancillaryRole: 'Test Architect',      managerName: 'Karan Singh',    readiness: 80, status: 'Active' },
-    { empId: 'EMP-1119', name: 'Mihir Patil',     department: 'Engineering', designation: 'Software Engineer',     primaryRole: 'Mobile Developer',     ancillaryRole: 'Release Manager',     managerName: 'Atharv Patekar', readiness: 73, status: 'Active' },
-    { empId: 'EMP-1124', name: 'Anita Saxena',    department: 'Sales',       designation: 'Sales Manager',         primaryRole: 'Account Manager',      ancillaryRole: 'Pipeline Reviewer',   managerName: 'Priya Iyer',     readiness: 0,  status: 'Missing Details' },
 
-    // ── Exit In Progress (8) ────────────────────────────────────────────
-    { empId: 'EMP-1041', name: 'Sahil Khanna',    department: 'Engineering', designation: 'Senior Developer',      primaryRole: 'Backend Engineer',     ancillaryRole: 'Tech Lead Backup',    managerName: 'Atharv Patekar', readiness: 65, status: 'Exit In Progress' },
-    { empId: 'EMP-1049', name: 'Meera Iyer',      department: 'Marketing',   designation: 'Brand Manager',         primaryRole: 'Brand Strategist',     ancillaryRole: 'Campaign Lead',       managerName: 'Ritu Khanna',    readiness: 50, status: 'Exit In Progress' },
-    { empId: 'EMP-1057', name: 'Aakash Bose',     department: 'Design',      designation: 'Sr. Designer',          primaryRole: 'Product Designer',     ancillaryRole: 'Design Mentor',       managerName: 'Neha Kulkarni',  readiness: 45, status: 'Exit In Progress' },
-    { empId: 'EMP-1064', name: 'Pooja Mehta',     department: 'HR',          designation: 'Talent Specialist',     primaryRole: 'Tech Recruiter',       ancillaryRole: 'Employer Brand',      managerName: 'Shalini Rao',    readiness: 70, status: 'Exit In Progress' },
-    { empId: 'EMP-1073', name: 'Rohit Sen',       department: 'Finance',     designation: 'Finance Lead',          primaryRole: 'Treasury Analyst',     ancillaryRole: 'Audit Coordinator',   managerName: 'Nikhil Mehra',   readiness: 55, status: 'Exit In Progress' },
-    { empId: 'EMP-1085', name: 'Aisha Rahman',    department: 'Operations',  designation: 'Operations Lead',       primaryRole: 'SCM Lead',             ancillaryRole: 'Supplier Owner',        managerName: 'Vivek Iyer',     readiness: 62, status: 'Exit In Progress' },
-    { empId: 'EMP-1092', name: 'Devansh Gupta',   department: 'CNS',         designation: 'Network Engineer',      primaryRole: 'Network Admin',        ancillaryRole: 'Security Liaison',    managerName: 'Karan Singh',    readiness: 40, status: 'Exit In Progress' },
-    { empId: 'EMP-1099', name: 'Kavya Menon',     department: 'Engineering', designation: 'Tech Lead',             primaryRole: 'Architect',            ancillaryRole: 'Hiring Panel',        managerName: 'Atharv Patekar', readiness: 78, status: 'Exit In Progress' },
 
-    // ── Exited (8) ──────────────────────────────────────────────────────
-    { empId: 'EMP-0987', name: 'Naveen Rao',      department: 'Engineering', designation: 'Senior Developer',      primaryRole: 'Full-stack Developer', ancillaryRole: 'Mentor',              managerName: 'Atharv Patekar', readiness: 100, status: 'Exited' },
-    { empId: 'EMP-0991', name: 'Shilpa Nair',     department: 'Sales',       designation: 'Account Executive',     primaryRole: 'Sales Rep',            ancillaryRole: 'Lead Qualifier',      managerName: 'Priya Iyer',     readiness: 100, status: 'Exited' },
-    { empId: 'EMP-0995', name: 'Manish Kapoor',   department: 'Finance',     designation: 'Auditor',               primaryRole: 'Internal Auditor',     ancillaryRole: 'Risk Reviewer',       managerName: 'Nikhil Mehra',   readiness: 100, status: 'Exited' },
-    { empId: 'EMP-1002', name: 'Geeta Shah',      department: 'HR',          designation: 'L&D Specialist',        primaryRole: 'Trainer',              ancillaryRole: 'Onboarding Lead',     managerName: 'Shalini Rao',    readiness: 100, status: 'Exited' },
-    { empId: 'EMP-1011', name: 'Vivaan Roy',      department: 'Design',      designation: 'Visual Designer',       primaryRole: 'Brand Designer',       ancillaryRole: 'Motion Support',      managerName: 'Neha Kulkarni',  readiness: 100, status: 'Exited' },
-    { empId: 'EMP-1019', name: 'Tara Bhalla',     department: 'Marketing',   designation: 'Content Writer',        primaryRole: 'SEO Writer',           ancillaryRole: 'Newsletter Lead',     managerName: 'Ritu Khanna',    readiness: 100, status: 'Exited' },
-    { empId: 'EMP-1024', name: 'Ishaan Pillai',   department: 'Engineering', designation: 'Junior Developer',      primaryRole: 'Backend Engineer',     ancillaryRole: 'QA Pair',             managerName: 'Atharv Patekar', readiness: 100, status: 'Exited' },
-    { empId: 'EMP-1028', name: 'Roshni Datta',    department: 'Operations',  designation: 'Project Coordinator',   primaryRole: 'PMO Coordinator',      ancillaryRole: 'Reporting Sup.',      managerName: 'Vivek Iyer',     readiness: 100, status: 'Exited' },
-  ];
 
-  return seeds.map((s, idx) => ({
-    id: idx + 1,
-    empId: s.empId,
-    name: s.name,
-    initials: initialsOf(s.name),
-    accent: palette[idx % palette.length],
-    department: s.department,
-    designation: s.designation,
-    primaryRole: s.primaryRole,
-    ancillaryRole: s.ancillaryRole,
-    managerName: s.managerName,
-    managerInitials: initialsOf(s.managerName),
-    managerAccent: palette[(idx + 4) % palette.length],
-    exitReadiness: s.readiness,
-    status: s.status,
-    exitInitiated: s.status === 'Exit In Progress' || s.status === 'Exited',
-    noticeStartIso: '',
-    laptopAsset: null,
-    mobileAsset: null,
-    otherAssets: [],
-  }));
-}
 
-// ─── Static Exit Checklist content ──────────────────────────────────────────
-// This is policy/SOP content, not user-generated data. Keep it in code so the
-// checklist is always available even before the backend API exists.
 const CHECKLIST_STAGES: ChecklistStage[] = [
-  // ══ STAGE 1 — Exit Initiation & Approval ══
   {
     num: 1, title: 'Exit Initiation & Approval',
     items: [
@@ -3278,7 +2512,6 @@ const CHECKLIST_STAGES: ChecklistStage[] = [
       { name: 'Internship completion / early exit documented', sub: 'Internship outcome recorded — completion certificate or early exit reason noted', owner: 'hr', desig: ['intern'], type: 'all', tag: 'INTERN' },
     ],
   },
-  // ══ STAGE 2 — Notice Period Management ══
   {
     num: 2, title: 'Notice Period Management',
     items: [
@@ -3295,7 +2528,6 @@ const CHECKLIST_STAGES: ChecklistStage[] = [
       { name: 'Intern project / work handover done',        sub: 'Incomplete work handed to supervisor, project progress documented',                                         owner: 'mgr', desig: ['intern'],                           type: 'all', tag: 'INTERN' },
     ],
   },
-  // ══ STAGE 3 — Clearance & Asset Recovery ══
   {
     num: 3, title: 'Clearance & Asset Recovery',
     items: [
@@ -3313,7 +2545,6 @@ const CHECKLIST_STAGES: ChecklistStage[] = [
       { name: 'Intern system access deactivated',           sub: 'Email, tool access, and any repo permissions removed on last day',  owner: 'it',  desig: ['intern'],                  type: 'all',   tag: 'INTERN' },
     ],
   },
-  // ══ STAGE 4 — Exit Interview ══
   {
     num: 4, title: 'Exit Interview',
     items: [
@@ -3325,7 +2556,6 @@ const CHECKLIST_STAGES: ChecklistStage[] = [
       { name: 'Intern feedback & performance recorded',     sub: 'Supervisor rating and intern self-assessment logged — PPO eligibility noted',              owner: 'hr', desig: ['intern'],                         type: 'all', tag: 'INTERN' },
     ],
   },
-  // ══ STAGE 5 — Full & Final Settlement (FnF) ══
   {
     num: 5, title: 'Full & Final Settlement (FnF)',
     items: [
@@ -3340,7 +2570,6 @@ const CHECKLIST_STAGES: ChecklistStage[] = [
       { name: 'Final stipend & reimbursements paid',        sub: 'Pro-rated stipend for last month, approved expense claims cleared',                         owner: 'fin', desig: ['intern'],                       type: 'all', tag: 'INTERN' },
     ],
   },
-  // ══ STAGE 6 — Exit Documents Management ══
   {
     num: 6, title: 'Exit Documents Management',
     items: [

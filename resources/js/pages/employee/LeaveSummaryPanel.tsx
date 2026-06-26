@@ -13,19 +13,8 @@ import RequestLeaveModal from './RequestLeaveModal';
 import LeaveRequestDetailsModal from './LeaveRequestDetailsModal';
 import { Shimmer } from '../../components/ui/Shimmer';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// LeaveSummaryPanel — renders the "Me → Leave" overview shown above the
-// Apply Leave wizard on EmployeeProfile. Three sections:
-//   1. Pending leave requests — list with View Approvers popover
-//   2. Leave Balances — per-type donut cards (View details → Balance modal)
-//   3. Leave History — past Approved / Rejected / Cancelled requests
-// All data is live from /api/leave-requests + /employees/:id/leave-balances.
-// ─────────────────────────────────────────────────────────────────────────────
 interface Props {
   employeeId: string;
-  // Only the employee viewing their OWN profile may raise a leave request.
-  // HR / branch / admin users opening someone else's profile can VIEW the
-  // leave overview but the "Request Leave" action is hidden for them.
   canRequest?: boolean;
 }
 
@@ -72,7 +61,6 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
   const [approversFor, setApproversFor] = useState<number | null>(null);
   const [approversList, setApproversList] = useState<ApiLeaveApprover[]>([]);
   const [detailsType, setDetailsType] = useState<ApiEmployeeBalanceType | null>(null);
-  // New Request Leave / Details modals replacing the old 7-stage wizard.
   const [showRequest, setShowRequest] = useState(false);
   const [detailsRequestId, setDetailsRequestId] = useState<number | null>(null);
 
@@ -135,12 +123,8 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
 
   return (
     <div className="leave-summary-panel mb-4">
-      {/* ── Top action bar: Request Leave ── */}
       <div className="d-flex justify-content-between align-items-center mb-3">
         <h5 className="fw-bold mb-0" style={{ fontSize: 16 }}>Leave</h5>
-        {/* Raising a leave request is self-service — only shown when the
-            logged-in user is viewing their OWN profile. Others (HR / branch /
-            admin) get a read-only view of the leave overview. */}
         {canRequest && (
           <button
             type="button"
@@ -152,13 +136,9 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
         )}
       </div>
 
-      {/* ── Pending Leave Requests ── */}
       <div className="mb-3">
         <h6 className="fw-bold mb-2" style={{ fontSize: 14 }}>Pending leave requests</h6>
         {loading ? (
-          // Two skeleton cards in the same shape as the live request rows
-          // (round avatar slot + 4-column meta grid + cancel button) so
-          // the layout doesn't reflow when the API resolves.
           <div className="d-flex flex-column gap-2">
             {[0, 1].map(i => (
               <div
@@ -240,13 +220,9 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
         ))}
       </div>
 
-      {/* ── Leave Balances ── */}
       <div className="mb-3">
         <h6 className="fw-bold mb-2" style={{ fontSize: 14 }}>Leave Balances</h6>
         {loading ? (
-          // Three donut-card placeholders matching the live grid below
-          // (heading + circle + 3-cell footer). Keeps the row height
-          // stable so the page doesn't jump when balances arrive.
           <div className="d-flex gap-3 flex-wrap">
             {[0, 1, 2].map(i => (
               <div key={i} className="flex-grow-1" style={{ minWidth: 240, background: 'var(--vz-card-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 14, padding: 18 }}>
@@ -337,12 +313,9 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
         )}
       </div>
 
-      {/* ── Leave History ── */}
       <div>
         <h6 className="fw-bold mb-2" style={{ fontSize: 14 }}>Leave History</h6>
         {loading ? (
-          // Mini table skeleton — header strip + 4 rows × 5 columns to
-          // match the live history table's column layout.
           <div style={{ background: 'var(--vz-card-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 12, overflow: 'hidden' }}>
             <div style={{ background: 'var(--vz-secondary-bg)', padding: '12px 14px', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>
               {[0, 1, 2, 3, 4].map(i => <Shimmer key={i} height={10} width="60%" />)}
@@ -401,7 +374,6 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
         )}
       </div>
 
-      {/* ── Approvers popover (small modal) ── */}
       <Modal
         isOpen={approversFor !== null}
         toggle={() => setApproversFor(null)}
@@ -449,7 +421,6 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
         </ModalBody>
       </Modal>
 
-      {/* ── New Request Leave modal (replaces the 7-stage wizard) ── */}
       <RequestLeaveModal
         isOpen={showRequest}
         employeeId={employeeId}
@@ -457,14 +428,12 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
         onSubmitted={refetch}
       />
 
-      {/* ── Leave Request Details modal (opens from clicking a row) ── */}
       <LeaveRequestDetailsModal
         isOpen={detailsRequestId !== null}
         requestId={detailsRequestId}
         onClose={() => setDetailsRequestId(null)}
       />
 
-      {/* ── Balance History modal ── */}
       <Modal
         isOpen={detailsType !== null}
         toggle={() => setDetailsType(null)}
@@ -524,7 +493,6 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
   );
 }
 
-// Tiny inline SVG donut so we don't pull in a chart lib for this card.
 function Donut({ size, stroke, percent, ring, track, children }: {
   size: number;
   stroke: number;

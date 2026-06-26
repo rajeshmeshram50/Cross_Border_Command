@@ -68,12 +68,18 @@ class VendorController extends Controller
             // Honour the BranchSwitcher (see CustomerController::index).
             ->forUser($user, $request->integer('branch_id') ?: null)
             ->with([
-                'primaryAddress:id,vendor_id,city,state_id,contact_name,email,contact_no,designation',
+                'primaryAddress:id,vendor_id,city,state_id,state_code,contact_name,email,contact_no,designation',
+                // Resolve the state FK to its name so the list shows "Maharashtra"
+                // instead of the raw state_id (e.g. 8999) in the Supplier State column.
+                'primaryAddress.state:id,name',
                 // All address-contacts (primary + extras) so the list page can
                 // render the "+N" contact badge + Contact Persons popup.
                 'addresses:id,vendor_id,is_primary,contact_name,designation,contact_no,email',
                 'vendorType:id,name',
                 'segment:id,name',
+                // All mapped segments (vendor_segments pivot) so the list can
+                // render the Segment column + "+N" badge, not just the scalar one.
+                'segments:id,name',
                 'riskLevel:id,name',
             ])
             ->withCount('productMappings')
@@ -513,6 +519,18 @@ class VendorController extends Controller
         }
 
         $data = $this->validateBank($request);
+
+        // No duplicate account number for this supplier (account number uniquely
+        // identifies a bank account; the same one can't be added twice).
+        if (VendorBankAccount::where('vendor_id', $vendor->id)
+                ->where('account_number', $data['account_number'])
+                ->exists()) {
+            return response()->json([
+                'message' => 'This account number is already added for this supplier.',
+                'errors'  => ['account_number' => ['This account number is already added for this supplier.']],
+            ], 422);
+        }
+
         $path = $this->absorbFile($request, 'cheque', $vendor->id, 'cheque', $data['cheque_path'] ?? null);
 
         $row = VendorBankAccount::create([
@@ -539,6 +557,18 @@ class VendorController extends Controller
 
         $row = VendorBankAccount::where('vendor_id', $vendor->id)->findOrFail($bankId);
         $data = $this->validateBank($request);
+
+        // No duplicate account number for this supplier (excluding this row).
+        if (VendorBankAccount::where('vendor_id', $vendor->id)
+                ->where('account_number', $data['account_number'])
+                ->where('id', '!=', $row->id)
+                ->exists()) {
+            return response()->json([
+                'message' => 'This account number is already added for this supplier.',
+                'errors'  => ['account_number' => ['This account number is already added for this supplier.']],
+            ], 422);
+        }
+
         $old = $row->cheque_path;
         $path = $this->absorbFile($request, 'cheque', $vendor->id, 'cheque', $data['cheque_path'] ?? $old);
 
@@ -581,11 +611,16 @@ class VendorController extends Controller
         return $request->validate([
             'bank_name'      => 'required|string|max:255',
             'branch_name'    => 'required|string|max:255',
-            'account_number' => 'required|string|max:64',
-            'ifsc'           => 'required|string|max:16',
+            // Account number: 9–18 digits (matches the frontend validator).
+            // IFSC: standard RBI format — 4 letters + 0 + 6 alphanumerics.
+            'account_number' => ['required', 'string', 'regex:/^[0-9]{9,18}$/'],
+            'ifsc'           => ['required', 'string', 'regex:/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/'],
             'branch_address' => 'nullable|string|max:500',
             'cheque'         => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:' . self::MAX_UPLOAD_KB,
             'cheque_path'    => 'nullable|string|max:500',
+        ], [
+            'account_number.regex' => 'Account Number must be 9–18 digits.',
+            'ifsc.regex'           => 'IFSC Code is invalid (format: 4 letters + 0 + 6 characters, e.g. HDFC0001234).',
         ]);
     }
 
@@ -952,7 +987,7 @@ class VendorController extends Controller
      * Helpers
      * ────────────────────────────────────────────────────────────── */
 
-    /** Compute the next vendor_code (V-01, V-02 …) scoped to one client.
+    /** Compute the next vendor_code (SUP-01, SUP-02 …) scoped to one client.
      *
      *  Earlier this used `orderByDesc('id')->value('vendor_code')` which
      *  returns the most-recently-inserted code, not the numerically
@@ -973,7 +1008,7 @@ class VendorController extends Controller
                 $max = max($max, (int) $m[1]);
             }
         }
-        return 'V-' . str_pad((string) ($max + 1), 2, '0', STR_PAD_LEFT);
+        return 'SUP-' . str_pad((string) ($max + 1), 2, '0', STR_PAD_LEFT);
     }
 
     /**

@@ -33,8 +33,12 @@ class ForgotPasswordController extends Controller
 
         $email = strtolower(trim($request->email));
 
-        // Check if user exists
-        $user = User::where('email', $email)->first();
+        // Check if user exists. Email can map to accounts in multiple clients
+        // now — prefer an ACTIVE one so a single inactive account doesn't block
+        // the reset when another active account shares the email. The actual
+        // account to reset is disambiguated later in resetPassword().
+        $user = User::where('email', $email)->where('status', 'active')->first()
+            ?? User::where('email', $email)->first();
         if (!$user) {
             return response()->json([
                 'message' => 'No account found with this email address. Please check and try again.',
@@ -190,6 +194,9 @@ class ForgotPasswordController extends Controller
         $request->validate([
             'email' => 'required|email',
             'password' => 'required|string|min:8|confirmed',
+            // Optional org pick — required only when the email exists in more
+            // than one client (email is unique per-tenant now).
+            'client_id' => 'nullable|integer',
         ]);
 
         $email = strtolower(trim($request->email));
@@ -216,10 +223,35 @@ class ForgotPasswordController extends Controller
             ], 422);
         }
 
-        // Find user and update password
-        $user = User::where('email', $email)->first();
-        if (!$user) {
+        // Find the user whose password to reset. Email is per-tenant now, so it
+        // can map to accounts in multiple clients — ask which one (the OTP was
+        // already proven, so listing the owner's orgs is safe). We return early
+        // WITHOUT consuming the verified OTP so the re-submit with client_id
+        // still works.
+        $users = User::where('email', $email)->get();
+        if ($users->isEmpty()) {
             return response()->json(['message' => 'User not found.'], 404);
+        }
+
+        if ($users->count() > 1) {
+            $selectedClientId = $request->input('client_id');
+            if ($selectedClientId === null || $selectedClientId === '') {
+                return response()->json([
+                    'needs_org_selection' => true,
+                    'message' => 'This email is registered with more than one organization. Choose which one to reset.',
+                    'organizations' => $users->map(fn ($u) => [
+                        'client_id' => $u->client_id,
+                        'name'      => $u->effectiveClient()?->org_name
+                            ?? ($u->user_type === 'super_admin' ? 'Platform Admin' : 'Organization'),
+                    ])->values(),
+                ], 409);
+            }
+            $user = $users->firstWhere('client_id', (int) $selectedClientId);
+            if (!$user) {
+                return response()->json(['message' => 'Please choose a valid organization.'], 422);
+            }
+        } else {
+            $user = $users->first();
         }
 
         // Block re-use of the last 3 passwords (current + 2 historical).
@@ -242,6 +274,9 @@ class ForgotPasswordController extends Controller
 
         $user->update([
             'password' => Hash::make($newPassword),
+            // Clear any forced-reset flag (e.g. set after an email change) so
+            // the user can sign in again now that they've set a new password.
+            'must_reset_password' => false,
         ]);
 
         // Delete all OTPs for this email

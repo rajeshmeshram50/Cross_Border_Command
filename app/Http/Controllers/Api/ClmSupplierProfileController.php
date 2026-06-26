@@ -192,7 +192,7 @@ class ClmSupplierProfileController extends Controller
             }
 
             $row = [
-                'id'    => $v->vendor_code ?: ('V-' . str_pad((string) $v->id, 2, '0', STR_PAD_LEFT)),
+                'id'    => $v->vendor_code ?: ('SUP-' . str_pad((string) $v->id, 2, '0', STR_PAD_LEFT)),
                 'db_id' => (int) $v->id,
                 'name'  => $v->company_name,
                 'seg'   => $segId ? ($segNameById[$segId] ?? '—') : '—',

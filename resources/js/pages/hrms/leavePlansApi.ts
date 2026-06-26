@@ -1,9 +1,5 @@
 import api from '../../api';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Backend response shapes — mirror the Eloquent models in
-// app/Models/Masters/{LeavePlans, LeaveTypes, LeavePlanLeaveType}.php.
-// ─────────────────────────────────────────────────────────────────────────────
 export interface ApiLeaveType {
   id: number;
   client_id: number | null;
@@ -16,7 +12,6 @@ export interface ApiLeaveType {
   paid_unpaid: 'Paid' | 'Unpaid' | null;
   gender_restriction: 'None' | 'Male' | 'Female';
   status: 'Active' | 'Inactive';
-  // Pivot fields appear when fetched through plan.leaveTypes
   pivot?: {
     id: number;
     leave_plan_id: number;
@@ -67,9 +62,6 @@ export interface ApiPlanEmployee {
   reporting_manager_user?: { id: number; name?: string | null; user_type?: string | null } | null;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// API calls
-// ─────────────────────────────────────────────────────────────────────────────
 export const leavePlansApi = {
   list: () =>
     api.get<{ data: ApiLeavePlan[] }>('/leave-plans').then(r => r.data.data),
@@ -108,12 +100,6 @@ export const leavePlansApi = {
     api.delete(`/leave-plans/${id}/employees/${employeeId}`),
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Leave Balances — aggregated employee × leave-type read used by the
-// Leave Balances tab. Columns are dynamic (driven by what's actually
-// assigned across plans), so callers iterate the response's `columns`
-// array to render headers and `employees[].balances` for cells.
-// ─────────────────────────────────────────────────────────────────────────────
 export interface ApiLeaveBalanceColumn {
   leave_type_id: number;
   name: string;
@@ -154,16 +140,9 @@ export const leaveBalancesApi = {
     api.get<{ data: ApiLeaveBalancesResponse }>('/leave-balances', { params }).then(r => r.data.data),
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Leave Type catalog — uses the existing generic /master/leave_type endpoint
-// rather than a dedicated controller. The catalog is what the "Add Leave
-// Type" modal manages and what "Assign Leave Types to Plan" picks from.
-// ─────────────────────────────────────────────────────────────────────────────
 export const leaveTypesApi = {
   list: () =>
     api.get<{ data?: ApiLeaveType[] } | ApiLeaveType[]>('/master/leave_type').then(r => {
-      // MasterController returns either {data: [...]} or a paginator wrapper —
-      // unwrap to a plain array regardless.
       const body: any = r.data;
       if (Array.isArray(body)) return body as ApiLeaveType[];
       if (Array.isArray(body?.data)) return body.data as ApiLeaveType[];
@@ -180,10 +159,6 @@ export const leaveTypesApi = {
     api.delete(`/master/leave_type/${id}`),
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Leave Requests — employee self-service apply / list / approve. Used by
-// the Employee Profile's Leave tab and (future) the HR approval queue.
-// ─────────────────────────────────────────────────────────────────────────────
 export interface ApiLeaveRequest {
   id: number;
   client_id: number | null;
@@ -210,9 +185,6 @@ export interface ApiLeaveRequest {
   leave_plan?: { id: number; plan_name: string };
   cover_person?: { id: number; first_name: string; last_name: string | null; display_name: string | null; emp_code?: string };
   approver?: { id: number; name: string };
-  // Populated by /leave-requests/approvals and /leave-requests/:id (the
-  // employee profile's `index` call doesn't eager-load this — caller knows
-  // who they're asking for there).
   employee?: {
     id: number;
     emp_code: string;
@@ -248,9 +220,6 @@ export interface ApiLeaveRequestPayload {
 }
 
 export interface ApiLeaveApprover {
-  // Multi-level approval response. `level` is 1-based; `is_current` marks
-  // the level the request is currently waiting on. Older single-level
-  // responses populate the same fields with level=1 / is_current=true.
   level: number;
   role: string;
   kind: string;
@@ -285,16 +254,10 @@ export const leaveRequestsApi = {
   cancel: (id: number) =>
     api.post<{ data: ApiLeaveRequest }>(`/leave-requests/${id}/cancel`).then(r => r.data.data),
 
-  // HR approval queue — pending requests where current user is the
-  // reporting manager (or every pending in tenant for HR / admin roles).
   approvals: (params: { status?: string; search?: string; branch_id?: number } = {}) =>
     api.get<{ data: ApiLeaveRequest[] }>('/leave-requests/approvals', { params }).then(r => r.data.data),
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Per-employee balance summary — drives the Leave tab on EmployeeProfile.
-// Different shape than /leave-balances (which is a matrix of all employees).
-// ─────────────────────────────────────────────────────────────────────────────
 export interface ApiEmployeeBalanceTransaction {
   date: string;
   change: string;

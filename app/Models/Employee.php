@@ -126,6 +126,23 @@ class Employee extends Model
         return trim(preg_replace('/\s+/', ' ', trim(($first ?? '') . ' ' . ($middle ?? '') . ' ' . ($last ?? ''))));
     }
 
+    /** Terminal statuses that disable the login + freeze profile activity. */
+    public const DISABLED_STATUSES = ['inactive', 'resigned', 'terminated'];
+
+    /**
+     * A "disabled" employee is one whose login is off — either soft-deleted
+     * (the Remove action) or sitting in a terminal status (Inactive/Resigned/
+     * Terminated). Profile-write actions (edit, documents, face enrolment,
+     * etc.) must be refused for these until they're restored/re-activated.
+     * Shared by every controller that mutates an employee's profile so the
+     * rule stays consistent across the app.
+     */
+    public function isDisabled(): bool
+    {
+        return $this->trashed()
+            || in_array(strtolower((string) $this->status), self::DISABLED_STATUSES, true);
+    }
+
     // ── Tenant / ownership ──────────────────────────────────────────────
 
     public function client(): BelongsTo

@@ -245,6 +245,19 @@
   background: #fff;
   box-shadow: 0 0 0 3px rgba(34,211,238,.16);
 }
+/* Dark mode: keep the cyan focus ring but DON'T flip the field to white. */
+[data-bs-theme="dark"] .ast-field input:focus,
+[data-bs-theme="dark"] .ast-field select:focus,
+[data-bs-theme="dark"] .ast-pl-price:focus,
+[data-bs-theme="dark"] .ast-clarity-body textarea:focus,
+[data-bs-theme="dark"] .ast-clarity-body input[type=text]:focus,
+[data-bs-theme="dark"] .snf-inp:focus,
+[data-bs-theme="dark"] .snf-sel:focus {
+  border-color: #22d3ee;
+  background: rgba(255,255,255,.07);
+  color: #e2e8f0;
+  box-shadow: 0 0 0 3px rgba(34,211,238,.18);
+}
 [data-bs-theme="dark"] .ast-radio,
 [data-bs-theme="dark"] .asrc-picker,
 [data-bs-theme="dark"] .astp-row {
@@ -808,6 +821,12 @@
   padding: 3px 7px;
   font-family: ui-monospace,Menlo,Consolas,monospace;
   letter-spacing: .01em;
+}
+.bst-src-wrap {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
 }
 .bst-src {
   display: inline-block;
@@ -1786,6 +1805,12 @@
   border-color: #a5e8f2;
   box-shadow: 0 2px 6px -2px rgba(8,145,178,.3);
 }
+[data-bs-theme="dark"] .ast-srccard-tag--teal {
+  background: rgba(34,211,238,.12);
+  color: #67e8f9;
+  border-color: rgba(34,211,238,.35);
+  box-shadow: none;
+}
 .ast-srccard-dot--teal {
   background: #06b6d4;
   box-shadow: 0 0 0 3px rgba(6,182,212,.18);
@@ -1798,6 +1823,18 @@
   padding: 6px 11px;
   font-size: 11px;
   background: rgba(255,255,255,.7);
+}
+/* In the card header the tabs sat on a near-opaque white (.7) with no dark
+   variant, so the inactive Manual/Masters tab showed white in dark mode. */
+[data-bs-theme="dark"] .ast-srccard-head .asrc-ltab {
+  background: rgba(255,255,255,.06);
+  border-color: rgba(255,255,255,.12);
+  color: #94a3b8;
+}
+[data-bs-theme="dark"] .ast-srccard-head .asrc-ltab.is-active {
+  background: linear-gradient(135deg,rgba(34,211,238,.16),rgba(6,182,212,.1));
+  border-color: rgba(34,211,238,.4);
+  color: #67e8f9;
 }
 .ast-srcgrid-sep {
   align-self: stretch;
@@ -1826,6 +1863,10 @@
   border-color: #bfe6ef;
   background: #f0fdff;
 }
+[data-bs-theme="dark"] .ast-radio:hover {
+  border-color: rgba(34,211,238,.35);
+  background: rgba(34,211,238,.07);
+}
 .ast-radio.is-sel {
   border-color: #22d3ee;
   background: linear-gradient(135deg,#ecfeff,#e0fbff);
@@ -1844,6 +1885,10 @@
   position: relative;
   transition: all .15s;
   background: #fff;
+}
+[data-bs-theme="dark"] .ast-radio-dot {
+  border-color: rgba(255,255,255,.25);
+  background: rgba(255,255,255,.04);
 }
 .ast-radio.is-sel .ast-radio-dot {
   border-color: #0891b2;
@@ -2008,6 +2053,12 @@
   border-color: #22d3ee;
   background: #ecfeff;
 }
+/* Selected row was near-white (#ecfeff) with no dark variant — every picked
+   product showed up white in dark mode. Use a translucent cyan instead. */
+[data-bs-theme="dark"] .asrc-pick-opt.is-sel {
+  border-color: rgba(34,211,238,.5);
+  background: rgba(34,211,238,.12);
+}
 .asrc-pick-opt.is-added {
   opacity: .5;
   cursor: default;
@@ -2024,10 +2075,19 @@
   flex-shrink: 0;
   transition: border-color .12s,background .12s;
 }
+[data-bs-theme="dark"] .asrc-pick-check {
+  border-color: rgba(255,255,255,.2);
+  background: rgba(255,255,255,.04);
+}
 .asrc-pick-opt.is-sel .asrc-pick-check,
 .asrc-pick-opt.is-added .asrc-pick-check {
   border-color: #22d3ee;
   background: #cffafe;
+}
+[data-bs-theme="dark"] .asrc-pick-opt.is-sel .asrc-pick-check,
+[data-bs-theme="dark"] .asrc-pick-opt.is-added .asrc-pick-check {
+  border-color: #22d3ee;
+  background: rgba(34,211,238,.25);
 }
 .asrc-pick-txt {
   font-size: 12.5px;
@@ -2086,6 +2146,14 @@
   padding: 1px 7px;
   min-width: 18px;
   text-align: center;
+}
+[data-bs-theme="dark"] .asrc-ltab-c {
+  color: #a5f3fc;
+  background: rgba(34,211,238,.18);
+  border-color: rgba(34,211,238,.3);
+}
+[data-bs-theme="dark"] .asrc-ltab.is-active .asrc-ltab-c {
+  background: rgba(34,211,238,.28);
 }
 .ast-plist {
   display: flex;
@@ -2202,6 +2270,14 @@
   background: #cffafe;
   border-color: #67e8f9;
 }
+[data-bs-theme="dark"] .ast-pl-clarity:hover {
+  background: rgba(34,211,238,.2);
+  border-color: rgba(34,211,238,.5);
+}
+/* Spinner for the "Uploading…" state on the Save Clarity button. */
+@keyframes ast-spin { to { transform: rotate(360deg); } }
+.ast-spin { animation: ast-spin .7s linear infinite; }
+.ast-btn-primary:disabled { opacity: .6; cursor: not-allowed; }
 .ast-pl-del {
   display: flex;
   align-items: center;
@@ -3027,6 +3103,86 @@
   color: #cbd5e1;
   font-weight: 500;
   letter-spacing: .05em;
+}
+.srpt-clarity-text {
+  display: inline-block;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  font-size: 11.5px;
+  color: #0e7490;
+  font-weight: 600;
+  background: none;
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline dotted rgba(8,145,178,.5);
+  text-underline-offset: 2px;
+}
+.srpt-clarity-text:hover { color: #0891b2; text-decoration-style: solid; }
+[data-bs-theme="dark"] .srpt-clarity-text { color: #67e8f9; text-decoration-color: rgba(103,232,249,.5); }
+/* Full-text popup — themed to match the report module (cyan header, dark body). */
+.srpt-clarity-ov {
+  position: fixed; inset: 0; z-index: 1200;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px; background: rgba(6,30,45,.55); backdrop-filter: blur(3px);
+}
+.srpt-clarity-modal {
+  width: 100%; max-width: 460px; border-radius: 16px; overflow: hidden;
+  background: #fff; box-shadow: 0 30px 70px -12px rgba(0,30,60,.5);
+}
+.srpt-clarity-modal-head {
+  display: flex; align-items: center; gap: 10px; padding: 14px 16px;
+  background: linear-gradient(135deg,#0a4d66,#0e7490);
+}
+.srpt-clarity-modal-ico {
+  width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.18);
+}
+.srpt-clarity-modal-title { flex: 1; font-size: 14px; font-weight: 700; color: #fff; }
+.srpt-clarity-modal-close {
+  width: 28px; height: 28px; border-radius: 8px; border: none; cursor: pointer;
+  background: rgba(255,255,255,.15); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+}
+.srpt-clarity-modal-close:hover { background: rgba(255,255,255,.28); }
+.srpt-clarity-modal-body {
+  padding: 16px 18px; font-size: 13px; line-height: 1.6; color: #334155;
+  max-height: 50vh; overflow-y: auto; white-space: pre-wrap; word-break: break-word;
+}
+[data-bs-theme="dark"] .srpt-clarity-modal { background: #0f1e2e; box-shadow: 0 30px 70px -12px rgba(0,0,0,.6); }
+[data-bs-theme="dark"] .srpt-clarity-modal-body { color: #cbd5e1; }
+/* HSN code — was a hard-coded dark grey, unreadable in dark mode. */
+.srpt-hsncode { font-family: monospace; font-size: 11px; color: #475569; }
+[data-bs-theme="dark"] .srpt-hsncode { color: #94a3b8; }
+.srpt-clarity-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 7px;
+  border: 1.5px solid #b2ebf2;
+  background: #f0fdff;
+  color: #0e7490;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background .15s, border-color .15s;
+}
+.srpt-clarity-link:hover {
+  background: #cffafe;
+  border-color: #67e8f9;
+}
+[data-bs-theme="dark"] .srpt-clarity-text { color: #cbd5e1; }
+[data-bs-theme="dark"] .srpt-clarity-link {
+  background: rgba(8, 145, 178, .15);
+  border-color: rgba(103, 232, 249, .3);
+  color: #67e8f9;
 }
 .srpt-sup-count {
   min-width: 26px;
@@ -4775,4 +4931,88 @@
   .pl-stat--prog { flex: none; width: 100%; }
   .pl-stat-lbl { font-size: 8px; }
   .pl-stat-val { font-size: 19px; }
+}
+
+/* ============================================================================
+   SegmentTags — first segment badge + "+N" pill with a popover (SegmentTags.tsx)
+   ============================================================================ */
+.seg-tags {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.seg-more-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 19px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid #bdf0f7;
+  background: #e0fbff;
+  color: #0e7490;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1;
+  transition: background .15s, border-color .15s;
+}
+.seg-more-pill:hover {
+  background: #cffafe;
+  border-color: #67e8f9;
+}
+.seg-more-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  min-width: 150px;
+  max-width: 240px;
+  padding: 8px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .18);
+}
+.seg-more-pop-hdr {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+.seg-more-pop-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.seg-more-pop-item {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #0e7490;
+  background: #f0fdff;
+  border: 1px solid #bdf0f7;
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+[data-bs-theme="dark"] .seg-more-pill {
+  background: rgba(8, 145, 178, .18);
+  border-color: rgba(103, 232, 249, .3);
+  color: #67e8f9;
+}
+[data-bs-theme="dark"] .seg-more-pop {
+  background: #0f1e2e;
+  border-color: rgba(255, 255, 255, .12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+}
+[data-bs-theme="dark"] .seg-more-pop-hdr { color: #94a3b8; }
+[data-bs-theme="dark"] .seg-more-pop-item {
+  background: rgba(8, 145, 178, .15);
+  border-color: rgba(103, 232, 249, .25);
+  color: #a5f3fc;
 }

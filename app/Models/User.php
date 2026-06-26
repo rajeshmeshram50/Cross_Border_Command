@@ -28,6 +28,7 @@ class User extends Authenticatable
         'branch_id',
         'department_id',
         'status',
+        'must_reset_password',
         'avatar',
         'profile_photo',
         'designation',
@@ -57,6 +58,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'last_login_at' => 'datetime',
             'login_count' => 'integer',
+            'must_reset_password' => 'boolean',
         ];
     }
 
