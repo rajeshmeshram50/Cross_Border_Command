@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useCallback, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Col, Row, Modal, ModalBody, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
-import { MasterFormStyles, MasterDatePicker, MasterSelect } from '../master/masterFormKit';
+import { MasterFormStyles, MasterSelect } from '../master/masterFormKit';
 import '../../../css/recruitment.css';
 import '../../../css/leave.css';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
@@ -1483,10 +1483,8 @@ function AddLeavePlanModal({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [showDescription, setShowDescription] = useState(false);
-  const [calendarStart, setCalendarStart] = useState<CalendarStart>('fixed_month');
-  const [startDate, setStartDate] = useState('');
+  const [calendarStart, setCalendarStart] = useState<CalendarStart>('joining_date');
   const [showSystemPolicy, setShowSystemPolicy] = useState(true);
-  const [uploadCustom, setUploadCustom] = useState(false);
   const [isDefault, setIsDefault] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -1494,8 +1492,8 @@ function AddLeavePlanModal({
 
   const reset = () => {
     setName(''); setDescription(''); setShowDescription(false);
-    setCalendarStart('fixed_month'); setStartDate('');
-    setShowSystemPolicy(true); setUploadCustom(false); setIsDefault(false);
+    setCalendarStart('joining_date');
+    setShowSystemPolicy(true); setIsDefault(false);
     setErrors({}); setSaving(false);
   };
 
@@ -1507,9 +1505,7 @@ function AddLeavePlanModal({
       setDescription(editing.description ?? '');
       setShowDescription(!!editing.description);
       setCalendarStart(editing.calendarStart);
-      setStartDate(editing.startDate ?? '');
       setShowSystemPolicy(editing.showSystemPolicy);
-      setUploadCustom(!!editing.customPolicyFile);
       setIsDefault(!!editing.isDefault);
     } else {
       reset();
@@ -1519,7 +1515,6 @@ function AddLeavePlanModal({
   const handleSave = async () => {
     const errs: Record<string, string> = {};
     if (!name.trim()) errs.name = 'Leave plan name is required';
-    if (calendarStart === 'fixed_month' && !startDate) errs.startDate = 'Start date is required';
     if (Object.keys(errs).length) { setErrors(errs); return; }
 
     setSaving(true);
@@ -1527,7 +1522,7 @@ function AddLeavePlanModal({
       name: name.trim(),
       description: description.trim() || undefined,
       calendarStart,
-      startDate: calendarStart === 'fixed_month' ? startDate : undefined,
+      startDate: undefined,
       showSystemPolicy,
       isDefault,
     });
@@ -1656,30 +1651,6 @@ function AddLeavePlanModal({
             </div>
             <Row className="g-2">
               <Col md={12}>
-                <label className={`lp-radio-card ${calendarStart === 'fixed_month' ? 'is-active' : ''}`}>
-                  <input
-                    type="radio"
-                    name="calendar-start"
-                    checked={calendarStart === 'fixed_month'}
-                    onChange={() => setCalendarStart('fixed_month')}
-                  />
-                  <div className="flex-grow-1">
-                    <div className="fw-semibold" style={{ fontSize: 13 }}>Starts from a particular month</div>
-                    {calendarStart === 'fixed_month' && (
-                      <div className="mt-2" style={{ maxWidth: 240 }}>
-                        <MasterDatePicker
-                          value={startDate}
-                          onChange={(v) => { setStartDate(v); clearErr('startDate'); }}
-                          placeholder="Select start date"
-                          invalid={!!errors.startDate}
-                        />
-                        {errors.startDate && <div className="rec-error"><i className="ri-error-warning-line" />{errors.startDate}</div>}
-                      </div>
-                    )}
-                  </div>
-                </label>
-              </Col>
-              <Col md={12}>
                 <label className={`lp-radio-card ${calendarStart === 'joining_date' ? 'is-active' : ''}`}>
                   <input
                     type="radio"
@@ -1698,70 +1669,6 @@ function AddLeavePlanModal({
             </Row>
           </div>
 
-          <div className="rec-form-section">
-            <div className="rec-form-section-head">
-              <span
-                className="rec-form-section-icon"
-                style={{
-                  background: 'linear-gradient(135deg,#0c63b0 0%,#3b82f6 50%,#60a5fa 100%)',
-                  color: '#fff',
-                  boxShadow: '0 4px 12px rgba(59,130,246,0.35), inset 0 1px 0 rgba(255,255,255,0.30)',
-                }}
-              >
-                <i className="ri-settings-3-line" style={{ fontSize: 18 }} />
-              </span>
-              <div>
-                <p className="rec-form-section-title">Section 3 · Policy &amp; Settings</p>
-                <p className="rec-form-section-sub">How the plan explains itself, and whether it's the org default.</p>
-              </div>
-            </div>
-            <Row className="g-2">
-              <Col md={12}>
-                <label className="lp-checkbox-row">
-                  <input
-                    type="checkbox"
-                    className="form-check-input"
-                    checked={showSystemPolicy}
-                    onChange={e => setShowSystemPolicy(e.target.checked)}
-                  />
-                  <span className="flex-grow-1">Show leave policy explanation generated by system</span>
-                  <Tooltip label="Auto-generated from configured leave types" position="left">
-                    <i className="ri-information-line text-muted" style={{ cursor: 'help' }} />
-                  </Tooltip>
-                </label>
-              </Col>
-              <Col md={12}>
-                <label className="lp-checkbox-row">
-                  <input
-                    type="checkbox"
-                    className="form-check-input"
-                    checked={uploadCustom}
-                    onChange={e => setUploadCustom(e.target.checked)}
-                  />
-                  <span>Upload custom leave policy document</span>
-                </label>
-              </Col>
-              <Col md={12}>
-                <div className="lp-toggle-row" style={{ marginTop: 8 }}>
-                  <div>
-                    <div className="fw-semibold" style={{ fontSize: 13 }}>Set as default plan</div>
-                    <div className="text-muted" style={{ fontSize: 11.5, marginTop: 2 }}>
-                      All new employees will be assigned this plan
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className={`lp-switch ${isDefault ? 'is-on' : ''}`}
-                    onClick={() => setIsDefault(v => !v)}
-                    role="switch"
-                    aria-checked={isDefault}
-                  >
-                    <span className="lp-switch-thumb" />
-                  </button>
-                </div>
-              </Col>
-            </Row>
-          </div>
         </div>
 
         <div className="rec-form-footer">
