@@ -27,6 +27,10 @@ class HolidayController extends Controller
     /** Module slug used for permission checks — matches ModuleSeeder. */
     private const MODULE_SLUG = 'hr.holiday';
 
+    /** Tenant-facing timezone used to resolve "today" when freezing past
+     *  holidays. The app runs in UTC; holiday dates are entered/read in IST. */
+    private const DISPLAY_TZ = 'Asia/Kolkata';
+
     /** Allowed holiday categories. */
     private const TYPES = ['Public', 'Restricted', 'Company', 'Regional', 'Optional'];
 
@@ -58,7 +62,9 @@ class HolidayController extends Controller
             $q->whereYear('date', (int) $year);
         }
 
-        return response()->json($q->orderBy('date')->get());
+        // Date-wise, with id as a stable tie-breaker so same-date holidays keep
+        // a deterministic order (the SPA prints a continuous Sr. No. over this).
+        return response()->json($q->orderBy('date')->orderBy('id')->get());
     }
 
     public function show(Request $request, $id)
@@ -93,6 +99,7 @@ class HolidayController extends Controller
     {
         $this->authorizeAction($request, 'can_edit');
         $row = $this->resolveRow($request, (int) $id);
+        $this->assertNotPast($row, 'edited');
 
         $data = $this->validatePayload($request, $row->id);
         $data['updated_by'] = $request->user()?->id;
@@ -106,6 +113,7 @@ class HolidayController extends Controller
     {
         $this->authorizeAction($request, 'can_delete');
         $row = $this->resolveRow($request, (int) $id);
+        $this->assertNotPast($row, 'removed');
 
         $row->delete();
 
@@ -322,6 +330,32 @@ class HolidayController extends Controller
             return Carbon::parse($raw)->toDateString();
         } catch (\Throwable $e) {
             return null;
+        }
+    }
+
+    /**
+     * Freeze past holidays. Once a holiday's date is before today it is
+     * read-only — it can no longer be edited or removed, since changing or
+     * deleting a holiday that already happened would rewrite history that
+     * payroll/attendance have already credited against.
+     *
+     * Recurring (yearly) holidays are exempt: their next occurrence is always
+     * upcoming, so the stored origin-year date is not "in the past" in any
+     * meaningful sense. "Today" is resolved in IST (the app runs in UTC).
+     */
+    private function assertNotPast(Holiday $row, string $verb): void
+    {
+        if ($row->is_recurring) return;
+
+        $todayStr = now(self::DISPLAY_TZ)->toDateString();
+        $rowDate  = $row->date instanceof \Carbon\Carbon
+            ? $row->date->toDateString()
+            : Carbon::parse((string) $row->date)->toDateString();
+
+        if ($rowDate < $todayStr) {
+            throw ValidationException::withMessages([
+                'date' => "This holiday has already passed and can no longer be {$verb}.",
+            ]);
         }
     }
 

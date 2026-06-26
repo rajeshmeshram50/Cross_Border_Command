@@ -67,6 +67,17 @@ function weekdayName(raw: any): string {
   return WEEKDAYS[d.getDay()];
 }
 
+// A holiday is "past" (frozen / read-only) once its date is before today.
+// Recurring (yearly) holidays are never frozen — their next occurrence is
+// always upcoming. Mirrors the backend guard in HolidayController.
+function isPastHoliday(row: HolidayRow): boolean {
+  if (row.is_recurring) return false;
+  const raw = String(row.date || '').slice(0, 10);
+  if (!raw) return false;
+  const todayStr = new Date().toLocaleDateString('en-CA'); // local YYYY-MM-DD
+  return raw < todayStr;
+}
+
 export default function HrHoliday() {
   const toast = useToast();
   const confirmDialog = useConfirm();
@@ -340,6 +351,7 @@ export default function HrHoliday() {
                           </td></tr>
                         ) : visible.map((r, idx) => {
                           const tone = TYPE_TONES[r.type] || TYPE_TONES.Public;
+                          const frozen = isPastHoliday(r);
                           return (
                             <tr key={r.id}>
                               <td className="ps-3 text-center text-muted fs-13">{sliceFrom + idx + 1}</td>
@@ -362,18 +374,26 @@ export default function HrHoliday() {
                                   : <span className="text-muted">—</span>}
                               </td>
                               <td className="pe-3 text-center">
-                                <div className="rec-row-actions justify-content-center">
-                                  <Tooltip label="Edit">
-                                    <button type="button" className="rec-act rec-act-view rec-act--icon" aria-label="Edit" onClick={() => { setEditingRow(r); setCreateOpen(true); }}>
-                                      <i className="ri-pencil-line" />
-                                    </button>
+                                {frozen ? (
+                                  <Tooltip label="Past holiday — locked">
+                                    <span className="rec-pill" style={{ background: '#f1f1f4', color: '#5b6270' }}>
+                                      <i className="ri-lock-line me-1" />Locked
+                                    </span>
                                   </Tooltip>
-                                  <Tooltip label="Delete">
-                                    <button type="button" className="rec-act rec-act-reject rec-act--icon" aria-label="Delete" onClick={() => handleDelete(r)}>
-                                      <i className="ri-delete-bin-line" />
-                                    </button>
-                                  </Tooltip>
-                                </div>
+                                ) : (
+                                  <div className="rec-row-actions justify-content-center">
+                                    <Tooltip label="Edit">
+                                      <button type="button" className="rec-act rec-act-view rec-act--icon" aria-label="Edit" onClick={() => { setEditingRow(r); setCreateOpen(true); }}>
+                                        <i className="ri-pencil-line" />
+                                      </button>
+                                    </Tooltip>
+                                    <Tooltip label="Delete">
+                                      <button type="button" className="rec-act rec-act-reject rec-act--icon" aria-label="Delete" onClick={() => handleDelete(r)}>
+                                        <i className="ri-delete-bin-line" />
+                                      </button>
+                                    </Tooltip>
+                                  </div>
+                                )}
                               </td>
                             </tr>
                           );
@@ -698,6 +718,7 @@ function ManageGroupsModal({
             <table className="rec-list-table align-middle table-nowrap mb-0">
               <thead>
                 <tr>
+                  <th className="text-center" style={{ width: 56 }}>#</th>
                   <th style={{ width: 110 }}>Code</th>
                   <th>Group Name</th>
                   <th style={{ width: 90 }}>Holidays</th>
@@ -707,9 +728,10 @@ function ManageGroupsModal({
               </thead>
               <tbody>
                 {groups.length === 0 ? (
-                  <tr><td colSpan={5} className="text-center py-4 text-muted">No groups yet — add one above.</td></tr>
-                ) : groups.map(g => (
+                  <tr><td colSpan={6} className="text-center py-4 text-muted">No groups yet — add one above.</td></tr>
+                ) : groups.map((g, idx) => (
                   <tr key={g.id}>
+                    <td className="text-center text-muted fs-13">{idx + 1}</td>
                     <td><span className="rec-id-pill">{g.code || `HGRP-${g.id}`}</span></td>
                     <td>
                       <div className="fw-bold fs-13">{g.name}</div>

@@ -10,6 +10,7 @@ use App\Models\Permission;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 /**
  * HRMS Holiday Groups — named holiday calendars ("types") that own a set of
@@ -39,7 +40,9 @@ class HolidayGroupController extends Controller
             $q->where('status', $status);
         }
 
-        return response()->json($q->orderBy('name')->get());
+        // Order by code (creation sequence) so the auto-generated IDs read as a
+        // clean ascending series instead of a name-scrambled order.
+        return response()->json($q->orderBy('code')->get());
     }
 
     public function show(Request $request, $id)
@@ -100,11 +103,31 @@ class HolidayGroupController extends Controller
 
     private function validatePayload(Request $request, ?int $id = null): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'name'        => 'required|string|max:191',
             'description' => 'nullable|string|max:1000',
             'status'      => ['nullable', Rule::in(['Active', 'Inactive'])],
         ]);
+
+        // Block duplicate group names within the same tenant scope. Match is
+        // case-insensitive (ilike) on the trimmed name; on update the row being
+        // edited is excluded so re-saving it without a rename is allowed.
+        [$clientId, $branchId] = $this->resolveOwnership($request);
+        $name = trim($data['name']);
+        $data['name'] = $name;
+        $duplicate = HolidayGroup::query()
+            ->when($clientId === null, fn ($q) => $q->whereNull('client_id'), fn ($q) => $q->where('client_id', $clientId))
+            ->when($branchId === null, fn ($q) => $q->whereNull('branch_id'), fn ($q) => $q->where('branch_id', $branchId))
+            ->where('name', 'ilike', $name)
+            ->when($id !== null, fn ($q) => $q->where('id', '!=', $id))
+            ->exists();
+        if ($duplicate) {
+            throw ValidationException::withMessages([
+                'name' => 'Holiday Group already exists.',
+            ]);
+        }
+
+        return $data;
     }
 
     private function resolveRow(Request $request, int $id): HolidayGroup
