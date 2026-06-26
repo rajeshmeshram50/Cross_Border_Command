@@ -76,6 +76,10 @@ interface LeaveRequest {
   escalatedToHr: boolean;
   escalationReason: EscalationReason;
 
+  // Whether the logged-in viewer can Approve/Reject this row right now (it's
+  // pending AND it's their turn in the manager→HR chain). Server-computed.
+  canActNow: boolean;
+
   stage: LeaveStage;
   stageNote?: string;
 
@@ -114,17 +118,6 @@ const PAYROLL_TONE: Record<PayrollMode, { fg: string; bg: string }> = {
   'Unpaid':     { fg: '#374151', bg: '#eef2f6' },
   'Half-Pay':   { fg: '#a4661c', bg: '#fde8c4' },
 };
-
-type SlaTone = { label: string; bg: string; fg: string; solid?: boolean };
-function computeSla(r: LeaveRequest, today = new Date()): SlaTone | null {
-  if (!r.stage.startsWith('Pending')) return null;
-  const applied = new Date(r.appliedOn);
-  if (isNaN(applied.getTime())) return null;
-  const days = Math.max(0, Math.round((today.getTime() - applied.getTime()) / (1000 * 60 * 60 * 24)));
-  if (days >= 7) return { label: 'OVERDUE',           bg: '#fde68a', fg: '#92400e', solid: true };
-  if (days >= 3) return { label: `${days}d pending`,  bg: '#fee2e2', fg: '#b91c1c' };
-  return            { label: `${days || 1}d pending`, bg: '#d1fae5', fg: '#065f46' };
-}
 
 const ACCENTS = ['#7c5cfc', '#0ab39c', '#f7b84b', '#f06548', '#0ea5e9', '#e83e8c', '#0c63b0', '#22c55e'];
 const accent = (i: number) => ACCENTS[i % ACCENTS.length];
@@ -231,27 +224,44 @@ function apiToLeaveRequest(api: ApiLeaveRequest, idx: number): LeaveRequest {
     || emp?.department?.name
     || '—';
 
-  const chain = (api as any).approval_chain as Array<{ status?: string }> | null;
+  const chain = (api as any).approval_chain as Array<{ status?: string; acted_at?: string | null; comment?: string | null }> | null;
   const status = api.status;
+  const mapNode = (s?: string): ApprovalState =>
+    s === 'Approved' ? 'Approved'
+    : s === 'Rejected' ? 'Rejected'
+    : s === 'Skipped' ? 'NA'
+    : 'Pending';
+
   let stage: LeaveStage = 'Pending (Manager)';
   let managerStatus: ApprovalState = 'Pending';
   let hrStatus: ApprovalState = 'Pending';
-  if (status === 'Approved') {
-    stage = 'Approved';
-    managerStatus = 'Approved';
-    hrStatus = chain && chain.length > 1 ? 'Approved' : 'Pending';
-  } else if (status === 'Rejected') {
-    stage = 'Rejected';
-    managerStatus = 'Rejected';
-    hrStatus = 'Pending';
-  } else if (status === 'Cancelled') {
+  if (status === 'Cancelled') {
     stage = 'Cancelled';
     managerStatus = 'NA';
     hrStatus = 'NA';
+  } else if (chain && chain.length > 0) {
+    // Read EACH level's own status so a decision is attributed to whoever
+    // actually acted — manager (level 1) vs HR (level 2) — instead of always
+    // blaming the manager whenever the overall request is Rejected. (Bug: HR
+    // rejection showed up as a reporting-manager rejection in the chain.)
+    managerStatus = mapNode(chain[0]?.status);
+    hrStatus = chain.length > 1 ? mapNode(chain[1]?.status) : 'NA';
+    stage = status === 'Approved' ? 'Approved'
+      : status === 'Rejected' ? 'Rejected'
+      : (((api as any).current_approval_level ?? 1) > 1 ? 'Pending (HR)' : 'Pending (Manager)');
   } else {
-    const level = (api as any).current_approval_level ?? 1;
-    stage = level > 1 ? 'Pending (HR)' : 'Pending (Manager)';
+    // Legacy rows with no approval chain — fall back to the overall status.
+    if (status === 'Approved') { stage = 'Approved'; managerStatus = 'Approved'; }
+    else if (status === 'Rejected') { stage = 'Rejected'; managerStatus = 'Rejected'; }
+    else {
+      const level = (api as any).current_approval_level ?? 1;
+      stage = level > 1 ? 'Pending (HR)' : 'Pending (Manager)';
+    }
   }
+  // HR is a real approval step (not just informational CC) only when the chain
+  // has a second level that wasn't auto-skipped. Drives whether the HR node
+  // renders its own decision in the timeline.
+  const hasHrLevel = !!chain && chain.length > 1 && chain[1]?.status !== 'Skipped';
 
   const typeMap: Record<string, LeaveType> = {
     'Sick Leave': 'Sick', 'Casual Leave': 'Casual', 'Annual Leave': 'Annual',
@@ -291,13 +301,14 @@ function apiToLeaveRequest(api: ApiLeaveRequest, idx: number): LeaveRequest {
     })(),
     hrApprover: api.approver ? { initials: (api.approver.name || '?').split(/\s+/).map(s => s[0]).join('').slice(0,2).toUpperCase(), name: api.approver.name, designation: 'Approver' } : undefined,
     managerStatus,
-    managerActionAt: api.approved_at ? api.approved_at.slice(0, 10) : undefined,
-    managerComment: api.approver_comment ?? undefined,
+    managerActionAt: chain?.[0]?.acted_at ? chain[0].acted_at.slice(0, 10) : (api.approved_at ? api.approved_at.slice(0, 10) : undefined),
+    managerComment: chain?.[0]?.comment ?? api.approver_comment ?? undefined,
     hrStatus,
-    hrActionAt: undefined,
-    hrComment: undefined,
-    escalatedToHr: false,
+    hrActionAt: chain?.[1]?.acted_at ? chain[1].acted_at.slice(0, 10) : undefined,
+    hrComment: chain?.[1]?.comment ?? undefined,
+    escalatedToHr: hasHrLevel,
     escalationReason: 'none',
+    canActNow: !!(api as any).can_act_now,
     stage,
     stageNote: undefined,
     payroll: (api.leave_type?.type === 'Unpaid Leave' ? 'Unpaid' : 'Paid Leave') as PayrollMode,
@@ -875,29 +886,24 @@ export default function HrLeave() {
                                     tone="info"
                                     onClick={() => setDetail(r)}
                                   />
-                                  {canApprove && (
+                                  {/* Approve / Reject appear ONLY when it's the
+                                      viewer's turn in the manager→HR chain
+                                      (server-computed canActNow). HR therefore
+                                      can't act while it sits at the manager
+                                      level, and a manager-rejected request
+                                      (now in the Rejected tab) shows View-only. */}
+                                  {canApprove && r.canActNow && (
                                     <>
                                   <ActionBtn
-                                    title={
-                                      r.stage === 'Approved'  ? 'Already approved'
-                                      : r.stage === 'Cancelled' ? 'Request cancelled'
-                                      : 'Approve'
-                                    }
+                                    title="Approve"
                                     icon="ri-check-line"
                                     tone="success"
-                                    disabled={r.stage === 'Approved' || r.stage === 'Cancelled'}
                                     onClick={() => setConfirmAction({ row: r, action: 'approve' })}
                                   />
                                   <ActionBtn
-                                    title={
-                                      r.stage === 'Approved'  ? 'Already approved'
-                                      : r.stage === 'Rejected'  ? 'Already rejected'
-                                      : r.stage === 'Cancelled' ? 'Request cancelled'
-                                      : 'Reject'
-                                    }
+                                    title="Reject"
                                     icon="ri-close-line"
                                     tone="danger"
-                                    disabled={r.stage === 'Rejected' || r.stage === 'Cancelled' || r.stage === 'Approved'}
                                     onClick={() => setConfirmAction({ row: r, action: 'reject' })}
                                   />
                                     </>
@@ -1141,112 +1147,10 @@ function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose
             )}
           </div>
 
-          {(() => {
-            const flags: { label: string; tone: { bg: string; fg: string } }[] = [];
-
-            const applied = new Date(row.appliedOn);
-            const startsAt = new Date(row.fromDate);
-            const noticeDays = Math.round((startsAt.getTime() - applied.getTime()) / (1000 * 60 * 60 * 24));
-            if (!isNaN(noticeDays) && noticeDays < 2 && row.type !== 'Sick' && row.type !== 'Maternity') {
-              flags.push({ label: 'Short Notice', tone: { bg: '#fde2dc', fg: '#b91c1c' } });
-            }
-
-            if (row.durationDays > 5) {
-              flags.push({ label: 'Long Duration', tone: { bg: '#fde8c4', fg: '#a4661c' } });
-            }
-
-            if (row.escalationReason === 'manager_rejected' && row.hrStatus === 'Approved') {
-              flags.push({ label: 'HR Override', tone: { bg: '#ede9fe', fg: '#5a3fd1' } });
-            }
-
-            if (row.escalationReason === 'aged_out') {
-              flags.push({ label: 'SLA Breached', tone: { bg: '#fef3c7', fg: '#92400e' } });
-            }
-
-            if (row.proof === 'Missing') {
-              flags.push({ label: 'Missing Proof', tone: { bg: '#fde2dc', fg: '#b91c1c' } });
-            }
-
-            return (
-              <div className="rec-view-card mt-3">
-                <div className="rec-view-label mb-2">Policy Flags</div>
-                {flags.length === 0 ? (
-                  <span className="text-muted fst-italic" style={{ fontSize: 12 }}>No policy flags</span>
-                ) : (
-                  <div className="d-flex flex-wrap gap-2">
-                    {flags.map((f, i) => (
-                      <span
-                        key={i}
-                        className="rec-pill"
-                        style={{ background: f.tone.bg, color: f.tone.fg }}
-                      >
-                        <i className="ri-flag-2-line me-1" />{f.label}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          <div className="rec-view-card mt-3">
-            <div className="rec-view-label mb-2">Payroll &amp; Balance Impact</div>
-            {[
-              { label: 'Annual Leave', used: 14, total: 18, color: '#7c5cfc' },
-              { label: 'Sick Leave',   used: 6,  total: 12, color: '#dc2626' },
-              { label: 'Casual Leave', used: 5,  total: 8,  color: '#c2410c' },
-              { label: 'WFH Days',     used: 16, total: 24, color: '#0ea5e9' },
-              { label: 'Comp-off',     used: 5,  total: 5,  color: '#9ca3af' },
-            ].map(b => {
-              const pct = b.total === 0 ? 0 : Math.min(100, (b.used / b.total) * 100);
-              return (
-                <div key={b.label} className="d-flex align-items-center gap-3 py-1">
-                  <span className="fs-13" style={{ width: 110, flexShrink: 0 }}>{b.label}</span>
-                  <span
-                    className="flex-grow-1 rounded-pill"
-                    style={{ height: 6, background: '#f3f4f6', overflow: 'hidden', minWidth: 0 }}
-                  >
-                    <span
-                      className="d-block rounded-pill"
-                      style={{ height: '100%', width: `${pct}%`, background: b.color }}
-                    />
-                  </span>
-                  <span className="fw-semibold fs-13 text-muted" style={{ width: 50, textAlign: 'right', flexShrink: 0 }}>
-                    {b.used}/{b.total}
-                  </span>
-                </div>
-              );
-            })}
-            <div className="d-flex align-items-center gap-2 mt-2 pt-2 border-top">
-              <span className="text-muted" style={{ fontSize: 12 }}>Impact:</span>
-              <span className="rec-pill" style={{ background: tPay.bg, color: tPay.fg }}>{row.payroll}</span>
-            </div>
-          </div>
-
-          <div className="rec-view-card mt-3">
-            <div className="rec-view-label mb-2">Audit Trail</div>
-            <ul className="list-unstyled mb-0">
-              {chain
-                .filter(n => n.decision === 'approved' || n.decision === 'rejected')
-                .map((n, i) => {
-                  const verb =
-                    n.role === 'Self' ? `submitted ${row.type} request (${row.id})`
-                    : n.decision === 'approved' && n.role === 'HR' && row.escalationReason === 'manager_rejected' ? 'override-approved (manager had rejected)'
-                    : n.decision === 'approved' ? 'approved'
-                    : 'rejected';
-                  const date = formatDate(n.actionAt || (n.role === 'Self' ? row.appliedOn : ''));
-                  return (
-                    <li key={i} className="text-muted" style={{ fontSize: 11.5, lineHeight: 1.6 }}>
-                      {date} — <strong className="text-body">{n.name}</strong> {verb}
-                    </li>
-                  );
-                })}
-            </ul>
-          </div>
         </div>
 
         <div className="rec-form-footer">
-          <span className="hint">Read-only view · Use the row actions to approve / reject</span>
+          <span className="hint" />
           <button type="button" className="rec-btn-ghost" onClick={onClose}>
             <i className="ri-close-line" />Close
           </button>
