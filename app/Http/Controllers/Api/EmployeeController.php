@@ -119,8 +119,9 @@ class EmployeeController extends Controller
 
     public function show(Request $request, $id)
     {
-        $this->authorize($request, 'can_view');
-        $row = $this->resolveRow($request, $this->resolveIdParam($id));
+        $empId = $this->resolveIdParam($id);
+        $this->authorizeViewOrSelf($request, $empId);
+        $row = $this->resolveRow($request, $empId);
         return response()->json($row);
     }
 
@@ -135,8 +136,9 @@ class EmployeeController extends Controller
      */
     public function holidays(Request $request, $id)
     {
-        $this->authorize($request, 'can_view');
-        $emp = $this->resolveRow($request, $this->resolveIdParam($id));
+        $empId = $this->resolveIdParam($id);
+        $this->authorizeViewOrSelf($request, $empId);
+        $emp = $this->resolveRow($request, $empId);
 
         $year    = (int) ($request->query('year') ?: now()->year);
         $groupId = $emp->holiday_group_id;
@@ -955,6 +957,24 @@ class EmployeeController extends Controller
      * ───────────────────────────────────────────────────────────────── */
 
     /** Cap the granular permission check to the 'master.employees' module. */
+    /**
+     * Like authorize('can_view'), but always allows a user to read THEIR OWN
+     * employee record even without the master.employees grant. Ordinary
+     * employees don't hold the HR module permission, yet the self-service
+     * profile (/profile → EmployeeProfile) and its panels (Holidays, etc.)
+     * must still load their own data. Anyone else falls back to the normal
+     * can_view gate.
+     */
+    private function authorizeViewOrSelf(Request $request, int $employeeId): void
+    {
+        $user = $request->user();
+        if ($user && $employeeId > 0) {
+            $ownId = Employee::where('user_id', $user->id)->value('id');
+            if ($ownId && (int) $ownId === $employeeId) return;
+        }
+        $this->authorize($request, 'can_view');
+    }
+
     private function authorize(Request $request, string $perm): void
     {
         $user = $request->user();
