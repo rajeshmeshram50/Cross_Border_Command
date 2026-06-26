@@ -69,20 +69,40 @@ class Attendance extends Model
         return $this->hasMany(AttendancePunch::class)->orderBy('punched_at');
     }
 
+    /** Local timezone work is measured in, and the hour at which an unclosed
+     *  day is auto-checked-out. A forgotten clock-out is capped at 21:00 (9 PM)
+     *  local: time worked is counted up to 9 PM and nothing after. */
+    private const WORK_TZ = 'Asia/Kolkata';
+    private const AUTO_CHECKOUT_HOUR = '21:00:00';
+
     /**
-     * Sum of (out_at − in_at) over every paired punch in the day. Open pairs
-     * (clocked-in but not yet out) count up to "now" ONLY when the row is
-     * for today's local date so the UI can show a live-ticking total while
-     * the user is still on the clock.
+     * Sum of (out_at − in_at) over every COMPLETED in→out pair, PLUS any open
+     * pair (clocked-in but never clocked-out) counted up to an automatic 9 PM
+     * check-out.
      *
-     * For PAST rows with an unclosed in (forgotten clock-out), the accessor
-     * caps the open pair at the end of that calendar day — otherwise every
-     * read accumulated another full day of phantom "worked" time and a
-     * 5-hour shift from a week ago reported 5d + 5h.
+     * Auto check-out rule for a trailing open 'in':
+     *   - boundary = 21:00 (9 PM) local on the row's own date.
+     *   - For TODAY the open pair runs to min(now, 21:00) so the live timer
+     *     ticks up to 9 PM and then freezes.
+     *   - For any PAST day it's just 21:00 — the employee forgot to clock out,
+     *     so the day is auto-closed at 9 PM (no phantom hours past 9 PM, and
+     *     none of the old "13h to midnight" inflation).
      *
      * Returned in SECONDS; the SPA formats to "9h 02m".
      */
     public function getTotalWorkedSecondsAttribute(): int
+    {
+        $total = $this->completedWorkedSeconds();
+        $openInTs = $this->openInTimestamp();
+        if ($openInTs !== null) {
+            $total += max(0, $this->autoCheckoutBoundaryTs() - $openInTs);
+        }
+        return (int) $total;
+    }
+
+    /** Seconds from COMPLETED in→out pairs only — request-time-independent.
+     *  The live/open portion is added separately by callers that need it. */
+    public function completedWorkedSeconds(): int
     {
         $punches = $this->relationLoaded('punches') ? $this->punches : $this->punches()->get();
         $total = 0;
@@ -99,25 +119,36 @@ class Attendance extends Model
                 $openInTs = null;
             }
         }
-        if ($openInTs !== null) {
-            // "now" boundary for the open-in pair — for today's row this is
-            // the literal now(); for past rows the punch was abandoned, so
-            // cap at end-of-day in the display tz to keep the value sane.
-            $tz = 'Asia/Kolkata';
-            $todayLocal = now($tz)->toDateString();
-            $rowDate = $this->attendance_date instanceof \Carbon\Carbon
-                ? $this->attendance_date->toDateString()
-                : (string) $this->attendance_date;
-
-            if ($rowDate === $todayLocal) {
-                $boundaryTs = now()->getTimestamp();
-            } else {
-                // 23:59:59 in display-tz on the row's date.
-                $boundaryTs = \Carbon\Carbon::parse($rowDate . ' 23:59:59', $tz)->getTimestamp();
-            }
-            $total += max(0, $boundaryTs - $openInTs);
-        }
         return (int) $total;
+    }
+
+    /** Epoch timestamp of a trailing OPEN 'in' (clocked-in, not yet out), or
+     *  null when the day is fully paired. Relies on the strict in/out punch
+     *  alternation the controller enforces, so the last punch being 'in' means
+     *  the day is open. */
+    public function openInTimestamp(): ?int
+    {
+        $punches = $this->relationLoaded('punches') ? $this->punches : $this->punches()->get();
+        $last = $punches->last();
+        if ($last && $last->direction === 'in' && $last->punched_at) {
+            return $last->punched_at->getTimestamp();
+        }
+        return null;
+    }
+
+    /** Epoch boundary an open day is auto-closed at: 21:00 (9 PM) local on the
+     *  row's date, or the current moment when that's still before 9 PM today. */
+    public function autoCheckoutBoundaryTs(): int
+    {
+        $rowDate = $this->attendance_date instanceof \Carbon\Carbon
+            ? $this->attendance_date->toDateString()
+            : (string) $this->attendance_date;
+        $cutoffTs   = \Carbon\Carbon::parse($rowDate . ' ' . self::AUTO_CHECKOUT_HOUR, self::WORK_TZ)->getTimestamp();
+        $todayLocal = now(self::WORK_TZ)->toDateString();
+        if ($rowDate === $todayLocal) {
+            return min(now()->getTimestamp(), $cutoffTs);
+        }
+        return $cutoffTs;
     }
 
     /**

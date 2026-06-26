@@ -18,6 +18,10 @@ use Illuminate\Validation\Rule;
 
 class LeaveRequestController extends Controller
 {
+    /** Tenant-facing timezone used to resolve "today" for date guards. The app
+     *  runs in UTC; leave dates are entered/read in IST. Matches the display
+     *  timezone used across the attendance module. */
+    private const DISPLAY_TZ = 'Asia/Kolkata';
 
     public function index(Request $request)
     {
@@ -129,12 +133,29 @@ class LeaveRequestController extends Controller
             abort(403, 'You can only raise a leave request for yourself.');
         }
 
-        // Past-date guard. Backdated leave bypasses the entire approval
-        // workflow's purpose — if HR really needs to log a historical
-        // absence, we can add a dedicated "Adjustments" path later.
-        $todayStr = now()->toDateString();
-        if ($data['from_date'] < $todayStr) {
-            abort(422, 'You cannot apply for leave in the past. Pick a date from today onward.');
+        // Date guards. "Today" is resolved in the display timezone (IST): the
+        // app runs in UTC, so now()->toDateString() reports YESTERDAY for the
+        // first 5.5h of every IST day and would let a stale date slip through.
+        // Normalise from_date through Carbon so any accepted date format
+        // compares cleanly as Y-m-d.
+        $todayStr = now(self::DISPLAY_TZ)->toDateString();
+        $fromStr  = Carbon::parse($data['from_date'])->toDateString();
+
+        // Backdated leave bypasses the entire approval workflow's purpose, so
+        // it is blocked for everyone. (A dedicated HR "Adjustments" path could
+        // log historical absences later.)
+        if ($fromStr < $todayStr) {
+            abort(422, 'You cannot apply for leave in the past. Pick a date from tomorrow onward.');
+        }
+
+        // Same-day guard (self-service). An employee cannot apply for leave that
+        // STARTS today — same-day requests skip any meaningful approval lead
+        // time (and were being auto-approved for the current date). They must
+        // pick tomorrow onward. Admins filing on behalf stay exempt so HR can
+        // still log a genuine same-day absence (e.g. an employee who called in
+        // sick this morning).
+        if (!$isAdmin && $fromStr === $todayStr) {
+            abort(422, 'Leave cannot be applied for today. Please select a date from tomorrow onward.');
         }
 
         // Compute days. Half-day requests collapse to 0.5; otherwise count

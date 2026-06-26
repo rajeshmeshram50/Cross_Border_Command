@@ -324,6 +324,21 @@ class AttendanceController extends Controller
             ->get()
             ->groupBy('employee_id');
 
+        // ── 2b) Preload company holidays so compliance can exclude them ──
+        // Compliance is "present days ÷ working days elapsed this month".
+        // A working day is any calendar day that is NOT a weekly-off and NOT
+        // a company holiday from the employee's holiday group. Holidays are
+        // loaded once per request (keyed by group) to avoid an N+1.
+        $holidayGroupIds = $employees->pluck('holiday_group_id')->filter()->unique()->values()->all();
+        $holidayByGroup  = $this->holidayDatesForGroups($holidayGroupIds, (clone $dateC)->startOfMonth(), (clone $dateC)->endOfMonth());
+
+        // Denominator window end = month-to-date: never count days in the
+        // future toward "absent". For a fully-past month this is the month
+        // end; for the current month it stops at today.
+        $monthEndC = (clone $dateC)->endOfMonth();
+        $todayC    = \Carbon\Carbon::parse(self::todayLocal());
+        $mtdEndC   = $monthEndC->lte($todayC) ? $monthEndC : $todayC;
+
         // ── 3) Compose per-employee payload in the shape the SPA expects ──
         // Default office window used when an employee's `shift` string has
         // no parseable time pair (e.g. just "General Shift"). Late-by-minutes
@@ -331,7 +346,7 @@ class AttendanceController extends Controller
         // stay meaningful even when shift data is incomplete.
         $defaultShiftStart = '09:30';
         $defaultShiftEnd   = '18:30';
-        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $date, $histStart, $defaultShiftStart, $defaultShiftEnd) {
+        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $date, $histStart, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $mtdEndC, $dateC) {
             [$parsedStart, $parsedEnd] = $this->parseShiftWindow((string) ($emp->shift ?? ''));
             $shiftStart = $parsedStart ?: $defaultShiftStart;
             $shiftEnd   = $parsedEnd   ?: $defaultShiftEnd;
@@ -346,8 +361,25 @@ class AttendanceController extends Controller
             $statusToday = $this->resolveDayStatus($today, $isWeeklyOff, $shiftStart, $date);
             $firstIn     = $today?->check_in_at ? $today->check_in_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i') : null;
             $lastOut     = $today?->check_out_at ? $today->check_out_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i') : null;
+            // Full worked total (completed pairs + any open pair auto-closed at
+            // 9 PM) — used for static / past-day display.
             $workedSecs  = $today ? (int) $today->total_worked_seconds : 0;
             $workedMins  = (int) floor($workedSecs / 60);
+
+            // Live-tick inputs. For an OPEN day (clocked-in, not yet out) the SPA
+            // re-derives the running total each second as:
+            //     completedSeconds + (min(now, autoCutoff) − openInAt)
+            // so the WORKED figure ticks up to a 9 PM auto-checkout and then
+            // freezes — matching the employee's own Clock-In screen. Past days
+            // have no open punch, so the SPA just shows $workedSecs (already
+            // capped at 9 PM by the model).
+            $workedCompletedSecs = $today ? (int) $today->completedWorkedSeconds() : 0;
+            $openInAt  = null;
+            $autoCutoffAt = \Carbon\Carbon::parse($date . ' 21:00:00', self::DISPLAY_TZ)->toIso8601String();
+            $lastPunch = $todayPunches->last();
+            if ($lastPunch && $lastPunch->direction === 'in' && $lastPunch->punched_at) {
+                $openInAt = $lastPunch->punched_at->toIso8601String();
+            }
 
             $lateByMinutes = 0;
             if ($firstIn && $shiftStart) {
@@ -357,8 +389,10 @@ class AttendanceController extends Controller
 
             // KPIs — month-to-date
             $mRows = $monthRows->get($emp->id, collect());
-            $presentDays = 0; $lateMarks = 0; $missingPunch = 0; $tracked = 0;
+            $presentDays = 0; $lateMarks = 0; $missingPunch = 0;
+            $mByIso = [];
             foreach ($mRows as $r) {
+                $mByIso[\Carbon\Carbon::parse($r->attendance_date)->toDateString()] = $r;
                 $st = strtolower((string) $r->status);
                 if (in_array($st, ['present', 'late', 'on duty', 'work from home', 'corrected', 'half day'], true)) {
                     $presentDays++;
@@ -373,19 +407,21 @@ class AttendanceController extends Controller
                     $late = $this->minutesBetween($shiftStart, $localIn);
                     if ($late > 10 && $st === 'present') $lateMarks++;
                 }
-                // A22: sanctioned days (Leave / Holiday / Weekly Off) are NOT
-                // non-compliant absences — keep them out of the denominator so
-                // compliance % isn't unfairly dragged down by approved leave.
-                $isSanctioned = str_contains($st, 'leave') || str_contains($st, 'holiday')
-                    || str_contains($st, 'week off') || $st === 'weekly off';
-                if (!$isSanctioned) $tracked++;
             }
-            // Compliance = share of MTD attendance days the employee was
-            // actually marked Present (or a present-equivalent status).
-            // Missing-punch days naturally drag this down because they're
-            // in `tracked` but NOT in `presentDays`. The old formula
-            // `(present - missing) / tracked` double-counted absences and
-            // reported e.g. 60 % when someone hit 4 of 5 days.
+
+            // Compliance = present days ÷ working days ELAPSED this month.
+            // The denominator must walk the calendar — NOT just the days that
+            // happen to have an attendance row — otherwise an employee who
+            // punched a single day reads 1/1 = 100 % while every absent
+            // working day (which has no row at all) is silently ignored.
+            // Sanctioned days (weekly-off, company holiday, approved leave),
+            // future days, and days before the employee joined are excluded
+            // from the denominator so they neither help nor hurt the score.
+            $holidaySet  = $holidayByGroup[$emp->holiday_group_id] ?? [];
+            $joinDate    = $emp->date_of_joining ? \Carbon\Carbon::parse($emp->date_of_joining) : null;
+            $tracked     = $this->trackedWorkingDays(
+                (clone $dateC)->startOfMonth(), $mtdEndC, $joinDate, $weeklyOffSet, $holidaySet, $mByIso
+            );
             $compliancePct = $tracked === 0
                 ? 100
                 : (int) round(min(100, max(0, $presentDays / $tracked * 100)));
@@ -420,6 +456,10 @@ class AttendanceController extends Controller
                 'firstIn'           => $firstIn,
                 'lastOut'           => $lastOut,
                 'workedMinutes'     => $workedMins,
+                'workedSeconds'     => $workedSecs,
+                'workedCompletedSeconds' => $workedCompletedSecs,
+                'openInAt'          => $openInAt,
+                'autoCutoffAt'      => $autoCutoffAt,
                 'expectedMinutes'   => $expectedMinutes,
                 'lateByMinutes'     => $lateByMinutes,
                 'punches'           => $this->renderPunches($todayPunches),
@@ -458,6 +498,75 @@ class AttendanceController extends Controller
         [$fh, $fm] = array_map('intval', explode(':', $from));
         [$th, $tm] = array_map('intval', explode(':', $to));
         return ($th * 60 + $tm) - ($fh * 60 + $fm);
+    }
+
+    /**
+     * Company holidays for the given holiday groups that fall inside [$start,$end].
+     * Returns [holiday_group_id => [Y-m-d => true]]. Recurring holidays are
+     * re-anchored to the window's year. Mirrors PayrollService::holidayAggregates
+     * so attendance compliance and payroll agree on what a holiday is.
+     */
+    private function holidayDatesForGroups(array $groupIds, \Carbon\Carbon $start, \Carbon\Carbon $end): array
+    {
+        if (empty($groupIds) || !\Illuminate\Support\Facades\Schema::hasTable('holidays')) {
+            return [];
+        }
+        $rows = DB::table('holidays')
+            ->whereIn('holiday_group_id', $groupIds)
+            ->whereNull('deleted_at')
+            ->get(['holiday_group_id', 'date', 'is_recurring']);
+
+        $map = [];
+        foreach ($rows as $r) {
+            if (!$r->date) continue;
+            $d = \Carbon\Carbon::parse($r->date);
+            if ($r->is_recurring) {
+                $d = \Carbon\Carbon::create($start->year, $d->month, $d->day);
+            }
+            if ($d->lt($start) || $d->gt($end)) continue;
+            $map[$r->holiday_group_id][$d->toDateString()] = true;
+        }
+        return $map;
+    }
+
+    /**
+     * Count the working days that have ELAPSED in [$monthStart, $mtdEnd] for an
+     * employee — the compliance denominator. A day counts only when it is NOT a
+     * weekly-off, NOT a company holiday, NOT a sanctioned-leave day (per the
+     * stored attendance status), and the employee had already joined. This walks
+     * the calendar so absent days (which carry no attendance row) are counted.
+     */
+    private function trackedWorkingDays(
+        \Carbon\Carbon $monthStart,
+        \Carbon\Carbon $mtdEnd,
+        ?\Carbon\Carbon $joinDate,
+        array $weeklyOffSet,
+        array $holidaySet,
+        array $mByIso
+    ): int {
+        $tracked = 0;
+        $cursor  = $monthStart->copy();
+        while ($cursor->lte($mtdEnd)) {
+            $iso = $cursor->toDateString();
+
+            // Day predates the employee's joining → not theirs to attend.
+            if ($joinDate && $cursor->lt($joinDate->copy()->startOfDay())) {
+                $cursor->addDay();
+                continue;
+            }
+
+            $isWeeklyOff = isset($weeklyOffSet[$cursor->dayOfWeek]);
+            $isHoliday   = isset($holidaySet[$iso]);
+            $st          = strtolower((string) ($mByIso[$iso]->status ?? ''));
+            $isSanctioned = str_contains($st, 'leave') || str_contains($st, 'holiday')
+                || str_contains($st, 'week off') || $st === 'weekly off';
+
+            if (!$isWeeklyOff && !$isHoliday && !$isSanctioned) {
+                $tracked++;
+            }
+            $cursor->addDay();
+        }
+        return $tracked;
     }
 
    
