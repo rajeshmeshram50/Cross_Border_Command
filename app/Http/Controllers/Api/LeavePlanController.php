@@ -405,12 +405,22 @@ class LeavePlanController extends Controller
             abort(403, 'You do not have access to this employee.');
         }
 
-        // Resolve the employee's current leave plan via the pivot.
-        $planRow = DB::table('leave_plan_employees as lpe')
-            ->join('master_leave_plans as p', 'p.id', '=', 'lpe.leave_plan_id')
-            ->where('lpe.employee_id', $employeeId)
-            ->select('p.id', 'p.plan_name', 'p.from_month', 'p.calendar_year')
-            ->first();
+        // Resolve the employee's current leave plan. Prefer the explicit
+        // leave_plan_employees pivot; fall back to the plan stamped on the
+        // employee record (set via the onboarding wizard / employee form) so an
+        // employee assigned that way still resolves a plan + balances.
+        $planId = DB::table('leave_plan_employees')
+            ->where('employee_id', $employeeId)
+            ->value('leave_plan_id');
+        if (!$planId && is_numeric($employee->leave_plan)) {
+            $planId = (int) $employee->leave_plan;
+        }
+        $planRow = $planId
+            ? DB::table('master_leave_plans')
+                ->where('id', $planId)
+                ->select('id', 'plan_name', 'from_month', 'calendar_year')
+                ->first()
+            : null;
 
         if (!$planRow) {
             return response()->json([

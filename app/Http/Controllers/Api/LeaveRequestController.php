@@ -222,10 +222,15 @@ class LeaveRequestController extends Controller
             }
         }
 
-        // Find the employee's current leave plan (if any) for stamping.
+        // Find the employee's current leave plan (if any) for stamping. Prefer
+        // the pivot; fall back to the plan stamped on the employee record
+        // (onboarding wizard / employee form) so either assignment path works.
         $planId = DB::table('leave_plan_employees')
             ->where('employee_id', $employee->id)
             ->value('leave_plan_id');
+        if (!$planId && is_numeric($employee->leave_plan)) {
+            $planId = (int) $employee->leave_plan;
+        }
 
         // Plan + leave-type sanity. Without a plan there are no quotas
         // and no approval chain config, so let HR fix the assignment

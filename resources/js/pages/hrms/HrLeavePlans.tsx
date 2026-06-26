@@ -8,6 +8,7 @@ import '../employee-onboarding/HrEmployeeOnboarding.css';
 import { leavePlansApi, leaveTypesApi, leaveBalancesApi, ApiLeavePlan, ApiLeaveType, ApiPlanEmployee, ApiLeaveBalancesResponse } from './leavePlansApi';
 import EmployeePicker, { PickedEmployee } from '../../components/ui/EmployeePicker';
 import Tooltip from '../../components/ui/Tooltip';
+import { Shimmer } from '../../components/ui/Shimmer';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -359,6 +360,7 @@ export default function HrLeavePlans() {
   const [viewingTypeId, setViewingTypeId] = useState<string | null>(null);
   const [showGuide, setShowGuide] = useState(false);
   const [catalog, setCatalog] = useState<CatalogType[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const loadPlans = useCallback(async () => {
     try {
@@ -391,8 +393,14 @@ export default function HrLeavePlans() {
     }
   }, []);
 
-  useEffect(() => { loadPlans(); }, [loadPlans]);
-  useEffect(() => { loadCatalog(); }, [loadCatalog]);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      await Promise.allSettled([loadPlans(), loadCatalog()]);
+      if (alive) setLoading(false);
+    })();
+    return () => { alive = false; };
+  }, [loadPlans, loadCatalog]);
 
   const editingType = catalog.find(t => t.id === editingTypeId) ?? null;
 
@@ -653,7 +661,9 @@ export default function HrLeavePlans() {
               )}
             </div>
 
-            {topTab === 'plans' ? (
+            {loading ? (
+              <LeavePlansBodyShimmer />
+            ) : topTab === 'plans' ? (
               <div className="lp-body">
                 <aside className="lp-sidebar">
                   <div className="lp-search-box">
@@ -1268,6 +1278,43 @@ function LeaveBalancesTab() {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function LeavePlansBodyShimmer() {
+  const card: CSSProperties = { border: '1px solid var(--vz-border-color)', borderRadius: 12, padding: '10px 12px' };
+  return (
+    <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+      <aside style={{ width: 280, flexShrink: 0 }}>
+        <Shimmer height={36} radius={10} style={{ marginBottom: 14 }} />
+        <Shimmer height={10} width={90} style={{ marginBottom: 12 }} />
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} style={{ ...card, marginBottom: 8 }}>
+            <Shimmer height={13} width="70%" style={{ marginBottom: 8 }} />
+            <Shimmer height={10} width="40%" />
+          </div>
+        ))}
+      </aside>
+      <section style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+          <Shimmer width={44} height={44} radius={12} />
+          <div style={{ flex: 1 }}>
+            <Shimmer height={16} width={180} style={{ marginBottom: 8 }} />
+            <Shimmer height={11} width={120} />
+          </div>
+          <Shimmer width={130} height={36} radius={10} />
+        </div>
+        <Shimmer height={40} radius={8} style={{ marginBottom: 14 }} />
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px 12px', borderBottom: '1px solid var(--vz-border-color)' }}>
+            <Shimmer width={32} height={32} radius={8} />
+            <div style={{ flex: 1 }}><Shimmer height={13} width="50%" /></div>
+            <Shimmer width={80} height={20} radius={999} />
+            <Shimmer width={60} height={20} radius={999} />
+          </div>
+        ))}
+      </section>
     </div>
   );
 }
