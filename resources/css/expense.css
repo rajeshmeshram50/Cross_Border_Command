@@ -142,8 +142,11 @@
    overflow:hidden clipping and doesn't rely on reactstrap's Popper dropdown. */
 .hrexp-export-menu {
   min-width: 210px;
-  background: var(--vz-card-bg);
-  border: 1px solid var(--vz-border-color);
+  /* `--vz-card-bg` is a Velzon Sass var (not a runtime CSS custom property),
+     so it resolved to transparent once this menu was portaled onto <body>.
+     Use the theme-aware `--shim-*` surface tokens, which flip light/dark. */
+  background: var(--shim-card-bg, #fff);
+  border: 1px solid var(--shim-border, #e5e7eb);
   border-radius: 12px;
   box-shadow: 0 12px 32px rgba(15,23,42,0.20);
   padding: 6px;
@@ -158,4 +161,4 @@
   border-radius: 8px; font-size: 13px; color: var(--vz-body-color);
   cursor: pointer; text-align: left;
 }
-.hrexp-export-item:hover { background: var(--vz-secondary-bg); }
+.hrexp-export-item:hover { background: var(--shim-secondary-bg, #f3f4f6); }

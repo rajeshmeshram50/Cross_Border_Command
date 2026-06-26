@@ -590,7 +590,14 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // free-text label). `monthly_limit` and `yearly_limit` are also fetched
   // so we can warn the user on the form when a draft amount exceeds the
   // per-category budget the admin set in Master > Expense Categories.
-  type ClaimCategory = { id: number; name: string; monthly_limit: number | null; yearly_limit: number | null };
+  type ClaimCategory = {
+    id: number; name: string;
+    monthly_limit: number | null; yearly_limit: number | null;
+    // Per-employee usage for the current period, computed server-side so the
+    // form can show "₹X remaining this month" and block over-limit claims.
+    spent_month: number; remaining_month: number | null;
+    spent_year: number; remaining_year: number | null;
+  };
   const [claimCategories, setClaimCategories] = useState<ClaimCategory[]>([]);
   useEffect(() => {
     if (!claimOpen) return;
@@ -598,8 +605,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     // the generic /master endpoint — the latter peer-isolates employees and
     // hides the branch-level categories HR configured, so the dropdown only
     // showed a few. This returns every Active category visible to the
-    // employee's branch.
-    api.get('/expense-claims/categories')
+    // employee's branch. Pass the profile's employee so the response carries
+    // that person's already-spent / remaining budget per category.
+    const params: Record<string, string> = {};
+    if (/^\d+$/.test(String(employeeId))) params.employee_id = String(employeeId);
+    else if (employeeId) params.employee_code = String(employeeId);
+    api.get('/expense-claims/categories', { params })
       .then((res: any) => {
         const rows = Array.isArray(res?.data) ? res.data : [];
         setClaimCategories(
@@ -610,11 +621,15 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               name: String(r.name ?? ''),
               monthly_limit: r.monthly_limit != null && r.monthly_limit !== '' ? Number(r.monthly_limit) : null,
               yearly_limit:  r.yearly_limit  != null && r.yearly_limit  !== '' ? Number(r.yearly_limit)  : null,
+              spent_month:     Number(r.spent_month ?? 0),
+              remaining_month: r.remaining_month != null ? Number(r.remaining_month) : null,
+              spent_year:      Number(r.spent_year ?? 0),
+              remaining_year:  r.remaining_year != null ? Number(r.remaining_year) : null,
             })),
         );
       })
       .catch(() => setClaimCategories([]));
-  }, [claimOpen]);
+  }, [claimOpen, employeeId]);
   const categoryById = (id: string | number | undefined): ClaimCategory | null => {
     if (id === undefined || id === '' || id === null) return null;
     const num = Number(id);
@@ -918,10 +933,16 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // past the selected category's monthly cap, so the form shows "exceeded"
   // before the user even submits.
   const claimAmountNum = Number(String(claimAmount).replace(/[^0-9.]/g, ''));
+  // Remaining budget for THIS employee this month (limit − already spent).
+  // Falls back to the full limit if the server didn't compute a remaining.
+  const claimMonthlyRemaining =
+    claimCategoryMeta?.remaining_month != null
+      ? claimCategoryMeta.remaining_month
+      : (claimCategoryMeta?.monthly_limit ?? null);
   const monthlyLimitExceeded =
-    claimCategoryMeta?.monthly_limit != null &&
+    claimMonthlyRemaining != null &&
     Number.isFinite(claimAmountNum) && claimAmountNum > 0 &&
-    claimAmountNum > claimCategoryMeta.monthly_limit;
+    claimAmountNum > claimMonthlyRemaining;
 
   // Per-field error map for the active expense draft — wired to red
   // borders + inline error messages on every input, same pattern the
@@ -1568,6 +1589,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     //     not currently visible), but the toast still names them.
     const errors: string[] = [];
     const firstFieldErrors: Record<string, string> = {};
+    // Running per-category total for THIS session's drafts, so several drafts
+    // under the same category are capped cumulatively (not each in isolation).
+    const monthlyDraftByCat: Record<number, number> = {};
     claimDrafts.forEach((d, idx) => {
       const label = `Claim ${idx + 1}`;
       const title = d.title.trim();
@@ -1613,15 +1637,20 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         draftErrs.files = 'At least one proof / receipt is required';
         errors.push(`${label}: At least one proof / receipt is required`);
       }
-      // Budget cap — categoryById carries the monthly_limit configured in
-      // Master > Expense Categories. We treat it as a hard ceiling per
-      // claim: any single claim that already exceeds the monthly cap is
-      // an obvious error and the server would reject it after manager
-      // approval anyway, so block it now.
+      // Budget cap — block when this claim, added to the employee's already
+      // spent amount for the period (remaining_month, computed server-side)
+      // PLUS any earlier same-category drafts in this session, exceeds the
+      // monthly limit. The backend re-checks cumulatively as the safety net.
       const cat = categoryById(d.category);
-      if (cat?.monthly_limit && Number.isFinite(amt) && amt > cat.monthly_limit) {
-        draftErrs.amount = `Exceeds the "${cat.name}" monthly budget of ₹${cat.monthly_limit.toLocaleString()}`;
-        errors.push(`${label}: Amount ₹${amt.toLocaleString()} exceeds the "${cat.name}" monthly budget of ₹${cat.monthly_limit.toLocaleString()}.`);
+      if (cat?.monthly_limit != null && Number.isFinite(amt) && amt > 0) {
+        const remaining = cat.remaining_month != null ? cat.remaining_month : cat.monthly_limit;
+        const priorDrafts = monthlyDraftByCat[cat.id] ?? 0;
+        if (priorDrafts + amt > remaining + 0.005) {
+          const left = Math.max(0, remaining - priorDrafts);
+          draftErrs.amount = `Monthly limit reached for "${cat.name}" — only ₹${left.toLocaleString('en-IN')} remaining`;
+          errors.push(`${label}: ₹${amt.toLocaleString('en-IN')} exceeds the remaining monthly budget for "${cat.name}" (₹${left.toLocaleString('en-IN')} left).`);
+        }
+        monthlyDraftByCat[cat.id] = priorDrafts + amt;
       }
       if (idx === activeClaimIdx) Object.assign(firstFieldErrors, draftErrs);
     });
@@ -2621,9 +2650,24 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     {claimCategoryMeta && (claimCategoryMeta.monthly_limit != null || claimCategoryMeta.yearly_limit != null) && (
                       <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 4 }}>
                         <i className="ri-information-line me-1" />
-                        {claimCategoryMeta.monthly_limit != null && <>Monthly limit: ₹{claimCategoryMeta.monthly_limit.toLocaleString('en-IN')}</>}
-                        {claimCategoryMeta.monthly_limit != null && claimCategoryMeta.yearly_limit != null && ' · '}
-                        {claimCategoryMeta.yearly_limit != null && <>Yearly: ₹{claimCategoryMeta.yearly_limit.toLocaleString('en-IN')}</>}
+                        {claimCategoryMeta.monthly_limit != null && (
+                          <>
+                            Monthly: ₹{claimCategoryMeta.monthly_limit.toLocaleString('en-IN')}
+                            {' · used ₹'}{claimCategoryMeta.spent_month.toLocaleString('en-IN')}
+                            {' · '}
+                            <strong style={{ color: claimMonthlyRemaining != null && claimMonthlyRemaining <= 0 ? 'var(--vz-danger)' : 'var(--vz-success)' }}>
+                              ₹{(claimMonthlyRemaining ?? claimCategoryMeta.monthly_limit).toLocaleString('en-IN')} left
+                            </strong>
+                          </>
+                        )}
+                        {claimCategoryMeta.monthly_limit != null && claimCategoryMeta.yearly_limit != null && <br />}
+                        {claimCategoryMeta.yearly_limit != null && (
+                          <>
+                            Yearly: ₹{claimCategoryMeta.yearly_limit.toLocaleString('en-IN')}
+                            {' · '}
+                            <strong>₹{(claimCategoryMeta.remaining_year ?? claimCategoryMeta.yearly_limit).toLocaleString('en-IN')} left</strong>
+                          </>
+                        )}
                       </div>
                     )}
                   </Col>
@@ -2703,7 +2747,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     </div>
                     {claimErrors.amount && <div className="ep-claim-err"><i className="ri-error-warning-line" />{claimErrors.amount}</div>}
                     {!claimErrors.amount && monthlyLimitExceeded && (
-                      <div className="ep-claim-err"><i className="ri-error-warning-line" />Monthly limit exceeded — max ₹{claimCategoryMeta!.monthly_limit!.toLocaleString('en-IN')}</div>
+                      <div className="ep-claim-err"><i className="ri-error-warning-line" />Monthly limit reached — only ₹{(claimMonthlyRemaining ?? 0).toLocaleString('en-IN')} remaining for this category</div>
                     )}
                   </Col>
                   <Col md={6}>
