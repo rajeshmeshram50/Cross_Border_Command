@@ -95,6 +95,17 @@ export default function PayslipViewerModal({
   // Sync defaults when the modal is reopened with a different cycle/employee.
   useEffect(() => { if (open) { setYear(defaultYear); setMonth(defaultMonth); } }, [open, defaultYear, defaultMonth]);
 
+  // Lock background scroll while the viewer is open so the underlying page
+  // can't scroll behind it; restore the previous values on close/unmount.
+  useEffect(() => {
+    if (!open) return;
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
+  }, [open]);
+
   if (!open) return null;
 
   // Header action handlers. When a payslipId is supplied they hit the real

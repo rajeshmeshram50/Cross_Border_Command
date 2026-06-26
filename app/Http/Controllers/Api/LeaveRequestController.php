@@ -429,8 +429,12 @@ class LeaveRequestController extends Controller
         $status = $request->input('status', 'Pending');
         $q = LeaveRequest::query()
             ->with([
-                'employee:id,emp_code,first_name,last_name,display_name,department_id,reporting_manager_id,branch_id,client_id',
+                'employee:id,emp_code,first_name,last_name,display_name,department_id,reporting_manager_id,reporting_manager_user_id,branch_id,client_id',
                 'employee.department:id,name',
+                // Reporting manager — may be an Employee row OR a login User
+                // (Client/Branch admin); load both so the name resolves either way.
+                'employee.reportingManager:id,first_name,middle_name,last_name,display_name',
+                'employee.reportingManagerUser:id,name',
                 'leaveType:id,name,short_code,type',
             ])
             ->orderByDesc('created_at');
@@ -692,21 +696,27 @@ class LeaveRequestController extends Controller
         $employees = Employee::with('user:id,name,email')
             ->whereIn('id', $employeeIds)
             ->get()->keyBy('id');
+        // Some levels (e.g. a reporting manager who is a login User, not an
+        // Employee) resolve to a user id — hydrate those names too.
+        $userIds = collect($chain)->pluck('approver_user_id')->filter()->unique()->all();
+        $users = \App\Models\User::whereIn('id', $userIds)->get(['id', 'name', 'email'])->keyBy('id');
 
         $out = [];
         foreach ($chain as $i => $entry) {
             $empId = $entry['approver_employee_id'] ?? null;
             $emp = $empId ? ($employees[$empId] ?? null) : null;
+            $uId = $entry['approver_user_id'] ?? null;
+            $u = $uId ? ($users[$uId] ?? null) : null;
             $name = $emp
                 ? trim($emp->display_name ?: trim(($emp->first_name ?? '') . ' ' . ($emp->last_name ?? '')))
-                : ($entry['approver_label'] ?? 'Unassigned');
+                : ($u ? trim((string) $u->name) : ($entry['approver_label'] ?? 'Unassigned'));
             $out[] = [
                 'level' => $entry['level'] ?? ($i + 1),
                 'role' => $entry['approver_role'] ?? ucfirst(str_replace('_', ' ', $entry['approver_kind'] ?? 'Approver')),
                 'kind' => $entry['approver_kind'] ?? 'reporting_manager',
                 'employee_id' => $empId,
                 'name' => $name,
-                'email' => $emp?->email,
+                'email' => $emp?->email ?? $u?->email,
                 'status' => $entry['status'] ?? 'Pending',
                 'acted_at' => $entry['acted_at'] ?? null,
                 'comment' => $entry['comment'] ?? null,
@@ -797,8 +807,16 @@ class LeaveRequestController extends Controller
             // user-based references stay symbolic — resolution happens at
             // approval time in canActOnLevel().
             $resolvedEmpId = $empIdOverride;
+            $resolvedUserId = $userId;
             if (!$resolvedEmpId && $kind === 'reporting_manager') {
                 $resolvedEmpId = $employee->reporting_manager_id;
+                // The reporting manager may be stored as a login User (a
+                // Client/Branch admin) rather than an Employee row — fall back
+                // to it so the level resolves to that user instead of staying
+                // Unassigned.
+                if (!$resolvedEmpId && !$resolvedUserId) {
+                    $resolvedUserId = $employee->reporting_manager_user_id;
+                }
             }
 
             // If the resolved approver is soft-deleted (active employee
@@ -840,8 +858,8 @@ class LeaveRequestController extends Controller
                     && (int) $empIdOverride === (int) $employee->id
                 ) {
                     $loopsToSelf = true;
-                } elseif ($userId
-                    && (int) $userId === (int) ($employee->user_id ?? 0)
+                } elseif ($resolvedUserId
+                    && (int) $resolvedUserId === (int) ($employee->user_id ?? 0)
                 ) {
                     $loopsToSelf = true;
                 }
@@ -861,7 +879,7 @@ class LeaveRequestController extends Controller
                 'level' => $i + 1,
                 'approver_kind' => $kind,
                 'approver_role' => $role,
-                'approver_user_id' => $userId,
+                'approver_user_id' => $resolvedUserId,
                 'approver_employee_id' => $resolvedEmpId,
                 'approver_label' => $r['label'] ?? null,
                 'skip_if' => $skipIf,

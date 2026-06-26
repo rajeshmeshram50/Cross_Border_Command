@@ -413,6 +413,7 @@ export default function HrEmployees() {
   const validateOnboarding = (): OnbErrors => {
     const errs: OnbErrors = {};
     if (!onbName.trim())  errs.name  = 'Employee name is required';
+    else if (!/^[A-Za-z][A-Za-z\s'\-.]*$/.test(onbName.trim())) errs.name = 'Name can only contain letters (no numbers or special characters)';
     if (!onbEmail.trim()) errs.email = 'Email address is required';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(onbEmail.trim())) errs.email = 'Please enter a valid email address';
     if (!onbDept)         errs.dept  = 'Please select a department';

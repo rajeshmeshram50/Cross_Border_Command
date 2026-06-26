@@ -467,6 +467,10 @@ function IssueCard({
   const tone = isBlocking
     ? { bg: '#fde7e3', fg: '#b1401d', dot: '#f06548' }
     : { bg: '#fdf3d6', fg: '#a06f00', dot: '#f59e0b' };
+  // Expand the full list of remaining reasons when the "+N more" text is
+  // clicked (and a native title shows them on hover too).
+  const [reasonsOpen, setReasonsOpen] = useState(false);
+  const extraReasons = issue.reasons.slice(1);
 
   return (
     <div className={`prm-issue${resolved ? ' is-resolved' : ''}`}>
@@ -490,10 +494,26 @@ function IssueCard({
           <div className="d-flex align-items-center gap-2 mt-1">
             <span className="d" style={{ width: 5, height: 5, borderRadius: '50%', background: tone.dot, flexShrink: 0 }} />
             <span style={{ fontSize: 12 }}>{issue.reasons[0]}</span>
-            {issue.reasons.length > 1 && (
-              <span className="text-muted" style={{ fontSize: 11.5 }}>+{issue.reasons.length - 1} more reason{issue.reasons.length - 1 === 1 ? '' : 's'}</span>
+            {extraReasons.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setReasonsOpen(o => !o)}
+                title={extraReasons.join('\n')}
+                aria-expanded={reasonsOpen}
+                className="text-muted"
+                style={{ fontSize: 11.5, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline dotted' }}
+              >
+                +{extraReasons.length} more reason{extraReasons.length === 1 ? '' : 's'}
+              </button>
             )}
           </div>
+          {reasonsOpen && extraReasons.length > 0 && (
+            <ul className="mt-1 mb-0" style={{ fontSize: 11.5, color: tone.fg, paddingLeft: 18 }}>
+              {extraReasons.map((reason, i) => (
+                <li key={i} style={{ marginTop: 2 }}>{reason}</li>
+              ))}
+            </ul>
+          )}
           {issue.actions.length > 0 && (
             <div className="d-flex gap-2 mt-2 flex-wrap">
               {issue.actions.map(a => {

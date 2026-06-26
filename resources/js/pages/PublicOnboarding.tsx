@@ -261,11 +261,10 @@ export default function PublicOnboarding() {
     const digits = raw.replace(/[^0-9]/g, '');
     return /^\d{7,15}$/.test(digits);
   };
-  // Pincode: India PIN code is exactly 6 digits, no leading zero. Loose
-  // 4–10 digit ranges were letting through obvious garbage like
-  // "12365444" (8 digits). Tightening to the IN format catches typos at
-  // the source instead of pushing them downstream to address services.
-  const isValidPincode = (raw: string) => /^[1-9]\d{5}$/.test(raw.trim());
+  // Pincode: exactly 6 digits. Leading zero IS allowed — some regions/PINs
+  // legitimately start with 0 (and non-IN postal codes do too), so we only
+  // enforce the 6-digit length, not a non-zero first digit.
+  const isValidPincode = (raw: string) => /^\d{6}$/.test(raw.trim());
   // A street address must look real: contain at least one letter AND at least
   // one digit or space (a building/house number or multiple words). This
   // rejects meaningless input — "@@@@@", "#####", "$$$$$", "-----", ".....",
@@ -287,14 +286,14 @@ export default function PublicOnboarding() {
     if (!firstName.trim())             e.first_name  = 'First name is required';
     else if (firstName.trim().length < 3) e.first_name = 'First name must be at least 3 characters';
     else if (firstName.trim().length > 15) e.first_name = 'First name must be 15 characters or fewer';
-    else if (!nameRe.test(firstName.trim())) e.first_name = 'First name cannot contain numbers';
+    else if (!nameRe.test(firstName.trim())) e.first_name = 'First name can only contain letters (no numbers or special characters)';
     if (middleName.trim()) {
       if (middleName.trim().length > 15) e.middle_name = 'Middle name must be 15 characters or fewer';
-      else if (!nameRe.test(middleName.trim())) e.middle_name = 'Middle name cannot contain numbers';
+      else if (!nameRe.test(middleName.trim())) e.middle_name = 'Middle name can only contain letters (no numbers or special characters)';
     }
     if (!lastName.trim())              e.last_name   = 'Last name is required';
     else if (lastName.trim().length > 15) e.last_name = 'Last name must be 15 characters or fewer';
-    else if (!nameRe.test(lastName.trim())) e.last_name = 'Last name cannot contain numbers';
+    else if (!nameRe.test(lastName.trim())) e.last_name = 'Last name can only contain letters (no numbers or special characters)';
     if (!gender)            e.gender      = 'Gender is required';
     if (!dob) {
       e.date_of_birth = 'Date of birth is required';
