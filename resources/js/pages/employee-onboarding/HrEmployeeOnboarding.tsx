@@ -5494,6 +5494,13 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   // Yes/No answer picked. Cleared the moment the HR makes a choice so
   // the red ring doesn't persist after they fix it.
   const [hasExperienceError, setHasExperienceError] = useState(false);
+  // Per-company required-field errors, keyed `${_localKey}:${field}`. Set by
+  // validate() when the HR tries to advance with the Yes path incomplete;
+  // cleared field-by-field as they fix each one (see updateCompany).
+  const [compErrors, setCompErrors] = useState<Record<string, string>>({});
+  // Server-backed document state, keyed by document_key (O(1) lookup per card).
+  // Declared here (before useImperativeHandle) so validate() can depend on it.
+  const [docsByKey, setDocsByKey] = useState<Record<string, ApiDocument>>({});
   // Initial-load shimmer. Stage 2 fetches documents + previous-employments on
   // mount; the UI used to render before they resolved, flashing empty/erroring
   // state. Hold a skeleton until BOTH first fetches settle.
@@ -5567,6 +5574,13 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   const updateCompany = (key: string, patch: Partial<PrevCompanyRow>) => {
     prevCompaniesRef.current = prevCompaniesRef.current.map(c => (c._localKey === key ? { ...c, ...patch } : c));
     setPrevCompanies(prev => prev.map(c => (c._localKey === key ? { ...c, ...patch } : c)));
+    // Clear the validation error for any field the user just edited.
+    setCompErrors(prev => {
+      if (!Object.keys(prev).length) return prev;
+      const next = { ...prev };
+      Object.keys(patch).forEach(f => delete next[`${key}:${f}`]);
+      return next;
+    });
   };
 
   const addCompany = () => setPrevCompanies(prev => {
@@ -5681,9 +5695,46 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         }, 50);
         return false;
       }
+
+      // Yes path: at least one company, each fully filled, HR Email 1 set, and
+      // the two mandatory docs (Previous Offer Letter + Last 3 Months Salary
+      // Slips) uploaded. Freshers ('no') skip all of this.
+      if (hasExperience === 'yes') {
+        const companies = prevCompaniesRef.current;
+        if (companies.length === 0) {
+          setTimeout(() => document.getElementById('onb-has-experience')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+          return false;
+        }
+        const errs: Record<string, string> = {};
+        const docUploaded = (c: PrevCompanyRow, key: string) => {
+          if (!c.id) return false;
+          const s = docsByKey[`prev_${c.id}_${key}`]?.status;
+          return s === 'uploaded' || s === 'verified';
+        };
+        companies.forEach(c => {
+          const k = c._localKey;
+          if (!c.company_name.trim()) errs[`${k}:company_name`] = 'Company name is required';
+          if (!c.job_title.trim())    errs[`${k}:job_title`]    = 'Job title is required';
+          if (!c.start_date)          errs[`${k}:start_date`]   = 'Start date is required';
+          if (!c.end_date)            errs[`${k}:end_date`]     = 'End date is required';
+          if (!c.hr_email_1.trim())   errs[`${k}:hr_email_1`]   = 'HR Email ID 1 is required';
+          else if (EMAIL_INVALID(c.hr_email_1)) errs[`${k}:hr_email_1`] = 'Enter a valid email address';
+          if (!docUploaded(c, 'offer_letter')) errs[`${k}:doc`] = 'Upload the Previous Offer Letter and the Last 3 Months Salary Slips';
+          else if (!docUploaded(c, 'salary_slips')) errs[`${k}:doc`] = 'Upload the Last 3 Months Salary Slips';
+        });
+        if (Object.keys(errs).length) {
+          setCompErrors(errs);
+          setTimeout(() => {
+            const firstKey = Object.keys(errs)[0].split(':')[0];
+            document.querySelector(`[data-comp="${firstKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 50);
+          return false;
+        }
+        setCompErrors({});
+      }
       return true;
     },
-  }), [emp?.dbId, hasExperience]);
+  }), [emp?.dbId, hasExperience, docsByKey]);
 
   /** Upload a document for a previous-employment row. Auto-persists the
    *  company first if it's an unsaved draft — otherwise users who type a
@@ -5772,10 +5823,8 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   };
 
   // ── Server-backed document state ─────────────────────────────────────
-  // Keyed by document_key so each catalogue card can look itself up in
-  // O(1). Refreshed after every upload/verify/reject so the pill colours
-  // and progress bar stay in sync with the backend.
-  const [docsByKey, setDocsByKey] = useState<Record<string, ApiDocument>>({});
+  // (docsByKey moved above the useImperativeHandle so validate() can list it
+  // as a dependency without hitting a temporal-dead-zone ReferenceError.)
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const reloadDocs = async () => {
     if (!emp?.dbId) { setDocsLoading(false); return; }
@@ -6172,7 +6221,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
               }).length
             : 0;
           return (
-          <div key={c._localKey} className="onb-doc-comp">
+          <div key={c._localKey} className="onb-doc-comp" data-comp={c._localKey}>
             <div className="onb-doc-comp-head">
               <span className="onb-doc-comp-num">{idx + 1}</span>
               <h6 className="onb-doc-comp-name">{c.company_name || `Previous Company ${idx + 1}`}</h6>
@@ -6198,30 +6247,33 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                 <Col md={6}>
                   <label className="onb-init-label">Company Name <span className="req">*</span></label>
                   <input
-                    className="onb-init-input"
+                    className={`onb-init-input${compErrors[`${c._localKey}:company_name`] ? ' is-invalid' : ''}`}
                     placeholder="e.g. Wipro Digital (2020-2023)"
                     value={c.company_name}
                     onChange={e => updateCompany(c._localKey, { company_name: e.target.value })}
                     onBlur={() => persistCompany(c._localKey)}
                     disabled={c._busy}
                   />
+                  {compErrors[`${c._localKey}:company_name`] && <div className="onb-error-msg">{compErrors[`${c._localKey}:company_name`]}</div>}
                 </Col>
                 <Col md={6}>
-                  <label className="onb-init-label">Job Title / Designation</label>
+                  <label className="onb-init-label">Job Title / Designation <span className="req">*</span></label>
                   <input
-                    className="onb-init-input"
+                    className={`onb-init-input${compErrors[`${c._localKey}:job_title`] ? ' is-invalid' : ''}`}
                     placeholder="e.g. Software Engineer"
                     value={c.job_title}
                     onChange={e => updateCompany(c._localKey, { job_title: e.target.value })}
                     onBlur={() => persistCompany(c._localKey)}
                     disabled={c._busy}
                   />
+                  {compErrors[`${c._localKey}:job_title`] && <div className="onb-error-msg">{compErrors[`${c._localKey}:job_title`]}</div>}
                 </Col>
                 <Col md={6}>
-                  <label className="onb-init-label">Employment Start Date</label>
+                  <label className="onb-init-label">Employment Start Date <span className="req">*</span></label>
                   <MasterDatePicker
                     placeholder="Select start date"
                     value={c.start_date}
+                    invalid={!!compErrors[`${c._localKey}:start_date`]}
                     // Previous employment must have already started — cap at
                     // today; floor at 5 years ago so the captured experience
                     // can't exceed the allowed 5-year window (BUG-034).
@@ -6229,12 +6281,14 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                     maxDate={c.end_date || _todayIso()}
                     onChange={(v) => { updateCompany(c._localKey, { start_date: v }); setTimeout(() => persistCompany(c._localKey), 0); }}
                   />
+                  {compErrors[`${c._localKey}:start_date`] && <div className="onb-error-msg">{compErrors[`${c._localKey}:start_date`]}</div>}
                 </Col>
                 <Col md={6}>
-                  <label className="onb-init-label">Employment End Date</label>
+                  <label className="onb-init-label">Employment End Date <span className="req">*</span></label>
                   <MasterDatePicker
                     placeholder="Select end date"
                     value={c.end_date}
+                    invalid={!!compErrors[`${c._localKey}:end_date`]}
                     // End must be on/after start, and not in the future
                     // (a previous employer relationship has, by definition,
                     // already happened).
@@ -6242,10 +6296,12 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                     maxDate={_todayIso()}
                     onChange={(v) => { updateCompany(c._localKey, { end_date: v }); setTimeout(() => persistCompany(c._localKey), 0); }}
                   />
+                  {compErrors[`${c._localKey}:end_date`] && <div className="onb-error-msg">{compErrors[`${c._localKey}:end_date`]}</div>}
                 </Col>
               </Row>
 
-              <p className="onb-doc-comp-section" style={{ marginTop: 14 }}><i className="ri-file-list-line" /> Document Upload</p>
+              <p className="onb-doc-comp-section" style={{ marginTop: 14 }}><i className="ri-file-list-line" /> Document Upload <span className="req">*</span></p>
+              {compErrors[`${c._localKey}:doc`] && <div className="onb-error-msg" style={{ marginTop: -4, marginBottom: 6 }}>{compErrors[`${c._localKey}:doc`]}</div>}
               {!c.id && (
                 <div className="onb-doc-hint-banner">
                   Save the company name first to enable document uploads.
@@ -6321,16 +6377,16 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
               </div>
               <Row className="g-3">
                 <Col md={4}>
-                  <label className="onb-init-label">HR Email ID 1</label>
+                  <label className="onb-init-label">HR Email ID 1 <span className="req">*</span></label>
                   <input
-                    className={`onb-init-input${EMAIL_INVALID(c.hr_email_1) ? ' is-invalid' : ''}`}
+                    className={`onb-init-input${(EMAIL_INVALID(c.hr_email_1) || compErrors[`${c._localKey}:hr_email_1`]) ? ' is-invalid' : ''}`}
                     placeholder="hr@company.com"
                     value={c.hr_email_1}
                     onChange={e => updateCompany(c._localKey, { hr_email_1: e.target.value })}
                     onBlur={() => persistCompany(c._localKey)}
                     disabled={c._busy}
                   />
-                  {EMAIL_INVALID(c.hr_email_1) && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 3 }}>Enter a valid email address.</div>}
+                  {(compErrors[`${c._localKey}:hr_email_1`] || EMAIL_INVALID(c.hr_email_1)) && <div className="onb-error-msg">{compErrors[`${c._localKey}:hr_email_1`] || 'Enter a valid email address.'}</div>}
                 </Col>
                 <Col md={4}>
                   <label className="onb-init-label">HR Email ID 2</label>
