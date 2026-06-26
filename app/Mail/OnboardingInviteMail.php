@@ -42,8 +42,11 @@ class OnboardingInviteMail extends Mailable
 
     public function envelope(): Envelope
     {
+        // Guard against an empty org name so the subject is never a dangling
+        // "Complete your onboarding — " (a blank-ish subject hurts deliverability).
+        $org = trim($this->orgName);
         return new Envelope(
-            subject: "Complete your onboarding — {$this->orgName}",
+            subject: $org !== '' ? "Complete your onboarding at {$org}" : 'Complete your onboarding',
         );
     }
 

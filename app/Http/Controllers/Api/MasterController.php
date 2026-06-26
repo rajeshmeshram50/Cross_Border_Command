@@ -440,17 +440,14 @@ class MasterController extends Controller
 
         $modelClass = $this->resolveModel($slug);
 
-        // Same tenant tuple used at create-time so the sequence restarts per
-        // (client_id, branch_id). Mirror logic in validatePayload().
-        [$tenantClientId, $tenantBranchId] = $this->resolveOwnership($request, $request->user());
-
+        // Compute the next code over the SAME set of rows the LIST shows
+        // (applyReadScope + the active branch filter) — NOT a strict
+        // (client_id, branch_id) tuple. Otherwise a user who can SEE
+        // DEPT-001…010 (via the hierarchy / a broader scope) but whose own
+        // strict tuple holds none of them would be handed "DEPT-001" again,
+        // colliding with a visible row. Mirrors index()'s scoping.
         $q = $modelClass::query();
-        $tenantClientId === null
-            ? $q->whereNull('client_id')
-            : $q->where('client_id', $tenantClientId);
-        $tenantBranchId === null
-            ? $q->whereNull('branch_id')
-            : $q->where('branch_id', $tenantBranchId);
+        $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
         $codes = $q->pluck($col);
         $max = 0;
