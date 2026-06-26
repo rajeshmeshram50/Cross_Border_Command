@@ -25,7 +25,6 @@ import '../../../css/recruitment.css';
 const OPT = (...vals: string[]) => vals.map(v => ({ value: v, label: v }));
 const ONB_GENDER       = OPT('Male', 'Female', 'Other');
 const ONB_NATIONALITY  = OPT('Indian', 'Other');
-const ONB_NUMBER_SERIES = OPT('Default Number Series');
 const ONB_EMP_STATUS   = OPT('Active', 'On Probation');
 const ONB_LEGAL_ENTITY = OPT('Cross Border Command Pvt Ltd', 'CBC International LLP');
 const ONB_LOCATION     = OPT('Pune HQ', 'Mumbai', 'Bengaluru');
@@ -3268,6 +3267,33 @@ function InitiateOnboardingModal({
 }) {
   const toast = useToast();
   const [activeStage, setActiveStage] = useState(1);
+  // Stage 5 (Policies & Agreements) live signing status: total matched
+  // agreement templates vs how many have a COMPLETED signing run. Lets the
+  // sidebar/header reflect real signatures instead of marking the stage
+  // "Completed" the moment HR clicks Next (macro watermark only).
+  const [stage5Total, setStage5Total]   = useState(0);
+  const [stage5Signed, setStage5Signed] = useState(0);
+  useEffect(() => {
+    if (!isOpen || !emp?.dbId) { setStage5Total(0); setStage5Signed(0); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const [tplRes, runRes] = await Promise.all([
+          api.get('/hr-document-templates/match', { params: { employee_id: emp.dbId, trigger_keyword: 'onboarding' } }),
+          api.get('/hr-document-signatures', { params: { employee_id: emp.dbId } }),
+        ]);
+        if (cancelled) return;
+        const tpls: any[] = Array.isArray(tplRes.data?.templates) ? tplRes.data.templates : [];
+        const runs: any[] = Array.isArray(runRes.data) ? runRes.data : [];
+        // Latest run per template_id (highest id wins) — a 'Completed' run = signed.
+        const latest = new Map<number, any>();
+        runs.forEach(r => { const t = r.template_id; if (t == null) return; const p = latest.get(t); if (!p || r.id > p.id) latest.set(t, r); });
+        setStage5Total(tpls.length);
+        setStage5Signed(tpls.filter(t => latest.get(t.id)?.status === 'Completed').length);
+      } catch { if (!cancelled) { setStage5Total(0); setStage5Signed(0); } }
+    })();
+    return () => { cancelled = true; };
+  }, [isOpen, emp?.dbId]);
   // Imperative handle into Stage 2 so we can flush its typed-but-not-blurred
   // company rows before leaving the stage (Previous / sidebar / Next Stage).
   const stage2Ref = useRef<Stage2DocumentsHandle | null>(null);
@@ -3564,6 +3590,9 @@ const STAGE1_FIELD_ORDER = [
   'email',
   'mobile',
   'date_of_joining',
+  'department_id',
+  'designation_id',
+  'primary_role_id',
   'annual_salary',
   'salary_effective_from',
 ] as const;
@@ -3627,11 +3656,14 @@ const validateStage1 = (): boolean => {
     errors.mobile = 'Mobile must be 6–15 digits';
   }
 
-  // Joining date — optional but bounded (no 1990 entries, no 2050 entries).
+  // Joining date — required + bounded (no 1990 entries, no 2050 entries).
   const doj = s1.date_of_joining?.trim() ?? '';
-  if (doj) {
-    if (doj < joinMin) errors.date_of_joining = 'Joining date is too far in the past';
-    else if (doj > joinMax) errors.date_of_joining = 'Joining date cannot be more than a year in the future';
+  if (!doj) {
+    errors.date_of_joining = 'Joining date is required';
+  } else if (doj < joinMin) {
+    errors.date_of_joining = 'Joining date is too far in the past';
+  } else if (doj > joinMax) {
+    errors.date_of_joining = 'Joining date cannot be more than a year in the future';
   }
 
   // Compensation - Required + range
@@ -3654,6 +3686,11 @@ const validateStage1 = (): boolean => {
   } else if (sef > salaryMax) {
     errors.salary_effective_from = 'Salary effective date cannot be more than a year in the future';
   }
+
+  // Job Details — Department / Designation / Primary Role are required.
+  if (!s1.department_id?.toString().trim())   errors.department_id   = 'Department is required';
+  if (!s1.designation_id?.toString().trim())  errors.designation_id  = 'Designation is required';
+  if (!s1.primary_role_id?.toString().trim()) errors.primary_role_id = 'Primary role is required';
 
   setS1Errors(errors);
 
@@ -4237,7 +4274,11 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   const stage2IsDone = stage2Done && macroCompleted >= 2;
   const stage3IsDone = stage3Done || macroCompleted >= 3;
   const stage4IsDone = stage4Done || macroCompleted >= 4;
-  const stage5IsDone = macroCompleted >= 5;
+  // "Done" only when EVERY matched agreement has a completed signing run —
+  // not just because HR advanced past the stage. If the employee has no
+  // matched agreements, fall back to the macro watermark.
+  const stage5SignedAll = stage5Total > 0 ? stage5Signed >= stage5Total : macroCompleted >= 5;
+  const stage5IsDone = macroCompleted >= 5 && stage5SignedAll;
   // Stage 6 represents the HR final-approval / activation step. Used to
   // flip Completed the moment the activate API returned, even when
   // earlier stages were still Pending (the screenshot bug). Now we
@@ -4264,10 +4305,14 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       progress = stage4IsDone ? 100 : stage4Pct;
       status   = stage4IsDone ? 'Completed' : (stage4Pass > 0 ? 'In Progress' : 'Pending');
     } else if (s.num === 5) {
-      // No live signing state yet — only the server macro watermark
-      // confirms completion. Otherwise In Progress while on the stage.
-      progress = stage5IsDone ? 100 : (activeStage === 5 ? 35 : 0);
-      status   = stage5IsDone ? 'Completed' : (activeStage === 5 ? 'In Progress' : 'Pending');
+      // Reflect real signing progress (signed / total agreements). 100% only
+      // when all are signed; "sent — awaiting sign" stays In Progress, so the
+      // stage no longer shows Completed just because it was sent.
+      progress = stage5IsDone ? 100
+        : (stage5Total > 0 ? Math.round((stage5Signed / stage5Total) * 100)
+        : (activeStage === 5 ? 35 : 0));
+      status = stage5IsDone ? 'Completed'
+        : ((stage5Signed > 0 || activeStage === 5 || macroCompleted >= 5) ? 'In Progress' : 'Pending');
     } else if (s.num === 6) {
       progress = stage6Done ? 100 : (activeStage === 6 ? 35 : 0);
       status   = stage6Done ? 'Completed' : (activeStage === 6 ? 'In Progress' : 'Pending');
@@ -4572,10 +4617,6 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   {s1Errors.mobile && <div className="onb-error-msg">{s1Errors.mobile}</div>}
 </Col>
                   <Col md={4}>
-                    <label className="onb-init-label">Number Series</label>
-                    <MasterSelect options={ONB_NUMBER_SERIES} defaultValue="Default Number Series" />
-                  </Col>
-                  <Col md={4}>
                     <label className="onb-init-label">Employee ID <span className="auto">AUTO</span></label>
                     <input className="onb-init-input is-autofilled" readOnly value={`${emp.empId} (auto-assigned)`} />
                   </Col>
@@ -4627,9 +4668,9 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                     />
                     {s1Errors.date_of_joining && <div className="onb-error-msg">{s1Errors.date_of_joining}</div>}
                   </Col>
-                  <Col md={4}><label className="onb-init-label">Department<span className="req">*</span></label><MasterSelect options={departmentOpts} placeholder="Select department" value={s1.department_id} onChange={(v) => setS1(p => ({ ...p, department_id: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Designation<span className="req">*</span></label><MasterSelect options={designationOpts} placeholder="Select designation" value={s1.designation_id} onChange={(v) => setS1(p => ({ ...p, designation_id: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Primary Role<span className="req">*</span></label><MasterSelect options={roleOpts} placeholder="Select role" value={s1.primary_role_id} onChange={(v) => setS1(p => ({ ...p, primary_role_id: v }))} /></Col>
+                  <Col md={4} data-field="department_id"><label className="onb-init-label">Department<span className="req">*</span></label><MasterSelect options={departmentOpts} placeholder="Select department" value={s1.department_id} invalid={!!s1Errors.department_id} onChange={(v) => { setS1(p => ({ ...p, department_id: v })); setS1Errors(p => ({ ...p, department_id: '' })); }} />{s1Errors.department_id && <div className="onb-error-msg">{s1Errors.department_id}</div>}</Col>
+                  <Col md={4} data-field="designation_id"><label className="onb-init-label">Designation<span className="req">*</span></label><MasterSelect options={designationOpts} placeholder="Select designation" value={s1.designation_id} invalid={!!s1Errors.designation_id} onChange={(v) => { setS1(p => ({ ...p, designation_id: v })); setS1Errors(p => ({ ...p, designation_id: '' })); }} />{s1Errors.designation_id && <div className="onb-error-msg">{s1Errors.designation_id}</div>}</Col>
+                  <Col md={4} data-field="primary_role_id"><label className="onb-init-label">Primary Role<span className="req">*</span></label><MasterSelect options={roleOpts} placeholder="Select role" value={s1.primary_role_id} invalid={!!s1Errors.primary_role_id} onChange={(v) => { setS1(p => ({ ...p, primary_role_id: v })); setS1Errors(p => ({ ...p, primary_role_id: '' })); }} />{s1Errors.primary_role_id && <div className="onb-error-msg">{s1Errors.primary_role_id}</div>}</Col>
                   <Col md={4}><label className="onb-init-label">Ancillary Role</label><MasterSelect options={roleOpts} placeholder="Select role" value={s1.ancillary_role_id} onChange={(v) => setS1(p => ({ ...p, ancillary_role_id: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Work Type <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly value="Full Time" /></Col>
                 </Row>
@@ -5190,8 +5231,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         // instead of silently progressing on a half-answered form.
         if (activeStage === 2 && !stage2Ref.current?.validate()) {
           toast.error(
-            'Previous employment — required',
-            'Select Yes or No before moving to the next stage.',
+            'Previous employment — incomplete',
+            'Complete the highlighted fields & documents (or pick Yes / No) before moving to the next stage.',
           );
           return;
         }
@@ -5805,10 +5846,16 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
           return false;
         }
         const errs: Record<string, string> = {};
+        const isUp = (s?: string) => s === 'uploaded' || s === 'verified';
         const docUploaded = (c: PrevCompanyRow, key: string) => {
           if (!c.id) return false;
-          const s = docsByKey[`prev_${c.id}_${key}`]?.status;
-          return s === 'uploaded' || s === 'verified';
+          // Salary slips are multi-file (prev_{id}_salary_slips[, _2, _3…]) —
+          // satisfied if ANY slip is uploaded.
+          if (key === 'salary_slips') {
+            return Object.entries(docsByKey).some(([k, v]) =>
+              (k === `prev_${c.id}_salary_slips` || k.startsWith(`prev_${c.id}_salary_slips_`)) && isUp(v.status));
+          }
+          return isUp(docsByKey[`prev_${c.id}_${key}`]?.status);
         };
         companies.forEach(c => {
           const k = c._localKey;
@@ -6192,8 +6239,14 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
       })}
 
       {/* Previous Employment Documents — optional. A fresher with no
-          prior employer simply leaves this section empty. */}
-      <div className="onb-doc-prev">
+          prior employer simply leaves this section empty. Red-outlined when
+          the stage-advance validation flags it (mirrors the toast). */}
+      <div
+        className="onb-doc-prev"
+        style={(hasExperienceError || Object.keys(compErrors).length > 0)
+          ? { outline: '2px solid #ef4444', outlineOffset: 2, borderRadius: 10 }
+          : undefined}
+      >
         <div className="onb-doc-prev-head">
           <span className="onb-doc-prev-icon"><i className="ri-briefcase-line" style={{ fontSize: 14 }} /></span>
           <div className="min-w-0 flex-grow-1">
@@ -6223,13 +6276,23 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
             ]).map(opt => {
               const active = hasExperience === opt.v;
               const errored = hasExperienceError && !active;
+              // Once a previous company is saved (i.e. the HR picked "Yes" and
+              // advanced), they can't flip back to "No — first job" — that would
+              // orphan recorded experience. Remove the companies to unlock.
+              const locked = opt.v === 'no' && hasExperience === 'yes' && prevCompanies.some(c => c.id);
               return (
                 <button
                   key={opt.v}
                   type="button"
                   role="radio"
                   aria-checked={active}
+                  aria-disabled={locked}
+                  title={locked ? 'Remove the previous companies first to switch to “first job”.' : undefined}
                   onClick={() => {
+                    if (locked) {
+                      toast.warning('Locked', 'Previous experience is already recorded — remove the companies first to switch to “first job”.');
+                      return;
+                    }
                     setHasExperience(opt.v);
                     setHasExperienceError(false);
                     // Picking "Yes" with an empty list — pre-seed a draft
@@ -6250,7 +6313,8 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                     color: active ? '#5a3fd1' : 'var(--vz-body-color)',
                     fontSize: 13,
                     fontWeight: 600,
-                    cursor: 'pointer',
+                    cursor: locked ? 'not-allowed' : 'pointer',
+                    opacity: locked ? 0.5 : 1,
                     transition: 'all .15s ease',
                   }}
                 >
@@ -6315,6 +6379,12 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
           const compDocsTotal = STAGE2_COMPANY_DOCS.length;
           const compDocsUploaded = c.id
             ? STAGE2_COMPANY_DOCS.filter(d => {
+                // Salary slips: multi-file — count the slot done if ANY slip exists.
+                if (d.id === 'salary_slips') {
+                  return Object.entries(docsByKey).some(([k, v]) =>
+                    (k === `prev_${c.id}_salary_slips` || k.startsWith(`prev_${c.id}_salary_slips_`)) &&
+                    (v.status === 'uploaded' || v.status === 'verified'));
+                }
                 const srv = docsByKey[docKeyFor(d.id)]?.status;
                 return srv === 'uploaded' || srv === 'verified';
               }).length
@@ -6407,6 +6477,65 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                 </div>
               )}
               {STAGE2_COMPANY_DOCS.map(d => {
+                // ── Salary slips: multi-file slot. Upload several (one per
+                //    month); list them, and after 3 the list scrolls. ──────
+                if (d.id === 'salary_slips') {
+                  const slips = c.id
+                    ? Object.entries(docsByKey)
+                        .filter(([k]) => k === `prev_${c.id}_salary_slips` || k.startsWith(`prev_${c.id}_salary_slips_`))
+                        .map(([k, v]) => ({ key: k, doc: v }))
+                    : [];
+                  const busyAny = !!uploadingKey && uploadingKey.startsWith(`prev_${c.id}_salary_slips`);
+                  const nextDocId = () => {
+                    if (!docsByKey[`prev_${c.id}_salary_slips`]) return 'salary_slips';
+                    let n = 2; while (docsByKey[`prev_${c.id}_salary_slips_${n}`]) n++;
+                    return `salary_slips_${n}`;
+                  };
+                  return (
+                    <div key={d.id} className="onb-doc-comp-doc" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span className="onb-doc-comp-doc-icon"><i className="ri-file-text-line" /></span>
+                        <h6 className="onb-doc-comp-doc-name" style={{ margin: 0 }}>
+                          {d.name}
+                          <span className="onb-doc-tag">{slips.length} file{slips.length !== 1 ? 's' : ''}</span>
+                        </h6>
+                        <button
+                          type="button"
+                          className="onb-doc-upload-btn"
+                          style={{ marginLeft: 'auto', ...((busyAny || c._busy) ? { opacity: 0.6, cursor: 'progress' } : {}) }}
+                          disabled={busyAny || c._busy || !c.id}
+                          onClick={() => uploadForCompany(c._localKey, nextDocId(), d.name, d.maxMb)}
+                        >
+                          <i className={busyAny ? 'ri-loader-4-line onb-spin' : 'ri-add-line'} /> {busyAny ? 'Uploading…' : 'Add Slip'}
+                        </button>
+                      </div>
+                      {slips.length === 0 ? (
+                        <div className="onb-doc-row-sub" style={{ marginTop: 6 }}>No salary slips yet — add one per month (last 3 months).</div>
+                      ) : (
+                        <div style={{ marginTop: 8, maxHeight: 150, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, paddingRight: 2 }}>
+                          {slips.map((s, si) => {
+                            const eff = _serverStatusToUi(s.doc.status);
+                            return (
+                              <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', border: '1px solid var(--vz-border-color)', borderRadius: 8 }}>
+                                <i className="ri-file-pdf-line" style={{ color: '#ef4444', flexShrink: 0 }} />
+                                <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {s.doc.original_name || `Salary Slip ${si + 1}`}
+                                </span>
+                                <span className={`onb-doc-status-pill onb-doc-status-pill--${String(eff).toLowerCase()}`}>{eff}</span>
+                                {s.doc.url && (
+                                  <a href={s.doc.url} target="_blank" rel="noreferrer" className="onb-doc-upload-btn onb-doc-ghost-btn onb-doc-ghost-view"><i className="ri-eye-line" /></a>
+                                )}
+                                <button type="button" className="onb-doc-upload-btn onb-doc-ghost-btn onb-doc-ghost-del" onClick={() => triggerDelete(s.doc.id, `${d.name} (${s.doc.original_name || si + 1})`)}>
+                                  <i className="ri-delete-bin-line" />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
                 const fullKey = docKeyFor(d.id);
                 const srv = fullKey ? docsByKey[fullKey] : undefined;
                 const effective: DocStatus = srv
@@ -7113,6 +7242,14 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
   const toast = useToast();
   const [templates, setTemplates] = useState<Tpl[]>([]);
   const [loading, setLoading] = useState(false);
+  // Per-template readiness — the Generate button stays disabled until that
+  // template's detail (content + custom-field tokens) has been fetched, so a
+  // user can't open Generate before its custom fields are known. Clicking
+  // while still loading shows a toast.
+  const [readyTpls, setReadyTpls] = useState<Set<number>>(new Set());
+  // Whether each template actually references any registered custom field
+  // (scanned from its content_html). Drives the "no custom fields" toast.
+  const [tplHasFields, setTplHasFields] = useState<Record<number, boolean>>({});
   // Generate modal — custom-field fill → preview → download / send for signature.
   const [genTpl, setGenTpl] = useState<Tpl | null>(null);
   /* Click-to-expand: the row a user has clicked, revealing the
@@ -7162,23 +7299,83 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
     return () => { cancelled = true; };
   }, [emp?.dbId]);
 
+  // Pre-fetch each matched template's detail so we know its custom fields are
+  // loaded before allowing Generate. Marks each template ready as its fetch
+  // resolves (per-row), so Generate enables one row at a time.
+  useEffect(() => {
+    let cancelled = false;
+    setReadyTpls(new Set());
+    setTplHasFields({});
+    if (!templates.length) return;
+    (async () => {
+      // Registered custom-field token names (once) so we can tell whether a
+      // template's {{Tokens}} include any real custom field to fill.
+      let customNames = new Set<string>();
+      try {
+        const tok = await api.get('/hr-custom-fields/known-tokens');
+        customNames = new Set((tok.data?.custom_fields ?? []).map((c: any) => c.name));
+      } catch { /* treat as "no custom fields" if the token list fails */ }
+      templates.forEach(t => {
+        api.get(`/hr-document-templates/${t.id}`)
+          .then(res => {
+            if (cancelled) return;
+            const html = String(res.data?.content_html ?? '');
+            const found = new Set<string>();
+            const re = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
+            let m: RegExpExecArray | null;
+            while ((m = re.exec(html)) !== null) found.add(m[1]);
+            const has = [...found].some(n => customNames.has(n));
+            setTplHasFields(prev => ({ ...prev, [t.id]: has }));
+            setReadyTpls(prev => { const next = new Set(prev); next.add(t.id); return next; });
+          })
+          .catch(() => { /* leave disabled if its detail can't load */ });
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [templates]);
+
   // ── Signing runs — the SAME workflow Exit Management uses. "Send" creates
   // a row in hr_document_signatures with the template's configured signers;
   // each signer then signs in-app sequentially. We list the runs for this
   // employee so the row reflects the LIVE signing status (Awaiting / Signed)
   // instead of the old hardcoded "Not Generated". No third-party — fully
   // internal (Zoho is only for CLM trade agreements, not HR docs).
-  type RunSigner = { name?: string | null; role_name?: string | null; action?: string | null; status?: string };
+  type RunSigner = { name?: string | null; role_name?: string | null; action?: string | null; status?: string; acted_at?: string | null };
   type SignatureRun = {
     id: number; code: string | null;
     status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Cancelled';
     template_id: number; signers: RunSigner[]; current_index: number;
+    created_at?: string | null;
   };
   const [runs, setRuns] = useState<SignatureRun[]>([]);
   const [sendingId, setSendingId] = useState<number | null>(null);
+  // Which row's ⋮ (previous signed copies) menu is open.
+  const [menuTplId, setMenuTplId] = useState<number | null>(null);
   // Rich "Send for Signing" modal (workflow preview) — replaces the plain
   // confirm so this matches the Evidence Vault send experience.
   const [sendForTpl, setSendForTpl] = useState<Tpl | null>(null);
+  // Download the final signed PDF (all signatures embedded) for a completed run.
+  const [downloadingRunId, setDownloadingRunId] = useState<number | null>(null);
+  const downloadSignedRun = async (runId: number, code?: string | null) => {
+    if (downloadingRunId !== null) return;
+    setDownloadingRunId(runId);
+    try {
+      const resp = await api.get(`/hr-document-signatures/${runId}/download-pdf`, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url; a.download = `${code || `doc-${runId}`}-signed.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Downloaded', 'Signed PDF saved.');
+    } catch (err: any) {
+      toast.error('Could not download', err?.response?.data?.message || 'Please try again.');
+    } finally { setDownloadingRunId(null); }
+  };
+  const fmtSignedAt = (iso?: string | null) => {
+    if (!iso) return '';
+    try { return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+    catch { return ''; }
+  };
 
   const fetchRuns = useCallback(async () => {
     if (!emp?.dbId) { setRuns([]); return; }
@@ -7198,6 +7395,20 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
       const existing = m.get(r.template_id);
       if (!existing || r.id > existing.id) m.set(r.template_id, r);
     }
+    return m;
+  }, [runs]);
+
+  // All COMPLETED runs per template, newest first → [0] is the current signed
+  // copy; the rest are previous signed copies (from earlier re-sends) shown
+  // behind the ⋮ menu.
+  const completedRunsByTpl = useMemo(() => {
+    const m = new Map<number, SignatureRun[]>();
+    for (const r of runs) {
+      if (r.status !== 'Completed') continue;
+      const arr = m.get(r.template_id) || [];
+      arr.push(r); m.set(r.template_id, arr);
+    }
+    for (const arr of m.values()) arr.sort((a, b) => b.id - a.id);
     return m;
   }, [runs]);
 
@@ -7243,9 +7454,19 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
         </div>
 
         {loading && (
-          <div style={{ padding: 20, textAlign: 'center', color: '#6b7280', fontSize: 12.5 }}>
-            <i className="ri-loader-4-line" style={{ fontSize: 22, display: 'block', marginBottom: 6 }} />
-            Loading matched templates…
+          <div className="placeholder-glow" style={{ padding: 4 }}>
+            {[0, 1].map(i => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 12px', borderBottom: '1px solid var(--vz-border-color)' }}>
+                <span className="placeholder" style={{ width: 30, height: 30, borderRadius: 8 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <span className="placeholder col-5" style={{ height: 12, display: 'block', borderRadius: 4 }} />
+                  <span className="placeholder col-3" style={{ height: 9, display: 'block', borderRadius: 4, marginTop: 6 }} />
+                </div>
+                <span className="placeholder" style={{ width: 70, height: 22, borderRadius: 6 }} />
+                <span className="placeholder" style={{ width: 80, height: 26, borderRadius: 6 }} />
+                <span className="placeholder" style={{ width: 70, height: 26, borderRadius: 6 }} />
+              </div>
+            ))}
           </div>
         )}
 
@@ -7259,7 +7480,6 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
         )}
 
         {!loading && templates.map(tpl => {
-          const canGenerate = tpl.status === 'Active' && !!emp.dbId;
           const isExpanded = expandedId === tpl.id;
           const signers = parseSigners(tpl.signers);
           const toggle = () => setExpandedId(prev => prev === tpl.id ? null : tpl.id);
@@ -7271,8 +7491,10 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
           // Once signed (Completed) the document is final — Resend must be
           // disabled (a signed offer letter can't be re-sent). Rejected /
           // cancelled runs are NOT signed, so they stay re-sendable.
-          const runSigned = !!run && run.status === 'Completed';
-          const canSend = tpl.status === 'Active' && !!emp.dbId && !isSending && !runActive && !runSigned;
+          // Latest signed copy (stays downloadable even while a re-send is in
+          // progress); previous signed copies live behind the ⋮ menu.
+          const signedRuns = completedRunsByTpl.get(tpl.id) || [];
+          const latestSigned = signedRuns[0] || null;
           // Status pill text/colour derived from the run.
           const statusInfo = run?.status === 'Completed'  ? { label: 'Signed',      color: '#10b981' }
                            : run?.status === 'Rejected'   ? { label: 'Rejected',    color: '#ef4444' }
@@ -7319,47 +7541,123 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
                   <span className="dot" style={{ background: statusInfo.color }} />
                   {statusInfo.label}
                 </span>
-                <button
-                  type="button"
-                  className="onb-pol-gen-btn"
-                  disabled={!canGenerate}
-                  onClick={(e) => { e.stopPropagation(); if (canGenerate) setGenTpl(tpl); }}
-                  title={
-                    tpl.status !== 'Active' ? 'Only Active templates can be generated'
-                    : !emp.dbId        ? 'Save the employee first'
-                    : 'Fill custom fields, preview & generate / send for signing'
-                  }
-                  style={{ opacity: canGenerate ? 1 : 0.6, cursor: canGenerate ? 'pointer' : 'not-allowed' }}
-                >
-                  <i className="ri-file-add-line" /> Generate
-                </button>
-                {/* Send for signing — kicks off the signing workflow (same as
-                    Exit Stage 3). Hidden while a run is already active; once
-                    signed/rejected/cancelled it can be re-sent. */}
-                <button
-                  type="button"
-                  className="onb-pol-gen-btn"
-                  disabled={!canSend}
-                  onClick={(e) => { e.stopPropagation(); handleSend(tpl); }}
-                  title={
-                    isSending          ? 'Sending…'
-                    : runSigned        ? 'Already signed — this document is final and cannot be re-sent'
-                    : runActive        ? 'Already sent — signing in progress'
-                    : tpl.status !== 'Active' ? 'Only Active templates can be sent'
-                    : !emp.dbId        ? 'Save the employee first'
-                    : 'Send through the configured signing workflow'
-                  }
-                  style={{
-                    marginLeft: 8,
-                    background: canSend ? 'linear-gradient(135deg,#7c3aed,#a855f7)' : '#e5e7eb',
-                    color: canSend ? '#fff' : '#9ca3af',
-                    border: 0,
-                    opacity: canSend ? 1 : 0.7,
-                    cursor: canSend ? 'pointer' : 'not-allowed',
-                  }}
-                >
-                  <i className={isSending ? 'ri-loader-4-line' : (runSigned ? 'ri-check-double-line' : 'ri-send-plane-line')} /> {isSending ? 'Sending…' : (runSigned ? 'Signed' : (run && !runActive ? 'Resend' : 'Send'))}
-                </button>
+                {/* ONE action: Send for Signature. If the template has custom
+                    fields we open the fill form first (it sends from there);
+                    otherwise we send directly via the confirm modal. After a run
+                    exists (signed / rejected / cancelled) it becomes "Resend"
+                    and each resend creates a new signed version. */}
+                {(() => {
+                  const fieldsReady = readyTpls.has(tpl.id);
+                  const hasFields = !!tplHasFields[tpl.id];
+                  const sendBlocked = tpl.status !== 'Active' || !emp.dbId || isSending || runActive || !fieldsReady;
+                  const sendLabel = isSending ? 'Sending…'
+                    : runActive ? 'Awaiting Sign'
+                    : run       ? 'Resend'
+                    :             'Send for Signature';
+                  const sendIcon = (isSending || (!runActive && !fieldsReady)) ? 'ri-loader-4-line'
+                    : runActive ? 'ri-time-line'
+                    : 'ri-send-plane-line';
+                  return (
+                    <button
+                      type="button"
+                      className="onb-pol-gen-btn"
+                      aria-disabled={sendBlocked}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (tpl.status !== 'Active') { toast.warning('Not sendable', 'Only Active templates can be sent.'); return; }
+                        if (!emp.dbId) { toast.warning('Save first', 'Save the employee before sending documents.'); return; }
+                        if (isSending) return;
+                        if (runActive) { toast.info('Already sent', 'This document is already out for signing.'); return; }
+                        if (!fieldsReady) { toast.info('Loading template…', 'Please wait a moment while the template loads, then try again.'); return; }
+                        // Always open the preview/fill modal so the document is
+                        // reviewed before sending — even with no custom fields we
+                        // don't want a blind "send unread". The modal previews
+                        // the rendered PDF and sends from there.
+                        setGenTpl(tpl);
+                      }}
+                      title={
+                        tpl.status !== 'Active' ? 'Only Active templates can be sent'
+                        : !emp.dbId        ? 'Save the employee first'
+                        : runActive        ? 'Already sent — signing in progress'
+                        : !fieldsReady     ? 'Loading template…'
+                        : hasFields        ? 'Fill custom fields, then send for signing'
+                        : 'Send through the configured signing workflow'
+                      }
+                      style={{
+                        background: sendBlocked ? '#e5e7eb' : 'linear-gradient(135deg,#7c3aed,#a855f7)',
+                        color: sendBlocked ? '#9ca3af' : '#fff',
+                        border: 0,
+                        opacity: sendBlocked ? 0.7 : 1,
+                        cursor: sendBlocked ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      <i className={sendIcon} /> {sendLabel}
+                    </button>
+                  );
+                })()}
+                {/* Signed → download the current (latest) signed PDF. */}
+                {latestSigned && (
+                  <button
+                    type="button"
+                    className="onb-pol-gen-btn"
+                    disabled={downloadingRunId === latestSigned.id}
+                    onClick={(e) => { e.stopPropagation(); downloadSignedRun(latestSigned.id, tpl.code); }}
+                    title="Download the latest signed PDF (all signatures)"
+                    style={{ marginLeft: 8, background: 'linear-gradient(135deg,#0891b2,#0e7490)', color: '#fff', border: 0, cursor: downloadingRunId === latestSigned.id ? 'wait' : 'pointer', opacity: downloadingRunId === latestSigned.id ? 0.7 : 1 }}
+                  >
+                    <i className={downloadingRunId === latestSigned.id ? 'ri-loader-4-line' : 'ri-file-pdf-2-line'} /> {downloadingRunId === latestSigned.id ? 'Downloading…' : 'Download'}
+                  </button>
+                )}
+                {/* Previous signed copies (from earlier re-sends) → ⋮ menu. */}
+                {(() => {
+                  const older = signedRuns.slice(1);
+                  if (older.length === 0) return null;
+                  const open = menuTplId === tpl.id;
+                  return (
+                    <div style={{ position: 'relative', marginLeft: 6 }}>
+                      <button
+                        type="button"
+                        className="onb-pol-gen-btn"
+                        onClick={(e) => { e.stopPropagation(); setMenuTplId(open ? null : tpl.id); }}
+                        title={`${older.length} previous signed cop${older.length === 1 ? 'y' : 'ies'}`}
+                        style={{ background: 'transparent', border: '1px solid var(--vz-border-color)', color: 'var(--vz-secondary-color)', cursor: 'pointer', padding: '6px 9px' }}
+                      >
+                        <i className="ri-more-2-fill" />
+                      </button>
+                      {open && (
+                        <>
+                          <div onClick={(e) => { e.stopPropagation(); setMenuTplId(null); }} style={{ position: 'fixed', inset: 0, zIndex: 20 }} />
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ position: 'absolute', right: 0, bottom: 'calc(100% + 4px)', zIndex: 21, minWidth: 230, maxHeight: 260, overflowY: 'auto', background: 'var(--vz-card-bg, #fff)', border: '1px solid var(--vz-border-color)', borderRadius: 10, boxShadow: '0 -10px 30px rgba(0,0,0,.14)', padding: 6 }}
+                          >
+                            <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--vz-secondary-color)', padding: '6px 8px 4px' }}>
+                              Previous signed copies
+                            </div>
+                            {older.map(r => (
+                              <button
+                                key={r.id}
+                                type="button"
+                                disabled={downloadingRunId === r.id}
+                                onClick={(e) => { e.stopPropagation(); setMenuTplId(null); downloadSignedRun(r.id, tpl.code); }}
+                                style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', background: 'transparent', border: 0, borderRadius: 7, padding: '7px 8px', fontSize: 12, color: 'var(--vz-body-color)', cursor: downloadingRunId === r.id ? 'wait' : 'pointer' }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--vz-light, #f3f4f6)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                              >
+                                <i className="ri-file-pdf-2-line" style={{ color: '#0e7490' }} />
+                                <span style={{ flex: 1, minWidth: 0 }}>
+                                  {r.code || `Run #${r.id}`}
+                                  {r.created_at && <span style={{ display: 'block', fontSize: 10, color: 'var(--vz-secondary-color)' }}>{fmtSignedAt(r.created_at)}</span>}
+                                </span>
+                                <i className={downloadingRunId === r.id ? 'ri-loader-4-line' : 'ri-download-2-line'} />
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
                 <span
                   className="onb-pol-doc-chev"
                   style={{
@@ -7390,6 +7688,17 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
                           ? `${run.signers.filter(s => s.status === 'Done').length}/${run.signers.length} signed`
                           : 'Not yet sent'}
                       </span>
+                      {run?.status === 'Completed' && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); downloadSignedRun(run.id, tpl.code); }}
+                          disabled={downloadingRunId === run.id}
+                          title="Download the signed PDF"
+                          style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: '#0e7490', background: '#cffafe', border: '1px solid #a5f3fc', borderRadius: 7, padding: '3px 9px', cursor: downloadingRunId === run.id ? 'wait' : 'pointer' }}
+                        >
+                          <i className={downloadingRunId === run.id ? 'ri-loader-4-line' : 'ri-file-pdf-2-line'} /> {downloadingRunId === run.id ? 'Downloading…' : 'Download signed PDF'}
+                        </button>
+                      )}
                     </div>
                     <div className="ep-signing-flow">
                       {/* When SENT → live per-signer status from the run; else
@@ -7403,12 +7712,14 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
                                   : s.status === 'Rejected' ? 'Rejected'
                                   : (i === run.current_index ? 'Awaiting' : 'Pending'),
                             active: i === run.current_index && (run.status === 'Pending' || run.status === 'In Progress'),
+                            at:     s.acted_at,
                           }))
                         : signers.map((s, i) => ({
                             name:   s.role_name || s.designation_name || `Signer ${i + 1}`,
                             action: s.action,
                             state:  'Pending' as string,
                             active: i === 0,
+                            at:     null as string | null,
                           }))
                       ).map((sg, i) => (
                         <div key={i} className={`ep-signer${sg.active ? ' is-active' : ''}`}>
@@ -7418,6 +7729,12 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
                             {sg.action && (
                               <span style={{ marginLeft: 6, fontSize: 10.5, color: 'var(--vz-secondary-color)', fontWeight: 500 }}>
                                 ({sg.action})
+                              </span>
+                            )}
+                            {/* Signing tracker — who signed & when. */}
+                            {sg.state === 'Completed' && sg.at && (
+                              <span style={{ display: 'block', fontSize: 10, color: 'var(--vz-secondary-color)', fontWeight: 500, marginTop: 1 }}>
+                                Signed · {fmtSignedAt(sg.at)}
                               </span>
                             )}
                           </span>

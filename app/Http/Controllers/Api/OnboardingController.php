@@ -95,7 +95,9 @@ class OnboardingController extends Controller
 
         // Onboarding invite mail — gated by Settings → Notifications → newUser
         if (Settings::shouldSendMail('newUser')) try {
-            $orgName = Client::find($clientId)?->org_name ?? config('mail.from.name', 'Cross Border Command');
+            // Use ?: (not ??) so an empty-string org_name also falls back —
+            // otherwise the mail subject would dangle as "Complete your onboarding — ".
+            $orgName = Client::find($clientId)?->org_name ?: config('mail.from.name', 'Cross Border Command');
             $deptName = $invite->department_id ? Departments::find($invite->department_id)?->name : null;
             Mail::to($invite->invitee_email)->send(new OnboardingInviteMail(
                 $invite->invitee_name,

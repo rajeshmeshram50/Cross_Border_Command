@@ -160,6 +160,24 @@ export default function Inbox() {
 
   // View modal (read-only preview)
   const [viewRun, setViewRun] = useState<SignatureRun | null>(null);
+  // Download the final signed PDF for an already-completed run (preview modal
+  // shows Download instead of Review & Decide once everything is signed).
+  const [dlRunId, setDlRunId] = useState<number | null>(null);
+  const downloadSignedRun = async (run: SignatureRun) => {
+    if (dlRunId !== null) return;
+    setDlRunId(run.id);
+    try {
+      const resp = await api.get(`/hr-document-signatures/${run.id}/download-pdf`, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url; a.download = `${run.code || `doc-${run.id}`}-signed.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Downloaded', 'Signed PDF saved.');
+    } catch (err: any) {
+      toast.error('Could not download', err?.response?.data?.message || 'Please try again.');
+    } finally { setDlRunId(null); }
+  };
 
   // Decision modal — same shape as MyTeam: doc preview + remark + Reject /
   // Approve|Sign|Acknowledge in the footer.
@@ -1122,10 +1140,53 @@ export default function Inbox() {
               className="inbox-btn-ghost ib-btn-ghost">
               Close
             </button>
-            <button type="button" onClick={() => { const v = viewRun; setViewRun(null); openAction(v); }}
-              className="ib-btn-decide">
-              <i className="ri-checkbox-circle-line me-1" />Review &amp; Decide
-            </button>
+            {(() => {
+              // Whole run signed → anyone can grab the final PDF.
+              if (viewRun.status === 'Completed') {
+                return (
+                  <button type="button" onClick={() => downloadSignedRun(viewRun)} disabled={dlRunId === viewRun.id}
+                    className="ib-btn-decide" style={dlRunId === viewRun.id ? { opacity: 0.7, cursor: 'wait' } : undefined}>
+                    <i className={dlRunId === viewRun.id ? 'ri-loader-4-line me-1' : 'ri-download-2-line me-1'} />{dlRunId === viewRun.id ? 'Downloading…' : 'Download'}
+                  </button>
+                );
+              }
+              // Where does the current user sit in this signing workflow?
+              const myIdx = viewRun.signers.findIndex(s => s.user_id != null && s.user_id === user?.id);
+              const mine = myIdx >= 0 ? viewRun.signers[myIdx] : null;
+              const isRunOpen = viewRun.status === 'Pending' || viewRun.status === 'In Progress';
+              const myTurn = !!mine && mine.status === 'Pending' && myIdx === viewRun.current_index && isRunOpen;
+              // It's my turn → let me act.
+              if (myTurn) {
+                return (
+                  <button type="button" onClick={() => { const v = viewRun; setViewRun(null); openAction(v); }}
+                    className="ib-btn-decide">
+                    <i className="ri-checkbox-circle-line me-1" />Review &amp; Decide
+                  </button>
+                );
+              }
+              // I already signed → no decision to make; awaiting the others.
+              if (mine && mine.status === 'Done') {
+                return (
+                  <span className="ib-btn-decide" style={{ cursor: 'default', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}>
+                    <i className="ri-check-double-line me-1" />You&rsquo;ve signed — awaiting other signers
+                  </span>
+                );
+              }
+              // I declined it earlier.
+              if (mine && mine.status === 'Rejected') {
+                return (
+                  <span className="ib-btn-decide" style={{ cursor: 'default', background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' }}>
+                    <i className="ri-close-circle-line me-1" />You declined this document
+                  </span>
+                );
+              }
+              // Not my turn yet (an earlier signer is pending) or I'm not a signer.
+              return (
+                <span className="ib-btn-decide" style={{ cursor: 'default', background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0' }}>
+                  <i className="ri-time-line me-1" />Awaiting earlier signer
+                </span>
+              );
+            })()}
           </div>
         </ModalShell>
       )}
