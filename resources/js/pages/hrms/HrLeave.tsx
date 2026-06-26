@@ -5,6 +5,7 @@ import { MasterFormStyles, MasterSelect, MasterDatePicker } from '../master/mast
 import Tooltip from '../../components/ui/Tooltip';
 import WorklistPager from '../../components/ui/WorklistPager';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { leaveRequestsApi, ApiLeaveRequest } from './leavePlansApi';
 import '../../../css/recruitment.css';
@@ -278,7 +279,16 @@ function apiToLeaveRequest(api: ApiLeaveRequest, idx: number): LeaveRequest {
     toDate: typeof api.to_date === 'string' ? api.to_date.slice(0, 10) : '',
     appliedOn: typeof api.created_at === 'string' ? api.created_at.slice(0, 10) : '',
     raisedBy: 'employee',
-    reportingManager: { initials: '—', name: '—', designation: 'Reporting Manager' },
+    reportingManager: (() => {
+      const rm = (emp as any)?.reporting_manager;
+      const rmu = (emp as any)?.reporting_manager_user;
+      const nm = (rm?.display_name
+        || [rm?.first_name, rm?.last_name].filter(Boolean).join(' ').trim()
+        || rmu?.name
+        || '').trim();
+      const ini = nm ? nm.split(/\s+/).filter(Boolean).map((s: string) => s[0]).join('').slice(0, 2).toUpperCase() : '—';
+      return { initials: nm ? ini : '—', name: nm || '—', designation: 'Reporting Manager' };
+    })(),
     hrApprover: api.approver ? { initials: (api.approver.name || '?').split(/\s+/).map(s => s[0]).join('').slice(0,2).toUpperCase(), name: api.approver.name, designation: 'Approver' } : undefined,
     managerStatus,
     managerActionAt: api.approved_at ? api.approved_at.slice(0, 10) : undefined,
@@ -306,6 +316,7 @@ const KPI_CARDS = [
 export default function HrLeave() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const toast = useToast();
   const isSuperAdmin = user?.user_type === 'super_admin';
   const leavePerm = user?.permissions?.['hr.leave'];
   const canApprove = isSuperAdmin || !!leavePerm?.can_approve;
@@ -342,9 +353,10 @@ export default function HrLeave() {
         await leaveRequestsApi.reject(id, comment.trim() || undefined);
       }
       await loadRequests();
+      toast.success(action === 'approve' ? 'Leave approved' : 'Leave rejected', 'The request has been updated.');
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Action failed';
-      alert(msg);
+      toast.error('Action failed', msg);
     } finally {
       setConfirmAction(null);
     }
@@ -782,16 +794,14 @@ export default function HrLeave() {
                           <th scope="col" style={{ width: 220 }}>Date Range</th>
                           <th scope="col" style={{ width: 200 }}>Approval Chain</th>
                           <th scope="col" style={{ width: 120 }}>Payroll</th>
-                          <th scope="col" style={{ width: 110 }}>Proof</th>
                           <th scope="col" style={{ width: 180 }}>Status</th>
-                          <th scope="col" style={{ width: 120 }}>SLA</th>
                           <th scope="col" className="text-center pe-3" style={{ width: 130 }}>Action</th>
                         </tr>
                       </thead>
                       <tbody>
                         {visible.length === 0 ? (
                           <tr>
-                            <td colSpan={12} className="text-center py-5 text-muted">
+                            <td colSpan={9} className="text-center py-5 text-muted">
                               <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
                               No leave requests match your filters
                             </td>
@@ -850,43 +860,12 @@ export default function HrLeave() {
                                 </span>
                               </td>
                               <td>
-                                {r.proof === 'Uploaded' ? (
-                                  <button
-                                    type="button"
-                                    className="lv-proof-btn lv-proof-uploaded"
-                                    onClick={() => {
-                                      if (r.proofUrl) window.open(r.proofUrl, '_blank', 'noopener');
-                                    }}
-                                    title={r.proofFileName ? `Preview ${r.proofFileName}` : 'Preview proof'}
-                                  >
-                                    <i className="ri-check-line" />
-                                    <span>Uploaded</span>
-                                    <i className="ri-eye-line lv-proof-view" />
-                                  </button>
-                                ) : (
-                                  <span className="text-muted fs-13">—</span>
-                                )}
-                              </td>
-                              <td>
                                 <span className="rec-pill lv-tone-pill" style={{ ['--lvp-bg' as string]: tone.bg, ['--lvp-fg' as string]: tone.fg, ['--lvp-accent' as string]: tone.dot } as CSSProperties}>
                                   {r.stage}
                                 </span>
                                 {isPending && r.stageNote && (
                                   <div className="text-muted" style={{ fontSize: 11, marginTop: 3 }}>{r.stageNote}</div>
                                 )}
-                              </td>
-                              <td>
-                                {(() => {
-                                  const sla = computeSla(r);
-                                  return sla ? (
-                                    <span
-                                      className="rec-pill"
-                                      style={{ background: sla.bg, color: sla.fg, fontWeight: sla.solid ? 800 : 700 }}
-                                    >
-                                      {sla.label}
-                                    </span>
-                                  ) : <span className="text-muted fs-13">—</span>;
-                                })()}
                               </td>
                               <td className="pe-3">
                                 <div className="d-flex gap-1 justify-content-center align-items-center">
@@ -1401,10 +1380,11 @@ function ConfirmActionModal({
 }: {
   state: { row: LeaveRequest; action: 'approve' | 'reject' } | null;
   onClose: () => void;
-  onConfirm: (comment: string) => void;
+  onConfirm: (comment: string) => void | Promise<void>;
 }) {
   const [comment, setComment] = useState('');
-  useEffect(() => { if (state) setComment(''); }, [state?.row.id, state?.action]);
+  const [submitting, setSubmitting] = useState(false);
+  useEffect(() => { if (state) { setComment(''); setSubmitting(false); } }, [state?.row.id, state?.action]);
 
   if (!state) return null;
   const { row, action } = state;
@@ -1490,15 +1470,22 @@ function ConfirmActionModal({
         </div>
 
         <div className="lv-confirm-footer">
-          <button type="button" className="rec-btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={submitting}>Cancel</button>
           <button
             type="button"
             className={isApprove ? 'lv-btn-success' : 'lv-btn-danger'}
-            onClick={() => onConfirm(comment)}
-            disabled={!canConfirm}
+            onClick={async () => {
+              if (submitting || !canConfirm) return;
+              setSubmitting(true);
+              try { await onConfirm(comment); } finally { setSubmitting(false); }
+            }}
+            disabled={!canConfirm || submitting}
           >
-            <i className={isApprove ? 'ri-check-line' : 'ri-close-line'} />
-            {isApprove ? 'Confirm Approve' : 'Confirm Reject'}
+            <i
+              className={submitting ? 'ri-loader-4-line' : (isApprove ? 'ri-check-line' : 'ri-close-line')}
+              style={submitting ? { animation: 'spin 1s linear infinite' } : undefined}
+            />
+            {submitting ? 'Processing…' : (isApprove ? 'Confirm Approve' : 'Confirm Reject')}
           </button>
         </div>
       </ModalBody>

@@ -2172,7 +2172,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
            the file for now in case we want to re-introduce a "detailed
            application" entry point later. */}
       {tab === 'apply_leave' && (
-        <LeaveSummaryPanel employeeId={employeeId} canRequest={isOwnProfile} />
+        <LeaveSummaryPanel
+          employeeId={empDetail?.id != null ? String(empDetail.id) : (profileEmpIdNum != null ? String(profileEmpIdNum) : '')}
+          canRequest={isOwnProfile}
+        />
       )}
 
       {/* ── Holidays tab — read-only view of the employee's assigned Holiday
