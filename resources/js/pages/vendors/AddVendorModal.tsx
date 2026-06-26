@@ -270,14 +270,14 @@ const KYC_TAB_TITLE: Record<string, string> = {
   company: 'Company Due Diligence',
   owner:   'Owner KYC',
   license: 'Trade Licence',
-  bank:    'Bank Details',
+  bank:    'Supplier Bank Details',
   gst:     'GST Scrutiny',
 };
 const KYC_TAB_SUB: Record<string, string> = {
   company: 'Licenses, statutory documents, and compliance proofs',
   owner:   'Identity & address proofs for owners / directors',
   license: 'Export / import licences and registrations',
-  bank:    'Bank account & verification documents',
+  bank:    'Account, IFSC, and cancelled cheque proof',
   gst:     'GST registration & compliance checks',
 };
 
@@ -1359,8 +1359,8 @@ export default function AddVendorModal(props: {
    * ────────────────────────────────────────────────────────────── */
 
   const saveIdentity = async (): Promise<boolean> => {
-    if (!companyName.trim()) { setFieldErrors(e => ({ ...e, companyName: 'Company Name is required' })); toast.error('Missing required fields', 'Company Name is required'); return false; }
     const errs: Record<string, string> = {};
+    if (!companyName.trim()) errs.companyName         = 'Company Name is required';
     if (!vendorType)         errs.vendorType          = 'Supplier Type is required';
     if (!riskLevel)          errs.riskLevel           = 'Risk Level is required';
     if (!vendorBehaviour)    errs.vendorBehaviour     = 'Supplier Behaviour is required';
@@ -2373,8 +2373,8 @@ export default function AddVendorModal(props: {
               </svg>
             </div>
             <div className="min-w-0">
-              <div className="avm-title">{isEdit ? 'Edit Supplier' : 'Add Supplier'}</div>
-              <div className="avm-sub">{isEdit ? 'Update supplier details, KYC, or product mappings — saved per step.' : 'Capture, verify, and onboard suppliers with complete compliance and product readiness.'}</div>
+              <div className="avm-title">{isEdit ? `Edit Supplier${vendorCode ? ` — ${vendorCode}` : ''}` : 'Add Supplier'}</div>
+              <div className="avm-sub">{isEdit ? 'Review, update, and modify this supplier profile, compliance, and product details.' : 'Capture, verify, and onboard suppliers with complete compliance and product readiness.'}</div>
             </div>
           </div>
           <div className="avm-head-right">
@@ -2616,7 +2616,7 @@ export default function AddVendorModal(props: {
               </div>
 
               {idTab === 'identification' && (
-                <SectionCard tone="violet" icon={<i className="ri-building-line" />} title="Basic Company Details" subtitle="Supplier identity, type, and risk classification">
+                <SectionCard tone="violet" icon={<i className="ri-home-line" />} title="Basic Company Details" subtitle="Supplier identity, type, and risk classification">
                   {/* 3×3 grid mirroring the Figma:
                       row1: Company Name · Company Legal Name · Supplier Type
                       row2: Company Website · Supplier Segment · Risk Level
@@ -2660,9 +2660,16 @@ export default function AddVendorModal(props: {
                           value={segment}
                           options={segmentOpts}
                           placeholder="Select Segment"
+                          /* Once documents have been uploaded against the selected
+                             segments, lock the picker — changing/removing a segment
+                             would orphan those uploads. */
+                          disabled={Object.keys(segmentRefUploads).length > 0}
                           onChange={vs => { setSegment(vs); clearFieldError('segment'); }}
                         />
                       </div>
+                      {Object.keys(segmentRefUploads).length > 0 && (
+                        <span className="avm-segment-lock-note"><i className="ri-lock-2-line" /> Locked — documents uploaded for these segments</span>
+                      )}
                     </Field>
                     <Field label="Risk Level" required addNew onAdd={() => setQuickAdd('risk_levels')} error={fieldErrors.riskLevel}>
                       <SelectInput value={riskLevel} onChange={(v) => { setRiskLevel(v); clearFieldError('riskLevel'); }} placeholder="Select" options={riskLevelOpts} />
@@ -2684,7 +2691,7 @@ export default function AddVendorModal(props: {
               )}
 
               {idTab === 'identification' && (
-                <SectionCard tone="violet" icon={<i className="ri-map-pin-line" />} title="Supplier Address Details" subtitle="Registered office and location">
+                <SectionCard tone="amber" icon={<i className="ri-map-pin-line" />} title="Supplier Address Details" subtitle="Registered office and location">
                   {/* Single full-width address field — no separate Address Type
                       dropdown; the primary address is the registered office. */}
                   <div className="avm-grid-2" style={{ gridTemplateColumns: '1fr' }}>
@@ -2802,7 +2809,7 @@ export default function AddVendorModal(props: {
                       we know about". Marked with a "Primary" pill and
                       not deletable — the user has to go back to the
                       first sub-tab to change it. */}
-                  <SectionCard tone="violet" icon={<i className="ri-contacts-book-line" />} title="Additional Contact Persons" subtitle="Add more points of contact for this supplier" headerAction={
+                  <SectionCard tone="violet" icon={<i className="ri-user-add-line" />} title="Additional Contact Persons" subtitle="Add more points of contact for this supplier" headerAction={
                     <button className="avm-section-add-btn" onClick={openContactPopup}>+ Add More Contact Person</button>
                   }>
                     {(() => {
@@ -2858,7 +2865,7 @@ export default function AddVendorModal(props: {
                       }
                       return (
                         <div className="table-responsive table-card border rounded">
-                          <table className="table align-middle table-nowrap mb-0">
+                          <table className="table align-middle table-nowrap mb-0 avm-mini-table">
                             <thead className="table-light">
                               <tr>
                                 <th>Sr No</th>
@@ -2955,7 +2962,7 @@ export default function AddVendorModal(props: {
               <button className={`avm-pill ${kycTab === 'bank'    ? 'on' : ''}`} onClick={() => setKycTab('bank')}>Bank Details</button>
               <button className={`avm-pill ${kycTab === 'gst'     ? 'on' : ''}`} onClick={() => setKycTab('gst')}>GST Scrutiny</button>
             </div>
-            <SectionCard tone="teal" icon={<i className="ri-file-list-3-line" />} title={KYC_TAB_TITLE[kycTab] ?? 'KYC / Due Diligence'} subtitle={KYC_TAB_SUB[kycTab] ?? 'Upload statutory & identity proofs'} headerAction={
+            <SectionCard tone="purple" icon={<i className="ri-file-line" style={{ transform: 'scaleX(-1)' }} />} title={KYC_TAB_TITLE[kycTab] ?? 'KYC / Due Diligence'} subtitle={KYC_TAB_SUB[kycTab] ?? 'Upload statutory & identity proofs'} headerAction={
               <div className="d-inline-flex align-items-center gap-2">
                 <span className="avm-doc-count">{kycDocCount} document{kycDocCount === 1 ? '' : 's'}</span>
                 {(kycTab === 'bank' || kycTab === 'gst') && (
@@ -3062,7 +3069,7 @@ export default function AddVendorModal(props: {
                 {saving ? (
                   <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
                 ) : (
-                  <>Save &amp; Next →</>
+                  <>{isEdit ? 'Update' : 'Save'} &amp; Next →</>
                 )}
               </button>
             ) : (
@@ -3901,20 +3908,27 @@ function SupplierSegmentRefTable(props: {
                   <td><span className={`avm-exp-pill ${isDate ? 'is-date' : 'is-na'}`}>{r.expiry || 'N/A'}</span></td>
                   <td>
                     <div className="avm-req-pair">
-                      <span className={`avm-req-pill ${r.requirement === 'M' ? 'on-m' : 'off'}`}>✓ Mandatory</span>
-                      <span className={`avm-req-pill ${r.requirement === 'O' ? 'on-o' : 'off'}`}>Optional</span>
+                      {r.requirement === 'M'
+                        ? <span className="avm-req-pill on-m">✓ Mandatory</span>
+                        : <span className="avm-req-pill on-o">Optional</span>}
                     </div>
                   </td>
                   <td>
                     <div className="avm-kyc-actions">
-                      <label className="avm-kyc-act up" data-tooltip={uploaded ? 'Re-upload' : 'Upload'} aria-label={uploaded ? 'Re-upload' : 'Upload'}>
-                        <i className="ri-upload-2-line" />
-                        <input type="file" hidden accept={FILE_ACCEPT} onChange={e => onPick(refKey, r.name, e.target.files?.[0])} />
-                      </label>
                       {uploaded ? (
-                        <a href={uploaded.url} download={uploaded.name} className="avm-kyc-act down" data-tooltip={`Download ${uploaded.name}`} aria-label="Download"><i className="ri-download-2-line" /></a>
+                        <>
+                          <a href={uploaded.url} target="_blank" rel="noreferrer" className="avm-kyc-act view" data-tooltip={`View ${uploaded.name}`} aria-label="View"><i className="ri-eye-line" /></a>
+                          <a href={uploaded.url} download={uploaded.name} className="avm-kyc-act down" data-tooltip={`Download ${uploaded.name}`} aria-label="Download"><i className="ri-download-2-line" /></a>
+                          <label className="avm-kyc-act reup" data-tooltip="Re-upload" aria-label="Re-upload">
+                            <i className="ri-refresh-line" />
+                            <input type="file" hidden accept={FILE_ACCEPT} onChange={e => onPick(refKey, r.name, e.target.files?.[0])} />
+                          </label>
+                        </>
                       ) : (
-                        <span className="avm-kyc-act down is-disabled" data-tooltip="No file uploaded yet" aria-label="No file"><i className="ri-download-2-line" /></span>
+                        <label className="avm-kyc-act up" data-tooltip="Upload" aria-label="Upload">
+                          <i className="ri-upload-2-line" />
+                          <input type="file" hidden accept={FILE_ACCEPT} onChange={e => onPick(refKey, r.name, e.target.files?.[0])} />
+                        </label>
                       )}
                     </div>
                   </td>
@@ -4003,7 +4017,7 @@ function DdTable(props: {
               <td>{String(i + 1).padStart(2, '0')}</td>
               <td><span className="avm-auto-code">{r.code}</span></td>
               <td><strong>{r.documentName}</strong></td>
-              <td>{r.issuingAuthority}</td>
+              <td className="avm-cell-authority">{r.issuingAuthority}</td>
               <td>{r.expiry || 'N/A'}</td>
               <td>
                 <span className={`avm-pill ${r.mandatory ? 'avm-pill-success' : 'avm-pill-muted'}`}>
@@ -4080,7 +4094,7 @@ function OwnerKycTable(props: {
               <td>{String(i + 1).padStart(2, '0')}</td>
               <td><span className="avm-auto-code">{r.code}</span></td>
               <td><strong>{r.documentName}</strong></td>
-              <td>{r.issuingAuthority}</td>
+              <td className="avm-cell-authority">{r.issuingAuthority}</td>
               <td><span className="font-monospace fs-13">{r.documentNumber || '—'}</span></td>
               <td>{r.issueDate || '—'}</td>
               <td>{r.expiry || 'N/A'}</td>
@@ -4146,7 +4160,7 @@ function TradeLicenseTable(props: {
                 <td><span className="avm-auto-code">{r.code}</span></td>
                 <td><strong>{r.licenseType}</strong></td>
                 <td><span className="font-monospace fs-13">{r.licenseNumber || '—'}</span></td>
-                <td>{r.issuingAuthority}</td>
+                <td className="avm-cell-authority">{r.issuingAuthority}</td>
                 <td>{r.issueDate || '—'}</td>
                 <td>{r.expiryDate || '—'}</td>
                 <td>
@@ -4483,7 +4497,7 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
             <th className="text-end">GST %</th>
             <th className="text-end">GST (₹)</th>
             <th className="text-end">TOTAL (₹)</th>
-            <th aria-label="Actions"></th>
+            <th>ACTIONS</th>
           </tr>
         </thead>
         <tbody>
@@ -4494,18 +4508,18 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
               <td><span className="avm-auto-code">{r.productCode}</span></td>
               <td><span className="font-monospace fs-13">{r.hsnSacCode || '—'}</span></td>
               <td>{r.segment || '—'}</td>
-              <td className="text-end font-monospace fs-13">{r.purchasePrice.toFixed(2)}</td>
+              <td className="text-end font-monospace fs-13">₹{r.purchasePrice.toFixed(2)}</td>
               <td className="text-end font-monospace fs-13">{r.gstPercentage ? `${r.gstPercentage.toFixed(2)}%` : '—'}</td>
-              <td className="text-end font-monospace fs-13">{r.gstAmount.toFixed(2)}</td>
-              <td className="text-end font-monospace fs-13"><strong>{r.totalAmount.toFixed(2)}</strong></td>
+              <td className="text-end font-monospace fs-13">₹{r.gstAmount.toFixed(2)}</td>
+              <td className="text-end font-monospace fs-13"><strong>₹{r.totalAmount.toFixed(2)}</strong></td>
               <td>
-                <div className="hstack gap-1">
+                <div className="avm-kyc-actions">
                   {props.onEdit && (
-                    <button type="button" className="btn btn-sm btn-soft-info" onClick={() => props.onEdit?.(r.id)} data-tooltip="Edit product" aria-label="Edit product">
+                    <button type="button" className="avm-kyc-act edit" onClick={() => props.onEdit?.(r.id)} data-tooltip="Edit product" aria-label="Edit product">
                       <i className="ri-pencil-line" />
                     </button>
                   )}
-                  <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove(r.id)} data-tooltip="Remove product" aria-label="Remove product">
+                  <button type="button" className="avm-kyc-act del" onClick={() => props.onRemove(r.id)} data-tooltip="Remove product" aria-label="Remove product">
                     <i className="ri-delete-bin-line" />
                   </button>
                 </div>
@@ -5104,7 +5118,7 @@ function BankAddPopup(props: {
     setErrors(prev => ({ ...prev, branchAddress: error }));
   };
   return (
-    <PopupShell title="Add Bank Details" icon="ri-bank-line" onClose={onClose} onSave={handleSave}>
+    <PopupShell title="Add Bank Details" icon="ri-bank-card-line" onClose={onClose} onSave={handleSave}>
       <div className="avm-grid-4">
         <Field label="Bank Name" required error={errors.bankName}>
           <input
@@ -5146,7 +5160,7 @@ function BankAddPopup(props: {
             file={draft.chequeFile}
             existingPath={draft.existingPath}
             onPick={f => { setDraft({ ...draft, chequeFile: f, chequeFileName: f?.name ?? '', existingPath: f ? undefined : draft.existingPath }); setErrors(p => ({ ...p, cheque: undefined })); }}
-            placeholder="Upload Cancelled Cheque (JPG / PNG / PDF, max 2 MB)"
+            placeholder="Upload Cancelled Cheque"
           />
         </Field>
       </div>
@@ -5324,9 +5338,10 @@ const SCOPED_CSS = `
 }
 .avm-modal {
   width: 100%; max-width: 1200px;
-  /* Fixed height so the modal never resizes with content — the body
-     (.avm-body) scrolls internally instead of the whole dialog growing. */
-  height: calc(100vh - 48px);
+  /* Shrink-to-fit like the Figma .sf-modal (max-height:93vh) — the dialog is
+     only as tall as its content (no dead space below short steps), and the
+     body (.avm-body) scrolls internally once content exceeds the cap. */
+  max-height: calc(100vh - 48px);
   margin: auto;
   /* Figma lavender wash (.sf-modal) — soft glows over a light gradient so the
      white section cards read as elevated, not flat on plain white. */
@@ -5365,8 +5380,8 @@ const SCOPED_CSS = `
   border: 1px solid rgba(255,255,255,.25);
   display: flex; align-items: center; justify-content: center;
 }
-.avm-title { font-size: 15.5px; font-weight: 600; letter-spacing: -0.01em; }
-.avm-sub   { font-size: 11px; font-weight: 400; color: rgba(255,255,255,.85); margin-top: 1px; }
+.avm-title { font-size: 18px; font-weight: 800; color: #fff; letter-spacing: -0.4px; line-height: 1.1; text-shadow: 0 1px 3px rgba(0,0,0,.18); }
+.avm-sub   { font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.85); margin-top: 3px; }
 .avm-head-right { display: inline-flex; align-items: center; gap: 8px; }
 .avm-map-btn {
   display: inline-flex; align-items: center; gap: 6px;
@@ -5390,24 +5405,26 @@ const SCOPED_CSS = `
 /* Stepper, body and footer share ONE continuous light-lavender surface so
    the modal reads as a single sheet (Figma) — the white section cards float
    on top. No dividing band between the stepper and the form. */
-.avm-stepper-wrap { padding: 12px 18px; background: transparent; }
+.avm-stepper-wrap { padding: 14px 18px 2px; background: transparent; }
 .avm-stepper { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
 
 /* Step card — matches the Figma two-card stepper: icon chip with a small
    number badge, title + sub, and a status pill pushed to the right. */
 .avm-step {
   flex: 1; min-width: 240px;
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 14px;
-  background: #fff; border: 1.5px solid #ece7f8; border-radius: 14px;
+  display: flex; align-items: center; gap: 13px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(255,255,255,.7), rgba(245,241,254,.55));
+  border: 1.5px solid rgba(196,181,253,.5); border-radius: 15px;
   box-shadow: 0 1px 3px rgba(124,58,237,.05);
   transition: border-color .15s, background .15s, box-shadow .15s;
 }
 .avm-step-ico {
-  position: relative; width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
+  position: relative; width: 38px; height: 38px; border-radius: 12px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center; color: #fff;
   background: linear-gradient(135deg, #c4b5fd, #a78bfa);
-  box-shadow: 0 4px 10px rgba(124,58,237,.25);
+  box-shadow: 0 4px 12px rgba(167,139,250,.4), 0 1px 0 rgba(255,255,255,.4) inset;
+  transition: all .25s;
 }
 .avm-step-ico i { font-size: 18px; line-height: 1; }
 .avm-step-ico-num {
@@ -5429,11 +5446,11 @@ const SCOPED_CSS = `
 
 /* Active card — purple wash + glow (universal, regardless of tone) */
 .avm-step-active {
-  border-color: #c4b5fd;
-  background: linear-gradient(135deg, #faf5ff, #f3e8ff);
-  box-shadow: 0 6px 18px rgba(124,58,237,.14);
+  border-color: #a78bfa;
+  background: linear-gradient(135deg, #f6f2ff, #ece4fb);
+  box-shadow: 0 10px 26px rgba(124,58,237,.2), 0 0 0 1px rgba(167,139,250,.3), 0 1px 0 rgba(255,255,255,.8) inset;
 }
-.avm-step-active .avm-step-ico { background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6); box-shadow: 0 4px 12px rgba(124,58,237,.45); }
+.avm-step-active .avm-step-ico { background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6); box-shadow: 0 6px 16px rgba(124,58,237,.55), 0 1px 0 rgba(255,255,255,.4) inset; }
 
 /* Completed card — green wash + green check chip */
 .avm-step-done {
@@ -5466,9 +5483,15 @@ const SCOPED_CSS = `
  * was a green "completed" panel; design feedback wanted the same calm
  * violet palette applied across all stages. */
 .avm-prev {
+  position: relative;
   background: linear-gradient(180deg, #faf5ff 0%, #f3e8ff 100%);
   border: 1px solid #e9d5ff; border-radius: 12px;
   margin-bottom: 14px; overflow: hidden;
+}
+/* Purple left accent strip — matches the section cards' ::before (Figma). */
+.avm-prev::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 4px; background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
 }
 .avm-prev-head {
   display: flex; align-items: center; gap: 12px;
@@ -5555,19 +5578,20 @@ const SCOPED_CSS = `
 
 /* Tabs */
 .avm-tabs {
-  display: flex; gap: 4px; margin-bottom: 14px;
+  display: flex; gap: 6px; margin-bottom: 14px;
   border-bottom: 1.5px solid #e2d4fa;
 }
 .avm-tab {
-  background: none; border: none; padding: 10px 16px;
-  font-family: inherit; font-size: 13px; font-weight: 500;
-  color: #94a3b8; cursor: pointer;
+  background: none; border: none; padding: 8px 14px;
+  font-family: "DM Sans", system-ui, sans-serif; font-size: 12px; font-weight: 700;
+  color: #8b7bb8; cursor: pointer;
   border-bottom: 2.5px solid transparent;
   margin-bottom: -1.5px;
+  white-space: nowrap;
   transition: color .15s, border-color .15s;
 }
-.avm-tab:hover { color: #7c3aed; }
-.avm-tab.on { color: #7c3aed; border-bottom-color: #7c3aed; font-weight: 600; }
+.avm-tab:hover { color: #5b21b6; }
+.avm-tab.on { color: #5b21b6; border-bottom-color: #7c3aed; font-weight: 700; }
 
 /* Pill tabs (Step 2 sub-tabs) */
 /* Sub-tab strip (Figma): a light lavender container; only the ACTIVE tab is a
@@ -5629,7 +5653,7 @@ const SCOPED_CSS = `
 
 .avm-section-head {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 9px 14px;
+  padding: 7px 14px;
   background: #fff;
   border-bottom: 1px solid #f1ecfb;
 }
@@ -5642,9 +5666,9 @@ const SCOPED_CSS = `
 .avm-section-green .avm-section-head { border-bottom-color: #dcfce7; }
 .avm-section-head-left { display: flex; align-items: center; gap: 10px; }
 .avm-section-icon {
-  width: 28px; height: 28px; border-radius: 8px;
+  width: 25px; height: 25px; border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 15px; border: 1px solid transparent;
+  font-size: 14px; border: 1px solid transparent;
 }
 .avm-section-violet .avm-section-icon { background: #f5f1fe; color: #7c3aed; border-color: #e2d4fa; }
 .avm-section-amber  .avm-section-icon { background: #fffbeb; color: #d97706; border-color: #fde68a; }
@@ -5657,16 +5681,28 @@ const SCOPED_CSS = `
 .avm-section-sub::before { content: '|'; margin-right: 7px; color: #c4b5fd; font-weight: 600; }
 /* Amber section keeps its amber icon, but the title + subtitle use the same
    purple as every other section heading (user request). */
-.avm-section-body { padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 8px; }
+.avm-section-body { padding: 8px 14px 10px; display: flex; flex-direction: column; gap: 9px; }
 
 .avm-section-add-btn {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 7px 14px; border-radius: 8px;
-  background: linear-gradient(120deg, #7c3aed 0%, #a78bfa 100%); color: #fff; border: none;
-  font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer;
-  transition: transform .12s, box-shadow .15s;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 12px; border-radius: 9px;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6); color: #fff; border: none;
+  font-family: inherit; font-size: 11px; font-weight: 700; cursor: pointer;
+  box-shadow: 0 3px 9px rgba(124,58,237,.42);
+  transition: transform .14s, box-shadow .14s;
 }
-.avm-section-add-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(124,58,237,.35); }
+.avm-section-add-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(124,58,237,.5); }
+
+/* Additional-contacts table = Figma .sf-mini-table: PURPLE header text, NO
+   gradient band (just a thin divider) — distinct from the DD/KYC tables, which
+   keep the lavender-gradient gray header. */
+.avm-modal .table.avm-mini-table thead tr { background: transparent !important; }
+.avm-modal .table.avm-mini-table thead th {
+  color: #7c3aed; font-size: 9.5px; font-weight: 800; letter-spacing: .06em;
+  padding: 7px 10px; border-bottom: 1px solid #ece7f8;
+}
+[data-bs-theme="dark"] .avm-modal .table.avm-mini-table thead tr { background: transparent !important; }
+[data-bs-theme="dark"] .avm-modal .table.avm-mini-table thead th { color: #c4b5fd; border-bottom-color: #3b2a6b; }
 
 /* "N documents" count badge on the KYC section header (Figma) */
 .avm-doc-count {
@@ -5678,24 +5714,28 @@ const SCOPED_CSS = `
 }
 
 /* Form */
-.avm-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px; }
-.avm-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 18px; }
-.avm-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 18px; }
+.avm-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+.avm-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 11px; }
+.avm-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 11px; }
 
-.avm-field { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.avm-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 /* Labels match the Client / Recruitment master forms: small, uppercase,
    modest letter-spacing, navy color, lighter weight (500) so the
    surrounding form chrome doesn't shout at the user. */
 .avm-field-label {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 12px; font-weight: 500;
+  font-size: 11px; font-weight: 700;
   letter-spacing: 0; text-transform: none;
-  color: #1e293b;
-  margin-bottom: 3px;
+  color: #3b0764;
+  margin-bottom: 0;
 }
 [data-bs-theme="dark"] .avm-field-label,
 [data-layout-mode="dark"] .avm-field-label { color: #c4b5fd; }
 .avm-req { color: #f06548; font-weight: 600; margin-left: 1px; }
+/* Segment picker lock note — shown when uploaded docs pin the segment set. */
+.avm-segment-lock-note { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 10.5px; font-weight: 600; color: #b45309; }
+.avm-segment-lock-note i { font-size: 12px; }
+[data-bs-theme="dark"] .avm-segment-lock-note { color: #fbbf24; }
 /* Inline quick-add (+) buttons — let the user add a new master entry
    (Risk Level / Supplier Behaviour / Segment / Compliance / Country)
    without leaving the form. */
@@ -5945,16 +5985,19 @@ const SCOPED_CSS = `
   font-size: 13px;
   margin-bottom: 0;
 }
+/* Exact match to the Figma prototype's .sf-doc-table header (P2P_Sourcing). */
+.avm-modal .table thead tr { background: linear-gradient(135deg, #faf8ff, #f3eefe); }
 .avm-modal .table thead.table-light th,
 .avm-modal .table thead th {
-  font-size: 11.5px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: #64748b;
-  padding: 10px 12px;
-  background: #f8f9fc;
-  border-bottom: 1px solid #e9ebec;
+  color: #8b7bb8;
+  padding: 10px 13px;
+  background: transparent;
+  border-bottom: 1.5px solid #ece7f8;
   white-space: nowrap;
 }
 .avm-modal .table tbody td {
@@ -5975,6 +6018,9 @@ const SCOPED_CSS = `
      adapts per theme (near-black in light, near-white in dark). */
   color: var(--vz-emphasis-color, var(--vz-heading-color, #1e293b));
 }
+/* Issuing Authority column reads in the brand purple (Figma), not body grey. */
+.avm-modal .table tbody td.avm-cell-authority { color: #7c3aed; font-weight: 500; }
+[data-bs-theme="dark"] .avm-modal .table tbody td.avm-cell-authority { color: #c4b5fd; }
 
 /* Action buttons inside vendor-modal tables — 30x30 outline pills,
    identical to the Clients ActionBtn component
@@ -6028,10 +6074,21 @@ const SCOPED_CSS = `
   border-color: #e5e7eb !important;
 }
 
+/* Dark-mode table header — the .table-light Bootstrap class forces a light bg
+   even in dark mode, so override with !important; the row carries a dark
+   gradient (mirrors the light-mode lavender gradient) and cells stay transparent. */
+[data-bs-theme="dark"] .avm-modal .table thead tr { background: linear-gradient(135deg, #251d47, #2a2150) !important; }
 [data-bs-theme="dark"] .avm-modal .table thead.table-light th,
 [data-bs-theme="dark"] .avm-modal .table thead th {
-  background: #2a2150; color: #94a3b8; border-bottom-color: #3b2a6b;
+  background: transparent !important; color: #a89fc7; border-bottom-color: #3b2a6b;
 }
+/* Section header icon tiles — translucent tinted chips instead of the bright
+   light-mode tiles, so they sit on the dark surface. */
+[data-bs-theme="dark"] .avm-section-violet .avm-section-icon,
+[data-bs-theme="dark"] .avm-section-purple .avm-section-icon { background: rgba(124,58,237,.22); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+[data-bs-theme="dark"] .avm-section-amber  .avm-section-icon { background: rgba(217,119,6,.22);  color: #fbbf24; border-color: rgba(251,191,36,.35); }
+[data-bs-theme="dark"] .avm-section-teal   .avm-section-icon { background: rgba(13,148,136,.22); color: #5eead4; border-color: rgba(94,234,212,.3); }
+[data-bs-theme="dark"] .avm-section-green  .avm-section-icon { background: rgba(22,163,74,.22);  color: #86efac; border-color: rgba(134,239,172,.3); }
 [data-bs-theme="dark"] .avm-modal .table tbody td {
   color: #cbd5e1; border-top-color: #2a2150;
 }
@@ -6175,7 +6232,9 @@ const SCOPED_CSS = `
    .table-card negative margin (margin: -card-spacer) bleeds them wider than the
    card and forces a horizontal scrollbar. Neutralize the margin so the table
    fits the card width and sizes to the popup dynamically. */
-.avm-kyc-table-wrap { overflow-x: clip; margin: 0 !important; }
+/* 12px radius + overflow clip so the gradient header curves at the top
+   corners, matching the Figma .sf-doc-scroll wrapper. */
+.avm-kyc-table-wrap { overflow: hidden; border-radius: 12px !important; border-color: #f1ecfb !important; margin: 0 !important; }
 .avm-kyc-table-wrap.table-card { margin: 0 !important; }
 /* Fill the card width so columns spread to fit (no bleed, no scroll on desktop). */
 .avm-kyc-table-wrap .avm-kyc-table { width: 100%; }
@@ -6186,9 +6245,9 @@ const SCOPED_CSS = `
   .avm-kyc-table-wrap .avm-kyc-table { min-width: 680px; }
   .avm-kyc-table th, .avm-kyc-table td { white-space: nowrap; max-width: none; }
 }
-/* KYC step card (teal tone) — extend down to fill the modal body instead of
+/* KYC step card (purple tone) — extend down to fill the modal body instead of
    floating short with empty space below. Step-1 sections (violet) are untouched. */
-.avm-section-teal { min-height: calc(100vh - 430px); }
+.avm-section-purple { min-height: calc(100vh - 430px); }
 /* width:auto so the table hugs its content — columns sit tight together
    instead of stretching across the full card (no wasted gaps / no scroll). */
 .avm-kyc-table {
@@ -6349,7 +6408,8 @@ const SCOPED_CSS = `
   border: 1px solid rgba(167,139,250,.14);
   box-shadow: 0 6px 20px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.05);
 }
-[data-bs-theme="dark"] .avm-section-violet { border-color: #3b2a6b; border-left-color: #a78bfa; }
+[data-bs-theme="dark"] .avm-section-violet,
+[data-bs-theme="dark"] .avm-section-purple { border-color: #3b2a6b; border-left-color: #a78bfa; }
 [data-bs-theme="dark"] .avm-section-amber  { border-color: #78350f; border-left-color: #f59e0b; }
 [data-bs-theme="dark"] .avm-section-teal   { border-color: #0f766e; border-left-color: #14b8a6; }
 [data-bs-theme="dark"] .avm-section-green  { border-color: #14532d; border-left-color: #4ade80; }
@@ -6358,6 +6418,16 @@ const SCOPED_CSS = `
 /* The head/body divider was a light lavender line (#f1ecfb) with no dark
    override — it read as an ugly white line. Subtle purple instead. */
 [data-bs-theme="dark"] .avm-section-head { border-bottom-color: rgba(167,139,250,.15); }
+/* Cleaner dark borders — these had light (near-white / bright-lavender) borders
+   that read as harsh outlines in dark. Soften to subtle purple. Light mode is
+   untouched (these only apply under [data-bs-theme="dark"]). */
+[data-bs-theme="dark"] .avm-kyc-table-wrap { border-color: rgba(167,139,250,.14) !important; }
+[data-bs-theme="dark"] .avm-step { border-color: rgba(167,139,250,.16); }
+[data-bs-theme="dark"] .avm-step-done { border-color: rgba(74,222,128,.30); }
+[data-bs-theme="dark"] .avm-mapped-wrap,
+[data-bs-theme="dark"] .table-card.border,
+[data-bs-theme="dark"] .avm-modal .border { border-color: rgba(167,139,250,.14) !important; }
+[data-bs-theme="dark"] .avm-doc-count { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
 [data-bs-theme="dark"] .avm-section-amber  .avm-section-head { background: linear-gradient(135deg, #3f2c0a, #4a3408); }
 [data-bs-theme="dark"] .avm-section-teal   .avm-section-head { background: linear-gradient(135deg, #0c2522, #133e3a); }
 [data-bs-theme="dark"] .avm-section-green  .avm-section-head { background: linear-gradient(135deg, #14241a, #1a3225); }
@@ -6503,15 +6573,15 @@ const SCOPED_CSS = `
   background: linear-gradient(180deg, rgba(255,255,255,.16), transparent);
 }
 /* Amber-toned popup (GST Scrutiny) — orange header + orange Save button. */
-.avm-cp-amber .avm-cp-head { background: linear-gradient(115deg, #d97706 0%, #f59e0b 55%, #fbbf24 100%); }
+.avm-cp-amber .avm-cp-head { background: linear-gradient(115deg, #b45309 0%, #d97706 45%, #f59e0b 100%); }
 .avm-btn-amber {
   background: linear-gradient(135deg, #fbbf24, #f59e0b, #d97706) !important;
   box-shadow: 0 4px 12px rgba(217,119,6,.4) !important;
 }
 .avm-btn-amber:hover { box-shadow: 0 6px 18px rgba(217,119,6,.5) !important; }
 /* Amber "+ Add" section button (GST tab). */
-.avm-section-add-btn.amber { background: linear-gradient(120deg, #f59e0b 0%, #fbbf24 100%); }
-.avm-section-add-btn.amber:hover { box-shadow: 0 4px 12px rgba(217,119,6,.4); }
+.avm-section-add-btn.amber { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 3px 9px rgba(217, 119, 6, .42); }
+.avm-section-add-btn.amber:hover { box-shadow: 0 6px 14px rgba(217,119,6,.5); }
 /* Figma .sf-pop-head layout — icon chip beside a tight title/subtitle column,
    vertically centred. Keeps the header compact (no taller than the icon). */
 .avm-cp-title { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 12px; }
@@ -6543,6 +6613,20 @@ const SCOPED_CSS = `
 /* Figma .sf-pop-body .sf-input — popup inputs sit a touch taller/rounder than
    the main form's, and popup grids breathe a little more. */
 .avm-cp-body .avm-input { height: 42px; border-radius: 11px; }
+/* Upload box (Cancelled Cheque etc.) matches the sibling inputs inside the
+   popup — same 42px height, radius, lavender tint and purple-tinted border —
+   so it doesn't sit shorter/whiter than the fields next to it (Figma). */
+.avm-cp-body .avm-filechooser {
+  height: 42px; border-radius: 11px;
+  border-color: color-mix(in srgb, #a78bfa 20%, var(--vz-border-color, #e9ebec));
+  background: color-mix(in srgb, #a78bfa 5%, var(--vz-card-bg, #fff));
+}
+/* Dark mode — the light tint above outranks the global dark .avm-filechooser
+   rule (same specificity, declared later), so re-darken it explicitly here. */
+[data-bs-theme="dark"] .avm-cp-body .avm-filechooser {
+  background: color-mix(in srgb, #a78bfa 12%, #110c25);
+  border-color: rgba(167,139,250,.3); color: #a89fc7;
+}
 .avm-cp-body .avm-grid-2, .avm-cp-body .avm-grid-3 { gap: 14px; }
 .avm-cp-foot {
   display: flex; justify-content: flex-end; gap: 11px;
@@ -6718,11 +6802,22 @@ const SCOPED_CSS = `
 .avm-kyc-act.up:hover { background: #7c3aed; color: #fff; border-color: transparent; transform: translateY(-1px); }
 .avm-kyc-act.down { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
 .avm-kyc-act.down:hover { background: #16a34a; color: #fff; border-color: transparent; transform: translateY(-1px); }
+/* View (eye) + Re-upload (refresh) — shown once a file exists, like Evidence Vault. */
+.avm-kyc-act.view { background: #ecfeff; color: #0891b2; border: 1px solid #a5f3fc; }
+.avm-kyc-act.view:hover { background: #0891b2; color: #fff; border-color: transparent; transform: translateY(-1px); }
+.avm-kyc-act.reup { background: #fffbeb; color: #d97706; border: 1px solid #fde68a; }
+.avm-kyc-act.reup:hover { background: #d97706; color: #fff; border-color: transparent; transform: translateY(-1px); }
+.avm-kyc-act.edit { background: #f5f1fe; color: #7c3aed; border: 1px solid #ddd6fe; }
+.avm-kyc-act.edit:hover { background: #7c3aed; color: #fff; border-color: transparent; transform: translateY(-1px); }
+.avm-kyc-act.del { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+.avm-kyc-act.del:hover { background: #dc2626; color: #fff; border-color: transparent; transform: translateY(-1px); }
+/* Green "file uploaded" tick that fronts the action group. */
+.avm-uploaded-dot { display: inline-flex; align-items: center; color: #16a34a; font-size: 16px; margin-right: 1px; }
 .avm-kyc-act.is-disabled { opacity: .45; cursor: not-allowed; }
 .avm-kyc-act.is-disabled:hover { background: #f0fdf4; color: #16a34a; transform: none; }
 .avm-kyc-search {
   position: relative; display: flex; align-items: center; gap: 9px;
-  height: 38px; margin-bottom: 12px; padding: 0 12px 0 14px;
+  height: 38px; margin-bottom: 6px; padding: 0 12px 0 14px;
   background: #faf8ff; border: 1.5px solid #e9e2f7; border-radius: 11px;
   transition: border-color .16s, box-shadow .16s;
 }
@@ -6822,6 +6917,11 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-req-pill.off { background: rgba(255,255,255,.05); color: #9a93b3; border-color: rgba(255,255,255,.12); }
 [data-bs-theme="dark"] .avm-kyc-act.up   { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
 [data-bs-theme="dark"] .avm-kyc-act.down { background: rgba(22,163,74,.18); color: #4ade80; border-color: rgba(22,163,74,.4); }
+[data-bs-theme="dark"] .avm-kyc-act.view { background: rgba(8,145,178,.18); color: #67e8f9; border-color: rgba(34,211,238,.4); }
+[data-bs-theme="dark"] .avm-kyc-act.reup { background: rgba(217,119,6,.18); color: #fbbf24; border-color: rgba(251,191,36,.4); }
+[data-bs-theme="dark"] .avm-kyc-act.edit { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+[data-bs-theme="dark"] .avm-kyc-act.del  { background: rgba(220,38,38,.18); color: #f87171; border-color: rgba(220,38,38,.4); }
+[data-bs-theme="dark"] .avm-uploaded-dot { color: #4ade80; }
 [data-bs-theme="dark"] .avm-kyc-search { background: rgba(255,255,255,.04); border-color: rgba(167,139,250,.22); }
 [data-bs-theme="dark"] .avm-kyc-search input { color: #ede9fe; }
 [data-bs-theme="dark"] .avm-mapped-count { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }

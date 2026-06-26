@@ -126,6 +126,9 @@ export interface SupplierVaultTarget {
   company: string;
   risk?: string;
   segment?: string;
+  /* All mapped segments (vendor_segments). Header shows every one; falls back
+     to the scalar `segment` when not provided. */
+  segments?: string[];
   country?: string;
   contact?: string;
   contactCity?: string;
@@ -541,7 +544,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                 </span>
               </div>
               <div className="cev-header-text">
-                <div className="cev-header-eyebrow">— PARTY WISE CLM: SUPPLIER EVIDENCE VAULT</div>
+                <div className="cev-header-eyebrow">SUPPLIER EVIDENCE VAULT</div>
                 <div className="cev-header-title">{supplier.company}</div>
                 <div className="cev-header-chips">
                   <span className="cev-chip cev-chip-id">● {supplier.id}</span>
@@ -558,7 +561,10 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
             </div>
             <div className="cev-header-right">
               <div className="cev-header-meta">
-                {supplier.segment && <span>{supplier.segment}</span>}
+                {(supplier.segments && supplier.segments.length > 0
+                  ? supplier.segments
+                  : (supplier.segment ? [supplier.segment] : [])
+                ).map((s, i) => <span key={`${s}-${i}`}>{s}</span>)}
                 {supplier.country && <span>· {supplier.country}</span>}
               </div>
               <button type="button" className="cev-close" onClick={onClose} aria-label="Close vault">
