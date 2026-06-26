@@ -4892,9 +4892,43 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 </Row>
 
                 <div className="onb-init-breakup">
-                  <div className="onb-init-breakup-head">
-                    <i className="ri-grid-line" style={{ color: '#7c3aed' }} />
-                    Salary Breakup
+                  <div className="onb-init-breakup-head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <i className="ri-grid-line" style={{ color: '#7c3aed' }} />
+                      Salary Breakup
+                    </span>
+                    {/* Detailed Breakup toggle — when on, the monthly component
+                        split (Basic / HRA / Special + PF) replaces the simple
+                        Regular + Bonus summary. Bound to s1.detailed_breakup,
+                        which round-trips through the saveStage1 payload. */}
+                    <span className="d-inline-flex align-items-center gap-2" style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--vz-secondary-color)' }}>
+                      <button
+                        type="button"
+                        aria-pressed={s1.detailed_breakup}
+                        onClick={() => setS1(p => ({ ...p, detailed_breakup: !p.detailed_breakup }))}
+                        className="btn p-0 border-0 d-inline-flex align-items-center"
+                        style={{
+                          width: 36, height: 20, borderRadius: 999,
+                          background: s1.detailed_breakup ? '#0ab39c' : '#e5e7eb',
+                          position: 'relative', transition: 'background .15s ease', cursor: 'pointer',
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 14, height: 14, borderRadius: '50%', background: '#fff',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                            position: 'absolute', top: 3,
+                            left: s1.detailed_breakup ? 19 : 3, transition: 'left .15s ease',
+                          }}
+                        />
+                      </button>
+                      <span
+                        onClick={() => setS1(p => ({ ...p, detailed_breakup: !p.detailed_breakup }))}
+                        style={{ cursor: 'pointer', userSelect: 'none' }}
+                      >
+                        Detailed breakup
+                      </span>
+                    </span>
                   </div>
                   <div className="onb-init-breakup-body">
                     <p className="onb-init-breakup-sub">Salary Effective From</p>
@@ -4914,13 +4948,65 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       const regular = annual - bonus;
                       const total = regular + bonus;
                       const fmt = (n: number) => `INR ${(Number.isFinite(n) ? n : 0).toLocaleString('en-IN')}`;
+
+                      // Simple view — Regular + Bonus = Total CTC (annual).
+                      if (!s1.detailed_breakup) {
+                        return (
+                          <div className="onb-init-breakup-grid">
+                            <div className="onb-init-breakup-cell"><div className="l">Regular Salary</div><div className="v">{fmt(regular)}</div></div>
+                            <span className="onb-init-breakup-op">+</span>
+                            <div className="onb-init-breakup-cell"><div className="l">Bonus</div><div className="v">{fmt(bonus)}</div></div>
+                            <span className="onb-init-breakup-op">=</span>
+                            <div className="onb-init-breakup-cell total"><div className="l">Total CTC</div><div className="v">{fmt(total)}</div></div>
+                          </div>
+                        );
+                      }
+
+                      // Detailed view — monthly component split seeded 50/30/20
+                      // (Basic / HRA / Special) from the monthly regular salary,
+                      // the same split HrEmployees uses. PF (12% of Basic) shows
+                      // as a deduction when the employee is PF-eligible.
+                      const monthlyGross = Math.round(regular / 12);
+                      const basic   = Math.round(monthlyGross * 0.5);
+                      const hra     = Math.round(monthlyGross * 0.3);
+                      const special = Math.max(0, monthlyGross - basic - hra);
+                      const pf      = s1.pf_eligible ? Math.round(basic * 0.12) : 0;
+                      const net     = monthlyGross - pf;
+                      const Line = ({ label, value, strong }: { label: string; value: number; strong?: boolean }) => (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px dashed var(--vz-border-color, #e5e7eb)' }}>
+                          <span style={{ fontSize: 12.5, fontWeight: strong ? 700 : 500 }}>{label}</span>
+                          <span style={{ fontSize: 13, fontWeight: strong ? 800 : 600 }}>{fmt(value)}</span>
+                        </div>
+                      );
                       return (
-                        <div className="onb-init-breakup-grid">
-                          <div className="onb-init-breakup-cell"><div className="l">Regular Salary</div><div className="v">{fmt(regular)}</div></div>
-                          <span className="onb-init-breakup-op">+</span>
-                          <div className="onb-init-breakup-cell"><div className="l">Bonus</div><div className="v">{fmt(bonus)}</div></div>
-                          <span className="onb-init-breakup-op">=</span>
-                          <div className="onb-init-breakup-cell total"><div className="l">Total CTC</div><div className="v">{fmt(total)}</div></div>
+                        <div>
+                          <p className="text-muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                            Monthly component breakup (auto-split from the annual salary).
+                          </p>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20 }}>
+                            <div style={{ flex: '1 1 240px', minWidth: 220 }}>
+                              <div style={{ fontSize: 11.5, fontWeight: 700, color: '#108548', textTransform: 'uppercase', letterSpacing: .4, marginBottom: 2 }}>Earnings</div>
+                              <Line label="Basic Salary" value={basic} />
+                              <Line label="House Rent Allowance" value={hra} />
+                              <Line label="Special Allowance" value={special} />
+                              <Line label="Gross (Monthly)" value={monthlyGross} strong />
+                            </div>
+                            <div style={{ flex: '1 1 240px', minWidth: 220 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                                <span style={{ fontSize: 11.5, fontWeight: 700, color: '#b91c1c', textTransform: 'uppercase', letterSpacing: .4 }}>Deductions</span>
+                                <label className="d-flex align-items-center gap-1 mb-0" style={{ fontSize: 12, cursor: 'pointer' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={s1.pf_eligible}
+                                    onChange={e => setS1(p => ({ ...p, pf_eligible: e.target.checked }))}
+                                  /> PF (12%)
+                                </label>
+                              </div>
+                              <Line label="Provident Fund (PF)" value={pf} />
+                              <Line label="Net Pay (Monthly)" value={net} strong />
+                              <Line label="Total CTC (Annual)" value={total} strong />
+                            </div>
+                          </div>
                         </div>
                       );
                     })()}

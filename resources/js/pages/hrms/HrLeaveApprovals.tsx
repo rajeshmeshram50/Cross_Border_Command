@@ -6,13 +6,6 @@ import { useTheme } from '../../contexts/ThemeContext';
 import '../../../css/recruitment.css';
 import '../../../css/leave.css';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HrLeaveApprovals — manager / HR approval queue. Lists pending leave
-// requests scoped by the backend (direct reports for managers; whole tenant
-// for HR / admin). Click any row to open a details modal with Approve /
-// Reject actions and an optional comment. Server enforces who can act on
-// what — UI just surfaces the buttons.
-// ─────────────────────────────────────────────────────────────────────────────
 type StatusFilter = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled' | 'All';
 
 const STATUS_TONE: Record<string, { bg: string; fg: string }> = {
@@ -21,9 +14,6 @@ const STATUS_TONE: Record<string, { bg: string; fg: string }> = {
   Rejected:  { bg: '#fee2e2', fg: '#b91c1c' },
   Cancelled: { bg: '#eef2f6', fg: '#374151' },
 };
-// Dark-mode equivalents — the .lva-tone-card color-mix dark rule doesn't take
-// on every browser, so feed theme-aware tones straight in (translucent tint +
-// lightened text) and the always-applied light CSS rule renders them dark.
 const STATUS_TONE_DARK: Record<string, { bg: string; fg: string }> = {
   Pending:   { bg: 'rgba(245,158,11,0.18)', fg: '#fcd34d' },
   Approved:  { bg: 'rgba(16,185,129,0.18)', fg: '#6ee7b7' },
@@ -93,8 +83,6 @@ export default function HrLeaveApprovals() {
     setComment('');
     setChain([]);
     try {
-      // Fire both in parallel — the chain endpoint is cheap and the
-      // approver list is small, so we save a roundtrip vs. sequential.
       const [d, c] = await Promise.all([
         leaveRequestsApi.show(id),
         leaveRequestsApi.approvers(id),
@@ -144,7 +132,6 @@ export default function HrLeaveApprovals() {
     <Row>
       <Col xs={12}>
         <div className="lp-shell">
-          {/* Header strip — same shape as the Clients / Branches headers. */}
           <div className="frm-cstrip mb-3">
             <span className="frm-cstrip-accent" />
             <div className="frm-cstrip-left">
@@ -160,11 +147,7 @@ export default function HrLeaveApprovals() {
             </button>
           </div>
 
-          {/* Filter row */}
           <div className="d-flex align-items-center gap-2 flex-wrap p-3" style={{ background: 'var(--vz-card-bg)', borderBottom: '1px solid var(--vz-border-color)' }}>
-            {/* Status filters as a segmented control — were plain text links
-                before, now distinct tab buttons matching the other HRMS
-                modules' filter bars (HRMS-BUG-100). */}
             <div
               className="d-flex flex-wrap"
               style={{
@@ -225,7 +208,6 @@ export default function HrLeaveApprovals() {
             </button>
           </div>
 
-          {/* Approvals table */}
           <div className="lp-config-table-wrap" style={{ padding: 16 }}>
             <table className="lp-config-table">
               <thead>
@@ -311,7 +293,6 @@ export default function HrLeaveApprovals() {
         </div>
       </Col>
 
-      {/* ── Detail / Approve / Reject modal ── */}
       <Modal isOpen={openId !== null} toggle={closeDetail} centered size="lg" backdrop="static">
         <ModalBody className="p-0">
           <div style={{ padding: '14px 22px 12px', background: 'linear-gradient(135deg, #5a3fd1, #7c5cfc)' }}>
@@ -336,7 +317,6 @@ export default function HrLeaveApprovals() {
               </div>
             ) : (
               <>
-                {/* Requester header */}
                 <div className="d-flex align-items-center gap-3 mb-3">
                   <span
                     className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
@@ -358,7 +338,6 @@ export default function HrLeaveApprovals() {
                   </div>
                 </div>
 
-                {/* Leave block */}
                 <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, marginBottom: 16 }}>
                   <Row className="g-3">
                     <Col md={3}>
@@ -380,7 +359,6 @@ export default function HrLeaveApprovals() {
                   </Row>
                 </div>
 
-                {/* Approval chain progress */}
                 {chain.length > 0 && (
                   <div className="mb-3">
                     <div className="text-muted mb-2" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.5 }}>APPROVAL CHAIN</div>
@@ -426,7 +404,6 @@ export default function HrLeaveApprovals() {
                   </div>
                 )}
 
-                {/* Reason */}
                 {detail.reason && (
                   <div className="mb-3">
                     <div className="text-muted" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.5 }}>LEAVE NOTE</div>
@@ -434,7 +411,6 @@ export default function HrLeaveApprovals() {
                   </div>
                 )}
 
-                {/* Handover */}
                 {detail.handover_required && (
                   <div className="mb-3" style={{ background: 'var(--vz-secondary-bg)', borderRadius: 10, padding: 12 }}>
                     <div className="fw-bold mb-1" style={{ fontSize: 12 }}>Handover</div>
@@ -448,7 +424,6 @@ export default function HrLeaveApprovals() {
                   </div>
                 )}
 
-                {/* Already-decided state */}
                 {detail.status !== 'Pending' && (
                   <div className="lva-tone-card mb-3" style={{
                     ['--lva-bg' as string]: statusTone(detail.status).bg,
@@ -468,7 +443,6 @@ export default function HrLeaveApprovals() {
                   </div>
                 )}
 
-                {/* Approver comment + action buttons (only when Pending) */}
                 {detail.status === 'Pending' && (
                   <>
                     <label className="fw-semibold" style={{ fontSize: 12 }}>

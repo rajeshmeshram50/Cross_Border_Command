@@ -3296,3 +3296,12 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link.cbc-sub[aria-expanded]::before {
   content: none !important;
 }
+
+/* Onboarding-pending banner (app shell) — inline light amber in light mode;
+   translucent dark amber so the full-width strip reads on the dark shell. */
+[data-bs-theme="dark"] .app-onboarding-banner,
+[data-layout-mode="dark"] .app-onboarding-banner {
+  background: rgba(245, 158, 11, 0.16) !important;
+  color: #fcd34d !important;
+  border-bottom-color: rgba(245, 158, 11, 0.30) !important;
+}

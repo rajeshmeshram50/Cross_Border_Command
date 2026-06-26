@@ -657,7 +657,7 @@ function DashboardRoutes({ user }: { user: any }) {
         <BranchSwitcherProvider>
           <VelzonShell>
             {onboardingPending && (
-              <div style={{ background: '#fef3c7', color: '#92400e', padding: '9px 16px', fontSize: 12.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #fde68a' }}>
+              <div className="app-onboarding-banner" style={{ background: '#fef3c7', color: '#92400e', padding: '9px 16px', fontSize: 12.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #fde68a' }}>
                 <i className="ri-information-line" style={{ fontSize: 16 }} />
                 Your onboarding isn&rsquo;t complete yet — sign your pending documents in the Inbox below. Full access unlocks once HR finishes your onboarding.
               </div>
