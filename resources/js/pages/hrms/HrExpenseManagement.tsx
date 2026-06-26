@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Card, CardBody, Col, Row, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Card, CardBody, Col, Row } from 'reactstrap';
 import * as XLSX from 'xlsx';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList } from 'recharts';
 import api from '../../api';
@@ -357,6 +358,39 @@ export default function HrExpenseManagement() {
   useEffect(() => { setPage(1); }, [module, filter, search, dateFilter]);
 
   const [exportOpen, setExportOpen] = useState(false);
+  // Self-contained export dropdown — portalled to <body> so it isn't clipped by
+  // the hero strip's `overflow:hidden`, and not dependent on reactstrap's
+  // Popper dropdown (which can fail to open here, leaving the button inert).
+  const exportBtnRef = useRef<HTMLButtonElement | null>(null);
+  const [exportPos, setExportPos] = useState<{ top: number; right: number } | null>(null);
+  const toggleExport = () => {
+    setExportOpen(prev => {
+      const next = !prev;
+      if (next && exportBtnRef.current) {
+        const r = exportBtnRef.current.getBoundingClientRect();
+        setExportPos({ top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) });
+      }
+      return next;
+    });
+  };
+  useEffect(() => {
+    if (!exportOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (exportBtnRef.current?.contains(t)) return;
+      if (document.getElementById('hrexp-export-menu')?.contains(t)) return;
+      setExportOpen(false);
+    };
+    const close = () => setExportOpen(false);
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [exportOpen]);
 
   const EXPORT_HEADER = [
     'Claim No', 'Employee', 'Emp Code', 'Category',
@@ -508,25 +542,38 @@ export default function HrExpenseManagement() {
                 placeholder="All Dates"
               />
             </div>
-            <Dropdown isOpen={exportOpen} toggle={() => setExportOpen(o => !o)}>
-              <DropdownToggle tag="button" type="button" className="hrexp-cta rounded-pill" caret={false}>
-                <i className="ri-download-2-line me-2" style={{ fontSize: 16 }} />
-                Export
-                <i className="ri-arrow-down-s-line ms-1" style={{ fontSize: 16 }} />
-              </DropdownToggle>
-              <DropdownMenu end container="body" strategy="fixed">
-                <DropdownItem header>Download as</DropdownItem>
-                <DropdownItem onClick={() => runExport('xlsx')}>
+            <button
+              ref={exportBtnRef}
+              type="button"
+              className="hrexp-cta rounded-pill"
+              onClick={toggleExport}
+              aria-haspopup="true"
+              aria-expanded={exportOpen}
+            >
+              <i className="ri-download-2-line me-2" style={{ fontSize: 16 }} />
+              Export
+              <i className="ri-arrow-down-s-line ms-1" style={{ fontSize: 16 }} />
+            </button>
+            {exportOpen && exportPos && createPortal(
+              <div
+                id="hrexp-export-menu"
+                className="hrexp-export-menu"
+                role="menu"
+                style={{ position: 'fixed', top: exportPos.top, right: exportPos.right, zIndex: 10600 }}
+              >
+                <div className="hrexp-export-head">Download as</div>
+                <button type="button" className="hrexp-export-item" role="menuitem" onClick={() => runExport('xlsx')}>
                   <i className="ri-file-excel-2-line me-2 text-success" />Excel (.xlsx)
-                </DropdownItem>
-                <DropdownItem onClick={() => runExport('pdf')}>
+                </button>
+                <button type="button" className="hrexp-export-item" role="menuitem" onClick={() => runExport('pdf')}>
                   <i className="ri-file-pdf-2-line me-2 text-danger" />PDF (.pdf)
-                </DropdownItem>
-                <DropdownItem onClick={() => runExport('csv')}>
+                </button>
+                <button type="button" className="hrexp-export-item" role="menuitem" onClick={() => runExport('csv')}>
                   <i className="ri-file-text-line me-2 text-primary" />CSV (.csv)
-                </DropdownItem>
-              </DropdownMenu>
-            </Dropdown>
+                </button>
+              </div>,
+              document.body
+            )}
           </div>
         </div>
 
@@ -760,6 +807,7 @@ export default function HrExpenseManagement() {
                     const limitTxt = c.limit > 0 ? `₹${Math.round(c.limit).toLocaleString('en-IN')}` : '—';
                     const spentTxt = `₹${Number(c.spent).toLocaleString('en-IN')}`;
                     const barColor = c.over ? '#ef4444' : c.usedPct >= 75 ? '#f59e0b' : '#22c55e';
+                    const remaining = c.limit > 0 ? c.limit - c.spent : null;
                     return (
                       <div key={`pol:${c.id}:${c.name}`} className="d-flex flex-column" style={{ gap: 4 }}>
                         <div className="d-flex align-items-center justify-content-between" style={{ fontSize: 12 }}>
@@ -796,6 +844,13 @@ export default function HrExpenseManagement() {
                             }}
                           />
                         </div>
+                        {remaining != null && (
+                          <div className="text-end" style={{ fontSize: 10.5, fontVariantNumeric: 'tabular-nums' }}>
+                            {remaining >= 0
+                              ? <span style={{ color: '#108548', fontWeight: 600 }}>₹{Math.round(remaining).toLocaleString('en-IN')} remaining</span>
+                              : <span style={{ color: '#b1401d', fontWeight: 600 }}>Over by ₹{Math.round(-remaining).toLocaleString('en-IN')}</span>}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
