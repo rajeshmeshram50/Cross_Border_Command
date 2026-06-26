@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { SegmentTags } from './SegmentTags';
 import { useModalGuard } from './useModalGuard';
+import Tooltip from '../../../../components/ui/Tooltip';
 import './bulk-sourcing.css';
 
 /* Mapped Suppliers — suppliers mapped to a product.
@@ -119,7 +120,7 @@ export default function MappedSuppliersModal({ product, recordId, recordSource, 
                   {[['Contact Person', sup.contact, 'user'], ['Mobile', sup.mobile, 'phone'], ['Email', sup.email, 'mail']].map(([lbl, val, ico]) => (
                     <div className="sv-contact-item" key={lbl}>
                       <div className="sv-contact-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">{CONTACT_ICONS[ico]}</svg></div>
-                      <div className="sv-contact-text"><div className="sv-contact-lbl">{lbl}</div><div className="sv-contact-val" title={val}>{val}</div></div>
+                      <div className="sv-contact-text"><div className="sv-contact-lbl">{lbl}</div><Tooltip label={val}><div className="sv-contact-val">{val}</div></Tooltip></div>
                     </div>
                   ))}
                 </div>

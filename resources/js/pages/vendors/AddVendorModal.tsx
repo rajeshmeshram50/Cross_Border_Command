@@ -4,6 +4,7 @@ import api from '../../api';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
+import Tooltip from '../../components/ui/Tooltip';
 import { MasterMultiSelect } from '../master/masterFormKit';
 import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 import {
@@ -2585,9 +2586,9 @@ export default function AddVendorModal(props: {
                                 <span key={`${f.label}-${j}`} className="avm-prev-pair">
                                   <span className="avm-prev-k">{f.label} :</span>{' '}
                                   {f.href ? (
-                                    <a href={f.href} target="_blank" rel="noopener noreferrer" className="avm-prev-link" title={f.value}>{f.value}</a>
+                                    <Tooltip label={f.value}><a href={f.href} target="_blank" rel="noopener noreferrer" className="avm-prev-link">{f.value}</a></Tooltip>
                                   ) : (
-                                    <span className="avm-prev-v" title={f.value}>{f.value}</span>
+                                    <Tooltip label={f.value}><span className="avm-prev-v">{f.value}</span></Tooltip>
                                   )}
                                   {f.suffix ? <span className="avm-prev-suffix"> {f.suffix}</span> : null}
                                 </span>
@@ -2864,7 +2865,7 @@ export default function AddVendorModal(props: {
                         return <div className="avm-empty">No contact persons added yet.</div>;
                       }
                       return (
-                        <div className="table-responsive table-card border rounded">
+                        <div className="table-responsive table-card border rounded avm-contacts-scroll">
                           <table className="table align-middle table-nowrap mb-0 avm-mini-table">
                             <thead className="table-light">
                               <tr>
@@ -5338,10 +5339,11 @@ const SCOPED_CSS = `
 }
 .avm-modal {
   width: 100%; max-width: 1200px;
-  /* Shrink-to-fit like the Figma .sf-modal (max-height:93vh) — the dialog is
-     only as tall as its content (no dead space below short steps), and the
-     body (.avm-body) scrolls internally once content exceeds the cap. */
-  max-height: calc(100vh - 48px);
+  /* FIXED height so the dialog never resizes when you switch tabs/steps with
+     different amounts of content — the body (.avm-body) scrolls internally
+     instead. (Shrink-to-fit was jarring: the popup visibly grew/shrank per
+     tab.) */
+  height: calc(100vh - 48px);
   margin: auto;
   /* Figma lavender wash (.sf-modal) — soft glows over a light gradient so the
      white section cards read as elevated, not flat on plain white. */
@@ -5518,7 +5520,7 @@ const SCOPED_CSS = `
 }
 .avm-prev-toggle i { font-size: 17px; }
 .avm-prev-toggle:hover { filter: brightness(1.06); box-shadow: 0 5px 13px rgba(124,58,237,.5); }
-.avm-prev-body { padding: 14px 18px 16px; display: flex; flex-direction: column; gap: 13px; border-top: 1px solid rgba(196,181,253,.4); }
+.avm-prev-body { padding: 10px 16px 12px; display: flex; flex-direction: column; gap: 9px; border-top: 1px solid rgba(196,181,253,.4); }
 /* Step-grouped summary — each stage's label uses the same muted violet
  * tone so the header reads as a single block rather than several panels
  * fighting for attention. */
@@ -5537,24 +5539,24 @@ const SCOPED_CSS = `
 /* Switch the per-stage rows from flex-wrap to the same 4-column grid
  * used by .avm-id-summary-row, so labels and values line up cleanly
  * across stages — matches the Stage 1 screenshot exactly. */
-.avm-prev-rows { display: flex; flex-direction: column; gap: 7px; }
+.avm-prev-rows { display: flex; flex-direction: column; gap: 5px; }
 .avm-prev-row {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   column-gap: 28px;
-  row-gap: 7px;
+  row-gap: 5px;
   align-items: baseline;
 }
 .avm-prev-pair {
   display: flex; align-items: baseline; gap: 6px;
-  font-size: 12px; line-height: 1.4;
+  font-size: 10.5px; line-height: 1.3;
   min-width: 0;
   cursor: default; padding: 1px 2px; border-radius: 4px;
   transition: background .12s;
 }
 .avm-prev-pair:hover { background: rgba(124,58,237,0.06); }
 .avm-prev-k {
-  font-size: 12px; font-weight: 600; letter-spacing: .01em;
+  font-size: 10.5px; font-weight: 600; letter-spacing: .01em;
   color: #64748b; text-transform: uppercase;
   white-space: nowrap; flex-shrink: 0;
 }
@@ -5703,6 +5705,12 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .avm-modal .table.avm-mini-table thead tr { background: transparent !important; }
 [data-bs-theme="dark"] .avm-modal .table.avm-mini-table thead th { color: #c4b5fd; border-bottom-color: #3b2a6b; }
+/* Additional Contacts list — show ~3 rows then scroll; min-height stops the
+   card collapsing to a single thin row (fills the empty space a bit). The
+   header stays pinned while the body scrolls. */
+.avm-contacts-scroll { min-height: 132px; max-height: 172px; overflow-y: auto; }
+.avm-contacts-scroll thead th { position: sticky; top: 0; z-index: 2; background: #fbfaff; }
+[data-bs-theme="dark"] .avm-contacts-scroll thead th { background: #1a1430; }
 
 /* "N documents" count badge on the KYC section header (Figma) */
 .avm-doc-count {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import Tooltip from '../../../../components/ui/Tooltip';
 
 /* SegmentTags — renders a supplier's segments compactly.
  * `segment` is a comma-separated string (e.g. "Tobacco, Rice"). Shows the FIRST
@@ -26,7 +27,7 @@ export function SegmentTags({ segment, tagClassName }: { segment?: string; tagCl
       <span className={tagClassName}>{first}</span>
       {rest.length > 0 && (
         <>
-          <button type="button" className="seg-more-pill" title="View all segments" onClick={e => { e.stopPropagation(); setOpen(o => !o); }}>+{rest.length}</button>
+          <Tooltip label="View all segments"><button type="button" className="seg-more-pill" onClick={e => { e.stopPropagation(); setOpen(o => !o); }}>+{rest.length}</button></Tooltip>
           {open && (
             <div className="seg-more-pop">
               <div className="seg-more-pop-hdr">Segments ({segs.length})</div>
