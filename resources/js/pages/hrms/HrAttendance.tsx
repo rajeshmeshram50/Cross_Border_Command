@@ -417,7 +417,7 @@ export default function HrAttendance() {
             </div>
 
             <Row className="g-2 align-items-stretch">
-              <Col xl={3} lg={4} md={5} xs={12}>
+              <Col xl={3} lg={4} md={5} xs={12} className="att-emplist-col">
                 <div className="att-emplist">
                   <div className="att-emplist-tabs">
                     {[
@@ -460,7 +460,7 @@ export default function HrAttendance() {
                           </div>
                           <div className="att-emp-right">
                             <span className="att-status-pill att-tone-pill" data-status={e.status} style={{ color: tone.fg, background: tone.bg }}>
-                              <span className="att-status-dot" style={{ background: tone.dot }} />{tone.label}
+                              {tone.label}
                             </span>
                             {e.firstIn && <div className="att-emp-time">{renderTime(e.firstIn, hour24)}</div>}
                           </div>
@@ -814,7 +814,7 @@ function LogsRequestsCard({
   hour24: boolean;
   setHour24: (v: boolean | ((p: boolean) => boolean)) => void;
 }) {
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(5);
   const [page, setPage] = useState(1);
 
   const filteredLogs = useMemo(() => {

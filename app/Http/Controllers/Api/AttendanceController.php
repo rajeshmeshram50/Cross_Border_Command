@@ -269,6 +269,12 @@ class AttendanceController extends Controller
         $empQ = Employee::query()
             ->where('attendance_tracking', true)
             ->where('status', 'Active')
+            // Only fully-onboarded employees belong in the Attendance Sheet.
+            // An employee still mid-onboarding (onboarding_stage_completed < 6)
+            // has no settled org context yet and must not be available for
+            // attendance marking until HR finishes onboarding (stage 6). Mirrors
+            // the "onboarded_only" gate used by managers() / Exit Management.
+            ->where('onboarding_stage_completed', '>=', 6)
             ->with([
                 'department:id,name',
                 'designation:id,name',
