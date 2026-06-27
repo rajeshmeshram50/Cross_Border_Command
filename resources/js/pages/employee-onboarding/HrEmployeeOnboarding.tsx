@@ -3293,6 +3293,33 @@ function InitiateOnboardingModal({
     })();
     return () => { cancelled = true; };
   }, [isOpen, emp?.dbId]);
+
+  // The employee's SAVED salary structure (the exact components HR entered in
+  // the employee form). The salary breakup prefers these real figures and only
+  // falls back to a 50/30/20 auto-split when nothing has been saved yet — so
+  // editing the breakup in the employee form reflects here too.
+  const [savedBreakup, setSavedBreakup] = useState<{ earnings: any[]; deductions: any[]; pf: boolean } | null>(null);
+  useEffect(() => {
+    if (!isOpen || !emp?.dbId) { setSavedBreakup(null); return; }
+    let cancelled = false;
+    api.get('/salary-structures', { params: { employee_id: emp.dbId, active_only: 1 } })
+      .then(res => {
+        if (cancelled) return;
+        const rows = res.data?.data ?? [];
+        const active = Array.isArray(rows) && rows.length ? rows[0] : null;
+        if (active && Array.isArray(active.earnings) && active.earnings.length) {
+          setSavedBreakup({
+            earnings: active.earnings,
+            deductions: Array.isArray(active.deductions) ? active.deductions : [],
+            pf: !!active.pf_applicable,
+          });
+        } else {
+          setSavedBreakup(null);
+        }
+      })
+      .catch(() => { if (!cancelled) setSavedBreakup(null); });
+    return () => { cancelled = true; };
+  }, [isOpen, emp?.dbId]);
   // Imperative handle into Stage 2 so we can flush its typed-but-not-blurred
   // company rows before leaving the stage (Previous / sidebar / Next Stage).
   const stage2Ref = useRef<Stage2DocumentsHandle | null>(null);
@@ -3675,21 +3702,26 @@ const validateStage1 = (): boolean => {
   // Postgres numeric(14, 2) max is 999,999,999,999.99. Anything larger
   // overflows the column and surfaces as a 500 from the server. Guard
   // here so the user gets a friendly inline error instead.
-  const annualNum = Number(s1.annual_salary);
-  if (!s1.annual_salary || !Number.isFinite(annualNum) || annualNum <= 0) {
-    errors.annual_salary = 'Annual salary is required and must be greater than 0';
-  } else if (annualNum > 999_999_999_999.99) {
-    errors.annual_salary = 'Annual salary is too large (max 999,999,999,999.99)';
-  }
-  const sef = s1.salary_effective_from?.trim() ?? '';
-  if (!sef) {
-    errors.salary_effective_from = 'Salary effective date is required';
-  } else if (sef < salaryMin) {
-    errors.salary_effective_from = doj
-      ? 'Salary effective date cannot be before the joining date'
-      : 'Salary effective date is too far in the past';
-  } else if (sef > salaryMax) {
-    errors.salary_effective_from = 'Salary effective date cannot be more than a year in the future';
+  // Only enforce the salary fields when payroll is enabled — mirrors the
+  // employee form, which skips all Compensation validation when the "Enable
+  // payroll" toggle is off (salary details don't apply then).
+  if (s1.enable_payroll !== false) {
+    const annualNum = Number(s1.annual_salary);
+    if (!s1.annual_salary || !Number.isFinite(annualNum) || annualNum <= 0) {
+      errors.annual_salary = 'Annual salary is required and must be greater than 0';
+    } else if (annualNum > 999_999_999_999.99) {
+      errors.annual_salary = 'Annual salary is too large (max 999,999,999,999.99)';
+    }
+    const sef = s1.salary_effective_from?.trim() ?? '';
+    if (!sef) {
+      errors.salary_effective_from = 'Salary effective date is required';
+    } else if (sef < salaryMin) {
+      errors.salary_effective_from = doj
+        ? 'Salary effective date cannot be before the joining date'
+        : 'Salary effective date is too far in the past';
+    } else if (sef > salaryMax) {
+      errors.salary_effective_from = 'Salary effective date cannot be more than a year in the future';
+    }
   }
 
   // Job Details — Department / Designation / Primary Role are required.
@@ -4746,8 +4778,6 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                   <Col md={4}><label className="onb-init-label">Shift<span className="req">*</span></label><MasterSelect options={ONB_SHIFT} value={s1.shift} placeholder="Select shift" onChange={(v) => setS1(p => ({ ...p, shift: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Weekly Off<span className="req">*</span></label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off} placeholder="Select weekly off" onChange={(v) => setS1(p => ({ ...p, weekly_off: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Attendance Number</label><input className="onb-init-input" placeholder="Attendance number" value={s1.attendance_number} onChange={e => setS1(p => ({ ...p, attendance_number: e.target.value }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Time Tracking Policy<span className="req">*</span></label><MasterSelect options={ONB_TIME_TRACK} value={s1.time_tracking} placeholder="Select time tracking" onChange={(v) => setS1(p => ({ ...p, time_tracking: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Penalization Policy<span className="req">*</span></label><MasterSelect options={ONB_PENALIZE} value={s1.penalization_policy} placeholder="Select penalization policy" onChange={(v) => setS1(p => ({ ...p, penalization_policy: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Overtime</label><MasterSelect options={ONB_OVERTIME} value={s1.overtime} placeholder="Select overtime policy" onChange={(v) => setS1(p => ({ ...p, overtime: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Expense Policy<span className="req">*</span></label><MasterSelect options={ONB_EXPENSE} placeholder="Select policy" value={s1.expense_policy} onChange={(v) => setS1(p => ({ ...p, expense_policy: v }))} /></Col>
                 </Row>
@@ -4885,7 +4915,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       overflow". The validator gives the friendly error. */}
 <Col md={4} data-field="annual_salary">
   <label className="onb-init-label">
-    Annual Salary <span className="req">*</span>
+    Annual Salary {s1.enable_payroll !== false && <span className="req">*</span>}
   </label>
   <input
     className={`onb-init-input ${s1Errors.annual_salary ? 'is-invalid' : ''}`}
@@ -4914,7 +4944,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 </Col>
                   <Col md={4} data-field="salary_effective_from">
   <label className="onb-init-label">
-    Salary Effective From <span className="req">*</span>
+    Salary Effective From {s1.enable_payroll !== false && <span className="req">*</span>}
   </label>
   <MasterDatePicker
     placeholder="Select effective date"
@@ -4983,7 +5013,12 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                         ~10% as bonus for the visual; everything else stays
                         regular salary. Refine when real bonus inputs land. */}
                     {(() => {
-                      const annual = s1.annual_salary === '' ? 0 : Number(s1.annual_salary);
+                      // Respect the Period: 'Per month' means the entered figure
+                      // is the MONTHLY amount → annual = ×12. Any other period is
+                      // treated as the annual figure. Mirrors HrEmployees'
+                      // monthlyGrossFromSalary so both screens show the same gross.
+                      const entered = s1.annual_salary === '' ? 0 : Number(s1.annual_salary);
+                      const annual = (s1.salary_frequency === 'Per month') ? entered * 12 : entered;
                       const bonus  = s1.bonus_in_annual ? Math.round(annual * 0.10) : 0;
                       const regular = annual - bonus;
                       const total = regular + bonus;
@@ -5002,16 +5037,31 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                         );
                       }
 
-                      // Detailed view — monthly component split seeded 50/30/20
-                      // (Basic / HRA / Special) from the monthly regular salary,
-                      // the same split HrEmployees uses. PF (12% of Basic) shows
-                      // as a deduction when the employee is PF-eligible.
-                      const monthlyGross = Math.round(regular / 12);
-                      const basic   = Math.round(monthlyGross * 0.5);
-                      const hra     = Math.round(monthlyGross * 0.3);
-                      const special = Math.max(0, monthlyGross - basic - hra);
-                      const pf      = s1.pf_eligible ? Math.round(basic * 0.12) : 0;
-                      const net     = monthlyGross - pf;
+                      // Detailed view — PREFER the employee's SAVED salary
+                      // structure (the exact components HR entered/edited in the
+                      // employee form). Only fall back to a 50/30/20 auto-split
+                      // from the salary when nothing has been saved yet, so a
+                      // breakup edited in the employee form reflects here too.
+                      const useSaved = !!savedBreakup && savedBreakup.earnings.length > 0;
+                      const earnLines: { label: string; value: number }[] = useSaved
+                        ? savedBreakup!.earnings.map((c: any) => ({ label: c.label || c.code || 'Component', value: Number(c.amount) || 0 }))
+                        : (() => {
+                            const g = Math.round(regular / 12);
+                            const b = Math.round(g * 0.5), h = Math.round(g * 0.3);
+                            return [
+                              { label: 'Basic Salary', value: b },
+                              { label: 'House Rent Allowance', value: h },
+                              { label: 'Special Allowance', value: Math.max(0, g - b - h) },
+                            ];
+                          })();
+                      const monthlyGross = earnLines.reduce((s, l) => s + l.value, 0);
+                      const basic = useSaved
+                        ? Number(savedBreakup!.earnings.find((c: any) => c.code === 'basic')?.amount ?? earnLines[0]?.value ?? 0)
+                        : (earnLines[0]?.value ?? 0);
+                      const pf = s1.pf_eligible ? Math.round(basic * 0.12) : 0;
+                      const fixedDed = useSaved ? savedBreakup!.deductions.reduce((s: number, c: any) => s + (Number(c.amount) || 0), 0) : 0;
+                      const net = Math.max(0, monthlyGross - pf - fixedDed);
+                      const ctcAnnual = useSaved ? monthlyGross * 12 : total;
                       const Line = ({ label, value, strong }: { label: string; value: number; strong?: boolean }) => (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px dashed var(--vz-border-color, #e5e7eb)' }}>
                           <span style={{ fontSize: 12.5, fontWeight: strong ? 700 : 500 }}>{label}</span>
@@ -5021,14 +5071,14 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       return (
                         <div>
                           <p className="text-muted" style={{ fontSize: 12, marginBottom: 8 }}>
-                            Monthly component breakup (auto-split from the annual salary).
+                            {useSaved
+                              ? "Monthly component breakup — the employee's saved salary structure."
+                              : 'Monthly component breakup (auto-split from the annual salary).'}
                           </p>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20 }}>
                             <div style={{ flex: '1 1 240px', minWidth: 220 }}>
                               <div style={{ fontSize: 11.5, fontWeight: 700, color: '#108548', textTransform: 'uppercase', letterSpacing: .4, marginBottom: 2 }}>Earnings</div>
-                              <Line label="Basic Salary" value={basic} />
-                              <Line label="House Rent Allowance" value={hra} />
-                              <Line label="Special Allowance" value={special} />
+                              {earnLines.map((l, i) => <Line key={i} label={l.label} value={l.value} />)}
                               <Line label="Gross (Monthly)" value={monthlyGross} strong />
                             </div>
                             <div style={{ flex: '1 1 240px', minWidth: 220 }}>
@@ -5043,8 +5093,11 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                                 </label>
                               </div>
                               <Line label="Provident Fund (PF)" value={pf} />
+                              {useSaved && savedBreakup!.deductions.map((c: any, i: number) => (
+                                <Line key={`d${i}`} label={c.label || c.code || 'Deduction'} value={Number(c.amount) || 0} />
+                              ))}
                               <Line label="Net Pay (Monthly)" value={net} strong />
-                              <Line label="Total CTC (Annual)" value={total} strong />
+                              <Line label="Total CTC (Annual)" value={ctcAnnual} strong />
                             </div>
                           </div>
                         </div>

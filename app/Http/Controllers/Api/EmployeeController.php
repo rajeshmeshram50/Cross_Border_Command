@@ -933,7 +933,15 @@ class EmployeeController extends Controller
         $row = $this->resolveRow($request, (int) $id);
         $this->guardHierarchicalAction($request->user(), $row, 'delete');
 
-        if (!$row->trashed()) {
+        // Only block a genuinely-ACTIVE employee. "Disabled" can mean either
+        // soft-deleted (toggle/destroy) OR a status of Inactive/Terminated/
+        // Resigned (set via the edit form or Exit Management) — all of which the
+        // frontend shows in the Disabled tab. Any of those are deletable here;
+        // a still-active employee must be disabled first to avoid a misclick.
+        $status = strtolower((string) $row->status);
+        $isDisabled = $row->trashed()
+            || in_array($status, ['inactive', 'terminated', 'resigned'], true);
+        if (!$isDisabled) {
             return response()->json([
                 'message' => 'This employee is still active. Disable them first, then delete.',
             ], 422);
@@ -1156,7 +1164,15 @@ class EmployeeController extends Controller
         $cap = (int) ($branch->max_users ?? 0);
         if ($cap <= 0) return; // 0 / null → unlimited
 
-        $current = User::where('branch_id', $branchId)->count();
+        // Count only ACTIVE login accounts against the cap. Deleting an employee
+        // keeps their user row but flips it to 'inactive' (so audit logs /
+        // permissions don't go dangling) — those freed-up seats must NOT keep
+        // occupying the branch's user limit. Null status counts as active.
+        $current = User::where('branch_id', $branchId)
+            ->where(function ($q) {
+                $q->whereNull('status')->orWhere('status', '!=', 'inactive');
+            })
+            ->count();
         if ($current >= $cap) {
             throw ValidationException::withMessages([
                 'email' => [
