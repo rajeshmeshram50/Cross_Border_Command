@@ -202,7 +202,12 @@ class FaceBiometricController extends Controller
      */
     private function findDuplicateOwner(Employee $target, array $captured): ?Employee
     {
-        $q = Employee::query()
+        // withTrashed(): a disabled (soft-deleted) employee keeps their face on
+        // file, so their face must STILL block a re-registration by someone
+        // else — otherwise the same person's face could be linked to a second
+        // employee just because the first was disabled. Inactive/Terminated
+        // (not soft-deleted) employees are already covered by the default scope.
+        $q = Employee::withTrashed()
             ->where('id', '!=', $target->id)
             ->whereNotNull('face_descriptor')
             ->whereNotNull('face_registered_at');
