@@ -473,7 +473,7 @@ function CreateAnnouncementModal({
   // Lookups for audience picker
   const [roles, setRoles]                       = useState<Array<{ id: number; name: string }>>([]);
   const [designations, setDesignations]         = useState<Array<{ id: number; name: string }>>([]);
-  const [employees, setEmployees]               = useState<Array<{ id: number; display_name: string; emp_code?: string; primary_role_id?: number | null; ancillary_role_id?: number | null; designation_id?: number | null }>>([]);
+  const [employees, setEmployees]               = useState<Array<{ id: number; display_name: string; emp_code?: string; primary_role_id?: number | null; ancillary_role_id?: number | null; designation_id?: number | null; designation_name?: string | null; department_name?: string | null }>>([]);
 
   // Which action is in flight, so only the clicked footer button spins. A
   // single boolean made Save Draft AND Publish show a loader on either click.
@@ -499,9 +499,13 @@ function CreateAnnouncementModal({
       setType(editing.type || 'General');
       setPriority(editing.priority || 'Normal');
       setAudienceType(editing.audience_type || 'all_employees');
-      setRoleIds(editing.audience_role_ids || []);
-      setDesignationIds(editing.audience_designation_ids || []);
-      setExcludeIds(editing.exclude_employee_ids || []);
+      // IDs come back from the JSON columns as strings (FormData submits them
+      // as strings and Laravel's `integer` rule validates without casting), so
+      // coerce to numbers — the pickers compare with `selected.includes(o.id)`
+      // against numeric option ids, and "3" !== 3 would render a blank audience.
+      setRoleIds((editing.audience_role_ids || []).map(Number));
+      setDesignationIds((editing.audience_designation_ids || []).map(Number));
+      setExcludeIds((editing.exclude_employee_ids || []).map(Number));
       setNotifyEmail(!!editing.notify_email);
     } else {
       setTitle(''); setDescription('');
@@ -520,7 +524,10 @@ function CreateAnnouncementModal({
         const [rolesRes, desigRes, empRes] = await Promise.all([
           api.get('/master/roles'),
           api.get('/master/designations'),
-          api.get('/employees'),
+          // onboarded_only → server gates to status=Active + fully onboarded
+          // (onboarding_stage_completed >= 6) + not soft-deleted, so half- or
+          // pending-onboarding people never enter the broadcast audience.
+          api.get('/employees', { params: { onboarded_only: true } }),
         ]);
         if (cancelled) return;
         const roleRows: any[]  = Array.isArray(rolesRes.data) ? rolesRes.data : [];
@@ -545,6 +552,14 @@ function CreateAnnouncementModal({
           primary_role_id: e.primary_role_id ?? null,
           ancillary_role_id: e.ancillary_role_id ?? null,
           designation_id: e.designation_id ?? null,
+          department_name: e.department?.name || null,
+          // Designation label for the Exclude picker. Mirrors managers():
+          // employee's own designation first, then the linked branch/login
+          // user's designation string, finally the readable user_type — so
+          // branch users (no designation_id of their own) still show a label.
+          designation_name: e.designation?.name
+            || e.user?.designation
+            || (e.user?.user_type ? String(e.user.user_type).replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) : null),
         })));
       } catch {
         if (!cancelled) { setRoles([]); setDesignations([]); setEmployees([]); }
@@ -753,6 +768,16 @@ function CreateAnnouncementModal({
         {/* Body — split: form left, live preview right */}
         <div className="d-flex" style={{ minHeight: 360 }}>
           <div style={{ flex: '1 1 0', padding: 20, overflowY: 'auto', maxHeight: '70vh' }}>
+            {/* View mode = 100% read-only. The disabled fieldset blocks native
+                inputs/buttons/checkboxes; pointerEvents:none additionally
+                neutralises the div-based handlers (audience-type pills, the
+                MultiPicker dropdown, and the file drag-and-drop zone). Footer
+                paging (Next) lives outside this wrapper so the user can still
+                page through the steps. */}
+            <fieldset
+              disabled={readOnly}
+              style={{ border: 0, padding: 0, margin: 0, minInlineSize: 'auto', pointerEvents: readOnly ? 'none' : undefined }}
+            >
             {step === 1 && (
               <Step1Basic
                 title={title} setTitle={setTitle}
@@ -787,6 +812,7 @@ function CreateAnnouncementModal({
                 editing={editing}
               />
             )}
+            </fieldset>
           </div>
 
           {/* Live preview — sits on the right of every step */}
@@ -880,6 +906,12 @@ function Step1Basic({
   // Client-side guard for the 20 MB attachment cap — the input only restricts
   // file type, so without this an oversize file was silently accepted.
   const MAX_ATTACHMENT_MB = 20;
+  // Allowed extensions mirror the server's mimes:png,jpg,jpeg,pdf rule. The
+  // `accept` attr only filters the OS picker (and is bypassed by "All files" /
+  // drag-drop), so we re-check the extension here to surface a red inline
+  // error the instant a disallowed file (e.g. a Word .docx) is chosen, rather
+  // than letting it fail at publish with a generic wrapper.
+  const ALLOWED_EXTS = ['png', 'jpg', 'jpeg', 'pdf'];
   const [fileError, setFileError] = useState('');
   return (
     <>
@@ -950,11 +982,20 @@ function Step1Basic({
             style={{ display: 'none' }}
             onChange={e => {
               const f = e.target.files?.[0] ?? null;
-              if (f && f.size > MAX_ATTACHMENT_MB * 1024 * 1024) {
-                setFileError(`File size exceeds the maximum limit of ${MAX_ATTACHMENT_MB} MB. Please upload a file smaller than ${MAX_ATTACHMENT_MB} MB.`);
-                setAttachment(null);
-                e.currentTarget.value = '';   // allow re-selecting the same file after fixing
-                return;
+              if (f) {
+                const ext = (f.name.split('.').pop() || '').toLowerCase();
+                if (!ALLOWED_EXTS.includes(ext)) {
+                  setFileError(`"${f.name}" is not an allowed file type. Please upload a PNG, JPG, or PDF file.`);
+                  setAttachment(null);
+                  e.currentTarget.value = '';   // allow re-selecting after fixing
+                  return;
+                }
+                if (f.size > MAX_ATTACHMENT_MB * 1024 * 1024) {
+                  setFileError(`File size exceeds the maximum limit of ${MAX_ATTACHMENT_MB} MB. Please upload a file smaller than ${MAX_ATTACHMENT_MB} MB.`);
+                  setAttachment(null);
+                  e.currentTarget.value = '';   // allow re-selecting the same file after fixing
+                  return;
+                }
               }
               setFileError('');
               setAttachment(f);
@@ -1049,7 +1090,15 @@ function Step2Audience({
       <div>
         <label className="rec-form-label">EXCLUDE (OPTIONAL)</label>
         <MultiPicker
-          options={employees.map((e: any) => ({ id: e.id, label: `${e.display_name}${e.emp_code ? ' · ' + e.emp_code : ''}` }))}
+          options={employees.map((e: any) => {
+            // Bracketed suffix = "Department - Designation"; whichever side is
+            // missing is dropped so we never render a dangling "- Designation".
+            const meta = [e.department_name, e.designation_name].filter(Boolean).join(' - ');
+            return {
+              id: e.id,
+              label: `${e.display_name}${e.emp_code ? ' · ' + e.emp_code : ''}${meta ? ' (' + meta + ')' : ''}`,
+            };
+          })}
           selected={excludeIds}
           onChange={setExcludeIds}
           placeholder="Names or departments to exclude…"

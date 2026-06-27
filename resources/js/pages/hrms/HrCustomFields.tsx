@@ -150,8 +150,12 @@ export default function HrCustomFields() {
       setPrefillName('');
       fetchAll();
     } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.response?.data?.errors?.name?.[0] || 'Please try again.';
-      toast.error('Could not save', msg);
+      // A duplicate-name / validation error on `name` is thrown back to the
+      // modal so it renders inline under the Field Name input. Only genuinely
+      // unexpected failures fall through to the top toast.
+      const nameErr = err?.response?.status === 422 ? err?.response?.data?.errors?.name?.[0] : null;
+      if (nameErr) throw new Error(nameErr);
+      toast.error('Could not save', err?.response?.data?.message || 'Please try again.');
     }
   };
 
@@ -523,6 +527,7 @@ export default function HrCustomFields() {
           <CustomFieldModal
             initial={editing}
             prefillName={prefillName}
+            existingNames={rows.map(r => r.name)}
             onClose={() => { setModalOpen(false); setEditing(null); setPrefillName(''); }}
             onSave={handleSave}
           />
