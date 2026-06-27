@@ -127,7 +127,10 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
   const G_DANGER  = 'linear-gradient(135deg, #f06548 0%, #ff9e7c 100%)';
   const G_PURPLE  = 'linear-gradient(135deg, #6a5acd 0%, #a78bfa 100%)';
   return (
-    <>
+    // Fill the content pane's full height (it's a flex item of the fixed-height
+    // profile overlay) so the cards stretch to the bottom instead of leaving a
+    // large empty area below — the two content rows below grow to share it.
+    <div className="att-tab-fill d-flex flex-column" style={{ minHeight: '100%' }}>
       {/* KPI strip */}
       <Row className="g-3 mb-3 align-items-stretch">
         <Col xl><KpiTile label="Present Days"      value={<AnimatedNumber value={stats.present_days} />}      sub="This month"         icon="ri-checkbox-circle-line" gradient={G_SUCCESS} /></Col>
@@ -137,7 +140,7 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
       </Row>
 
       {/* Today + Timeline side-by-side */}
-      <Row className="g-3 mb-3 align-items-stretch">
+      <Row className="g-3 mb-3 align-items-stretch flex-grow-1">
         <Col xl={6}>
           <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column ep-ct-emerald">
             <div
@@ -259,9 +262,9 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
       </Row>
 
       {/* Attendance Timelog History */}
-      <Row className="g-3">
+      <Row className="g-3 flex-grow-1 align-items-stretch">
         <Col xs={12}>
-          <div className="ep-section-card-flat ep-section-card ep-ct-amber">
+          <div className="ep-section-card-flat ep-section-card ep-ct-amber h-100 d-flex flex-column">
             <div
               className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 flex-wrap ep-hd-amber"
             >
@@ -283,9 +286,9 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
                 </button>
               </div>
             </div>
-            <div className="px-3 py-3">
+            <div className="px-3 py-3 flex-grow-1 d-flex flex-column">
               {history.length === 0 ? (
-                <div className="text-center text-muted py-4 ep-fs-13">
+                <div className="text-center text-muted py-4 ep-fs-13 my-auto">
                   No attendance records for {new Date(month + '-01').toLocaleDateString([], { month: 'long', year: 'numeric' })}.
                 </div>
               ) : (
@@ -370,6 +373,6 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
           </div>
         </Col>
       </Row>
-    </>
+    </div>
   );
 }

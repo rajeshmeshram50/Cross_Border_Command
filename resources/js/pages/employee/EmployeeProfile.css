@@ -19,6 +19,20 @@
           overflow-y: auto;
           padding-bottom: 32px;
         }
+        /* Tab fill helper — a tab root carrying .ep-tab-fill stretches to the
+           full height of the content pane and grows its LAST block so the cards
+           fill the page instead of leaving a large empty area below. For tabs
+           with sub-tab panes, wrap each pane in .ep-tab-pane so the active
+           pane (and its last block) fills the remaining height. */
+        .ep-tab-fill { min-height: 100%; display: flex; flex-direction: column; }
+        .ep-tab-fill > :last-child { flex-grow: 1; }
+        .ep-tab-fill .ep-tab-pane { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+        .ep-tab-fill .ep-tab-pane > :last-child { flex-grow: 1; }
+        /* The Leave tab renders a self-contained panel whose own root must also
+           become a column and grow its last section (Leave History) so it
+           fills the height like the other tabs. */
+        .ep-tab-fill > .leave-summary-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+        .ep-tab-fill > .leave-summary-panel > :last-child { flex-grow: 1; }
         /* Keep the regularization modal above the fullscreen overlay
            (Bootstrap defaults to 1055/1050 which falls below the 1080
            overlay, so the popup would be invisible). Defined globally so

@@ -2,6 +2,7 @@
 // Extracted from EmployeeProfile.tsx; shared state via useEmployeeProfile().
 import { Col, Row } from 'reactstrap';
 import { useEmployeeProfile } from '../EmployeeProfileContext';
+import { AncillaryRolesChip } from '../../../components/AncillaryRolesChip';
 
 export default function JobTab() {
   const { empDetail, employee, employeeId, fmtDate, ancillaryList } = useEmployeeProfile();
@@ -28,20 +29,7 @@ export default function JobTab() {
                 <Col><div className="ep-field-label">Job Title (Primary)</div><div className="ep-field-value">{empDetail?.designation?.name || employee?.designation || '—'}</div></Col>
                 <Col>
                   <div className="ep-field-label">Job Title (Secondary)</div>
-                  {ancillaryList.length > 0 ? (
-                    <div className="d-flex flex-wrap gap-1">
-                      {ancillaryList.map(r => (
-                        <span
-                          key={r}
-                          className="d-inline-flex align-items-center fw-semibold jt-teal-pill-11"
-                        >
-                          {r}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="ep-field-value text-muted fw-normal">—</div>
-                  )}
+                  <AncillaryRolesChip names={ancillaryList} />
                 </Col>
                 <Col><div className="ep-field-label">Employment Status</div><div className="ep-field-value">{empDetail?.status || (employee?.enabled === false ? 'Disabled' : 'Active')}</div></Col>
                 <Col><div className="ep-field-label">Worker Type</div><div className="ep-field-value">{empDetail?.worker_type || empDetail?.work_type || '—'}</div></Col>
@@ -94,20 +82,7 @@ export default function JobTab() {
                     <Col xs={4}><div className="ep-field-label">Primary Role</div><div className="ep-field-value">{employee?.primaryRole || 'Executive'}</div></Col>
                     <Col xs={4}>
                       <div className="ep-field-label">Ancillary Role</div>
-                      {ancillaryList.length > 0 ? (
-                        <div className="d-flex flex-wrap gap-1">
-                          {ancillaryList.map(r => (
-                            <span
-                              key={r}
-                              className="d-inline-flex align-items-center fw-semibold jt-teal-pill-9"
-                            >
-                              {r}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="ep-field-value text-muted fw-normal">—</div>
-                      )}
+                      <AncillaryRolesChip names={ancillaryList} />
                     </Col>
                     <Col xs={4}><div className="ep-field-label">Employee Level</div><div className="ep-field-value">L3 — Mid</div></Col>
                   </Row>
@@ -127,9 +102,7 @@ export default function JobTab() {
                 <div className="px-3 py-3">
                   <Row className="g-3">
                     <Col xs={6}><div className="ep-field-label">Probation Policy</div><div className="ep-field-value">{empDetail?.probation_policy || '—'}</div></Col>
-                    <Col xs={6}><div className="ep-field-label">Probation Duration</div><div className="ep-field-value">{empDetail?.probation_months ? `${empDetail.probation_months} Months` : '—'}</div></Col>
                     <Col xs={6}><div className="ep-field-label">Notice Period</div><div className="ep-field-value">{empDetail?.notice_period || (empDetail?.notice_period_days ? `${empDetail.notice_period_days} Days` : '—')}</div></Col>
-                    <Col xs={6}><div className="ep-field-label">Contract Status</div><div className="ep-field-value">{empDetail?.contract_status || empDetail?.work_type || '—'}</div></Col>
                   </Row>
                 </div>
               </div>
@@ -145,16 +118,21 @@ export default function JobTab() {
                   <h6 className="mb-0 fw-bold ep-fs-12">Attendance &amp; Time</h6>
                 </div>
                 <div className="px-3 py-3">
+                  {/* Mirrors the Edit Employee form's "Leave & Attendance"
+                      step (Leave Plan, Holiday List, Shift, Weekly Off,
+                      Attendance Number, Overtime, Expense Policy) bound to real
+                      data. Fields with no form equivalent (Time Tracking,
+                      Penalization, Shift Allowance) were removed. */}
                   <Row className="g-3">
-                    <Col xs={4}><div className="ep-field-label">Shift</div><div className="ep-field-value">Morning Shift</div></Col>
-                    <Col xs={4}><div className="ep-field-label">Weekly Off</div><div className="ep-field-value">Sat &amp; Sun</div></Col>
-                    <Col xs={4}><div className="ep-field-label">Leave Plan</div><div className="ep-field-value">Default Leave Plan</div></Col>
-                    <Col xs={4}><div className="ep-field-label">Holiday Calendar</div><div className="ep-field-value">Maharashtra 2026</div></Col>
-                    <Col xs={4}><div className="ep-field-label">Time Tracking</div><div className="ep-field-value">Enabled</div></Col>
-                    <Col xs={4}><div className="ep-field-label">Attendance No.</div><div className="ep-field-value font-monospace">{employeeId}</div></Col>
-                    <Col xs={4}><div className="ep-field-label">Penalization</div><div className="ep-field-value">Default</div></Col>
-                    <Col xs={4}><div className="ep-field-label">Overtime Policy</div><div className="ep-field-value">Standard OT</div></Col>
-                    <Col xs={4}><div className="ep-field-label">Shift Allowance</div><div className="ep-field-value">None</div></Col>
+                    {/* Top row holds 4 fields (incl. Attendance Number); the
+                        bottom row holds the remaining 3. */}
+                    <Col xs={3}><div className="ep-field-label">Leave Plan</div><div className="ep-field-value">{empDetail?.leave_plan || '—'}</div></Col>
+                    <Col xs={3}><div className="ep-field-label">Holiday List</div><div className="ep-field-value">{empDetail?.holidayGroup?.name || empDetail?.holiday_group?.name || '—'}</div></Col>
+                    <Col xs={3}><div className="ep-field-label">Shift</div><div className="ep-field-value">{empDetail?.shift || '—'}</div></Col>
+                    <Col xs={3}><div className="ep-field-label">Attendance Number</div><div className="ep-field-value font-monospace">{empDetail?.attendance_number || '—'}</div></Col>
+                    <Col xs={4}><div className="ep-field-label">Weekly Off</div><div className="ep-field-value">{empDetail?.weekly_off || '—'}</div></Col>
+                    <Col xs={4}><div className="ep-field-label">Overtime</div><div className="ep-field-value">{empDetail?.overtime || '—'}</div></Col>
+                    <Col xs={4}><div className="ep-field-label">Expense Policy</div><div className="ep-field-value">{empDetail?.expense_policy || '—'}</div></Col>
                   </Row>
                 </div>
               </div>
@@ -188,24 +166,24 @@ export default function JobTab() {
                     : '—';
                   return (
                     <>
-                      <Col md={3}><div className="ep-field-label">Laptop Assigned</div><div className="ep-field-value">{empDetail?.laptop_assigned || (laptop ? 'Yes' : 'No')}</div></Col>
-                      <Col md={3}>
+                      {/* All asset fields on a single row — equal-width auto cols. */}
+                      <Col><div className="ep-field-label">Laptop Assigned</div><div className="ep-field-value">{empDetail?.laptop_assigned || (laptop ? 'Yes' : 'No')}</div></Col>
+                      <Col>
                         <div className="ep-field-label">Laptop Asset ID</div>
                         {laptop ? (
                           <span className="font-monospace fw-semibold jt-asset-badge">{laptop.code || laptop.asset_number || `LAP-${laptop.id}`}</span>
                         ) : <div className="ep-field-value text-muted fw-normal">—</div>}
                       </Col>
-                      <Col md={3}><div className="ep-field-label">Laptop Type</div><div className="ep-field-value">{laptop?.asset_name || '—'}</div></Col>
-                      <Col md={3}>
+                      <Col><div className="ep-field-label">Laptop Type</div><div className="ep-field-value">{laptop?.asset_name || '—'}</div></Col>
+                      <Col>
                         <div className="ep-field-label">Mobile Device</div>
                         {mobile ? (
                           <div className="ep-field-value">{mobile.asset_name || mobile.code || '—'}</div>
                         ) : <div className="ep-field-value text-muted fw-normal">—</div>}
                       </Col>
-
-                      <Col md={6}><div className="ep-field-label">Other Assets</div><div className="ep-field-value">{otherSummary}</div></Col>
-                      <Col md={3}><div className="ep-field-label">Asset Issued Date</div><div className="ep-field-value font-monospace">{fmtDate(empDetail?.asset_issued_date)}</div></Col>
-                      <Col md={3}><div className="ep-field-label">Return Required</div><div className="ep-field-value">{empDetail?.return_required || '—'}</div></Col>
+                      <Col><div className="ep-field-label">Other Assets</div><div className="ep-field-value">{otherSummary}</div></Col>
+                      <Col><div className="ep-field-label">Asset Issued Date</div><div className="ep-field-value font-monospace">{fmtDate(empDetail?.asset_issued_date)}</div></Col>
+                      <Col><div className="ep-field-label">Return Required</div><div className="ep-field-value">{empDetail?.return_required || '—'}</div></Col>
                     </>
                   );
                 })()}

@@ -98,11 +98,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const initials = employee?.initials
     || (employee?.name ? employee.name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase() : 'EM');
   const accent = employee?.accent || '#7c5cfc';
-  const ancillaryList: string[] = Array.isArray(employee?.ancillaryRoles) && employee.ancillaryRoles.length > 0
-    ? employee.ancillaryRoles.filter(Boolean)
-    : Array.isArray(employee?.ancillaryRole)
-      ? (employee?.ancillaryRole as string[]).filter(Boolean)
-      : (employee?.ancillaryRole ? [employee.ancillaryRole as string] : []);
 
   // A disabled employee must read "Inactive" here regardless of the raw
   // `status` field — fixing the mismatch where the list showed "Disabled" but
@@ -161,6 +156,20 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // while the /employees/{id} fetch is in flight. Without this every
   // field rendered "—" for the first 200-500ms which looked broken.
   const [empDetailLoading, setEmpDetailLoading] = useState(true);
+
+  // Ancillary roles for the header + Job tab. Prefer the freshly-fetched
+  // empDetail.ancillary_roles_resolved (the full multi-role list from the
+  // ancillary_role_ids JSON column) — the navigation-state `employee` row
+  // often only carries the single legacy ancillaryRole, which is why the
+  // profile showed just one role while the edit form showed all of them.
+  const ancillaryList: string[] = Array.isArray(empDetail?.ancillary_roles_resolved) && empDetail.ancillary_roles_resolved.length > 0
+    ? empDetail.ancillary_roles_resolved.map((r: any) => r?.name ?? '').filter(Boolean)
+    : Array.isArray(employee?.ancillaryRoles) && employee.ancillaryRoles.length > 0
+      ? employee.ancillaryRoles.filter(Boolean)
+      : Array.isArray(employee?.ancillaryRole)
+        ? (employee?.ancillaryRole as string[]).filter(Boolean)
+        : (employee?.ancillaryRole ? [employee.ancillaryRole as string] : []);
+
   // The "Employee ID" shown under the name must be the emp_code (EMP-017),
   // never the raw numeric DB id. The route slug (`employeeId`) and the list's
   // `employee.id` can be either, so prefer the resolved emp_code and fall back
@@ -2045,20 +2054,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             <div className="d-flex align-items-center gap-2 mb-1">
               <h2 className="text-white mb-0 fw-bold ep-fs-22 ep-line-115">{employee?.name || employeeId}</h2>
             </div>
-            <p className="mb-1 ep-hero-empcode">{displayEmpCode}</p>
-            <p className="mb-2 ep-hero-subline">
-              {/* Hero meta line — prefer the freshly-fetched empDetail
-                  relations so newly-edited Department / Designation / work
-                  type are reflected immediately, instead of the stale
-                  navigation-state row that previously fell back to
-                  hardcoded "Accounts" / "Associate Engineer" / "Full-time". */}
-              {empDetail?.department?.name || asName(employee?.department) || '—'}
-              <span className="mx-2 ep-opacity-50">·</span>
-              {empDetail?.designation?.name || asName(employee?.designation) || '—'}
-              <span className="mx-2 ep-opacity-50">·</span>
-              {empDetail?.worker_type || empDetail?.work_type || empDetail?.time_type || '—'}
-            </p>
-            <div className="d-flex gap-2 flex-wrap mb-3">
+            {/* Employee code + role / status badges share one line so the
+                identity reads compactly (was: code, then badges on a row of
+                their own below the subline). */}
+            <div className="d-flex align-items-center gap-2 flex-wrap mb-1">
+              <p className="mb-0 ep-hero-empcode">{displayEmpCode}</p>
               {(empDetail?.primary_role?.name || employee?.primaryRole) && (
                 <span className="ep-hero-pill ep-hero-pill-blue">
                   <i className="ri-suitcase-line" /> {empDetail?.primary_role?.name || employee?.primaryRole}
@@ -2072,6 +2072,18 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 {statusTone.label}
               </span>
             </div>
+            <p className="mb-2 ep-hero-subline">
+              {/* Hero meta line — prefer the freshly-fetched empDetail
+                  relations so newly-edited Department / Designation / work
+                  type are reflected immediately, instead of the stale
+                  navigation-state row that previously fell back to
+                  hardcoded "Accounts" / "Associate Engineer" / "Full-time". */}
+              {empDetail?.department?.name || asName(employee?.department) || '—'}
+              <span className="mx-2 ep-opacity-50">·</span>
+              {empDetail?.designation?.name || asName(employee?.designation) || '—'}
+              <span className="mx-2 ep-opacity-50">·</span>
+              {empDetail?.worker_type || empDetail?.work_type || empDetail?.time_type || '—'}
+            </p>
             <div className="d-flex column-gap-4 row-gap-2 flex-wrap">
               {/* Each meta cell renders a thin shimmer placeholder until
                   empDetail resolves — keeps the row from flashing "—" /
@@ -2212,10 +2224,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
            the file for now in case we want to re-introduce a "detailed
            application" entry point later. */}
       {tab === 'apply_leave' && (
-        <LeaveSummaryPanel
-          employeeId={empDetail?.id != null ? String(empDetail.id) : (profileEmpIdNum != null ? String(profileEmpIdNum) : '')}
-          canRequest={isOwnProfile}
-        />
+        <div className="ep-tab-fill">
+          <LeaveSummaryPanel
+            employeeId={empDetail?.id != null ? String(empDetail.id) : (profileEmpIdNum != null ? String(profileEmpIdNum) : '')}
+            canRequest={isOwnProfile}
+          />
+        </div>
       )}
 
       {/* ── Holidays tab — read-only view of the employee's assigned Holiday
@@ -2223,9 +2237,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
            /employees/{id}/holidays, so changes to the assigned calendar reflect
            automatically. List + Calendar views inside the panel. */}
       {tab === 'holidays' && (
-        <div className="ep-section-card-flat ep-section-card mb-3">
-          <div className="px-3 py-3">
-            <HolidayCalendarPanel employeeId={employeeId} />
+        <div className="ep-tab-fill">
+          <div className="ep-section-card-flat ep-section-card mb-3 h-100 d-flex flex-column">
+            <div className="px-3 py-3 flex-grow-1">
+              <HolidayCalendarPanel employeeId={employeeId} />
+            </div>
           </div>
         </div>
       )}
