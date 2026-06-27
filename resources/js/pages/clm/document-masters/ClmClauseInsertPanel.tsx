@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
+import { useToast } from '../../../contexts/ToastContext';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Shared Clause Library insert popup.
@@ -39,6 +40,7 @@ interface Props {
 }
 
 export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
+  const toast = useToast();
   const [types, setTypes]       = useState<ClauseTypeRow[]>([]);
   const [clauses, setClauses]   = useState<ClauseRow[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -104,7 +106,10 @@ export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
       const body = (c.content && c.content.trim()) ? c.content : '<p></p>';
       return `<h3>${escapeHtml(c.name)}</h3>${body}`;
     }).join('');
+    const count = chosen.length;
     onInsert(html);
+    toast.success('Inserted', `${count} clause${count === 1 ? '' : 's'} inserted successfully`);
+    onClose();   // always dismiss the picker after a successful insert (some hosts don't close it themselves)
   };
 
   return createPortal(
