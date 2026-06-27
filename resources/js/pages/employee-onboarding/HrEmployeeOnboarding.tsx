@@ -4275,7 +4275,11 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   // exception is Stage 2, which requires BOTH all docs uploaded AND the
   // macro watermark to have moved past 2 — see comment on the original
   // change for why the OR was a false positive.
-  const stage1IsDone = stage1Done || macroCompleted >= 1;
+  // Stage 1 is only "done" when EVERY required field is actually filled. The
+  // macro watermark alone must not mark it 100% — e.g. if annual salary was
+  // cleared on re-edit, the sidebar should drop below 100% and block Stage 6.
+  const stage1AllRequiredFilled = stage1Filled === stage1RequiredFields.length;
+  const stage1IsDone = (stage1Done || macroCompleted >= 1) && stage1AllRequiredFilled;
   const stage2IsDone = stage2Done && macroCompleted >= 2;
   const stage3IsDone = stage3Done || macroCompleted >= 3;
   const stage4IsDone = stage4Done || macroCompleted >= 4;
@@ -4298,8 +4302,10 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   const stagesView = ONB_STAGES.map(s => {
     let status: StageStatus, progress: number;
     if (s.num === 1) {
-      progress = stage1IsDone ? 100 : stage1Pct;
-      status   = stage1IsDone ? 'Completed' : (wizardStep > 0 || stage1Pct > 0 ? 'In Progress' : 'Pending');
+      // Use the live required-field % so a missing required field (e.g. annual
+      // salary) shows < 100 instead of the macro watermark's 100.
+      progress = stage1IsDone ? 100 : stage1LivePct;
+      status   = stage1IsDone ? 'Completed' : (wizardStep > 0 || stage1Filled > 0 ? 'In Progress' : 'Pending');
     } else if (s.num === 2) {
       progress = stage2IsDone ? 100 : stage2Pct;
       status   = stage2IsDone ? 'Completed' : (stage2Uploaded > 0 ? 'In Progress' : 'Pending');
@@ -4906,10 +4912,6 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   />
   {s1Errors.annual_salary && <div className="onb-error-msg">{s1Errors.annual_salary}</div>}
 </Col>
-                  <Col md={4}>
-                    <label className="onb-init-label">Period</label>
-                    <MasterSelect options={ONB_PERIOD} value={s1.salary_frequency} placeholder="Select frequency" onChange={(v) => setS1(p => ({ ...p, salary_frequency: v }))} />
-                  </Col>
                   <Col md={4} data-field="salary_effective_from">
   <label className="onb-init-label">
     Salary Effective From <span className="req">*</span>
@@ -4927,14 +4929,6 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   />
   {s1Errors.salary_effective_from && <div className="onb-error-msg">{s1Errors.salary_effective_from}</div>}
 </Col>
-                  <Col md={4}>
-                    <label className="onb-init-label">Salary Structure Type</label>
-                    <MasterSelect options={ONB_SAL_STRUCT} value={s1.salary_structure} placeholder="Select salary structure" onChange={(v) => setS1(p => ({ ...p, salary_structure: v }))} />
-                  </Col>
-                  <Col md={4}>
-                    <label className="onb-init-label">Tax Regime</label>
-                    <MasterSelect options={ONB_TAX_REGIME} value={s1.tax_regime} placeholder="Select tax regime" onChange={(v) => setS1(p => ({ ...p, tax_regime: v }))} />
-                  </Col>
                 </Row>
 
                 <div className="onb-init-breakup">
@@ -7160,7 +7154,7 @@ function Stage4Payroll({
               <MasterSelect options={ONB_TAX_REGIME} value={s4.tax_regime || 'New Regime (115BAC)'} onChange={(v) => setS4(p => ({ ...p, tax_regime: v }))} />
             </Col>
             <Col md={4}>
-              <label className="onb-init-label">PF Deduction</label>
+              <label className="onb-init-label">PF Deduction <span className="req">*</span></label>
               <MasterSelect options={ONB_PF_DEDUCT} value={s4.pf_deduction} onChange={(v) => setS4(p => ({ ...p, pf_deduction: v }))} invalid={invalid.pf_deduction} />
             </Col>
             <Col md={4}>

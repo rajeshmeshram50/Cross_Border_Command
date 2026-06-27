@@ -2453,14 +2453,16 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
         URL.revokeObjectURL(objUrl);
         toast.success('Downloaded', 'Signed PDF saved.');
       } else if (d.url) {
-        toast.info('Downloading…', 'Preparing the document.');
-        const resp = await fetch(d.url, { credentials: 'include' });
-        const blob = await resp.blob();
-        const objUrl = URL.createObjectURL(blob);
+        // Direct anchor download — NOT fetch(): uploaded files are served from
+        // storage / a different origin, and fetch() trips a CORS error there.
+        // An anchor download works for same-origin files and falls back to
+        // opening the file in a new tab cross-origin (no CORS preflight).
         const a = document.createElement('a');
-        a.href = objUrl; a.download = d.name || 'document';
+        a.href = d.url;
+        a.download = d.name || 'document';
+        a.target = '_blank';
+        a.rel = 'noopener';
         document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(objUrl);
         toast.success('Downloaded', 'Document saved.');
       } else {
         toast.info('Not available yet', 'This document has not been generated / signed yet.');
