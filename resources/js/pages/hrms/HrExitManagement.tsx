@@ -41,6 +41,10 @@ interface EmployeeRow {
   status: ExitStatus;
   exitInitiated: boolean;
   noticeStartIso: string;
+  // Notice period set on the employee at hire (e.g. "30 Days" + 30). Used to
+  // auto-derive the Notice Period End Date in the exit form.
+  noticePeriodDays: number | null;
+  noticePeriodLabel: string;
   laptopAsset:  AssetMini | null;
   mobileAsset:  AssetMini | null;
   otherAssets:  AssetMini[];
@@ -498,7 +502,15 @@ function ExitChecklistModal({ open, onClose }: { open: boolean; onClose: () => v
   return (
     <Modal isOpen={open} toggle={onClose} centered size="lg" backdrop="static" contentClassName="border-0 ecl-modal">
       <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
-        <div className="ecl-head">
+        <div className="ecl-head" style={{ position: 'relative' }}>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            style={{ position: 'absolute', top: 12, right: 12, width: 30, height: 30, borderRadius: 8, border: 0, background: 'rgba(255,255,255,0.22)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 18, lineHeight: 1, zIndex: 3 }}
+          >
+            <i className="ri-close-line" />
+          </button>
           <div className="ecl-head-left">
             <span className="ecl-head-icon"><i className="ri-clipboard-line" /></span>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -639,6 +651,17 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const [reasonForExit, setReasonForExit] = useState('');
   const [noticeDate, setNoticeDate]       = useState('');
   const [lwd, setLwd]                     = useState('');
+  // Notice Period End Date — auto-derived from the notice start date + the
+  // employee's notice period (set at hire). Read-only; the Last Working Day
+  // stays a separate, manually-set field.
+  const noticePeriodEnd = useMemo(() => {
+    const days = employee?.noticePeriodDays;
+    if (!noticeDate || days == null || !Number.isFinite(days)) return '';
+    const d = new Date(noticeDate + 'T00:00:00');
+    if (isNaN(d.getTime())) return '';
+    d.setDate(d.getDate() + Number(days));
+    return d.toISOString().slice(0, 10);
+  }, [noticeDate, employee?.noticePeriodDays]);
   const [reportingManagerId, setReportingManagerId] = useState<number | null>(null);
   const [reportingManagerName, setReportingManagerName] = useState('');
   const [comments, setComments]           = useState('');
@@ -654,8 +677,27 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const [advancingStage, setAdvancingStage] = useState(false);
 
   const todayIso = new Date().toISOString().slice(0, 10);
+  const addDaysIso = (iso: string, days: number) => {
+    const d = new Date(iso + 'T00:00:00');
+    if (isNaN(d.getTime())) return iso;
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+  };
+  const tomorrowIso = addDaysIso(todayIso, 1);
+  const fmtDateShort = (iso: string) => {
+    try { return new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); }
+    catch { return iso; }
+  };
+  // Notice start date may be today, but not in the past.
   const noticeDateInvalid = !!noticeDate && noticeDate < todayIso;
-  const lwdInvalid        = !!lwd && (lwd <= todayIso || (!!noticeDate && lwd < noticeDate));
+  // Last working day must be in the future (not today) AND on/after the notice
+  // period END date (notice start + notice period). When no notice period is
+  // set, fall back to "strictly after the notice start date".
+  const lwdMin = noticePeriodEnd || (noticeDate ? addDaysIso(noticeDate, 1) : tomorrowIso);
+  const lwdInvalid = !!lwd && (lwd <= todayIso || lwd < lwdMin);
+  // Exit can only be finalised on/after the Last Working Day — you can't close
+  // out an employee before their last day has actually arrived.
+  const lwdReached = !!lwd && lwd <= todayIso;
 
   const [clearances, setClearances] = useState<{ checked: boolean; status: string }[]>([
     { checked: false, status: 'Pending' },
@@ -958,7 +1000,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     const items: string[] = [];
     clearances.forEach((c, i) => { if (c.status !== 'Approved') items.push(`${CLR[i]} clearance — ${c.status || 'Pending'}`); });
     validation.forEach((v, i) => { if (!v) items.push(CHK[i]); });
-    if (hrSignOff === 'Pending') items.push('HR final sign-off');
+    // Exit may complete ONLY when HR Final Sign-off is Approved — a Rejected
+    // (or still-Pending) sign-off must block completion. (QA bug fix.)
+    if (hrSignOff !== 'Approved') items.push(`HR final sign-off — ${hrSignOff === 'Rejected' ? 'Rejected' : 'Pending'}`);
     return items;
   }, [clearances, validation, hrSignOff]);
 
@@ -992,19 +1036,34 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       return Math.round((done / total) * 100);
     }
     if (n === 4) {
+      // Final actions now expose only Employee Status + HR Final Sign-off
+      // (Profile Lock & Exit Case Status removed from the UI).
       const validationDone = validation.filter(Boolean).length;
       const finalsDone =
         (empStatus !== 'Active' ? 1 : 0)
-        + (profileLock === 'Locked' ? 1 : 0)
-        + (exitCaseStatus === 'Closed' ? 1 : 0)
-        + (hrSignOff !== 'Pending' ? 1 : 0);
-      const total = validation.length + 4;
+        + (hrSignOff === 'Approved' ? 1 : 0);
+      const total = validation.length + 2;
       return Math.round(((validationDone + finalsDone) / total) * 100);
     }
     return 0;
   };
 
   const effStatusOf = (n: number): StageStatus => {
+    // Stage 2 is only truly complete once EVERY clearance is approved — don't
+    // let a stale persisted "Completed" show 100% while clearances are pending.
+    if (n === 2 && !clearances.every(c => c.status === 'Approved')) {
+      return (n === stage || rawStagePct(2) > 0 || stageStatus[2] === 'In Progress') ? 'In Progress' : 'Pending';
+    }
+    // Stage 3 is only complete once EVERY exit document is fully SIGNED. Merely
+    // sending a document (run Pending/In Progress) must not flip it to 100%.
+    if (n === 3) {
+      const total = exitTemplates.length;
+      const allSigned = total > 0 && exitTemplates.every(t => runByTemplateId.get(t.id)?.status === 'Completed');
+      if (!allSigned) {
+        const anySent = exitTemplates.some(t => runByTemplateId.has(t.id));
+        return (n === stage || anySent || rawStagePct(3) > 0 || stageStatus[3] === 'In Progress') ? 'In Progress' : 'Pending';
+      }
+    }
     if (stageStatus[n] === 'Completed' || rawStagePct(n) === 100) return 'Completed';
     if (n === stage || rawStagePct(n) > 0 || stageStatus[n] === 'In Progress') return 'In Progress';
     return 'Pending';
@@ -1068,6 +1127,32 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
   const completeExit = async () => {
     if (!employee || completing) return;
+
+    // Can't finalise before the employee's last working day has arrived.
+    if (!lwdReached) {
+      toast.error(
+        'Exit can’t be completed yet',
+        lwd
+          ? `You can complete this exit on or after the last working day (${fmtDateShort(lwd)}).`
+          : 'Set the last working day in Stage 1 first.',
+      );
+      setStage(1);
+      return;
+    }
+
+    // HARD gate: every matched exit document must be fully SIGNED (run
+    // Completed) before the exit can be finalised. The "Exit documents signed"
+    // checklist box is a manual tick and was being used to bypass real signing
+    // status — this checks the actual signing runs instead. (QA bug fix.)
+    const unsignedDocs = exitTemplates.filter(t => runByTemplateId.get(t.id)?.status !== 'Completed');
+    if (exitTemplates.length > 0 && unsignedDocs.length) {
+      toast.error(
+        `Exit can't be completed — ${unsignedDocs.length} document${unsignedDocs.length > 1 ? 's' : ''} not fully signed`,
+        'Every exit document must be sent and signed by all required signatories first. Finish them in “Exit Documents Management”.',
+      );
+      setStage(3);
+      return;
+    }
 
     if (exitPending.length) {
       toast.error(
@@ -1259,7 +1344,10 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                       <EpInput
                         type="date"
                         value={noticeDate}
-                        onChange={(v) => { setNoticeDate(v); clearS1Err('noticeDate'); }}
+                        onChange={(v) => {
+                          setNoticeDate(v); clearS1Err('noticeDate');
+                          if (v && v < todayIso) toast.warning('Invalid notice start date', 'Notice start date cannot be in the past.');
+                        }}
                         min={todayIso}
                         invalid={s1Errors.has('noticeDate') || noticeDateInvalid}
                       />
@@ -1272,18 +1360,53 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     </EpField>
                   </Col>
                   <Col md={6}>
+                    <EpField label={`Notice Period End Date${employee?.noticePeriodLabel ? ` (${employee.noticePeriodLabel})` : ''}`}>
+                      <EpInput
+                        type="date"
+                        value={noticePeriodEnd}
+                        disabled
+                        onChange={() => {}}
+                      />
+                      <div className="ep-hint" style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 4 }}>
+                        {employee?.noticePeriodDays != null
+                          ? 'Auto-calculated from the notice start date + the employee’s notice period.'
+                          : 'No notice period set on this employee — set it on the employee record to auto-fill.'}
+                      </div>
+                    </EpField>
+                  </Col>
+                  <Col md={6}>
                     <EpField label="Last Working Day" required invalid={s1Errors.has('lwd') || lwdInvalid}>
                       <EpInput
                         type="date"
                         value={lwd}
-                        onChange={(v) => { setLwd(v); clearS1Err('lwd'); }}
-                        min={noticeDate || todayIso}
+                        onChange={(v) => {
+                          setLwd(v); clearS1Err('lwd');
+                          if (v) {
+                            if (v <= todayIso) {
+                              toast.warning('Invalid last working day', 'Last working day cannot be today or a past date.');
+                            } else if (v < lwdMin) {
+                              toast.warning(
+                                'Invalid last working day',
+                                noticePeriodEnd
+                                  ? `Last working day must be on or after the notice period end date (${fmtDateShort(noticePeriodEnd)}).`
+                                  : 'Last working day must be after the notice start date.',
+                              );
+                            }
+                          }
+                        }}
+                        min={lwdMin}
                         invalid={s1Errors.has('lwd') || lwdInvalid}
                       />
                       {(s1Errors.has('lwd') || lwdInvalid) && (
                         <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                           <i className="ri-error-warning-line" />
-                          {lwdInvalid ? 'Last working day must be on/after the notice start date and not in the past.' : 'Last working day is required.'}
+                          {lwdInvalid
+                            ? (lwd <= todayIso
+                                ? 'Last working day cannot be today or a past date.'
+                                : (noticePeriodEnd
+                                    ? `Last working day must be on or after the notice period end date (${fmtDateShort(noticePeriodEnd)}).`
+                                    : 'Last working day must be after the notice start date.'))
+                            : 'Last working day is required.'}
                         </div>
                       )}
                     </EpField>
@@ -1359,8 +1482,12 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         const row = assetReturns[a.id] ?? { checked: false, status: 'Pending' };
                         return (
                           <div key={a.id} className="ep-check-row">
-                            <span className="ep-check-box" style={{ background: row.status === 'Handed Over' ? '#10b981' : 'transparent', borderColor: row.status === 'Handed Over' ? '#10b981' : 'var(--vz-border-color)' }}>
+                            <span className="ep-check-box" style={{
+                              background: row.status === 'Handed Over' ? '#10b981' : row.status === 'Not Returned' ? '#ef4444' : 'transparent',
+                              borderColor: row.status === 'Handed Over' ? '#10b981' : row.status === 'Not Returned' ? '#ef4444' : 'var(--vz-border-color)',
+                            }}>
                               {row.status === 'Handed Over' && <i className="ri-check-line" style={{ color: '#fff' }} />}
+                              {row.status === 'Not Returned' && <i className="ri-close-line" style={{ color: '#fff' }} />}
                             </span>
                             <span className="ep-check-label">
                               {a.label} <span className="ep-asset-code">({a.code})</span>
@@ -1391,7 +1518,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         checked={clearances[idx].checked}
                         onChange={() => setClearances(prev => prev.map((c, i) => i === idx ? { ...c, checked: !c.checked, status: !c.checked ? 'Approved' : 'Pending' } : c))}
                       />
-                      <span className="ep-check-box"><i className="ri-check-line" /></span>
+                      <span className="ep-check-box" style={{
+                        background: clearances[idx].status === 'Approved' ? '#10b981' : clearances[idx].status === 'Rejected' ? '#ef4444' : 'transparent',
+                        borderColor: clearances[idx].status === 'Approved' ? '#10b981' : clearances[idx].status === 'Rejected' ? '#ef4444' : 'var(--vz-border-color)',
+                      }}>
+                        {clearances[idx].status === 'Approved' && <i className="ri-check-line" style={{ color: '#fff' }} />}
+                        {clearances[idx].status === 'Rejected' && <i className="ri-close-line" style={{ color: '#fff' }} />}
+                      </span>
                       <span className="ep-check-label">{label}</span>
                       <div style={{ width: 140 }}>
                         <EpSelect
@@ -1425,7 +1558,8 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
             {stage === 3 && (() => {
               const totalDocs = exitTemplates.length;
-              const generatedCount = exitTemplates.filter(t => generatedTplIds.has(t.id) || runByTemplateId.has(t.id)).length;
+              // "Sent" = documents that have entered the signing workflow (a run exists).
+              const sentCount = exitTemplates.filter(t => runByTemplateId.has(t.id)).length;
               const pendingCount = exitTemplates.filter(t => {
                 const r = runByTemplateId.get(t.id);
                 return r && (r.status === 'Pending' || r.status === 'In Progress');
@@ -1433,7 +1567,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
               const completedCount = exitTemplates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed').length;
               const KPIS = [
                 { label: 'Total Docs',   value: totalDocs,      icon: 'ri-file-list-3-line',     gradient: 'linear-gradient(135deg, #4338ca 0%, #6366f1 60%, #818cf8 100%)', deep: '#4338ca' },
-                { label: 'Generated',    value: generatedCount, icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
+                { label: 'Sent',         value: sentCount,      icon: 'ri-send-plane-line',      gradient: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
                 { label: 'Pending Sign', value: pendingCount,   icon: 'ri-time-line',            gradient: 'linear-gradient(135deg, #c2410c 0%, #f59e0b 60%, #fbbf24 100%)', deep: '#c2410c' },
                 { label: 'Completed',    value: completedCount, icon: 'ri-check-double-line',    gradient: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 60%, #38bdf8 100%)', deep: '#0369a1' },
               ];
@@ -1548,17 +1682,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                   <i className="ri-eye-line" />View
                                 </button>
                               </Tooltip>
-                              {canSend && (
-                                <Tooltip label="Send through the configured signing workflow" position="bottom" themed>
-                                  <button
-                                    type="button"
-                                    className="ep-doc-btn"
-                                    onClick={() => openSend(tpl)}
-                                  >
-                                    <i className="ri-send-plane-line" />{run ? 'Resend' : 'Send'}
-                                  </button>
-                                </Tooltip>
-                              )}
                               {runInFlight && run && (() => {
                                 const isReminding = remindingRunId === run.id;
                                 return (
@@ -1578,13 +1701,14 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                 );
                               })()}
                               {canSend && (
-                                <Tooltip label="Fill custom fields, preview & generate / send for signing" position="bottom" themed>
+                                <Tooltip label="Preview the document (fills custom fields if any) then send for signing" position="bottom" themed>
                                   <button
                                     type="button"
                                     className="ep-doc-btn"
                                     onClick={() => setGenTpl(tpl)}
+                                    style={{ background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', border: 0 }}
                                   >
-                                    <i className="ri-file-add-line" />Generate
+                                    <i className="ri-send-plane-line" />Send for Signature
                                   </button>
                                 </Tooltip>
                               )}
@@ -1701,8 +1825,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                 <div className="ep-section-label">Final Actions</div>
                 <Row className="g-2 mb-2">
                   <Col md={6}><EpField label="Employee Status"><EpSelect value={empStatus} onChange={setEmpStatus} options={['Active','Inactive','Exited']} /></EpField></Col>
-                  <Col md={6}><EpField label="Profile Lock"><EpSelect value={profileLock} onChange={setProfileLock} options={['Unlocked','Locked']} /></EpField></Col>
-                  <Col md={6}><EpField label="Exit Case Status"><EpSelect value={exitCaseStatus} onChange={setExitCaseStatus} options={['Open','Closed']} /></EpField></Col>
                   <Col md={6}><EpField label="HR Final Sign-off"><EpSelect value={hrSignOff} onChange={setHrSignOff} options={['Pending','Approved','Rejected']} /></EpField></Col>
                 </Row>
 
@@ -1750,7 +1872,16 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
               <button type="button" className="ep-btn ep-btn--prev" onClick={goBack}><i className="ri-arrow-left-s-line" />Previous</button>
             )}
             {isLastStage ? (
-              <button type="button" className="ep-btn ep-btn--complete" disabled={completing} onClick={completeExit}>
+              <button
+                type="button"
+                className="ep-btn ep-btn--complete"
+                disabled={completing || !lwdReached}
+                onClick={completeExit}
+                title={!lwdReached
+                  ? (lwd ? `Exit can be completed on or after the last working day (${fmtDateShort(lwd)})` : 'Set the last working day first')
+                  : 'Finalize and close this exit case'}
+                style={!lwdReached ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
+              >
                 <i className={completing ? 'ri-loader-4-line ri-spin' : 'ri-check-double-line'} />
                 {completing ? 'Completing…' : 'Complete Exit'}
               </button>
@@ -1847,7 +1978,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
               className="btn rounded-pill px-3 fw-semibold"
               style={{ background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', border: 0, fontSize: 13, boxShadow: '0 4px 10px rgba(124,58,237,0.30)', opacity: generating ? 0.7 : 1, cursor: generating ? 'progress' : 'pointer' }}>
               {generating
-                ? <><i className="ri-loader-4-line ri-spin me-1" />Downloading…</>
+                ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Downloading…</>
                 : <><i className="ri-download-2-line me-1" />Download DOCX</>}
             </button>
           )}
@@ -2435,7 +2566,12 @@ function apiToExitRow(e: any): EmployeeRow {
   );
 
   let status: ExitStatus;
-  if      (trashed || caseClosed || statusExited)                   status = 'Exited';
+  // NOTE: a soft-disabled employee (deleted_at set via the Employee module
+  // toggle) is NOT an exit — only a completed/closed exit case or a
+  // Resigned/Terminated status counts as "Exited" here. This keeps a merely
+  // disabled employee visible & manageable in the hub instead of being
+  // silently moved to the Exited list.
+  if      (caseClosed || statusExited)                              status = 'Exited';
   else if (exitInitiated || statusNotice)                           status = 'Exit In Progress';
   else if (!e.email || !e.department_id || !e.designation_id)        status = 'Missing Details';
   else                                                              status = 'Active';
@@ -2466,6 +2602,15 @@ function apiToExitRow(e: any): EmployeeRow {
     status,
     exitInitiated,
     noticeStartIso: noticeRaw,
+    // Prefer the explicit integer; fall back to parsing the label ("90 Days")
+    // since notice_period_days is often null while notice_period holds "N Days".
+    noticePeriodDays: (() => {
+      const n = e.notice_period_days;
+      if (n != null && n !== '' && Number.isFinite(Number(n))) return Number(n);
+      const m = String(e.notice_period || '').match(/(\d+)/);
+      return m ? Number(m[1]) : null;
+    })(),
+    noticePeriodLabel: e.notice_period || '',
     laptopAsset: e.laptop_asset ? {
       id:           Number(e.laptop_asset.id),
       asset_name:   e.laptop_asset.asset_name,

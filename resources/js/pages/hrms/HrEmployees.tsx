@@ -2310,10 +2310,21 @@ export default function HrEmployees() {
                                 {tab === 'disabled' && (
                                   <ActionBtn title="Delete permanently" icon="ri-delete-bin-line" color="danger" onClick={() => setConfirmDelete(e)} />
                                 )}
-                                <ToggleSwitch
-                                  initial={e.enabled}
-                                  onRequestToggle={(next, commit) => requestToggle(e, next, commit)}
-                                />
+                                {(() => {
+                                  // EXITED employees (exit case completed → status
+                                  // Resigned/Terminated) are PERMANENTLY disabled and
+                                  // cannot be re-enabled here. A plain soft-disable
+                                  // (Inactive) stays reversible.
+                                  const exited = ['resigned', 'terminated'].includes(String((e as any)._raw?.status || '').toLowerCase());
+                                  return (
+                                    <ToggleSwitch
+                                      initial={e.enabled}
+                                      locked={exited}
+                                      lockedTitle="This employee has exited (exit process completed) and cannot be re-enabled."
+                                      onRequestToggle={(next, commit) => requestToggle(e, next, commit)}
+                                    />
+                                  );
+                                })()}
                               </div>
                               ); })()}
                             </td>
@@ -4471,13 +4482,20 @@ function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; pr
 function ToggleSwitch({
   initial,
   onRequestToggle,
+  locked = false,
+  lockedTitle,
 }: {
   initial: boolean;
   onRequestToggle?: (next: boolean, commit: () => void) => void;
+  // When locked the switch is frozen (e.g. an EXITED employee can't be
+  // re-enabled). It renders disabled with an explanatory tooltip.
+  locked?: boolean;
+  lockedTitle?: string;
 }) {
   const [on, setOn] = useState(initial);
   const commit = () => setOn(v => !v);
   const handleClick = () => {
+    if (locked) return;
     if (onRequestToggle) onRequestToggle(!on, commit);
     else commit();
   };
@@ -4486,6 +4504,8 @@ function ToggleSwitch({
       type="button"
       onClick={handleClick}
       aria-pressed={on}
+      disabled={locked}
+      title={locked ? (lockedTitle || 'This employee has exited and cannot be re-enabled.') : undefined}
       className={`btn p-0 border-0 d-inline-flex align-items-center emp-toggle${on ? ' is-on' : ''}`}
       style={{
         width: 36,
@@ -4495,6 +4515,8 @@ function ToggleSwitch({
         position: 'relative',
         marginLeft: 4,
         transition: 'background .15s ease',
+        opacity: locked ? 0.5 : 1,
+        cursor: locked ? 'not-allowed' : 'pointer',
       }}
     >
       <span
