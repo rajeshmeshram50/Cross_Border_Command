@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card, CardBody, Col, Row, Input } from 'reactstrap';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { MasterSelect } from '../../components/ui/MasterSelect';
@@ -50,17 +50,14 @@ const TYPE_TONES: Record<FieldType, { bg: string; fg: string; border: string; la
 export default function HrCustomFields() {
   const toast = useToast();
   const navigate = useNavigate();
-  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Back button — prefer browser history so we return to whichever page
-  // the user came from. If they landed here directly (refresh / typed URL /
-  // bookmark), React Router sets location.key to 'default' and there's
-  // nothing to go back to, so fall back to the sibling Document Templates
-  // page rather than a no-op.
+  // Back button — always return to the parent Document Templates page (Custom
+  // Fields belong to the doc-template system). Using navigate(-1) followed
+  // browser history, which wrongly dropped users onto whatever page they came
+  // from (e.g. Broadcast) instead of the correct parent.
   const goBack = () => {
-    if (location.key !== 'default') navigate(-1);
-    else navigate('/hr/doc-templates');
+    navigate('/hr/doc-templates');
   };
 
   const [rows, setRows]   = useState<CustomFieldRow[]>([]);

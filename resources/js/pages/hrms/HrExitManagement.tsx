@@ -1015,17 +1015,52 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     return () => { cancelled = true; };
   }, [employee?.id]);
 
+  // The COMPLETE list of everything that blocks "Complete Exit" — surfaced both
+  // in the Stage-4 panel AND enforced in completeExit(), so the user sees every
+  // blocker at once instead of hitting them one toast at a time.
   const exitPending = useMemo(() => {
     const CLR = ['Manager', 'IT', 'Admin', 'Finance', 'Legal / Compliance'];
     const CHK = ['All clearances obtained', 'All assets handed over', 'All access revoked', 'Exit documents signed', 'Exit interview completed'];
     const items: string[] = [];
+
+    // 1. The last working day must have arrived.
+    if (!lwdReached) {
+      items.push(lwd ? `Last working day not yet reached (${fmtDateShort(lwd)})` : 'Last working day not set');
+    }
+
+    // 2. The reporting manager must be active (not disabled / exited).
+    if (reportingManagerDisabled) {
+      items.push('Reporting manager is disabled / exited — change it on the employee record');
+    }
+
+    // 3. Every assigned asset must be Handed Over (Pending / Not Returned block).
+    const assignedAssets: { id: number; label: string }[] = [];
+    if (employee?.laptopAsset) assignedAssets.push({ id: employee.laptopAsset.id, label: employee.laptopAsset.asset_name });
+    if (employee?.mobileAsset) assignedAssets.push({ id: employee.mobileAsset.id, label: employee.mobileAsset.asset_name });
+    for (const a of employee?.otherAssets || []) assignedAssets.push({ id: a.id, label: a.asset_name });
+    const assetsPending = assignedAssets.filter(a => (assetReturns[a.id]?.status ?? 'Pending') !== 'Handed Over');
+    if (assetsPending.length) {
+      items.push(`${assetsPending.length} asset${assetsPending.length > 1 ? 's' : ''} not handed over`);
+    }
+
+    // 4. Every matched exit document must be fully signed.
+    const unsigned = exitTemplates.filter(t => runByTemplateId.get(t.id)?.status !== 'Completed');
+    if (exitTemplates.length > 0 && unsigned.length) {
+      items.push(`${unsigned.length} exit document${unsigned.length > 1 ? 's' : ''} not fully signed`);
+    }
+
+    // 5. Every departmental clearance must be approved.
     clearances.forEach((c, i) => { if (c.status !== 'Approved') items.push(`${CLR[i]} clearance — ${c.status || 'Pending'}`); });
+
+    // 4. Every final-validation checklist item must be ticked.
     validation.forEach((v, i) => { if (!v) items.push(CHK[i]); });
-    // Exit may complete ONLY when HR Final Sign-off is Approved — a Rejected
-    // (or still-Pending) sign-off must block completion. (QA bug fix.)
+
+    // 5. HR Final Sign-off must be Approved (Rejected / Pending block).
     if (hrSignOff !== 'Approved') items.push(`HR final sign-off — ${hrSignOff === 'Rejected' ? 'Rejected' : 'Pending'}`);
+
     return items;
-  }, [clearances, validation, hrSignOff]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lwdReached, lwd, reportingManagerDisabled, employee, assetReturns, exitTemplates, runByTemplateId, clearances, validation, hrSignOff]);
 
   if (!employee) return null;
 
@@ -1069,10 +1104,19 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   };
 
   const effStatusOf = (n: number): StageStatus => {
-    // Stage 2 is only truly complete once EVERY clearance is approved — don't
-    // let a stale persisted "Completed" show 100% while clearances are pending.
-    if (n === 2 && !clearances.every(c => c.status === 'Approved')) {
-      return (n === stage || rawStagePct(2) > 0 || stageStatus[2] === 'In Progress') ? 'In Progress' : 'Pending';
+    // Stage 2 — only complete when EVERY clearance is approved AND EVERY
+    // assigned asset is handed over. A stale persisted "Completed" must not
+    // show 100% while clearances/assets are still pending.
+    if (n === 2) {
+      const allClr = clearances.every(c => c.status === 'Approved');
+      const assetIds: number[] = [];
+      if (employee?.laptopAsset) assetIds.push(employee.laptopAsset.id);
+      if (employee?.mobileAsset) assetIds.push(employee.mobileAsset.id);
+      for (const a of employee?.otherAssets || []) assetIds.push(a.id);
+      const allAssets = assetIds.every(id => (assetReturns[id]?.status ?? 'Pending') === 'Handed Over');
+      if (!allClr || !allAssets) {
+        return (n === stage || rawStagePct(2) > 0 || stageStatus[2] === 'In Progress') ? 'In Progress' : 'Pending';
+      }
     }
     // Stage 3 is only complete once EVERY exit document is fully SIGNED. Merely
     // sending a document (run Pending/In Progress) must not flip it to 100%.
@@ -1083,6 +1127,12 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         const anySent = exitTemplates.some(t => runByTemplateId.has(t.id));
         return (n === stage || anySent || rawStagePct(3) > 0 || stageStatus[3] === 'In Progress') ? 'In Progress' : 'Pending';
       }
+    }
+    // Stage 4 (Final Deactivation & Closure) is only complete when there are NO
+    // outstanding blockers — it can't show 100% while earlier stages (assets,
+    // clearances, documents, sign-off, last working day) are unfinished.
+    if (n === 4 && exitPending.length > 0) {
+      return (n === stage || rawStagePct(4) > 0 || stageStatus[4] === 'In Progress') ? 'In Progress' : 'Pending';
     }
     if (stageStatus[n] === 'Completed' || rawStagePct(n) === 100) return 'Completed';
     if (n === stage || rawStagePct(n) > 0 || stageStatus[n] === 'In Progress') return 'In Progress';
@@ -1157,6 +1207,31 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
           : 'Set the last working day in Stage 1 first.',
       );
       setStage(1);
+      return;
+    }
+
+    // Reporting manager must be active — block if disabled / exited.
+    if (reportingManagerDisabled) {
+      toast.error(
+        'Reporting manager is disabled',
+        'This employee’s reporting manager is disabled / has exited. Change the reporting manager on the employee record (Add / Edit Employee) first, then complete the exit.',
+      );
+      setStage(1);
+      return;
+    }
+
+    // Every assigned asset must be Handed Over (Pending / Not Returned block).
+    const assignedAssets: { id: number }[] = [];
+    if (employee.laptopAsset) assignedAssets.push({ id: employee.laptopAsset.id });
+    if (employee.mobileAsset) assignedAssets.push({ id: employee.mobileAsset.id });
+    for (const a of employee.otherAssets || []) assignedAssets.push({ id: a.id });
+    const assetsPending = assignedAssets.filter(a => (assetReturns[a.id]?.status ?? 'Pending') !== 'Handed Over');
+    if (assetsPending.length) {
+      toast.error(
+        `Exit can't be completed — ${assetsPending.length} asset${assetsPending.length > 1 ? 's' : ''} not handed over`,
+        'Mark every assigned asset as “Handed Over” in Clearance & Handover (Stage 2) before completing the exit.',
+      );
+      setStage(2);
       return;
     }
 
@@ -1911,17 +1986,17 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
               <button
                 type="button"
                 className="ep-btn ep-btn--complete"
-                /* Only HARD-disable while a completion is in flight. When it's
-                   blocked by the last-working-day we keep it clickable (greyed)
-                   so completeExit() can toast WHY instead of silently doing
-                   nothing. */
+                /* Greyed whenever ANY blocker remains (see exitPending) — but
+                   only HARD-disabled while a completion is in flight, so a
+                   click still fires completeExit() to toast the exact reason
+                   instead of silently doing nothing. */
                 disabled={completing}
-                aria-disabled={!lwdReached}
+                aria-disabled={exitPending.length > 0}
                 onClick={completeExit}
-                title={!lwdReached
-                  ? (lwd ? `Exit can be completed on or after the last working day (${fmtDateShort(lwd)})` : 'Set the last working day first')
+                title={exitPending.length > 0
+                  ? `${exitPending.length} item(s) pending: ${exitPending.join('; ')}`
                   : 'Finalize and close this exit case'}
-                style={!lwdReached ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
+                style={exitPending.length > 0 ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
               >
                 <i className={completing ? 'ri-loader-4-line ri-spin' : 'ri-check-double-line'} />
                 {completing ? 'Completing…' : 'Complete Exit'}

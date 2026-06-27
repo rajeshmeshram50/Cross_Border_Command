@@ -27,6 +27,20 @@
 
   {{-- ── Brand header ─────────────────────────────────────────── --}}
   <tr><td style="padding:34px 32px 18px;text-align:center;border-bottom:1px solid #e9e5fb;position:relative;">
+    {{-- Decorative top-right corner (layered purple + navy triangles). Built as
+         an inline SVG data-URI; clipped by the card's rounded corner + overflow.
+         (Some clients e.g. Gmail strip absolute-positioned / data images — it's
+         purely decorative, so the email still reads fine without it.) --}}
+    @php
+      $cornerSvg = "<svg xmlns='http://www.w3.org/2000/svg' width='118' height='118' viewBox='0 0 118 118'>"
+                 . "<polygon points='26,0 118,0 118,92' fill='#c4b5fd'/>"
+                 . "<polygon points='118,0 118,74 44,0' fill='#0f172a'/>"
+                 . "<polygon points='118,0 118,40 80,0' fill='#7c5cfc'/>"
+                 . "</svg>";
+      $cornerUri = 'data:image/svg+xml,' . rawurlencode($cornerSvg);
+    @endphp
+    <img src="{{ $cornerUri }}" alt="" width="118" height="118"
+         style="position:absolute;top:0;right:0;border:0;display:block;" />
     @if(!empty($logoUrl))
       <img src="{{ $logoUrl }}" alt="{{ $orgName }}" height="38" style="display:inline-block;max-height:38px;border:0;outline:none;" />
     @else

@@ -61,6 +61,7 @@ interface PayrollRow {
   tds: number;
   lopDeducted: number;
   lop_days?: number;
+  workingDays?: number;
   advanceRec: number;
   holdReason?: string | null;
   reasons?: string[];
@@ -274,7 +275,7 @@ export default function HrPayroll() {
   // so View PDF / the day chips always reflect the SELECTED period — not the
   // period the modal was first opened on.
   const [activePayslipId, setActivePayslipId] = useState<number | undefined>(undefined);
-  const [payslipDays, setPayslipDays] = useState<{ present?: number; lopDays?: number; totalMonthDays?: number } | null>(null);
+  const [payslipDays, setPayslipDays] = useState<{ present?: number; lopDays?: number; totalMonthDays?: number; paidDays?: number; workingDays?: number } | null>(null);
 
   const loadPayslipDetail = (payslipId?: number) => {
     if (!payslipId) return;
@@ -289,6 +290,11 @@ export default function HrPayroll() {
           present: typeof d.present === 'number' ? d.present : undefined,
           lopDays: typeof d.lopDays === 'number' ? d.lopDays : undefined,
           totalMonthDays: typeof d.totalMonthDays === 'number' ? d.totalMonthDays : undefined,
+          // Authoritative server-computed day counts — paid_days + lop_days =
+          // working_days. Use these instead of re-deriving Paid Days on the
+          // client (which mixed calendar-month total with working-day LOP). (#33)
+          paidDays: typeof d.paidDays === 'number' ? d.paidDays : undefined,
+          workingDays: typeof d.workingDays === 'number' ? d.workingDays : undefined,
         });
         setPayslipFinal(typeof d.is_final === 'boolean' ? d.is_final : undefined);
         if (d.company) {
@@ -1724,10 +1730,10 @@ export default function HrPayroll() {
             defaultYear={yStr}
             earnings={earnings}
             deductions={deductions}
-            workingDays={payslipDays?.totalMonthDays ?? periodMeta?.total_month_days ?? 30}
+            workingDays={payslipDays?.workingDays ?? r.workingDays ?? periodMeta?.working_days ?? 26}
             daysPresent={payslipDays?.present ?? r.present}
-            lossOfPay={payslipDays?.lopDays ?? r.lop_days ?? Math.max(0, (periodMeta?.working_days || 26) - r.attendance)}
-            paidDays={Math.max(0, (payslipDays?.totalMonthDays ?? periodMeta?.total_month_days ?? 30) - (payslipDays?.lopDays ?? r.lop_days ?? Math.max(0, (periodMeta?.working_days || 26) - r.attendance)))}
+            lossOfPay={payslipDays?.lopDays ?? r.lop_days ?? 0}
+            paidDays={payslipDays?.paidDays ?? r.attendance ?? 0}
             isFinal={payslipFinal}
             onSelectRecent={selectRecent}
             recentMonths={payslipRecent}

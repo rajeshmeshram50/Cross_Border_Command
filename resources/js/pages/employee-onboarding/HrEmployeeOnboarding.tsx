@@ -3323,6 +3323,9 @@ function InitiateOnboardingModal({
   // Imperative handle into Stage 2 so we can flush its typed-but-not-blurred
   // company rows before leaving the stage (Previous / sidebar / Next Stage).
   const stage2Ref = useRef<Stage2DocumentsHandle | null>(null);
+  // Live previous-employment progress reported by Stage2Documents (so the
+  // sidebar % reflects a "Yes" answer + unsaved/0-doc companies immediately).
+  const [stage2Prev, setStage2Prev] = useState<{ required: number; uploaded: number } | null>(null);
   // Reset to stage 1 each time a new employee opens
   useEffect(() => { if (isOpen) setActiveStage(1); }, [isOpen, emp?.id]);
 
@@ -3625,6 +3628,8 @@ const STAGE1_FIELD_ORDER = [
   'department_id',
   'designation_id',
   'primary_role_id',
+  'legal_entity_id',
+  'reporting_manager',
   'annual_salary',
   'salary_effective_from',
 ] as const;
@@ -3728,6 +3733,10 @@ const validateStage1 = (): boolean => {
   if (!s1.department_id?.toString().trim())   errors.department_id   = 'Department is required';
   if (!s1.designation_id?.toString().trim())  errors.designation_id  = 'Designation is required';
   if (!s1.primary_role_id?.toString().trim()) errors.primary_role_id = 'Primary role is required';
+
+  // Organisational Details — Legal Entity + Reporting Manager are required.
+  if (!s1.legal_entity_id?.toString().trim()) errors.legal_entity_id = 'Legal entity is required';
+  if (!s1.reporting_manager?.toString().trim()) errors.reporting_manager = 'Reporting manager is required';
 
   setS1Errors(errors);
 
@@ -4189,12 +4198,21 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   // chunks only after Save Draft. Once the wizard is fully saved on the
   // server, lock at 100% (server is authoritative — covers cases where
   // the form is empty on reopen for a Completed employee).
+  // Mirror the validateStage1 required set so the sidebar % / 100%-gate match
+  // exactly what blocks "Next Stage" (Job + Organisational details included).
   const stage1RequiredFields = [
+    s1.work_country_id,
     s1.first_name,
     s1.last_name,
     s1.date_of_birth,
     s1.email,
     s1.mobile,
+    s1.date_of_joining,
+    s1.department_id,
+    s1.designation_id,
+    s1.primary_role_id,
+    s1.legal_entity_id,
+    s1.reporting_manager,
     s1.annual_salary,
     s1.salary_effective_from,
   ];
@@ -4216,25 +4234,35 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   const stage2RequiredCatalogueKeys = STAGE2_CATEGORIES.flatMap(cat =>
     cat.docs.filter(d => d.status !== 'Optional').map(d => d.id),
   );
-  // Per-company doc keys live under prev_<id>_<key>. We pull the unique
-  // company ids straight from the document rows themselves so the modal
-  // doesn't need its own copy of `prevCompanies` here.
-  const stage2PerCompanyIds = Array.from(new Set(
-    stage2Docs
-      .map(d => d.document_key.match(/^prev_(\d+)_/)?.[1])
-      .filter((x): x is string => !!x),
-  ));
-  const stage2RequiredCompanyKeys = stage2PerCompanyIds.flatMap(id =>
-    STAGE2_COMPANY_DOCS
-      .filter(d => d.status !== 'Optional')
-      .map(d => `prev_${id}_${d.id}`),
-  );
-  const stage2AllKeys = [...stage2RequiredCatalogueKeys, ...stage2RequiredCompanyKeys];
-  const stage2Total = stage2AllKeys.length;
-  const stage2Uploaded = stage2AllKeys.filter(k => {
-    const s = stage2Docs.find(d => d.document_key === k)?.status;
-    return s === 'uploaded' || s === 'verified';
-  }).length;
+  const isUp2 = (s?: string) => s === 'uploaded' || s === 'verified';
+  const catalogueTotal    = stage2RequiredCatalogueKeys.length;
+  const catalogueUploaded = stage2RequiredCatalogueKeys.filter(k =>
+    isUp2(stage2Docs.find(d => d.document_key === k)?.status),
+  ).length;
+
+  // Previous-employment progress. Prefer the LIVE report from Stage2Documents
+  // (the only place that knows the in-progress "Yes" answer + unsaved / 0-doc
+  // companies); fall back to the saved previous_employment rows + uploaded doc
+  // rows when the child hasn't reported yet (e.g. before Stage 2 is opened).
+  let prevRequired: number;
+  let prevUploaded: number;
+  if (stage2Prev) {
+    prevRequired = stage2Prev.required;
+    prevUploaded = Math.min(stage2Prev.uploaded, stage2Prev.required);
+  } else {
+    const ids = Array.from(new Set([
+      ...stage2Docs.map(d => d.document_key.match(/^prev_(\d+)_/)?.[1]).filter((x): x is string => !!x),
+      ...(emp?.raw?.has_prior_experience && Array.isArray(emp?.raw?.previous_employments)
+        ? emp.raw.previous_employments.map((pe: any) => String(pe.id)).filter(Boolean) : []),
+    ]));
+    const keys = ids.flatMap(id =>
+      STAGE2_COMPANY_DOCS.filter(d => d.status !== 'Optional').map(d => `prev_${id}_${d.id}`));
+    prevRequired = keys.length;
+    prevUploaded = keys.filter(k => isUp2(stage2Docs.find(d => d.document_key === k)?.status)).length;
+  }
+
+  const stage2Total    = catalogueTotal + prevRequired;
+  const stage2Uploaded = catalogueUploaded + prevUploaded;
   const stage2Pct = stage2Total ? Math.round((stage2Uploaded / stage2Total) * 100) : 0;
   const stage2Done = stage2Total > 0 && stage2Uploaded >= stage2Total;
 
@@ -4480,6 +4508,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 ref={stage2Ref}
                 emp={emp}
                 onDocsChanged={(rows) => setStage2Docs(rows)}
+                onProgress={setStage2Prev}
               />
             )}
             {activeStage === 3 && (
@@ -4720,20 +4749,23 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 
                 <p className="onb-init-subgroup">Organisational Details</p>
                 <Row className="g-3">
-                  <Col md={4}>
+                  <Col md={4} data-field="legal_entity_id">
                     <label className="onb-init-label">Legal Entity<span className="req">*</span></label>
                     <MasterSelect
                       options={legalEntityOpts}
                       placeholder="Select entity"
                       value={s1.legal_entity_id}
+                      invalid={!!s1Errors.legal_entity_id}
                       onChange={(v) => {
                         // Always overwrite Location with the entity's city —
                         // Location is now a derived, read-only field. Users
                         // change the Legal Entity to change the office.
                         const ent = mLegalEntities.find(le => String(le.id) === String(v));
                         setS1(p => ({ ...p, legal_entity_id: v, location: ent?.city || '' }));
+                        setS1Errors(p => ({ ...p, legal_entity_id: '' }));
                       }}
                     />
+                    {s1Errors.legal_entity_id && <div className="onb-error-msg">{s1Errors.legal_entity_id}</div>}
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Location <span className="auto">AUTO</span></label>
@@ -4748,7 +4780,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       placeholder={s1.legal_entity_id ? '—' : 'Select a Legal Entity first'}
                     />
                   </Col>
-                  <Col md={4}><label className="onb-init-label">Reporting Manager<span className="req">*</span></label><MasterSelect options={managerOpts} placeholder="Select manager" value={s1.reporting_manager} onChange={(v) => setS1(p => ({ ...p, reporting_manager: v }))} /></Col>
+                  <Col md={4} data-field="reporting_manager"><label className="onb-init-label">Reporting Manager<span className="req">*</span></label><MasterSelect options={managerOpts} placeholder="Select manager" value={s1.reporting_manager} invalid={!!s1Errors.reporting_manager} onChange={(v) => { setS1(p => ({ ...p, reporting_manager: v })); setS1Errors(p => ({ ...p, reporting_manager: '' })); }} />{s1Errors.reporting_manager && <div className="onb-error-msg">{s1Errors.reporting_manager}</div>}</Col>
                 </Row>
 
                 <p className="onb-init-subgroup">Employment Terms</p>
@@ -5646,7 +5678,11 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
    *  The parent modal uses it to update Stage 2's side-rail progress
    *  without doing its own duplicate fetch. */
   onDocsChanged?: (rows: { document_key: string; status: string }[]) => void;
-}>(({ emp, onDocsChanged }, ref) => {
+  /** Live previous-employment progress (required vs uploaded docs) for the
+   *  parent's Stage 2 side-rail %, including the in-progress "Yes" answer and
+   *  unsaved / 0-doc companies the parent can't otherwise see. */
+  onProgress?: (p: { required: number; uploaded: number }) => void;
+}>(({ emp, onDocsChanged, onProgress }, ref) => {
   const toast = useToast();
 
   // ── Previous Employment Companies — backed by /api/employees/{id}/previous-employments
@@ -5681,7 +5717,10 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   // chosen yet (initial state for an empty list). When the server hands
   // us saved companies we auto-set this to 'yes' so reopening the modal
   // doesn't ask the question again.
-  const [hasExperience, setHasExperience] = useState<'yes' | 'no' | null>(null);
+  // Default to "No" so the question starts answered (avoids the "Not set"
+  // limbo). Load below flips it to "Yes" if the employee actually has prior
+  // experience on record.
+  const [hasExperience, setHasExperience] = useState<'yes' | 'no' | null>('no');
   // Flipped on by validate() when the parent tries to advance with no
   // Yes/No answer picked. Cleared the moment the HR makes a choice so
   // the red ring doesn't persist after they fix it.
@@ -5693,6 +5732,31 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   // Server-backed document state, keyed by document_key (O(1) lookup per card).
   // Declared here (before useImperativeHandle) so validate() can depend on it.
   const [docsByKey, setDocsByKey] = useState<Record<string, ApiDocument>>({});
+
+  // Previous-employment progress reported up to the parent so the Stage 2
+  // side-rail % reflects the "Yes" answer immediately (each company needs its
+  // 4 required docs). "Yes" with zero/unsaved companies still requires one
+  // company's worth, so the bar drops below 100% until they're uploaded.
+  const prevEmpProgress = useMemo(() => {
+    if (hasExperience !== 'yes') return { required: 0, uploaded: 0 };
+    const reqDocs = STAGE2_COMPANY_DOCS.filter(d => d.status !== 'Optional');
+    const isUp = (s?: string) => s === 'uploaded' || s === 'verified';
+    const required = Math.max(prevCompanies.length, 1) * reqDocs.length;
+    let uploaded = 0;
+    for (const c of prevCompanies) {
+      if (c.id == null) continue; // unsaved draft → no docs uploaded yet
+      for (const d of reqDocs) {
+        const up = d.id === 'salary_slips'
+          ? Object.entries(docsByKey).some(([k, v]) =>
+              (k === `prev_${c.id}_salary_slips` || k.startsWith(`prev_${c.id}_salary_slips_`)) && isUp(v?.status))
+          : isUp(docsByKey[`prev_${c.id}_${d.id}`]?.status);
+        if (up) uploaded++;
+      }
+    }
+    return { required, uploaded };
+  }, [hasExperience, prevCompanies, docsByKey]);
+  useEffect(() => { onProgress?.(prevEmpProgress); }, [prevEmpProgress, onProgress]);
+
   // Initial-load shimmer. Stage 2 fetches documents + previous-employments on
   // mount; the UI used to render before they resolved, flashing empty/erroring
   // state. Hold a skeleton until BOTH first fetches settle.
@@ -5727,7 +5791,9 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         const flag = freshRaw.has_prior_experience;
         if (list.length === 0) {
           setPrevCompanies([]);
-          setHasExperience(flag === true ? 'yes' : flag === false ? 'no' : null);
+          // Default to "No" unless the server explicitly recorded prior
+          // experience — never leave it unset.
+          setHasExperience(flag === true ? 'yes' : 'no');
           return;
         }
         // The server returned previous-employment rows, so the answer is
