@@ -1835,10 +1835,10 @@ function MasterPageInner({
       `}</style>
 
 
-      {/* Page title — EVERY master (except the headerless Departments) now uses
-          the same rich client-style [icon|title+subtitle][Back] strip for a
-          consistent look across all master pages. */}
-      {cfg.slug !== 'departments' && (
+      {/* Page title — EVERY master (now including Departments) uses the same
+          rich client-style [icon|title+subtitle][Back] strip for a consistent
+          look across all master pages. */}
+      {true && (
       <Row>
         <Col xs={12}>
           {true ? (
@@ -1883,6 +1883,7 @@ function MasterPageInner({
                       : cfg.slug === 'packaging_material' ? 'Packaging Materials'
                       : cfg.slug === 'conditions' ? 'Product Conditions'
                       : cfg.slug === 'segments' ? 'Segments'
+                      : cfg.slug === 'departments' ? 'Department Master'
                       : cfg.title}
                   </h4>
                   <p className="mb-0 text-muted" style={{ fontSize: 12.5, marginTop: 2 }}>
@@ -1908,6 +1909,8 @@ function MasterPageInner({
                       ? 'Manage storage & handling states (Organic, Fresh, Frozen) for products'
                       : cfg.slug === 'segments'
                       ? 'Manage business segments (Dry Fruits, Pharma, etc.) used to classify orders & products'
+                      : cfg.slug === 'departments'
+                      ? 'Manage department hierarchy, heads & configuration across the organisation'
                       : `Manage ${cfg.title.toLowerCase()} records`}
                   </p>
                 </div>
@@ -1960,21 +1963,9 @@ function MasterPageInner({
       </Row>
       )}
 
-      {/* "What you are doing here" guide — removed from the standard master
-          pages (the strip header now carries the context). Kept ONLY for
-          Departments, whose headerless layout hosts its Add + Back here. */}
-      {cfg.slug === 'departments' && (
-        <WhatYouDoHere
-          cfg={cfg}
-          onAdd={openAdd}
-          canAdd={caps.add}
-          // Departments uses a collapsed header card that hosts the only
-          // Add button on the page, so the Back-to-Master pill belongs
-          // here too — pairs the two actions as a single right-side
-          // cluster matching Legal Entities' header layout.
-          onBack={cfg.slug === 'departments' ? () => navigate('/master') : undefined}
-        />
-      )}
+      {/* "What you are doing here" guide — fully retired. Departments now uses
+          the same rich client-style header + search-row Add as every other
+          master, so this standalone guide strip is no longer rendered. */}
 
       {/* KPI strip — only when the master config opts in via `kpis`.
           Flex row (flex:1 per tile) so ANY number of KPIs always fills the
@@ -2112,10 +2103,9 @@ function MasterPageInner({
                     />
                   )}
                   {/* Add button — lives in this search/filter row (right corner)
-                      for EVERY master. Departments is the exception: it hosts its
-                      Add in the WhatYouDoHere header strip. Violet gradient pill
-                      matches the client-style page header. */}
-                  {cfg.slug !== 'departments' && caps.add && (
+                      for EVERY master (Departments included). Violet gradient
+                      pill matches the client-style page header. */}
+                  {caps.add && (
                     <button
                       type="button"
                       onClick={openAdd}
