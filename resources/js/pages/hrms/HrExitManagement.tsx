@@ -651,6 +651,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const [reasonForExit, setReasonForExit] = useState('');
   const [noticeDate, setNoticeDate]       = useState('');
   const [lwd, setLwd]                     = useState('');
+  // The dates as loaded from the server. A date already saved on an in-progress
+  // exit is accepted even if it has since fallen into the past — the
+  // "not in the past" rule only applies when HR newly picks/changes a date.
+  const loadedNoticeRef = useRef<string>('');
+  const loadedLwdRef     = useRef<string>('');
   // Notice Period End Date — auto-derived from the notice start date + the
   // employee's notice period (set at hire). Read-only; the Last Working Day
   // stays a separate, manually-set field.
@@ -664,6 +669,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   }, [noticeDate, employee?.noticePeriodDays]);
   const [reportingManagerId, setReportingManagerId] = useState<number | null>(null);
   const [reportingManagerName, setReportingManagerName] = useState('');
+  // The assigned reporting manager is disabled/exited — exit can't proceed until
+  // HR fixes the manager on the employee record.
+  const [reportingManagerDisabled, setReportingManagerDisabled] = useState(false);
   const [comments, setComments]           = useState('');
   const [businessImpact, setBusinessImpact] = useState('Low');
   const [replacementNeeded, setReplacementNeeded] = useState('Yes — Immediate');
@@ -688,13 +696,23 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     try { return new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); }
     catch { return iso; }
   };
-  // Notice start date may be today, but not in the past.
-  const noticeDateInvalid = !!noticeDate && noticeDate < todayIso;
+  // Notice start date may be today, but not in the past — UNLESS it's the value
+  // already saved on this exit (revisiting an in-progress case shouldn't flag a
+  // historical date the user never touched).
+  const noticeDateInvalid = !!noticeDate && noticeDate !== loadedNoticeRef.current && noticeDate < todayIso;
   // Last working day must be in the future (not today) AND on/after the notice
   // period END date (notice start + notice period). When no notice period is
-  // set, fall back to "strictly after the notice start date".
+  // set, fall back to "strictly after the notice start date". Same carve-out:
+  // an already-saved value is accepted as-is.
   const lwdMin = noticePeriodEnd || (noticeDate ? addDaysIso(noticeDate, 1) : tomorrowIso);
-  const lwdInvalid = !!lwd && (lwd <= todayIso || lwd < lwdMin);
+  const lwdInvalid = !!lwd && lwd !== loadedLwdRef.current && (lwd <= todayIso || lwd < lwdMin);
+  // Picker `min`s must never exclude the value already saved on the exit — a
+  // saved date earlier than today/lwdMin would otherwise get clamped forward to
+  // the min on (re)mount, replacing the loaded value with "today".
+  const ndLoaded   = loadedNoticeRef.current ? loadedNoticeRef.current.slice(0, 10) : '';
+  const lwdLoaded  = loadedLwdRef.current ? loadedLwdRef.current.slice(0, 10) : '';
+  const noticeMin  = ndLoaded && ndLoaded < todayIso ? ndLoaded : todayIso;
+  const effLwdMin  = lwdLoaded && lwdLoaded < lwdMin ? lwdLoaded : lwdMin;
   // Exit can only be finalised on/after the Last Working Day — you can't close
   // out an employee before their last day has actually arrived.
   const lwdReached = !!lwd && lwd <= todayIso;
@@ -959,8 +977,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         setReasonForExit(String(data.reason_for_exit ?? ''));
         setNoticeDate(data.notice_date ? String(data.notice_date) : '');
         setLwd(data.last_working_day ? String(data.last_working_day) : '');
+        loadedNoticeRef.current = data.notice_date ? String(data.notice_date) : '';
+        loadedLwdRef.current    = data.last_working_day ? String(data.last_working_day) : '';
         setReportingManagerId(data.reporting_manager_id ?? null);
         setReportingManagerName(data.reporting_manager?.display_name || '');
+        setReportingManagerDisabled(!!data.reporting_manager?.disabled);
         setComments(String(data.comments ?? ''));
         setBusinessImpact(String(data.business_impact ?? 'Low'));
         setReplacementNeeded(String(data.replacement_required ?? 'Yes — Immediate'));
@@ -1036,13 +1057,12 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       return Math.round((done / total) * 100);
     }
     if (n === 4) {
-      // Final actions now expose only Employee Status + HR Final Sign-off
-      // (Profile Lock & Exit Case Status removed from the UI).
+      // Final actions now expose only Employee Status + HR Final Sign-off.
+      // Only HR Final Sign-off (Approved) is a real completion gate — Employee
+      // Status is informational and must NOT hold the progress below 100%.
       const validationDone = validation.filter(Boolean).length;
-      const finalsDone =
-        (empStatus !== 'Active' ? 1 : 0)
-        + (hrSignOff === 'Approved' ? 1 : 0);
-      const total = validation.length + 2;
+      const finalsDone = (hrSignOff === 'Approved' ? 1 : 0);
+      const total = validation.length + 1;
       return Math.round(((validationDone + finalsDone) / total) * 100);
     }
     return 0;
@@ -1196,6 +1216,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       return false;
     }
     setS1Errors(new Set());
+    // Block when the assigned reporting manager is disabled/exited — HR must
+    // reassign the manager on the employee record first (we don't pick one here).
+    if (reportingManagerDisabled) {
+      toast.error(
+        'Reporting manager unavailable',
+        'This employee’s reporting manager is disabled or has already exited. Change the reporting manager on the employee record (Add / Edit Employee) before continuing the exit.',
+      );
+      return false;
+    }
     if (noticeDateInvalid || lwdInvalid) {
       toast.error(
         'Fix the highlighted dates',
@@ -1346,9 +1375,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         value={noticeDate}
                         onChange={(v) => {
                           setNoticeDate(v); clearS1Err('noticeDate');
-                          if (v && v < todayIso) toast.warning('Invalid notice start date', 'Notice start date cannot be in the past.');
+                          if (v && v !== loadedNoticeRef.current && v < todayIso) toast.warning('Invalid notice start date', 'Notice start date cannot be in the past.');
                         }}
-                        min={todayIso}
+                        min={noticeMin}
                         invalid={s1Errors.has('noticeDate') || noticeDateInvalid}
                       />
                       {(s1Errors.has('noticeDate') || noticeDateInvalid) && (
@@ -1381,7 +1410,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         value={lwd}
                         onChange={(v) => {
                           setLwd(v); clearS1Err('lwd');
-                          if (v) {
+                          if (v && v !== loadedLwdRef.current) {
                             if (v <= todayIso) {
                               toast.warning('Invalid last working day', 'Last working day cannot be today or a past date.');
                             } else if (v < lwdMin) {
@@ -1394,7 +1423,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                             }
                           }
                         }}
-                        min={lwdMin}
+                        min={effLwdMin}
                         invalid={s1Errors.has('lwd') || lwdInvalid}
                       />
                       {(s1Errors.has('lwd') || lwdInvalid) && (
@@ -1415,12 +1444,19 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
               
                   </Col>
                   <Col md={6}>
-                    <EpField label="Reporting Manager">
+                    <EpField label="Reporting Manager" invalid={reportingManagerDisabled}>
                       <EpInput
                         value={reportingManagerName || '— Not set on employee record —'}
                         onChange={() => {}}
                         disabled
+                        invalid={reportingManagerDisabled}
                       />
+                      {reportingManagerDisabled && (
+                        <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <i className="ri-error-warning-line" />
+                          This reporting manager is disabled / has exited. Change it on the employee record (Add / Edit Employee) before continuing.
+                        </div>
+                      )}
                     </EpField>
                   </Col>
                   <Col xs={12}>
@@ -1875,7 +1911,12 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
               <button
                 type="button"
                 className="ep-btn ep-btn--complete"
-                disabled={completing || !lwdReached}
+                /* Only HARD-disable while a completion is in flight. When it's
+                   blocked by the last-working-day we keep it clickable (greyed)
+                   so completeExit() can toast WHY instead of silently doing
+                   nothing. */
+                disabled={completing}
+                aria-disabled={!lwdReached}
                 onClick={completeExit}
                 title={!lwdReached
                   ? (lwd ? `Exit can be completed on or after the last working day (${fmtDateShort(lwd)})` : 'Set the last working day first')
@@ -2253,7 +2294,12 @@ type VaultRun = {
 };
 
 function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | null; onClose: () => void }) {
+  const toast = useToast();
   const [tab, setTab] = useState<VaultTab>('employee');
+  // Which doc row is mid view/download — drives the spinner + blocks a second
+  // click (multiple concurrent downloads were hanging the UI).
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [busyAction, setBusyAction] = useState<'view' | 'download' | null>(null);
 
   const [empDocs, setEmpDocs]               = useState<EmpDocApiRow[]>([]);
   const [orgTemplates, setOrgTemplates]     = useState<VaultTemplate[]>([]);
@@ -2344,6 +2390,10 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
         category: tpl.trigger_point?.module_name || 'Template',
         status,
         url: null as string | null,
+        // Signed-PDF source once the run is fully signed — View/Download use this
+        // instead of the template /generate endpoint (which 401→login-redirects
+        // when opened directly in a browser tab).
+        runId: run?.status === 'Completed' ? run.id : null,
       };
     });
     return docs.length ? [{ title, icon: groupIcon, iconBg: groupBg, iconFg: groupFg, docs }] : [];
@@ -2367,48 +2417,57 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
   const orgCount  = orgGroups.reduce((a, g) => a + g.docs.length, 0);
   const exitCount = exitGroups.reduce((a, g) => a + g.docs.length, 0);
 
-  const handleViewRow = (d: { url: string | null; key: string; id: number }) => {
-    if (d.url) {
-      window.open(d.url, '_blank', 'noopener,noreferrer');
+  type VaultDoc = { url: string | null; key: string; id: number; name: string; runId?: number | null };
+  // View — show the SIGNED PDF inline for completed runs (opens the
+  // authenticated blob in a new tab); falls back to an uploaded file URL.
+  const handleViewRow = async (d: VaultDoc) => {
+    if (busyKey) return;
+    if (d.runId) {
+      setBusyKey(d.key); setBusyAction('view');
+      try {
+        const resp = await api.get(`/hr-document-signatures/${d.runId}/download-pdf`, { responseType: 'blob' });
+        const objUrl = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
+        window.open(objUrl, '_blank', 'noopener,noreferrer');
+        setTimeout(() => URL.revokeObjectURL(objUrl), 60000);
+      } catch (err: any) {
+        toast.error('Could not open', err?.response?.data?.message || 'Please try again.');
+      } finally { setBusyKey(null); setBusyAction(null); }
       return;
     }
-    if (d.key.startsWith('tpl-')) {
-      window.open(`/api/hr-document-templates/${d.id}/generate?employee_id=${employee.id}`, '_blank', 'noopener,noreferrer');
-    }
+    if (d.url) { window.open(d.url, '_blank', 'noopener,noreferrer'); return; }
+    toast.info('Not available yet', 'This document has not been generated / signed yet.');
   };
-  const handleDownloadRow = async (d: { url: string | null; key: string; id: number; name: string }) => {
-    if (d.url) {
-      try {
+  // Download — signed PDF for completed runs; uploaded file otherwise. Shows a
+  // "downloading" toast, a button spinner, and blocks concurrent clicks.
+  const handleDownloadRow = async (d: VaultDoc) => {
+    if (busyKey) return;
+    setBusyKey(d.key); setBusyAction('download');
+    try {
+      if (d.runId) {
+        toast.info('Downloading…', 'Preparing the signed PDF.');
+        const resp = await api.get(`/hr-document-signatures/${d.runId}/download-pdf`, { responseType: 'blob' });
+        const objUrl = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
+        const a = document.createElement('a');
+        a.href = objUrl; a.download = `${(d.name || 'document').replace(/\s+/g, '-')}-signed.pdf`;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(objUrl);
+        toast.success('Downloaded', 'Signed PDF saved.');
+      } else if (d.url) {
+        toast.info('Downloading…', 'Preparing the document.');
         const resp = await fetch(d.url, { credentials: 'include' });
         const blob = await resp.blob();
         const objUrl = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = objUrl;
-        a.download = d.name || 'document';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
+        a.href = objUrl; a.download = d.name || 'document';
+        document.body.appendChild(a); a.click(); a.remove();
         URL.revokeObjectURL(objUrl);
-      } catch {
-        window.open(d.url, '_blank', 'noopener,noreferrer');
+        toast.success('Downloaded', 'Document saved.');
+      } else {
+        toast.info('Not available yet', 'This document has not been generated / signed yet.');
       }
-      return;
-    }
-    if (d.key.startsWith('tpl-')) {
-      try {
-        const resp = await api.get(`/hr-document-templates/${d.id}/generate`, {
-          params: { employee_id: employee.id }, responseType: 'blob',
-        });
-        const objUrl = URL.createObjectURL(new Blob([resp.data]));
-        const a = document.createElement('a');
-        a.href = objUrl;
-        a.download = `${(employee.name || 'employee').replace(/\s+/g, '-')}-${d.name}.docx`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(objUrl);
-      } catch {  }
-    }
+    } catch (err: any) {
+      toast.error('Could not download', err?.response?.data?.message || 'Please try again.');
+    } finally { setBusyKey(null); setBusyAction(null); }
   };
 
   return (
@@ -2510,17 +2569,21 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
                       <span className={`ev-doc-status ev-doc-status--${status.toLowerCase().replace(/\s+/g, '-')}`}>{status}</span>
                       <button type="button"
                         className={`ev-doc-btn ev-doc-btn--view${status === 'Generated' ? ' ev-doc-btn--preview' : ''}`}
-                        disabled={disabled}
+                        disabled={disabled || busyKey === d.key}
                         onClick={() => handleViewRow(d)}
                       >
-                        <i className="ri-eye-line" />{status === 'Generated' ? 'Preview' : 'View'}
+                        {busyKey === d.key && busyAction === 'view'
+                          ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Opening…</>
+                          : <><i className="ri-eye-line" />{status === 'Generated' ? 'Preview' : 'View'}</>}
                       </button>
                       <button type="button"
                         className="ev-doc-btn ev-doc-btn--download"
-                        disabled={disabled}
+                        disabled={disabled || busyKey === d.key}
                         onClick={() => handleDownloadRow(d)}
                       >
-                        <i className="ri-download-line" />Download
+                        {busyKey === d.key && busyAction === 'download'
+                          ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Downloading…</>
+                          : <><i className="ri-download-line" />Download</>}
                       </button>
                     </div>
                   );

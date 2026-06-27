@@ -7,8 +7,10 @@ use App\Models\Employee;
 use App\Models\EmployeeExit;
 use App\Models\Module;
 use App\Models\Permission;
+use App\Mail\ExitFarewellMail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 
 /**
  * Exit Process — Stage 1 (Exit Initiation & Approval) backend.
@@ -23,8 +25,11 @@ use Illuminate\Support\Facades\DB;
  */
 class ExitController extends Controller
 {
-    public function show(Request $request, Employee $employee)
+    public function show(Request $request, $employee)
     {
+        // Resolve withTrashed — a disabled (soft-deleted) employee still appears
+        // in the Exit hub, so its exit form must load instead of 404-ing.
+        $employee = Employee::withTrashed()->findOrFail($employee);
         $this->guardSameTenant($request, $employee);
         $row = EmployeeExit::with(['manager:id,first_name,middle_name,last_name,display_name,emp_code'])
             ->where('employee_id', $employee->id)
@@ -32,8 +37,9 @@ class ExitController extends Controller
         return response()->json($this->format($row, $employee));
     }
 
-    public function upsert(Request $request, Employee $employee)
+    public function upsert(Request $request, $employee)
     {
+        $employee = Employee::withTrashed()->findOrFail($employee);
         $this->guardSameTenant($request, $employee);
         $data = $this->validatePayload($request);
 
@@ -60,12 +66,13 @@ class ExitController extends Controller
      * disables the paired login. No soft-delete — the row stays visible in
      * the Exited tab and is reversible (re-activate the employee).
      */
-    public function complete(Request $request, Employee $employee)
+    public function complete(Request $request, $employee)
     {
+        $employee = Employee::withTrashed()->findOrFail($employee);
         $this->guardSameTenant($request, $employee);
         $data = $this->validatePayload($request);
 
-        return DB::transaction(function () use ($request, $data, $employee) {
+        $row = DB::transaction(function () use ($request, $data, $employee) {
             $row = EmployeeExit::firstOrNew(['employee_id' => $employee->id]);
             $row->fill($data);
             $row->employee_id          = $employee->id;
@@ -92,12 +99,52 @@ class ExitController extends Controller
                 $employee->user->tokens()->delete();
             }
 
-            $row->load(['manager:id,first_name,middle_name,last_name,display_name,emp_code']);
-            return response()->json([
-                'message' => 'Exit completed — employee marked as exited and login disabled.',
-                'exit'    => $this->format($row, $employee->fresh()),
-            ]);
+            return $row;
         });
+
+        // Farewell email — sent AFTER the transaction commits so a mail failure
+        // can never roll back a completed exit. Goes to the employee's PERSONAL
+        // email (the contact email captured on the Add Employee form).
+        $this->sendFarewellEmail($employee, $row);
+
+        $row->load(['manager:id,first_name,middle_name,last_name,display_name,emp_code']);
+        return response()->json([
+            'message' => 'Exit completed — employee marked as exited and login disabled.',
+            'exit'    => $this->format($row, $employee->fresh()),
+        ]);
+    }
+
+    /**
+     * Best-effort "Thank You for Being a Part of Our Journey" farewell email to
+     * the exiting employee's personal email. Failures are logged, never thrown.
+     */
+    private function sendFarewellEmail(Employee $employee, EmployeeExit $row): void
+    {
+        try {
+            $personal = trim((string) ($employee->email ?? ''));
+            if ($personal === '') return; // no personal email on file → skip
+
+            $orgName = \App\Models\Client::find($employee->client_id)?->org_name
+                ?: config('mail.from.name', 'Our Company');
+
+            $lwd = $row->last_working_day ? $row->last_working_day->format('jS M Y') : '';
+            $name = $employee->display_name
+                ?: trim(($employee->first_name ?? '') . ' ' . ($employee->last_name ?? ''));
+
+            Mail::to($personal)->send(new ExitFarewellMail([
+                'org_name'         => $orgName,
+                'employee_name'    => $name ?: 'Employee',
+                'last_working_day' => $lwd,
+                'hr_email'         => config('mail.from.address', 'hr@company.com'),
+                'hr_phone'         => '',
+                'gender'           => (string) ($employee->gender ?? ''),
+            ]));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning(
+                'Exit farewell email failed: ' . $e->getMessage(),
+                ['employee_id' => $employee->id],
+            );
+        }
     }
 
     /* ── Helpers ───────────────────────────────────────────────────── */
@@ -198,7 +245,7 @@ class ExitController extends Controller
             // Include soft-deleted managers — the manager record might
             // have been disabled after the employee row was set up.
             $manager = Employee::withTrashed()
-                ->select('id', 'first_name', 'middle_name', 'last_name', 'display_name', 'emp_code')
+                ->select('id', 'first_name', 'middle_name', 'last_name', 'display_name', 'emp_code', 'status', 'deleted_at')
                 ->find($managerId);
         }
 
@@ -211,11 +258,17 @@ class ExitController extends Controller
         // even though a reporting manager WAS assigned on the employee.
         $managerPayload = null;
         if ($manager) {
+            // Disabled = soft-deleted (toggled off in Employee module) OR an
+            // exited/inactive status. The exit flow blocks on this so HR fixes
+            // the reporting manager on the employee record first.
+            $mgrDisabled = $manager->deleted_at !== null
+                || in_array((string) $manager->status, ['Resigned', 'Terminated', 'Inactive'], true);
             $managerPayload = [
                 'id'           => $manager->id,
                 'display_name' => $manager->display_name
                                   ?: trim(($manager->first_name ?? '') . ' ' . ($manager->last_name ?? '')),
                 'emp_code'     => $manager->emp_code,
+                'disabled'     => $mgrDisabled,
             ];
         } elseif ($employee->reporting_manager_user_id) {
             $employee->loadMissing('reportingManagerUser');

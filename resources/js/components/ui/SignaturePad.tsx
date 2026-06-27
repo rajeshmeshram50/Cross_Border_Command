@@ -388,7 +388,14 @@ function DrawPanel({
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
+    // clearRect alone can leave stray pixels when the context is mid-transform
+    // (DPR scaling) — reset the transform, wipe the full device-pixel buffer,
+    // then re-init so the pad is pristine and ready to draw again.
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+    setupCanvas();
     dirtyRef.current = false;
     setHasInk(false);
     onChange(null);
