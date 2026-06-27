@@ -1485,12 +1485,12 @@ export default function HrEmployees() {
     if (!eEnablePayroll) return e;
     const amt = Number(eAnnualSalary);
     if (eAnnualSalary === '' || !Number.isFinite(amt) || amt <= 0) {
-      e.annual_salary = 'Annual salary is required';
+      e.annual_salary = 'Salary amount is required';
     } else if (amt > 999999999999.99) {
-      e.annual_salary = 'Annual salary must be ≤ 999,999,999,999.99';
+      e.annual_salary = 'Salary amount must be ≤ 999,999,999,999.99';
     }
     if (!eSalaryFreq) {
-      e.salary_frequency = 'Salary frequency is required';
+      e.salary_frequency = 'Frequency is required';
     }
     if (!eSalaryFrom) {
       e.salary_effective_from = 'Effective-from date is required';
@@ -3685,31 +3685,33 @@ export default function HrEmployees() {
                   </div>
                   <Row className="g-3">
                     <Col md={6}>
-                      <label className="emp-label">Annual Salary{eEnablePayroll && <span className="req">*</span>}</label>
-                      <div className="d-flex gap-2">
-                        <input
-                          className={`emp-input${eErrors.annual_salary ? ' is-invalid' : ''}`}
-                          type="number"
-                          placeholder="Enter amount"
-                          value={eAnnualSalary}
-                          max={999999999999.99}
-                          step="0.01"
-                          inputMode="decimal"
-                          onChange={e => {
-                            const raw = e.target.value;
-                            if (raw === '') { setEAnnualSalary(''); clearEErr('annual_salary'); return; }
-                            if (!/^\d{0,12}(\.\d{0,2})?$/.test(raw)) return;
-                            setEAnnualSalary(raw);
-                            clearEErr('annual_salary');
-                          }}
-                          style={{ flex: 1 }}
-                        />
-                        <div style={{ width: 130, flexShrink: 0 }}>
+                      <label className="emp-label">Salary Amount{eEnablePayroll && <span className="req">*</span>}</label>
+                      <div className="d-flex gap-2 align-items-start">
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <input
+                            className={`emp-input${eErrors.annual_salary ? ' is-invalid' : ''}`}
+                            type="number"
+                            placeholder="Enter amount"
+                            value={eAnnualSalary}
+                            max={999999999999.99}
+                            step="0.01"
+                            inputMode="decimal"
+                            onChange={e => {
+                              const raw = e.target.value;
+                              if (raw === '') { setEAnnualSalary(''); clearEErr('annual_salary'); return; }
+                              if (!/^\d{0,12}(\.\d{0,2})?$/.test(raw)) return;
+                              setEAnnualSalary(raw);
+                              clearEErr('annual_salary');
+                            }}
+                            style={{ width: '100%' }}
+                          />
+                          {eErrors.annual_salary && <small className="emp-err">{eErrors.annual_salary}</small>}
+                        </div>
+                        <div style={{ width: 150, flexShrink: 0 }}>
                           <MasterSelect value={eSalaryFreq} onChange={(v) => { setESalaryFreq(v); clearEErr('salary_frequency'); }} options={SALARY_FREQUENCY_OPTIONS} placeholder="Select frequency" invalid={!!eErrors.salary_frequency} />
+                          {eErrors.salary_frequency && <small className="emp-err">{eErrors.salary_frequency}</small>}
                         </div>
                       </div>
-                      {eErrors.annual_salary && <small className="emp-err">{eErrors.annual_salary}</small>}
-                      {eErrors.salary_frequency && <small className="emp-err">{eErrors.salary_frequency}</small>}
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Salary Effective From{eEnablePayroll && <span className="req">*</span>}</label>

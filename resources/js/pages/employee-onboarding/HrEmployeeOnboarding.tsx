@@ -3708,9 +3708,9 @@ const validateStage1 = (): boolean => {
   if (s1.enable_payroll !== false) {
     const annualNum = Number(s1.annual_salary);
     if (!s1.annual_salary || !Number.isFinite(annualNum) || annualNum <= 0) {
-      errors.annual_salary = 'Annual salary is required and must be greater than 0';
+      errors.annual_salary = 'Salary amount is required and must be greater than 0';
     } else if (annualNum > 999_999_999_999.99) {
-      errors.annual_salary = 'Annual salary is too large (max 999,999,999,999.99)';
+      errors.annual_salary = 'Salary amount is too large (max 999,999,999,999.99)';
     }
     const sef = s1.salary_effective_from?.trim() ?? '';
     if (!sef) {
@@ -4915,7 +4915,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       overflow". The validator gives the friendly error. */}
 <Col md={4} data-field="annual_salary">
   <label className="onb-init-label">
-    Annual Salary {s1.enable_payroll !== false && <span className="req">*</span>}
+    Salary Amount {s1.enable_payroll !== false && <span className="req">*</span>}
   </label>
   <input
     className={`onb-init-input ${s1Errors.annual_salary ? 'is-invalid' : ''}`}

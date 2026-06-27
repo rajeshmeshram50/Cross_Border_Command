@@ -204,10 +204,22 @@ class EmployeeController extends Controller
             // not an encrypted token — fall through.
         }
 
-        // Legacy URL fallback: callers (and bookmarks) sometimes still
-        // pass the plain emp_code (e.g. EMP-001). Resolve that to a
-        // numeric id; tenant scope is enforced downstream by resolveRow.
-        $byEmpCode = Employee::where('emp_code', $raw)->value('id');
+        // Legacy URL fallback: callers (and bookmarks) sometimes still pass the
+        // plain emp_code (e.g. EMP-001). emp_codes are allocated sequentially
+        // PER TENANT, so the SAME code can exist in another client — an unscoped
+        // lookup would return whichever row sorts first (often a different
+        // tenant's employee). That stray id then fails the tenant-scoped
+        // findOrFail in resolveRow with "No query results for Employee N"
+        // (e.g. password reset on a newly-onboarded employee). Scope the lookup
+        // to the caller's own tenant; super-admins resolve across tenants.
+        $user = request()->user();
+        $q = Employee::withTrashed()->where('emp_code', $raw);
+        if ($user && $user->user_type !== 'super_admin') {
+            $q->where(function ($w) use ($user) {
+                $w->whereNull('client_id')->orWhere('client_id', $user->client_id);
+            });
+        }
+        $byEmpCode = $q->value('id');
         return (int) ($byEmpCode ?? 0);
     }
 
