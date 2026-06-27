@@ -3,7 +3,7 @@ import { Shimmer, ShimmerTableRows } from '../../../components/ui/Shimmer';
 import { useEmployeeProfile } from '../EmployeeProfileContext';
 
 export default function HiringTab() {
-  const { hiringRequests, hiringLoading, setRaiseHiringOpen, setHiringEditing, authUser, teamSize } = useEmployeeProfile();
+  const { hiringRequests, hiringLoading, setRaiseHiringOpen, setHiringEditing, setHiringViewing, authUser, teamSize } = useEmployeeProfile();
 
         const stats = {
           total:     hiringRequests.length,
@@ -164,22 +164,31 @@ export default function HiringTab() {
                             {fmtDate(r.submittedAt || r.created_at)}
                           </td>
                           <td className="text-center">
-                            {/* Draft rows can be reopened + edited before
-                                submitting to HR. Once submitted / converted
-                                there's nothing to edit, so show a dash. */}
-                            {r.status === 'Draft' && !r._hasRecruitment ? (
+                            {/* Every request can be viewed (read-only). Draft
+                                rows can additionally be reopened + edited before
+                                submitting to HR. */}
+                            <div className="d-inline-flex align-items-center justify-content-center gap-1">
                               <button
                                 type="button"
                                 className="btn btn-sm d-inline-flex align-items-center justify-content-center ht-edit-btn"
-                                data-tooltip="Edit Draft"
-                                aria-label="Edit Draft"
-                                onClick={() => { setHiringEditing({ ...r, _raw: r }); setRaiseHiringOpen(true); }}
+                                data-tooltip="View"
+                                aria-label="View hiring request"
+                                onClick={() => setHiringViewing(r)}
                               >
-                                <i className="ri-pencil-line" />
+                                <i className="ri-eye-line" />
                               </button>
-                            ) : (
-                              <span className="text-muted">—</span>
-                            )}
+                              {r.status === 'Draft' && !r._hasRecruitment && (
+                                <button
+                                  type="button"
+                                  className="btn btn-sm d-inline-flex align-items-center justify-content-center ht-edit-btn"
+                                  data-tooltip="Edit Draft"
+                                  aria-label="Edit Draft"
+                                  onClick={() => { setHiringEditing({ ...r, _raw: r }); setRaiseHiringOpen(true); }}
+                                >
+                                  <i className="ri-pencil-line" />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
