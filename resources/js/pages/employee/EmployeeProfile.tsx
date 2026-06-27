@@ -17,6 +17,8 @@ import FaceRegistrationModal from '../../components/FaceRegistrationModal';
 import {
   RaiseHiringRequestModal,
   HiringRequestsListModal,
+  ViewHiringRequestModal,
+  apiToHiringRequestRow,
   type HiringRequestRow,
 } from '../recruitment/HrRecruitment';
 import './EmployeeProfile.css';
@@ -139,6 +141,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [raiseHiringOpen, setRaiseHiringOpen] = useState<boolean>(false);
   // When set, the Raise modal opens in EDIT mode to resume a saved Draft.
   const [hiringEditing, setHiringEditing] = useState<any | null>(null);
+  // When set, opens the read-only View modal for a single hiring request.
+  const [hiringViewing, setHiringViewing] = useState<any | null>(null);
   const [listHiringOpen, setListHiringOpen] = useState<boolean>(false);
   const [hiringRefreshKey, setHiringRefreshKey] = useState<number>(0);
 
@@ -1995,7 +1999,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     setClaimOpen, setClaimMode, setEditingDraftId, setResumeFromDraft,
     exportOpen, setExportOpen,
     // Hiring tab
-    hiringRequests, hiringLoading, setRaiseHiringOpen, setHiringEditing, teamSize,
+    hiringRequests, hiringLoading, setRaiseHiringOpen, setHiringEditing, setHiringViewing, teamSize,
     // Other shared (Profile/Vault/Expense)
     resetPwForm, employeeDocCount, organizationalDocCount,
     runProfileExport, readSavedDrafts, filteredAdvances,
@@ -3455,6 +3459,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             onRaiseNew={() => { setListHiringOpen(false); setRaiseHiringOpen(true); }}
             onCreateRecruitment={() => { /* recruitment creation is HR-side; managers don't trigger this from the profile */ }}
             refreshKey={hiringRefreshKey}
+          />
+          {/* Read-only view of a single hiring request (eye action in the tab). */}
+          <ViewHiringRequestModal
+            request={hiringViewing ? apiToHiringRequestRow(hiringViewing) : null}
+            onClose={() => setHiringViewing(null)}
+            recruitmentCreated={!!hiringViewing?._hasRecruitment}
           />
         </>
       )}

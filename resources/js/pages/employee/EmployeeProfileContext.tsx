@@ -101,6 +101,7 @@ export interface EmployeeProfileCtx {
   hiringLoading: boolean;
   setRaiseHiringOpen: (v: boolean) => void;
   setHiringEditing: (v: any) => void;
+  setHiringViewing: (v: any) => void;
   teamSize: number;
 
   // ── Other shared (Profile/Vault/Expense) ──

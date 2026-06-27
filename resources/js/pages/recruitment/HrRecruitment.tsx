@@ -200,7 +200,7 @@ const HR_WORK_MODE_MAP: Record<string, WorkMode> = {
   'On-site':  'On-site',
 };
 
-function apiToHiringRequestRow(api: any): HiringRequestRow {
+export function apiToHiringRequestRow(api: any): HiringRequestRow {
   const dept = api?.department?.name || '';
   const requestedBy = api?.requested_by_name || api?.creator?.name || '';
 
@@ -1579,7 +1579,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
 }
 
 
-function ViewHiringRequestModal({ request, onClose, onReject, onCreate, canCreate, recruitmentCreated }: {
+export function ViewHiringRequestModal({ request, onClose, onReject, onCreate, canCreate, recruitmentCreated }: {
   request: HiringRequestRow | null;
   onClose: () => void;
   onReject?: (req: HiringRequestRow) => Promise<void>;
