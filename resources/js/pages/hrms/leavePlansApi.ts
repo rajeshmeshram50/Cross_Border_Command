@@ -38,6 +38,10 @@ export interface ApiLeavePlan {
   status: 'Active' | 'Inactive';
   employees_count?: number;
   leave_types_count?: number;
+  /** True only when the plan has ≥1 leave type AND every assigned type has its
+   *  quota setup saved. The employee-form dropdowns hide plans where this is
+   *  false (server-computed in LeavePlanController::index). */
+  setup_complete?: boolean;
   client?: { id: number; org_name: string };
   branch?: { id: number; name: string };
   leave_types?: ApiLeaveType[];

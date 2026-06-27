@@ -587,7 +587,13 @@ export default function HrEmployees() {
   useEffect(() => {
     leavePlansApi.list()
       .then(plans => {
-        setLeavePlanOptions(plans.map(p => ({ value: String(p.id), label: p.plan_name })));
+        // Only configured plans (quota setup complete) may be assigned to an
+        // employee — hide draft / unconfigured plans from the dropdown.
+        setLeavePlanOptions(
+          plans
+            .filter(p => p.setup_complete)
+            .map(p => ({ value: String(p.id), label: p.plan_name })),
+        );
       })
       .catch(err => console.warn('[HrEmployees] failed to load leave plans', err));
   }, []);
