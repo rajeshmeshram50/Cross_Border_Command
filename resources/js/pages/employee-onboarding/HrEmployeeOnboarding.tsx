@@ -31,7 +31,6 @@ const ONB_LOCATION     = OPT('Pune HQ', 'Mumbai', 'Bengaluru');
 
 const ONB_PROBATION    = OPT('Default Probation Policy', '3-Month Probation', '6-Month Probation', 'No Probation');
 const ONB_NOTICE       = OPT('Default Notice Period', '15 Days', '30 Days', '60 Days', '90 Days');
-const ONB_LEAVE_PLAN   = OPT('Leave Policy');
 const ONB_HOLIDAY      = OPT('Holiday Calendar', 'India Holidays 2026', 'Global Holidays 2026');
 const ONB_SHIFT        = OPT('General Shift', 'Morning Shift', 'Evening Shift', 'Night Shift', 'Flexible');
 const ONB_WEEKLY_OFF   = OPT('Week Off Policy', 'Saturday & Sunday', 'Sunday Only', 'Rotational');
@@ -3376,7 +3375,13 @@ function InitiateOnboardingModal({
       api.get('/leave-plans').then(r => {
         if (cancelled) return;
         const plans = Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.data) ? r.data.data : []);
-        setLeavePlanOpts(plans.map((p: any) => ({ value: String(p.id), label: p.plan_name || p.name || `Plan ${p.id}` })));
+        // Only surface plans whose quota setup is fully complete — draft /
+        // unconfigured plans must not be assignable to an employee.
+        setLeavePlanOpts(
+          plans
+            .filter((p: any) => p.setup_complete)
+            .map((p: any) => ({ value: String(p.id), label: p.plan_name || p.name || `Plan ${p.id}` })),
+        );
       }).catch(() => { if (!cancelled) setLeavePlanOpts([]); }),
     ]);
     return () => { cancelled = true; };
@@ -4302,7 +4307,11 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   // exception is Stage 2, which requires BOTH all docs uploaded AND the
   // macro watermark to have moved past 2 — see comment on the original
   // change for why the OR was a false positive.
-  const stage1IsDone = stage1Done || macroCompleted >= 1;
+  // Stage 1 is only "done" when EVERY required field is actually filled. The
+  // macro watermark alone must not mark it 100% — e.g. if annual salary was
+  // cleared on re-edit, the sidebar should drop below 100% and block Stage 6.
+  const stage1AllRequiredFilled = stage1Filled === stage1RequiredFields.length;
+  const stage1IsDone = (stage1Done || macroCompleted >= 1) && stage1AllRequiredFilled;
   const stage2IsDone = stage2Done && macroCompleted >= 2;
   const stage3IsDone = stage3Done || macroCompleted >= 3;
   const stage4IsDone = stage4Done || macroCompleted >= 4;
@@ -4325,8 +4334,10 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   const stagesView = ONB_STAGES.map(s => {
     let status: StageStatus, progress: number;
     if (s.num === 1) {
-      progress = stage1IsDone ? 100 : stage1Pct;
-      status   = stage1IsDone ? 'Completed' : (wizardStep > 0 || stage1Pct > 0 ? 'In Progress' : 'Pending');
+      // Use the live required-field % so a missing required field (e.g. annual
+      // salary) shows < 100 instead of the macro watermark's 100.
+      progress = stage1IsDone ? 100 : stage1LivePct;
+      status   = stage1IsDone ? 'Completed' : (wizardStep > 0 || stage1Filled > 0 ? 'In Progress' : 'Pending');
     } else if (s.num === 2) {
       progress = stage2IsDone ? 100 : stage2Pct;
       status   = stage2IsDone ? 'Completed' : (stage2Uploaded > 0 ? 'In Progress' : 'Pending');
@@ -4762,7 +4773,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
               <div className="onb-init-section-body">
                 <p className="onb-init-subgroup">Leave &amp; Attendance</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanOpts.length ? leavePlanOpts : ONB_LEAVE_PLAN} value={s1.leave_plan} placeholder={leavePlanOpts.length ? 'Select a leave plan' : 'No plans found — create one in HR > Leave'} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanOpts} value={s1.leave_plan} placeholder={leavePlanOpts.length ? 'Select a leave plan' : 'No configured leave plan — finish its setup in HR > Leave'} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Holiday List<span className="req">*</span></label><MasterSelect options={ONB_HOLIDAY} value={s1.holiday_list} placeholder="Select holiday list" onChange={(v) => setS1(p => ({ ...p, holiday_list: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Shift<span className="req">*</span></label><MasterSelect options={ONB_SHIFT} value={s1.shift} placeholder="Select shift" onChange={(v) => setS1(p => ({ ...p, shift: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Weekly Off<span className="req">*</span></label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off} placeholder="Select weekly off" onChange={(v) => setS1(p => ({ ...p, weekly_off: v }))} /></Col>
@@ -4931,10 +4942,6 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   />
   {s1Errors.annual_salary && <div className="onb-error-msg">{s1Errors.annual_salary}</div>}
 </Col>
-                  <Col md={4}>
-                    <label className="onb-init-label">Period</label>
-                    <MasterSelect options={ONB_PERIOD} value={s1.salary_frequency} placeholder="Select frequency" onChange={(v) => setS1(p => ({ ...p, salary_frequency: v }))} />
-                  </Col>
                   <Col md={4} data-field="salary_effective_from">
   <label className="onb-init-label">
     Salary Effective From {s1.enable_payroll !== false && <span className="req">*</span>}
@@ -7200,7 +7207,7 @@ function Stage4Payroll({
               <MasterSelect options={ONB_TAX_REGIME} value={s4.tax_regime || 'New Regime (115BAC)'} onChange={(v) => setS4(p => ({ ...p, tax_regime: v }))} />
             </Col>
             <Col md={4}>
-              <label className="onb-init-label">PF Deduction</label>
+              <label className="onb-init-label">PF Deduction <span className="req">*</span></label>
               <MasterSelect options={ONB_PF_DEDUCT} value={s4.pf_deduction} onChange={(v) => setS4(p => ({ ...p, pf_deduction: v }))} invalid={invalid.pf_deduction} />
             </Col>
             <Col md={4}>

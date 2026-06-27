@@ -84,6 +84,13 @@ interface Props {
   onBack: () => void;
 }
 type TabKey = 'profile' | 'job' | 'attendance' | 'vault' | 'payroll' | 'expense' | 'apply_leave' | 'holidays' | 'hiring';
+
+/** Coerce a value that may be a plain string OR a relation object
+ *  (e.g. department `{id, name, code}`) down to a renderable string.
+ *  Guards against "Objects are not valid as a React child" when a caller
+ *  passes the raw API row instead of a flattened name. */
+const asName = (v: unknown): string =>
+  v && typeof v === 'object' ? String((v as any).name ?? (v as any).title ?? '') : (v == null ? '' : String(v));
 type PayrollTab = 'summary' | 'details';
 type VaultTab = 'employee' | 'organizational';
 type ExpenseFilter = 'all' | 'approved' | 'rejected' | 'pending' | 'draft';
@@ -2045,9 +2052,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   type are reflected immediately, instead of the stale
                   navigation-state row that previously fell back to
                   hardcoded "Accounts" / "Associate Engineer" / "Full-time". */}
-              {empDetail?.department?.name || employee?.department || '—'}
+              {empDetail?.department?.name || asName(employee?.department) || '—'}
               <span className="mx-2 ep-opacity-50">·</span>
-              {empDetail?.designation?.name || employee?.designation || '—'}
+              {empDetail?.designation?.name || asName(employee?.designation) || '—'}
               <span className="mx-2 ep-opacity-50">·</span>
               {empDetail?.worker_type || empDetail?.work_type || empDetail?.time_type || '—'}
             </p>
@@ -2403,8 +2410,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         employee={{
           name: empDetail?.display_name || employee?.name || String(employeeId),
           empId: empDetail?.emp_code || String(employeeId),
-          designation: empDetail?.designation_name || empDetail?.designation || '—',
-          department: empDetail?.department_name || empDetail?.department || '—',
+          designation: empDetail?.designation_name || asName(empDetail?.designation) || '—',
+          department: empDetail?.department_name || asName(empDetail?.department) || '—',
         }}
         defaultMonth={viewSlip?.month || 'March'}
         defaultYear={viewSlip?.year || String(new Date().getFullYear())}

@@ -34,6 +34,26 @@ class LeavePlanController extends Controller
         $this->applyScope($q, $user, $branchFilter);
 
         $rows = $q->orderByDesc('is_default')->orderBy('plan_name')->get();
+
+        // Per-plan setup completeness. A plan is "configured" only when it has
+        // at least one leave type AND every assigned type has its quota/setup
+        // saved (leave_plan_leave_types.config_json is non-null — it's seeded
+        // null on assign and populated by the Setup modal). The employee form's
+        // leave-plan dropdown uses this to hide unconfigured / draft plans.
+        $planIds = $rows->pluck('id')->all();
+        $cfgStats = empty($planIds) ? collect() : DB::table('leave_plan_leave_types')
+            ->whereIn('leave_plan_id', $planIds)
+            ->selectRaw('leave_plan_id, COUNT(*) as total, COUNT(config_json) as configured')
+            ->groupBy('leave_plan_id')
+            ->get()
+            ->keyBy('leave_plan_id');
+        $rows->each(function ($plan) use ($cfgStats) {
+            $stat = $cfgStats->get($plan->id);
+            $total = $stat ? (int) $stat->total : 0;
+            $configured = $stat ? (int) $stat->configured : 0;
+            $plan->setup_complete = $total > 0 && $configured === $total;
+        });
+
         return response()->json(['data' => $rows]);
     }
 

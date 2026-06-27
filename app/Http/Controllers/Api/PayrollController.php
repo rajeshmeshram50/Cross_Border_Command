@@ -235,6 +235,22 @@ class PayrollController extends Controller
         return response()->json(['data' => ['cycles' => $cycles, 'rows' => $rows]]);
     }
 
+    /**
+     * Mirror of Employee::getEncryptedIdAttribute — produce the same URL-safe
+     * encrypted token from a bare employee id (the payroll rows come off
+     * Payslip, not Employee, so the accessor isn't available here). The
+     * resolver in resolveIdParam inverts this before Crypt::decryptString.
+     */
+    private function encId($employeeId): ?string
+    {
+        if (!$employeeId) return null;
+        try {
+            return rtrim(strtr(\Illuminate\Support\Facades\Crypt::encryptString((string) $employeeId), '+/', '-_'), '=');
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
     /* ───────────────────────── cycle view ────────────────────── */
 
     public function index(Request $request)
@@ -910,6 +926,9 @@ class PayrollController extends Controller
             'payslip_id'  => $p->id,
             'empId'       => $p->employee_code ?: ('EMP-' . $p->employee_id),
             'employee_id' => $p->employee_id,
+            // URL-safe encrypted id so the SPA opens the profile via an opaque
+            // token (like the employee list), not the readable EMP-### code.
+            'encryptedId' => $this->encId($p->employee_id),
             'name'        => $name,
             'initials'    => $initials ?: 'NA',
             'accent'      => $this->accentFor($p->employee_id),

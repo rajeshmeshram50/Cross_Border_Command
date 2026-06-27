@@ -391,7 +391,18 @@ function EmployeeProfileWrapper() {
         if (!e) { setResolveErr('Employee not found'); return; }
         const code = e.emp_code || (e.id ? `EMP-${e.id}` : null);
         setEmpCode(code);
-        setResolvedEmp(e);
+        // Normalise the raw API row into the EmployeeProfileTarget shape —
+        // department / designation arrive as relation OBJECTS ({id,name,code}),
+        // but EmployeeProfile expects flat strings. Passing the raw objects
+        // crashed the hero with "Objects are not valid as a React child".
+        const flatName = (v: any) => (v && typeof v === 'object' ? v.name : v) ?? undefined;
+        setResolvedEmp({
+          ...e,
+          id: code,
+          name: e.display_name || [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ').trim() || code,
+          department: flatName(e.department),
+          designation: flatName(e.designation),
+        });
       })
       .catch((err: any) => {
         if (cancelled) return;

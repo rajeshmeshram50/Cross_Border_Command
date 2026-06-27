@@ -32,6 +32,9 @@ interface PayrollRow {
   payslip_id?: number;
   employee_id?: number;
   empId: string;
+  /** URL-safe encrypted employee id — used to open the profile via an opaque
+   *  token instead of the readable EMP-### code (matches the employee list). */
+  encryptedId?: string | null;
   name: string;
   initials: string;
   accent: string;
@@ -167,12 +170,13 @@ export default function HrPayroll() {
   const toast = useToast();
   const navigate = useNavigate();
 
-  const handleIssueAction = (action: { kind?: string }, issue: { empCode?: string }) => {
+  const handleIssueAction = (action: { kind?: string }, issue: { empCode?: string; encryptedId?: string | null }) => {
     setRunOpen(false);
     if (action.kind === 'attendance') {
       navigate('/hr/attendance');
-    } else if (action.kind === 'employee' && issue.empCode) {
-      navigate(`/hr/employees/${encodeURIComponent(issue.empCode)}/profile`);
+    } else if (action.kind === 'employee' && (issue.encryptedId || issue.empCode)) {
+      // Prefer the opaque encrypted token so the URL never exposes EMP-###.
+      navigate(`/hr/employees/${encodeURIComponent(issue.encryptedId || issue.empCode!)}/profile`);
     }
   };
 
@@ -328,6 +332,7 @@ export default function HrPayroll() {
   const closePayslip = () => { setPaySlipRow(null); setPayslipBreakup(null); setPayslipFinal(undefined); setPayslipRecent([]); setPayslipCompany(null); setActivePayslipId(undefined); setPayslipDays(null); };
 
   const [runOpen, setRunOpen] = useState(false);
+  const [proceeding, setProceeding] = useState(false);
 
   const runIssues = useMemo<PayrollRunIssue[]>(() => {
     const list: PayrollRunIssue[] = [];
@@ -345,6 +350,7 @@ export default function HrPayroll() {
           id: r.id,
           type: 'blocking',
           empCode: r.empId,
+          encryptedId: r.encryptedId,
           empName: r.name,
           empInitials: r.initials,
           empAccent: r.accent,
@@ -366,6 +372,7 @@ export default function HrPayroll() {
           id: r.id,
           type: 'warning',
           empCode: r.empId,
+          encryptedId: r.encryptedId,
           empName: r.name,
           empInitials: r.initials,
           empAccent: r.accent,
@@ -472,6 +479,8 @@ export default function HrPayroll() {
   const [paymentRunId, setPaymentRunId] = useState<number | null>(null);
   const proceedToPay = async () => {
     if (!runMeta?.id) { setRunOpen(false); return; }
+    if (proceeding) return;
+    setProceeding(true);
     setBusy(true);
     try {
       if (runMeta.status !== 'approved' && runMeta.status !== 'paid') {
@@ -484,6 +493,7 @@ export default function HrPayroll() {
       toast.error('Could not start payment', err?.response?.data?.message || 'Approve the payroll first.');
     } finally {
       setBusy(false);
+      setProceeding(false);
     }
   };
 
@@ -1081,7 +1091,7 @@ export default function HrPayroll() {
                     </p>
                     <div className="text-muted" style={{ fontSize: 11.5 }}>{subtitle}</div>
                   </div>
-                  <div className="onb-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <div className="onb-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, ['--kpi-accent' as any]: k.strip, ['--kpi-tint-dark' as any]: `${k.strip}2e` }}>
                     <i className={k.icon} style={{ fontSize: 20, color: k.fg }} />
                   </div>
                 </div>
@@ -1252,7 +1262,8 @@ export default function HrPayroll() {
                         <td className="text-end fs-13 fw-bold">₹{fmtINR(r.netPay)}</td>
                         <td className="text-center">
                           <span
-                            className="onb-role-pill"
+                            className="onb-role-pill pay-att-badge"
+                            data-att={r.attendance < 30 ? 'low' : 'ok'}
                             style={r.attendance < 30 ? { background: '#fde8c4', color: '#a4661c' } : undefined}
                           >
                             {r.attendance}/30
@@ -1644,6 +1655,7 @@ export default function HrPayroll() {
         open={runOpen}
         onClose={() => setRunOpen(false)}
         onProceedToPay={proceedToPay}
+        proceeding={proceeding}
         cycleLabel={cycle.label}
         totalEmployees={counts.totalEmployees}
         totalPayrollLabel={fmtINRShort(counts.totalPayroll)}

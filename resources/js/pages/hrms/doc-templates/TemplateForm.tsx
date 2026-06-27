@@ -235,6 +235,22 @@ export default function TemplateFormPage() {
   }, [editingId, category, roleType]);
 
   // ── Validation ─────────────────────────────────────────────────────────────
+  // Every "Sign" signer configured in Step 2 must have its {{SignerNSign}}
+  // placeholder somewhere in the design — otherwise, at signing time the person
+  // is in the workflow but has no spot to sign. Returns the signers still
+  // missing a signature placeholder.
+  const missingSignerSlots = (): string[] => {
+    if (!requiresSig) return [];
+    const html = contentHtml || '';
+    const out: string[] = [];
+    signers.forEach((s, i) => {
+      if ((s.action || 'Sign').toString().toLowerCase() !== 'sign') return;
+      const n = i + 1;
+      if (!html.includes(`{{Signer${n}Sign}}`)) out.push(s.role_name?.trim() || `Signer ${n}`);
+    });
+    return out;
+  };
+
   const validateStep = (s: number): boolean => {
     const e: Record<string, string> = {};
     if (s === 1) {
@@ -245,6 +261,12 @@ export default function TemplateFormPage() {
     if (s === 2) {
       if (!triggerPointId) e.trigger_point_id = 'Select a lifecycle event';
       if (requiresSig && signers.length === 0) e.signers = 'Add at least one signer';
+    }
+    if (s === 3) {
+      const missing = missingSignerSlots();
+      if (missing.length) {
+        e.signers_placeholders = `Add a signature placeholder for each signer in the design: ${missing.join(', ')}.`;
+      }
     }
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -282,6 +304,19 @@ export default function TemplateFormPage() {
   const handleSubmit = async (asDraft: boolean) => {
     if (!asDraft && !validateStep(1)) { setStep(1); return; }
     if (!asDraft && !validateStep(2)) { setStep(2); return; }
+    // Block publishing a template whose signers have no signature spot in the
+    // design — you'd configure a signer who then can't actually sign.
+    if (!asDraft && !validateStep(3)) {
+      setStep(3);
+      const missing = missingSignerSlots();
+      toast.error(
+        'Add a signature spot for every signer',
+        missing.length
+          ? `Insert the signature placeholder for: ${missing.join(', ')}. Use the “Workflow Signers” panel to drop {{Signer N Sign}} into the design.`
+          : 'Each signer needs a signature placeholder in the template design.',
+      );
+      return;
+    }
     setSaving(true);
     try {
       const payload = buildPayload(asDraft ? 'Draft' : 'Active');
@@ -594,6 +629,7 @@ export default function TemplateFormPage() {
               headerConfig={headerConfig} setHeaderConfig={setHeaderConfig}
               footerConfig={footerConfig} setFooterConfig={setFooterConfig}
               signers={signers}
+              slotError={errors.signers_placeholders}
               editingId={editing?.id || null}
               docxName={editing?.docx_original_name || null}
               docxRef={docxRef}
@@ -914,6 +950,7 @@ function Step3(props: {
   headerConfig: HeaderConfig; setHeaderConfig: (v: HeaderConfig) => void;
   footerConfig: FooterConfig; setFooterConfig: (v: FooterConfig) => void;
   signers: SignerRow[];
+  slotError?: string;
   editingId: number | null;
   docxName: string | null;
   docxRef: React.RefObject<HTMLInputElement | null>;
@@ -940,6 +977,13 @@ function Step3(props: {
           <button type="button" className={`tpl-editor-tab${props.editorMode === 'word' ? ' is-active' : ''}`} style={tabBtn(props.editorMode === 'word')} onClick={() => props.setEditorMode('word')}><i className="ri-file-word-2-line me-1" />MS Word</button>
         </div>
       </div>
+
+      {props.slotError && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 14px', marginBottom: 12, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, color: '#b91c1c', fontSize: 12.5 }}>
+          <i className="ri-error-warning-line" style={{ marginTop: 1 }} />
+          <span>{props.slotError} <strong>Drop the signature placeholder from the “Workflow Signers” panel into the document.</strong></span>
+        </div>
+      )}
 
       {props.editorMode === 'web' && (
         <HeaderFooterPanel
