@@ -39,6 +39,10 @@ class PayrollService
     // ESI applies only when gross is at/under this; employee share 0.75%.
     private const ESI_GROSS_LIMIT = 21000;
     private const ESI_RATE        = 0.0075;
+    // Display timezone for the late-mark heuristic — attendance timestamps are
+    // stored UTC and the shift-start comparison runs in local time (matches
+    // AttendanceController::DISPLAY_TZ).
+    private const DISPLAY_TZ = 'Asia/Kolkata';
 
     /** Resolve the period for a month/year, creating it open+unfinalized.
      *  Race-safe: the unique (client,branch,month,year) index means a
@@ -619,7 +623,9 @@ class PayrollService
         $effectiveWorkingDays = round($period->working_days * $proration, 2);
 
         // ── Rules 2 & 3 — attendance + leave ───────────────────────────────
-        $att = $this->attendanceAggregates($employee->id, $winStart, $winEnd);
+        $att = $this->attendanceAggregates(
+            $employee->id, $winStart, $winEnd, $this->shiftStartOf($employee->shift ?? null)
+        );
         $leave = $this->leaveAggregates($employee->id, $winStart, $winEnd);
         // Holidays from the employee's assigned holiday group that fall on a
         // working day in the active window — paid like leave, never LOP.
@@ -630,6 +636,14 @@ class PayrollService
         $missingPunch  = $att['missing'];
         $paidLeaveDays = $leave['paid'];
         $unpaidLeaveDays = $leave['unpaid'];
+
+        // Incomplete punches are an attendance data-quality issue — flag them so
+        // the employee surfaces as a "Mismatch"/Review case (att_source=Review)
+        // in the Biometric Input table for HR to reconcile before approving. (#34)
+        if ($missingPunch > 0) {
+            $exceptions = $this->withException($exceptions, 'warning',
+                "{$missingPunch} day(s) with a missing punch — verify attendance before approving.");
+        }
 
         // Paid days = present + paid leave + group holidays (capped to the
         // window). The min() cap means holidays only ever fill the unpaid gap
@@ -952,7 +966,7 @@ class PayrollService
         return (float) count($dates);
     }
 
-    private function attendanceAggregates(int $employeeId, Carbon $start, Carbon $end): array
+    private function attendanceAggregates(int $employeeId, Carbon $start, Carbon $end, ?string $shiftStart = null): array
     {
         if (!Schema::hasTable('attendances')) {
             return ['present' => 0, 'late' => 0, 'missing' => 0, 'rows' => 0];
@@ -961,29 +975,78 @@ class PayrollService
             ->where('employee_id', $employeeId)
             ->whereNull('deleted_at')
             ->whereBetween('attendance_date', [$start->toDateString(), $end->toDateString()])
-            ->get(['status']);
+            ->get(['status', 'check_in_at', 'check_out_at']);
+
+        // The face-clock flow always stores 'Present' on first punch — the
+        // 'Late' status is derived at READ time from the shift-start heuristic
+        // (AttendanceController::resolveDayStatus). Payroll must apply the same
+        // promotion, otherwise Late Marks / Mismatch always read 0 on the
+        // payslip + Biometric Input table even when the employee was late. (#34)
+        $shiftStart = $shiftStart ?: '09:30';
 
         $present = 0.0;
         $late = 0;
         $missing = 0;
         foreach ($rows as $r) {
-            switch ($r->status) {
+            $status = (string) ($r->status ?? '');
+            $hasIn  = !empty($r->check_in_at);
+            $hasOut = !empty($r->check_out_at);
+            // Promote Present → Late when first-in is >10 min past shift start
+            // (10-min grace + UTC→local conversion mirror the attendance module).
+            if (strcasecmp($status, 'Present') === 0 && $hasIn) {
+                $localIn = Carbon::parse($r->check_in_at, 'UTC')->setTimezone(self::DISPLAY_TZ)->format('H:i');
+                if ($this->minutesBetween($shiftStart, $localIn) > 10) {
+                    $status = 'Late';
+                }
+            }
+
+            $worked = false;
+            switch ($status) {
                 case 'Present':
                 case 'On Duty':
                 case 'Work From Home':
                 case 'Corrected':
-                    $present += 1; break;
+                    $present += 1; $worked = true; break;
                 case 'Late':
-                    $present += 1; $late++; break;
+                    $present += 1; $late++; $worked = true; break;
                 case 'Half Day':
-                    $present += 0.5; break;
+                    $present += 0.5; $worked = true; break;
                 case 'Missing In':
                 case 'Missing Out':
-                    $present += 1; $missing++; break;
+                    $present += 1; $missing++; $worked = true; break;
                 // Absent / Leave / Weekly Off / Holiday → not counted present.
+            }
+
+            // "Missing punch" is never persisted as a status anywhere in the
+            // system, so derive it: a worked day that recorded only one side of
+            // the punch pair (in without out, or out without in) is an
+            // incomplete/missing punch. This is what drives the Missing Punch +
+            // Mismatch columns in the Biometric Input table. (#34)
+            if ($worked && $status !== 'Missing In' && $status !== 'Missing Out' && ($hasIn xor $hasOut)) {
+                $missing++;
             }
         }
         return ['present' => round($present, 2), 'late' => $late, 'missing' => $missing, 'rows' => $rows->count()];
+    }
+
+    /** Shift start ("HH:MM") parsed from an employee shift label like
+     *  "09:30 – 18:30"; null when unparseable. Mirrors
+     *  AttendanceController::parseShiftWindow so payroll and attendance agree. */
+    private function shiftStartOf(?string $shift): ?string
+    {
+        if (!$shift) return null;
+        if (preg_match('/(\d{1,2}:\d{2})\s*[–\-]\s*(\d{1,2}:\d{2})/u', $shift, $m)) {
+            return $m[1];
+        }
+        return null;
+    }
+
+    /** Minutes from $from ("HH:MM") to $to ("HH:MM"); negative if $to earlier. */
+    private function minutesBetween(string $from, string $to): int
+    {
+        [$fh, $fm] = array_map('intval', explode(':', $from));
+        [$th, $tm] = array_map('intval', explode(':', $to));
+        return ($th * 60 + $tm) - ($fh * 60 + $fm);
     }
 
     /**
