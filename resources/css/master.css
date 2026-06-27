@@ -300,6 +300,41 @@
 .dsn-inline-filters .form-select-sm { min-width: 120px; }
 
 /* ---------------------------------------------------------------------
+   5b. Responsive — master pages on tablet / mobile
+   Makes every master page (shared MasterPage layout) adapt down to phones:
+   the flex KPI strip reflows 4→3→2 up, the header strip stacks its actions,
+   and the search/filter row + inline filters go full-width.
+   --------------------------------------------------------------------- */
+/* KPI flex strip (.mp-kpi-tile lives in a d-flex flex-wrap row with a 16px
+   gap and an inline min-width:180). Override the basis so tiles wrap evenly
+   instead of one tile stretching to fill a half-empty row. flex-grow:0 keeps
+   a lone trailing tile at its column width rather than spanning full width. */
+@media (max-width: 1199.98px) {
+  .mp-kpi-tile { flex: 0 1 calc(33.333% - 11px) !important; min-width: calc(33.333% - 11px) !important; }
+}
+@media (max-width: 767.98px) {
+  .mp-kpi-tile { flex: 0 1 calc(50% - 8px) !important; min-width: calc(50% - 8px) !important; }
+}
+@media (max-width: 479.98px) {
+  .mp-kpi-tile { flex: 1 1 100% !important; min-width: 100% !important; }
+}
+/* Header strip — tighter padding on phones; the action cluster (Back) drops
+   below the title and aligns left instead of being squeezed on the right. */
+@media (max-width: 575.98px) {
+  .dsn-page-strip { padding: 14px 16px !important; }
+  .dsn-page-strip > .d-flex.flex-shrink-0 {
+    width: 100%;
+    justify-content: flex-start !important;
+    margin-top: 6px;
+  }
+  /* Inline filter groups + their selects span the row so the dropdowns are
+     comfortably tappable rather than cramped. */
+  .dsn-inline-filters { width: 100%; }
+  .dsn-inline-filters .dsn-il-group { flex: 1 1 100%; }
+  .dsn-inline-filters .dsn-il-group > div { flex: 1 1 auto; min-width: 0 !important; }
+}
+
+/* ---------------------------------------------------------------------
    6. Roles — KPI cards + segmented filter tabs
    --------------------------------------------------------------------- */
 .role-extras .role-kpis {
