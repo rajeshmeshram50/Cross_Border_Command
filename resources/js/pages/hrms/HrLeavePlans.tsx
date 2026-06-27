@@ -363,6 +363,11 @@ export default function HrLeavePlans() {
   const [loading, setLoading] = useState(true);
 
   const loadPlans = useCallback(async () => {
+    // Drive the body shimmer for the FULL reload lifecycle (list + per-plan
+    // detail fetches) so every dataset refresh — including the one right after
+    // creating a new plan — shows the skeleton until the data is ready, rather
+    // than snapping in instantly.
+    setLoading(true);
     try {
       const list = await leavePlansApi.list();
       const settled = await Promise.allSettled(list.map(p => leavePlansApi.show(p.id)));
@@ -381,6 +386,8 @@ export default function HrLeavePlans() {
       setActivePlanId(curr => curr || mapped[0]?.id || '');
     } catch (err) {
       console.warn('[HrLeavePlans] failed to load plans', err);
+    } finally {
+      setLoading(false);
     }
   }, []);
 

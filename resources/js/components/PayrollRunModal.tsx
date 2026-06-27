@@ -14,6 +14,9 @@ export interface PayrollRunIssue {
   id: string;
   type: 'blocking' | 'warning';
   empCode: string;
+  /** URL-safe encrypted employee id — preferred over empCode when opening the
+   *  profile so the URL carries an opaque token, not the readable code. */
+  encryptedId?: string | null;
   empName: string;
   empInitials: string;
   empAccent: string;
@@ -31,6 +34,10 @@ export interface PayrollRunModalProps {
   /** Fires when the user confirms the final "Proceed to Pay" step on the
    *  success screen — parent decides what to do (toast + close, route, …). */
   onProceedToPay: () => void;
+  /** True while the parent's async "Proceed to Pay" work (payroll approve →
+   *  open disbursement) is in flight — drives the button's spinner + disabled
+   *  state so it can't be double-clicked. */
+  proceeding?: boolean;
   cycleLabel: string;
   totalEmployees: number;
   /** Net disbursable for the cycle (formatted by the parent — passed as a
@@ -65,6 +72,7 @@ export default function PayrollRunModal({
   open,
   onClose,
   onProceedToPay,
+  proceeding = false,
   cycleLabel,
   totalEmployees,
   totalPayrollLabel,
@@ -429,9 +437,12 @@ export default function PayrollRunModal({
           </div>
 
           {/* Primary CTA */}
-          <button type="button" className="prm-pay-cta" onClick={onProceedToPay}>
-            <i className="ri-bank-card-line me-2" />
-            Proceed to Pay <i className="ri-arrow-right-s-line ms-1" />
+          <button type="button" className="prm-pay-cta" onClick={onProceedToPay} disabled={proceeding} style={proceeding ? { opacity: 0.75, cursor: 'wait' } : undefined}>
+            {proceeding ? (
+              <><i className="ri-loader-4-line me-2" style={{ animation: 'spin 1s linear infinite' }} />Processing…</>
+            ) : (
+              <><i className="ri-bank-card-line me-2" />Proceed to Pay <i className="ri-arrow-right-s-line ms-1" /></>
+            )}
           </button>
 
           {/* Secondary actions */}
@@ -523,6 +534,7 @@ function IssueCard({
                     key={a.label}
                     type="button"
                     className="prm-action-chip"
+                    data-tone={a.tone}
                     onClick={() => onAction?.(a, issue)}
                     style={{ background: t.bg, color: t.fg, borderColor: t.border, cursor: 'pointer' }}
                   >
@@ -628,6 +640,14 @@ function PayrollRunStyles() {
       [data-bs-theme="dark"] .prm-pill--amber  { background: rgba(160,111,0,0.22); color: #fcd34d; }
       [data-bs-theme="dark"] .prm-pill--green  { background: rgba(16,133,72,0.22); color: #6ee7b7; }
       [data-bs-theme="dark"] .prm-pill--violet { background: rgba(90,63,209,0.22); color: #c4b5fd; }
+
+      /* Action chips (Go to Attendance / Open Employee) — the inline tone
+         colours are light pastels; repaint them as translucent accent chips
+         in dark mode so they don't render as bright chips on the dark surface. */
+      [data-bs-theme="dark"] .prm-action-chip[data-tone="blue"]   { background: rgba(59,130,246,0.18) !important; color: #93c5fd !important; border-color: rgba(59,130,246,0.38) !important; }
+      [data-bs-theme="dark"] .prm-action-chip[data-tone="green"]  { background: rgba(16,185,129,0.18) !important; color: #6ee7b7 !important; border-color: rgba(16,185,129,0.38) !important; }
+      [data-bs-theme="dark"] .prm-action-chip[data-tone="purple"] { background: rgba(124,92,252,0.18) !important; color: #c4b5fd !important; border-color: rgba(124,92,252,0.38) !important; }
+      [data-bs-theme="dark"] .prm-action-chip[data-tone="amber"]  { background: rgba(245,158,11,0.18) !important; color: #fcd34d !important; border-color: rgba(245,158,11,0.38) !important; }
 
       /* Progress steps */
       .prm-progress {
