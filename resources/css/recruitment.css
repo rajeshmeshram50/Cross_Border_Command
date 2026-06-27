@@ -10016,6 +10016,29 @@
   color: #c4b5fd !important; background: rgba(124,92,252,0.18) !important;
 }
 
+/* ── Payroll KPI icons — dark mode ────────────────────────────────────────
+   Light mode keeps the pastel tint + dark glyph (set inline on each card).
+   In dark mode those read as bright light chips on the dark surface, so swap
+   to a translucent accent bubble with the vivid accent glyph. The per-card
+   accent is passed inline as --kpi-accent / --kpi-tint-dark. */
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .pay-page .onb-kpi-icon {
+  background: var(--kpi-tint-dark, rgba(255,255,255,0.08)) !important;
+}
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .pay-page .onb-kpi-icon i {
+  color: var(--kpi-accent, #e2e8f0) !important;
+}
+
+/* ── Payroll "Att." count badge (e.g. 4/30) — dark mode ───────────────────
+   The under-target badge is inline amber pastel (light); the on-target one
+   falls back to the default pill. Repaint both as translucent accent chips so
+   they don't read as light badges on the dark table. */
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .pay-page .pay-att-badge[data-att="low"] {
+  background: rgba(245,158,11,0.18) !important; color: #fcd34d !important;
+}
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .pay-page .pay-att-badge[data-att="ok"] {
+  background: rgba(16,185,129,0.18) !important; color: #6ee7b7 !important;
+}
+
 /* ── Payroll page (HrPayroll) — mobile / tablet (≤ 767.98px) ───────────────
    Scoped to .pay-page. Hero: title on top, then the cycle picker / Run Payroll
    / Export / Reopen stacked full-width. Tab bar flows 2-per-row. Pager wraps. */

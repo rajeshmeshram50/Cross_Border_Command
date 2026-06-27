@@ -587,7 +587,13 @@ export default function HrEmployees() {
   useEffect(() => {
     leavePlansApi.list()
       .then(plans => {
-        setLeavePlanOptions(plans.map(p => ({ value: String(p.id), label: p.plan_name })));
+        // Only configured plans (quota setup complete) may be assigned to an
+        // employee — hide draft / unconfigured plans from the dropdown.
+        setLeavePlanOptions(
+          plans
+            .filter(p => p.setup_complete)
+            .map(p => ({ value: String(p.id), label: p.plan_name })),
+        );
       })
       .catch(err => console.warn('[HrEmployees] failed to load leave plans', err));
   }, []);
@@ -983,47 +989,55 @@ export default function HrEmployees() {
     const errs = which === 'earn' ? breakupErrors.earnings : breakupErrors.deductions;
     return (
       <div>
-        <div className="d-flex align-items-center justify-content-between mb-2">
-          <span className="fw-bold text-uppercase" style={{ fontSize: 11, letterSpacing: '0.06em', color: accent }}>{heading}</span>
-          <button type="button" className="btn btn-sm" style={{ fontSize: 11, color: accent, border: `1px solid ${accent}40`, borderRadius: 8, padding: '2px 10px' }}
+        {/* Clean Earnings/Deductions column styled like the onboarding breakup
+            (uppercase accent header, dashed-separator rows, ₹ right-aligned
+            amounts) — but the name + amount stay editable inputs. */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `2px solid ${accent}26`, paddingBottom: 5, marginBottom: 4 }}>
+          <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: accent }}>{heading}</span>
+          <button type="button"
+            style={{ fontSize: 11, fontWeight: 700, color: accent, background: `${accent}12`, border: `1px solid ${accent}33`, borderRadius: 8, padding: '3px 11px', display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}
             onClick={() => addBreakRow(which)}>
             <i className="ri-add-line" /> Add
           </button>
         </div>
-        {list.length === 0 && <div className="text-muted mb-2" style={{ fontSize: 12 }}>No components.</div>}
+        {list.length === 0 && <div className="text-muted" style={{ fontSize: 12, padding: '9px 0' }}>No components.</div>}
         {list.map((c, i) => {
           const rowErr = errs[i];
+          const underline = rowErr ? '#dc2626' : 'transparent';
           return (
-            <div key={i} className="mb-2">
-              <div className="d-flex align-items-center gap-2">
+            <div key={i} style={{ padding: '5px 0', borderBottom: '1px dashed var(--vz-border-color, #e5e7eb)' }}>
+              <div className="emp-break-row" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <input
-                  className={`form-control form-control-sm${rowErr ? ' is-invalid' : ''}`}
-                  style={{ flex: 2 }}
+                  style={{ flex: 2, minWidth: 0, border: 'none', borderBottom: `1px solid ${underline}`, background: 'transparent', fontSize: 12.5, fontWeight: 500, padding: '3px 2px', outline: 'none', color: 'var(--vz-body-color)' }}
                   placeholder="Component name"
                   maxLength={MAX_COMP_LABEL}
                   value={c.label}
                   onChange={e => updateBreakRow(which, i, 'label', e.target.value)}
+                  onFocus={e => { if (!rowErr) e.currentTarget.style.borderBottomColor = `${accent}66`; }}
+                  onBlur={e => { e.currentTarget.style.borderBottomColor = rowErr ? '#dc2626' : 'transparent'; }}
                 />
-                <div className="d-flex align-items-center" style={{ flex: 1, position: 'relative' }}>
-                  <span style={{ position: 'absolute', left: 8, fontSize: 12, color: 'var(--vz-secondary-color)' }}>₹</span>
+                <div style={{ display: 'flex', alignItems: 'center', position: 'relative', flex: 1, minWidth: 96 }}>
+                  <span style={{ position: 'absolute', left: 2, fontSize: 12.5, color: 'var(--vz-secondary-color)' }}>₹</span>
                   <input
                     type="number"
                     min={0}
                     max={MAX_COMP_AMOUNT}
                     step="0.01"
                     inputMode="decimal"
-                    className={`form-control form-control-sm${rowErr ? ' is-invalid' : ''}`}
-                    style={{ paddingLeft: 18, textAlign: 'right' }}
+                    style={{ width: '100%', border: 'none', borderBottom: `1px solid ${underline}`, background: 'transparent', textAlign: 'right', fontSize: 13, fontWeight: 700, padding: '3px 2px 3px 15px', outline: 'none', color: 'var(--vz-body-color)' }}
                     value={c.amount}
                     onChange={e => updateBreakRow(which, i, 'amount', e.target.value)}
+                    onFocus={e => { if (!rowErr) e.currentTarget.style.borderBottomColor = `${accent}66`; }}
+                    onBlur={e => { e.currentTarget.style.borderBottomColor = rowErr ? '#dc2626' : 'transparent'; }}
                   />
                 </div>
-                <button type="button" className="btn btn-sm" style={{ color: '#dc2626', padding: '2px 6px' }}
+                <button type="button"
+                  style={{ color: '#dc2626', background: 'transparent', border: 'none', padding: '2px 4px', cursor: 'pointer', flexShrink: 0, opacity: 0.65, lineHeight: 1 }}
                   onClick={() => removeBreakRow(which, i)} title="Remove">
                   <i className="ri-delete-bin-line" />
                 </button>
               </div>
-              {rowErr && <small className="emp-err d-block mt-1">{rowErr}</small>}
+              {rowErr && <small className="emp-err d-block" style={{ marginTop: 2 }}>{rowErr}</small>}
             </div>
           );
         })}
@@ -2966,7 +2980,7 @@ export default function HrEmployees() {
                           setEFirstName(v);
                           const composed = `${v} ${eMiddleName} ${eLastName}`.replace(/\s+/g,' ').trim();
                           if (!eDisplayNameTouched) setEDisplayName(composed);
-                          setEActualName(composed);
+                          if (!eActualNameTouched) setEActualName(composed);
                           clearEErr('first_name');
                           clearEErr('display_name');
                           clearEErr('actual_name');
@@ -2981,7 +2995,7 @@ export default function HrEmployees() {
                         setEMiddleName(v);
                         const composed = `${eFirstName} ${v} ${eLastName}`.replace(/\s+/g,' ').trim();
                         if (!eDisplayNameTouched) setEDisplayName(composed);
-                        setEActualName(composed);
+                        if (!eActualNameTouched) setEActualName(composed);
                         clearEErr('middle_name');
                         clearEErr('actual_name');
                       }} />
@@ -2999,7 +3013,7 @@ export default function HrEmployees() {
                           setELastName(v);
                           const composed = `${eFirstName} ${eMiddleName} ${v}`.replace(/\s+/g,' ').trim();
                           if (!eDisplayNameTouched) setEDisplayName(composed);
-                          setEActualName(composed);
+                          if (!eActualNameTouched) setEActualName(composed);
                           clearEErr('last_name');
                           clearEErr('display_name');
                           clearEErr('actual_name');
@@ -3025,15 +3039,16 @@ export default function HrEmployees() {
                     <Col md={4}>
                       <label className="emp-label">
                         Employee Actual Name<span className="req">*</span>
-                        <span className="hint">(auto-generated)</span>
+                        <span className="hint">{eActualNameLocked ? '(auto-generated)' : '(auto-filled · editable)'}</span>
                       </label>
                       <input
-                        className={`emp-input is-readonly${eErrors.actual_name ? ' is-invalid' : ''}`}
+                        className={`emp-input${eActualNameLocked ? ' is-readonly' : ''}${eErrors.actual_name ? ' is-invalid' : ''}`}
                         type="text"
-                        placeholder="Auto-filled from First / Middle / Last name"
+                        placeholder="Auto-filled from name — edit to override"
                         value={eActualName}
-                        readOnly
-                        tabIndex={-1}
+                        readOnly={eActualNameLocked}
+                        tabIndex={eActualNameLocked ? -1 : undefined}
+                        onChange={e => { setEActualName(e.target.value); setEActualNameTouched(true); clearEErr('actual_name'); }}
                       />
                       {eErrors.actual_name && <small className="emp-err">{eErrors.actual_name}</small>}
                     </Col>
@@ -3205,7 +3220,7 @@ export default function HrEmployees() {
                   </div>
                   <Row className="g-3">
                     <Col md={6}>
-                      <label className="emp-label">Address Line 1<span className="req">*</span></label>
+                      <label className="emp-label">Address Line 1</label>
                       <input className="emp-input" type="text" placeholder="House / Flat No., Building, Street" value={ePermAddr1} onChange={e => setEPermAddr1(e.target.value)} disabled={eSameAsCurrent} />
                     </Col>
                     <Col md={6}>
@@ -3213,11 +3228,11 @@ export default function HrEmployees() {
                       <input className="emp-input" type="text" placeholder="Area, Locality (optional)" value={ePermAddr2} onChange={e => setEPermAddr2(e.target.value)} disabled={eSameAsCurrent} />
                     </Col>
                     <Col md={3}>
-                      <label className="emp-label">City<span className="req">*</span></label>
+                      <label className="emp-label">City</label>
                       <input className="emp-input" type="text" placeholder="e.g. Pune" value={ePermCity} onChange={e => setEPermCity(e.target.value)} disabled={eSameAsCurrent} />
                     </Col>
                     <Col md={3}>
-                      <label className="emp-label">Country<span className="req">*</span></label>
+                      <label className="emp-label">Country</label>
                       <MasterSelect
                         value={ePermCountry}
                         onChange={(v) => { setEPermCountry(v); if (ePermState) setEPermState(''); }}
@@ -3227,7 +3242,7 @@ export default function HrEmployees() {
                       />
                     </Col>
                     <Col md={3}>
-                      <label className="emp-label">State<span className="req">*</span></label>
+                      <label className="emp-label">State</label>
                       <MasterSelect
                         value={ePermState}
                         onChange={setEPermState}
@@ -3237,7 +3252,7 @@ export default function HrEmployees() {
                       />
                     </Col>
                     <Col md={3}>
-                      <label className="emp-label">Pincode<span className="req">*</span></label>
+                      <label className="emp-label">Pincode</label>
                       <input className="emp-input" type="text" inputMode="numeric" maxLength={6} placeholder="6-digit pincode" value={ePermPin} onChange={e => setEPermPin(e.target.value.replace(/\D/g, '').slice(0, 6))} disabled={eSameAsCurrent} />
                     </Col>
                   </Row>
@@ -3804,7 +3819,12 @@ export default function HrEmployees() {
                   </div>
                   <div className="emp-label mb-1">Salary Effective From</div>
                   <div className="text-muted mb-3" style={{ fontSize: 13 }}>
-                    {eSalaryFrom ? eSalaryFrom : '—'}
+                    {(() => {
+                      if (!eSalaryFrom) return '—';
+                      const [y, m, d] = eSalaryFrom.slice(0, 10).split('-');
+                      const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(m) - 1];
+                      return mon ? `${d}-${mon}-${y}` : eSalaryFrom;
+                    })()}
                   </div>
 
                   {!eDetailedBreakup ? (

@@ -31,7 +31,6 @@ const ONB_LOCATION     = OPT('Pune HQ', 'Mumbai', 'Bengaluru');
 
 const ONB_PROBATION    = OPT('Default Probation Policy', '3-Month Probation', '6-Month Probation', 'No Probation');
 const ONB_NOTICE       = OPT('Default Notice Period', '15 Days', '30 Days', '60 Days', '90 Days');
-const ONB_LEAVE_PLAN   = OPT('Leave Policy');
 const ONB_HOLIDAY      = OPT('Holiday Calendar', 'India Holidays 2026', 'Global Holidays 2026');
 const ONB_SHIFT        = OPT('General Shift', 'Morning Shift', 'Evening Shift', 'Night Shift', 'Flexible');
 const ONB_WEEKLY_OFF   = OPT('Week Off Policy', 'Saturday & Sunday', 'Sunday Only', 'Rotational');
@@ -3349,7 +3348,13 @@ function InitiateOnboardingModal({
       api.get('/leave-plans').then(r => {
         if (cancelled) return;
         const plans = Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.data) ? r.data.data : []);
-        setLeavePlanOpts(plans.map((p: any) => ({ value: String(p.id), label: p.plan_name || p.name || `Plan ${p.id}` })));
+        // Only surface plans whose quota setup is fully complete — draft /
+        // unconfigured plans must not be assignable to an employee.
+        setLeavePlanOpts(
+          plans
+            .filter((p: any) => p.setup_complete)
+            .map((p: any) => ({ value: String(p.id), label: p.plan_name || p.name || `Plan ${p.id}` })),
+        );
       }).catch(() => { if (!cancelled) setLeavePlanOpts([]); }),
     ]);
     return () => { cancelled = true; };
@@ -4730,7 +4735,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
               <div className="onb-init-section-body">
                 <p className="onb-init-subgroup">Leave &amp; Attendance</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanOpts.length ? leavePlanOpts : ONB_LEAVE_PLAN} value={s1.leave_plan} placeholder={leavePlanOpts.length ? 'Select a leave plan' : 'No plans found — create one in HR > Leave'} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanOpts} value={s1.leave_plan} placeholder={leavePlanOpts.length ? 'Select a leave plan' : 'No configured leave plan — finish its setup in HR > Leave'} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Holiday List<span className="req">*</span></label><MasterSelect options={ONB_HOLIDAY} value={s1.holiday_list} placeholder="Select holiday list" onChange={(v) => setS1(p => ({ ...p, holiday_list: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Shift<span className="req">*</span></label><MasterSelect options={ONB_SHIFT} value={s1.shift} placeholder="Select shift" onChange={(v) => setS1(p => ({ ...p, shift: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Weekly Off<span className="req">*</span></label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off} placeholder="Select weekly off" onChange={(v) => setS1(p => ({ ...p, weekly_off: v }))} /></Col>

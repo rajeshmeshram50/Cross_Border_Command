@@ -17,6 +17,8 @@ import FaceRegistrationModal from '../../components/FaceRegistrationModal';
 import {
   RaiseHiringRequestModal,
   HiringRequestsListModal,
+  ViewHiringRequestModal,
+  apiToHiringRequestRow,
   type HiringRequestRow,
 } from '../recruitment/HrRecruitment';
 import './EmployeeProfile.css';
@@ -82,6 +84,13 @@ interface Props {
   onBack: () => void;
 }
 type TabKey = 'profile' | 'job' | 'attendance' | 'vault' | 'payroll' | 'expense' | 'apply_leave' | 'holidays' | 'hiring';
+
+/** Coerce a value that may be a plain string OR a relation object
+ *  (e.g. department `{id, name, code}`) down to a renderable string.
+ *  Guards against "Objects are not valid as a React child" when a caller
+ *  passes the raw API row instead of a flattened name. */
+const asName = (v: unknown): string =>
+  v && typeof v === 'object' ? String((v as any).name ?? (v as any).title ?? '') : (v == null ? '' : String(v));
 type PayrollTab = 'summary' | 'details';
 type VaultTab = 'employee' | 'organizational';
 type ExpenseFilter = 'all' | 'approved' | 'rejected' | 'pending' | 'draft';
@@ -139,6 +148,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [raiseHiringOpen, setRaiseHiringOpen] = useState<boolean>(false);
   // When set, the Raise modal opens in EDIT mode to resume a saved Draft.
   const [hiringEditing, setHiringEditing] = useState<any | null>(null);
+  // When set, opens the read-only View modal for a single hiring request.
+  const [hiringViewing, setHiringViewing] = useState<any | null>(null);
   const [listHiringOpen, setListHiringOpen] = useState<boolean>(false);
   const [hiringRefreshKey, setHiringRefreshKey] = useState<number>(0);
 
@@ -1995,7 +2006,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     setClaimOpen, setClaimMode, setEditingDraftId, setResumeFromDraft,
     exportOpen, setExportOpen,
     // Hiring tab
-    hiringRequests, hiringLoading, setRaiseHiringOpen, setHiringEditing, teamSize,
+    hiringRequests, hiringLoading, setRaiseHiringOpen, setHiringEditing, setHiringViewing, teamSize,
     // Other shared (Profile/Vault/Expense)
     resetPwForm, employeeDocCount, organizationalDocCount,
     runProfileExport, readSavedDrafts, filteredAdvances,
@@ -2041,9 +2052,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   type are reflected immediately, instead of the stale
                   navigation-state row that previously fell back to
                   hardcoded "Accounts" / "Associate Engineer" / "Full-time". */}
-              {empDetail?.department?.name || employee?.department || '—'}
+              {empDetail?.department?.name || asName(employee?.department) || '—'}
               <span className="mx-2 ep-opacity-50">·</span>
-              {empDetail?.designation?.name || employee?.designation || '—'}
+              {empDetail?.designation?.name || asName(employee?.designation) || '—'}
               <span className="mx-2 ep-opacity-50">·</span>
               {empDetail?.worker_type || empDetail?.work_type || empDetail?.time_type || '—'}
             </p>
@@ -2399,8 +2410,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         employee={{
           name: empDetail?.display_name || employee?.name || String(employeeId),
           empId: empDetail?.emp_code || String(employeeId),
-          designation: empDetail?.designation_name || empDetail?.designation || '—',
-          department: empDetail?.department_name || empDetail?.department || '—',
+          designation: empDetail?.designation_name || asName(empDetail?.designation) || '—',
+          department: empDetail?.department_name || asName(empDetail?.department) || '—',
         }}
         defaultMonth={viewSlip?.month || 'March'}
         defaultYear={viewSlip?.year || String(new Date().getFullYear())}
@@ -3455,6 +3466,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             onRaiseNew={() => { setListHiringOpen(false); setRaiseHiringOpen(true); }}
             onCreateRecruitment={() => { /* recruitment creation is HR-side; managers don't trigger this from the profile */ }}
             refreshKey={hiringRefreshKey}
+          />
+          {/* Read-only view of a single hiring request (eye action in the tab). */}
+          <ViewHiringRequestModal
+            request={hiringViewing ? apiToHiringRequestRow(hiringViewing) : null}
+            onClose={() => setHiringViewing(null)}
+            recruitmentCreated={!!hiringViewing?._hasRecruitment}
           />
         </>
       )}
