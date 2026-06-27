@@ -345,7 +345,7 @@ export default function ProfileTab() {
                 {/* 4 mini-tiles */}
                 <div className="px-3 pb-3 flex-grow-1">
                   <Row className="g-2">
-                    <Col xs={6} md={3} xl>
+                    <Col xs={6}>
                       <div className="px-3 py-2 h-100 pft-mini-green">
                         <div className="ep-field-label pft-mini-label-green">Status</div>
                         <div className="ep-field-value d-inline-flex align-items-center gap-1 pft-mini-value-green">
@@ -354,22 +354,22 @@ export default function ProfileTab() {
                         </div>
                       </div>
                     </Col>
-                    <Col xs={6} md={3} xl>
+                    <Col xs={6}>
                       <div className="px-3 py-2 h-100 pft-mini-indigo">
                         <div className="ep-field-label pft-mini-label-indigo">Emp Type</div>
-                        <div className="ep-field-value pft-mini-value-indigo">Full-time</div>
+                        <div className="ep-field-value pft-mini-value-indigo">{empDetail?.worker_type || empDetail?.work_type || empDetail?.time_type || '—'}</div>
                       </div>
                     </Col>
-                    <Col xs={6} md={3} xl>
+                    <Col xs={6}>
                       <div className="px-3 py-2 h-100 pft-mini-amber">
                         <div className="ep-field-label pft-mini-label-amber">Joined</div>
-                        <div className="ep-field-value font-monospace pft-mini-value-amber">03-Nov-2023</div>
+                        <div className="ep-field-value font-monospace pft-mini-value-amber">{empDetail?.date_of_joining ? fmtDate(empDetail.date_of_joining) : '—'}</div>
                       </div>
                     </Col>
-                    <Col xs={6} md={3} xl>
+                    <Col xs={6}>
                       <div className="px-3 py-2 h-100 pft-mini-teal">
                         <div className="ep-field-label pft-mini-label-teal">Department</div>
-                        <div className="ep-field-value pft-mini-value-teal">{employee?.department || '—'}</div>
+                        <div className="ep-field-value pft-mini-value-teal" title={employee?.department || ''}>{employee?.department || '—'}</div>
                       </div>
                     </Col>
                   </Row>

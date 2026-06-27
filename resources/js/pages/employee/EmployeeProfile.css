@@ -2460,6 +2460,19 @@
 .pft-mini-value-amber { color: #a16207; font-size: 13px; }
 .pft-mini-label-teal { color: #0a716a; }
 .pft-mini-value-teal { color: #0a716a; font-size: 13px; }
+/* Mini-tile values are narrow — long text (a long department name) or the
+   wide monospace joined-date used to overflow / wrap. Keep them on one line
+   and clip with an ellipsis (full value still shows via the title tooltip). */
+.pft-mini-value-green,
+.pft-mini-value-indigo,
+.pft-mini-value-amber,
+.pft-mini-value-teal {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
 .pft-kyc-badge { background: rgba(99, 102, 241, 0.16); color: #4338ca; font-size: 10.5px; }
 .pft-kyc-doc-label { font-size: 12.5px; font-weight: 600; }
 .pft-kyc-status-icon {
