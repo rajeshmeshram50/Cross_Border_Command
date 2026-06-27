@@ -150,8 +150,12 @@ export default function HrCustomFields() {
       setPrefillName('');
       fetchAll();
     } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.response?.data?.errors?.name?.[0] || 'Please try again.';
-      toast.error('Could not save', msg);
+      // A duplicate-name / validation error on `name` is thrown back to the
+      // modal so it renders inline under the Field Name input. Only genuinely
+      // unexpected failures fall through to the top toast.
+      const nameErr = err?.response?.status === 422 ? err?.response?.data?.errors?.name?.[0] : null;
+      if (nameErr) throw new Error(nameErr);
+      toast.error('Could not save', err?.response?.data?.message || 'Please try again.');
     }
   };
 
@@ -251,6 +255,10 @@ export default function HrCustomFields() {
           /* Uniform cell padding + middle-align so the header columns line up
              exactly with the body columns (some cells had ad-hoc inline padding). */
           .cf-page .cf-table th, .cf-page .cf-table td { padding: 11px 14px !important; vertical-align: middle; }
+          /* With table-layout: fixed, wrap long content (descriptions, variable
+             tokens) inside the column instead of letting it overflow and break
+             the header alignment. */
+          .cf-page .cf-table td { overflow-wrap: anywhere; word-break: break-word; }
 
           /* Search input — default form-control blended into the dark card.
              Give it a distinct surface + visible border in both themes. */
@@ -423,15 +431,18 @@ export default function HrCustomFields() {
           <Card className="cf-table-card" style={{ borderRadius: 12 }}>
             <CardBody style={{ padding: 0 }}>
               <div className="table-responsive">
-                <table className="table align-middle mb-0 cf-table" style={{ fontSize: 13 }}>
+                {/* table-layout: fixed → column widths are driven by these
+                    header widths, NOT by row content, so switching the Type
+                    filter can't reflow the columns and shift the headers. */}
+                <table className="table align-middle mb-0 cf-table" style={{ fontSize: 13, tableLayout: 'fixed', width: '100%' }}>
                   <thead style={{ background: '#f5f3ff' }}>
                     <tr style={{ fontSize: 11, letterSpacing: 0.4, textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
-                      <th style={{ padding: '10px 12px', width: 44 }}>Sr No</th>
-                      <th>Field Name</th>
-                      <th>Variable</th>
-                      <th>Type</th>
+                      <th style={{ padding: '10px 12px', width: 60 }}>Sr No</th>
+                      <th style={{ width: '19%' }}>Field Name</th>
+                      <th style={{ width: '17%' }}>Variable</th>
+                      <th style={{ width: 110 }}>Type</th>
                       <th>Description</th>
-                      <th>Used In</th>
+                      <th style={{ width: '17%' }}>Used In</th>
                       <th style={{ width: 100 }}>Actions</th>
                     </tr>
                   </thead>
@@ -523,6 +534,7 @@ export default function HrCustomFields() {
           <CustomFieldModal
             initial={editing}
             prefillName={prefillName}
+            existingNames={rows.map(r => r.name)}
             onClose={() => { setModalOpen(false); setEditing(null); setPrefillName(''); }}
             onSave={handleSave}
           />

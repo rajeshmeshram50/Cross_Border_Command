@@ -1835,34 +1835,43 @@ function MasterPageInner({
       `}</style>
 
 
-      {/* Page title — designations gets the rich [icon|title+subtitle][Add] strip;
-          departments is rendered headerless (goes straight into KPI/table);
-          all other masters keep the original [back][title][breadcrumb] layout. */}
+      {/* Page title — EVERY master (except the headerless Departments) now uses
+          the same rich client-style [icon|title+subtitle][Back] strip for a
+          consistent look across all master pages. */}
       {cfg.slug !== 'departments' && (
       <Row>
         <Col xs={12}>
-          {(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets' || cfg.slug === 'legal_entities' || cfg.slug === 'haz_class' || cfg.slug === 'uom' || cfg.slug === 'hsn_codes' || cfg.slug === 'gst_percentage' || cfg.slug === 'packaging_material' || cfg.slug === 'conditions' || cfg.slug === 'segments') ? (
+          {true ? (
             <div
               className="dsn-page-strip d-sm-flex align-items-center justify-content-between flex-wrap gap-3 mb-3"
               style={{
                 padding: '16px 20px',
-                borderRadius: 14,
               }}
             >
               <div className="d-flex align-items-center gap-3 min-w-0">
                 <span
                   className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
                   style={{
+                    position: 'relative',
                     width: 46, height: 46,
-                    background: 'linear-gradient(135deg, #2b3a85 0%, #405189 50%, #6691e7 100%)',
-                    border: '1px solid color-mix(in srgb, #405189 35%, transparent)',
-                    boxShadow: '0 4px 12px rgba(64,81,137,0.32), inset 0 1px 0 rgba(255,255,255,0.18)',
+                    // Violet gradient icon with a green status dot — mirrors the
+                    // Clients header (.cl-cstrip-icon).
+                    background: 'linear-gradient(135deg, #7c3aed, #5b21b6)',
+                    boxShadow: '0 4px 14px rgba(91,33,182,0.40), 0 0 0 3px rgba(124,58,237,0.10)',
                   }}
                 >
                   <i className={cfg.icon} style={{ color: '#ffffff', fontSize: 21 }} />
+                  <span
+                    style={{
+                      position: 'absolute', bottom: -2, right: -2,
+                      width: 11, height: 11, borderRadius: '50%',
+                      background: '#22c55e', border: '2px solid #ffffff',
+                      boxShadow: '0 0 0 1px rgba(34,197,94,0.25), 0 2px 5px rgba(34,197,94,0.45)',
+                    }}
+                  />
                 </span>
                 <div className="min-w-0">
-                  <h4 className="mb-0 fw-bold" style={{ color: 'var(--vz-heading-color, #2b3245)', letterSpacing: '0.01em' }}>
+                  <h4 className="mb-0 fw-bold" style={{ color: 'var(--vz-heading-color, #2e1065)', letterSpacing: '0.01em' }}>
                     {cfg.slug === 'roles' ? 'Role Master'
                       : cfg.slug === 'kpis' ? 'KPI Master'
                       : cfg.slug === 'assets' ? 'Asset Master'
@@ -1899,7 +1908,7 @@ function MasterPageInner({
                       ? 'Manage storage & handling states (Organic, Fresh, Frozen) for products'
                       : cfg.slug === 'segments'
                       ? 'Manage business segments (Dry Fruits, Pharma, etc.) used to classify orders & products'
-                      : 'Manage all job roles, hierarchy levels, and role structure for employees'}
+                      : `Manage ${cfg.title.toLowerCase()} records`}
                   </p>
                 </div>
               </div>
@@ -1912,45 +1921,23 @@ function MasterPageInner({
                   style={{
                     height: 38,
                     padding: '0 18px',
-                    background: 'color-mix(in srgb, #405189 8%, #ffffff)',
-                    color: '#405189',
-                    border: '1px solid color-mix(in srgb, #405189 22%, transparent)',
+                    background: 'color-mix(in srgb, #7c3aed 8%, #ffffff)',
+                    color: '#6d28d9',
+                    border: '1px solid color-mix(in srgb, #7c3aed 30%, transparent)',
                     fontSize: 13,
                     fontWeight: 600,
                     cursor: 'pointer',
                     transition: 'background 0.18s ease',
                     whiteSpace: 'nowrap',
                   }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 14%, #ffffff)'; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 8%, #ffffff)'; }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #7c3aed 14%, #ffffff)'; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #7c3aed 8%, #ffffff)'; }}
                 >
                   <i className="ri-arrow-left-line" style={{ fontSize: 15 }}></i>
                   Back to Master list
                 </button>
-                {caps.add && (
-                  <button
-                    type="button"
-                    onClick={openAdd}
-                    className="d-inline-flex align-items-center justify-content-center gap-2 rounded-pill border-0"
-                    style={{
-                      height: 38,
-                      padding: '0 20px',
-                      background: 'linear-gradient(120deg, #405189 0%, #6691e7 100%)',
-                      color: '#ffffff',
-                      fontSize: 13,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                      boxShadow: '0 4px 12px rgba(64,81,137,0.28)',
-                      transition: 'transform .18s ease, box-shadow .18s ease',
-                    }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 6px 16px rgba(64,81,137,0.36)'; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 12px rgba(64,81,137,0.28)'; }}
-                  >
-                    <i className="ri-add-line" style={{ fontSize: 16 }}></i>
-                    Add {singular}
-                  </button>
-                )}
+                {/* Add button moved to the search/filter row (right corner) for
+                    every master — see the search Row below. */}
               </div>
             </div>
           ) : (
@@ -1989,58 +1976,57 @@ function MasterPageInner({
         />
       )}
 
-      {/* KPI strip — only when the master config opts in via `kpis` */}
+      {/* KPI strip — only when the master config opts in via `kpis`.
+          Flex row (flex:1 per tile) so ANY number of KPIs always fills the
+          full width evenly — Bootstrap Col spans left a gap when the count
+          didn't divide into 12 (e.g. 5 KPIs → 10/12 cols). Wraps on small
+          screens via flex-wrap + min-width. */}
       {cfg.kpis && cfg.kpis.length > 0 && (
-        <Row className="g-2 mb-3 align-items-stretch">
+        <div className="d-flex flex-wrap align-items-stretch mb-3" style={{ gap: 16 }}>
           {cfg.kpis.map(k => {
             const value = k.compute(records);
-            // Pick xl span so the KPI strip fills the row regardless of how
-            // many tiles the master declared: 3 KPIs → xl=4, 4 → xl=3,
-            // 6 → xl=2. Clamped to [2, 4] so tiny / huge KPI counts still
-            // look reasonable.
-            const xl = Math.min(4, Math.max(2, Math.floor(12 / cfg.kpis!.length)));
             return (
-              <Col key={k.label} xl={xl} md={4} sm={6} xs={12}>
-                <div
-                  className="mp-kpi-tile"
-                  style={{
-                    borderRadius: 12,
-                    border: '1px solid var(--vz-border-color)',
-                    background: '#ffffff',
-                    boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
-                    padding: '14px 16px',
-                    position: 'relative',
-                    overflow: 'hidden',
-                    height: '100%',
-                  }}
-                >
-                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
-                  <div className="d-flex align-items-center justify-content-between">
-                    <div>
-                      <p style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 6px' }}>
-                        {k.label}
-                      </p>
-                      <h3 style={{ fontSize: 22, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
-                        {value.toLocaleString()}
-                      </h3>
-                    </div>
-                    <div
-                      style={{
-                        width: 38, height: 38, borderRadius: 10,
-                        background: k.gradient,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        flexShrink: 0,
-                        boxShadow: '0 4px 10px rgba(0,0,0,0.10)',
-                      }}
-                    >
-                      <i className={k.icon} style={{ fontSize: 18, color: '#fff' }} />
-                    </div>
+              <div
+                key={k.label}
+                className="mp-kpi-tile"
+                style={{
+                  flex: '1 1 0',
+                  minWidth: 180,
+                  borderRadius: 12,
+                  border: '1px solid var(--vz-border-color)',
+                  background: '#ffffff',
+                  boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
+                  padding: '14px 16px',
+                  position: 'relative',
+                  overflow: 'hidden',
+                }}
+              >
+                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
+                <div className="d-flex align-items-center justify-content-between">
+                  <div>
+                    <p style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 6px' }}>
+                      {k.label}
+                    </p>
+                    <h3 style={{ fontSize: 22, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
+                      {value.toLocaleString()}
+                    </h3>
+                  </div>
+                  <div
+                    style={{
+                      width: 38, height: 38, borderRadius: 10,
+                      background: k.gradient,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
+                      boxShadow: '0 4px 10px rgba(0,0,0,0.10)',
+                    }}
+                  >
+                    <i className={k.icon} style={{ fontSize: 18, color: '#fff' }} />
                   </div>
                 </div>
-              </Col>
+              </div>
             );
           })}
-        </Row>
+        </div>
       )}
 
       {/* Main card — search + Add New row, then table */}
@@ -2125,18 +2111,33 @@ function MasterPageInner({
                       setPriorityFilter={setKpiPriorityFilter}
                     />
                   )}
-                  {/* Add button — shown here for non-rich masters; designations,
-                      roles, kpis, assets, legal_entities, haz_class & departments
-                      host their Add button in the rich page header instead. */}
-                  {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'legal_entities' && cfg.slug !== 'haz_class' && cfg.slug !== 'uom' && cfg.slug !== 'hsn_codes' && cfg.slug !== 'gst_percentage' && cfg.slug !== 'packaging_material' && cfg.slug !== 'conditions' && cfg.slug !== 'segments' && cfg.slug !== 'departments' && caps.add && (
-                    <Button
-                      color="secondary"
-                      className="btn-label waves-effect waves-light rounded-pill"
+                  {/* Add button — lives in this search/filter row (right corner)
+                      for EVERY master. Departments is the exception: it hosts its
+                      Add in the WhatYouDoHere header strip. Violet gradient pill
+                      matches the client-style page header. */}
+                  {cfg.slug !== 'departments' && caps.add && (
+                    <button
+                      type="button"
                       onClick={openAdd}
+                      className="d-inline-flex align-items-center justify-content-center gap-2 rounded-pill border-0"
+                      style={{
+                        height: 38,
+                        padding: '0 20px',
+                        background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 45%, #6d28d9 100%)',
+                        color: '#ffffff',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        boxShadow: '0 5px 16px rgba(124,58,237,0.40), 0 2px 5px rgba(91,33,182,0.25)',
+                        transition: 'transform .18s ease, box-shadow .18s ease, filter .18s ease',
+                      }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLButtonElement).style.filter = 'brightness(1.05)'; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLButtonElement).style.filter = 'none'; }}
                     >
-                      <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                      <i className="ri-add-line" style={{ fontSize: 16 }}></i>
                       Add {singular}
-                    </Button>
+                    </button>
                   )}
                 </Col>
               </Row>
@@ -4321,10 +4322,9 @@ function renderField(
         maxLength={maxLength}
         min={numMin}
         max={numMax}
-        inputMode={f.t === 'number' ? 'numeric' : undefined}
-        // Numeric-only text fields (HSN/SAC) get the on-screen numeric
-        // keypad on mobile + a hint to the browser's autofill heuristics.
-        inputMode={isNumericOnly ? 'numeric' : undefined}
+        // Number fields and numeric-only text fields (HSN/SAC) get the on-screen
+        // numeric keypad on mobile + a hint to the browser's autofill heuristics.
+        inputMode={(f.t === 'number' || isNumericOnly) ? 'numeric' : undefined}
         // `key` forces a remount when the auto-generated value changes between
         // opens of the Add modal so React picks up the new defaultValue.
         key={isAutogen ? autogenVal : undefined}

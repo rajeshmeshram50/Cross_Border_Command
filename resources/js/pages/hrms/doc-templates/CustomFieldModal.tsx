@@ -27,10 +27,14 @@ export interface CustomFieldInitial {
 export default function CustomFieldModal(props: {
   initial: CustomFieldInitial | null;
   prefillName?: string;
+  // Names of existing fields — used for instant, inline duplicate detection so
+  // the "already exists" warning renders under the Field Name input rather than
+  // arriving as a top-right toast after a server round-trip.
+  existingNames?: string[];
   onClose: () => void;
   onSave: (row: CustomFieldFormPayload) => void | Promise<void>;
 }) {
-  const { initial, prefillName, onClose, onSave } = props;
+  const { initial, prefillName, existingNames = [], onClose, onSave } = props;
 
   const [name, setName]               = useState(initial?.name || prefillName || '');
   const [type, setType]               = useState<CustomFieldType>(initial?.type || 'text');
@@ -48,10 +52,18 @@ export default function CustomFieldModal(props: {
 
   const validate = (): boolean => {
     const e: Record<string, string> = {};
-    if (!name.trim()) {
+    const trimmed = name.trim();
+    if (!trimmed) {
       e.name = 'Field name is required';
-    } else if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name.trim())) {
+    } else if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) {
       e.name = 'No spaces — use PascalCase (e.g. LastWorkingDate)';
+    } else if (
+      // Case-insensitive duplicate check, excluding the field being edited so
+      // re-saving an unchanged name doesn't false-positive.
+      existingNames.some(n => n.trim().toLowerCase() === trimmed.toLowerCase()
+        && n.trim().toLowerCase() !== (initial?.name || '').trim().toLowerCase())
+    ) {
+      e.name = 'A field with this name already exists';
     }
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -71,6 +83,11 @@ export default function CustomFieldModal(props: {
         description: description.trim(),
         used_in_hint: usedInHint.trim(),
       });
+    } catch (err: any) {
+      // A server-side rejection (e.g. the unique constraint racing the
+      // client-side check) is surfaced inline under Field Name, not as a
+      // toast — keeps the modal open with the warning where the user is looking.
+      setErrors(prev => ({ ...prev, name: err?.message || 'A field with this name already exists' }));
     } finally {
       setSaving(false);
     }

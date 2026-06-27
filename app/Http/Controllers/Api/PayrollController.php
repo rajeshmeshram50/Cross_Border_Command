@@ -106,6 +106,31 @@ class PayrollController extends Controller
         return [$month, $year];
     }
 
+    /**
+     * Bug #22 guard — payroll for a period must not be generated/processed
+     * before that period has begun. A future cycle (e.g. July while it is still
+     * June) has no attendance to draw from, so generating it produces a bogus
+     * fully-LOP'd run. Viewing a future cycle is fine; only the mutating
+     * generate/finalize actions are blocked.
+     *
+     * Returns a 422 JsonResponse to short-circuit the caller, or null when the
+     * period is current/past and processing may proceed.
+     */
+    private function guardPeriodStarted(PayrollPeriod $period): ?\Illuminate\Http\JsonResponse
+    {
+        $start = $period->period_start instanceof Carbon
+            ? $period->period_start->copy()
+            : Carbon::parse($period->period_start);
+
+        if ($start->startOfDay()->isFuture()) {
+            return response()->json([
+                'message' => "Payroll for {$period->label} cannot be processed before the period begins on {$start->format('d M Y')}.",
+            ], 422);
+        }
+
+        return null;
+    }
+
     /* ───────────────────────── cycles ────────────────────────── */
 
     /** Trailing 13-month strip (existing periods + synthesised placeholders). */
@@ -117,6 +142,17 @@ class PayrollController extends Controller
             ->when($ctx['branch_id'], fn ($q) => $q->where('branch_id', $ctx['branch_id']))
             ->get()
             ->keyBy(fn ($p) => $p->year . '-' . $p->month);
+
+        // Batch-load the latest run per period in ONE query instead of querying
+        // runs() per period inside the loop (N+1). cycleDisplayStatus only needs
+        // the most-recent run's status, so group by period and keep the top id.
+        // (Mirrors the pattern already used by history().)
+        $latestRuns = $periods->isEmpty()
+            ? collect()
+            : PayrollRun::whereIn('payroll_period_id', $periods->pluck('id'))
+                ->get()
+                ->groupBy('payroll_period_id')
+                ->map(fn ($g) => $g->sortByDesc('id')->first());
 
         $out = [];
         $cursor = now()->startOfMonth()->subMonths(11);
@@ -130,17 +166,16 @@ class PayrollController extends Controller
                 'range'  => $cursor->copy()->startOfMonth()->format('d M') . '–' . $cursor->copy()->endOfMonth()->format('d M'),
                 'month'  => $m,
                 'year'   => $y,
-                'status' => $this->cycleDisplayStatus($existing, $cursor),
+                'status' => $this->cycleDisplayStatus($existing, $cursor, $existing ? $latestRuns->get($existing->id) : null),
             ];
             $cursor->addMonth();
         }
         return response()->json(['data' => $out]);
     }
 
-    private function cycleDisplayStatus(?PayrollPeriod $period, Carbon $cursor): string
+    private function cycleDisplayStatus(?PayrollPeriod $period, Carbon $cursor, ?PayrollRun $run = null): string
     {
         if ($period) {
-            $run = $period->runs()->latest('id')->first();
             // A finished cycle is COMPLETED. Full disbursement both flips the run
             // to 'paid' AND locks the period — checking the locked period (not
             // just the latest run) keeps a settled month showing Completed even
@@ -285,6 +320,7 @@ class PayrollController extends Controller
         $ctx = $this->ctx($request);
         if ($scopeErr = $this->requireScope($ctx)) return $scopeErr;
         $period = $this->payroll->resolveOrCreatePeriod($ctx, $month, $year);
+        if ($futureErr = $this->guardPeriodStarted($period)) return $futureErr;
 
         if ($period->status === 'locked') {
             return response()->json(['message' => 'Period is locked.'], 422);
@@ -396,6 +432,7 @@ class PayrollController extends Controller
         $ctx = $this->ctx($request);
         if ($scopeErr = $this->requireScope($ctx)) return $scopeErr;
         $period = $this->payroll->resolveOrCreatePeriod($ctx, $month, $year);
+        if ($futureErr = $this->guardPeriodStarted($period)) return $futureErr;
 
         try {
             $run = $this->payroll->generate($period, $ctx);

@@ -33,9 +33,12 @@ class EmployeeController extends Controller
         'client:id,org_name',
         'branch:id,name',
         'creator:id,name,user_type',
-        'user:id,name,email,status,last_login_at',
+        'user:id,name,email,status,last_login_at,user_type,designation',
         'department:id,name,code',
-        'designation:id,name',
+        // `level` mirrors the 6 canonical role tiers (Director/CEO … Intern)
+        // — the HR document-template generator filters its recipient list by
+        // designation.level === template.role_type, so it must be selected.
+        'designation:id,name,level',
         'holidayGroup:id,name',
         'primaryRole:id,name',
         'ancillaryRole:id,name',
@@ -204,10 +207,22 @@ class EmployeeController extends Controller
             // not an encrypted token — fall through.
         }
 
-        // Legacy URL fallback: callers (and bookmarks) sometimes still
-        // pass the plain emp_code (e.g. EMP-001). Resolve that to a
-        // numeric id; tenant scope is enforced downstream by resolveRow.
-        $byEmpCode = Employee::where('emp_code', $raw)->value('id');
+        // Legacy URL fallback: callers (and bookmarks) sometimes still pass the
+        // plain emp_code (e.g. EMP-001). emp_codes are allocated sequentially
+        // PER TENANT, so the SAME code can exist in another client — an unscoped
+        // lookup would return whichever row sorts first (often a different
+        // tenant's employee). That stray id then fails the tenant-scoped
+        // findOrFail in resolveRow with "No query results for Employee N"
+        // (e.g. password reset on a newly-onboarded employee). Scope the lookup
+        // to the caller's own tenant; super-admins resolve across tenants.
+        $user = request()->user();
+        $q = Employee::withTrashed()->where('emp_code', $raw);
+        if ($user && $user->user_type !== 'super_admin') {
+            $q->where(function ($w) use ($user) {
+                $w->whereNull('client_id')->orWhere('client_id', $user->client_id);
+            });
+        }
+        $byEmpCode = $q->value('id');
         return (int) ($byEmpCode ?? 0);
     }
 
@@ -933,7 +948,15 @@ class EmployeeController extends Controller
         $row = $this->resolveRow($request, (int) $id);
         $this->guardHierarchicalAction($request->user(), $row, 'delete');
 
-        if (!$row->trashed()) {
+        // Only block a genuinely-ACTIVE employee. "Disabled" can mean either
+        // soft-deleted (toggle/destroy) OR a status of Inactive/Terminated/
+        // Resigned (set via the edit form or Exit Management) — all of which the
+        // frontend shows in the Disabled tab. Any of those are deletable here;
+        // a still-active employee must be disabled first to avoid a misclick.
+        $status = strtolower((string) $row->status);
+        $isDisabled = $row->trashed()
+            || in_array($status, ['inactive', 'terminated', 'resigned'], true);
+        if (!$isDisabled) {
             return response()->json([
                 'message' => 'This employee is still active. Disable them first, then delete.',
             ], 422);
@@ -1156,7 +1179,15 @@ class EmployeeController extends Controller
         $cap = (int) ($branch->max_users ?? 0);
         if ($cap <= 0) return; // 0 / null → unlimited
 
-        $current = User::where('branch_id', $branchId)->count();
+        // Count only ACTIVE login accounts against the cap. Deleting an employee
+        // keeps their user row but flips it to 'inactive' (so audit logs /
+        // permissions don't go dangling) — those freed-up seats must NOT keep
+        // occupying the branch's user limit. Null status counts as active.
+        $current = User::where('branch_id', $branchId)
+            ->where(function ($q) {
+                $q->whereNull('status')->orWhere('status', '!=', 'inactive');
+            })
+            ->count();
         if ($current >= $cap) {
             throw ValidationException::withMessages([
                 'email' => [

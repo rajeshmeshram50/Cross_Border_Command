@@ -177,7 +177,7 @@ interface OverviewData {
     expense_status: { approved: number; pending: number; rejected: number };
     total_claimed: number;
     expense_trend: Array<{ month: string; amount: number }>;
-    attendance: { month: string; present: number; leave: number; absent: number; half_day: number; total: number } | null;
+    attendance: { month: string; present: number; leave: number; absent: number; half_day: number; total: number; working_days?: number } | null;
     leave_by_type: Array<{ type: string; days: number }>;
     leave_status: { approved: number; pending: number; rejected: number };
   };
@@ -195,6 +195,20 @@ function fmtDateShort(s: string | null): string {
   try {
     return new Date(s + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
   } catch { return s; }
+}
+
+// True when the date falls on the current local calendar day — drives the
+// "NEW" pill, which only flags announcements released today. created_at arrives
+// as a date-only string (YYYY-MM-DD); appending T00:00:00 parses it at LOCAL
+// midnight (same as the fmtDate helpers) so the comparison is timezone-safe.
+function isToday(s: string | null): boolean {
+  if (!s) return false;
+  const d = new Date((s.includes('T') ? s : s + 'T00:00:00'));
+  if (isNaN(d.getTime())) return false;
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear()
+    && d.getMonth() === now.getMonth()
+    && d.getDate() === now.getDate();
 }
 
 const STATUS_PILL: Record<string, { bg: string; fg: string }> = {
@@ -573,7 +587,7 @@ export default function EmployeeDashboard() {
                   engaging feel instead of just a name banner. */}
               {(() => {
                 const chips = [
-                  att && att.total > 0 ? { icon: 'ri-calendar-check-line', text: `${Math.round((att.present / att.total) * 100)}% present` } : null,
+                  att && (att.working_days ?? 0) > 0 ? { icon: 'ri-calendar-check-line', text: `${Math.min(100, Math.round((att.present / (att.working_days as number)) * 100))}% present` } : null,
                   analytics.total_claimed > 0 ? { icon: 'ri-bill-line', text: `${formatINRCompact(analytics.total_claimed)} claimed` } : null,
                   kpis.team_size > 0 ? { icon: 'ri-team-line', text: `${kpis.team_size} in team` } : null,
                   kpis.days_since_joining != null ? { icon: 'ri-time-line', text: `${kpis.days_since_joining} days here` } : null,
@@ -731,30 +745,12 @@ export default function EmployeeDashboard() {
                   </div>
                 </div>
               </Col>
-              <Col xs={6} md={3}>
+              <Col xs={12} md={9} className="text-md-end">
                 <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 600, marginBottom: 2 }}>Annual</div>
                 <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
                   {formatINRCompact(compensation.annual_salary)}
                 </div>
               </Col>
-              {compensation.salary_frequency && (
-                <Col xs={6} md={2}>
-                  <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 600, marginBottom: 2 }}>Frequency</div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{compensation.salary_frequency}</div>
-                </Col>
-              )}
-              {compensation.salary_structure && (
-                <Col xs={6} md={2}>
-                  <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 600, marginBottom: 2 }}>Structure</div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{compensation.salary_structure}</div>
-                </Col>
-              )}
-              {compensation.tax_regime && (
-                <Col xs={6} md={2}>
-                  <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 600, marginBottom: 2 }}>Tax Regime</div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{compensation.tax_regime}</div>
-                </Col>
-              )}
             </Row>
           </CardBody>
         </Card>
@@ -960,7 +956,16 @@ export default function EmployeeDashboard() {
                 announcements.map(a => (
                   <div key={a.id} style={{ padding: '14px 18px', borderBottom: '1px solid var(--vz-border-color)' }}>
                     <div className="d-flex align-items-start justify-content-between gap-2 mb-1">
-                      <div className="fw-semibold" style={{ fontSize: 13.5, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{a.title}</div>
+                      <div className="d-flex align-items-center gap-2 min-w-0">
+                        <div className="fw-semibold" style={{ fontSize: 13.5, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{a.title}</div>
+                        {isToday(a.created_at) && (
+                          <span style={{
+                            flexShrink: 0, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.04em',
+                            padding: '2px 7px', borderRadius: 999, lineHeight: 1.4,
+                            background: '#3577f1', color: '#fff', textTransform: 'uppercase',
+                          }}>New</span>
+                        )}
+                      </div>
                       {a.created_at && (
                         <span style={{ fontSize: 11, color: 'var(--vz-secondary-color)', whiteSpace: 'nowrap', flexShrink: 0 }}>
                           {fmtDateShort(a.created_at)}

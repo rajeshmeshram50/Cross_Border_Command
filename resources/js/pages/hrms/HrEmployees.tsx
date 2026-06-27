@@ -34,7 +34,7 @@ const PROBATION_POLICY_OPTIONS = [
   { value: CUSTOM_PROBATION_VALUE, label: 'Set Custom Probation…' },
 ];
 const NOTICE_PERIOD_OPTIONS = [
-  ...['Default Notice Period','15 Days','30 Days','60 Days','90 Days']
+  ...['15 Days','30 Days','60 Days','90 Days']
     .map(n => ({ value: n, label: n })),
   { value: CUSTOM_NOTICE_VALUE, label: 'Set Custom Notice Period…' },
 ];
@@ -610,8 +610,6 @@ export default function HrEmployees() {
   const [eShift, setEShift]                      = useState('');
   const [eWeeklyOff, setEWeeklyOff]              = useState('');
   const [eAttendanceNumber, setEAttendanceNumber]= useState('');
-  const [eTimeTracking, setETimeTracking]        = useState('');
-  const [ePenalizationPolicy, setEPenalizationPolicy] = useState('');
   const [eOvertime, setEOvertime]                = useState('');
   const [eExpensePolicy, setEExpensePolicy]      = useState('');
   const [eLaptopAssigned, setELaptopAssigned]    = useState('No');
@@ -786,8 +784,6 @@ export default function HrEmployees() {
   const [eAnnualSalary, setEAnnualSalary]        = useState('');
   const [eSalaryFreq, setESalaryFreq]            = useState('');
   const [eSalaryFrom, setESalaryFrom]            = useState('');
-  const [eSalaryStructure, setESalaryStructure]  = useState('');
-  const [eTaxRegime, setETaxRegime]              = useState('');
   const [eBonusInAnnual, setEBonusInAnnual]      = useState(false);
   const [ePfEligible, setEPfEligible]            = useState(false);
   const [eDetailedBreakup, setEDetailedBreakup]  = useState(false);
@@ -819,7 +815,6 @@ export default function HrEmployees() {
     setELeavePlan(''); setEHolidayList('');
     setEAttendanceTracking(true); setEShift('');
     setEWeeklyOff(''); setEAttendanceNumber('');
-    setETimeTracking(''); setEPenalizationPolicy('');
     setEOvertime(''); setEExpensePolicy('');
     setELaptopAssigned('No'); setELaptopAssetId(''); setEMobileDevice(''); setEOtherAssets('');
     setELaptopMasterAssetId(''); setEMobileAssigned('No'); setEMobileMasterAssetId(''); setEOtherMasterAssetIds([]);
@@ -827,7 +822,6 @@ export default function HrEmployees() {
     setEExistingDocs({}); setEDocBusy({});
     setEEnablePayroll(true); setEPayGroup('');
     setEAnnualSalary(''); setESalaryFreq(''); setESalaryFrom('');
-    setESalaryStructure(''); setETaxRegime('');
     setEBonusInAnnual(false); setEPfEligible(false); setEDetailedBreakup(false);
     setEEarnings([]); setEDeductions([]); setEEsiApplicable(false); setEPtApplicable(true);
     setEBreakupLoading(false);
@@ -941,6 +935,15 @@ export default function HrEmployees() {
       form = 'Add at least one earning component with a positive amount';
     } else if (breakupDed > breakupGross) {
       form = 'Total deductions cannot exceed the monthly gross';
+    } else {
+      // Code on Wages, 2019: "wages" (Basic + DA) must be at least 50% of the
+      // total remuneration. The auto-split already seeds Basic at 50%; this only
+      // trips if Basic is manually skewed below the legal floor. A ₹1 slack
+      // absorbs the rounding on a clean 50% split so it never false-positives.
+      const basic = Number(eEarnings.find(c => c.code === 'basic')?.amount ?? 0) || 0;
+      if (basic > 0 && basic + 1 < breakupGross * 0.5) {
+        form = 'Basic Salary must be at least 50% of the monthly gross (Code on Wages, 2019).';
+      }
     }
     return { earnings, deductions, form };
   }, [eDetailedBreakup, eEarnings, eDeductions, breakupGross, breakupDed]);
@@ -1227,7 +1230,10 @@ export default function HrEmployees() {
       const savedActual = [raw.first_name, raw.middle_name, raw.last_name]
         .filter(Boolean).join(' ').trim() || raw.display_name || row.name;
       setEActualName(savedActual);
-      setEActualNameLocked(true);
+      // Editable when editing an existing employee too (not locked). Marked as
+      // "touched" so typing in First/Middle/Last name won't silently overwrite
+      // the saved value — the HR user edits the actual name directly.
+      setEActualNameLocked(false);
       setEActualNameTouched(true);
       setEWorkEmail(raw.email || '');
       setEMobile(raw.mobile || '');
@@ -1298,8 +1304,6 @@ export default function HrEmployees() {
       if (raw.shift !== undefined && raw.shift !== null) setEShift(raw.shift);
       if (raw.weekly_off !== undefined && raw.weekly_off !== null) setEWeeklyOff(raw.weekly_off);
       if (raw.attendance_number !== undefined && raw.attendance_number !== null) setEAttendanceNumber(raw.attendance_number);
-      if (raw.time_tracking !== undefined && raw.time_tracking !== null) setETimeTracking(raw.time_tracking);
-      if (raw.penalization_policy !== undefined && raw.penalization_policy !== null) setEPenalizationPolicy(raw.penalization_policy);
       if (raw.overtime !== undefined && raw.overtime !== null) setEOvertime(raw.overtime);
       if (raw.expense_policy !== undefined && raw.expense_policy !== null) setEExpensePolicy(raw.expense_policy);
       if (raw.laptop_assigned !== undefined && raw.laptop_assigned !== null) setELaptopAssigned(raw.laptop_assigned);
@@ -1318,8 +1322,6 @@ export default function HrEmployees() {
       if (raw.annual_salary !== undefined && raw.annual_salary !== null) setEAnnualSalary(String(raw.annual_salary));
       if (raw.salary_frequency !== undefined && raw.salary_frequency !== null) setESalaryFreq(raw.salary_frequency);
       if (raw.salary_effective_from) setESalaryFrom(String(raw.salary_effective_from).slice(0, 10));
-      if (raw.salary_structure !== undefined && raw.salary_structure !== null) setESalaryStructure(raw.salary_structure);
-      if (raw.tax_regime !== undefined && raw.tax_regime !== null) setETaxRegime(raw.tax_regime);
       if (raw.bonus_in_annual !== undefined && raw.bonus_in_annual !== null) setEBonusInAnnual(!!raw.bonus_in_annual);
       if (raw.pf_eligible !== undefined && raw.pf_eligible !== null) setEPfEligible(!!raw.pf_eligible);
       if (raw.detailed_breakup !== undefined && raw.detailed_breakup !== null) setEDetailedBreakup(!!raw.detailed_breakup);
@@ -1425,6 +1427,7 @@ export default function HrEmployees() {
     if (!eDept)            e.department_id     = 'Department is required';
     if (!eDesignation)     e.designation_id    = 'Designation is required';
     if (!ePrimaryRole)     e.primary_role_id   = 'Primary role is required';
+    if (!eWorkType)        e.work_type         = 'Work type is required';
     if (!eLegalEntity)     e.legal_entity_id   = 'Legal entity is required';
     if (!eReportingMgr)    e.reporting_manager_id = 'Reporting manager is required';
     if (!eProbationPolicy) e.probation_policy  = 'Probation policy is required';
@@ -1436,7 +1439,7 @@ export default function HrEmployees() {
       e.notice_period = 'Please describe the custom notice period';
     }
     return e;
-  }, [eJoinDate, eDept, eDesignation, ePrimaryRole, eLegalEntity, eReportingMgr,
+  }, [eJoinDate, eDept, eDesignation, ePrimaryRole, eWorkType, eLegalEntity, eReportingMgr,
       eProbationPolicy, eCustomProbation, eNoticePeriod, eCustomNotice]);
 
   const validateStep3 = useCallback((): Record<string, string> => {
@@ -1451,8 +1454,6 @@ export default function HrEmployees() {
     }
     if (!eShift)              e.shift               = 'Shift is required';
     if (!eWeeklyOff)          e.weekly_off          = 'Weekly off is required';
-    if (!eTimeTracking)       e.time_tracking       = 'Time tracking policy is required';
-    if (!ePenalizationPolicy) e.penalization_policy = 'Penalization policy is required';
     if (!eExpensePolicy)      e.expense_policy      = 'Expense policy is required';
 
     if (!eAadharFile && !existing['aadhaar']) {
@@ -1469,7 +1470,7 @@ export default function HrEmployees() {
     }
     return e;
   }, [eAadharFile, ePanFile, eLaptopAssigned, eLaptopMasterAssetId, eMobileAssigned, eMobileMasterAssetId,
-      leavePlanOptions, holidayGroupOptions, eLeavePlan, eHolidayList, eShift, eWeeklyOff, eTimeTracking, ePenalizationPolicy, eExpensePolicy]);
+      leavePlanOptions, holidayGroupOptions, eLeavePlan, eHolidayList, eShift, eWeeklyOff, eExpensePolicy]);
 
   const salaryEffectiveCap = useMemo(() => {
     if (!eJoinDate) return '';
@@ -1484,12 +1485,12 @@ export default function HrEmployees() {
     if (!eEnablePayroll) return e;
     const amt = Number(eAnnualSalary);
     if (eAnnualSalary === '' || !Number.isFinite(amt) || amt <= 0) {
-      e.annual_salary = 'Annual salary is required';
+      e.annual_salary = 'Salary amount is required';
     } else if (amt > 999999999999.99) {
-      e.annual_salary = 'Annual salary must be ≤ 999,999,999,999.99';
+      e.annual_salary = 'Salary amount must be ≤ 999,999,999,999.99';
     }
     if (!eSalaryFreq) {
-      e.salary_frequency = 'Salary frequency is required';
+      e.salary_frequency = 'Frequency is required';
     }
     if (!eSalaryFrom) {
       e.salary_effective_from = 'Effective-from date is required';
@@ -1516,7 +1517,7 @@ export default function HrEmployees() {
     const STEP_KEYS: Array<{ step: 1 | 2 | 3 | 4; keys: Set<string> }> = [
       { step: 1, keys: new Set(['work_country_id','first_name','middle_name','last_name','display_name','actual_name','gender','date_of_birth','nationality_country_id','email','mobile','address_line1','city','country_id','state_id','pincode']) },
       { step: 2, keys: new Set(['date_of_joining','department_id','designation_id','primary_role_id','legal_entity_id','probation_policy','notice_period']) },
-      { step: 3, keys: new Set(['leave_plan','holiday_list','shift','weekly_off','time_tracking','penalization_policy','expense_policy','doc_aadhaar','doc_pan','laptop_master_asset_id','mobile_master_asset_id']) },
+      { step: 3, keys: new Set(['leave_plan','holiday_list','shift','weekly_off','expense_policy','doc_aadhaar','doc_pan','laptop_master_asset_id','mobile_master_asset_id']) },
       { step: 4, keys: new Set(['annual_salary','salary_frequency','salary_effective_from','salary_breakup']) },
     ];
     for (const s of STEP_KEYS) {
@@ -1586,8 +1587,6 @@ export default function HrEmployees() {
       shift:                eShift || null,
       weekly_off:           eWeeklyOff || null,
       attendance_number:    eAttendanceNumber.trim() || null,
-      time_tracking:        eTimeTracking || null,
-      penalization_policy:  ePenalizationPolicy || null,
       overtime:             eOvertime || null,
       expense_policy:       eExpensePolicy || null,
       laptop_assigned:      eLaptopAssigned || null,
@@ -1603,8 +1602,6 @@ export default function HrEmployees() {
       annual_salary:         eAnnualSalary === '' ? null : Number(eAnnualSalary),
       salary_frequency:      eSalaryFreq || null,
       salary_effective_from: eSalaryFrom || null,
-      salary_structure:      eSalaryStructure || null,
-      tax_regime:            eTaxRegime || null,
       bonus_in_annual:       !!eBonusInAnnual,
       pf_eligible:           !!ePfEligible,
       detailed_breakup:      !!eDetailedBreakup,
@@ -1988,7 +1985,7 @@ export default function HrEmployees() {
       <Row>
         <Col xs={12}>
           <div className="hr-employees-surface" style={{ background: 'transparent' }}>
-            <div className="frm-cstrip mb-3">
+            <div className="frm-cstrip mb-2">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
                 <div className="frm-cstrip-icon"><i className="ri-team-line" /></div>
@@ -2024,7 +2021,7 @@ export default function HrEmployees() {
               </div>
             </div>
 
-            <Row className="g-2 mb-0 align-items-stretch">
+            <Row className="g-3 mb-3 align-items-stretch">
               {KPI_CARDS.map(k => (
                 <Col key={k.key} xl md={4} sm={6} xs={12}>
                   <div
@@ -2032,26 +2029,26 @@ export default function HrEmployees() {
                     style={{
                       borderRadius: 14,
                       border: '1px solid var(--vz-border-color)',
-                      padding: '16px 18px',
+                      padding: '11px 15px',
                       position: 'relative',
                       overflow: 'hidden',
                       ['--card-accent' as any]: k.accent,
                     }}
                   >
                     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
-                      <div className="min-w-0">
-                        <p className="hr-emp-kpi-label" style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, height: '100%' }}>
+                      <div className="min-w-0" style={{ flex: 1, minWidth: 0 }}>
+                        <p className="hr-emp-kpi-label" style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.05em', textTransform: 'uppercase', margin: '0 0 8px' }}>
                           {k.label}
                         </p>
-                        <h3 className="hr-emp-kpi-value" style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
+                        <h3 className="hr-emp-kpi-value" style={{ fontSize: 24, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
                           {loadingEmployees
-                            ? <Shimmer height={26} width={64} />
+                            ? <Shimmer height={24} width={56} />
                             : <AnimatedNumber value={(counts as any)[k.key]} />}
                         </h3>
                       </div>
-                      <div className="hr-emp-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
-                        <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
+                      <div className="hr-emp-kpi-icon" style={{ width: 38, height: 38, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
+                        <i className={k.icon} style={{ fontSize: 18, color: '#fff' }} />
                       </div>
                     </div>
                   </div>
@@ -3298,7 +3295,8 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Work Type<span className="req">*</span></label>
-                      <MasterSelect value={eWorkType} onChange={setEWorkType} options={WORK_TYPE_OPTIONS} placeholder="Select work type" />
+                      <MasterSelect value={eWorkType} onChange={(v) => { setEWorkType(v); clearEErr('work_type'); }} options={WORK_TYPE_OPTIONS} placeholder="Select work type" invalid={!!eErrors.work_type} />
+                      {eErrors.work_type && <small className="emp-err">{eErrors.work_type}</small>}
                     </Col>
                   </Row>
                 </div>
@@ -3409,40 +3407,6 @@ export default function HrEmployees() {
                       {eErrors.holiday_list && <small className="emp-err">{eErrors.holiday_list}</small>}
                     </Col>
                     <Col md={6}>
-                      <label className="emp-label">Attendance Tracking</label>
-                      <div
-                        className="d-flex align-items-center justify-content-between emp-input"
-                        style={{ height: 38, cursor: 'pointer' }}
-                        onClick={() => setEAttendanceTracking(v => !v)}
-                      >
-                        <span className="emp-attn-text" style={{ fontSize: 13 }}>
-                          {eAttendanceTracking ? 'Enabled' : 'Disabled'}
-                        </span>
-                        <button
-                          type="button"
-                          aria-pressed={eAttendanceTracking}
-                          onClick={(e) => { e.stopPropagation(); setEAttendanceTracking(v => !v); }}
-                          className="btn p-0 border-0 d-inline-flex align-items-center"
-                          style={{
-                            width: 36, height: 20, borderRadius: 999,
-                            background: eAttendanceTracking ? '#7c5cfc' : '#e5e7eb',
-                            position: 'relative',
-                            transition: 'background .15s ease',
-                          }}
-                        >
-                          <span
-                            style={{
-                              width: 14, height: 14, borderRadius: '50%',
-                              background: '#fff',
-                              boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-                              position: 'absolute', top: 3,
-                              left: eAttendanceTracking ? 19 : 3, transition: 'left .15s ease',
-                            }}
-                          />
-                        </button>
-                      </div>
-                    </Col>
-                    <Col md={6}>
                       <label className="emp-label">Shift<span className="req">*</span></label>
                       <MasterSelect value={eShift} onChange={(v) => { setEShift(v); clearEErr('shift'); }} options={SHIFT_OPTIONS} placeholder="Select shift" invalid={!!eErrors.shift} />
                       {eErrors.shift && <small className="emp-err">{eErrors.shift}</small>}
@@ -3463,16 +3427,6 @@ export default function HrEmployees() {
                         onChange={e => setEAttendanceNumber(e.target.value.replace(/\D/g, ''))}
                         maxLength={20}
                       />
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Time Tracking Policy<span className="req">*</span></label>
-                      <MasterSelect value={eTimeTracking} onChange={(v) => { setETimeTracking(v); clearEErr('time_tracking'); }} options={TIME_TRACKING_OPTIONS} placeholder="Select time tracking" invalid={!!eErrors.time_tracking} />
-                      {eErrors.time_tracking && <small className="emp-err">{eErrors.time_tracking}</small>}
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Penalization Policy<span className="req">*</span></label>
-                      <MasterSelect value={ePenalizationPolicy} onChange={(v) => { setEPenalizationPolicy(v); clearEErr('penalization_policy'); }} options={PENALIZATION_OPTIONS} placeholder="Select penalization policy" invalid={!!eErrors.penalization_policy} />
-                      {eErrors.penalization_policy && <small className="emp-err">{eErrors.penalization_policy}</small>}
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Overtime</label>
@@ -3731,31 +3685,33 @@ export default function HrEmployees() {
                   </div>
                   <Row className="g-3">
                     <Col md={6}>
-                      <label className="emp-label">Annual Salary{eEnablePayroll && <span className="req">*</span>}</label>
-                      <div className="d-flex gap-2">
-                        <input
-                          className={`emp-input${eErrors.annual_salary ? ' is-invalid' : ''}`}
-                          type="number"
-                          placeholder="Enter amount"
-                          value={eAnnualSalary}
-                          max={999999999999.99}
-                          step="0.01"
-                          inputMode="decimal"
-                          onChange={e => {
-                            const raw = e.target.value;
-                            if (raw === '') { setEAnnualSalary(''); clearEErr('annual_salary'); return; }
-                            if (!/^\d{0,12}(\.\d{0,2})?$/.test(raw)) return;
-                            setEAnnualSalary(raw);
-                            clearEErr('annual_salary');
-                          }}
-                          style={{ flex: 1 }}
-                        />
-                        <div style={{ width: 130, flexShrink: 0 }}>
+                      <label className="emp-label">Salary Amount{eEnablePayroll && <span className="req">*</span>}</label>
+                      <div className="d-flex gap-2 align-items-start">
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <input
+                            className={`emp-input${eErrors.annual_salary ? ' is-invalid' : ''}`}
+                            type="number"
+                            placeholder="Enter amount"
+                            value={eAnnualSalary}
+                            max={999999999999.99}
+                            step="0.01"
+                            inputMode="decimal"
+                            onChange={e => {
+                              const raw = e.target.value;
+                              if (raw === '') { setEAnnualSalary(''); clearEErr('annual_salary'); return; }
+                              if (!/^\d{0,12}(\.\d{0,2})?$/.test(raw)) return;
+                              setEAnnualSalary(raw);
+                              clearEErr('annual_salary');
+                            }}
+                            style={{ width: '100%' }}
+                          />
+                          {eErrors.annual_salary && <small className="emp-err">{eErrors.annual_salary}</small>}
+                        </div>
+                        <div style={{ width: 150, flexShrink: 0 }}>
                           <MasterSelect value={eSalaryFreq} onChange={(v) => { setESalaryFreq(v); clearEErr('salary_frequency'); }} options={SALARY_FREQUENCY_OPTIONS} placeholder="Select frequency" invalid={!!eErrors.salary_frequency} />
+                          {eErrors.salary_frequency && <small className="emp-err">{eErrors.salary_frequency}</small>}
                         </div>
                       </div>
-                      {eErrors.annual_salary && <small className="emp-err">{eErrors.annual_salary}</small>}
-                      {eErrors.salary_frequency && <small className="emp-err">{eErrors.salary_frequency}</small>}
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Salary Effective From{eEnablePayroll && <span className="req">*</span>}</label>
@@ -3768,14 +3724,6 @@ export default function HrEmployees() {
                         invalid={!!eErrors.salary_effective_from}
                       />
                       {eErrors.salary_effective_from && <small className="emp-err">{eErrors.salary_effective_from}</small>}
-                    </Col>
-                    <Col md={6}>
-                      <label className="emp-label">Salary Structure Type</label>
-                      <MasterSelect value={eSalaryStructure} onChange={setESalaryStructure} options={SALARY_STRUCTURE_OPTIONS} placeholder="Select salary structure" />
-                    </Col>
-                    <Col md={6}>
-                      <label className="emp-label">Tax Regime</label>
-                      <MasterSelect value={eTaxRegime} onChange={setETaxRegime} options={TAX_REGIME_OPTIONS} placeholder="Select tax regime" />
                     </Col>
                   </Row>
                 </div>
@@ -3883,14 +3831,9 @@ export default function HrEmployees() {
 
                       <div className="d-flex align-items-center justify-content-between mt-3 p-2 px-3"
                         style={{ background: 'var(--vz-secondary-bg)', borderRadius: 10, border: '1px solid var(--vz-border-color)' }}>
-                        <div>
-                          <span className="fw-semibold" style={{ fontSize: 13 }}>Monthly Gross (CTC)</span>
-                          {breakupDed > 0 && (
-                            <div className="text-muted" style={{ fontSize: 11.5 }}>
-                              Net after fixed deductions: ₹{(breakupGross - breakupDed).toLocaleString('en-IN')}
-                            </div>
-                          )}
-                        </div>
+                        {/* Gross — sum of all earning components (NOT CTC; CTC also
+                            includes employer PF/ESI/gratuity, which aren't here). */}
+                        <span className="fw-semibold" style={{ fontSize: 13 }}>Monthly Gross</span>
                         <div className="text-end">
                           <div className="fw-bold" style={{ fontSize: 18, color: '#5a3fd1' }}>
                             ₹{breakupGross.toLocaleString('en-IN')}
