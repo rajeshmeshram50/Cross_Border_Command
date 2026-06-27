@@ -33,7 +33,7 @@ class EmployeeController extends Controller
         'client:id,org_name',
         'branch:id,name',
         'creator:id,name,user_type',
-        'user:id,name,email,status,last_login_at',
+        'user:id,name,email,status,last_login_at,user_type,designation',
         'department:id,name,code',
         'designation:id,name',
         'holidayGroup:id,name',

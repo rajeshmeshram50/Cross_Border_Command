@@ -197,6 +197,20 @@ function fmtDateShort(s: string | null): string {
   } catch { return s; }
 }
 
+// True when the date falls on the current local calendar day — drives the
+// "NEW" pill, which only flags announcements released today. created_at arrives
+// as a date-only string (YYYY-MM-DD); appending T00:00:00 parses it at LOCAL
+// midnight (same as the fmtDate helpers) so the comparison is timezone-safe.
+function isToday(s: string | null): boolean {
+  if (!s) return false;
+  const d = new Date((s.includes('T') ? s : s + 'T00:00:00'));
+  if (isNaN(d.getTime())) return false;
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear()
+    && d.getMonth() === now.getMonth()
+    && d.getDate() === now.getDate();
+}
+
 const STATUS_PILL: Record<string, { bg: string; fg: string }> = {
   Approved: { bg: 'rgba(10,179,156,0.12)',  fg: '#0ab39c' },
   Pending:  { bg: 'rgba(247,184,75,0.14)',  fg: '#c98308' },
@@ -960,7 +974,16 @@ export default function EmployeeDashboard() {
                 announcements.map(a => (
                   <div key={a.id} style={{ padding: '14px 18px', borderBottom: '1px solid var(--vz-border-color)' }}>
                     <div className="d-flex align-items-start justify-content-between gap-2 mb-1">
-                      <div className="fw-semibold" style={{ fontSize: 13.5, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{a.title}</div>
+                      <div className="d-flex align-items-center gap-2 min-w-0">
+                        <div className="fw-semibold" style={{ fontSize: 13.5, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{a.title}</div>
+                        {isToday(a.created_at) && (
+                          <span style={{
+                            flexShrink: 0, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.04em',
+                            padding: '2px 7px', borderRadius: 999, lineHeight: 1.4,
+                            background: '#3577f1', color: '#fff', textTransform: 'uppercase',
+                          }}>New</span>
+                        )}
+                      </div>
                       {a.created_at && (
                         <span style={{ fontSize: 11, color: 'var(--vz-secondary-color)', whiteSpace: 'nowrap', flexShrink: 0 }}>
                           {fmtDateShort(a.created_at)}

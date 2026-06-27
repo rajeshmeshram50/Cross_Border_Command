@@ -352,7 +352,7 @@ class AnnouncementController extends Controller
         $isDraft = strtolower((string) $request->input('status')) === 'draft';
         $req = fn () => $isUpdate || $isDraft ? 'nullable' : 'required';
 
-        return $request->validate([
+        $validated = $request->validate([
             'title'       => [$req(), 'string', 'max:191'],
             'description' => [$req(), 'string'],
             'type'        => ['nullable', Rule::in(self::TYPES)],
@@ -383,6 +383,18 @@ class AnnouncementController extends Controller
 
             'status' => ['nullable', Rule::in(self::STATUSES)],
         ]);
+
+        // Multipart form-data delivers array members as strings ("3"), and the
+        // `integer` rule validates without casting — so the JSON columns would
+        // persist ["3","4"] and the wizard's strict id comparison ("3" !== 3)
+        // renders a blank audience on re-open. Cast to real ints before saving.
+        foreach (['audience_role_ids', 'audience_designation_ids', 'exclude_employee_ids'] as $key) {
+            if (array_key_exists($key, $validated) && is_array($validated[$key])) {
+                $validated[$key] = array_values(array_map('intval', $validated[$key]));
+            }
+        }
+
+        return $validated;
     }
 
     /**
@@ -467,6 +479,15 @@ class AnnouncementController extends Controller
                 $w->whereNull('branch_id')->orWhere('branch_id', $branchId);
             });
         }
+
+        // Count only fully-onboarded, operational staff so the saved
+        // audience_count matches the wizard's list exactly. Mirrors the
+        // `onboarded_only` gate EmployeeController applies to /employees:
+        // status=Active + onboarding_stage_completed >= 6 + not soft-deleted
+        // (the default scope already drops trashed rows). This keeps
+        // half-onboarded / pending people out of the broadcast audience.
+        $q->where('status', 'Active')
+          ->where('onboarding_stage_completed', '>=', 6);
 
         if ($audienceType === 'roles' && !empty($roleIds)) {
             $q->where(function ($w) use ($roleIds) {
