@@ -794,6 +794,11 @@ export default function HrEmployees() {
   const [eBreakupLoading, setEBreakupLoading]    = useState(false);
   const breakupLoadedForRef = useRef<number | 'new' | null>(null);
   const breakupBaselineRef  = useRef<string | null>(null);
+  // false while the breakup is still the auto-split (Basic/HRA/Special) — lets
+  // it re-seed when the Salary Amount changes. Flips true the moment HR edits /
+  // adds / removes a component or a saved structure loads, so manual work is
+  // never wiped by a later salary change.
+  const breakupDirtyRef     = useRef<boolean>(false);
 
   const resetEmpForm = () => {
     setEmpStep(1);
@@ -827,6 +832,7 @@ export default function HrEmployees() {
     setEBreakupLoading(false);
     breakupLoadedForRef.current = null;
     breakupBaselineRef.current = null;
+    breakupDirtyRef.current = false;
     setEErrors({});
   };
 
@@ -863,6 +869,7 @@ export default function HrEmployees() {
       setEEsiApplicable(monthlyGross > 0 && monthlyGross <= 21000);
       setEPtApplicable(true);
       breakupBaselineRef.current = null;
+      breakupDirtyRef.current = false; // fresh auto-split → may re-seed on salary change
     };
 
     if (typeof target === 'number') {
@@ -881,6 +888,7 @@ export default function HrEmployees() {
             setEEsiApplicable(esi);
             setEPtApplicable(pt);
             breakupBaselineRef.current = breakupSignature(earn, ded, pf, esi, pt);
+            breakupDirtyRef.current = true; // saved structure is HR's own → don't re-seed on salary change
           } else {
             seedFresh();
           }
@@ -892,6 +900,19 @@ export default function HrEmployees() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empOpen, empStep, eDetailedBreakup, editingDbId]);
+
+  // Re-seed the auto-split (Basic/HRA/Special) whenever the Salary Amount or
+  // frequency changes — but ONLY while the breakup is still untouched. Once HR
+  // edits/adds/removes a component (breakupDirty), their figures are kept as-is.
+  useEffect(() => {
+    if (!empOpen || empStep !== 4 || !eDetailedBreakup) return;
+    if (breakupLoadedForRef.current === null) return; // initial seed not done yet
+    if (breakupDirtyRef.current) return;               // HR customised → leave it
+    const monthlyGross = monthlyGrossFromSalary();
+    setEEarnings(seedBreakup(monthlyGross));
+    setEEsiApplicable(monthlyGross > 0 && monthlyGross <= 21000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eAnnualSalary, eSalaryFreq]);
 
   const breakupGross = useMemo(() => eEarnings.reduce((s, c) => s + (Number(c.amount) || 0), 0), [eEarnings]);
   const breakupDed   = useMemo(() => eDeductions.reduce((s, c) => s + (Number(c.amount) || 0), 0), [eDeductions]);
@@ -964,9 +985,11 @@ export default function HrEmployees() {
       next[i] = { ...next[i], label: value };
     }
     setList(next);
+    breakupDirtyRef.current = true; // HR edited a component → stop auto-re-seeding
     clearEErr('salary_breakup');
   };
   const addBreakRow = (which: 'earn' | 'ded') => {
+    breakupDirtyRef.current = true; // HR added a component → stop auto-re-seeding
     if (which === 'earn') setEEarnings([...eEarnings, { code: `comp_${eEarnings.length + 1}`, label: '', amount: 0 }]);
     else setEDeductions([...eDeductions, { code: `ded_${eDeductions.length + 1}`, label: '', amount: 0 }]);
   };
@@ -982,6 +1005,7 @@ export default function HrEmployees() {
       icon: 'delete-bin-line',
     });
     if (!ok) return;
+    breakupDirtyRef.current = true; // HR removed a component → stop auto-re-seeding
     if (which === 'earn') setEEarnings(eEarnings.filter((_, idx) => idx !== i));
     else setEDeductions(eDeductions.filter((_, idx) => idx !== i));
     clearEErr('salary_breakup');
