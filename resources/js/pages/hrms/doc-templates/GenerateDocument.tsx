@@ -48,6 +48,10 @@ interface TemplateRow {
   code: string;
   name: string;
   description: string | null;
+  // Designation tier + category the template was authored under — used to scope
+  // the Step 1 recipient list (designation.level === role_type).
+  role_type?: string;
+  employee_category?: string;
   content_html: string | null;
   status: string;
   header_config?: HeaderConfig | null;
@@ -62,7 +66,7 @@ interface EmployeeRow {
   display_name: string | null;
   email: string | null;
   department?: { id: number; name: string } | null;
-  designation?: { id: number; name: string } | null;
+  designation?: { id: number; name: string; level?: string | null } | null;
   status?: string;
 }
 
@@ -157,6 +161,21 @@ export default function GenerateDocument() {
     () => employees.filter(e => selectedIds.has(e.id)),
     [employees, selectedIds],
   );
+
+  // Recipients are scoped to the template's designation level: a template is
+  // built for a specific role tier (Director/CEO … Intern), and the matcher
+  // keys on designation.level === template.role_type. So Step 1 only offers
+  // employees at that level. Guard for legacy/un-seeded data: if NO employee
+  // carries a designation level at all, fall back to the full list rather than
+  // showing an empty picker (an empty result when levels ARE set is correct —
+  // it genuinely means no one holds this role tier).
+  const eligibleEmployees = useMemo(() => {
+    const level = template?.role_type;
+    if (!level) return employees;
+    const anyLevels = employees.some(e => e.designation?.level);
+    if (!anyLevels) return employees;
+    return employees.filter(e => (e.designation?.level || '') === level);
+  }, [employees, template?.role_type]);
 
   // ── Step transitions ─────────────────────────────────────────────────────
   const goNext = async () => {
@@ -428,7 +447,9 @@ export default function GenerateDocument() {
         <CardBody style={{ padding: 22 }} className="gd-body">
           {step === 1 && (
             <Step1
-              employees={employees}
+              employees={eligibleEmployees}
+              roleType={template.role_type}
+              category={template.employee_category}
               selectedIds={selectedIds}
               setSelectedIds={setSelectedIds}
             />
@@ -528,6 +549,8 @@ function StepStrip({ step }: { step: number }) {
 // ── Step 1: Select Employees ────────────────────────────────────────────────
 function Step1(props: {
   employees: EmployeeRow[];
+  roleType?: string;
+  category?: string;
   selectedIds: Set<number>;
   setSelectedIds: (s: Set<number>) => void;
 }) {
@@ -567,12 +590,23 @@ function Step1(props: {
 
   return (
     <div>
-      <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+      <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
         <h5 className="fw-bold mb-0 gd-title">Select Employees</h5>
         <span style={{ fontSize: 12, fontWeight: 700, color: '#4338ca', background: '#e0e7ff', padding: '4px 10px', borderRadius: 999 }}>
           {props.selectedIds.size} selected
         </span>
       </div>
+
+      {/* Scope hint — the list is filtered to the template's designation level
+          (and IT/Non-IT/Legal category it was authored under) so only eligible
+          recipients appear. */}
+      {props.roleType && (
+        <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 12 }} className="gd-scope-hint">
+          <i className="ri-filter-3-line me-1" style={{ color: '#8b5cf6' }} />
+          Showing employees at the <strong style={{ color: '#4338ca' }}>{props.roleType}</strong> level
+          {props.category ? <> · <strong style={{ color: '#4338ca' }}>{props.category}</strong></> : null}.
+        </div>
+      )}
 
       <div style={{ position: 'relative', marginBottom: 12, maxWidth: 360 }}>
         <i className="ri-search-line" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
@@ -593,7 +627,11 @@ function Step1(props: {
           {filtered.length === 0 ? (
             <div style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>
               <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 6 }} />
-              No employees match.
+              {search.trim()
+                ? 'No employees match your search.'
+                : props.roleType
+                  ? `No onboarded employees at the ${props.roleType} level. Assign this designation level to employees in HR → Employees, or in Master → Designations.`
+                  : 'No employees available.'}
             </div>
           ) : pageRows.map((e, i) => {
             const checked = props.selectedIds.has(e.id);
