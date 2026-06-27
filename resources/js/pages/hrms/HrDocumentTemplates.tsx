@@ -385,8 +385,10 @@ export default function HrDocumentTemplates() {
                             </td>
                             <td>
                               <div className="d-flex gap-1">
-                                <ActionBtn icon="ri-pencil-line"  tone="info"    onClick={() => navigate(`/hr/doc-templates/${r.id}/edit`)} title="Edit" />
-                                <ActionBtn icon="ri-more-2-fill"  tone="dark"    onClick={() => toast.info('Coming soon', 'More actions menu.')} title="More" />
+                                {/* Action column: View (opens the template), Deprecate/Activate,
+                                    and Delete. The "More" 3-dot menu (a Coming-soon stub) was
+                                    removed. */}
+                                <ActionBtn icon="ri-eye-line"  tone="info"    onClick={() => navigate(`/hr/doc-templates/${r.id}/edit`)} title="View" />
                                 <ActionBtn icon={r.status === 'Active' ? 'ri-forbid-2-line' : 'ri-checkbox-circle-line'} tone={r.status === 'Active' ? 'danger' : 'success'} onClick={() => handleToggleStatus(r)} title={r.status === 'Active' ? 'Deprecate' : 'Activate'} />
                                 <ActionBtn icon="ri-delete-bin-line" tone="danger" onClick={() => handleDelete(r)} title="Delete" />
                               </div>

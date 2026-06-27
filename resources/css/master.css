@@ -8,9 +8,20 @@
    1. Page strip + table card — premium dark-mode glass treatment
    --------------------------------------------------------------------- */
 .dsn-page-strip {
+  position: relative;
+  overflow: hidden;
   background: #ffffff;
-  border: 1px solid color-mix(in srgb, var(--vz-border-color) 70%, transparent);
-  box-shadow: 0 6px 22px rgba(64,81,137,0.10), 0 2px 6px rgba(64,81,137,0.05);
+  /* Match the Clients header (.cl-cstrip): violet border + 16px radius + soft
+     shadow, with a 4px violet accent strip down the left edge. */
+  border: 1px solid #c4b5fd;
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+}
+.dsn-page-strip::before {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
+  border-radius: 16px 0 0 16px;
 }
 /* Premium dark-mode glass strip — multi-stop gradient + colored glow +
    crisp top sheen. Reads like the Plans page panels. */
@@ -23,7 +34,7 @@
     linear-gradient(180deg,
       color-mix(in srgb, var(--vz-card-bg) 80%, #ffffff) 0%,
       color-mix(in srgb, var(--vz-card-bg) 95%, #ffffff) 100%);
-  border: 1px solid color-mix(in srgb, #6691e7 22%, var(--vz-border-color));
+  border: 1px solid color-mix(in srgb, #7c3aed 40%, var(--vz-border-color));
   box-shadow:
     0 12px 32px rgba(0,0,0,0.36),
     0 2px 6px rgba(0,0,0,0.20),
@@ -94,7 +105,17 @@
 .master-scroll-wrap thead {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 3;
+  /* Opaque backing so body rows can't bleed THROUGH the translucent th tint
+     when scrolled under the sticky header (header/row overlap fix). */
+  background: var(--vz-card-bg, #ffffff);
+}
+/* Belt-and-suspenders: each sticky header cell also carries an opaque-ish base
+   so there's no see-through gap at the very top while scrolling. */
+.master-scroll-wrap thead th {
+  position: sticky;
+  top: 0;
+  background-color: var(--vz-card-bg, #ffffff);
 }
 .master-scroll-wrap::-webkit-scrollbar { width: 8px; }
 .master-scroll-wrap::-webkit-scrollbar-track { background: transparent; }
@@ -277,6 +298,41 @@
   color: var(--vz-secondary-color);
 }
 .dsn-inline-filters .form-select-sm { min-width: 120px; }
+
+/* ---------------------------------------------------------------------
+   5b. Responsive — master pages on tablet / mobile
+   Makes every master page (shared MasterPage layout) adapt down to phones:
+   the flex KPI strip reflows 4→3→2 up, the header strip stacks its actions,
+   and the search/filter row + inline filters go full-width.
+   --------------------------------------------------------------------- */
+/* KPI flex strip (.mp-kpi-tile lives in a d-flex flex-wrap row with a 16px
+   gap and an inline min-width:180). Override the basis so tiles wrap evenly
+   instead of one tile stretching to fill a half-empty row. flex-grow:0 keeps
+   a lone trailing tile at its column width rather than spanning full width. */
+@media (max-width: 1199.98px) {
+  .mp-kpi-tile { flex: 0 1 calc(33.333% - 11px) !important; min-width: calc(33.333% - 11px) !important; }
+}
+@media (max-width: 767.98px) {
+  .mp-kpi-tile { flex: 0 1 calc(50% - 8px) !important; min-width: calc(50% - 8px) !important; }
+}
+@media (max-width: 479.98px) {
+  .mp-kpi-tile { flex: 1 1 100% !important; min-width: 100% !important; }
+}
+/* Header strip — tighter padding on phones; the action cluster (Back) drops
+   below the title and aligns left instead of being squeezed on the right. */
+@media (max-width: 575.98px) {
+  .dsn-page-strip { padding: 14px 16px !important; }
+  .dsn-page-strip > .d-flex.flex-shrink-0 {
+    width: 100%;
+    justify-content: flex-start !important;
+    margin-top: 6px;
+  }
+  /* Inline filter groups + their selects span the row so the dropdowns are
+     comfortably tappable rather than cramped. */
+  .dsn-inline-filters { width: 100%; }
+  .dsn-inline-filters .dsn-il-group { flex: 1 1 100%; }
+  .dsn-inline-filters .dsn-il-group > div { flex: 1 1 auto; min-width: 0 !important; }
+}
 
 /* ---------------------------------------------------------------------
    6. Roles — KPI cards + segmented filter tabs

@@ -1243,8 +1243,13 @@ export default function Inbox() {
             </div>
             <div className="inbox-modal-footer ib-modal-footer ib-modal-footer--between">
               <button type="button" onClick={() => submitDecision('reject')}
-                disabled={submitting || !actionNote.trim()}
+                /* Only hard-disable while submitting — when the remark is
+                   missing we keep it clickable (styled blocked) so the click
+                   toasts WHY (submitDecision already guards the empty remark). */
+                disabled={submitting}
+                aria-disabled={!actionNote.trim()}
                 title={actionNote.trim() ? 'Reject with this remark' : 'Add a remark first'}
+                style={!actionNote.trim() ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
                 className={`inbox-btn-reject ib-btn-sendback ${actionNote.trim() ? 'is-ready' : 'is-blocked'}`}>
                 <i className="ri-close-circle-line me-1" />Reject &amp; Send Back
               </button>

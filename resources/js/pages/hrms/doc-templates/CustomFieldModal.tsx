@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 export type CustomFieldType = 'text' | 'date' | 'number' | 'textarea';
@@ -36,12 +36,27 @@ export default function CustomFieldModal(props: {
 }) {
   const { initial, prefillName, existingNames = [], onClose, onSave } = props;
 
+  // Character limits mirror the server rules (name max:100, description &
+  // used_in_hint max:500) so the inline validation matches what would 422.
+  const NAME_MAX = 100;
+  const TEXT_MAX = 500;
+
   const [name, setName]               = useState(initial?.name || prefillName || '');
   const [type, setType]               = useState<CustomFieldType>(initial?.type || 'text');
   const [description, setDescription] = useState(initial?.description || '');
   const [usedInHint, setUsedInHint]   = useState(initial?.used_in_hint || '');
   const [errors, setErrors]           = useState<Record<string, string>>({});
   const [saving, setSaving]           = useState(false);
+
+  // Lock background page scroll while this overlay is open. It's a custom
+  // overlay (not reactstrap's Modal), so it doesn't get Bootstrap's automatic
+  // body-scroll lock — without this, scrolling inside the form bleeds through
+  // to the dashboard behind it. Restored on unmount.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
 
   const TYPE_OPTIONS: { value: CustomFieldType; label: string; icon: string }[] = [
     { value: 'text',     label: 'Text',     icon: 'ri-text' },
@@ -57,6 +72,8 @@ export default function CustomFieldModal(props: {
       e.name = 'Field name is required';
     } else if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) {
       e.name = 'No spaces — use PascalCase (e.g. LastWorkingDate)';
+    } else if (trimmed.length > NAME_MAX) {
+      e.name = `Field name must be ${NAME_MAX} characters or fewer (currently ${trimmed.length}).`;
     } else if (
       // Case-insensitive duplicate check, excluding the field being edited so
       // re-saving an unchanged name doesn't false-positive.
@@ -64,6 +81,14 @@ export default function CustomFieldModal(props: {
         && n.trim().toLowerCase() !== (initial?.name || '').trim().toLowerCase())
     ) {
       e.name = 'A field with this name already exists';
+    }
+    // Character limits mirror the server rules (description / used_in_hint
+    // max:500) so they surface inline here instead of as a post-save toast.
+    if (description.trim().length > TEXT_MAX) {
+      e.description = `Description must be ${TEXT_MAX} characters or fewer (currently ${description.trim().length}).`;
+    }
+    if (usedInHint.trim().length > TEXT_MAX) {
+      e.used_in_hint = `Used in Templates must be ${TEXT_MAX} characters or fewer (currently ${usedInHint.trim().length}).`;
     }
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -263,7 +288,13 @@ export default function CustomFieldModal(props: {
               <input type="text" value={description} onChange={e => setDescription(e.target.value)}
                 placeholder="What is this field for? (shown at generation time)"
                 className="cfm-input"
-                style={inputStyle(false)} />
+                style={inputStyle(!!errors.description)} />
+              <div className="d-flex justify-content-between align-items-center" style={{ marginTop: 4, gap: 8 }}>
+                <span style={errMsg as React.CSSProperties}>{errors.description || ''}</span>
+                <span style={{ fontSize: 11, color: description.trim().length > TEXT_MAX ? '#ef4444' : '#9ca3af', flexShrink: 0, marginLeft: 'auto' }}>
+                  {description.trim().length}/{TEXT_MAX}
+                </span>
+              </div>
             </div>
 
             <div className="mb-3">
@@ -271,9 +302,16 @@ export default function CustomFieldModal(props: {
               <input type="text" value={usedInHint} onChange={e => setUsedInHint(e.target.value)}
                 placeholder="e.g. Relieving Letter, Experience Letter (comma separated)"
                 className="cfm-input"
-                style={inputStyle(false)} />
-              <div className="cfm-helper" style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
-                Optional. Your hint for which templates this field is for. Actual references update automatically once a template uses <code style={{ background: '#ede9fe', color: '#6d28d9', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>{`{{${name || 'FieldName'}}}`}</code>.
+                style={inputStyle(!!errors.used_in_hint)} />
+              <div className="d-flex justify-content-between align-items-center" style={{ marginTop: 4, gap: 8 }}>
+                {errors.used_in_hint
+                  ? <span style={errMsg as React.CSSProperties}>{errors.used_in_hint}</span>
+                  : <div className="cfm-helper" style={{ fontSize: 11, color: '#9ca3af' }}>
+                      Optional. Your hint for which templates this field is for. Actual references update automatically once a template uses <code style={{ background: '#ede9fe', color: '#6d28d9', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>{`{{${name || 'FieldName'}}}`}</code>.
+                    </div>}
+                <span style={{ fontSize: 11, color: usedInHint.trim().length > TEXT_MAX ? '#ef4444' : '#9ca3af', flexShrink: 0, marginLeft: 'auto' }}>
+                  {usedInHint.trim().length}/{TEXT_MAX}
+                </span>
               </div>
             </div>
 

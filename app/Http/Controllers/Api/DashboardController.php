@@ -1254,13 +1254,34 @@ class DashboardController extends Controller
                     elseif (str_contains($s, 'absent'))     $absent++;
                     elseif (str_contains($s, 'present') || $a->check_in_at) $present++;
                 });
+            // Expected working days so far this month (Mon–Fri, counted from the
+            // joining date when it falls inside the month). This is the correct
+            // denominator for the attendance %: dividing by the days that merely
+            // happened to be MARKED made a single present day read as 100%. Now
+            // the % reflects "present out of the working days in the period", so
+            // it only reaches 100% when every working day is accounted for.
+            $periodStart = ($emp && $emp->date_of_joining && Carbon::parse($emp->date_of_joining)->gt($monthStart))
+                ? Carbon::parse($emp->date_of_joining)->startOfDay()
+                : $monthStart->copy();
+            $todayEod    = Carbon::now()->startOfDay();
+            $workingDays = 0;
+            if ($periodStart->lte($todayEod)) {
+                for ($d = $periodStart->copy(); $d->lte($todayEod); $d->addDay()) {
+                    if (!$d->isWeekend()) $workingDays++;
+                }
+            }
+            $marked = $present + $leaveDays + $absent + $halfDay;
+
             $attendanceSummary = [
-                'month'     => $monthStart->format('F Y'),
-                'present'   => $present,
-                'leave'     => $leaveDays,
-                'absent'    => $absent,
-                'half_day'  => $halfDay,
-                'total'     => $present + $leaveDays + $absent + $halfDay,
+                'month'        => $monthStart->format('F Y'),
+                'present'      => $present,
+                'leave'        => $leaveDays,
+                'absent'       => $absent,
+                'half_day'     => $halfDay,
+                // Days that actually have a record (drives the "X days marked" donut).
+                'total'        => $marked,
+                // Working days expected so far — the attendance-% denominator.
+                'working_days' => $workingDays,
             ];
 
             // Leave this calendar year — taken days by type (approved) +

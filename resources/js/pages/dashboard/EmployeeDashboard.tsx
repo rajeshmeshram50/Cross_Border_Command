@@ -177,7 +177,7 @@ interface OverviewData {
     expense_status: { approved: number; pending: number; rejected: number };
     total_claimed: number;
     expense_trend: Array<{ month: string; amount: number }>;
-    attendance: { month: string; present: number; leave: number; absent: number; half_day: number; total: number } | null;
+    attendance: { month: string; present: number; leave: number; absent: number; half_day: number; total: number; working_days?: number } | null;
     leave_by_type: Array<{ type: string; days: number }>;
     leave_status: { approved: number; pending: number; rejected: number };
   };
@@ -587,7 +587,7 @@ export default function EmployeeDashboard() {
                   engaging feel instead of just a name banner. */}
               {(() => {
                 const chips = [
-                  att && att.total > 0 ? { icon: 'ri-calendar-check-line', text: `${Math.round((att.present / att.total) * 100)}% present` } : null,
+                  att && (att.working_days ?? 0) > 0 ? { icon: 'ri-calendar-check-line', text: `${Math.min(100, Math.round((att.present / (att.working_days as number)) * 100))}% present` } : null,
                   analytics.total_claimed > 0 ? { icon: 'ri-bill-line', text: `${formatINRCompact(analytics.total_claimed)} claimed` } : null,
                   kpis.team_size > 0 ? { icon: 'ri-team-line', text: `${kpis.team_size} in team` } : null,
                   kpis.days_since_joining != null ? { icon: 'ri-time-line', text: `${kpis.days_since_joining} days here` } : null,
@@ -745,30 +745,12 @@ export default function EmployeeDashboard() {
                   </div>
                 </div>
               </Col>
-              <Col xs={6} md={3}>
+              <Col xs={12} md={9} className="text-md-end">
                 <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 600, marginBottom: 2 }}>Annual</div>
                 <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
                   {formatINRCompact(compensation.annual_salary)}
                 </div>
               </Col>
-              {compensation.salary_frequency && (
-                <Col xs={6} md={2}>
-                  <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 600, marginBottom: 2 }}>Frequency</div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{compensation.salary_frequency}</div>
-                </Col>
-              )}
-              {compensation.salary_structure && (
-                <Col xs={6} md={2}>
-                  <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 600, marginBottom: 2 }}>Structure</div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{compensation.salary_structure}</div>
-                </Col>
-              )}
-              {compensation.tax_regime && (
-                <Col xs={6} md={2}>
-                  <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 600, marginBottom: 2 }}>Tax Regime</div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{compensation.tax_regime}</div>
-                </Col>
-              )}
             </Row>
           </CardBody>
         </Card>
