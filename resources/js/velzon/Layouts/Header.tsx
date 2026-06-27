@@ -226,14 +226,17 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
                                 </div>
                             )}
 
-                            {/* Gmail */}
-                            <div className="ms-1 header-item d-none d-sm-flex">
-                                <button type="button" title="Gmail"
-                                    onClick={() => navigate('/gmail')}
-                                    className="btn btn-icon btn-topbar btn-ghost-secondary rounded-circle">
-                                    <i className="bx bx-envelope fs-22"></i>
-                                </button>
-                            </div>
+                            {/* Gmail — hidden for employee logins; kept for
+                                branch/client users and admins. */}
+                            {!isEmployee && (
+                                <div className="ms-1 header-item d-none d-sm-flex">
+                                    <button type="button" title="Gmail"
+                                        onClick={() => navigate('/gmail')}
+                                        className="btn btn-icon btn-topbar btn-ghost-secondary rounded-circle">
+                                        <i className="bx bx-envelope fs-22"></i>
+                                    </button>
+                                </div>
+                            )}
 
                             {/* Inbox / Notifications */}
                             <div className="ms-1 header-item d-none d-sm-flex">
