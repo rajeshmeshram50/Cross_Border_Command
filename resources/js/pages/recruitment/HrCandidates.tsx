@@ -1281,6 +1281,15 @@ function CandidateFormModal({
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>{editing ? 'Update applicant profile' : 'Register a new applicant profile in the pipeline'}</div>
               </div>
             </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="cand-head-close"
+              style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 32, height: 32, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer' }}
+            >
+              <i className="ri-close-line" style={{ fontSize: 18 }} />
+            </button>
           </div>
         </div>
 
@@ -1296,7 +1305,7 @@ function CandidateFormModal({
               <Row className="g-2">
                 <Col md={4}>
                   <label className="rec-form-label">Name<span className="req">*</span></label>
-                  <input type="text" className={`rec-input${errors.name ? ' is-invalid' : ''}`} placeholder="Full name" value={name} onChange={e => setName(e.target.value)} />
+                  <input type="text" className={`rec-input${errors.name ? ' is-invalid' : ''}`} placeholder="Full name" value={name} onChange={e => setName(e.target.value.replace(/[^a-zA-Z .'\-]/g, ''))} />
                   {errors.name && <div className="rec-error"><i className="ri-error-warning-line" />{errors.name}</div>}
                 </Col>
                 <Col md={4}>
@@ -1311,9 +1320,9 @@ function CandidateFormModal({
                     className={`rec-input${errors.mobile ? ' is-invalid' : ''}`}
                     placeholder="9XXXXXXXXX"
                     value={mobile}
-                    inputMode="tel"
-                    maxLength={20}
-                    onChange={e => setMobile(e.target.value)}
+                    inputMode="numeric"
+                    maxLength={15}
+                    onChange={e => setMobile(e.target.value.replace(/\D/g, '').slice(0, 15))}
                   />
                   {errors.mobile && <div className="rec-error"><i className="ri-error-warning-line" />{errors.mobile}</div>}
                 </Col>

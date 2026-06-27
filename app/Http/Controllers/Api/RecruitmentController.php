@@ -23,8 +23,8 @@ class RecruitmentController extends Controller
         'department:id,name,code',
         'designation:id,name',
         'primaryRole:id,name',
-        'hiringManager:id,emp_code,display_name,first_name,last_name',
-        'assignedHr:id,emp_code,display_name,first_name,last_name',
+        'hiringManager:id,emp_code,display_name,first_name,last_name,status,deleted_at',
+        'assignedHr:id,emp_code,display_name,first_name,last_name,status,deleted_at',
     ];
 
     /** Module slug used for permission checks — matches ModuleSeeder. */

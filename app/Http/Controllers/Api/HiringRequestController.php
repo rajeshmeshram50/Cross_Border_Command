@@ -55,8 +55,15 @@ class HiringRequestController extends Controller
     {
         $this->authorize($request, 'can_view');
 
+        // No scheduler runs in this app, so expiry is applied lazily on read:
+        // a submitted request whose target join date has passed (and which was
+        // never turned into a recruitment) is auto-rejected before the list is
+        // built. Mirrors RecruitmentController::expireOverdue.
+        $branchFilter = $request->integer('branch_id') ?: null;
+        $this->autoRejectOverdue($request->user(), $branchFilter);
+
         $q = HiringRequest::query()->with(self::WITH);
-        $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
+        $this->applyScope($q, $request->user(), $branchFilter);
 
         if ($search = $request->query('search')) {
             $q->where(function ($w) use ($search) {
@@ -381,6 +388,29 @@ class HiringRequestController extends Controller
             ->exists();
         if (!$belongsToClient) return;
         $q->where('branch_id', $branchFilter);
+    }
+
+    /**
+     * Auto-reject hiring requests whose target join date has passed. A request
+     * that was never acted on (still pending) and whose hire-by date is gone is
+     * no longer fulfillable, so it's flipped to Rejected. Drafts (not yet
+     * submitted), already-rejected rows, and requests already promoted into a
+     * recruitment are left untouched.
+     */
+    private function autoRejectOverdue($user, ?int $branchFilter = null): void
+    {
+        $q = HiringRequest::query();
+        $this->applyScope($q, $user, $branchFilter);
+        $q->whereNotNull('target_join_date')
+          ->whereDate('target_join_date', '<', today())
+          ->whereNotIn('status', ['Rejected', 'Draft'])
+          ->whereNotExists(function ($sub) {
+              $sub->selectRaw('1')
+                  ->from('recruitments')
+                  ->whereColumn('recruitments.hiring_request_id', 'hiring_requests.id')
+                  ->whereNull('recruitments.deleted_at');
+          })
+          ->update(['status' => 'Rejected']);
     }
 
     private function resolveRow(Request $request, int $id): HiringRequest

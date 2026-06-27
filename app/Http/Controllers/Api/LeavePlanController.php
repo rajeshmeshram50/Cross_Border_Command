@@ -647,7 +647,9 @@ class LeavePlanController extends Controller
             }
         }
 
-        $employees = $empQ->orderBy('employees.first_name')->get();
+        // Order by Employee ID so the balance grid follows a stable,
+        // predictable sequence rather than name/insert order (bug #10).
+        $employees = $empQ->orderBy('employees.id')->get();
 
         // Plan name lookup so each row can show which plan an employee is on.
         $planNames = LeavePlans::whereIn('id', $planIds)->pluck('plan_name', 'id')->all();

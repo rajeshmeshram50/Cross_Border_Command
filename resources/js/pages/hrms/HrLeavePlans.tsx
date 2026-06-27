@@ -945,13 +945,6 @@ function ConfigurationTab({
           </tbody>
         </table>
       </div>
-
-      {plan.isDefault && plan.leaveTypes.length > 0 && (
-        <div className="lp-info-banner">
-          <i className="ri-information-line" />
-          This is the default plan — showing {plan.leaveTypes.length} of 7 leave types.
-        </div>
-      )}
     </div>
   );
 }
@@ -1148,8 +1141,11 @@ function LeaveBalancesTab() {
 
   const filteredRows = useMemo(() => {
     if (!data) return [];
-    if (department === 'All') return data.employees;
-    return data.employees.filter(e => e.department === department);
+    const rows = department === 'All'
+      ? data.employees
+      : data.employees.filter(e => e.department === department);
+    // Always display in a stable sequence by Employee ID (bug #10).
+    return [...rows].sort((a, b) => a.id - b.id);
   }, [data, department]);
 
   const accentFor = (id: number) => {
@@ -1730,6 +1726,7 @@ function AddLeaveTypeModal({
     const errs: Record<string, string> = {};
     if (!name.trim()) errs.name = 'Leave type name is required';
     if (!code.trim()) errs.short_code = 'Code is required';
+    else if (!/^[A-Z0-9]+$/.test(code.trim().toUpperCase())) errs.short_code = 'Only letters and numbers are allowed (no spaces or special characters)';
     if (Object.keys(errs).length) { setErrors(errs); return; }
 
     setSaving(true);
@@ -1826,7 +1823,7 @@ function AddLeaveTypeModal({
                   placeholder="e.g. BL"
                   maxLength={4}
                   value={code}
-                  onChange={e => { setCode(e.target.value.toUpperCase()); clearErr('short_code'); }}
+                  onChange={e => { setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '')); clearErr('short_code'); }}
                   style={{ textTransform: 'uppercase' }}
                 />
                 {errors.short_code && <div className="rec-error"><i className="ri-error-warning-line" />{errors.short_code}</div>}

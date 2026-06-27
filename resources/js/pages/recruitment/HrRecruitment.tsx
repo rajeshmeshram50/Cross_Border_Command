@@ -28,6 +28,7 @@ interface RecruitmentRow {
   primaryRoleId: number | null;
   hiringManagerId: number | null;
   assignedHrId: number | null;
+  hiringRequestId: number | null;
 
   employmentType: EmployType;
   openings: number;
@@ -40,9 +41,11 @@ interface RecruitmentRow {
   hiringManagerRole: string;
   hiringManagerInitials: string;
   hiringManagerAccent: string;
+  hiringManagerState: 'ok' | 'disabled' | 'inactive' | 'missing';
   assignedHrName: string;
   assignedHrInitials: string;
   assignedHrAccent: string;
+  assignedHrState: 'ok' | 'disabled' | 'inactive' | 'missing';
 
   startDate: string;
   deadline: string;
@@ -80,6 +83,16 @@ function apiToRow(api: any): RecruitmentRow {
   const desig = api?.designation?.name || '';
   const role = api?.primary_role?.name || '';
 
+  // Resolve the manager/HR plus their availability state so the edit form can
+  // flag a person who has since been disabled (removed) or gone inactive
+  // (resigned/etc) — they're no longer pickable but the recruitment still
+  // points at them.
+  const stateOf = (emp: any): 'ok' | 'disabled' | 'inactive' | 'missing' => {
+    if (!emp) return 'missing';
+    if (emp.deleted_at) return 'disabled';
+    if (emp.status && emp.status !== 'Active') return 'inactive';
+    return 'ok';
+  };
   const mgrEmp = api?.hiring_manager;
   const mgrName = mgrEmp?.display_name || [mgrEmp?.first_name, mgrEmp?.last_name].filter(Boolean).join(' ') || '';
   const hrEmp = api?.assigned_hr;
@@ -99,6 +112,7 @@ function apiToRow(api: any): RecruitmentRow {
     primaryRoleId:   api?.primary_role_id ?? null,
     hiringManagerId: api?.hiring_manager_id ?? null,
     assignedHrId:    api?.assigned_hr_id ?? null,
+    hiringRequestId: api?.hiring_request_id ?? null,
 
     employmentType: (api?.employment_type || 'Full Time') as EmployType,
     openings:       Number(api?.openings) || 1,
@@ -111,9 +125,11 @@ function apiToRow(api: any): RecruitmentRow {
     hiringManagerRole:     '',
     hiringManagerInitials: initialsOf(mgrName),
     hiringManagerAccent:   pickAccent(api?.hiring_manager_id ?? mgrName),
+    hiringManagerState:    stateOf(mgrEmp),
     assignedHrName:        hrName,
     assignedHrInitials:    initialsOf(hrName),
     assignedHrAccent:      pickAccent(api?.assigned_hr_id ?? hrName),
+    assignedHrState:       stateOf(hrEmp),
 
     startDate: api?.start_date || '',
     deadline:  api?.deadline   || '',
@@ -253,12 +269,12 @@ const REQUEST_URGENCY_TONES: Record<RequestUrgency, { bg: string; fg: string }> 
 };
 
 const KPI_CARDS = [
-  { key: 'total',       label: 'Total Recruitments', icon: 'ri-briefcase-4-line',     gradient: 'linear-gradient(135deg,#299cdb 0%,#4dabf7 100%)', deep: '#1e6dd6' },
-  { key: 'active',      label: 'Active Hiring',      icon: 'ri-checkbox-circle-fill', gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', deep: '#089d7a' },
-  { key: 'candidates',  label: 'Total Candidates',   icon: 'ri-team-line',            gradient: 'linear-gradient(135deg,#6366f1 0%,#818cf8 100%)', deep: '#4f46e5' },
-  { key: 'selected',    label: 'Selected',           icon: 'ri-user-follow-line',     gradient: 'linear-gradient(135deg,#10b981 0%,#34d399 100%)', deep: '#059669' },
-  { key: 'rejected',    label: 'Rejected',           icon: 'ri-close-circle-fill',    gradient: 'linear-gradient(135deg,#f06548 0%,#f47c5d 100%)', deep: '#d63a5e' },
-  { key: 'pending',     label: 'Pending Interviews', icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b 0%,#fbc763 100%)', deep: '#a4661c' },
+  { key: 'total',          label: 'Total Recruitments',     icon: 'ri-briefcase-4-line',     gradient: 'linear-gradient(135deg,#299cdb 0%,#4dabf7 100%)', deep: '#1e6dd6' },
+  { key: 'active',         label: 'Active Hiring',          icon: 'ri-checkbox-circle-fill', gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', deep: '#089d7a' },
+  { key: 'hiringRequests', label: 'Hiring Requests',        icon: 'ri-inbox-archive-line',   gradient: 'linear-gradient(135deg,#6366f1 0%,#818cf8 100%)', deep: '#4f46e5' },
+  { key: 'converted',      label: 'Converted to Recruitment', icon: 'ri-exchange-funds-line', gradient: 'linear-gradient(135deg,#8b5cf6 0%,#a78bfa 100%)', deep: '#6d28d9' },
+  { key: 'completed',      label: 'Completed Recruitment',  icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#10b981 0%,#34d399 100%)', deep: '#059669' },
+  { key: 'cancelled',      label: 'Cancelled Recruitment',  icon: 'ri-close-circle-fill',    gradient: 'linear-gradient(135deg,#f06548 0%,#f47c5d 100%)', deep: '#d63a5e' },
 ] as const;
 
 const EMPLOYMENT_TYPE_OPTIONS = [
@@ -316,20 +332,27 @@ export default function HrRecruitment() {
     selected: 0, offered: 0, rejected: 0, on_hold: 0,
   };
   const [candidateStats, setCandidateStats] = useState<CandidateStats>(ZERO_STATS);
+  // Hiring requests power the "Hiring Requests" + "Converted to Recruitment"
+  // KPIs. Drafts are excluded (they aren't submitted requests yet).
+  const [hiringRequests, setHiringRequests] = useState<HiringRequestRow[]>([]);
 
   const fetchRecruitments = async () => {
     try {
-      const [listRes, statsRes] = await Promise.all([
+      const [listRes, statsRes, hrRes] = await Promise.all([
         api.get('/recruitments'),
         api.get('/candidates/stats').catch(() => ({ data: ZERO_STATS })),
+        api.get('/hiring-requests').catch(() => ({ data: [] })),
       ]);
       const rows: any[] = Array.isArray(listRes.data) ? listRes.data : [];
       setRecruitments(rows.map(apiToRow));
       setCandidateStats({ ...ZERO_STATS, ...(statsRes.data || {}) });
+      const hrRows: any[] = Array.isArray(hrRes.data) ? hrRes.data : [];
+      setHiringRequests(hrRows.map(apiToHiringRequestRow));
     } catch (err: any) {
       toast.error('Could not load recruitments', err?.response?.data?.message || 'Please try again.');
       setRecruitments([]);
       setCandidateStats(ZERO_STATS);
+      setHiringRequests([]);
     } finally {
       setLoadingRecruitments(false);
     }
@@ -342,22 +365,34 @@ export default function HrRecruitment() {
     const completed  = recruitments.filter(r => r.status === 'Completed').length;
     const cancelled  = recruitments.filter(r => r.status === 'Cancelled').length;
     const expired    = recruitments.filter(r => r.status === 'Expired').length;
+
+    // KPIs track the recruitment lifecycle: a Hiring Request is raised, then
+    // (optionally) converted into a Recruitment, which then runs and finishes
+    // as Completed or Cancelled. Each card maps to one clear stage.
+    //
+    //   Hiring Request ──convert──▶ Recruitment ──▶ Active/Completed/Cancelled
+    //
+    // Converted = recruitments that were created from a hiring request, counted
+    // by distinct source request id so two recruitments off one request (rare)
+    // don't double-count. Drafts are excluded from the Hiring Requests count.
+    const submittedRequests = hiringRequests.filter(r => r.status !== 'Draft').length;
+    const convertedRequestIds = new Set(
+      recruitments.map(r => r.hiringRequestId).filter((id): id is number => id != null),
+    );
+
     return {
       total,
-      active:     inProgress,
-      candidates: candidateStats.total,
-      selected:   candidateStats.selected,
-      rejected:   candidateStats.rejected,
-      pending: Math.max(
-        0,
-        candidateStats.total
-          - candidateStats.selected
-          - candidateStats.offered
-          - candidateStats.rejected,
-      ),
+      // Open requisitions still actively hiring.
+      active:         inProgress,
+      // Submitted hiring requests (Drafts excluded).
+      hiringRequests: submittedRequests,
+      // Hiring requests promoted into a recruitment.
+      converted:      convertedRequestIds.size,
+      completed,
+      cancelled,
       tabs: { 'In Progress': inProgress, Completed: completed, Cancelled: cancelled, Expired: expired },
     };
-  }, [recruitments, candidateStats]);
+  }, [recruitments, candidateStats, hiringRequests]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -571,6 +606,9 @@ export default function HrRecruitment() {
                                   {r.hiringManagerInitials}
                                 </div>
                                 <span className="fs-13">{r.hiringManagerRole ? `${r.hiringManagerRole} – ` : ''}{r.hiringManagerName}</span>
+                                {(r.hiringManagerState === 'disabled' || r.hiringManagerState === 'inactive') && (
+                                  <span className={`rec-mgr-flag rec-mgr-flag--${r.hiringManagerState}`}>{r.hiringManagerState === 'disabled' ? 'Disabled' : 'Inactive'}</span>
+                                )}
                               </div>
                             </td>
                             <td>
@@ -582,6 +620,9 @@ export default function HrRecruitment() {
                                   {r.assignedHrInitials}
                                 </div>
                                 <span className="fs-13">{r.assignedHrName}</span>
+                                {(r.assignedHrState === 'disabled' || r.assignedHrState === 'inactive') && (
+                                  <span className={`rec-mgr-flag rec-mgr-flag--${r.assignedHrState}`}>{r.assignedHrState === 'disabled' ? 'Disabled' : 'Inactive'}</span>
+                                )}
                               </div>
                             </td>
                             <td className="fs-13"><span className="rec-date">{formatDate(r.startDate)}</span></td>
@@ -600,32 +641,38 @@ export default function HrRecruitment() {
                                   onClick={() => { setCreateMode('edit'); setCreateEditingId(r.id); setCreateOpen(true); }}
                                 />
                                 <ActionBtn
-                                  title={r.status === 'Cancelled' ? 'Cancelled — no candidates can be added' : 'View Candidates'}
+                                  title={
+                                    r.status === 'Cancelled' ? 'Cancelled — no candidates can be added'
+                                    : r.status === 'Expired' ? 'Recruitment expired — candidates unavailable'
+                                    : 'View Candidates'
+                                  }
                                   icon="ri-team-line"
                                   color="primary"
-                                  disabled={r.status === 'Cancelled'}
+                                  disabled={r.status === 'Cancelled' || r.status === 'Expired'}
                                   onClick={() => navigate(`/hr/recruitment/${r.id}/candidates`)}
                                 />
                                 <ActionBtn
                                   title={
                                     r.status === 'Cancelled' ? 'Already Cancelled'
                                     : r.status === 'Completed' ? 'Already Completed'
+                                    : r.status === 'Expired' ? 'Recruitment expired — cannot complete'
                                     : 'Mark Recruitment Completed'
                                   }
                                   icon="ri-checkbox-circle-line"
                                   color="success"
-                                  disabled={r.status === 'Cancelled' || r.status === 'Completed'}
+                                  disabled={r.status === 'Cancelled' || r.status === 'Completed' || r.status === 'Expired'}
                                   onClick={() => { setCancelInitialAction('complete'); setCancelTarget(r); }}
                                 />
                                 <ActionBtn
                                   title={
                                     r.status === 'Cancelled' ? 'Already Cancelled'
                                     : r.status === 'Completed' ? 'Already Completed'
+                                    : r.status === 'Expired' ? 'Recruitment expired — cannot cancel'
                                     : 'Cancel Recruitment'
                                   }
                                   icon="ri-forbid-2-line"
                                   color="danger"
-                                  disabled={r.status === 'Cancelled' || r.status === 'Completed'}
+                                  disabled={r.status === 'Cancelled' || r.status === 'Completed' || r.status === 'Expired'}
                                   onClick={() => { setCancelInitialAction('cancel'); setCancelTarget(r); }}
                                 />
                               </div>
@@ -1854,6 +1901,31 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
   const [employeeOptions, setEmployeeOptions] = useState<{ value: string; label: string }[]>([]);
   const [mastersLoading, setMastersLoading] = useState(false);
 
+  // The Hiring Manager / Assigned HR pickers list only onboarded + active
+  // employees. But a recruitment being edited may point at someone who has
+  // since resigned or been removed — they won't be in that list, so the select
+  // would show a raw id (e.g. "4"). Inject the saved manager/HR (with their
+  // resolved name) as options so the dropdown always shows a name, flagged
+  // "(unavailable)" when they're no longer selectable.
+  const employeeOptionsForEdit = useMemo(() => {
+    const opts = [...employeeOptions];
+    const ensure = (id: number | null, name: string | undefined, state?: RecruitmentRow['hiringManagerState']) => {
+      if (id == null) return;
+      const v = String(id);
+      if (!opts.some(o => o.value === v)) {
+        const suffix = state === 'disabled' ? ' (disabled)'
+          : state === 'inactive' ? ' (inactive)'
+          : ' (unavailable)';
+        opts.push({ value: v, label: name ? `${name}${suffix}` : `Employee #${v}` });
+      }
+    };
+    if (editing) {
+      ensure(editing.hiringManagerId, editing.hiringManagerName, editing.hiringManagerState);
+      ensure(editing.assignedHrId, editing.assignedHrName, editing.assignedHrState);
+    }
+    return opts;
+  }, [employeeOptions, editing]);
+
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
@@ -2019,6 +2091,18 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
     if (!experience)             e.experience      = 'Experience level is required';
     if (!hiringManagerId)        e.hiringManager   = 'Hiring manager is required';
     if (!assignedHrId)           e.assignedHr      = 'Assigned HR is required';
+    // A disabled/inactive person (only present as an injected option, not in the
+    // live active list) can't stay assigned — force picking an active employee.
+    // Guarded on options being loaded so we don't false-flag during the fetch.
+    if (employeeOptions.length > 0) {
+      const activeIds = new Set(employeeOptions.map(o => o.value));
+      if (hiringManagerId && !activeIds.has(hiringManagerId)) {
+        e.hiringManager = 'This hiring manager is no longer active — select an active employee';
+      }
+      if (assignedHrId && !activeIds.has(assignedHrId)) {
+        e.assignedHr = 'This HR is no longer active — select an active employee';
+      }
+    }
     if (!startDate)              e.startDate       = 'Start date is required';
     if (!deadline)               e.deadline        = 'TAT/Deadline is required';
     const todayIso = new Date().toISOString().slice(0, 10);
@@ -2358,7 +2442,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                 <MasterSelect
                   value={hiringManagerId}
                   onChange={(v) => { setHiringManagerId(v); clear('hiringManager'); }}
-                  options={employeeOptions}
+                  options={employeeOptionsForEdit}
                   placeholder={employeeOptions.length === 0 ? 'Loading employees…' : '— Select —'}
                   invalid={!!errors.hiringManager}
                 />
@@ -2369,7 +2453,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                 <MasterSelect
                   value={assignedHrId}
                   onChange={(v) => { setAssignedHrId(v); clear('assignedHr'); }}
-                  options={employeeOptions}
+                  options={employeeOptionsForEdit}
                   placeholder={employeeOptions.length === 0 ? 'Loading employees…' : '— Select —'}
                   invalid={!!errors.assignedHr}
                 />

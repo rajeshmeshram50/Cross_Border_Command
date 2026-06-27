@@ -30,7 +30,8 @@ class AdvanceRequestController extends Controller
 
         $employeeIdFilter = $this->resolveEmployeeId(
             $request->query('employee_id'),
-            $request->query('employee_code')
+            $request->query('employee_code'),
+            $user
         );
 
         $q = AdvanceRequest::query()
@@ -87,7 +88,8 @@ class AdvanceRequestController extends Controller
         $user = $request->user();
         $employeeId = $this->resolveEmployeeId(
             $request->input('employee_id'),
-            $request->input('employee_code')
+            $request->input('employee_code'),
+            $user
         ) ?: $this->currentEmployeeId($user);
 
         if (!$employeeId) {
@@ -356,7 +358,7 @@ class AdvanceRequestController extends Controller
         return $all;
     }
 
-    private function resolveEmployeeId($idInput, $codeInput): ?int
+    private function resolveEmployeeId($idInput, $codeInput, $user = null): ?int
     {
         if ($idInput !== null && $idInput !== '') {
             if (is_numeric($idInput)) {
@@ -365,7 +367,15 @@ class AdvanceRequestController extends Controller
             $codeInput = $codeInput ?: $idInput;
         }
         if ($codeInput) {
-            $found = Employee::where('emp_code', $codeInput)->value('id');
+            // emp_code is unique PER CLIENT only, so scope the lookup to the
+            // caller's client — otherwise a serial code (EMP-001) shared by
+            // another tenant resolves the wrong employee and trips the
+            // "your own record" ownership guard with a 403.
+            $q = Employee::where('emp_code', $codeInput);
+            if ($user && $user->user_type !== 'super_admin' && $user->client_id) {
+                $q->where('client_id', $user->client_id);
+            }
+            $found = $q->value('id');
             if ($found) return (int) $found;
         }
         return null;

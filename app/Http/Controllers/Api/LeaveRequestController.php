@@ -540,6 +540,21 @@ class LeaveRequestController extends Controller
             })->values();
         }
 
+        // Per-row "can the viewer act on this RIGHT NOW?" flag. True only when
+        // the request is still Pending AND the viewer is the approver for the
+        // CURRENT level — i.e. the reporting manager while it sits at the
+        // manager level, then HR once the manager has approved and it advances
+        // to the HR level. Super admins keep a blanket override. This is what
+        // the UI uses to show Approve/Reject vs. a View-only row, so HR can't
+        // act before the manager and a manager-rejected request shows View-only.
+        $rows->each(function (LeaveRequest $row) use ($user) {
+            $chain = is_array($row->approval_chain) ? $row->approval_chain : [];
+            $idx = max(0, ((int) ($row->current_approval_level ?? 1)) - 1);
+            $row->can_act_now = $row->status === 'Pending'
+                && ($user->user_type === 'super_admin'
+                    || $this->canActOnLevel($user, $chain, $idx, $row));
+        });
+
         return response()->json(['data' => $rows]);
     }
 

@@ -1773,23 +1773,47 @@
 .cand-step-5 { background: linear-gradient(135deg, #ec4899 0%, #f472b6 100%); box-shadow: 0 2px 6px rgba(236,72,153,0.30); }
 
 /* CV upload drop zone in the form */
+/* Hiring Manager / Assigned HR availability flag in the recruitment list —
+   surfaces a disabled (removed) or inactive (resigned) person right in the
+   list so it's obvious before opening the edit form. */
+.rec-mgr-flag {
+  display: inline-flex; align-items: center;
+  font-size: 9px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 999px; line-height: 1; flex-shrink: 0;
+}
+.rec-mgr-flag--disabled { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+.rec-mgr-flag--inactive { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+[data-bs-theme="dark"] .rec-mgr-flag--disabled { background: rgba(239,68,68,.18); color: #fca5a5; border-color: rgba(248,113,113,.35); }
+[data-bs-theme="dark"] .rec-mgr-flag--inactive { background: rgba(217,119,6,.20); color: #fcd34d; border-color: rgba(251,191,36,.35); }
+
+/* Candidate form header close (X) — hover feedback: brighter pill + a quick
+   quarter-turn so the button reacts to the cursor. */
+.cand-head-close { transition: background .16s ease, transform .16s ease, box-shadow .16s ease; }
+.cand-head-close:hover {
+  background: rgba(255,255,255,0.32) !important;
+  transform: rotate(90deg);
+  box-shadow: 0 3px 10px rgba(0,0,0,0.22);
+}
+.cand-head-close:active { transform: rotate(90deg) scale(0.92); }
+
 .cand-cv-drop {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 12px; min-height: 60px;
+  display: flex; align-items: center; gap: 9px;
+  padding: 6px 12px; min-height: 40px; height: 40px;
   background: linear-gradient(180deg, #fffbeb 0%, #fef3c7 100%);
   border: 1.5px dashed #f59e0b;
   border-radius: 9px;
   cursor: pointer;
+  overflow: hidden;
   transition: background .15s ease, border-color .15s ease;
 }
 .cand-cv-drop:hover {
   background: linear-gradient(180deg, #fef3c7 0%, #fde68a 100%);
   border-color: #d97706;
 }
-.cand-cv-drop i { font-size: 18px; color: #d97706; flex-shrink: 0; }
-.cand-cv-text { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; }
-.cand-cv-text strong { font-size: 12.5px; color: var(--vz-body-color); font-weight: 700; word-break: break-all; }
-.cand-cv-text span { font-size: 10.5px; color: var(--vz-secondary-color); }
+.cand-cv-drop i { font-size: 16px; color: #d97706; flex-shrink: 0; }
+.cand-cv-text { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
+.cand-cv-text strong { font-size: 12px; color: var(--vz-body-color); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cand-cv-text span { font-size: 9.5px; color: var(--vz-secondary-color); white-space: nowrap; }
 [data-bs-theme="dark"] .cand-cv-drop {
   background: rgba(245,158,11,0.10);
   border-color: rgba(245,158,11,0.50);
@@ -6586,6 +6610,26 @@
   align-self: flex-start;
   max-height: calc(100vh - 200px);
 }
+
+/* Equal-height with the right pane (>=768px, where the columns sit side by
+   side): make the column the positioning context and let the roster fill it
+   absolutely. With the roster out of flow, the shorter right pane drives the
+   row height, so a long roster is capped to that height and scrolls inside
+   instead of hanging below the right boxes. Below 768px the columns stack and
+   the roster keeps sizing to its content (rules above). */
+@media (min-width: 768px) {
+  .att-emplist-col { position: relative; }
+  .att-emplist-col .att-emplist {
+    position: absolute;
+    inset: 0;
+    align-self: stretch;
+    max-height: none;
+  }
+  .att-emplist-col .att-emplist-scroll {
+    max-height: none;
+    min-height: 0;
+  }
+}
 [data-bs-theme="dark"] .att-emplist {
   background: rgba(255,255,255,0.03);
   border-color: rgba(255,255,255,0.10);
@@ -6674,9 +6718,9 @@
   scrollbar-width: thin;
   scrollbar-color: rgba(15,23,42,0.22) transparent;
 }
-.att-emplist-scroll::-webkit-scrollbar { width: 8px; }
+.att-emplist-scroll::-webkit-scrollbar { width: 5px; }
 .att-emplist-scroll::-webkit-scrollbar-track { background: transparent; }
-.att-emplist-scroll::-webkit-scrollbar-thumb { background: rgba(15,23,42,0.22); border-radius: 8px; }
+.att-emplist-scroll::-webkit-scrollbar-thumb { background: rgba(15,23,42,0.18); border-radius: 999px; }
 .att-emplist-scroll::-webkit-scrollbar-thumb:hover { background: rgba(15,23,42,0.34); }
 [data-bs-theme="dark"] .att-emplist-scroll { scrollbar-color: rgba(255,255,255,0.40) transparent; }
 [data-bs-theme="dark"] .att-emplist-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.40); }
@@ -6781,7 +6825,7 @@
 /* ── Section header (TODAY'S RECORD) ── */
 .att-section-head {
   display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 8px; padding: 0 4px;
+  margin-bottom: 4px; padding: 0 2px;
 }
 .att-section-label {
   font-size: 10.5px; font-weight: 800; letter-spacing: 0.10em;
@@ -6794,19 +6838,22 @@
    teal-tinted titlebar + drop shadow + hover lift. ── */
 .att-today-card {
   position: relative;
-  background: var(--vz-card-bg);
-  border: 1px solid var(--vz-border-color);
-  border-radius: 14px;
-  box-shadow: 0 4px 14px rgba(15,23,42,0.06), 0 1px 3px rgba(15,23,42,0.04);
+  background: linear-gradient(165deg, #ffffff 0%, #f6fdfb 58%, #edfbf6 100%);
+  border: 1px solid #e3f0ed;
+  border-radius: 16px;
+  box-shadow: 0 8px 26px rgba(15,23,42,0.07), 0 2px 8px rgba(13,148,136,0.06), 0 1px 0 rgba(255,255,255,0.9) inset;
   overflow: hidden;
   height: 100%;
-  min-height: 380px;
-  transition: box-shadow .2s ease, transform .2s ease, border-color .2s ease;
+  min-height: 312px;
+  transition: box-shadow .25s ease, transform .25s ease, border-color .25s ease;
 }
 [data-bs-theme="dark"] .att-today-card {
-  background: rgba(255,255,255,0.03);
-  border-color: rgba(255,255,255,0.10);
-  box-shadow: 0 4px 14px rgba(0,0,0,0.30);
+  background:
+    radial-gradient(120% 85% at 50% 0%, rgba(20,184,166,0.14), transparent 55%),
+    linear-gradient(165deg, rgba(255,255,255,0.055), rgba(255,255,255,0) 62%),
+    var(--vz-card-bg);
+  border-color: rgba(45,212,191,0.22);
+  box-shadow: 0 16px 36px rgba(0,0,0,0.48), 0 0 0 1px rgba(45,212,191,0.05), inset 0 1px 0 rgba(255,255,255,0.06);
 }
 .att-today-card::before {
   content: '';
@@ -6817,10 +6864,14 @@
   z-index: 1;
 }
 .att-today-card:hover {
-  box-shadow: 0 10px 28px rgba(13,148,136,0.10), 0 2px 6px rgba(15,23,42,0.05);
+  transform: translateY(-3px);
+  box-shadow: 0 16px 38px rgba(13,148,136,0.17), 0 4px 12px rgba(15,23,42,0.07), 0 1px 0 rgba(255,255,255,0.9) inset;
   border-color: #99f6e4;
 }
-[data-bs-theme="dark"] .att-today-card { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
+[data-bs-theme="dark"] .att-today-card:hover {
+  box-shadow: 0 16px 38px rgba(13,148,136,0.28), 0 4px 12px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.05) inset;
+  border-color: rgba(45,212,191,0.35);
+}
 
 .att-today-banner {
   display: flex; align-items: center; justify-content: space-between;
@@ -6911,18 +6962,21 @@
    (slate gradient since OUT punches use slate) + soft shadow + hover lift. ── */
 .att-timeline-card {
   position: relative;
-  background: var(--vz-card-bg);
-  border: 1px solid var(--vz-border-color);
-  border-radius: 14px;
-  box-shadow: 0 4px 14px rgba(15,23,42,0.06), 0 1px 3px rgba(15,23,42,0.04);
-  min-height: 380px;
+  background: linear-gradient(165deg, #ffffff 0%, #f6fdfb 58%, #edfbf6 100%);
+  border: 1px solid #e3f0ed;
+  border-radius: 16px;
+  box-shadow: 0 8px 26px rgba(15,23,42,0.07), 0 2px 8px rgba(13,148,136,0.06), 0 1px 0 rgba(255,255,255,0.9) inset;
+  min-height: 312px;
   overflow: hidden;
-  transition: box-shadow .2s ease, transform .2s ease, border-color .2s ease;
+  transition: box-shadow .25s ease, transform .25s ease, border-color .25s ease;
 }
 [data-bs-theme="dark"] .att-timeline-card {
-  background: rgba(255,255,255,0.03);
-  border-color: rgba(255,255,255,0.10);
-  box-shadow: 0 4px 14px rgba(0,0,0,0.30);
+  background:
+    radial-gradient(120% 85% at 50% 0%, rgba(20,184,166,0.14), transparent 55%),
+    linear-gradient(165deg, rgba(255,255,255,0.055), rgba(255,255,255,0) 62%),
+    var(--vz-card-bg);
+  border-color: rgba(45,212,191,0.22);
+  box-shadow: 0 16px 36px rgba(0,0,0,0.48), 0 0 0 1px rgba(45,212,191,0.05), inset 0 1px 0 rgba(255,255,255,0.06);
 }
 .att-timeline-card::before {
   content: '';
@@ -6933,15 +6987,48 @@
   z-index: 1;
 }
 .att-timeline-card:hover {
-  box-shadow: 0 10px 28px rgba(13,148,136,0.10), 0 2px 6px rgba(15,23,42,0.05);
+  transform: translateY(-3px);
+  box-shadow: 0 16px 38px rgba(13,148,136,0.17), 0 4px 12px rgba(15,23,42,0.07), 0 1px 0 rgba(255,255,255,0.9) inset;
   border-color: #99f6e4;
+}
+[data-bs-theme="dark"] .att-timeline-card:hover {
+  box-shadow: 0 16px 38px rgba(13,148,136,0.28), 0 4px 12px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.05) inset;
+  border-color: rgba(45,212,191,0.35);
+}
+
+/* Premium KPI cards — scoped to the Attendance page so the shared
+   .rec-kpi-card stays as-is on every other page. Soft gradient surface,
+   deeper layered shadow and a smooth hover-lift matching the record cards. */
+.att-page .rec-kpi-card {
+  padding: 9px 14px;
+  background: linear-gradient(165deg, #ffffff 0%, #f7fdfc 100%);
+  border-radius: 14px;
+  box-shadow: 0 6px 18px rgba(15,23,42,0.06), 0 1px 0 rgba(255,255,255,0.9) inset;
+  transition: transform .22s cubic-bezier(.34,1.56,.64,1), box-shadow .22s ease, border-color .22s ease;
+}
+.att-page .rec-kpi-icon { width: 38px; height: 38px; }
+.att-page .rec-kpi-num { line-height: 1.1; }
+.att-page .rec-kpi-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 32px rgba(13,148,136,0.14), 0 4px 10px rgba(15,23,42,0.06), 0 1px 0 rgba(255,255,255,0.9) inset;
+}
+[data-bs-theme="dark"] .att-page .rec-kpi-card {
+  background:
+    radial-gradient(120% 95% at 50% 0%, rgba(20,184,166,0.11), transparent 60%),
+    linear-gradient(165deg, rgba(255,255,255,0.05), rgba(255,255,255,0) 65%),
+    var(--vz-card-bg);
+  border-color: rgba(45,212,191,0.16);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+[data-bs-theme="dark"] .att-page .rec-kpi-card:hover {
+  box-shadow: 0 16px 32px rgba(13,148,136,0.22), 0 4px 10px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.05) inset;
 }
 
 .att-timeline-head {
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 8px;
-  margin: -16px -20px 14px;       /* extend the head edge-to-edge under the gradient strip */
-  padding: 14px 18px 12px;
+  margin: -16px -20px 12px;       /* extend the head edge-to-edge under the gradient strip */
+  padding: 9px 18px;
   background: linear-gradient(180deg, rgba(204,251,241,0.45) 0%, transparent 100%);
   border-bottom: 1px solid var(--vz-border-color);
 }
@@ -7030,6 +7117,61 @@
   border: 0;
   border-radius: 0;
   box-shadow: none;
+}
+
+/* WorklistPager footer — retheme from the shared violet to this page's teal
+   accent so the pager matches the rest of the (teal) Attendance UI instead of
+   reading as a stray purple band. Scoped to .att-logs-card so the shared pager
+   stays violet on every other page. */
+/* Join the table + pager into ONE continuous card. The Velzon .table-card
+   class adds negative margins, so the table bled wider than the pager and the
+   pager read as a separate floating band. Neutralise that bleed, square the
+   table's bottom edge, and butt the pager flush underneath with matching
+   side/bottom borders so they read as a single bordered unit. */
+.att-logs-card .att-logs-table-wrap--fixed {
+  margin: 0 !important;
+  border-bottom: 0 !important;
+  border-radius: 12px 12px 0 0 !important;
+}
+.att-logs-card .wl-pager {
+  margin-top: 0;
+  border: 1px solid var(--vz-border-color);
+  border-top: 2px solid #99f6e4;
+  border-radius: 0 0 12px 12px;
+  background: linear-gradient(90deg, #f0fdfa 0%, #d8f7f1 40%, #f0fdfa 100%);
+}
+.att-logs-card .tc-wl-info,
+.att-logs-card .tc-wl-rows {
+  color: #0f766e;
+  border-color: #99f6e4;
+  box-shadow: 0 1px 4px rgba(13,148,136,.10), 0 1px 0 rgba(255,255,255,.9) inset;
+}
+.att-logs-card .tc-wl-info .tc-wl-hl { color: #0d9488; }
+.att-logs-card .tc-wl-rows select { color: #0d9488; }
+.att-logs-card .tc-wl-range {
+  background: linear-gradient(135deg, #2dd4bf 0%, #0d9488 55%, #0f766e 100%);
+  box-shadow: 0 3px 12px rgba(13,148,136,.4), 0 1px 0 rgba(255,255,255,.2) inset;
+}
+.att-logs-card .tc-wl-btn { border-color: #99f6e4; color: #0d9488; }
+.att-logs-card .tc-wl-btn:hover:not(:disabled) {
+  background: #fff; border-color: #0d9488;
+  box-shadow: 0 4px 12px rgba(13,148,136,.25);
+}
+[data-bs-theme="dark"] .att-logs-card .wl-pager {
+  background: linear-gradient(90deg, rgba(13,148,136,.08), rgba(13,148,136,.16), rgba(13,148,136,.08));
+  border: 1px solid var(--vz-border-color);
+  border-top: 2px solid rgba(45,212,191,.30);
+}
+[data-bs-theme="dark"] .att-logs-card .tc-wl-info,
+[data-bs-theme="dark"] .att-logs-card .tc-wl-rows,
+[data-bs-theme="dark"] .att-logs-card .tc-wl-btn {
+  background: rgba(45,212,191,.10); border-color: rgba(45,212,191,.32); color: #5eead4;
+}
+[data-bs-theme="dark"] .att-logs-card .tc-wl-info .tc-wl-hl,
+[data-bs-theme="dark"] .att-logs-card .tc-wl-rows select { color: #5eead4; }
+[data-bs-theme="dark"] .att-logs-card .tc-wl-btn:hover:not(:disabled) {
+  background: rgba(45,212,191,.22); border-color: #2dd4bf; color: #fff;
+  box-shadow: 0 4px 12px rgba(13,148,136,.35);
 }
 
 .att-logs-head {
@@ -7539,7 +7681,7 @@
    ════════════════════════════════════════════════════════════════════════ */
 .att-today-titlebar {
   display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
-  padding: 14px 16px;
+  padding: 9px 14px;
   background: linear-gradient(180deg, rgba(204,251,241,0.45) 0%, transparent 100%);
   border-bottom: 1px solid var(--vz-border-color);
 }
@@ -7582,8 +7724,9 @@
   transition: border-color .18s ease, box-shadow .18s ease, transform .15s ease;
 }
 [data-bs-theme="dark"] .att-tile {
-  background: rgba(255,255,255,0.04);
-  border-color: rgba(255,255,255,0.10);
+  background: linear-gradient(165deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+  border-color: rgba(45,212,191,0.16);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
 }
 .att-tile::after {
   content: '';

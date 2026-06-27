@@ -1057,6 +1057,25 @@ tbody tr:nth-child(10) {
 }
 .frm-cstrip-title { font-size: 18px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
 .frm-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; margin-top: 4px; line-height: 1.5; }
+
+/* Attendance page — compact header strip. The shared strip reads too tall on
+   this page; scope the smaller sizing to .att-page so every other page that
+   uses .frm-cstrip keeps its original height. */
+.att-page .frm-cstrip { min-height: 52px; padding: 8px 16px; }
+.att-page .frm-cstrip-left { gap: 12px; }
+.att-page .frm-cstrip-icon { width: 38px; height: 38px; border-radius: 10px; font-size: 18px; }
+.att-page .frm-cstrip-title { font-size: 16px; }
+.att-page .frm-cstrip-sub { font-size: 11.5px; margin-top: 2px; }
+/* Premium dark header strip — elevated glass with a soft violet glow on the
+   accent side instead of a flat near-black bar. */
+[data-bs-theme="dark"] .att-page .frm-cstrip {
+  background:
+    radial-gradient(130% 130% at 0% 50%, rgba(124,58,237,0.18), transparent 55%),
+    linear-gradient(165deg, rgba(255,255,255,0.045), rgba(255,255,255,0) 60%),
+    var(--vz-card-bg);
+  border-color: rgba(167,139,250,0.34);
+  box-shadow: 0 12px 30px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.05);
+}
 .frm-cstrip-back {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   padding: 0 18px; height: 44px; border-radius: 14px;
