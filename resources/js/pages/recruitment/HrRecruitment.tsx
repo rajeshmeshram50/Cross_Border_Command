@@ -1391,36 +1391,29 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
           ))}
         </div>
 
-        <div className="rec-req-tab-strip d-flex align-items-center gap-2 flex-wrap" style={{ padding: '8px 18px 12px' }}>
-          {([
-            { key: 'pending',  label: 'Pending Hiring Requests', icon: 'ri-time-line',        count: pendingCount },
-            { key: 'created',  label: 'Recruitment Created',     icon: 'ri-user-search-line', count: createdCount },
-            { key: 'rejected', label: 'Rejected',                icon: 'ri-close-circle-line', count: rejectedCount },
-          ] as const).map(t => {
-            const active = tab === t.key;
-            return (
+        {/* Tabs use the same rec-tab-track / rec-tab styling as the main
+            Recruitment list table for a consistent look across the module. */}
+        <div className="rec-req-filter-row d-flex align-items-center gap-3 flex-wrap" style={{ padding: '8px 18px 12px' }}>
+          <div className="rec-tab-track" style={{ marginBottom: 0, flex: '1 1 0', minWidth: 0 }}>
+            {([
+              { key: 'pending',  label: 'Pending Hiring Requests', icon: 'ri-time-line',         count: pendingCount,  variant: 'in-progress' },
+              { key: 'created',  label: 'Recruitment Created',     icon: 'ri-user-search-line',  count: createdCount,  variant: 'completed'   },
+              { key: 'rejected', label: 'Rejected',                icon: 'ri-close-circle-line', count: rejectedCount, variant: 'cancelled'   },
+            ] as const).map(t => (
               <button
                 key={t.key}
                 type="button"
                 onClick={() => setTab(t.key)}
-                className="btn d-inline-flex align-items-center gap-2 fw-semibold"
-                style={{
-                  background: active ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'var(--vz-secondary-bg)',
-                  color: active ? '#fff' : 'var(--vz-secondary-color)',
-                  border: active ? 'none' : '1px solid var(--vz-border-color)',
-                  borderRadius: 999,
-                  padding: '6px 14px',
-                  fontSize: 12.5,
-                  boxShadow: active ? '0 4px 12px rgba(124,92,252,0.25)' : 'none',
-                }}
+                className={`rec-tab ${tab === t.key ? `is-active ${t.variant}` : ''}`}
+                style={{ flex: 1, justifyContent: 'center' }}
               >
-                <i className={t.icon} style={{ fontSize: 14 }} />
+                <i className={t.icon} />
                 {t.label}
-                <span className={`rec-tab-count${active ? ' rec-tab-count--active' : ''}`}>{t.count}</span>
+                <span className="badge">{t.count}</span>
               </button>
-            );
-          })}
-          <div className="rec-req-search search-box ms-auto" style={{ flex: '0 1 340px', minWidth: 200 }}>
+            ))}
+          </div>
+          <div className="rec-req-search search-box" style={{ flex: '0 1 340px', minWidth: 200 }}>
             <Input
               type="text"
               className="form-control"

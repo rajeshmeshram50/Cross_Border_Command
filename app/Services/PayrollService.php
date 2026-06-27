@@ -489,6 +489,10 @@ class PayrollService
             }
 
             $nameCache = $this->masterNameCaches();
+            // Batch the exit lookup ONCE for the whole run instead of querying
+            // employee_exits (plus a Schema::hasTable check) per employee inside
+            // computeForEmployee — exitMap() already accepts an id array. (perf)
+            $exitMap = $this->exitMap($employees->pluck('id')->all());
 
             $totGross = 0;
             $totDed   = 0;
@@ -496,7 +500,7 @@ class PayrollService
             $onHold   = 0;
 
             foreach ($employees as $employee) {
-                $data = $this->computeForEmployee($employee, $period, $nameCache);
+                $data = $this->computeForEmployee($employee, $period, $nameCache, $exitMap);
                 $data['client_id']         = $period->client_id;
                 // Store the EMPLOYEE's real branch (not the period's), so a
                 // client-wide run still keeps per-branch reporting accurate.
@@ -534,7 +538,7 @@ class PayrollService
      * The core per-employee calculation. Returns a full Payslip attribute array.
      * Pure-ish: only reads, never writes.
      */
-    public function computeForEmployee(Employee $employee, PayrollPeriod $period, array $nameCache = []): array
+    public function computeForEmployee(Employee $employee, PayrollPeriod $period, array $nameCache = [], ?array $exitMap = null): array
     {
         $exceptions = [];
 
@@ -599,7 +603,7 @@ class PayrollService
         if ($employee->date_of_joining && Carbon::parse($employee->date_of_joining)->gt($winStart)) {
             $winStart = Carbon::parse($employee->date_of_joining)->copy();
         }
-        $lwd = $this->exitMap([$employee->id])[$employee->id] ?? null;
+        $lwd = ($exitMap ?? $this->exitMap([$employee->id]))[$employee->id] ?? null;
         if ($lwd && Carbon::parse($lwd)->lt($winEnd)) {
             $winEnd = Carbon::parse($lwd)->copy();
         }

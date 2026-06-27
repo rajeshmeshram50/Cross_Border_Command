@@ -164,15 +164,28 @@ export default function HrBroadcastCentre() {
     { label: 'High Priority', value: highPriorityCount, icon: 'ri-fire-fill',           gradient: 'linear-gradient(135deg,#f06548 0%,#fb9b85 100%)', deep: '#c2410c' },
   ];
 
-  const handleSaved = (saved: AnnRow) => {
+  // Merge a saved row into the list (insert new / replace existing) + refresh
+  // stats. Shared by the close-on-save (Publish) and keep-open (Save Draft) paths.
+  const mergeSavedRow = (saved: AnnRow) => {
     setRows(prev => {
       const idx = prev.findIndex(r => r.id === saved.id);
       if (idx >= 0) { const next = [...prev]; next[idx] = saved; return next; }
       return [saved, ...prev];
     });
+    fetchAll(); // refresh stats too
+  };
+
+  const handleSaved = (saved: AnnRow) => {
+    mergeSavedRow(saved);
     setCreateOpen(false);
     setEditingRow(null);
-    fetchAll(); // refresh stats too
+  };
+
+  // Save Draft path — persist to the list/stats but KEEP the modal open so the
+  // user can keep editing. The modal tracks the saved id internally so further
+  // saves update the same record rather than creating duplicate drafts.
+  const handleSilentSave = (saved: AnnRow) => {
+    mergeSavedRow(saved);
   };
 
   const handleDelete = async (row: AnnRow) => {
@@ -404,6 +417,7 @@ export default function HrBroadcastCentre() {
         editing={editingRow}
         onClose={() => { setCreateOpen(false); setEditingRow(null); }}
         onSaved={handleSaved}
+        onSilentSave={handleSilentSave}
       />
     </>
   );
@@ -440,17 +454,25 @@ const STEPS: Array<{ key: number; label: string; sub: string }> = [
   { key: 4, label: 'Review & Publish', sub: 'Final confirmation' },
 ];
 const TOTAL_STEPS = STEPS.length;
+// Mirrors the server rule `title => max:191` so the over-length error is caught
+// instantly on Step 1's "Save & Next" instead of failing at publish.
+const TITLE_MAX = 191;
 
 function CreateAnnouncementModal({
-  isOpen, editing, onClose, onSaved,
+  isOpen, editing, onClose, onSaved, onSilentSave,
 }: {
   isOpen: boolean;
   editing: AnnRow | null;
   onClose: () => void;
   onSaved: (row: AnnRow) => void;
+  onSilentSave: (row: AnnRow) => void;
 }) {
   const toast = useToast();
   const [step, setStep] = useState(1);
+  // Tracks the persisted record id once a draft has been saved, so a NEW
+  // announcement saved via "Save Draft" (which keeps the modal open) updates
+  // the same row on the next save instead of creating duplicate drafts.
+  const [savedId, setSavedId] = useState<number | null>(editing?.id ?? null);
 
   // Step 1
   const [title, setTitle] = useState('');
@@ -492,6 +514,7 @@ function CreateAnnouncementModal({
     setErrors({});
     setSaving(null);
     setAttachment(null);
+    setSavedId(editing?.id ?? null);
 
     if (editing) {
       setTitle(editing.title || '');
@@ -599,6 +622,7 @@ function CreateAnnouncementModal({
     const e: Record<string, string> = {};
     if (s === 1) {
       if (!title.trim()) e.title = 'Title is required';
+      else if (title.trim().length > TITLE_MAX) e.title = `Title must be ${TITLE_MAX} characters or fewer (currently ${title.trim().length}).`;
       if (!description.trim()) e.description = 'Description is required';
     }
     if (s === 2) {
@@ -657,13 +681,22 @@ function CreateAnnouncementModal({
     setSaving(asDraft ? 'draft' : 'publish');
     try {
       const fd = buildPayload(asDraft ? 'Draft' : null);
-      const isEdit = editing != null;
+      // Treat as an update when we already have a persisted id — either editing
+      // an existing row OR re-saving a draft created earlier in this session.
+      const isEdit = savedId != null;
       if (isEdit) fd.append('_method', 'PUT');
-      const url = isEdit ? `/announcements/${editing!.id}` : '/announcements';
+      const url = isEdit ? `/announcements/${savedId}` : '/announcements';
       const { data } = await api.post(url, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success(asDraft ? 'Saved as draft' : (isEdit ? 'Announcement updated' : 'Announcement published'),
         `${data.code || data.id} saved.`);
-      onSaved(data);
+      if (asDraft) {
+        // Keep the modal open; remember the id so the next save updates this
+        // same record instead of inserting another draft.
+        setSavedId(data.id);
+        onSilentSave(data);
+      } else {
+        onSaved(data);
+      }
     } catch (err: any) {
       if (err?.response?.status === 422 && err?.response?.data?.errors) {
         const serverErrs = err.response.data.errors as Record<string, string | string[]>;

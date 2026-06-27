@@ -409,6 +409,17 @@ export default function HrPayroll() {
     [cycleKey, cycleMonths],
   );
 
+  // Bug #22 — a cycle whose month hasn't started yet (e.g. July while it's June)
+  // has no attendance to process; payroll for it must not be generated. Backend
+  // enforces this too, but we disable the button so HR gets a clear signal
+  // instead of a 422 after clicking.
+  const isFutureCycle = useMemo(() => {
+    if (!cycle) return false;
+    const curYear = today.getFullYear();
+    const curMonth = today.getMonth() + 1;
+    return cycle.year > curYear || (cycle.year === curYear && cycle.month > curMonth);
+  }, [cycle, today]);
+
   // Switch the displayed year — keep the same month if possible, else snap to
   // the live (In Progress) cycle of that year, else its first month.
   const selectYear = (y: number) => {
@@ -460,6 +471,10 @@ export default function HrPayroll() {
     if (busy) return;
     const month = cycle?.month, year = cycle?.year;
     if (!month || !year) { toast.error('Run failed', 'Select a valid cycle first.'); return; }
+    if (isFutureCycle) {
+      toast.error('Cycle not started', `${cycle.label} hasn't begun yet — payroll can be run once the period starts.`);
+      return;
+    }
     setBusy(true);
     try {
       if (!periodMeta?.attendance_finalized) {
@@ -830,14 +845,15 @@ export default function HrPayroll() {
           <Button
             className="rounded-pill fw-bold d-inline-flex align-items-center pay-hero-run"
             onClick={runPayroll}
-            disabled={busy}
+            disabled={busy || isFutureCycle}
+            title={isFutureCycle ? `${cycle?.label} hasn't started yet` : undefined}
             style={{
               padding: '10px 18px',
               fontSize: 13,
               color: '#fff',
               background: 'linear-gradient(135deg,#0ab39c 0%,#078b78 100%)',
               boxShadow: '0 8px 18px rgba(90,63,209,0.32)',
-              opacity: busy ? 0.6 : 1,
+              opacity: (busy || isFutureCycle) ? 0.6 : 1,
             }}
           >
             <i className={`me-2 ${busy ? 'ri-loader-4-line' : 'ri-play-circle-line'}`} style={{ fontSize: 16 }} />
@@ -1115,8 +1131,8 @@ export default function HrPayroll() {
           >
             {[
               { key: 'processing' as const, label: 'Payroll Processing', icon: 'ri-money-rupee-circle-line', count: counts.totalEmployees },
-              { key: 'biometric'  as const, label: 'Biometric Input',    icon: 'ri-fingerprint-line',         count: counts.attMismatch },
-              { key: 'report'     as const, label: 'Salary Report',      icon: 'ri-file-chart-line',          count: counts.processed },
+              { key: 'biometric'  as const, label: 'Biometric Input',    icon: 'ri-fingerprint-line',         count: counts.totalEmployees },
+              { key: 'report'     as const, label: 'Salary Report',      icon: 'ri-file-chart-line',          count: counts.totalEmployees },
               { key: 'salary'     as const, label: 'Salary Setup',       icon: 'ri-money-rupee-circle-line',  count: roster.filter(r => !r.has_structure).length },
             ].map(t => {
               const on = tab === t.key;
@@ -1663,6 +1679,8 @@ export default function HrPayroll() {
         atRiskAmountLabel={fmtINRShort(atRiskAmount)}
         issues={runIssues}
         onAction={handleIssueAction}
+        onExportPayslips={downloadAllPayslips}
+        exporting={downloading === 'zip'}
       />
 
       {paySlipRow && (() => {

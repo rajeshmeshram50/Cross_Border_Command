@@ -633,9 +633,13 @@ export default function IdimsHeader() {
                     {IC.clock}
                   </button>
                 )}
-                <button type="button" className="idims-action-btn idims-mail-btn" title="Gmail" onClick={() => go('/gmail')}>
-                  {IC.mail}
-                </button>
+                {/* Email (Gmail) button is hidden for employee logins — only
+                    branch/client users (and admins) get it. */}
+                {!isEmployee && (
+                  <button type="button" className="idims-action-btn idims-mail-btn" title="Gmail" onClick={() => go('/gmail')}>
+                    {IC.mail}
+                  </button>
+                )}
                 <button type="button" className="idims-action-btn" title="Inbox" onClick={() => go('/inbox')}>
                   {IC.bell}
                   {!!user?.inbox_count && <span className="idims-action-badge" />}

@@ -35,7 +35,10 @@ class EmployeeController extends Controller
         'creator:id,name,user_type',
         'user:id,name,email,status,last_login_at,user_type,designation',
         'department:id,name,code',
-        'designation:id,name',
+        // `level` mirrors the 6 canonical role tiers (Director/CEO … Intern)
+        // — the HR document-template generator filters its recipient list by
+        // designation.level === template.role_type, so it must be selected.
+        'designation:id,name,level',
         'holidayGroup:id,name',
         'primaryRole:id,name',
         'ancillaryRole:id,name',

@@ -52,6 +52,13 @@ export interface PayrollRunModalProps {
   /** Fired when an issue action chip (Go to Attendance / Open Employee /
    *  Upload Proof) is clicked — parent handles navigation. */
   onAction?: (action: PayrollRunActionChip, issue: PayrollRunIssue) => void;
+  /** Fired when the success screen's "Export Payslips" button is clicked —
+   *  parent downloads the cycle's payslips (ZIP). The modal stays open so the
+   *  user can still proceed to pay afterwards. */
+  onExportPayslips?: () => void;
+  /** True while the parent's payslip export is in flight — drives the button's
+   *  spinner + disabled state. */
+  exporting?: boolean;
 }
 
 const ACTION_TONES: Record<PayrollRunActionChip['tone'], { bg: string; fg: string; border: string }> = {
@@ -80,6 +87,8 @@ export default function PayrollRunModal({
   atRiskAmountLabel,
   issues,
   onAction,
+  onExportPayslips,
+  exporting = false,
 }: PayrollRunModalProps) {
   const [phase, setPhase] = useState<'preflight' | 'success'>('preflight');
   const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set());
@@ -447,8 +456,18 @@ export default function PayrollRunModal({
 
           {/* Secondary actions */}
           <div className="d-flex gap-2 mt-2">
-            <button type="button" className="prm-btn prm-btn--ghost flex-grow-1" onClick={onClose}>
-              <i className="ri-download-2-line me-1" /> Export Payslips
+            <button
+              type="button"
+              className="prm-btn prm-btn--ghost flex-grow-1"
+              onClick={() => onExportPayslips?.()}
+              disabled={exporting || !onExportPayslips}
+              style={exporting ? { opacity: 0.75, cursor: 'wait' } : undefined}
+            >
+              {exporting ? (
+                <><i className="ri-loader-4-line me-1" style={{ animation: 'spin 1s linear infinite' }} /> Exporting…</>
+              ) : (
+                <><i className="ri-download-2-line me-1" /> Export Payslips</>
+              )}
             </button>
             <button type="button" className="prm-btn prm-btn--ghost flex-grow-1" onClick={onClose}>
               <i className="ri-file-list-3-line me-1" /> View Payroll Details
