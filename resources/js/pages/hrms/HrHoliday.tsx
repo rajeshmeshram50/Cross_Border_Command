@@ -136,6 +136,7 @@ export default function HrHoliday() {
     [groups],
   );
 
+  const [idSort, setIdSort] = useState<'asc' | 'desc' | null>(null);
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return rows.filter(r => {
@@ -151,10 +152,21 @@ export default function HrHoliday() {
     });
   }, [rows, search, typeFilter, yearFilter, groupFilter]);
 
+  // Holiday ID column sort — natural alphanumeric on the displayed code,
+  // toggled none → asc → desc → none from the header arrow. Count/pagination
+  // stay on `filtered` (sorting doesn't change the row count).
+  const sorted = useMemo(() => {
+    if (!idSort) return filtered;
+    const codeOf = (r: typeof filtered[number]) => r.code || `HOL-${r.id}`;
+    const arr = [...filtered].sort((a, b) =>
+      codeOf(a).localeCompare(codeOf(b), undefined, { numeric: true, sensitivity: 'base' }));
+    return idSort === 'desc' ? arr.reverse() : arr;
+  }, [filtered, idSort]);
+
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage  = Math.min(page, pageCount);
   const sliceFrom = (safePage - 1) * pageSize;
-  const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
+  const visible   = sorted.slice(sliceFrom, sliceFrom + pageSize);
   const goto = (p: number) => setPage(Math.max(1, Math.min(pageCount, p)));
 
   const targetGroupId =groupFilter !== 'All' ? Number(groupFilter) : null;
@@ -437,21 +449,35 @@ export default function HrHoliday() {
                       <thead>
                         <tr>
                           <th className="ps-3 text-center" style={{ width: 60 }}>Sr No</th>
-                          <th style={{ width: 110 }}>Holiday ID</th>
+                          <th style={{ width: 110 }}>
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => setIdSort(s => (s === 'asc' ? 'desc' : s === 'desc' ? null : 'asc'))}
+                              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setIdSort(s => (s === 'asc' ? 'desc' : s === 'desc' ? null : 'asc')); } }}
+                              style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, userSelect: 'none' }}
+                              title="Sort by Holiday ID"
+                            >
+                              Holiday ID
+                              <i
+                                className={idSort === 'asc' ? 'ri-arrow-up-line' : idSort === 'desc' ? 'ri-arrow-down-line' : 'ri-arrow-up-down-line'}
+                                style={{ fontSize: 13, opacity: idSort ? 1 : 0.45 }}
+                              />
+                            </span>
+                          </th>
                           <th>Holiday Name</th>
                           <th style={{ width: 160 }}>Group</th>
                           <th style={{ width: 125 }}>Date</th>
                           <th style={{ width: 100 }}>Day</th>
                           <th style={{ width: 130 }}>Type</th>
-                          <th style={{ width: 90 }}>Recurring</th>
                           <th className="text-center pe-3" style={{ width: 110 }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {loading ? (
-                          <ShimmerTableRows rows={5} cols={9} />
+                          <ShimmerTableRows rows={5} cols={8} />
                         ) : visible.length === 0 ? (
-                          <tr><td colSpan={9} className="text-center py-5 text-muted">
+                          <tr><td colSpan={8} className="text-center py-5 text-muted">
                             <i className="ri-calendar-2-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
                             {rows.length === 0 ? 'No holidays yet — click Add Holiday or Import Excel to get started' : 'No holidays match your filters'}
                           </td></tr>
@@ -476,11 +502,6 @@ export default function HrHoliday() {
                               <td className="fs-13"><span className="rec-date">{formatDate(r.date)}</span></td>
                               <td className="fs-13 text-muted">{weekdayName(r.date)}</td>
                               <td><span className="rec-pill" style={{ background: tone.bg, color: tone.fg, ['--pill-fg' as any]: tone.fg }}>{r.type}</span></td>
-                              <td className="fs-13">
-                                {r.is_recurring
-                                  ? <span className="rec-pill" style={{ background: '#d8f5e6', color: '#0f8a4d', ['--pill-fg' as any]: '#0f8a4d' }}>Yearly</span>
-                                  : <span className="rec-pill rec-pill--na" style={{ background: '#eef0f4', color: '#8a93a6', ['--pill-fg' as any]: '#8a93a6' }}>N/A</span>}
-                              </td>
                               <td className="pe-3 text-center">
                                 {/* When the holiday's group is assigned to employees the
                                     row is locked — both icons greyed/disabled with a
