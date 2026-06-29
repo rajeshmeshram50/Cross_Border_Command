@@ -2716,7 +2716,7 @@ export default function AddVendorModal(props: {
                         />
                       </div>
                       {lockedSegments.length > 0 && (
-                        <span className="avm-segment-lock-note"><i className="ri-lock-2-line" /> Segments with uploaded documents can’t be removed — you can still add new ones</span>
+                        <span className="avm-segment-lock-note"><i className="ri-lock-2-line" /> Segments with uploaded documents can’t be removed</span>
                       )}
                     </Field>
                     <Field label="Risk Level" required addNew onAdd={() => setQuickAdd('risk_levels')} error={fieldErrors.riskLevel}>
@@ -6527,8 +6527,12 @@ const SCOPED_CSS = `
   box-shadow: 0 3px 9px rgba(124,58,237,.42);
 }
 /* Popup Close/Cancel — match Figma .sf-btn-cancel (light slate border, radius 12px). */
-.avm-cp-foot .avm-btn-ghost { color: #475569; border: 1.5px solid #e2e8f0; border-radius: 12px; font-weight: 700; }
+/* Footer buttons — exact Figma .sf-pop-foot .sf-btn: 13px / 700, padding
+   10px 22px, radius 12px. Cancel = white + #475569 text; Save keeps the base
+   violet gradient (which already matches Figma's .sf-btn-primary). */
+.avm-cp-foot .avm-btn-ghost { color: #475569; background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px; font-weight: 700; font-size: 13px; height: auto; padding: 10px 22px; box-shadow: none; }
 .avm-cp-foot .avm-btn-ghost:hover { background: #f8fafc; border-color: #cbd5e1; color: #334155; }
+.avm-cp-foot .avm-btn-primary { font-weight: 700; font-size: 13px; height: auto; padding: 10px 22px; border-radius: 12px; }
 [data-bs-theme="dark"] .avm-mapped-table thead tr { background: rgba(124,58,237,.12); }
 [data-bs-theme="dark"] .avm-mapped-table thead th { color: #c4b5fd; border-bottom-color: rgba(167,139,250,.2); }
 [data-bs-theme="dark"] .avm-mapped-table tbody td { color: #cbd5e1; }

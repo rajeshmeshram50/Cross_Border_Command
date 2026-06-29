@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Modal, ModalBody } from 'reactstrap';
 import { leaveRequestsApi, ApiLeaveRequest, ApiLeaveApprover } from '../hrms/leavePlansApi';
+import { useTheme } from '../../contexts/ThemeContext';
+
+/* Status pill / banner colours, theme-aware so the modal reads correctly in
+ * both light and dark mode (the dark variants use translucent fills + bright
+ * text instead of the light-mode pastel-on-dark-text pairs). */
+function statusColors(status: string | null | undefined, dark: boolean): { bg: string; fg: string } {
+  if (status === 'Approved') return dark ? { bg: 'rgba(16,185,129,.16)', fg: '#34d399' } : { bg: '#d1fae5', fg: '#065f46' };
+  if (status === 'Rejected') return dark ? { bg: 'rgba(239,68,68,.16)', fg: '#f87171' } : { bg: '#fee2e2', fg: '#b91c1c' };
+  return dark ? { bg: 'rgba(148,163,184,.16)', fg: '#cbd5e1' } : { bg: '#eef2f6', fg: '#374151' };
+}
 
 interface Props {
   isOpen: boolean;
@@ -42,6 +52,13 @@ function daysAgoLabel(endIso: string | null | undefined): string {
 }
 
 export default function LeaveRequestDetailsModal({ isOpen, requestId, onClose }: Props) {
+  const { theme } = useTheme();
+  const dark = theme === 'dark';
+  // Theme-aware structural colours (borders / dividers / date card) — the
+  // modal-content surface itself already flips via Velzon's dark theme, so
+  // only these hardcoded accents needed switching.
+  const borderCol = dark ? 'rgba(255,255,255,.09)' : '#e5e7eb';
+  const dividerCol = dark ? 'rgba(255,255,255,.07)' : '#f1f3f5';
   const [detail, setDetail] = useState<ApiLeaveRequest | null>(null);
   const [chain, setChain] = useState<ApiLeaveApprover[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,7 +100,7 @@ export default function LeaveRequestDetailsModal({ isOpen, requestId, onClose }:
       backdropClassName="ep-leave-backdrop"
     >
       <ModalBody className="p-0">
-        <div className="d-flex align-items-center justify-content-between" style={{ padding: '20px 24px 16px', borderBottom: '1px solid #e5e7eb' }}>
+        <div className="d-flex align-items-center justify-content-between" style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${borderCol}` }}>
           <h5 className="fw-bold mb-0" style={{ fontSize: 18 }}>Leave Request Details</h5>
           <button type="button" className="btn-close" onClick={onClose} aria-label="Close" />
         </div>
@@ -110,10 +127,10 @@ export default function LeaveRequestDetailsModal({ isOpen, requestId, onClose }:
               </div>
             </div>
 
-            <div className="d-flex align-items-center gap-3 mb-4 pb-3" style={{ borderBottom: '1px solid #f1f3f5' }}>
-              <DateCard mon={from.mon} day={from.day} dow={from.dow} />
-              <span className="fw-bold" style={{ fontSize: 22, color: '#9ca3af' }}>–</span>
-              <DateCard mon={to.mon} day={to.day} dow={to.dow} />
+            <div className="d-flex align-items-center gap-3 mb-4 pb-3" style={{ borderBottom: `1px solid ${dividerCol}` }}>
+              <DateCard mon={from.mon} day={from.day} dow={from.dow} dark={dark} />
+              <span className="fw-bold" style={{ fontSize: 22, color: dark ? '#6b7280' : '#9ca3af' }}>–</span>
+              <DateCard mon={to.mon} day={to.day} dow={to.dow} dark={dark} />
               <div className="ms-2">
                 <div className="fw-semibold" style={{ fontSize: 15 }}>
                   {Number(detail.days)} {Number(detail.days) === 1 ? 'day' : 'days'} of {detail.leave_type?.name ?? '—'}
@@ -126,12 +143,8 @@ export default function LeaveRequestDetailsModal({ isOpen, requestId, onClose }:
 
             {detail.status !== 'Pending' && (
               <div className="mb-3" style={{
-                background:
-                  detail.status === 'Approved' ? '#d1fae5' :
-                  detail.status === 'Rejected' ? '#fee2e2' : '#eef2f6',
-                color:
-                  detail.status === 'Approved' ? '#065f46' :
-                  detail.status === 'Rejected' ? '#b91c1c' : '#374151',
+                background: statusColors(detail.status, dark).bg,
+                color: statusColors(detail.status, dark).fg,
                 borderRadius: 10, padding: 12, fontSize: 13,
               }}>
                 <strong>{detail.status}</strong>
@@ -196,8 +209,8 @@ export default function LeaveRequestDetailsModal({ isOpen, requestId, onClose }:
                   <div className="d-flex align-items-center gap-2 mb-1">
                     <strong style={{ fontSize: 13 }}>{c.name}</strong>
                     <span className="rec-pill" style={{
-                      background: c.status === 'Approved' ? '#d1fae5' : c.status === 'Rejected' ? '#fee2e2' : '#f3f4f6',
-                      color: c.status === 'Approved' ? '#065f46' : c.status === 'Rejected' ? '#b91c1c' : '#6b7280',
+                      background: statusColors(c.status, dark).bg,
+                      color: statusColors(c.status, dark).fg,
                       fontSize: 10,
                     }}>{c.status}</span>
                     {c.acted_at && (
@@ -208,21 +221,6 @@ export default function LeaveRequestDetailsModal({ isOpen, requestId, onClose }:
                 </div>
               </div>
             ))}
-
-            <div className="d-flex align-items-center gap-2 mt-3" style={{
-              border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 14px',
-            }}>
-              <input
-                type="text"
-                className="border-0 flex-grow-1"
-                placeholder="Add comment"
-                disabled
-                style={{ outline: 'none', fontSize: 13, background: 'transparent' }}
-              />
-              <span className="text-muted" title="Comments coming soon">
-                <i className="ri-chat-1-line" />
-              </span>
-            </div>
           </div>
         )}
       </ModalBody>
@@ -230,11 +228,11 @@ export default function LeaveRequestDetailsModal({ isOpen, requestId, onClose }:
   );
 }
 
-function DateCard({ mon, day, dow }: { mon: string; day: string; dow: string }) {
+function DateCard({ mon, day, dow, dark }: { mon: string; day: string; dow: string; dark: boolean }) {
   return (
-    <div className="text-center" style={{ background: '#ede9fe', borderRadius: 12, padding: '8px 16px', minWidth: 72 }}>
+    <div className="text-center" style={{ background: dark ? 'rgba(124,92,252,.18)' : '#ede9fe', borderRadius: 12, padding: '8px 16px', minWidth: 72 }}>
       <div className="text-muted fw-semibold" style={{ fontSize: 10, letterSpacing: 0.5 }}>{mon}</div>
-      <div className="fw-bold" style={{ fontSize: 24, lineHeight: 1, color: '#1f2937' }}>{day}</div>
+      <div className="fw-bold" style={{ fontSize: 24, lineHeight: 1, color: dark ? '#ede9fe' : '#1f2937' }}>{day}</div>
       <div className="text-muted fw-semibold" style={{ fontSize: 10, letterSpacing: 0.5 }}>{dow}</div>
     </div>
   );

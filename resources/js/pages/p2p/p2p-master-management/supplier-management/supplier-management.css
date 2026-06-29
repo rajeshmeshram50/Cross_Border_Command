@@ -382,9 +382,14 @@
 
 [data-bs-theme="dark"] .sup-fig .sl-wrap{background:#141a2b;border-color:rgba(167,139,250,.2);box-shadow:0 8px 28px rgba(0,0,0,.45);}
 [data-bs-theme="dark"] .sup-fig .sl-toolbar{background:#1f1838;border-bottom-color:rgba(167,139,250,.22);}
-[data-bs-theme="dark"] .sup-fig .sl-tabs{background:rgba(124,58,237,.14);border-color:rgba(167,139,250,.3);}
-[data-bs-theme="dark"] .sup-fig .sl-tab{color:#e2d6fb;background:rgba(255,255,255,.06);border-color:rgba(167,139,250,.24);}
-[data-bs-theme="dark"] .sup-fig .sl-tab:hover{color:#fff;background:rgba(124,58,237,.32);border-color:rgba(167,139,250,.5);}
+[data-bs-theme="dark"] .sup-fig .sl-tabs{background:rgba(124,58,237,.10);border-color:rgba(167,139,250,.22);}
+/* Inactive tab → flat & dim (no fill) so it clearly reads as "off". */
+[data-bs-theme="dark"] .sup-fig .sl-tab{color:#9b8fc4;background:transparent;border-color:transparent;box-shadow:none;}
+[data-bs-theme="dark"] .sup-fig .sl-tab:hover{color:#fff;background:rgba(124,58,237,.28);border-color:transparent;}
+/* Active tab → vivid violet pill + glow + light ring so the selected one
+   stands out clearly in dark mode (previously it inherited the light style and
+   blended with the faint inactive fill). */
+[data-bs-theme="dark"] .sup-fig .sl-tab.is-active{color:#fff;background:linear-gradient(135deg,#a78bfa,#8b5cf6,#7c3aed,#5b21b6);border-color:transparent;box-shadow:0 4px 16px rgba(124,58,237,.6),0 0 0 1.5px rgba(196,181,253,.45),0 1px 0 rgba(255,255,255,.4) inset;}
 [data-bs-theme="dark"] .sup-fig .sl-tab svg{opacity:.95;}
 [data-bs-theme="dark"] .sup-fig .sl-search{background:rgba(255,255,255,.07);border-color:rgba(167,139,250,.32);}
 [data-bs-theme="dark"] .sup-fig .sl-search input{color:#f3effe;}
