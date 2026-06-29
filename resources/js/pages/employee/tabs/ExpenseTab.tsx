@@ -14,6 +14,7 @@ export default function ExpenseTab() {
     employee, employeeId, initials, accent, authUser, isOwnProfile,
     expenseModuleTab, setExpenseModuleTab, expenseSubTab, setExpenseSubTab,
     advanceSubTab, setAdvanceSubTab, expenseFilter, setExpenseFilter,
+    expenseSearch, setExpenseSearch,
     expenseCounts, advanceCounts, totalClaimed,
     activeClaimsSource, filteredExpenses, filteredAdvances, activeAdvancesSource,
     apiClaims, teamClaims, apiAdvances, teamAdvances,
@@ -163,7 +164,13 @@ export default function ExpenseTab() {
               </div>
               <div className="d-flex align-items-center gap-2 flex-wrap">
                 <div className="search-box ep-exp-search ext-search">
-                  <input type="text" className="form-control form-control-sm ext-search-input" placeholder="Search…" />
+                  <input
+                    type="text"
+                    className="form-control form-control-sm ext-search-input"
+                    placeholder="Search…"
+                    value={expenseSearch}
+                    onChange={e => setExpenseSearch(e.target.value)}
+                  />
                   <i className="ri-search-line search-icon ext-search-icon" />
                 </div>
                 {/* Export — opens a format picker (Excel / PDF / CSV) and

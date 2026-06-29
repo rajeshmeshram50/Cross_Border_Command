@@ -123,6 +123,22 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
 
   return (
     <div className="leave-summary-panel mb-4">
+      {/* Status pill tints. Light mode keeps the original pastel chips; the
+          dark-mode overrides (which out-rank the inline-free class colours via
+          !important) swap to deep tints so the badges don't wash out to bright
+          chips on the dark table — same treatment as the expense-claims table. */}
+      <style>{`
+        .leave-status-badge--approved { background: #d1fae5; color: #065f46; }
+        .leave-status-badge--rejected { background: #fee2e2; color: #b91c1c; }
+        .leave-status-badge--pending  { background: #fef3c7; color: #a16207; }
+        .leave-status-badge--waiting  { background: #ede9fe; color: #5a3fd1; }
+        .leave-status-badge--neutral  { background: #f3f4f6; color: #6b7280; }
+        [data-bs-theme="dark"] .leave-status-badge--approved { background: #0c2e1d !important; color: #4ade80 !important; }
+        [data-bs-theme="dark"] .leave-status-badge--rejected { background: #3a0e1e !important; color: #f9a8d4 !important; }
+        [data-bs-theme="dark"] .leave-status-badge--pending  { background: #3a2a08 !important; color: #fbbf24 !important; }
+        [data-bs-theme="dark"] .leave-status-badge--waiting  { background: #2a1d5c !important; color: #c4b5fd !important; }
+        [data-bs-theme="dark"] .leave-status-badge--neutral  { background: rgba(255,255,255,0.08) !important; color: #cbd5e1 !important; }
+      `}</style>
       <div className="d-flex justify-content-between align-items-center mb-3">
         <h5 className="fw-bold mb-0" style={{ fontSize: 16 }}>Leave</h5>
         {canRequest && (
@@ -306,6 +322,23 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
                       </div>
                     </div>
                   </div>
+                  {/* Extra-leave breakdown — only when the plan grants an
+                      overdraft. The extra is an allowance beyond the accrued
+                      quota (yearly + extra = total), shown for visibility; it
+                      does not change Available / Consumed above. */}
+                  {!t.unlimited && t.extra > 0 && (
+                    <div
+                      className="mt-3 pt-2 d-flex align-items-center justify-content-between flex-wrap gap-1"
+                      style={{ borderTop: '1px dashed var(--vz-border-color)' }}
+                    >
+                      <span className="text-muted" style={{ fontSize: 11.5 }}>
+                        {t.quota} yearly <span className="fw-semibold" style={{ color: tone.ring }}>+ {t.extra} extra</span>
+                      </span>
+                      <span className="fw-semibold" style={{ fontSize: 12 }}>
+                        Total allowance: {t.quota + t.extra} {t.quota + t.extra === 1 ? 'day' : 'days'}
+                      </span>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -353,17 +386,14 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
                     <td style={{ padding: '10px 14px' }}>{r.leave_type?.name ?? '—'}</td>
                     <td style={{ padding: '10px 14px' }}>{Number(r.days)}</td>
                     <td style={{ padding: '10px 14px' }}>
-                      <span className="rec-pill" style={{
-                        background:
-                          r.status === 'Approved' ? '#d1fae5' :
-                          r.status === 'Rejected' ? '#fee2e2' :
-                          '#fef3c7',
-                        color:
-                          r.status === 'Approved' ? '#065f46' :
-                          r.status === 'Rejected' ? '#b91c1c' :
-                          '#a16207',
-                        fontSize: 11,
-                      }}>{r.status}</span>
+                      <span
+                        className={`rec-pill leave-status-badge leave-status-badge--${
+                          r.status === 'Approved' ? 'approved'
+                          : r.status === 'Rejected' ? 'rejected'
+                          : 'pending'
+                        }`}
+                        style={{ fontSize: 11 }}
+                      >{r.status}</span>
                     </td>
                     <td style={{ padding: '10px 14px' }} className="text-muted">{r.approver?.name ?? '—'}</td>
                   </tr>
@@ -393,20 +423,17 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
           ) : (
             <ol className="ps-3 mb-0">
               {approversList.map((a, i) => {
-                const statusColor = a.status === 'Approved' ? '#065f46'
-                  : a.status === 'Rejected' ? '#b91c1c'
-                  : a.is_current ? '#5a3fd1' : '#6b7280';
+                const variant = a.status === 'Approved' ? 'approved'
+                  : a.status === 'Rejected' ? 'rejected'
+                  : a.is_current ? 'waiting' : 'neutral';
                 return (
                   <li key={i} style={{ fontSize: 12.5, marginBottom: 8 }}>
                     <div className="d-flex align-items-center gap-2">
                       <strong>{a.role.toUpperCase()}</strong>
-                      <span className="rec-pill" style={{
-                        background: a.status === 'Approved' ? '#d1fae5'
-                          : a.status === 'Rejected' ? '#fee2e2'
-                          : a.is_current ? '#ede9fe' : '#f3f4f6',
-                        color: statusColor,
-                        fontSize: 10,
-                      }}>
+                      <span
+                        className={`rec-pill leave-status-badge leave-status-badge--${variant}`}
+                        style={{ fontSize: 10 }}
+                      >
                         {a.is_current && a.status === 'Pending' ? 'WAITING' : a.status.toUpperCase()}
                       </span>
                     </div>

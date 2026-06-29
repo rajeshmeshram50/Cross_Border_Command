@@ -127,6 +127,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [payrollTab, setPayrollTab] = useState<PayrollTab>('summary');
   const [vaultTab, setVaultTab] = useState<VaultTab>('employee');
   const [expenseFilter, setExpenseFilter] = useState<ExpenseFilter>('all');
+  // Free-text search over the Expense / Advance tables. Applied on top of the
+  // status filter so the table, the "Showing N" counter and Export all narrow
+  // to matching rows. Empty = no narrowing.
+  const [expenseSearch, setExpenseSearch] = useState('');
 
   // ── Manager detection — the "Hiring Requests" tab is gated to people
   //   who actually manage someone (i.e. someone else's reporting_manager
@@ -1567,6 +1571,29 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, profileEmpIdNum, isOwnProfile]);
 
+  // Keep an already-open Expense Overview in sync with approve/reject
+  // decisions made elsewhere (a manager / HR acting in another tab or
+  // session). There's no realtime push, so without this the status pill
+  // keeps showing the stale value until a full page reload. Refetch both
+  // claims and advances whenever the tab regains focus / becomes visible.
+  // The guards inside refreshClaims / refreshAdvances no-op unless the
+  // Expense Details tab is active, so this stays cheap.
+  useEffect(() => {
+    if (tab !== 'expense') return;
+    const resync = () => {
+      if (document.visibilityState === 'hidden') return;
+      refreshClaims();
+      refreshAdvances();
+    };
+    window.addEventListener('focus', resync);
+    document.addEventListener('visibilitychange', resync);
+    return () => {
+      window.removeEventListener('focus', resync);
+      document.removeEventListener('visibilitychange', resync);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, profileEmpIdNum, isOwnProfile]);
+
   /** Dispatcher for inline Approve / Reject buttons on advance-request
    *  rows. Same shape as `actOnClaim`, just a different REST collection. */
   const actOnAdvance = async (
@@ -1855,10 +1882,26 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     rejected: activeClaimsSource.filter(c => c.status === 'rejected').length,
     pending:  activeClaimsSource.filter(c => c.status === 'pending').length,
   };
-  const totalClaimed = activeClaimsSource.reduce((sum, c) => sum + Number(c.amount || 0), 0);
-  const filteredExpenses: ApiClaim[] = expenseFilter === 'all'
+  // Total Claimed reflects only approved claims — pending/rejected rows are
+  // excluded so the hero figure represents money actually owed/reimbursed.
+  const totalClaimed = activeClaimsSource
+    .filter(c => c.status === 'approved')
+    .reduce((sum, c) => sum + Number(c.amount || 0), 0);
+  // Status filter first, then the free-text search. The search matches across
+  // the columns the table renders (claim no, description, category, supplier,
+  // project, employee, status, amount) so a search for any visible token finds
+  // the row.
+  const expenseQuery = expenseSearch.trim().toLowerCase();
+  const filteredExpenses: ApiClaim[] = (expenseFilter === 'all'
     ? activeClaimsSource
-    : activeClaimsSource.filter(c => c.status === expenseFilter);
+    : activeClaimsSource.filter(c => c.status === expenseFilter)
+  ).filter(c => {
+    if (!expenseQuery) return true;
+    return [
+      c.claim_no, c.title, c.category_name, c.vendor, c.project,
+      c.employee_name, c.employee_code, c.status, c.amount,
+    ].some(v => v != null && String(v).toLowerCase().includes(expenseQuery));
+  });
 
   // Mirror counts/filtering for the Advance Requests tab so the same set
   // of filter pills (All/Approved/Rejected/Pending) drives the advance
@@ -1872,9 +1915,16 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     rejected: activeAdvancesSource.filter(a => a.status === 'rejected').length,
     pending:  activeAdvancesSource.filter(a => a.status === 'pending').length,
   };
-  const filteredAdvances: AdvanceRequestRow[] = expenseFilter === 'all'
+  const filteredAdvances: AdvanceRequestRow[] = (expenseFilter === 'all'
     ? activeAdvancesSource
-    : activeAdvancesSource.filter(a => a.status === expenseFilter);
+    : activeAdvancesSource.filter(a => a.status === expenseFilter)
+  ).filter(a => {
+    if (!expenseQuery) return true;
+    return [
+      a.advance_no, a.employee_name, a.employee_code, a.advance_type,
+      a.advance_type_other, a.reason, a.status, a.amount,
+    ].some(v => v != null && String(v).toLowerCase().includes(expenseQuery));
+  });
 
   // ── Export (Excel / PDF / CSV) for the active module's filtered rows ──
   // The Export button used to be a no-op (no onClick) — clicking it did
@@ -2006,6 +2056,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     authUser, isOwnProfile,
     expenseModuleTab, setExpenseModuleTab, expenseSubTab, setExpenseSubTab,
     advanceSubTab, setAdvanceSubTab, expenseFilter, setExpenseFilter,
+    expenseSearch, setExpenseSearch,
     expenseCounts, advanceCounts, totalClaimed,
     activeClaimsSource, filteredExpenses, activeAdvancesSource,
     apiClaims, teamClaims, apiAdvances, teamAdvances,

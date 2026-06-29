@@ -37,9 +37,13 @@ class AdvanceRequestController extends Controller
 
         $q = AdvanceRequest::query()
             ->with([
-                'employee:id,first_name,middle_name,last_name,display_name,emp_code,reporting_manager_id,department_id',
+                // withTrashed so a disabled (soft-deleted) employee's name still
+                // resolves instead of the row collapsing to "#<id>".
+                'employee' => fn ($r) => $r->withTrashed()
+                    ->select('id', 'first_name', 'middle_name', 'last_name', 'display_name', 'emp_code', 'reporting_manager_id', 'department_id'),
                 'employee.department:id,name',
-                'manager:id,first_name,middle_name,last_name,display_name,emp_code',
+                'manager' => fn ($r) => $r->withTrashed()
+                    ->select('id', 'first_name', 'middle_name', 'last_name', 'display_name', 'emp_code'),
                 'creator:id,name,user_type',
                 'hrUser:id,name,user_type',
             ])
@@ -208,7 +212,12 @@ class AdvanceRequestController extends Controller
     public function show(Request $request, $id)
     {
         $user = $request->user();
-        $row = AdvanceRequest::with(['employee', 'manager', 'creator', 'hrUser'])
+        $row = AdvanceRequest::with([
+                // withTrashed so a disabled employee's name still resolves (see index()).
+                'employee' => fn ($r) => $r->withTrashed(),
+                'manager' => fn ($r) => $r->withTrashed(),
+                'creator', 'hrUser',
+            ])
             ->findOrFail($id);
         $this->ensureTenantAccess($row, $user);
         return response()->json($this->serialize($row));

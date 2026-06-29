@@ -68,6 +68,8 @@ export interface EmployeeProfileCtx {
   setAdvanceSubTab: (v: 'mine' | 'team') => void;
   expenseFilter: 'all' | 'approved' | 'rejected' | 'pending' | 'draft';
   setExpenseFilter: (v: 'all' | 'approved' | 'rejected' | 'pending' | 'draft') => void;
+  expenseSearch: string;
+  setExpenseSearch: (v: string) => void;
   expenseCounts: any;
   advanceCounts: any;
   totalClaimed: number;
