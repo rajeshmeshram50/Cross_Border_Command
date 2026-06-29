@@ -128,9 +128,15 @@ class ExpenseClaimController extends Controller
 
         $q = ExpenseClaim::query()
             ->with([
-                'employee:id,first_name,middle_name,last_name,display_name,emp_code,reporting_manager_id,department_id',
+                // Load employee/manager WITH trashed rows so a disabled
+                // (soft-deleted via the Remove action) employee's name still
+                // resolves — otherwise the relation is null and the row shows
+                // "#<id>" instead of the name.
+                'employee' => fn ($r) => $r->withTrashed()
+                    ->select('id', 'first_name', 'middle_name', 'last_name', 'display_name', 'emp_code', 'reporting_manager_id', 'department_id'),
                 'employee.department:id,name',
-                'manager:id,first_name,middle_name,last_name,display_name,emp_code',
+                'manager' => fn ($r) => $r->withTrashed()
+                    ->select('id', 'first_name', 'middle_name', 'last_name', 'display_name', 'emp_code'),
                 'category:id,name,code',
                 'creator:id,name,user_type',
                 'hrUser:id,name,user_type',
@@ -368,7 +374,12 @@ class ExpenseClaimController extends Controller
     public function show(Request $request, $id)
     {
         $user = $request->user();
-        $row = ExpenseClaim::with(['employee', 'manager', 'category', 'creator', 'hrUser'])
+        $row = ExpenseClaim::with([
+                // withTrashed so a disabled employee's name still resolves (see index()).
+                'employee' => fn ($r) => $r->withTrashed(),
+                'manager' => fn ($r) => $r->withTrashed(),
+                'category', 'creator', 'hrUser',
+            ])
             ->findOrFail($id);
         $this->ensureTenantAccess($row, $user);
         return response()->json($this->serialize($row));
