@@ -1909,7 +1909,10 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
         const suffix = state === 'disabled' ? ' (disabled)'
           : state === 'inactive' ? ' (inactive)'
           : ' (unavailable)';
-        opts.push({ value: v, label: name ? `${name}${suffix}` : `Employee #${v}` });
+        // Prefer the resolved name; only when it can't be resolved at all
+        // (e.g. the record was hard-removed) fall back to a labelled
+        // "unavailable employee" rather than a bare raw id.
+        opts.push({ value: v, label: name ? `${name}${suffix}` : `Unavailable employee${suffix}` });
       }
     };
     if (editing) {
@@ -2002,7 +2005,20 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       setPostOnPortal(editing.postOnPortal);
       setNotifyTeamLeads(editing.notifyTeamLeads);
       setEnableReferralBonus(editing.enableReferralBonus);
-      setErrors({});
+      // Proactively flag a hiring manager / assigned HR that has since been
+      // disabled or exited. The dropdown still shows them (flagged) so the
+      // field isn't blank, but we surface a red inline error + a toast on
+      // open so the user knows to reassign before saving — instead of a
+      // confusing raw "Employee #47" with no explanation.
+      const isStale = (s?: RecruitmentRow['hiringManagerState']) => s === 'disabled' || s === 'inactive' || s === 'missing';
+      const initErrs: CreateErrors = {};
+      if (isStale(editing.hiringManagerState)) initErrs.hiringManager = 'This hiring manager is disabled or has exited — select an active employee.';
+      if (isStale(editing.assignedHrState))    initErrs.assignedHr    = 'This HR is disabled or has exited — select an active employee.';
+      setErrors(initErrs);
+      if (Object.keys(initErrs).length) {
+        const who = [isStale(editing.hiringManagerState) && 'hiring manager', isStale(editing.assignedHrState) && 'assigned HR'].filter(Boolean).join(' and ');
+        toast.warning('Reassignment required', `The ${who} is disabled or has exited. Please select an active employee before saving.`);
+      }
     } else if (prefillFromHr) {
       const hr = prefillFromHr;
       setJobTitle((hr.job_role || hr.title || '') as string);
