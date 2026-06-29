@@ -417,11 +417,6 @@ export default function HrHoliday() {
                     </div>
 
                     <div className="hol-actions d-flex align-items-center gap-2 ms-auto">
-                      <Tooltip label="Create & manage holiday groups (types)">
-                        <button type="button" className="rec-btn-ghost" onClick={() => setManageGroupsOpen(true)}>
-                          <i className="ri-folder-settings-line" />Groups
-                        </button>
-                      </Tooltip>
                       <Tooltip label="Download Excel template">
                         <button type="button" className="rec-btn-ghost" onClick={downloadTemplate}>
                           <i className="ri-download-2-line" />Template
@@ -430,6 +425,14 @@ export default function HrHoliday() {
                       <button type="button" className="rec-btn-ghost" onClick={() => fileRef.current?.click()} disabled={importing}>
                         {importing ? <Spinner size="sm" /> : <i className="ri-file-excel-2-line" />}Import Excel
                       </button>
+                      {/* Groups — moved beside "Add Holiday" and highlighted so it's
+                          clear this is where you create/manage holiday groups first. */}
+                      <Tooltip label="Create & manage holiday groups — add a group here first, then assign holidays to it">
+                        <button type="button" className="rec-btn-ghost hol-groups-btn" onClick={() => setManageGroupsOpen(true)}
+                          style={{ background: 'linear-gradient(135deg,#ede9fe,#ddd6fe)', border: '1px solid #c4b5fd', color: '#6d28d9', fontWeight: 700 }}>
+                          <i className="ri-folder-add-line" />Groups
+                        </button>
+                      </Tooltip>
                       <button type="button" className="rec-btn-primary" onClick={() => { setEditingRow(null); setCreateOpen(true); }}>
                         <i className="ri-add-line" />Add Holiday
                       </button>
@@ -511,14 +514,14 @@ export default function HrHoliday() {
                                       <Tooltip label="Edit">
                                         <button type="button" className="rec-act rec-act-view rec-act--icon" aria-label="Edit"
                                           onClick={() => { setEditingRow(r); setCreateOpen(true); }}>
-                                          <i className="ri-pencil-line" />
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                                         </button>
                                       </Tooltip>
                                       <Tooltip label={delLocked ? 'Group is assigned to employees — can’t delete' : 'Delete'}>
                                         <button type="button" className="rec-act rec-act-reject rec-act--icon" aria-label="Delete" aria-disabled={delLocked}
                                           onClick={() => { if (delLocked) return; handleDelete(r); }}
                                           style={delLocked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}>
-                                          <i className="ri-delete-bin-line" />
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
                                         </button>
                                       </Tooltip>
                                     </div>
