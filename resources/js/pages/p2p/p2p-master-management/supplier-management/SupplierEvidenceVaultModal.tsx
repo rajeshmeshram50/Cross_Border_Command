@@ -803,7 +803,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
         <div className="cev-footer">
           <div className="cev-footer-meta" />
           <div className="cev-footer-actions">
-            <Tooltip label="Download a ZIP of all uploaded files, foldered: Standard (Company DD / Owner KYC / Trade Licenses) and CTC (With / Without Shipment ID)">
+            <Tooltip label="Download all files as a foldered ZIP">
               <button type="button" className="cev-btn cev-btn-light" onClick={handleExportAll} disabled={exporting}>
                 <i className={exporting ? 'ri-loader-4-line cev-spin' : 'ri-download-cloud-2-line'} />
                 {exporting ? ' Exporting…' : ' Export All'}
