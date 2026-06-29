@@ -25,7 +25,7 @@ export default function ExpenseTab() {
   } = useEmployeeProfile();
 
   return (
-        <>
+        <div className="ep-tab-fill">
           {/* Expense Overview hero — same shape as Evidence Vault / Payroll Summary. */}
           <Card className="mb-3 border-0 ext-hero-card">
             <div className="ext-hero">
@@ -401,6 +401,6 @@ export default function ExpenseTab() {
               </div>
             </div>
           </div>
-        </>
+        </div>
   );
 }

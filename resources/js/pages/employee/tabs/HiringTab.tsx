@@ -35,7 +35,8 @@ export default function HiringTab() {
           }
         };
         return (
-          <Card className="mb-3 border-0 ht-card">
+          <div className="ep-tab-fill">
+          <Card className="mb-3 border-0 ht-card h-100">
             <CardBody>
               {/* Header — title + Raise CTA + View All */}
               <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
@@ -206,5 +207,6 @@ export default function HiringTab() {
               )}
             </CardBody>
           </Card>
+          </div>
         );
 }

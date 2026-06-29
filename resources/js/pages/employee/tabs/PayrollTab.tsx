@@ -23,7 +23,7 @@ export default function PayrollTab() {
     : empDetail?.salary_payment_mode ? String(empDetail.salary_payment_mode) : '—';
 
   return (
-        <>
+        <div className="ep-tab-fill">
           {/* Sub-tab pill — Payroll Summary (indigo) | Payment Details (green).
               Same compact strap shape as the Evidence Vault subtabs. */}
           <Row className="g-2 mb-3">
@@ -58,7 +58,7 @@ export default function PayrollTab() {
           </Row>
 
           {payrollTab === 'summary' && (
-            <>
+            <div className="ep-tab-pane">
               {/* Hero strip — only on the Payroll Summary tab. */}
               <Card className="mb-3 border-0 pyt-hero-card">
                 <div
@@ -248,11 +248,11 @@ export default function PayrollTab() {
                   </div>
                 </Col>
               </Row>
-            </>
+            </div>
           )}
 
           {payrollTab === 'details' && (
-            <>
+            <div className="ep-tab-pane">
               <Row className="g-3 mb-3 align-items-stretch">
                 <Col xl={5}>
                   <div
@@ -404,8 +404,8 @@ export default function PayrollTab() {
                   ))}
                 </div>
               </div>
-            </>
+            </div>
           )}
-        </>
+        </div>
   );
 }

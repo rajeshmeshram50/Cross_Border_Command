@@ -24,7 +24,9 @@ export default function VaultTab() {
   } = useEmployeeProfile();
 
   return (
-        <>
+        // Fill the profile content pane's full height so the active document
+        // card stretches to the bottom instead of leaving a large empty area.
+        <div className="vt-tab-fill d-flex flex-column" style={{ minHeight: '100%' }}>
           {/* Hero strip — "Evidence Vault — {Name} Document Repository" + KPIs */}
           <Card className="mb-3 border-0 vt-hero-card">
             <div className="vt-hero-strip">
@@ -120,7 +122,7 @@ export default function VaultTab() {
               /api/employees/{id}/documents. */}
           {vaultTab === 'employee' && (
             <div
-              className="ep-section-card-flat ep-section-card mb-3 ep-ct-violet"
+              className="ep-section-card-flat ep-section-card mb-3 ep-ct-violet flex-grow-1 d-flex flex-column"
             >
               <div
                 className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 ep-hd-violet"
@@ -143,8 +145,8 @@ export default function VaultTab() {
                   <small className="text-muted text-uppercase vt-count-label">Documents</small>
                 </div>
               </div>
-              <div className="px-3 pb-3 pt-2">
-                <div className="table-responsive border rounded ep-att-scroll-wrap">
+              <div className="px-3 pb-3 pt-2 flex-grow-1 d-flex flex-column">
+                <div className="table-responsive border rounded ep-att-scroll-wrap flex-grow-1">
                   <table className="table align-middle table-nowrap ep-att-table mb-0">
                     <thead>
                       <tr>
@@ -212,7 +214,7 @@ export default function VaultTab() {
               top of the page. */}
           {vaultTab === 'organizational' && (
             <div
-              className="ep-section-card-flat ep-section-card mb-3 ep-ct-violet"
+              className="ep-section-card-flat ep-section-card mb-3 ep-ct-violet flex-grow-1 d-flex flex-column"
             >
               {/* Dark-theme-aware styling for the org-doc Code badge, Signer
                   tags and View button (were hardcoded light → BUG-131/132/133). */}
@@ -250,8 +252,8 @@ export default function VaultTab() {
                   <small className="text-muted text-uppercase vt-count-label">Documents</small>
                 </div>
               </div>
-              <div className="px-3 pb-3 pt-2">
-                <div className="table-responsive border rounded ep-att-scroll-wrap">
+              <div className="px-3 pb-3 pt-2 flex-grow-1 d-flex flex-column">
+                <div className="table-responsive border rounded ep-att-scroll-wrap flex-grow-1">
                   <table className="table align-middle table-nowrap ep-att-table mb-0">
                     <thead>
                       <tr>
@@ -312,6 +314,6 @@ export default function VaultTab() {
             </div>
           )}
 
-        </>
+        </div>
   );
 }

@@ -442,6 +442,11 @@ body.clm-active[data-bs-theme="dark"] footer.footer, body.clm-active[data-bs-the
 .clm-td-name { font-weight: 700; color: #0c4a6e; letter-spacing: -.15px; text-align: left; font-size: 13.5px; text-transform: capitalize; overflow-wrap: anywhere; word-break: break-word; }
 .clm-td-desc { font-size: 12px; color: #475569; text-transform: capitalize; overflow-wrap: anywhere; word-break: break-word; }
 .clm-td-desc::first-letter { text-transform: uppercase; }
+/* Single-line truncation with ellipsis — keeps long Purpose text on one
+ * line so the row height stays compact; full text shows in the native
+ * title tooltip on hover. */
+.clm-td-trunc { font-size: 12px; color: #475569; text-transform: capitalize; max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clm-td-trunc::first-letter { text-transform: uppercase; }
 
 /* Code chip */
 .clm-code-pill {

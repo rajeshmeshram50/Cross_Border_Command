@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useToast } from '../../../contexts/ToastContext';
 import api from '../../../api';
 import WorklistPager from '../../../components/ui/WorklistPager';
+import Tooltip from '../../../components/ui/Tooltip';
 import { resolveFileUrl } from '../../../utils/resolveFileUrl';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -176,13 +177,13 @@ function VaultDrawer({ title, targets, onClose }: { title: string; targets: Vaul
                         <div className="rdf-file-top">
                           <span className="rdf-file-ico"><FileIco /><i className="rdf-pdf">PDF</i></span>
                           <div className="rdf-file-body">
-                            <div className="rdf-file-name" title={doc.name}>{doc.name ?? doc.reference ?? 'Document'}</div>
+                            <Tooltip label={doc.name}><div className="rdf-file-name">{doc.name ?? doc.reference ?? 'Document'}</div></Tooltip>
                             <div className="rdf-file-meta" style={{ color: st.color, background: st.bg, borderColor: st.border }}><i className="rdf-dot" style={{ background: st.dot }} /> {doc.status ?? 'Pending'}</div>
                           </div>
                         </div>
                         <div className="rdf-file-acts">
-                          <button className="rdf-act view" title="View" onClick={() => docOpen(doc)}><EyeIco /></button>
-                          <button className="rdf-act dl" title="Download" onClick={() => docOpen(doc)}><DlIco /></button>
+                          <Tooltip label="View"><button className="rdf-act view" aria-label="View" onClick={() => docOpen(doc)}><EyeIco /></button></Tooltip>
+                          <Tooltip label="Download"><button className="rdf-act dl" aria-label="Download" onClick={() => docOpen(doc)}><DlIco /></button></Tooltip>
                         </div>
                       </div>
                     );
@@ -195,11 +196,11 @@ function VaultDrawer({ title, targets, onClose }: { title: string; targets: Vaul
                     return (
                       <div key={i} className="rdf-row">
                         <span className="rdf-row-ico"><FileIco /></span>
-                        <span className="rdf-row-name" title={doc.name}>{doc.name ?? doc.reference ?? 'Document'}</span>
+                        <Tooltip label={doc.name}><span className="rdf-row-name">{doc.name ?? doc.reference ?? 'Document'}</span></Tooltip>
                         <span className="rdf-row-status" style={{ color: st.color, background: st.bg, borderColor: st.border }}><i className="rdf-dot" style={{ background: st.dot }} /> {doc.status ?? 'Pending'}</span>
                         <span className="rdf-file-acts">
-                          <button className="rdf-act view" title="View" onClick={() => docOpen(doc)}><EyeIco /></button>
-                          <button className="rdf-act dl" title="Download" onClick={() => docOpen(doc)}><DlIco /></button>
+                          <Tooltip label="View"><button className="rdf-act view" aria-label="View" onClick={() => docOpen(doc)}><EyeIco /></button></Tooltip>
+                          <Tooltip label="Download"><button className="rdf-act dl" aria-label="Download" onClick={() => docOpen(doc)}><DlIco /></button></Tooltip>
                         </span>
                       </div>
                     );
@@ -461,13 +462,15 @@ export default function ClmRegulatoryDefenseFilePage() {
 
 function Party({ name, grad, code }: { name: string; grad: string; code?: string }) {
   return (
-    <span className="rdf-party" title={code ? `${name} (${code})` : name}>
-      <span className="rdf-ava" style={{ background: `linear-gradient(135deg,${grad})` }}>{initials(name)}</span>
-      <span className="rdf-party-col">
-        <span className="rdf-party-name">{name}</span>
-        {code && <span className="rdf-party-code">{code}</span>}
+    <Tooltip label={code ? `${name} (${code})` : name}>
+      <span className="rdf-party">
+        <span className="rdf-ava" style={{ background: `linear-gradient(135deg,${grad})` }}>{initials(name)}</span>
+        <span className="rdf-party-col">
+          <span className="rdf-party-name">{name}</span>
+          {code && <span className="rdf-party-code">{code}</span>}
+        </span>
       </span>
-    </span>
+    </Tooltip>
   );
 }
 

@@ -299,9 +299,9 @@ export function QcModal(props: { existing: Qc | null; authorities: Authority[]; 
                   onChange={(v) => { setIssuedBy(v); setErrors(p => ({ ...p, issuedBy: '' })); }}
                 />
               </div>
-              <button type="button" className="clm-quick-add-btn" onClick={() => setQuickAddOpen(true)} aria-label="Add new authority" title="Add new authority">
+              <Tooltip label="Add new authority"><button type="button" className="clm-quick-add-btn" onClick={() => setQuickAddOpen(true)} aria-label="Add new authority">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              </button>
+              </button></Tooltip>
             </div>
             <div className="clm-field-hint">Pulls from Authority Master — click + to add a new authority.</div>
             {errors.issuedBy && <div className="clm-err">{errors.issuedBy}</div>}

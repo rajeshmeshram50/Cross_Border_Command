@@ -370,11 +370,13 @@ function ActionBtn({ title, color, bg, border, t, onClick, children }: { title: 
   const fborder = t.dark ? `color-mix(in srgb, ${color} 45%, transparent)` : border;
   const fcolor  = t.dark ? `color-mix(in srgb, ${color} 55%, #ffffff)` : color;
   return (
-    <button title={title} onClick={onClick} style={{ width: 28, height: 28, borderRadius: 7, border: `1.5px solid ${fborder}`, background: fbg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: fcolor, opacity: .85, flexShrink: 0, transition: 'all .15s' }}
-      onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,.13)'; }}
-      onMouseLeave={e => { e.currentTarget.style.opacity = '.85'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
-      {children}
-    </button>
+    <Tooltip label={title}>
+      <button onClick={onClick} style={{ width: 28, height: 28, borderRadius: 7, border: `1.5px solid ${fborder}`, background: fbg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: fcolor, opacity: .85, flexShrink: 0, transition: 'all .15s' }}
+        onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,.13)'; }}
+        onMouseLeave={e => { e.currentTarget.style.opacity = '.85'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
+        {children}
+      </button>
+    </Tooltip>
   );
 }
 
@@ -390,7 +392,7 @@ function DownloadMenu({ id, dlOpen, setDlOpen, onPick, t }: { id: string; dlOpen
   };
   return (
     <>
-      <button ref={btnRef} title="Download Contract" onClick={toggle} style={{ width: 28, height: 28, borderRadius: 7, border: `1.5px solid ${t.dark ? 'color-mix(in srgb, #06b6d4 45%, transparent)' : '#7DD3FC'}`, background: t.dark ? 'color-mix(in srgb, #06b6d4 20%, transparent)' : '#B2EBF2', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: t.dark ? '#67e8f9' : '#0369A1', opacity: .85, flexShrink: 0 }}>{ICO_DL}</button>
+      <Tooltip label="Download Contract"><button ref={btnRef} onClick={toggle} style={{ width: 28, height: 28, borderRadius: 7, border: `1.5px solid ${t.dark ? 'color-mix(in srgb, #06b6d4 45%, transparent)' : '#7DD3FC'}`, background: t.dark ? 'color-mix(in srgb, #06b6d4 20%, transparent)' : '#B2EBF2', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: t.dark ? '#67e8f9' : '#0369A1', opacity: .85, flexShrink: 0 }}>{ICO_DL}</button></Tooltip>
       {open && pos && createPortal(
         <>
           <div onClick={() => setDlOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000 }} />
@@ -456,7 +458,7 @@ function StandardTable({ rows, page, setPage, tab, dlOpen, setDlOpen, cpOpen, se
                         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                           <Avatar name={c.cp[0]} grad="#0891b2,#0e7490" />
                           <Tooltip label={c.cp.join(', ')}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100 }}>{c.cp[0]}</span></Tooltip>
-                          {extra > 0 && <button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setCpOpen(cpOpen?.id === c.id ? null : { id: c.id, names: c.cp, x: r.left, y: r.bottom + 4 }); }} title="View all counterparties" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 5px', borderRadius: 20, background: 'linear-gradient(135deg,#0891b2,#0e7490)', color: '#fff', fontSize: 9, fontWeight: 800, flexShrink: 0, border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{extra}</button>}
+                          {extra > 0 && <Tooltip label="View all counterparties"><button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setCpOpen(cpOpen?.id === c.id ? null : { id: c.id, names: c.cp, x: r.left, y: r.bottom + 4 }); }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 5px', borderRadius: 20, background: 'linear-gradient(135deg,#0891b2,#0e7490)', color: '#fff', fontSize: 9, fontWeight: 800, flexShrink: 0, border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{extra}</button></Tooltip>}
                         </div>
                       </td>
                       <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A7F3D0,#7DD3FC)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #B2EBF2' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0891b2' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
@@ -524,7 +526,7 @@ function RejectedTable({ rows, ata, page, setPage, dlOpen, setDlOpen, onDownload
                       <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }}>{c.title}</div></Tooltip></td>
                       <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A5F3FC,#67E8F9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #CFFAFE' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0e7490' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                       <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#FCA5A5,#EF4444)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(rej.by)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.dark ? '#fca5a5' : '#7F1D1D', whiteSpace: 'nowrap' }}>{rej.by}</span></div></td>
-                      <td style={{ ...TD_L, maxWidth: 220 }}><div style={{ display: 'flex', alignItems: 'flex-start', gap: 5 }}><div style={{ width: 16, height: 16, borderRadius: '50%', background: '#FEE2E2', border: '1px solid #FECACA', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg></div><div style={{ fontSize: 10.5, color: t.dark ? '#fca5a5' : '#7F1D1D', fontWeight: 500, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }} title={rej.reason}>{rej.reason}</div></div></td>
+                      <td style={{ ...TD_L, maxWidth: 220 }}><div style={{ display: 'flex', alignItems: 'flex-start', gap: 5 }}><div style={{ width: 16, height: 16, borderRadius: '50%', background: '#FEE2E2', border: '1px solid #FECACA', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg></div><Tooltip label={rej.reason}><div style={{ fontSize: 10.5, color: t.dark ? '#fca5a5' : '#7F1D1D', fontWeight: 500, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{rej.reason}</div></Tooltip></div></td>
                       <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.endDate}</span></td>
                       <td style={TD_C}><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                         <DownloadMenu id={c.id} dlOpen={dlOpen} setDlOpen={setDlOpen} onPick={(fmt) => onDownload(c, fmt)} t={t} />

@@ -7,6 +7,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import { ClmSkeletonRows, DeleteConf, LockedConf, SimpleNameModal } from '../shared/clmCommon';
+import Tooltip from '../../../components/ui/Tooltip';
 import ClmTradeDocumentDraftModal from './ClmTradeDocumentDraftModal';
 
 /* Central CLM → Trade Documents Master (two tabs: List + Library). */
@@ -183,16 +184,17 @@ function NamesPane({ rows, loading, reload }: { rows: TdName[]; loading: boolean
                           // those drafts. Only fresh (unused) types are editable.
                           const used = (r.in_use ?? 0) > 0;
                           return (
-                            <button
-                              className="clm-act clm-act-edit"
-                              title={used ? `Used by ${r.in_use} draft${r.in_use === 1 ? '' : 's'} in the Trade Document Library — can't edit. Remove or reassign ${r.in_use === 1 ? 'it' : 'them'} first.` : 'Edit'}
-                              disabled={used}
-                              style={used ? { opacity: .4, cursor: 'not-allowed' } : undefined}
-                              onClick={() => { if (used) return; setEditing(r); setModalOpen(true); }}
-                            ><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                            <Tooltip label={used ? `Used by ${r.in_use} draft${r.in_use === 1 ? '' : 's'} in the Trade Document Library — can't edit. Remove or reassign ${r.in_use === 1 ? 'it' : 'them'} first.` : 'Edit'}>
+                              <button
+                                className="clm-act clm-act-edit"
+                                disabled={used}
+                                style={used ? { opacity: .4, cursor: 'not-allowed' } : undefined}
+                                onClick={() => { if (used) return; setEditing(r); setModalOpen(true); }}
+                              ><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                            </Tooltip>
                           );
                         })()}
-                        <button className="clm-act clm-act-del" title="Delete" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+                        <Tooltip label="Delete"><button className="clm-act clm-act-del" aria-label="Delete" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></Tooltip>
                       </div>
                     </td>
                   </tr>
@@ -353,19 +355,18 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
                     <td className="clm-td-name">{r.title}</td>
                     <td style={{ textAlign: 'center' }}>
                       {r.name
-                        ? <span className="clm-badge clm-badge-violet" title={r.name}>{r.name}</span>
+                        ? <Tooltip label={r.name}><span className="clm-badge clm-badge-violet">{r.name}</span></Tooltip>
                         : <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>—</span>}
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       {(() => {
                         const isHigh = r.regulatory === 'highly';
                         return (
-                          <span
-                            className={`clm-badge ${isHigh ? 'clm-badge-red' : 'clm-badge-emerald'}`}
-                            title={isHigh ? 'Highly Regulated — needs segment-specific compliance' : 'Less Regulated — applies to all standard segments'}
-                          >
-                            <span className="clm-badge-dot" />{isHigh ? 'High' : 'Less'}
-                          </span>
+                          <Tooltip label={isHigh ? 'Highly Regulated — needs segment-specific compliance' : 'Less Regulated — applies to all standard segments'}>
+                            <span className={`clm-badge ${isHigh ? 'clm-badge-red' : 'clm-badge-emerald'}`}>
+                              <span className="clm-badge-dot" />{isHigh ? 'High' : 'Less'}
+                            </span>
+                          </Tooltip>
                         );
                       })()}
                     </td>
@@ -376,35 +377,38 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
                         const extra = segList.length - 1;
                         return (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
-                            <span className="clm-badge clm-badge-teal" title={`Segment scope · ${segList[0]}`}>{segList[0]}</span>
+                            <Tooltip label={`Segment scope · ${segList[0]}`}><span className="clm-badge clm-badge-teal">{segList[0]}</span></Tooltip>
                             {extra > 0 && (
-                              <button
-                                type="button"
-                                title="View all segments"
-                                onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(segOpen?.id === r.id ? null : { id: r.id, names: segList, x: b.left, y: b.bottom + 4 }); }}
-                                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
-                                +{extra}
-                              </button>
+                              <Tooltip label="View all segments">
+                                <button
+                                  type="button"
+                                  onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(segOpen?.id === r.id ? null : { id: r.id, names: segList, x: b.left, y: b.bottom + 4 }); }}
+                                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
+                                  +{extra}
+                                </button>
+                              </Tooltip>
                             )}
                           </span>
                         );
                       })()}
                     </td>
-                    <td className="clm-td-desc">{r.purpose}</td>
+                    <Tooltip label={r.purpose}><td className="clm-td-trunc">{r.purpose}</td></Tooltip>
                     <td className="clm-td-desc">{r.party}</td>
                     <td style={{ textAlign: 'center' }}>
                       {/* Draft PDF preview — the complete combined document
                           (branded header + content + footer), to see how the
                           finished trade document looks. */}
-                      <button type="button" className="tdl-dl-btn" onClick={() => void download(r, 'pdf')} title="Download the complete draft as PDF">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                        Download Draft PDF
-                      </button>
+                      <Tooltip label="Download the complete draft as PDF">
+                        <button type="button" className="tdl-dl-btn" onClick={() => void download(r, 'pdf')}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                          Download Draft PDF
+                        </button>
+                      </Tooltip>
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">
-                        <button className="clm-act clm-act-edit" title={r.is_signed ? 'Signed — cannot edit' : 'Edit'} onClick={() => { if (r.is_signed) { setLocked({ mode: 'edit', row: r }); return; } setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-                        <button className="clm-act clm-act-del" title={r.is_signed ? 'Signed — cannot delete' : 'Delete'} onClick={() => { if (r.is_signed) { setLocked({ mode: 'delete', row: r }); return; } setPendingDelete(r); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+                        <Tooltip label={r.is_signed ? 'Signed — cannot edit' : 'Edit'}><button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { if (r.is_signed) { setLocked({ mode: 'edit', row: r }); return; } setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></Tooltip>
+                        <Tooltip label={r.is_signed ? 'Signed — cannot delete' : 'Delete'}><button className="clm-act clm-act-del" aria-label="Delete" onClick={() => { if (r.is_signed) { setLocked({ mode: 'delete', row: r }); return; } setPendingDelete(r); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></Tooltip>
                       </div>
                     </td>
                   </tr>
