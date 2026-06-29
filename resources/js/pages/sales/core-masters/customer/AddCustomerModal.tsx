@@ -226,6 +226,48 @@ export interface EditCustomer {
   id: string; db_id?: number; company: string; type: string; segment: string;
   country: string; contact: string; phone: string; email: string;
   whatsapp: 'Yes' | 'No';
+  gstApplicable?: 'Yes' | 'No';
+}
+
+/* GST Scrutiny — one entry per GST number a domestic customer is
+ * registered under. `id` is a number once persisted; a `local-…`
+ * string while the row is held client-side before the customer exists. */
+type GstRow = {
+  id: number | string;
+  gst_number: string;
+  status: string;
+  last_filing_date: string | null;
+  prev_non_gst_2a_invoice: string | null;
+  red_flags: string | null;
+  _local?: boolean;
+};
+type GstDraft = {
+  gstNumber: string;
+  status: 'Active' | 'Inactive';
+  lastFilingDate: string;
+  prevNonGst2aInvoice: string;
+  redFlags: string;
+};
+
+/* Standard 15-char GSTIN: 2-digit state code, 10-char PAN, 1 entity
+ * char, 'Z', 1 checksum char. e.g. 27AADCI6120M1ZH. */
+const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+
+/* Progressive GSTIN validator — instead of one generic "invalid" message,
+ * it pinpoints the first segment that's wrong in plain language so the
+ * user understands the structure (2 digits → 5 letters → 4 digits → …).
+ * Returns undefined when valid. Input is already uppercase-alphanumeric. */
+function gstNumberError(v: string): string | undefined {
+  if (!v.trim()) return 'GST Number is required';
+  if (v.length !== 15) return `GST Number must be 15 characters (you've entered ${v.length}). Format: 2 digits, 5 letters, 4 digits, 1 letter, 1 digit/letter, Z, 1 digit/letter — e.g. 27AADCI6120M1ZH`;
+  if (!/^[0-9]{2}/.test(v)) return 'First 2 characters must be digits (state code) — e.g. 27';
+  if (!/^[0-9]{2}[A-Z]{5}/.test(v)) return 'Characters 3–7 must be 5 letters (PAN) — e.g. AADCI';
+  if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}/.test(v)) return 'Characters 8–11 must be 4 digits — e.g. 6120';
+  if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]/.test(v)) return 'Character 12 must be a letter — e.g. M';
+  if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]/.test(v)) return 'Character 13 (entity code) must be a digit or letter';
+  if (v[13] !== 'Z') return 'Character 14 must be the letter Z';
+  if (!GSTIN_RE.test(v)) return 'Character 15 (checksum) must be a digit or letter';
+  return undefined;
 }
 
 interface Props {
@@ -353,6 +395,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   // Form: company + primary address + primary contact
   const [form, setForm] = useState({
     coName:'', coLegal:'', coType:'', coWeb:'', coSeg:[] as string[], coClass:'', coRisk:'',
+    /* Stage 1 — domestic GST flag. 'Yes' reveals the GST Scrutiny header
+       button. Required; defaults to 'Yes' (most customers are domestic). */
+    coGstApplicable:'Yes' as 'Yes'|'No'|'',
     /* Primary address type is locked to "Registered Office" in the UI
        — other types live on the Address & Contact Details tab. */
     addrType: DEFAULT_ADDRESS_TYPE, addr:'', country:'', state:'', city:'', pin:'',
@@ -399,6 +444,67 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
    * a `/customers/{id}/documents` target without forcing the user to
    * close + re-open the modal. */
   const [savedDbId, setSavedDbId] = useState<number | null>(customer?.db_id ?? null);
+
+  /* ── GST Scrutiny (domestic customers) ────────────────────────────
+   * Rows are held in modal state and persisted via the customer's
+   * gst-scrutiny CRUD. When the customer already has an id (edit mode,
+   * or after the Stage 1 auto-save) each add/remove hits the server
+   * immediately; when it doesn't yet (brand-new, unsaved), rows are
+   * held locally (string temp id) and flushed once the customer row is
+   * created. `gstRowsRef` mirrors state so the async flush reads the
+   * latest list without re-binding. */
+  const [gstRows, setGstRows] = useState<GstRow[]>([]);
+  const [gstPopupOpen, setGstPopupOpen] = useState(false);
+  const gstRowsRef = useRef<GstRow[]>([]);
+  useEffect(() => { gstRowsRef.current = gstRows; }, [gstRows]);
+
+  const gstBody = (r: { gst_number: string; status: string; last_filing_date: string | null; prev_non_gst_2a_invoice: string | null; red_flags: string | null }) => ({
+    gst_number:              r.gst_number,
+    status:                  r.status,
+    last_filing_date:        r.last_filing_date || null,
+    prev_non_gst_2a_invoice: r.prev_non_gst_2a_invoice || null,
+    red_flags:               r.red_flags || null,
+  });
+
+  const addGstRow = async (draft: GstDraft): Promise<boolean> => {
+    const id = customer?.db_id ?? savedDbId;
+    const row = {
+      gst_number: draft.gstNumber,
+      status: draft.status,
+      last_filing_date: draft.lastFilingDate || null,
+      prev_non_gst_2a_invoice: draft.prevNonGst2aInvoice || null,
+      red_flags: draft.redFlags || null,
+    };
+    if (id) {
+      try {
+        const { data } = await api.post(`/customers/${id}/gst-scrutiny`, gstBody(row));
+        setGstRows(prev => [data.data, ...prev]);
+        toast.success('GST scrutiny saved', row.gst_number);
+      } catch (err: any) {
+        toast.error('Could not save GST scrutiny', err?.response?.data?.message ?? 'Please try again.');
+        return false;
+      }
+    } else {
+      setGstRows(prev => [{ id: `local-${prev.length}-${draft.gstNumber}`, _local: true, ...row } as GstRow, ...prev]);
+    }
+    return true;
+  };
+
+  /* Flush any locally-held rows once the customer row is first created,
+   * then reload from the server so they carry real numeric ids (delete
+   * works correctly afterwards). */
+  const flushLocalGst = async (newId: number) => {
+    const locals = gstRowsRef.current.filter(r => r._local);
+    if (!locals.length) return;
+    for (const r of locals) {
+      try { await api.post(`/customers/${newId}/gst-scrutiny`, gstBody(r)); } catch { /* best-effort */ }
+    }
+    try {
+      const { data } = await api.get(`/customers/${newId}/gst-scrutiny`);
+      setGstRows(data.data ?? []);
+    } catch { /* keep local view */ }
+  };
+
   /* Synchronous re-entry lock — `saving` state is async and React
    * batches updates, so two rapid Save & Next clicks can both pass
    * the saving check before either has set saving=true. A ref flips
@@ -792,6 +898,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       coSeg:    (customer?.segment ?? '').split(',').map(s => s.trim()).filter(Boolean),
       coClass:  '',
       coRisk:   '',
+      coGstApplicable: (customer?.gstApplicable as 'Yes'|'No'|undefined) ?? 'Yes',
       addrType: DEFAULT_ADDRESS_TYPE,
       addr:     '',
       country:  customer?.country ?? '',
@@ -807,6 +914,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     setLocations([]);
     setKycDocs([]);
     setKycOwners([]);
+    setGstRows([]);
+    setGstPopupOpen(false);
     setErrors({});
     // Edit mode arrives with db_id (Stage 2 KYC POSTs work
     // immediately); create mode starts null and gets filled by the
@@ -900,6 +1009,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
                       : String(d.segment ?? '').split(',').map(s => s.trim()).filter(Boolean),
           coClass:  d.classification ?? '',
           coRisk:   d.riskLevel     ?? '',
+          coGstApplicable: (d.gstApplicable as 'Yes'|'No'|undefined) ?? 'Yes',
           // Primary address type is locked to "Registered Office" — even
           // if older data stored a different label, normalise here so
           // the disabled dropdown stays in sync with the saved record.
@@ -937,6 +1047,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         const root = r.data ?? {};
         setKycDocs(Array.isArray(root.documents) ? root.documents : []);
         setKycOwners(Array.isArray(root.owners) ? root.owners : []);
+        // GST Scrutiny history (domestic customers).
+        setGstRows(Array.isArray(root.gst_scrutiny) ? root.gst_scrutiny : []);
 
         // Stage 3 segment-rule reference uploads. Same hydration pattern
         // as before — only the source moved from a separate call to this
@@ -1185,6 +1297,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       case 'coRisk':
         if (!f.coRisk) return 'Select a risk level';
         return null;
+      case 'coGstApplicable':
+        if (!f.coGstApplicable) return 'Select whether GST is applicable';
+        return null;
       case 'coWeb':
         if (!f.coWeb || !f.coWeb.trim()) return null;
         if (f.coWeb.trim().length > 200) return 'Website must be 200 characters or fewer';
@@ -1248,7 +1363,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   };
 
   const STAGE1_FIELD_KEYS = [
-    'coName','coLegal','coType','coSeg','coClass','coRisk','coWeb',
+    'coName','coLegal','coType','coSeg','coClass','coRisk','coGstApplicable','coWeb',
     'addrType','addr','country','state','city','pin',
     'cpName','cpDesig','cpTel','cpEmail','cpWa',
   ];
@@ -1348,6 +1463,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     segment:        (form.coSeg ?? []).join(', '),
     classification: form.coClass,
     risk_level:     form.coRisk,
+    gst_applicable: form.coGstApplicable || null,
     website:        form.coWeb,
     status:         'Active' as const,
     primary_address: {
@@ -1398,7 +1514,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       } else {
         const r = await api.post('/customers', payload);
         const newId = r.data?.data?.db_id ?? null;
-        if (newId) setSavedDbId(newId);
+        if (newId) { setSavedDbId(newId); await flushLocalGst(newId); }
       }
       // Final submit succeeded → drop the remembered stage so a future
       // re-open of this customer starts fresh on Stage 1 instead of
@@ -1481,7 +1597,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       }
       const r = await api.post('/customers', payload);
       const newId = r.data?.data?.db_id ?? null;
-      if (newId) setSavedDbId(newId);
+      if (newId) { setSavedDbId(newId); await flushLocalGst(newId); }
       dirtySavedRef.current = true;
       return newId;
     } catch (err: any) {
@@ -1629,9 +1745,31 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               Loading customer details…
             </div>
           )}
-          <button type="button" className="acm-close" onClick={handleClose} aria-label="Close">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
+          {/* GST Scrutiny button + close grouped on the right so they sit
+              together (the header is justify-content: space-between, which
+              would otherwise push them apart). Greyed/disabled when GST
+              Applicable = No (domestic only). */}
+          <div className="acm-header-right">
+            {(() => {
+              const gstOn = form.coGstApplicable === 'Yes';
+              return (
+                <button
+                  type="button"
+                  className={`acm-gst-btn${gstOn ? '' : ' is-disabled'}`}
+                  onClick={() => { if (gstOn) setGstPopupOpen(true); }}
+                  disabled={!gstOn}
+                  title={gstOn ? 'Manage GST Scrutiny' : 'Set GST Applicable = Yes to enable'}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  GST Scrutiny
+                  {gstRows.length > 0 && <span className="acm-gst-count">{gstRows.length}</span>}
+                </button>
+              );
+            })()}
+            <button type="button" className="acm-close" onClick={handleClose} aria-label="Close">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
         </div>
 
         {/* Indeterminate top progress bar — gives the user immediate
@@ -1736,7 +1874,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
                 return [...vs, ...locked.filter(s => !vs.includes(s))];
               }
               return vs;
-            }} />
+            }} gstLocked={gstRows.length > 0} onGstLocked={() => toast.warning('GST Applicable is locked', 'Once you add a GST Scrutiny entry, you cannot change the GST Applicable status.')} />
           )}
           {stage === 1 && !showShimmer && tab === 'address-contact' && (
             <Stage1AdditionalLocations
@@ -2021,6 +2159,190 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           setSendForSignature(null);
         }}
       />
+
+      {/* GST Scrutiny — history list + add form, opened from the header
+          button. Domestic (GST Applicable = Yes) customers only. */}
+      <GstScrutinyManagePopup
+        open={gstPopupOpen}
+        rows={gstRows}
+        onClose={() => setGstPopupOpen(false)}
+        onAdd={addGstRow}
+      />
+    </div>
+  );
+}
+
+/* ───────────────────────────────────────────────────────────────────
+ * GST Scrutiny popup — a self-contained overlay showing the customer's
+ * GST scrutiny history (list) plus a top-right "+ Add GST Scrutiny"
+ * button that reveals the entry form. Mirrors the supplier's GST
+ * Scrutiny popup field-for-field. Persistence is delegated to the
+ * parent via onAdd/onRemove (which decide server vs local-hold).
+ * ─────────────────────────────────────────────────────────────────── */
+const EMPTY_GST_DRAFT: GstDraft = { gstNumber: '', status: 'Active', lastFilingDate: '', prevNonGst2aInvoice: '', redFlags: '' };
+const GST_STATUS_OPTS = [{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }];
+function GstScrutinyManagePopup(props: {
+  open: boolean;
+  rows: GstRow[];
+  onClose: () => void;
+  onAdd: (draft: GstDraft) => Promise<boolean>;
+}) {
+  const { open, rows, onClose, onAdd } = props;
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState<GstDraft>(EMPTY_GST_DRAFT);
+  const [errs, setErrs] = useState<{ gstNumber?: string; lastFilingDate?: string }>({});
+  const [busy, setBusy] = useState(false);
+  const [page, setPage] = useState(1);
+
+  const GST_PER_PAGE = 5;
+
+  // Reset the inline form + paging whenever the popup is opened/closed.
+  useEffect(() => {
+    if (!open) { setAdding(false); setDraft(EMPTY_GST_DRAFT); setErrs({}); setPage(1); }
+  }, [open]);
+
+  // Newest first. `rows` already arrives newest-first (server orders by id
+  // desc; new local rows are prepended), so just paginate as-is.
+  const pageCount = Math.max(1, Math.ceil(rows.length / GST_PER_PAGE));
+  const safePage = Math.min(page, pageCount);
+  const pageRows = rows.slice((safePage - 1) * GST_PER_PAGE, safePage * GST_PER_PAGE);
+  // Keep the current page valid if rows shrink (e.g. last item on a page removed).
+  useEffect(() => { if (page > pageCount) setPage(pageCount); }, [page, pageCount]);
+
+  if (!open) return null;
+
+  const setD = <K extends keyof GstDraft>(k: K, v: GstDraft[K]) => setDraft(prev => ({ ...prev, [k]: v }));
+
+  // GST number: strictly 15-char uppercase alphanumeric (e.g. 27AADCI6120M1ZH).
+  const onGstNumber = (raw: string) => {
+    setD('gstNumber', raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15));
+    setErrs(p => ({ ...p, gstNumber: undefined }));
+  };
+
+  const save = async () => {
+    const e: typeof errs = {};
+    const gstErr = gstNumberError(draft.gstNumber);
+    if (gstErr) e.gstNumber = gstErr;
+    // No duplicate GST number for the same customer (the backend enforces
+    // this too; this gives instant feedback without a round-trip).
+    else if (rows.some(r => String(r.gst_number).toUpperCase() === draft.gstNumber.toUpperCase())) {
+      e.gstNumber = 'This GST number is already added for this customer.';
+    }
+    if (!draft.lastFilingDate) e.lastFilingDate = 'GST Last Filing Date is required';
+    if (Object.keys(e).length) { setErrs(e); return; }
+    setBusy(true);
+    const ok = await onAdd(draft);
+    setBusy(false);
+    // Jump back to page 1 so the just-added (newest) entry is visible on top.
+    if (ok) { setDraft(EMPTY_GST_DRAFT); setErrs({}); setAdding(false); setPage(1); }
+  };
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  return (
+    <div className="acm-gst-overlay" role="dialog" aria-modal="true">
+      <div className="acm-gst-card">
+        <div className="acm-gst-head">
+          <div className="acm-gst-head-left">
+            <div className="acm-gst-head-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+            </div>
+            <div>
+              <div className="acm-gst-title">GST Scrutiny</div>
+              <div className="acm-gst-sub">GST profile, filing status &amp; compliance red-flags</div>
+            </div>
+          </div>
+          <div className="acm-gst-head-actions">
+            {!adding && (
+              <button type="button" className="acm-add-pill" onClick={() => { setAdding(true); setErrs({}); }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add GST Scrutiny
+              </button>
+            )}
+            <button type="button" className="acm-close" onClick={onClose} aria-label="Close">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div className="acm-gst-body">
+          {/* Add form REPLACES the table while open — one focused view at a
+              time. Cancel/Save returns to the history list. */}
+          {adding ? (
+            <div className="acm-gst-form">
+              <div className="acm-row acm-row-3">
+                <Field label="GST Number" required error={errs.gstNumber}>
+                  <input className={errs.gstNumber ? 'acm-input-error' : ''} value={draft.gstNumber} maxLength={15} onChange={e => onGstNumber(e.target.value)} placeholder="27AADCI6120M1ZH" />
+                </Field>
+                <Field label="GST Status" required>
+                  <MasterSelect value={draft.status} options={GST_STATUS_OPTS} placeholder="Select GST status" onChange={v => setD('status', v as GstDraft['status'])} />
+                </Field>
+                <Field label="GST Last Filing Date" required error={errs.lastFilingDate}>
+                  <MasterDatePicker value={draft.lastFilingDate} onChange={v => { setD('lastFilingDate', v); setErrs(p => ({ ...p, lastFilingDate: undefined })); }} placeholder="dd/mm/yyyy" maxDate={today} />
+                </Field>
+              </div>
+              <div className="acm-row acm-row-2">
+                <Field label="Previous Non-GST 2A Reflected Invoice">
+                  <input value={draft.prevNonGst2aInvoice} maxLength={50} onChange={e => setD('prevNonGst2aInvoice', e.target.value)} placeholder="Enter invoice reference (optional)" />
+                </Field>
+                <Field label="Red Flags">
+                  <input value={draft.redFlags} maxLength={300} onChange={e => setD('redFlags', e.target.value)} placeholder="Enter red flags (optional)" />
+                </Field>
+              </div>
+              <div className="acm-gst-form-actions">
+                <button type="button" className="acm-btn-ghost" onClick={() => { setAdding(false); setDraft(EMPTY_GST_DRAFT); setErrs({}); }} disabled={busy}>Cancel</button>
+                <button type="button" className="acm-btn-primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+              </div>
+            </div>
+          ) : (
+            <div className="acm-gst-table-wrap">
+              <table className="acm-gst-table">
+                <thead>
+                  <tr>
+                    <th className="acm-gst-srno-col">SR NO</th>
+                    <th>GST Number</th>
+                    <th>Status</th>
+                    <th>Last Filing Date</th>
+                    <th>Prev Non-GST 2A Invoice</th>
+                    <th>Red Flags</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.length === 0 ? (
+                    <tr><td colSpan={6} className="acm-gst-empty">No GST scrutiny entries added yet. Click “Add GST Scrutiny” to create one.</td></tr>
+                  ) : pageRows.map((r, i) => {
+                    const sr = (safePage - 1) * GST_PER_PAGE + i + 1;
+                    return (
+                      <tr key={r.id}>
+                        <td className="acm-gst-srno-col"><span className="acm-gst-sr">{String(sr).padStart(2, '0')}</span></td>
+                        <td style={{ fontWeight: 600 }}>{r.gst_number}</td>
+                        <td><span className={`acm-gst-status acm-gst-status-${String(r.status).toLowerCase()}`}>{r.status}</span></td>
+                        <td>{r.last_filing_date || '—'}</td>
+                        <td>{r.prev_non_gst_2a_invoice || '—'}</td>
+                        <td>{r.red_flags || '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {/* Pagination — 5 rows per page; only shown once there are more
+              than a page's worth of entries. */}
+          {!adding && rows.length > GST_PER_PAGE && (
+            <div className="acm-gst-pager">
+              <span className="acm-gst-pager-info">
+                {(safePage - 1) * GST_PER_PAGE + 1}–{Math.min(safePage * GST_PER_PAGE, rows.length)} of {rows.length}
+              </span>
+              <div className="acm-gst-pager-btns">
+                <button type="button" className="acm-gst-page-btn" disabled={safePage === 1} onClick={() => setPage(p => Math.max(1, p - 1))} aria-label="Previous page">‹</button>
+                <span className="acm-gst-page-cur">{safePage} / {pageCount}</span>
+                <button type="button" className="acm-gst-page-btn" disabled={safePage === pageCount} onClick={() => setPage(p => Math.min(pageCount, p + 1))} aria-label="Next page">›</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -2200,8 +2522,8 @@ function Stage2Shimmer() {
 /* Stage 3 (Evidence Vault) shimmer removed along with the stage itself. */
 
 /* ───── Stage 1 — Identification + Primary Address & Contact ───── */
-function Stage1Identification({ form, setF, masters, errors, clearErr, validateField, guardSegmentRemove }:
-  { form: any; setF: (k: any, v: any) => void; masters: MasterLists; errors: Record<string, string>; clearErr: (k: string) => void; validateField: (k: string, nextForm: any) => void; guardSegmentRemove: (prev: string[], next: string[]) => string[] }) {
+function Stage1Identification({ form, setF, masters, errors, clearErr, validateField, guardSegmentRemove, gstLocked, onGstLocked }:
+  { form: any; setF: (k: any, v: any) => void; masters: MasterLists; errors: Record<string, string>; clearErr: (k: string) => void; validateField: (k: string, nextForm: any) => void; guardSegmentRemove: (prev: string[], next: string[]) => string[]; gstLocked: boolean; onGstLocked: () => void }) {
   // States filter against the selected country: look up the country
   // name → its id from the countries master, then filter states by it.
   const selectedCountry = masters.countries.find(c => c.name === form.country);
@@ -2226,15 +2548,17 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
           </div>
         </div>
         <div className="acm-section-body">
-          <div className="acm-row acm-row-3">
+          {/* Row 1 (4-col): identity + website. */}
+          <div className="acm-row acm-row-4">
             <Field label="Company Name" required error={errors.coName} fieldKey="coName"><input className={errors.coName ? 'acm-input-error' : ''} value={form.coName} maxLength={30} onChange={e => set('coName', e.target.value.slice(0, 30))} placeholder="e.g. Shree Agro Pvt Ltd (max 30)" /></Field>
             <Field label="Company Legal Name" required error={errors.coLegal} fieldKey="coLegal"><input className={errors.coLegal ? 'acm-input-error' : ''} value={form.coLegal} onChange={e => set('coLegal', e.target.value)} placeholder="Registered legal entity name" /></Field>
             <Field label="Customer Type" required error={errors.coType} fieldKey="coType">
               <MasterSelect value={form.coType} options={optsWith(masters.customerTypes, form.coType)} placeholder="Select customer type" invalid={!!errors.coType} onChange={v => set('coType', v)} />
             </Field>
-          </div>
-          <div className="acm-row acm-row-4">
             <Field label="Company Website" error={errors.coWeb} fieldKey="coWeb"><input className={errors.coWeb ? 'acm-input-error' : ''} value={form.coWeb} onChange={e => set('coWeb', e.target.value)} placeholder="https://example.com" /></Field>
+          </div>
+          {/* Row 2 (4-col): segment → GST applicable → classification → risk. */}
+          <div className="acm-row acm-row-4">
             <Field label="Customer Segment" required error={errors.coSeg} fieldKey="coSeg">
               {/* masterFormKit's MasterMultiSelect renders visible violet
                   chips with × buttons + a checkbox-marked dropdown so
@@ -2255,6 +2579,34 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 }}
                 maxChips={2}
               />
+            </Field>
+            {/* GST flag — 'Yes' enables the GST Scrutiny button in the modal
+                header. Independent of country (a non-India customer may still
+                deal domestically). Required, defaults to Yes. */}
+            <Field label="GST Applicable" required error={errors.coGstApplicable} fieldKey="coGstApplicable">
+              {/* Locked once any GST Scrutiny entry exists — flipping to No
+                  would orphan the captured GST records. The lock is surfaced
+                  via a toast on click (no inline note, which would push the
+                  row out of grid alignment). A transparent overlay sits over
+                  the disabled control so the click reliably fires the toast
+                  (a disabled select swallows its own events). */}
+              <div style={{ position: 'relative' }}>
+                <MasterSelect
+                  value={form.coGstApplicable}
+                  options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
+                  placeholder="Select"
+                  invalid={!!errors.coGstApplicable}
+                  disabled={gstLocked}
+                  onChange={v => set('coGstApplicable', v as 'Yes' | 'No')}
+                />
+                {gstLocked && (
+                  <div
+                    onClick={onGstLocked}
+                    title="Locked — delete the GST Scrutiny entries to change this"
+                    style={{ position: 'absolute', inset: 0, zIndex: 3, cursor: 'not-allowed' }}
+                  />
+                )}
+              </div>
             </Field>
             <Field label="Classification & Flags" required error={errors.coClass} fieldKey="coClass">
               <MasterSelect value={form.coClass} options={optsWith(masters.classifications, form.coClass)} placeholder="Select classification" invalid={!!errors.coClass} allowDeselect onChange={v => set('coClass', v)} />
@@ -4728,6 +5080,73 @@ const SCOPED_CSS = `
 /* Add pill button */
 .acm-add-pill { display: inline-flex; align-items: center; gap: 5px; padding: 6px 14px; border-radius: 20px; border: 1px solid #c4b5fd; background: #fff; color: #6d28d9; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all .18s; white-space: nowrap; box-shadow: 0 2px 6px rgba(109,40,217,.1); flex-shrink: 0; }
 .acm-add-pill:hover { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; border-color: #7c3aed; transform: translateY(-1px); }
+
+/* ── GST Scrutiny: header button + popup ─────────────────────────── */
+.acm-header-right { display: flex; align-items: center; gap: 8px; position: relative; z-index: 1; flex-shrink: 0; }
+.acm-gst-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.55); background: rgba(255,255,255,0.18); color: #fff; font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: all .18s; white-space: nowrap; position: relative; z-index: 1; }
+.acm-gst-btn:hover:not(.is-disabled) { background: rgba(255,255,255,0.30); transform: translateY(-1px); }
+.acm-gst-btn.is-disabled { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.22); color: rgba(255,255,255,0.45); cursor: not-allowed; }
+.acm-gst-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #fff; color: #6d28d9; font-size: 11px; font-weight: 800; }
+.acm-gst-btn.is-disabled .acm-gst-count { background: rgba(255,255,255,0.45); color: #6d28d9; }
+
+.acm-gst-overlay { position: fixed; inset: 0; background: rgba(17,12,40,0.55); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; z-index: 1200; padding: 24px; }
+.acm-gst-card { width: min(920px, 96vw); max-height: 88vh; display: flex; flex-direction: column; background: var(--vz-card-bg, #fff); border: 0.5px solid #fff; border-radius: 18px; box-shadow: 0 24px 70px rgba(0,0,0,0.35); overflow: hidden; }
+/* Full-bleed gradient header — rounds with the card, no white inset line
+   or gloss band (those read as a white frame on top/left/right). */
+.acm-gst-head { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 22px; background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 30%, #6d28d9 60%, #7c3aed 82%, #8b5cf6 100%); color: #fff; border-top-left-radius: 16px; border-top-right-radius: 16px; }
+/* Subtle dotted texture only — no white highlights bleeding to the edges. */
+.acm-gst-head::before { content: ''; position: absolute; inset: 0; opacity: .35; pointer-events: none; background-image: radial-gradient(rgba(255,255,255,.16) 1px, transparent 1px); background-size: 16px 16px; }
+.acm-gst-head-left { position: relative; z-index: 1; display: flex; align-items: center; gap: 12px; }
+.acm-gst-head-icon { width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, rgba(255,255,255,.3), rgba(255,255,255,.12)); border: 1px solid rgba(255,255,255,.38); box-shadow: 0 5px 14px rgba(0,0,0,.18), 0 1px 0 rgba(255,255,255,.4) inset; }
+.acm-gst-title { font-size: 16px; font-weight: 800; letter-spacing: -0.2px; line-height: 1.1; }
+.acm-gst-sub { font-size: 11px; font-weight: 500; color: rgba(255,255,255,.82); text-shadow: none; line-height: 1.2; margin-top: 1px; }
+.acm-gst-head-actions { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; }
+.acm-gst-head-actions .acm-add-pill { background: rgba(255,255,255,0.18); border-color: rgba(255,255,255,0.55); color: #fff; box-shadow: none; }
+.acm-gst-head-actions .acm-add-pill:hover { background: #fff; color: #6d28d9; border-color: #fff; }
+.acm-gst-body { padding: 20px 22px 22px; overflow-y: auto; }
+/* Borderless form — the fields sit directly on the body (no boxed panel). */
+.acm-gst-form { padding: 0; margin: 0; }
+.acm-gst-form-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 18px; }
+/* Keep form inputs solid white even in the error state (red border only). */
+.acm-gst-card .acm-field input.acm-input-error { background: #fff; }
+.acm-btn-ghost { padding: 8px 18px; border-radius: 9px; border: 1.5px solid #c4b5fd; background: #fff; color: #6d28d9; font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+.acm-btn-ghost:hover:not(:disabled) { background: #ede9fe; }
+.acm-btn-primary { padding: 8px 18px; border-radius: 9px; border: none; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+.acm-btn-primary:disabled, .acm-btn-ghost:disabled { opacity: 0.6; cursor: not-allowed; }
+.acm-gst-table-wrap { border: 1px solid #ece9f6; border-radius: 12px; overflow: hidden; }
+.acm-gst-table { width: 100%; border-collapse: collapse; }
+.acm-gst-table thead tr { background: linear-gradient(135deg, #faf8ff, #f3eefe); }
+.acm-gst-table th { text-align: left; background: transparent; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #8b7bb8; padding: 10px 12px; border-bottom: 1.5px solid #ece7f8; white-space: nowrap; }
+.acm-gst-table td { padding: 9px 12px; border-top: 1px solid #f0eef8; font-size: 12px; color: #475569; }
+.acm-gst-table th:first-child, .acm-gst-table td:first-child { padding-left: 16px; }
+.acm-gst-table th:last-child, .acm-gst-table td:last-child { padding-right: 16px; }
+.acm-gst-srno-col { width: 64px; }
+.acm-gst-sr { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 24px; padding: 0 6px; border-radius: 7px; background: #f5f1fe; color: #6d28d9; border: 1px solid #e2d4fa; font-size: 11px; font-weight: 800; font-family: 'DM Mono', ui-monospace, monospace; }
+.acm-gst-empty { text-align: center; color: #9ca3af; padding: 26px 12px !important; }
+.acm-gst-status { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+.acm-gst-status-active { background: #dcfce7; color: #15803d; }
+.acm-gst-status-inactive { background: #fee2e2; color: #b91c1c; }
+.acm-gst-status-suspended { background: #fef3c7; color: #b45309; }
+.acm-gst-status-cancelled { background: #fee2e2; color: #b91c1c; }
+.acm-gst-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.acm-gst-pager-info { font-size: 11.5px; font-weight: 600; color: #8b7bb8; }
+.acm-gst-pager-btns { display: inline-flex; align-items: center; gap: 8px; }
+.acm-gst-page-cur { font-size: 12px; font-weight: 700; color: #6d28d9; min-width: 48px; text-align: center; }
+.acm-gst-page-btn { width: 30px; height: 30px; border-radius: 8px; border: 1.5px solid #e0d9f7; background: #fff; color: #6d28d9; font-size: 16px; font-weight: 700; line-height: 1; cursor: pointer; transition: all .15s; }
+.acm-gst-page-btn:hover:not(:disabled) { background: #ede9fe; border-color: #c4b5fd; }
+.acm-gst-page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+[data-bs-theme="dark"] .acm-gst-pager-info { color: #a78bfa; }
+[data-bs-theme="dark"] .acm-gst-page-cur { color: #c4b5fd; }
+[data-bs-theme="dark"] .acm-gst-page-btn { background: rgba(167,139,250,0.10); border-color: rgba(167,139,250,0.40); color: #c4b5fd; }
+
+[data-bs-theme="dark"] .acm-gst-card { background: #0f1729; }
+[data-bs-theme="dark"] .acm-gst-form { background: rgba(167,139,250,0.06); border-color: rgba(167,139,250,0.30); }
+[data-bs-theme="dark"] .acm-gst-table-wrap { border-color: rgba(167,139,250,0.25); }
+[data-bs-theme="dark"] .acm-gst-table thead tr { background: rgba(124,58,237,.12); }
+[data-bs-theme="dark"] .acm-gst-table th { background: transparent; color: #c4b5fd; border-bottom-color: rgba(167,139,250,.2); }
+[data-bs-theme="dark"] .acm-gst-sr { background: rgba(124,58,237,.2); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+[data-bs-theme="dark"] .acm-gst-table td { color: #cbd5e1; border-top-color: rgba(167,139,250,0.15); }
+[data-bs-theme="dark"] .acm-btn-ghost { background: rgba(167,139,250,0.12); border-color: rgba(167,139,250,0.40); color: #c4b5fd; }
 
 /* Pagination */
 .acm-doc-pag-wrap { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 11px 16px; border-top: 1px solid #ede9fe; background: #fafafd; flex-wrap: wrap; }

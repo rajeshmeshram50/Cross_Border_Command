@@ -157,6 +157,13 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::apiResource('customers', CustomerController::class)
         ->only(['index', 'show', 'store', 'update', 'destroy']);
 
+    // GST Scrutiny (domestic customers) — each row persists on its own,
+    // mirroring the vendor gst-scrutiny endpoints.
+    Route::get   ('/customers/{customer}/gst-scrutiny',          [CustomerController::class, 'indexGstScrutiny']);
+    Route::post  ('/customers/{customer}/gst-scrutiny',          [CustomerController::class, 'storeGstScrutiny']);
+    Route::put   ('/customers/{customer}/gst-scrutiny/{gst}',    [CustomerController::class, 'updateGstScrutiny']);
+    Route::delete('/customers/{customer}/gst-scrutiny/{gst}',    [CustomerController::class, 'destroyGstScrutiny']);
+
 
     Route::get   ('/customers/{customer}/documents',           [\App\Http\Controllers\Api\CustomerDocumentController::class, 'index']);
     Route::post  ('/customers/{customer}/documents',           [\App\Http\Controllers\Api\CustomerDocumentController::class, 'store']);

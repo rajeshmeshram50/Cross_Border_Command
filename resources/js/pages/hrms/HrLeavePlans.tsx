@@ -6,7 +6,6 @@ import '../../../css/recruitment.css';
 import '../../../css/leave.css';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
 import { leavePlansApi, leaveTypesApi, leaveBalancesApi, ApiLeavePlan, ApiLeaveType, ApiPlanEmployee, ApiLeaveBalancesResponse } from './leavePlansApi';
-import EmployeePicker, { PickedEmployee } from '../../components/ui/EmployeePicker';
 import Tooltip from '../../components/ui/Tooltip';
 import { Shimmer } from '../../components/ui/Shimmer';
 import { useAuth } from '../../contexts/AuthContext';
@@ -39,13 +38,17 @@ interface LeavePlan {
 }
 
 interface AccrualConfig {
-  unit: 'days' | 'hours';
+  unit: 'days';
   unlimited: boolean;
   yearlyQuota: number;
   mode: 'periodic' | 'attendance' | 'immediate';
   frequency: 'monthly' | 'quarterly' | 'half_yearly' | 'yearly';
   dayOfMonth: number;
   variesEachMonth: boolean;
+  // Attendance-based accrual: "For every <daysWorked> days worked, accrue
+  // <daysAccrued> days of leave".
+  attendanceDaysWorked: number;
+  attendanceDaysAccrued: number;
   leaveExpires: { enabled: boolean; unit: 'day' | 'month' | 'year'; days: number };
   restrictByAttendance: boolean;
   noAccrualIfOnLeaveFor: { enabled: boolean; days: number };
@@ -70,6 +73,13 @@ interface LeaveAppConfig {
   cannotUseSameYear: boolean;
   preventFutureExpected: boolean;
   minIfBalanceMore: { enabled: boolean; balance: number; minDays: number };
+  managerCannotOverride: boolean;
+  // Sandwich policy — counts intervening weekly-offs / holidays as leave when a
+  // leave spans them (e.g. Sat + Mon leave makes the Sunday weekly-off count
+  // as leave too). `sandwichClub` extends this across leave types.
+  sandwichWeeklyOff: boolean;
+  sandwichHoliday: boolean;
+  sandwichClub: boolean;
 }
 
 interface ApprovalLevel {
@@ -132,6 +142,7 @@ const defaultLeaveTypeConfig = (): LeaveTypeConfig => ({
     unit: 'days', unlimited: false, yearlyQuota: 12,
     mode: 'periodic', frequency: 'monthly', dayOfMonth: 1,
     variesEachMonth: false,
+    attendanceDaysWorked: 0, attendanceDaysAccrued: 0,
     leaveExpires: { enabled: false, unit: 'day', days: 0 },
     restrictByAttendance: false,
     noAccrualIfOnLeaveFor: { enabled: false, days: 30 },
@@ -154,11 +165,16 @@ const defaultLeaveTypeConfig = (): LeaveTypeConfig => ({
     cannotUseSameYear: false,
     preventFutureExpected: true,
     minIfBalanceMore: { enabled: false, balance: 0, minDays: 0 },
+    managerCannotOverride: false,
+    sandwichWeeklyOff: false,
+    sandwichHoliday: false,
+    sandwichClub: false,
   },
   approval: {
     required: true, approverRole: 'reporting_manager',
     autoApproveIfMissing: false, doNotEmailEveryRequest: false,
-    chain: [{ approver_kind: 'reporting_manager' }],
+    // Fixed two-step signing flow: Reporting Manager → HR.
+    chain: [{ approver_kind: 'reporting_manager' }, { approver_kind: 'role', approver_role: 'hr' }],
   },
   yearEnd: {
     encashmentAllowed: false, carryForward: 'reset', carryForwardCap: 0,
@@ -2326,27 +2342,9 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
     <>
       <h5 className="fw-bold mb-3">Accrual</h5>
 
-      <div className="lts-info-banner mb-3">
-        <i className="ri-information-line" />
-        Wondering how employees can request leave? <a href="#guide">Here's a quick guide you can share!</a>
-      </div>
-
       <SectionCard icon="ri-information-line" iconBg="#ece6ff" title="Yearly Quota">
-        <div className="d-flex align-items-center gap-3 flex-wrap mb-3">
-          <span className="text-muted" style={{ fontSize: 12.5 }}>This leave is calculated in</span>
-          <div className="lts-toggle-group">
-            <button
-              type="button"
-              className={`lts-toggle ${cfg.unit === 'days' ? 'is-on' : ''}`}
-              onClick={() => update({ unit: 'days' })}
-            >Days</button>
-            <button
-              type="button"
-              className={`lts-toggle ${cfg.unit === 'hours' ? 'is-on' : ''}`}
-              onClick={() => update({ unit: 'hours' })}
-            >Hours</button>
-          </div>
-        </div>
+        {/* Leave is always calculated in days — the Days/Hours toggle and all
+            hours-based logic were removed. */}
         <div className="d-flex align-items-center gap-3 flex-wrap">
           <span className="text-muted" style={{ fontSize: 12.5, minWidth: 80 }}>Yearly quota</span>
           <label className="d-flex align-items-center gap-2 mb-0" style={{ cursor: 'pointer' }}>
@@ -2365,7 +2363,7 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
               onChange={e => update({ yearlyQuota: Number(e.target.value) || 0, unlimited: false })}
               disabled={cfg.unlimited}
             />
-            <span className="text-muted" style={{ fontSize: 12.5 }}>{cfg.unit}</span>
+            <span className="text-muted" style={{ fontSize: 12.5 }}>days</span>
           </label>
           <label className="d-flex align-items-center gap-2 mb-0" style={{ cursor: 'pointer' }}>
             <input
@@ -2380,6 +2378,11 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
         </div>
       </SectionCard>
 
+      {/* Unlimited quota makes accrual rate, restrictions and extra-leave rules
+          irrelevant — hide the rest of the Accrual step so only the quota
+          choice remains. */}
+      {!cfg.unlimited && (
+        <>
       <SectionCard icon="ri-pulse-line" iconBg="#dbeafe" title="Allocation & Accrual Rate">
         <RadioRow
           selected={cfg.mode === 'periodic'}
@@ -2430,6 +2433,31 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
           onSelect={() => update({ mode: 'attendance' })}
           label="Leave accrues based on attendance"
         />
+        {cfg.mode === 'attendance' && (
+          <div className="lts-nested-block">
+            <div className="d-flex align-items-center gap-2 flex-wrap">
+              <span className="text-muted" style={{ fontSize: 12.5 }}>For every</span>
+              <input
+                type="number"
+                className="lts-input"
+                style={{ width: 80 }}
+                placeholder="Ex: 8"
+                value={cfg.attendanceDaysWorked || ''}
+                onChange={e => update({ attendanceDaysWorked: Number(e.target.value) || 0 })}
+              />
+              <span className="text-muted" style={{ fontSize: 12.5 }}>days worked, accrue</span>
+              <input
+                type="number"
+                className="lts-input"
+                style={{ width: 80 }}
+                placeholder="Ex: 4"
+                value={cfg.attendanceDaysAccrued || ''}
+                onChange={e => update({ attendanceDaysAccrued: Number(e.target.value) || 0 })}
+              />
+              <span className="text-muted" style={{ fontSize: 12.5 }}>days of leave</span>
+            </div>
+          </div>
+        )}
         <RadioRow
           selected={cfg.mode === 'immediate'}
           onSelect={() => update({ mode: 'immediate' })}
@@ -2437,6 +2465,8 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
         />
       </SectionCard>
 
+      {/* Accrual Restrictions are day-centric — always shown now that leave is
+          days-only. */}
       <SectionCard icon="ri-prohibited-line" iconBg="#fde8c4" title="Accrual Restrictions">
         <CheckRow
           checked={cfg.leaveExpires.enabled}
@@ -2573,6 +2603,8 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
           sub="Calculated from employee's joining date"
         />
       </SectionCard>
+        </>
+      )}
     </>
   );
 }
@@ -2627,11 +2659,6 @@ function LeaveAppSectionView({ cfg, update }: { cfg: LeaveAppConfig; update: (p:
             }
           />
         </CheckRow>
-        <CheckRow
-          checked={cfg.commentMandatory}
-          onChange={v => update({ commentMandatory: v })}
-          label="Comment is mandatory when requesting"
-        />
       </SectionCard>
 
       <SectionCard icon="ri-prohibited-line" iconBg="#fee2e2" title="Leave Application Restrictions">
@@ -2682,85 +2709,73 @@ function LeaveAppSectionView({ cfg, update }: { cfg: LeaveAppConfig; update: (p:
           onChange={v => update({ preventFutureExpected: v })}
           label="Employees cannot request leave with future dates based on expected accrual"
         />
+        <CheckRow
+          checked={cfg.managerCannotOverride}
+          onChange={v => update({ managerCannotOverride: v })}
+          label="Manager cannot override restrictions when requesting for leave on behalf of the employee"
+        />
+      </SectionCard>
+
+      {/* Sandwich Policy — when a leave spans an intervening weekly-off / holiday
+          (e.g. Sat + Mon leave), that off-day is counted as part of the leave. */}
+      <SectionCard icon="ri-restaurant-line" iconBg="#fde8c4" title="Sandwich Policy">
+        <CheckRow
+          checked={cfg.sandwichWeeklyOff}
+          onChange={v => update({ sandwichWeeklyOff: v })}
+          label="If applied leave adjoins a weekly off, the weekly off is considered as part of leave."
+        />
+        <CheckRow
+          checked={cfg.sandwichHoliday}
+          onChange={v => update({ sandwichHoliday: v })}
+          label="If applied leave adjoins a holiday, the holiday is considered as part of leave."
+        />
+        <CheckRow
+          checked={cfg.sandwichClub}
+          onChange={v => update({ sandwichClub: v })}
+          label="Club sandwich policy across leave types."
+        />
       </SectionCard>
     </>
   );
 }
 
-const APPROVER_KIND_META: Record<ApprovalLevel['approver_kind'], { label: string; bg: string; fg: string; initials: string }> = {
-  reporting_manager: { label: 'Reporting Manager', bg: '#d3f0ee', fg: '#0a716a', initials: 'RM' },
-  role:              { label: 'Role',              bg: '#ece6ff', fg: '#5a3fd1', initials: 'RL' },
-  user:              { label: 'Specific User',     bg: '#dceefe', fg: '#0c63b0', initials: 'U' },
-  employee:          { label: 'Specific Employee', bg: '#fde8c4', fg: '#a4661c', initials: 'E' },
-};
-
-const ROLE_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: 'hr',                label: 'HR' },
-  { value: 'branch_admin',      label: 'Branch Admin' },
-  { value: 'reporting_manager', label: 'Reporting Manager (role)' },
+/* Fixed two-step signing flow. The leave approval hierarchy is locked to
+ * Reporting Manager → HR — no other approver types are offered, matching the
+ * business rule that a leave first goes to the reporting manager and only
+ * after their approval reaches HR. */
+const FIXED_APPROVAL_LEVELS: Array<{
+  kind: ApprovalLevel['approver_kind'];
+  role: string | null;
+  title: string; bg: string; fg: string; initials: string; desc: string;
+}> = [
+  { kind: 'reporting_manager', role: null, title: 'Reporting Manager', bg: '#d3f0ee', fg: '#0a716a', initials: 'RM',
+    desc: 'Resolves to each requestor\'s reporting manager at submission time. Acts first.' },
+  { kind: 'role', role: 'hr', title: 'HR', bg: '#ece6ff', fg: '#5a3fd1', initials: 'HR',
+    desc: 'Any user holding the HR role can approve — only after the reporting manager has approved.' },
 ];
 
 function ApprovalSectionView({ cfg, update }: { cfg: ApprovalConfig; update: (p: Partial<ApprovalConfig>) => void }) {
-  const chain: ApprovalLevel[] = Array.isArray(cfg.chain) && cfg.chain.length > 0
-    ? cfg.chain
-    : [{ approver_kind: 'reporting_manager' }];
+  // The chain is fixed to Reporting Manager → HR. Skip rules per level are the
+  // only configurable bit, preserved across the fixed levels.
+  const chain: ApprovalLevel[] = FIXED_APPROVAL_LEVELS.map((lv, i) => ({
+    approver_kind: lv.kind,
+    approver_role: lv.role,
+    skip_if: cfg.chain?.[i]?.skip_if ?? null,
+  }));
 
-  const [chainPicked, setChainPicked] = useState<Record<number, PickedEmployee | null>>({});
+  // Normalize any legacy / custom chain to the fixed two-step flow so saving
+  // the plan persists exactly Reporting Manager → HR.
   useEffect(() => {
-    const needIds = chain
-      .map((l, idx) => ({ idx, l }))
-      .filter(({ idx, l }) =>
-        !chainPicked[idx]
-        && (l.approver_kind === 'user' || l.approver_kind === 'employee')
-        && (l.approver_user_id || l.approver_employee_id)
-      );
-    if (needIds.length === 0) return;
-    Promise.all(needIds.map(({ idx, l }) => {
-      const params = l.approver_kind === 'employee'
-        ? { id: l.approver_employee_id }
-        : { user_id: l.approver_user_id };
-      return api.get('/employees', { params: { ...params, per_page: 1 } })
-        .then(r => {
-          const raw = r.data?.data ?? r.data ?? [];
-          const e = Array.isArray(raw) ? raw[0] : null;
-          if (!e) return { idx, picked: null as PickedEmployee | null };
-          const picked: PickedEmployee = {
-            id: e.id,
-            user_id: e.user_id ?? null,
-            name: (e.display_name?.trim() || `${e.first_name ?? ''} ${e.last_name ?? ''}`.trim()) || `Employee #${e.id}`,
-            emp_code: e.emp_code || `EMP-${e.id}`,
-            designation: e.designation?.name || e.designation_name || null,
-            photo_url: e.profile_photo_url || e.photo_url || null,
-          };
-          return { idx, picked };
-        })
-        .catch(() => ({ idx, picked: null as PickedEmployee | null }));
-    })).then(results => {
-      setChainPicked(prev => {
-        const next = { ...prev };
-        results.forEach(({ idx, picked }) => { next[idx] = picked; });
-        return next;
-      });
-    });
+    const c = cfg.chain;
+    const ok = Array.isArray(c) && c.length === 2
+      && c[0]?.approver_kind === 'reporting_manager'
+      && c[1]?.approver_kind === 'role' && c[1]?.approver_role === 'hr';
+    if (!ok) update({ chain });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg.chain]);
+  }, []);
 
-  const setChain = (next: ApprovalLevel[]) => update({ chain: next });
-  const updateLevel = (idx: number, patch: Partial<ApprovalLevel>) => {
-    const next = chain.map((c, i) => i === idx ? { ...c, ...patch } : c);
-    setChain(next);
-  };
-  const addLevel = () => setChain([...chain, { approver_kind: 'role', approver_role: 'hr' }]);
-  const removeLevel = (idx: number) => {
-    if (chain.length <= 1) return;
-    setChain(chain.filter((_, i) => i !== idx));
-  };
-  const moveLevel = (idx: number, dir: -1 | 1) => {
-    const target = idx + dir;
-    if (target < 0 || target >= chain.length) return;
-    const next = chain.slice();
-    [next[idx], next[target]] = [next[target], next[idx]];
-    setChain(next);
+  const setSkip = (idx: number, next: ApprovalLevel['skip_if'] | null) => {
+    update({ chain: chain.map((c, i) => i === idx ? { ...c, skip_if: next } : c) });
   };
 
   return (
@@ -2774,192 +2789,42 @@ function ApprovalSectionView({ cfg, update }: { cfg: ApprovalConfig; update: (p:
           label="Leave request requires an approval"
         >
           <div className="lts-approval-chain">
-            <div className="d-flex align-items-center justify-content-between mb-2">
-              <div className="lts-section-label">APPROVAL CHAIN</div>
-              <button
-                type="button"
-                className="rec-btn-ghost"
-                onClick={addLevel}
-                style={{ fontSize: 12, padding: '4px 10px' }}
-              >
-                <i className="ri-add-line" /> Add Level
-              </button>
-            </div>
+            <div className="lts-section-label mb-2">APPROVAL CHAIN</div>
 
-            {chain.map((level, idx) => {
-              const meta = APPROVER_KIND_META[level.approver_kind] || APPROVER_KIND_META.reporting_manager;
-              return (
-                <div key={idx} className="lts-approval-card" style={{ marginBottom: 10 }}>
-                  <div className="d-flex align-items-center gap-2 mb-2 flex-wrap">
-                    <span className="lts-level-pill">LEVEL {idx + 1}</span>
-                    <span
-                      className="lts-kind-pill"
-                      style={{ ['--kp-bg' as string]: meta.bg, ['--kp-fg' as string]: meta.fg } as CSSProperties}
-                    >
-                      {meta.label.toUpperCase()}
-                    </span>
-                    <div className="ms-auto d-flex align-items-center gap-1">
-                      <Tooltip label="Move up">
-                        <button
-                          type="button"
-                          className="lp-icon-btn"
-                          onClick={() => moveLevel(idx, -1)}
-                          disabled={idx === 0}
-                          style={{ opacity: idx === 0 ? 0.3 : 1 }}
-                        >
-                          <i className="ri-arrow-up-s-line" />
-                        </button>
-                      </Tooltip>
-                      <Tooltip label="Move down">
-                        <button
-                          type="button"
-                          className="lp-icon-btn"
-                          onClick={() => moveLevel(idx, 1)}
-                          disabled={idx === chain.length - 1}
-                          style={{ opacity: idx === chain.length - 1 ? 0.3 : 1 }}
-                        >
-                          <i className="ri-arrow-down-s-line" />
-                        </button>
-                      </Tooltip>
-                      <Tooltip label="Remove level">
-                        <button
-                          type="button"
-                          className="lp-icon-btn"
-                          onClick={() => removeLevel(idx)}
-                          disabled={chain.length <= 1}
-                          style={{ color: chain.length <= 1 ? '#d1d5db' : '#dc2626' }}
-                        >
-                          <i className="ri-delete-bin-line" />
-                        </button>
-                      </Tooltip>
-                    </div>
-                  </div>
-
-                  <div className="text-muted mb-2" style={{ fontSize: 12 }}>Approver</div>
-
-                  <div className="d-flex align-items-center gap-2 flex-wrap" style={{ marginBottom: 6 }}>
-                    <div style={{ minWidth: 200 }}>
-                      <MasterSelect
-                        value={level.approver_kind}
-                        onChange={v => updateLevel(idx, {
-                          approver_kind: v as ApprovalLevel['approver_kind'],
-                          approver_role: null, approver_user_id: null, approver_employee_id: null,
-                        })}
-                        options={[
-                          { value: 'reporting_manager', label: 'Reporting Manager' },
-                          { value: 'role',              label: 'Role' },
-                          { value: 'user',              label: 'Specific User' },
-                          { value: 'employee',          label: 'Specific Employee' },
-                        ]}
-                        placeholder="Pick approver type"
-                      />
-                    </div>
-
-                    {level.approver_kind === 'role' && (
-                      <div style={{ minWidth: 200 }}>
-                        <MasterSelect
-                          value={level.approver_role ?? ''}
-                          onChange={v => updateLevel(idx, { approver_role: v || null })}
-                          options={ROLE_OPTIONS}
-                          placeholder="Pick a role…"
-                        />
-                      </div>
-                    )}
-
-                    {level.approver_kind === 'user' && (
-                      <EmployeePicker
-                        value={chainPicked[idx] ?? (level.approver_user_id
-                          ? { id: 0, user_id: level.approver_user_id, name: level.label || `User #${level.approver_user_id}`, emp_code: '' }
-                          : null)}
-                        placeholder="Search user…"
-                        onChange={(picked) => {
-                          setChainPicked(prev => ({ ...prev, [idx]: picked }));
-                          updateLevel(idx, {
-                            approver_user_id: picked?.user_id ?? null,
-                            label: picked?.name ?? null,
-                          });
-                        }}
-                      />
-                    )}
-
-                    {level.approver_kind === 'employee' && (
-                      <EmployeePicker
-                        value={chainPicked[idx] ?? (level.approver_employee_id
-                          ? { id: level.approver_employee_id, name: level.label || `Employee #${level.approver_employee_id}`, emp_code: '' }
-                          : null)}
-                        placeholder="Search employee…"
-                        onChange={(picked) => {
-                          setChainPicked(prev => ({ ...prev, [idx]: picked }));
-                          updateLevel(idx, {
-                            approver_employee_id: picked?.id ?? null,
-                            label: picked?.name ?? null,
-                          });
-                        }}
-                      />
-                    )}
-
-                    <input
-                      type="text"
-                      className="lts-input"
-                      placeholder="Display label (optional)"
-                      style={{ flex: 1, minWidth: 160 }}
-                      value={level.label ?? ''}
-                      onChange={e => updateLevel(idx, { label: e.target.value || null })}
-                    />
-                  </div>
-
-                  <div className="lts-assignee-row" style={{ marginTop: 6 }}>
-                    <span
-                      className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold"
-                      style={{ width: 28, height: 28, fontSize: 10, background: meta.fg }}
-                    >{meta.initials}</span>
-                    <span className="text-muted" style={{ fontSize: 12 }}>
-                      {level.approver_kind === 'reporting_manager' && 'Resolves to each requestor\'s reporting manager at submission time.'}
-                      {level.approver_kind === 'role' && (level.approver_role
-                        ? `Any user holding the ${ROLE_OPTIONS.find(r => r.value === level.approver_role)?.label ?? level.approver_role} role can approve.`
-                        : 'Pick a role to gate this level.')}
-                      {level.approver_kind === 'user' && (level.approver_user_id
-                        ? `Only ${level.label || `user #${level.approver_user_id}`} can approve this level.`
-                        : 'Search and pick the user who should act on this level.')}
-                      {level.approver_kind === 'employee' && (level.approver_employee_id
-                        ? `Only ${level.label || `employee #${level.approver_employee_id}`} can approve this level.`
-                        : 'Search and pick the employee whose user account should approve.')}
-                    </span>
-                  </div>
-
-                  <SkipRuleEditor
-                    rule={level.skip_if ?? null}
-                    onChange={(next) => updateLevel(idx, { skip_if: next })}
-                  />
+            {FIXED_APPROVAL_LEVELS.map((lv, idx) => (
+              <div key={idx} className="lts-approval-card" style={{ marginBottom: 10 }}>
+                <div className="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                  <span className="lts-level-pill">LEVEL {idx + 1}</span>
+                  <span
+                    className="lts-kind-pill"
+                    style={{ ['--kp-bg' as string]: lv.bg, ['--kp-fg' as string]: lv.fg } as CSSProperties}
+                  >
+                    {lv.title.toUpperCase()}
+                  </span>
                 </div>
-              );
-            })}
 
-            {chain.length > 1 && (
-              <div className="text-muted" style={{ fontSize: 11.5, marginTop: 4 }}>
-                <i className="ri-information-line me-1" />
-                Levels approve in order. The next level only sees the request after the previous one approves. Any rejection terminates the entire chain.
+                <div className="lts-assignee-row" style={{ marginTop: 2 }}>
+                  <span
+                    className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold"
+                    style={{ width: 28, height: 28, fontSize: 10, background: lv.fg }}
+                  >{lv.initials}</span>
+                  <span className="text-muted" style={{ fontSize: 12 }}>{lv.desc}</span>
+                </div>
+
+                <SkipRuleEditor
+                  rule={chain[idx].skip_if ?? null}
+                  onChange={(next) => setSkip(idx, next)}
+                />
               </div>
-            )}
+            ))}
+
+            <div className="text-muted" style={{ fontSize: 11.5, marginTop: 4 }}>
+              <i className="ri-information-line me-1" />
+              Leave goes to the reporting manager first; HR can act only after the manager approves. Any rejection terminates the chain.
+            </div>
           </div>
         </CheckRow>
-        <CheckRow
-          checked={cfg.autoApproveIfMissing}
-          onChange={v => update({ autoApproveIfMissing: v })}
-          label="Auto-approve if approver is missing"
-        />
-        <CheckRow
-          checked={cfg.doNotEmailEveryRequest}
-          onChange={v => update({ doNotEmailEveryRequest: v })}
-          label="Do not email approvers for every request"
-          sub="They will view these requests as part of the daily email digest."
-        />
       </SectionCard>
-
-      <div className="lts-info-banner lts-info-banner-success">
-        <i className="ri-information-line" />
-        Changed your leave plan after YEP and then rolled it back? <a href="#yep-rollback">Know the repercussions here.</a>
-      </div>
     </>
   );
 }

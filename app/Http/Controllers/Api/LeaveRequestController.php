@@ -610,10 +610,18 @@ class LeaveRequestController extends Controller
 
         $chain = $row->approval_chain ?? [];
         $level = max(1, (int) ($row->current_approval_level ?? 1));
-        $isAdminOverride = in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true);
+        // Hierarchy gate: only super admins may act out of turn. HR
+        // (client_admin / branch_user) must wait for the chain to reach a level
+        // they own — the leave goes to the reporting manager FIRST; HR can view
+        // a manager-level request but cannot approve/reject it until the manager
+        // has confirmed and it advances to the HR level. This matches the
+        // per-row `can_act_now` flag the approvals() list already exposes (only
+        // super_admin overrides there), so the API can no longer be used to
+        // bypass the manager via a direct call.
+        $isSuperOverride = $user->user_type === 'super_admin';
         $isApproverForLevel = $this->canActOnLevel($user, $chain, $level - 1, $row);
-        if (!$isApproverForLevel && !$isAdminOverride) {
-            abort(403, 'You are not the approver for the current level of this request.');
+        if (!$isApproverForLevel && !$isSuperOverride) {
+            abort(403, 'You cannot act on this leave request yet — it is awaiting approval from the reporting manager before HR can act.');
         }
 
         // LV-11: no one may APPROVE their own leave — not even via the admin
@@ -806,8 +814,16 @@ class LeaveRequestController extends Controller
             }
         }
         if ($rawChain === null) {
-            // No config — default to reporting manager.
-            $rawChain = [['approver_kind' => 'reporting_manager']];
+            // No saved config — default to the standard two-step flow:
+            // Reporting Manager first, then HR. (Was reporting-manager-only,
+            // which finalized the request at manager approval and left HR as a
+            // CC/informational node. The leave-plan editor is already locked to
+            // RM → HR, so the default now matches that intent for any leave
+            // type that hasn't had its chain explicitly saved.)
+            $rawChain = [
+                ['approver_kind' => 'reporting_manager'],
+                ['approver_kind' => 'role', 'approver_role' => 'hr'],
+            ];
         }
 
         $chain = [];

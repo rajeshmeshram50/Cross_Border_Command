@@ -28,6 +28,7 @@ class Customer extends Model
         'client_id', 'branch_id', 'created_by',
         'customer_code',
         'company_name', 'legal_name', 'type', 'segment', 'classification', 'risk_level',
+        'gst_applicable',
         'website', 'primary_email', 'status',
     ];
 
@@ -66,6 +67,13 @@ class Customer extends Model
     public function owners(): HasMany
     {
         return $this->hasMany(CustomerOwner::class)->orderByDesc('id');
+    }
+
+    /** GST Scrutiny rows (domestic / India customers). Mirrors the
+     *  vendor side; managed from the "GST Scrutiny" popup on the modal. */
+    public function gstScrutiny(): HasMany
+    {
+        return $this->hasMany(CustomerGstScrutiny::class)->orderByDesc('id');
     }
 
     /** Consignees mapped to this customer (Sales Matrix → Consignee).
