@@ -223,6 +223,8 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   const [overviewPage, setOverviewPage] = useState(1);
   // Active shipment tab inside the Case-to-Case Document Overview popup.
   const [ovShip, setOvShip] = useState<number | null>(null);
+  // Row currently downloading in the Document Overview — drives a per-row spinner.
+  const [ovDownloadingKey, setOvDownloadingKey] = useState<string | null>(null);
   const [shipmentFilter, setShipmentFilter] = useState<'buyer-eq-consignee' | 'buyer-neq-consignee'>('buyer-eq-consignee');
 
   /* Switch the active group and jump to its first sub-tab. */
@@ -795,14 +797,26 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                           <td className="cnev-ov-name">{d.name}</td>
                           <td><StatusPill s={d.status as VaultStatus} /></td>
                           <td>
-                            <button
-                              type="button"
-                              className="cnev-ov-dl"
-                              disabled={!url}
-                              onClick={() => { if (url) void downloadFile(url, fname); }}
-                            >
-                              <i className="ri-download-2-line" aria-hidden /> Download
-                            </button>
+                            {(() => {
+                              const dlKey = `${activeShip?.id ?? 'std'}-${absIdx}`;
+                              const dling = ovDownloadingKey === dlKey;
+                              return (
+                                <button
+                                  type="button"
+                                  className="cnev-ov-dl"
+                                  disabled={!url || dling}
+                                  onClick={async () => {
+                                    if (!url) return;
+                                    setOvDownloadingKey(dlKey);
+                                    try { await downloadFile(url, fname); } finally { setOvDownloadingKey(null); }
+                                  }}
+                                >
+                                  {dling
+                                    ? <><i className="ri-loader-4-line cnev-spin" aria-hidden /> Downloading…</>
+                                    : <><i className="ri-download-2-line" aria-hidden /> Download</>}
+                                </button>
+                              );
+                            })()}
                           </td>
                         </tr>
                       );

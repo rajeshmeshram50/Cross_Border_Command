@@ -1,5 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 import api from '../../../../api';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -8,6 +10,25 @@ import { signatureRequestsToVaultDocs, mergeTradeDocuments, type SigReqRow } fro
 import { downloadFile } from '../../../../utils/downloadFile';
 import SalesCustomerSendForSignatureModal from '../../../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
 import { CEV_CSS } from '../../../sales/core-masters/customer/CustomerEvidenceVaultModal';
+
+/* Fetch a stored attachment as a Blob for the ZIP export. Our own uploads
+ * (segment_doc_uploads/…) stream THROUGH the backend so Azure's cross-origin
+ * CORS doesn't block them; anything else is fetched directly. Returns null on
+ * failure so the export skips it (and counts it as "missing"). */
+async function fetchVaultBlob(rawUrl: string): Promise<Blob | null> {
+  if (!rawUrl) return null;
+  if (/segment_doc_uploads\//i.test(rawUrl)) {
+    try {
+      const res = await api.get('/segment-uploads/download', { params: { url: rawUrl }, responseType: 'blob' });
+      return res.data as Blob;
+    } catch { /* fall through to a direct fetch */ }
+  }
+  try {
+    const res = await fetch(resolveFileUrl(rawUrl), { credentials: 'include' });
+    if (res.ok) return await res.blob();
+  } catch { /* ignore */ }
+  return null;
+}
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Supplier Evidence Vault — read-only compliance archive
@@ -227,6 +248,8 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
   const [overview, setOverview] = useState<GroupKey | null>(null);
   const [overviewPage, setOverviewPage] = useState(1);
   const [ovShip, setOvShip] = useState<number | null>(null);
+  // Row currently downloading in the Document Overview — drives a per-row spinner.
+  const [ovDownloadingKey, setOvDownloadingKey] = useState<string | null>(null);
   /* Case-to-Case top toggle (Figma .ev-shp-toggle) — splits per-deal records
      into those tied to a shipment vs general trade docs. */
   const [shipmentIdMode, setShipmentIdMode] = useState<'with' | 'without'>('with');
@@ -256,6 +279,8 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
    * db_id (unsaved record). */
   const [vaultLive, setVaultLive] = useState<VaultData | null>(null);
   const [loading, setLoading] = useState(false);
+  /* Export All — in-flight flag drives the spinner + disabled state. */
+  const [exporting, setExporting] = useState(false);
   /* Zoho Sign signature requests for this supplier — fetched in parallel
    * with the vault payload and merged into the Trade Documents tab. The
    * vault's own /vault endpoint doesn't know about clm_signature_requests
@@ -452,6 +477,76 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
   }, [supplier, data, vaultLive, signatureRows]);
 
   if (!open || !supplier || !vault) return null;
+
+  /* Export All — builds a ZIP of the ACTUAL document files, foldered:
+   *   <Supplier> /
+   *     Standard / Company Due Diligence | Owner KYC Details | Trade Licenses /
+   *     CTC / With Shipment ID / <shipment> /  &  Without Shipment ID / <procurement> /
+   * Files are fetched as blobs (our uploads stream through the backend so Azure
+   * CORS doesn't block them) and dropped into the matching folder. */
+  const handleExportAll = async () => {
+    if (!vault || !supplier || exporting) return;
+    setExporting(true);
+    let added = 0, missing = 0;
+    try {
+      const sanitize = (s: string) => (s || '').replace(/[\\/:*?"<>|]/g, '_').trim() || 'item';
+      const fileNameFor = (d: VaultDoc): string => {
+        const fromAttach = d.attachment && d.attachment.trim();
+        if (fromAttach) return fromAttach;
+        const fromUrl = d.attachment_url ? decodeURIComponent(d.attachment_url.split('/').pop()?.split('?')[0] || '') : '';
+        return fromUrl || `${d.name || 'document'}.pdf`;
+      };
+
+      const zip = new JSZip();
+      // Drop every doc with a file into `folder`, numbered to avoid name clashes.
+      const addDocs = async (folder: JSZip, docs: VaultDoc[]) => {
+        let i = 0;
+        for (const d of docs) {
+          i++;
+          if (!d.attachment_url) { missing++; continue; }
+          const blob = await fetchVaultBlob(d.attachment_url);
+          if (!blob) { missing++; continue; }
+          folder.file(`${String(i).padStart(2, '0')} - ${sanitize(fileNameFor(d))}`, blob);
+          added++;
+        }
+        // Keep the folder visible in the zip even when nothing landed in it.
+        if (!docs.some(d => d.attachment_url)) folder.file('(no documents).txt', 'No uploaded documents in this category.');
+      };
+
+      // ── Standard Documents ──
+      const std = zip.folder('Standard')!;
+      await addDocs(std.folder('Company Due Diligence')!, vault.company_dd);
+      await addDocs(std.folder('Owner KYC Details')!, vault.owner_kyc);
+      await addDocs(std.folder('Trade Licenses')!, vault.trade_licenses);
+
+      // ── Case to Case ── one subfolder per deal (shipment / procurement id),
+      // holding that deal's Trade Documents + Agreements.
+      const ctc = zip.folder('CTC')!;
+      const withShip = ctc.folder('With Shipment ID')!;
+      const withDeals = vault.vendor_with_shipment ?? [];
+      if (withDeals.length === 0) withShip.file('(no shipments).txt', 'No shipment-based deals for this supplier.');
+      for (const deal of withDeals) {
+        const f = withShip.folder(sanitize(deal.shipment_id || `deal-${deal.sr}`))!;
+        await addDocs(f, [...(deal.docs ?? []), ...(deal.agreements ?? [])]);
+      }
+      const withoutShip = ctc.folder('Without Shipment ID')!;
+      const withoutDeals = vault.vendor_without_shipment ?? [];
+      if (withoutDeals.length === 0) withoutShip.file('(no procurements).txt', 'No procurement-based deals for this supplier.');
+      for (const deal of withoutDeals) {
+        const f = withoutShip.folder(sanitize(deal.procurement_id || `deal-${deal.sr}`))!;
+        await addDocs(f, [...(deal.docs ?? []), ...(deal.agreements ?? [])]);
+      }
+
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const zipName = sanitize(`${supplier.id} ${supplier.company}`);
+      saveAs(blob, `${zipName}.zip`);
+      toast.success('Exported', `${added} file${added === 1 ? '' : 's'} zipped${missing ? ` · ${missing} had no attachment` : ''}.`);
+    } catch {
+      toast.error('Export failed', 'Could not build the ZIP. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   /* ─── Status pill renderer — Verified (mint), Expiring (amber),
    *      Pending (rose), Signed (sky). Same palette across all tabs. */
@@ -708,9 +803,12 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
         <div className="cev-footer">
           <div className="cev-footer-meta" />
           <div className="cev-footer-actions">
-            <button type="button" className="cev-btn cev-btn-light" onClick={() => alert('Export wiring lands with the backend')}>
-              <i className="ri-download-cloud-2-line" /> Export All
-            </button>
+            <Tooltip label="Download a ZIP of all uploaded files, foldered: Standard (Company DD / Owner KYC / Trade Licenses) and CTC (With / Without Shipment ID)">
+              <button type="button" className="cev-btn cev-btn-light" onClick={handleExportAll} disabled={exporting}>
+                <i className={exporting ? 'ri-loader-4-line cev-spin' : 'ri-download-cloud-2-line'} />
+                {exporting ? ' Exporting…' : ' Export All'}
+              </button>
+            </Tooltip>
             <button type="button" className="cev-btn cev-btn-dark" onClick={onClose}>
               Close Vault
             </button>
@@ -785,14 +883,26 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                           <td className="cev-ov-name">{d.name}</td>
                           <td><StatusPill s={d.status as VaultStatus} /></td>
                           <td>
-                            <button
-                              type="button"
-                              className="cev-ov-dl"
-                              disabled={!url}
-                              onClick={() => { if (url) void downloadFile(url, fname); }}
-                            >
-                              <i className="ri-download-2-line" aria-hidden /> Download
-                            </button>
+                            {(() => {
+                              const dlKey = `${overview}-${absIdx}`;
+                              const dling = ovDownloadingKey === dlKey;
+                              return (
+                                <button
+                                  type="button"
+                                  className="cev-ov-dl"
+                                  disabled={!url || dling}
+                                  onClick={async () => {
+                                    if (!url) return;
+                                    setOvDownloadingKey(dlKey);
+                                    try { await downloadFile(url, fname); } finally { setOvDownloadingKey(null); }
+                                  }}
+                                >
+                                  {dling
+                                    ? <><i className="ri-loader-4-line cev-spin" aria-hidden /> Downloading…</>
+                                    : <><i className="ri-download-2-line" aria-hidden /> Download</>}
+                                </button>
+                              );
+                            })()}
                           </td>
                         </tr>
                       );

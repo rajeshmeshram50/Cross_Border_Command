@@ -1084,8 +1084,15 @@ class VendorController extends Controller
             'segment_id'               => $v->segment_id,
             'segment_name'             => optional($v->segment)->title,
             // Full multi-select set (ids + labels) from the vendor_segments pivot.
-            'segment_ids'              => $v->segments->pluck('id')->all(),
-            'segments'                 => $v->segments->map(fn ($s) => ['id' => $s->id, 'name' => $s->name])->all(),
+            // Older suppliers (created before multi-segment) have an EMPTY pivot
+            // but a scalar segment_id — fall back to it so the list + edit form
+            // still show the segment without needing a re-save.
+            'segment_ids'              => $v->segments->isNotEmpty()
+                ? $v->segments->pluck('id')->all()
+                : array_values(array_filter([$v->segment_id])),
+            'segments'                 => $v->segments->isNotEmpty()
+                ? $v->segments->map(fn ($s) => ['id' => $s->id, 'name' => $s->name])->all()
+                : ($v->segment_id ? [['id' => $v->segment_id, 'name' => optional($v->segment)->title]] : []),
             'compliance_behaviour_id'  => $v->compliance_behaviour_id,
             'compliance_behaviour_name'=> optional($v->complianceBehaviour)->name,
             'classification_id'        => $v->classification_id,
