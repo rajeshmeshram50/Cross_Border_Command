@@ -483,25 +483,42 @@ class LeavePlanController extends Controller
             $accrual = $cfg['accrual'] ?? null;
             $unlimited = (bool) ($accrual['unlimited'] ?? false);
             $quota = (float) ($accrual['yearlyQuota'] ?? 0); // LV-05: keep fractional (½-day) quotas; enforcement uses float too
+            // "Extra Leave" overdraft from the plan setup — how many days the
+            // employee may avail beyond their accrued balance. Surfaced as a
+            // breakdown alongside the base quota (yearly + extra = total
+            // allowance); it does NOT inflate the accrued quota/available here.
+            $overdraft = $accrual['employeeOverdraft'] ?? null;
+            $extra = (!$unlimited && ($overdraft['enabled'] ?? false))
+                ? (float) ($overdraft['days'] ?? 0)
+                : 0.0;
             $reqs = $requestsByType[$row->leave_type_id] ?? collect();
 
-            // Build a simple ledger: start-of-year accrual, then each
-            // approved leave as a deduction. Pending entries surface but
-            // don't affect the running balance.
+            // Build the ledger: one accrual entry per elapsed accrual period
+            // (so a "1 day/month" plan shows the balance growing month by month
+            // rather than the full year dropping in on day one), then each
+            // approved leave as a deduction. Pending entries surface in the
+            // request list but don't affect the running balance.
             $transactions = [];
-            $balance = 0;
+            $balance = 0.0;
+            $accrued = 0.0;
             if (!$unlimited && $quota > 0) {
-                $accrualDate = $planRow->from_month && $planRow->calendar_year
-                    ? sprintf('01 %s %s', substr($planRow->from_month, 0, 3), $planRow->calendar_year)
-                    : 'Start of year';
-                $transactions[] = [
-                    'date' => $accrualDate,
-                    'change' => "+ {$quota}",
-                    'balance' => $quota,
-                    'reason' => 'Leave Accrual allocated at the start of year.',
-                    'kind' => 'accrual',
-                ];
-                $balance = $quota;
+                $events = self::accrualEvents(
+                    is_array($accrual) ? $accrual : [],
+                    $planRow->from_month,
+                    $planRow->calendar_year
+                );
+                foreach ($events as $ev) {
+                    $accrued += $ev['amount'];
+                    $balance += $ev['amount'];
+                    $fmtAmt = rtrim(rtrim(number_format($ev['amount'], 2), '0'), '.');
+                    $transactions[] = [
+                        'date' => $ev['date']->format('d M Y'),
+                        'change' => "+ {$fmtAmt}",
+                        'balance' => round($balance, 2),
+                        'reason' => 'Leave accrued for the period.',
+                        'kind' => 'accrual',
+                    ];
+                }
             }
 
             $used = 0.0;
@@ -527,8 +544,12 @@ class LeavePlanController extends Controller
                 'category' => $row->category,
                 'paid_unpaid' => $row->paid_unpaid,
                 'quota' => $quota,
+                // Days accrued so far this plan year — drives Available so an
+                // employee can only avail what has accrued to date.
+                'accrued' => $accrued,
+                'extra' => $extra,
                 'used' => $used,
-                'available' => $unlimited ? null : max(0, $quota - $used),
+                'available' => $unlimited ? null : max(0, $accrued - $used),
                 'unlimited' => $unlimited,
                 'transactions' => $transactions,
             ];
@@ -563,12 +584,86 @@ class LeavePlanController extends Controller
         return response()->json(['data' => ['removed' => true]]);
     }
 
+    /**
+     * Accrual events that have occurred up to `asOf` for a leave type, honouring
+     * the configured accrual mode/frequency. Each event is ['date' => Carbon,
+     * 'amount' => float]. Periodic accrual produces one event per elapsed period
+     * (e.g. 1 day on the 1st of every month) so the balance grows over the year
+     * instead of dropping the whole yearly quota in on day one. "Immediate" mode
+     * (and attendance-based accrual, which isn't time-derivable here) hands over
+     * the full quota up front in a single event. The summed amount never exceeds
+     * the yearly quota.
+     *
+     * Plan-year start = the 1st of the plan's `from_month` in its `calendar_year`
+     * (sensible fallbacks when unset). Before the year starts → no events; after
+     * it ends → the full quota.
+     */
+    public static function accrualEvents(array $accrual, ?string $fromMonth, $calendarYear, ?\Illuminate\Support\Carbon $asOf = null): array
+    {
+        $quota = (float) ($accrual['yearlyQuota'] ?? 0);
+        if ($quota <= 0) return [];
+
+        $asOf = $asOf ?: \Illuminate\Support\Carbon::now();
+
+        // Resolve the plan-year start.
+        $startMonth = 1;
+        if ($fromMonth) {
+            try {
+                $startMonth = \Illuminate\Support\Carbon::parse('01 ' . substr($fromMonth, 0, 3) . ' 2000')->month;
+            } catch (\Throwable $e) {
+                $startMonth = 1;
+            }
+        }
+        $year = is_numeric($calendarYear) ? (int) $calendarYear : $asOf->year;
+        $yearStart = \Illuminate\Support\Carbon::create($year, $startMonth, 1)->startOfDay();
+        if ($asOf->lt($yearStart)) return [];
+
+        // Non-periodic accrual: the full quota is available from the year start.
+        $mode = $accrual['mode'] ?? 'periodic';
+        if ($mode !== 'periodic') {
+            return [['date' => $yearStart, 'amount' => round($quota, 2)]];
+        }
+
+        $periodsPerYear = match ($accrual['frequency'] ?? 'monthly') {
+            'monthly'     => 12,
+            'quarterly'   => 4,
+            'half_yearly' => 2,
+            'yearly'      => 1,
+            default       => 12,
+        };
+        $monthsPerPeriod = intdiv(12, $periodsPerYear);
+        $rate = $quota / $periodsPerYear;
+        $dayOfMonth = max(1, (int) ($accrual['dayOfMonth'] ?? 1));
+
+        $events = [];
+        $running = 0.0;
+        for ($p = 0; $p < $periodsPerYear; $p++) {
+            $d = $yearStart->copy()->addMonths($p * $monthsPerPeriod);
+            $d->day = min($dayOfMonth, $d->daysInMonth);
+            if ($d->gt($asOf)) break;
+            // Trim the final event so rounding can't push the total over quota.
+            $amount = min($rate, $quota - $running);
+            if ($amount <= 0) break;
+            $events[] = ['date' => $d->copy(), 'amount' => round($amount, 2)];
+            $running += $amount;
+        }
+        return $events;
+    }
+
+    /** Total days accrued so far (sum of {@see accrualEvents}), capped at quota. */
+    public static function accruedToDate(array $accrual, ?string $fromMonth, $calendarYear, ?\Illuminate\Support\Carbon $asOf = null): float
+    {
+        $sum = 0.0;
+        foreach (self::accrualEvents($accrual, $fromMonth, $calendarYear, $asOf) as $e) {
+            $sum += $e['amount'];
+        }
+        return round($sum, 2);
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // Leave Balances — aggregated read for the Leave Balances tab.
     // Returns a dynamic column set (every leave type that any plan in the
-    // current scope has assigned) plus per-employee balances. We don't
-    // track actual leave usage yet, so `used` always returns 0; once a
-    // leave_requests table exists this is the place to join it in.
+    // current scope has assigned) plus per-employee balances.
     // ─────────────────────────────────────────────────────────────────────
     public function leaveBalances(Request $request)
     {
@@ -610,17 +705,29 @@ class LeavePlanController extends Controller
                 'paid_unpaid' => $r->paid_unpaid,
             ])->all();
 
+        // Plan-year meta (from_month / calendar_year) per plan so accrual can be
+        // time-phased the same way the employee profile does.
+        $planMeta = empty($planIds) ? collect() : LeavePlans::whereIn('id', $planIds)
+            ->get(['id', 'from_month', 'calendar_year'])
+            ->keyBy('id');
+
         // 3) Per-(plan, type) quota lookup keyed for O(1) rendering below.
         //    `unlimited` short-circuits to a sentinel; everything else
-        //    falls back to 0 if the Setup popup hasn't been touched.
+        //    falls back to 0 if the Setup popup hasn't been touched. `accrued`
+        //    is the days vested so far this plan year (drives `available`).
         $quotaByPlanType = [];
         foreach ($planTypeRows as $row) {
             $cfg = $row->config_json ? json_decode($row->config_json, true) : null;
             $accrual = $cfg['accrual'] ?? null;
             $unlimited = (bool) ($accrual['unlimited'] ?? false);
             $quota = (float) ($accrual['yearlyQuota'] ?? 0); // LV-05: keep fractional (½-day) quotas; enforcement uses float too
+            $meta = $planMeta->get($row->leave_plan_id);
+            $accrued = (!$unlimited && $quota > 0)
+                ? self::accruedToDate(is_array($accrual) ? $accrual : [], $meta->from_month ?? null, $meta->calendar_year ?? null)
+                : $quota;
             $quotaByPlanType[$row->leave_plan_id][$row->leave_type_id] = [
                 'quota' => $quota,
+                'accrued' => $accrued,
                 'unlimited' => $unlimited,
             ];
         }
@@ -718,7 +825,9 @@ class LeavePlanController extends Controller
                     'unlimited' => $entry['unlimited'],
                     'quota' => $entry['quota'],
                     'used' => $used,
-                    'available' => $entry['unlimited'] ? null : max(0, $entry['quota'] - $used),
+                    // Available is gated by what has accrued so far, not the
+                    // full yearly quota (periodic accrual vests over the year).
+                    'available' => $entry['unlimited'] ? null : max(0, ($entry['accrued'] ?? $entry['quota']) - $used),
                 ];
             }
 

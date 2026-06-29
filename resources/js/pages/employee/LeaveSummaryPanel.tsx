@@ -322,6 +322,23 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
                       </div>
                     </div>
                   </div>
+                  {/* Extra-leave breakdown — only when the plan grants an
+                      overdraft. The extra is an allowance beyond the accrued
+                      quota (yearly + extra = total), shown for visibility; it
+                      does not change Available / Consumed above. */}
+                  {!t.unlimited && t.extra > 0 && (
+                    <div
+                      className="mt-3 pt-2 d-flex align-items-center justify-content-between flex-wrap gap-1"
+                      style={{ borderTop: '1px dashed var(--vz-border-color)' }}
+                    >
+                      <span className="text-muted" style={{ fontSize: 11.5 }}>
+                        {t.quota} yearly <span className="fw-semibold" style={{ color: tone.ring }}>+ {t.extra} extra</span>
+                      </span>
+                      <span className="fw-semibold" style={{ fontSize: 12 }}>
+                        Total allowance: {t.quota + t.extra} {t.quota + t.extra === 1 ? 'day' : 'days'}
+                      </span>
+                    </div>
+                  )}
                 </div>
               );
             })}
