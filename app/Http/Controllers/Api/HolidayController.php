@@ -99,7 +99,8 @@ class HolidayController extends Controller
     {
         $this->authorizeAction($request, 'can_edit');
         $row = $this->resolveRow($request, (int) $id);
-        $this->assertGroupNotInUse($row, 'edited');
+        // Editing is always allowed — the change just propagates to every
+        // employee on this holiday's group automatically.
 
         $data = $this->validatePayload($request, $row->id);
         $data['updated_by'] = $request->user()?->id;
@@ -113,6 +114,8 @@ class HolidayController extends Controller
     {
         $this->authorizeAction($request, 'can_delete');
         $row = $this->resolveRow($request, (int) $id);
+        // A holiday can be EDITED freely (auto-propagates), but it can't be
+        // DELETED while its group is assigned to employees — they depend on it.
         $this->assertGroupNotInUse($row, 'removed');
 
         $row->delete();
@@ -151,18 +154,28 @@ class HolidayController extends Controller
         $skipped = 0;
         $errors  = [];
 
-        // Existing dates in this tenant + group scope so we can skip duplicates
-        // without a query per row. Duplicates are judged within the target
-        // group, so the same date may legitimately exist in another group.
+        // Each row can name its own Group (Excel "Group" column). Build a
+        // case-insensitive name → id map of THIS tenant's groups so a row's
+        // group resolves without the user pre-selecting one in the UI. Rows
+        // with no/unknown group fall back to the UI-selected group ($groupId).
+        $groupMapQ = \App\Models\HolidayGroup::query();
+        $this->applyScope($groupMapQ, $auth, null);
+        $groupMap = [];
+        foreach ($groupMapQ->get(['id', 'name']) as $g) {
+            $groupMap[mb_strtolower(trim((string) $g->name))] = (int) $g->id;
+        }
+
+        // Existing (group, date) pairs so we can skip duplicates without a query
+        // per row. Duplicates are judged WITHIN a group — the same date may
+        // legitimately exist in another group.
         $existing = Holiday::query()
             ->when($clientId === null, fn ($q) => $q->whereNull('client_id'), fn ($q) => $q->where('client_id', $clientId))
             ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
-            ->when($groupId === null, fn ($q) => $q->whereNull('holiday_group_id'), fn ($q) => $q->where('holiday_group_id', $groupId))
-            ->pluck('date')
-            ->map(fn ($d) => Carbon::parse($d)->toDateString())
-            ->flip();
+            ->get(['holiday_group_id', 'date'])
+            ->mapWithKeys(fn ($h) => [(($h->holiday_group_id ?? 'null') . '|' . Carbon::parse($h->date)->toDateString()) => true])
+            ->all();
 
-        DB::transaction(function () use ($payload, $clientId, $branchId, $groupId, $auth, &$created, &$skipped, &$errors, $existing) {
+        DB::transaction(function () use ($payload, $clientId, $branchId, $groupId, $groupMap, $auth, &$created, &$skipped, &$errors, $existing) {
             $seenInBatch = [];
 
             foreach ($payload['rows'] as $i => $raw) {
@@ -181,8 +194,15 @@ class HolidayController extends Controller
                     continue;
                 }
 
-                // De-dupe against the DB and against earlier rows in the same file.
-                if (isset($existing[$date]) || isset($seenInBatch[$date])) {
+                // Per-row group from the Excel "Group" column; fall back to the
+                // UI-selected group when the cell is blank or names an unknown group.
+                $rowGroupName = trim((string) ($raw['group'] ?? ''));
+                $rowGroupId = $rowGroupName !== '' ? ($groupMap[mb_strtolower($rowGroupName)] ?? null) : null;
+                if ($rowGroupId === null) $rowGroupId = $groupId;
+
+                // De-dupe against the DB and earlier rows — scoped to (group, date).
+                $dupeKey = ($rowGroupId ?? 'null') . '|' . $date;
+                if (isset($existing[$dupeKey]) || isset($seenInBatch[$dupeKey])) {
                     $skipped++;
                     continue;
                 }
@@ -195,7 +215,7 @@ class HolidayController extends Controller
                 Holiday::create([
                     'client_id'        => $clientId,
                     'branch_id'        => $branchId,
-                    'holiday_group_id' => $groupId,
+                    'holiday_group_id' => $rowGroupId,
                     'created_by'       => $auth?->id,
                     'updated_by'       => $auth?->id,
                     'code'             => $this->allocateCode($clientId, $branchId),
@@ -206,7 +226,7 @@ class HolidayController extends Controller
                     'description'  => ($d = trim((string) ($raw['description'] ?? ''))) !== '' ? $d : null,
                 ]);
 
-                $seenInBatch[$date] = true;
+                $seenInBatch[$dupeKey] = true;
                 $created++;
             }
         });
