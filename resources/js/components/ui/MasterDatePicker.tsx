@@ -40,9 +40,13 @@ export function MasterDatePicker({
 
   const [viewDate, setViewDate] = useState<Date>(() => {
     if (currentValue) return new Date(currentValue);
-    if (maxDate)      return new Date(maxDate);
-    if (minDate)      return new Date(minDate);
-    return new Date();
+    // Open on the CURRENT month by default; only clamp into [minDate, maxDate]
+    // when today falls outside it. (Previously it jumped straight to maxDate's
+    // month — e.g. a Dec salary cap made the picker open in December.)
+    const t = new Date();
+    if (maxDate && t > new Date(maxDate)) return new Date(maxDate);
+    if (minDate && t < new Date(minDate)) return new Date(minDate);
+    return t;
   });
   const [popupPos, setPopupPos] = useState<{ top?: number; bottom?: number; left: number; width: number; maxHeight: number } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -178,12 +182,13 @@ export function MasterDatePicker({
   useEffect(() => {
     if (!open) return;
     setView('days');
-    setViewDate(
-      currentValue ? new Date(currentValue)
-        : maxDate ? new Date(maxDate)
-        : minDate ? new Date(minDate)
-        : new Date()
-    );
+    setViewDate((() => {
+      if (currentValue) return new Date(currentValue);
+      const t = new Date();
+      if (maxDate && t > new Date(maxDate)) return new Date(maxDate);
+      if (minDate && t < new Date(minDate)) return new Date(minDate);
+      return t;
+    })());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 

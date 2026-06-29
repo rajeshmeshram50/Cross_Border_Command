@@ -3929,7 +3929,7 @@ function iconForField(f: FieldDef): string {
   return 'ri-edit-box-line';
 }
 
-function renderField(
+export function renderField(
   f: FieldDef,
   i: number,
   editing: any,
