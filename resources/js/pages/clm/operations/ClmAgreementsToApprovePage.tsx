@@ -254,9 +254,11 @@ function Pager({ total, page, setPage, t }: { total: number; page: number; setPa
    clarify). Named for what it does — it doesn't approve directly. */
 function ReviewBtn({ active, onClick, onBlocked }: { active: boolean; onClick: () => void; onBlocked?: () => void }) {
   return (
-    <button onClick={() => (active ? onClick() : onBlocked?.())} title={active ? 'Review & Approve' : 'Awaiting clarification response'} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, border: active ? 'none' : '1.5px solid #E2E8F0', background: active ? 'linear-gradient(135deg,#0891b2,#0e7490)' : '#F8FAFC', color: active ? '#fff' : '#CBD5E1', fontFamily: 'inherit', fontSize: 9.5, fontWeight: active ? 700 : 600, cursor: 'pointer', boxShadow: active ? '0 2px 7px rgba(8,145,178,.35)' : 'none', whiteSpace: 'nowrap', opacity: active ? 1 : .6 }}>
-      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : '#CBD5E1'} strokeWidth="2" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg> Review &amp; Approve
-    </button>
+    <Tooltip label={active ? 'Review & Approve' : 'Awaiting clarification response'}>
+      <button onClick={() => (active ? onClick() : onBlocked?.())} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, border: active ? 'none' : '1.5px solid #E2E8F0', background: active ? 'linear-gradient(135deg,#0891b2,#0e7490)' : '#F8FAFC', color: active ? '#fff' : '#CBD5E1', fontFamily: 'inherit', fontSize: 9.5, fontWeight: active ? 700 : 600, cursor: 'pointer', boxShadow: active ? '0 2px 7px rgba(8,145,178,.35)' : 'none', whiteSpace: 'nowrap', opacity: active ? 1 : .6 }}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : '#CBD5E1'} strokeWidth="2" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg> Review &amp; Approve
+      </button>
+    </Tooltip>
   );
 }
 
@@ -266,9 +268,11 @@ function ReviewBtn({ active, onClick, onBlocked }: { active: boolean; onClick: (
 function RespondBtn({ onClick, t }: { onClick: () => void; t: OpsTokens }) {
   const fg = t.dark ? '#67e8f9' : '#0e7490';
   return (
-    <button onClick={onClick} title="View conversation & add your remark" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.45)' : '#A5F3FC'}`, background: t.dark ? 'rgba(6,182,212,.14)' : '#ECFEFF', color: fg, fontFamily: 'inherit', fontSize: 9.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={fg} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg> Respond
-    </button>
+    <Tooltip label="View conversation & add your remark">
+      <button onClick={onClick} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.45)' : '#A5F3FC'}`, background: t.dark ? 'rgba(6,182,212,.14)' : '#ECFEFF', color: fg, fontFamily: 'inherit', fontSize: 9.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={fg} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg> Respond
+      </button>
+    </Tooltip>
   );
 }
 
@@ -708,10 +712,12 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-              <button onClick={downloadPdf} title="Download PDF" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 12px', borderRadius: 9, background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.3)', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                Download
-              </button>
+              <Tooltip label="Download PDF">
+                <button onClick={downloadPdf} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 12px', borderRadius: 9, background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.3)', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                  Download
+                </button>
+              </Tooltip>
               <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 9, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)', color: '#fff', fontSize: 16, cursor: 'pointer' }}>✕</button>
             </div>
           </div>
@@ -739,12 +745,16 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
           {/* Fixed prev / next — pinned to the viewer centre regardless of scroll. */}
           {!loading && !error && numPages > 1 && (
             <>
-              <button onClick={() => go(activePage - 1)} disabled={activePage <= 1} style={{ ...navBtn('prev'), position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', zIndex: 5 }} title="Previous page">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
-              </button>
-              <button onClick={() => go(activePage + 1)} disabled={activePage >= numPages} style={{ ...navBtn('next'), position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', zIndex: 5 }} title="Next page">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
-              </button>
+              <Tooltip label="Previous page">
+                <button onClick={() => go(activePage - 1)} disabled={activePage <= 1} style={{ ...navBtn('prev'), position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', zIndex: 5 }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                </button>
+              </Tooltip>
+              <Tooltip label="Next page">
+                <button onClick={() => go(activePage + 1)} disabled={activePage >= numPages} style={{ ...navBtn('next'), position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', zIndex: 5 }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                </button>
+              </Tooltip>
             </>
           )}
         </div>

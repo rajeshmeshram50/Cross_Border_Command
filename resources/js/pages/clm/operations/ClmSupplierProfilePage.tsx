@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, type CSSProperties } from 'react';
 import api from '../../../api';
 import SupplierEvidenceVaultModal, { type SupplierVaultTarget } from '../../p2p/p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 import ClmDocsPopup, { type DocCategory } from '../shared/ClmDocsPopup';
+import Tooltip from '../../../components/ui/Tooltip';
 
 /*
  * CLM → Supplier Profile.
@@ -325,9 +326,9 @@ function PartyProgCell({ obj, onClick }: { obj: Prog; onClick?: () => void }) {
   const numBg = isComplete ? '#ecfdf5' : isPartial ? '#fffbeb' : '#f8fafc';
   const numBd = isComplete ? '#A7F3D0' : isPartial ? '#FDE68A' : '#e2e8f0';
   return (
+    <Tooltip label={onClick ? 'View these documents' : undefined}>
     <td
       style={{ padding: '8px 10px', textAlign: 'center', cursor: onClick ? 'pointer' : undefined }}
-      title={onClick ? 'View these documents' : undefined}
       onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined}
     >
       <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '5px', minWidth: '62px', padding: '3px 4px', borderRadius: '7px' }}>
@@ -339,6 +340,7 @@ function PartyProgCell({ obj, onClick }: { obj: Prog; onClick?: () => void }) {
         </div>
       </div>
     </td>
+    </Tooltip>
   );
 }
 
@@ -353,9 +355,9 @@ function TxnProgCell({ obj, onClick }: { obj: Prog; onClick?: () => void }) {
   const nBg = isC ? '#ecfdf5' : isP ? '#fffbeb' : '#f8fafc';
   const nBd = isC ? '#A7F3D0' : isP ? '#FDE68A' : '#e2e8f0';
   return (
+    <Tooltip label={onClick ? 'View these documents' : undefined}>
     <td
       style={{ padding: '7px 8px', textAlign: 'center', cursor: onClick ? 'pointer' : undefined }}
-      title={onClick ? 'View these documents' : undefined}
       onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined}
     >
       <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '4px', minWidth: '50px' }}>
@@ -367,6 +369,7 @@ function TxnProgCell({ obj, onClick }: { obj: Prog; onClick?: () => void }) {
         </div>
       </div>
     </td>
+    </Tooltip>
   );
 }
 

@@ -4,6 +4,7 @@ import api from '../../../api';
 import CustomerEvidenceVaultModal, { type CustomerVaultTarget, type TabKey as VaultTab } from '../../sales/core-masters/customer/CustomerEvidenceVaultModal';
 import ConsigneeEvidenceVaultModal, { type ConsigneeVaultTarget } from '../../sales/core-masters/consignee/ConsigneeEvidenceVaultModal';
 import ClmDocsPopup, { type DocCategory } from '../shared/ClmDocsPopup';
+import Tooltip from '../../../components/ui/Tooltip';
 
 /*
  * CLM → Buyer Profile page.
@@ -428,20 +429,21 @@ function ProgCell({ obj, big = true, onClick }: { obj: Prog; big?: boolean; onCl
   const minW = big ? '62px' : '52px';
   const pad = big ? '2px 8px' : '2px 7px';
   return (
-    <td
-      style={{ padding: '8px 10px', textAlign: 'center', cursor: onClick ? 'pointer' : undefined }}
-      title={onClick ? 'View these documents in the Evidence Vault' : undefined}
-      onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined}
-    >
-      <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: big ? '5px' : '4px', minWidth: minW }}>
-        <span className={`bp-prog ${isComplete ? 'is-complete' : isPartial ? 'is-partial' : 'is-none'}`} style={{ fontSize: '11px', fontWeight: 900, color: numC, background: numBg, border: `1px solid ${numBd}`, padding: pad, borderRadius: '20px', letterSpacing: '-.2px', lineHeight: 1.4 }}>
-          {d}<span style={{ fontSize: '9px', fontWeight: 500, color: '#94a3b8' }}>/{t}</span>
-        </span>
-        <div style={{ width: barW, height: barH, borderRadius: '5px', background: 'rgba(6,182,212,.1)', overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${pct}%`, background: barGrad, borderRadius: '5px', transition: 'width .5s cubic-bezier(.22,1,.36,1)' }} />
+    <Tooltip label={onClick ? 'View these documents in the Evidence Vault' : undefined}>
+      <td
+        style={{ padding: '8px 10px', textAlign: 'center', cursor: onClick ? 'pointer' : undefined }}
+        onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined}
+      >
+        <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: big ? '5px' : '4px', minWidth: minW }}>
+          <span className={`bp-prog ${isComplete ? 'is-complete' : isPartial ? 'is-partial' : 'is-none'}`} style={{ fontSize: '11px', fontWeight: 900, color: numC, background: numBg, border: `1px solid ${numBd}`, padding: pad, borderRadius: '20px', letterSpacing: '-.2px', lineHeight: 1.4 }}>
+            {d}<span style={{ fontSize: '9px', fontWeight: 500, color: '#94a3b8' }}>/{t}</span>
+          </span>
+          <div style={{ width: barW, height: barH, borderRadius: '5px', background: 'rgba(6,182,212,.1)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${pct}%`, background: barGrad, borderRadius: '5px', transition: 'width .5s cubic-bezier(.22,1,.36,1)' }} />
+          </div>
         </div>
-      </div>
-    </td>
+      </td>
+    </Tooltip>
   );
 }
 
@@ -492,19 +494,20 @@ function WsProgCell({ obj }: { obj: Prog }) {
 function EvidenceVaultBtn({ icon, onClick, disabled }: { icon: 'shield' | 'box'; onClick?: () => void; disabled?: boolean }) {
   return (
     <td style={{ padding: '8px 10px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-      <button
-        title={icon === 'shield' ? 'Shipment Evidence Vault' : 'Opportunity Evidence Vault'}
-        onClick={onClick}
-        disabled={disabled}
-        style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 10px', borderRadius: '7px', border: '1.5px solid rgba(6,182,212,.3)', background: 'linear-gradient(135deg,#f0fdff,#e8fbfd)', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, fontFamily: 'inherit', fontSize: '10px', fontWeight: 700, color: '#0891b2', transition: 'all .15s', whiteSpace: 'nowrap' }}
-        onMouseEnter={(e) => { if (disabled) return; e.currentTarget.style.background = 'linear-gradient(135deg,#06b6d4,#0891b2)'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = '#0891b2'; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = 'linear-gradient(135deg,#f0fdff,#e8fbfd)'; e.currentTarget.style.color = '#0891b2'; e.currentTarget.style.borderColor = 'rgba(6,182,212,.3)'; }}
-      >
-        {icon === 'shield'
-          ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" strokeWidth="2.5" /></svg>
-          : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="1" /></svg>}
-        Evidence Vault
-      </button>
+      <Tooltip label={icon === 'shield' ? 'Shipment Evidence Vault' : 'Opportunity Evidence Vault'}>
+        <button
+          onClick={onClick}
+          disabled={disabled}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 10px', borderRadius: '7px', border: '1.5px solid rgba(6,182,212,.3)', background: 'linear-gradient(135deg,#f0fdff,#e8fbfd)', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, fontFamily: 'inherit', fontSize: '10px', fontWeight: 700, color: '#0891b2', transition: 'all .15s', whiteSpace: 'nowrap' }}
+          onMouseEnter={(e) => { if (disabled) return; e.currentTarget.style.background = 'linear-gradient(135deg,#06b6d4,#0891b2)'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = '#0891b2'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'linear-gradient(135deg,#f0fdff,#e8fbfd)'; e.currentTarget.style.color = '#0891b2'; e.currentTarget.style.borderColor = 'rgba(6,182,212,.3)'; }}
+        >
+          {icon === 'shield'
+            ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" strokeWidth="2.5" /></svg>
+            : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="1" /></svg>}
+          Evidence Vault
+        </button>
+      </Tooltip>
     </td>
   );
 }
@@ -746,7 +749,7 @@ export default function ClmBuyerProfilePage() {
     return <>
       <span style={{ fontSize: '8.5px', fontWeight: 600, color: sc, background: sb, border: '1px solid rgba(6,182,212,.15)', padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap' }}>{segs[0]}</span>
       {segs.length > 1 && (
-        <button type="button" title="View all segments" onClick={(e) => toggleSegPop(e, key, segs)} style={{ fontSize: '8.5px', fontWeight: 800, color: '#fff', background: 'linear-gradient(135deg, #06b6d4, #0891b2)', padding: '2px 8px', borderRadius: '20px', whiteSpace: 'nowrap', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{segs.length - 1}</button>
+        <Tooltip label="View all segments"><button type="button" onClick={(e) => toggleSegPop(e, key, segs)} style={{ fontSize: '8.5px', fontWeight: 800, color: '#fff', background: 'linear-gradient(135deg, #06b6d4, #0891b2)', padding: '2px 8px', borderRadius: '20px', whiteSpace: 'nowrap', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{segs.length - 1}</button></Tooltip>
       )}
     </>;
   };
@@ -1341,12 +1344,12 @@ export default function ClmBuyerProfilePage() {
                             </td>
                             <td style={{ padding: '9px 11px', fontSize: '11px', color: '#475569', textAlign: 'center' }}>{r.country}</td>
                             <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-                              <div title="View consignees for this customer" style={{ width: '24px', height: '24px', borderRadius: '6px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'transform .15s,box-shadow .15s' }}
+                              <Tooltip label="View consignees for this customer"><div style={{ width: '24px', height: '24px', borderRadius: '6px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'transform .15s,box-shadow .15s' }}
                                 onClick={() => setConsListBuyer(r)}
                                 onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.15)'; e.currentTarget.style.boxShadow = '0 3px 10px rgba(6,182,212,.45)'; }}
                                 onMouseLeave={(e) => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ''; }}>
                                 <span style={{ fontSize: '9px', fontWeight: 800, color: '#fff' }}>{r.cn}</span>
-                              </div>
+                              </div></Tooltip>
                             </td>
                             <ProgCell obj={r.kyc} onClick={() => openBuyerDocs(r, 'kyc')} />
                             <ProgCell obj={r.dd} onClick={() => openBuyerDocs(r, 'dd')} />
@@ -1356,7 +1359,7 @@ export default function ClmBuyerProfilePage() {
                             <ProgCell obj={r.agr} onClick={() => openBuyerDocs(r, 'agr')} />
                             <td style={{ padding: '9px 12px' }} onClick={(e) => e.stopPropagation()}>
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
-                                <button title="Evidence Vault" style={vaultBtnStyle} disabled={!r.db_id} onClick={() => openBuyerVault(r, 'company-dd')}><VaultIcon /></button>
+                                <Tooltip label="Evidence Vault"><button style={vaultBtnStyle} disabled={!r.db_id} onClick={() => openBuyerVault(r, 'company-dd')}><VaultIcon /></button></Tooltip>
                               </div>
                             </td>
                           </tr>
@@ -1440,7 +1443,7 @@ export default function ClmBuyerProfilePage() {
                             <ProgCell obj={r.agr} onClick={() => openConsDocs(r, 'agr')} />
                             <td style={{ padding: '9px 12px' }} onClick={(e) => e.stopPropagation()}>
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
-                                <button title="Evidence Vault" style={vaultBtnStyle} disabled={!r.db_id} onClick={() => openConsVault(r, 'company-dd')}><VaultIcon /></button>
+                                <Tooltip label="Evidence Vault"><button style={vaultBtnStyle} disabled={!r.db_id} onClick={() => openConsVault(r, 'company-dd')}><VaultIcon /></button></Tooltip>
                               </div>
                             </td>
                           </tr>
@@ -1517,7 +1520,7 @@ function SegCell({ names, sc, sb }: { names: string[]; sc: string; sb: string })
   return <>
     <span style={{ fontSize: '8.5px', fontWeight: 600, color: sc, background: sb, border: '1px solid rgba(6,182,212,.15)', padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap' }}>{segs[0]}</span>
     {segs.length > 1 && (
-      <button type="button" title="View all segments" onClick={toggle} style={{ fontSize: '8.5px', fontWeight: 800, color: '#fff', background: 'linear-gradient(135deg, #06b6d4, #0891b2)', padding: '2px 8px', borderRadius: '20px', whiteSpace: 'nowrap', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{segs.length - 1}</button>
+      <Tooltip label="View all segments"><button type="button" onClick={toggle} style={{ fontSize: '8.5px', fontWeight: 800, color: '#fff', background: 'linear-gradient(135deg, #06b6d4, #0891b2)', padding: '2px 8px', borderRadius: '20px', whiteSpace: 'nowrap', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{segs.length - 1}</button></Tooltip>
     )}
     {open && createPortal(
       <>

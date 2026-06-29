@@ -171,13 +171,12 @@ export default function ClmTradeLicensesPage() {
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                               <span className="clm-badge clm-badge-teal">{list[0]}</span>
                               {extra > 0 && (
-                                <button
+                                <Tooltip label="View all authorities"><button
                                   type="button"
-                                  title="View all authorities"
                                   onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setAuthPop(authPop?.id === r.id ? null : { id: r.id, names: list, x: b.left, y: b.bottom + 4 }); }}
                                   style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
                                   +{extra}
-                                </button>
+                                </button></Tooltip>
                               )}
                             </span>
                           );
@@ -320,9 +319,9 @@ export function TlModal(props: { existing: Tl | null; authorities: Authority[]; 
                   onChange={(next) => { setAuthList(next); setErrors(p => ({ ...p, auth: '' })); }}
                 />
               </div>
-              <button type="button" className="clm-quick-add-btn" onClick={() => setQuickAddOpen(true)} aria-label="Add new authority" title="Add new authority">
+              <Tooltip label="Add new authority"><button type="button" className="clm-quick-add-btn" onClick={() => setQuickAddOpen(true)} aria-label="Add new authority">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              </button>
+              </button></Tooltip>
             </div>
             <div className="clm-field-hint">Pulls from Authority Master — click + to add a new authority.</div>
             {errors.auth && <div className="clm-err">{errors.auth}</div>}
