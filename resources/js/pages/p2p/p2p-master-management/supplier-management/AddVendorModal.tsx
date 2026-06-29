@@ -2427,7 +2427,7 @@ export default function AddVendorModal(props: {
               disabled={!vendorId}
               title={!vendorId ? 'Save the Supplier Legal Identity step first to map products' : 'Map products to this supplier'}
             >
-              <i className="ri-price-tag-3-line" /> Map Product
+              <i className="ri-price-tag-line" /> Map Product
             </button>
             <button className="avm-close" onClick={onClose} aria-label="Close">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -2695,7 +2695,8 @@ export default function AddVendorModal(props: {
                     <Field label="Company Website">
                       <input className="avm-input" placeholder="https://abclogistics.com" value={website} onChange={e => setWebsite(e.target.value)} />
                     </Field>
-                    <Field label="Supplier Segment" required addNew onAdd={() => setQuickAdd('segments')} error={fieldErrors.segment}>
+                    <Field label="Supplier Segment" required addNew onAdd={() => setQuickAdd('segments')} error={fieldErrors.segment}
+                      hint={lockedSegments.length > 0 ? <span className="avm-seg-hint" title="Segments with uploaded documents can’t be removed"><i className="ri-lock-2-line" />(locked)</span> : undefined}>
                       {/* masterFormKit's MasterMultiSelect renders visible violet
                           chips with × buttons + a checkbox-marked dropdown so
                           multi-select is obvious. `value` prop is plural despite
@@ -2715,9 +2716,6 @@ export default function AddVendorModal(props: {
                           onChange={vs => { setSegment(vs); clearFieldError('segment'); }}
                         />
                       </div>
-                      {lockedSegments.length > 0 && (
-                        <span className="avm-segment-lock-note"><i className="ri-lock-2-line" /> Segments with uploaded documents can’t be removed</span>
-                      )}
                     </Field>
                     <Field label="Risk Level" required addNew onAdd={() => setQuickAdd('risk_levels')} error={fieldErrors.riskLevel}>
                       <SelectInput value={riskLevel} onChange={(v) => { setRiskLevel(v); clearFieldError('riskLevel'); }} placeholder="Select" options={riskLevelOpts} />
@@ -2857,7 +2855,7 @@ export default function AddVendorModal(props: {
                       we know about". Marked with a "Primary" pill and
                       not deletable — the user has to go back to the
                       first sub-tab to change it. */}
-                  <SectionCard tone="violet" icon={<i className="ri-user-add-line" />} title="Additional Contact Persons" subtitle="Add more points of contact for this supplier" headerAction={
+                  <SectionCard tone="violet" className="avm-section-grow" icon={<i className="ri-user-add-line" />} title="Additional Contact Persons" subtitle="Add more points of contact for this supplier" headerAction={
                     <button className="avm-section-add-btn" onClick={openContactPopup}>+ Add More Contact Person</button>
                   }>
                     {(() => {
@@ -3690,10 +3688,11 @@ function SectionCard(props: {
   title: string;
   subtitle: string;
   headerAction?: ReactNode;
+  className?: string;
   children: ReactNode;
 }) {
   return (
-    <div className={`avm-section avm-section-${props.tone}`}>
+    <div className={`avm-section avm-section-${props.tone}${props.className ? ` ${props.className}` : ''}`}>
       <div className="avm-section-head">
         <div className="avm-section-head-left">
           <div className="avm-section-icon">{props.icon}</div>
@@ -3715,6 +3714,7 @@ function Field(props: {
   addNew?: boolean;
   onAdd?: () => void;
   error?: string;
+  hint?: ReactNode;
   children: ReactNode;
 }) {
   /* Renders as a <div>, NOT a <label>. A <label> proxies clicks anywhere
@@ -3736,6 +3736,7 @@ function Field(props: {
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); props.onAdd?.(); }}
           >+</button>
         )}
+        {props.hint}
       </span>
       {props.children}
       {props.error && (
@@ -5819,12 +5820,15 @@ const SCOPED_CSS = `
 .avm-section-green  .avm-section-icon { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
 .avm-section-purple .avm-section-icon { background: #f5f1fe; color: #7c3aed; border-color: #e2d4fa; }
 .avm-section-headtext { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-width: 0; }
-.avm-section-title { font-size: 11px; font-weight: 600; color: #5b21b6; letter-spacing: 0.02em; text-transform: uppercase; }
+.avm-section-title { font-size: 11px; font-weight: 700; color: #5b21b6; letter-spacing: 0.02em; text-transform: uppercase; }
 .avm-section-sub   { font-size: 10.5px; font-weight: 500; color: #a78bfa; letter-spacing: 0; }
 .avm-section-sub::before { content: '|'; margin-right: 7px; color: #c4b5fd; font-weight: 600; }
 /* Amber section keeps its amber icon, but the title + subtitle use the same
    purple as every other section heading (user request). */
 .avm-section-body { padding: 8px 14px 10px; display: flex; flex-direction: column; gap: 9px; }
+/* Additional Contact Persons card — stretch its body so the card fills the
+   empty space below in the modal instead of leaving a big gap. */
+.avm-section-grow .avm-section-body { min-height: 230px; }
 
 .avm-section-add-btn {
   display: inline-flex; align-items: center; gap: 6px;
@@ -5880,7 +5884,8 @@ const SCOPED_CSS = `
 /* Additional Contacts list — show ~3 rows then scroll; min-height stops the
    card collapsing to a single thin row (fills the empty space a bit). The
    header stays pinned while the body scrolls. */
-.avm-contacts-scroll { min-height: 132px; max-height: 220px; overflow-y: auto; }
+/* Show ~3 contact rows + the sticky header, then scroll for the rest. */
+.avm-contacts-scroll { max-height: 174px; overflow-y: auto; }
 .avm-contacts-scroll thead th { position: sticky; top: 0; z-index: 2; background: #fbfaff; }
 [data-bs-theme="dark"] .avm-contacts-scroll thead th { background: #1a1430; }
 
@@ -5908,6 +5913,7 @@ const SCOPED_CSS = `
   letter-spacing: 0; text-transform: none;
   color: #3b0764;
   margin-bottom: 0;
+  white-space: nowrap;
 }
 [data-bs-theme="dark"] .avm-field-label,
 [data-layout-mode="dark"] .avm-field-label { color: #c4b5fd; }
@@ -5916,6 +5922,10 @@ const SCOPED_CSS = `
 .avm-segment-lock-note { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 10.5px; font-weight: 600; color: #b45309; }
 .avm-segment-lock-note i { font-size: 12px; }
 [data-bs-theme="dark"] .avm-segment-lock-note { color: #fbbf24; }
+/* Inline lock hint beside the Supplier Segment label (no extra row → no gap). */
+.avm-seg-hint { display: inline-flex; align-items: center; gap: 3px; margin-left: 4px; font-size: 9.5px; font-weight: 500; color: #b45309; text-transform: none; letter-spacing: 0; white-space: nowrap; cursor: help; }
+.avm-seg-hint i { font-size: 11px; }
+[data-bs-theme="dark"] .avm-seg-hint { color: #fbbf24; }
 /* Inline quick-add (+) buttons — let the user add a new master entry
    (Risk Level / Supplier Behaviour / Segment / Compliance / Country)
    without leaving the form. */
@@ -6180,6 +6190,11 @@ const SCOPED_CSS = `
   border-bottom: 1.5px solid #ece7f8;
   white-space: nowrap;
 }
+/* KYC / DD / License / Bank / GST document tables — Figma header th is
+   "9px DM Sans" which is weight 400 (normal). The general rule above uses 800,
+   so even at the same 9px the dev headers read heavier/larger. Match the Figma
+   weight here; scoped to avm-kyc-table so contacts and mapped tables keep theirs. */
+.avm-modal .table.avm-kyc-table thead th { font-weight: 400; letter-spacing: 0.04em; }
 .avm-modal .table tbody td {
   font-size: 13px;
   font-weight: 400;
