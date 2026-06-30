@@ -1396,6 +1396,9 @@ class EmployeeController extends Controller
             // PAN: 5 letters, 4 digits, 1 letter + tenant-unique (see $panRule above).
             'pan_number'            => $panRule,
             'pf_deduction'          => 'nullable|string|max:50',
+            // PF calculation method (Stage 4). statutory = 12% capped at the
+            // ₹15k EPF ceiling; standard = 12% of full basic. Read by PayrollService.
+            'pf_type'               => 'nullable|in:statutory,standard',
             'esi_applicable'        => 'nullable|in:Yes,No',
             'gratuity_nominee_name' => 'nullable|string|max:150',
             'agreed_ctc_lpa'        => 'nullable|numeric|min:0',
