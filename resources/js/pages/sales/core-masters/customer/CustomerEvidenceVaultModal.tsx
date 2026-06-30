@@ -265,6 +265,9 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
   const toast = useToast();
   const [tab, setTab] = useState<TabKey>('company-dd');
   const [group, setGroup] = useState<GroupKey>('standard');
+  /* "+N more" segment overflow popover — a titled list (matches the CLM pages'
+   * authority/segment popovers), opened on click from the header chip. */
+  const [segPop, setSegPop] = useState<{ names: string[]; x: number; y: number } | null>(null);
   // "Document Overview" popup — set to a group key to open the all-docs list.
   const [overview, setOverview] = useState<GroupKey | null>(null);
   // Document-overview pagination (5 rows per page) + selected shipment tab
@@ -659,7 +662,27 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
             <div className="cev-header-right">
               <div className="cev-header-meta">
                 {customer.type && <span>{customer.type}</span>}
-                {customer.segment && <span>· {customer.segment}</span>}
+                {customer.segment && (() => {
+                  /* Cap the inline segment list at 5; the rest collapse into a
+                   * "+N more" chip whose tooltip lists every segment, so a
+                   * customer with many segments no longer overflows the header. */
+                  const segs = String(customer.segment).split(',').map(s => s.trim()).filter(Boolean);
+                  if (segs.length === 0) return null;
+                  const shown = segs.slice(0, 5);
+                  const extra = segs.length - shown.length;
+                  return (
+                    <span>
+                      · {shown.join(', ')}
+                      {extra > 0 && (
+                        <button
+                          type="button"
+                          className="cev-seg-more"
+                          onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(prev => prev ? null : { names: segs, x: b.left, y: b.bottom + 6 }); }}
+                        >+{extra} more</button>
+                      )}
+                    </span>
+                  );
+                })()}
                 {customer.country && <span>· {customer.country}</span>}
               </div>
               <button type="button" className="cev-close" onClick={onClose} aria-label="Close vault">
@@ -946,6 +969,21 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
           </div>
         );
       })()}
+
+      {segPop && createPortal(
+        <>
+          <div onClick={() => setSegPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 13000 }} />
+          <div className="cev-seg-pop" style={{ position: 'fixed', left: Math.min(segPop.x, window.innerWidth - 250), top: segPop.y, zIndex: 13001, width: 232, maxHeight: 320, overflowY: 'auto' }}>
+            <div className="cev-seg-pop-title">Segments ({segPop.names.length})</div>
+            {segPop.names.map((name, i) => (
+              <div key={i} className={`cev-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
+                <span className="cev-seg-pop-pill">{name}</span>
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
     </div>,
     document.body
   );
@@ -1712,6 +1750,25 @@ export const CEV_CSS = `
 .cev-header-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 .cev-header-meta { font-size: 11px; color: rgba(255,255,255,.84); display: inline-flex; gap: 4px; align-items: center; }
 .cev-header-meta span { white-space: nowrap; }
+.cev-seg-more {
+  display: inline-flex; align-items: center; margin-left: 5px;
+  padding: 1px 8px; border-radius: 999px; cursor: default;
+  font-size: 10px; font-weight: 800;
+  background: rgba(255,255,255,.20); border: 1px solid rgba(255,255,255,.28); color: #ecfeff;
+}
+.cev-seg-more:hover { background: rgba(255,255,255,.30); }
+/* "+N more" segment list popover — white card with a titled list of segment
+ * pills (matches the CLM authority/segment popovers). */
+.cev-seg-pop { background: #fff; border: 1.5px solid #a5f3fc; border-radius: 12px; padding: 8px; box-shadow: 0 18px 44px rgba(8,47,73,.28); }
+.cev-seg-pop-title { font-size: 8px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: #0e7490; padding: 4px 8px 7px; }
+.cev-seg-pop-row { display: flex; align-items: center; padding: 5px 8px; border-radius: 8px; }
+.cev-seg-pop-row.alt { background: #ecfeff; }
+.cev-seg-pop-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: #0e7490; background: #cffafe; border: 1px solid rgba(8,145,178,.30); border-radius: 999px; padding: 2px 11px; }
+.cev-seg-pop-pill::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+[data-bs-theme="dark"] .cev-seg-pop { background: #0f2a30; border-color: rgba(34,211,238,.30); box-shadow: 0 18px 44px rgba(0,0,0,.55); }
+[data-bs-theme="dark"] .cev-seg-pop-title { color: #67e8f9; }
+[data-bs-theme="dark"] .cev-seg-pop-row.alt { background: rgba(255,255,255,.04); }
+[data-bs-theme="dark"] .cev-seg-pop-pill { background: rgba(8,145,178,.18); color: #67e8f9; border-color: rgba(34,211,238,.30); }
 .cev-close {
   width: 28px; height: 28px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;

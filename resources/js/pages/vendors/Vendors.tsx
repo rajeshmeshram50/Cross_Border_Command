@@ -171,7 +171,7 @@ export default function Vendors() {
       .sort((x, y) => Number(y.isPrimary) - Number(x.isPrimary));
     return {
       id:          row.id,
-      code:        row.vendor_code ?? `SUP-${row.id}`,
+      code:        row.vendor_code ?? `S-${String(row.id).padStart(3, '0')}`,
       companyName: row.company_name ?? 'Untitled Supplier',
       legalName:   row.legal_name ?? row.company_name ?? '—',
       type:        row.vendor_type?.name ?? 'Pending',

@@ -218,6 +218,9 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
 
   const [tab, setTab] = useState<TabKey>('company-dd');
   const [group, setGroup] = useState<GroupKey>('standard');
+  /* "+N more" segment overflow popover — a titled list (matches the CLM pages'
+   * authority/segment popovers), opened on click from the header chip. */
+  const [segPop, setSegPop] = useState<{ names: string[]; x: number; y: number } | null>(null);
   // "Document Overview" popup — set to a group key to open the all-docs list.
   const [overview, setOverview] = useState<GroupKey | null>(null);
   const [overviewPage, setOverviewPage] = useState(1);
@@ -576,7 +579,27 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
             </div>
             <div className="cnev-header-right">
               <div className="cnev-header-meta">
-                {consignee.segment && <span>{consignee.segment}</span>}
+                {consignee.segment && (() => {
+                  /* Cap the inline segment list at 5; the rest collapse into a
+                   * "+N more" chip whose tooltip lists every segment, so a
+                   * consignee with many segments no longer overflows the header. */
+                  const segs = String(consignee.segment).split(',').map(s => s.trim()).filter(Boolean);
+                  if (segs.length === 0) return null;
+                  const shown = segs.slice(0, 5);
+                  const extra = segs.length - shown.length;
+                  return (
+                    <span>
+                      {shown.join(', ')}
+                      {extra > 0 && (
+                        <button
+                          type="button"
+                          className="cnev-seg-more"
+                          onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(prev => prev ? null : { names: segs, x: b.left, y: b.bottom + 6 }); }}
+                        >+{extra} more</button>
+                      )}
+                    </span>
+                  );
+                })()}
                 {consignee.country && <span>· {consignee.country}</span>}
               </div>
               <button type="button" className="cnev-close" onClick={onClose} aria-label="Close vault">
@@ -846,6 +869,21 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           </div>
         );
       })()}
+
+      {segPop && createPortal(
+        <>
+          <div onClick={() => setSegPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 13000 }} />
+          <div className="cnev-seg-pop" style={{ position: 'fixed', left: Math.min(segPop.x, window.innerWidth - 250), top: segPop.y, zIndex: 13001, width: 232, maxHeight: 320, overflowY: 'auto' }}>
+            <div className="cnev-seg-pop-title">Segments ({segPop.names.length})</div>
+            {segPop.names.map((name, i) => (
+              <div key={i} className={`cnev-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
+                <span className="cnev-seg-pop-pill">{name}</span>
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
     </div>,
     document.body
   );
@@ -1402,6 +1440,25 @@ const CNEV_CSS = `
 .cnev-header-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 .cnev-header-meta { font-size: 11px; color: rgba(255,255,255,.84); display: inline-flex; gap: 4px; align-items: center; }
 .cnev-header-meta span { white-space: nowrap; }
+.cnev-seg-more {
+  display: inline-flex; align-items: center; margin-left: 5px;
+  padding: 1px 8px; border-radius: 999px; cursor: default;
+  font-size: 10px; font-weight: 800;
+  background: rgba(255,255,255,.20); border: 1px solid rgba(255,255,255,.28); color: #ecfeff;
+}
+.cnev-seg-more:hover { background: rgba(255,255,255,.30); }
+/* "+N more" segment list popover — white card with a titled list of segment
+ * pills (matches the CLM authority/segment popovers). */
+.cnev-seg-pop { background: #fff; border: 1.5px solid #a5f3fc; border-radius: 12px; padding: 8px; box-shadow: 0 18px 44px rgba(8,47,73,.28); }
+.cnev-seg-pop-title { font-size: 8px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: #0e7490; padding: 4px 8px 7px; }
+.cnev-seg-pop-row { display: flex; align-items: center; padding: 5px 8px; border-radius: 8px; }
+.cnev-seg-pop-row.alt { background: #ecfeff; }
+.cnev-seg-pop-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: #0e7490; background: #cffafe; border: 1px solid rgba(8,145,178,.30); border-radius: 999px; padding: 2px 11px; }
+.cnev-seg-pop-pill::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+[data-bs-theme="dark"] .cnev-seg-pop { background: #0f2a30; border-color: rgba(34,211,238,.30); box-shadow: 0 18px 44px rgba(0,0,0,.55); }
+[data-bs-theme="dark"] .cnev-seg-pop-title { color: #67e8f9; }
+[data-bs-theme="dark"] .cnev-seg-pop-row.alt { background: rgba(255,255,255,.04); }
+[data-bs-theme="dark"] .cnev-seg-pop-pill { background: rgba(8,145,178,.18); color: #67e8f9; border-color: rgba(34,211,238,.30); }
 .cnev-close {
   width: 28px; height: 28px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;

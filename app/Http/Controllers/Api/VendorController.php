@@ -1009,7 +1009,7 @@ class VendorController extends Controller
                 $max = max($max, (int) $m[1]);
             }
         }
-        return 'SUP-' . str_pad((string) ($max + 1), 2, '0', STR_PAD_LEFT);
+        return 'S-' . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
     }
 
     /**

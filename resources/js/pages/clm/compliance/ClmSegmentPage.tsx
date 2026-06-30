@@ -47,7 +47,9 @@ export function nextSegmentCode(rows: { code: string }[]): string {
   let maxN = 0;
   const taken = new Set<string>();
   for (const r of rows) {
-    const m = /^S-(\d+)$/.exec(r.code ?? '');
+    // Match both new SG-NNN and any legacy S-NNN so the preview keeps counting
+    // past every existing code during/after the prefix migration.
+    const m = /^SG?-(\d+)$/.exec(r.code ?? '');
     if (m) {
       const n = parseInt(m[1], 10);
       if (n > maxN) maxN = n;
@@ -58,7 +60,7 @@ export function nextSegmentCode(rows: { code: string }[]): string {
   let code: string;
   do {
     n++;
-    code = `S-${String(n).padStart(3, '0')}`;
+    code = `SG-${String(n).padStart(3, '0')}`;
   } while (taken.has(code));
   return code;
 }
