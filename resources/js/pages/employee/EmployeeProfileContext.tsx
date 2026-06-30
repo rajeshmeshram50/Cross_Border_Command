@@ -14,6 +14,7 @@ export interface EmployeeProfileCtx {
   // ── Core employee record ──
   empDetail: any;
   empDetailLoading: boolean;
+  setEmpDetail: (updater: any) => void;
 
   // ── Shared formatters ──
   fmtDate: (raw: any) => string;
@@ -68,6 +69,8 @@ export interface EmployeeProfileCtx {
   setAdvanceSubTab: (v: 'mine' | 'team') => void;
   expenseFilter: 'all' | 'approved' | 'rejected' | 'pending' | 'draft';
   setExpenseFilter: (v: 'all' | 'approved' | 'rejected' | 'pending' | 'draft') => void;
+  expenseSearch: string;
+  setExpenseSearch: (v: string) => void;
   expenseCounts: any;
   advanceCounts: any;
   totalClaimed: number;

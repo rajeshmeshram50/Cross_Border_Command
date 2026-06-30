@@ -26,52 +26,10 @@ class ExpenseClaimController extends Controller
 
         $this->applyCategoryScope($q, $user, $request->integer('branch_id') ?: null);
 
-        $cats = $q->get(['id', 'name', 'code', 'monthly_limit', 'yearly_limit']);
-
-        // Annotate each category with how much the target employee has already
-        // spent (non-rejected claims) and how much remains for the period, so
-        // the Raise-Claim form can show "₹X remaining this month" up front and
-        // block over-limit claims before submit. Resolves the employee the same
-        // way store() does.
-        $employeeId = $this->resolveEmployeeId(
-            $request->input('employee_id'),
-            $request->input('employee_code'),
-            $user
-        ) ?: $this->currentEmployeeId($user);
-
-        if ($employeeId && $cats->isNotEmpty()) {
-            $ref = $request->filled('expense_date')
-                ? \Illuminate\Support\Carbon::parse($request->input('expense_date'))
-                : \Illuminate\Support\Carbon::now();
-            $catIds = $cats->pluck('id')->all();
-
-            $base = fn () => ExpenseClaim::where('employee_id', $employeeId)
-                ->whereIn('category_id', $catIds)
-                ->where('status', '!=', 'rejected')
-                ->whereYear('expense_date', $ref->year);
-
-            $monthSpend = $base()
-                ->whereMonth('expense_date', $ref->month)
-                ->groupBy('category_id')
-                ->selectRaw('category_id, SUM(amount) as total')
-                ->pluck('total', 'category_id');
-            $yearSpend = $base()
-                ->groupBy('category_id')
-                ->selectRaw('category_id, SUM(amount) as total')
-                ->pluck('total', 'category_id');
-
-            $cats->transform(function ($c) use ($monthSpend, $yearSpend) {
-                $ml = $c->monthly_limit !== null ? (float) $c->monthly_limit : null;
-                $yl = $c->yearly_limit  !== null ? (float) $c->yearly_limit  : null;
-                $usedM = (float) ($monthSpend[$c->id] ?? 0);
-                $usedY = (float) ($yearSpend[$c->id] ?? 0);
-                $c->spent_month     = round($usedM, 2);
-                $c->spent_year      = round($usedY, 2);
-                $c->remaining_month = $ml !== null ? round(max(0, $ml - $usedM), 2) : null;
-                $c->remaining_year  = $yl !== null ? round(max(0, $yl - $usedY), 2) : null;
-                return $c;
-            });
-        }
+        // Expense categories no longer carry monthly/yearly limits — claims and
+        // advances can be raised for any amount, so we just return the active
+        // category list for the dropdowns.
+        $cats = $q->get(['id', 'name', 'code']);
 
         return response()->json($cats);
     }
@@ -128,9 +86,15 @@ class ExpenseClaimController extends Controller
 
         $q = ExpenseClaim::query()
             ->with([
-                'employee:id,first_name,middle_name,last_name,display_name,emp_code,reporting_manager_id,department_id',
+                // Load employee/manager WITH trashed rows so a disabled
+                // (soft-deleted via the Remove action) employee's name still
+                // resolves — otherwise the relation is null and the row shows
+                // "#<id>" instead of the name.
+                'employee' => fn ($r) => $r->withTrashed()
+                    ->select('id', 'first_name', 'middle_name', 'last_name', 'display_name', 'emp_code', 'reporting_manager_id', 'department_id'),
                 'employee.department:id,name',
-                'manager:id,first_name,middle_name,last_name,display_name,emp_code',
+                'manager' => fn ($r) => $r->withTrashed()
+                    ->select('id', 'first_name', 'middle_name', 'last_name', 'display_name', 'emp_code'),
                 'category:id,name,code',
                 'creator:id,name,user_type',
                 'hrUser:id,name,user_type',
@@ -267,51 +231,8 @@ class ExpenseClaimController extends Controller
         if (!empty($data['category_id'])) {
             $cat = \App\Models\Masters\ExpenseCategories::find($data['category_id']);
             $categoryName = $cat?->name;
-
-            // Enforce the category's spending caps. The new amount, added to
-            // every non-rejected claim already filed by this employee under
-            // the same category for the same period (by expense date), must
-            // stay within the configured monthly / yearly limit. Pending and
-            // approved claims both count so a series of under-limit claims
-            // can't collectively blow past the cap. (Currency is INR-only.)
-            if ($cat) {
-                $expenseDate = \Illuminate\Support\Carbon::parse($data['expense_date']);
-                $newAmount   = (float) $data['amount'];
-
-                $spent = function (bool $monthScoped) use ($employee, $data, $expenseDate) {
-                    $q = ExpenseClaim::where('employee_id', $employee->id)
-                        ->where('category_id', $data['category_id'])
-                        ->whereYear('expense_date', $expenseDate->year)
-                        ->where('status', '!=', 'rejected');
-                    if ($monthScoped) $q->whereMonth('expense_date', $expenseDate->month);
-                    return (float) $q->sum('amount');
-                };
-
-                $checkCap = function (?string $rawLimit, bool $monthScoped, string $label, string $period)
-                    use ($spent, $newAmount, $cat) {
-                    if ($rawLimit === null) return;
-                    $limit = (float) $rawLimit;
-                    if ($limit <= 0) return;
-                    $used = $spent($monthScoped);
-                    if ($used + $newAmount > $limit) {
-                        $remaining = max(0, $limit - $used);
-                        throw \Illuminate\Validation\ValidationException::withMessages([
-                            'amount' => [sprintf(
-                                'Exceeds the %s limit for %s (₹%s). Already used ₹%s in %s — only ₹%s remaining.',
-                                $label,
-                                $cat->name,
-                                number_format($limit, 2),
-                                number_format($used, 2),
-                                $period,
-                                number_format($remaining, 2)
-                            )],
-                        ]);
-                    }
-                };
-
-                $checkCap($cat->monthly_limit, true,  'monthly', $expenseDate->format('M Y'));
-                $checkCap($cat->yearly_limit,  false, 'yearly',  $expenseDate->format('Y'));
-            }
+            // Expense categories no longer carry monthly/yearly spending caps —
+            // a claim of any amount is accepted (parity with advance requests).
         }
 
         // When the employee has no reporting manager assigned, auto-clear
@@ -368,7 +289,12 @@ class ExpenseClaimController extends Controller
     public function show(Request $request, $id)
     {
         $user = $request->user();
-        $row = ExpenseClaim::with(['employee', 'manager', 'category', 'creator', 'hrUser'])
+        $row = ExpenseClaim::with([
+                // withTrashed so a disabled employee's name still resolves (see index()).
+                'employee' => fn ($r) => $r->withTrashed(),
+                'manager' => fn ($r) => $r->withTrashed(),
+                'category', 'creator', 'hrUser',
+            ])
             ->findOrFail($id);
         $this->ensureTenantAccess($row, $user);
         return response()->json($this->serialize($row));

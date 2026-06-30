@@ -36,7 +36,12 @@ const WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const fmtDate = (iso: string) => {
   const d = new Date(iso + 'T00:00:00');
-  return d.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+  if (isNaN(d.getTime())) return iso;
+  // Dashed date to match the admin Holiday list (e.g. "Tue, 16-Jun-2026").
+  const wd = d.toLocaleDateString('en-GB', { weekday: 'short' });
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mon = d.toLocaleDateString('en-GB', { month: 'short' });
+  return `${wd}, ${dd}-${mon}-${d.getFullYear()}`;
 };
 
 export default function HolidayCalendarPanel({ employeeId }: { employeeId: string }) {
@@ -145,8 +150,10 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
     [data-bs-theme="dark"] .hcp-year button:hover { background: rgba(255,255,255,.16); }
     [data-bs-theme="dark"] .hcp-year span { color: #f1f5f9; }
     [data-bs-theme="dark"] .hcp-toggle { background: rgba(255,255,255,.06); }
-    [data-bs-theme="dark"] .hcp-toggle button { color: #94a3b8; }
-    [data-bs-theme="dark"] .hcp-toggle button.on { background: var(--vz-card-bg); color: #c4b5fd; }
+    [data-bs-theme="dark"] .hcp-toggle button { color: #9b8fc4; }
+    /* Selected tab = vivid purple pill + glow so it's clearly the active one in
+       dark mode (the old card-bg fill blended with the inactive button). */
+    [data-bs-theme="dark"] .hcp-toggle button.on { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; box-shadow: 0 2px 8px rgba(124,58,237,.5); }
 
     [data-bs-theme="dark"] .hcp-table thead th { background: rgba(255,255,255,.04); color: #cbd5e1; border-color: rgba(255,255,255,.1); }
     [data-bs-theme="dark"] .hcp-table tbody td { color: #e2e8f0; border-color: rgba(255,255,255,.06); }
@@ -233,7 +240,7 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
           <table className="hcp-table">
             <thead>
               <tr>
-                <th style={{ width: 52 }}>#</th>
+                <th style={{ width: 60 }}>Sr No</th>
                 <th>Holiday Name</th>
                 <th style={{ width: 220 }}>Date</th>
                 <th style={{ width: 150 }}>Type</th>

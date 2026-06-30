@@ -59,7 +59,7 @@ function formatDate(raw: any): string {
   const d = new Date(String(raw));
   if (isNaN(d.getTime())) return String(raw);
   const dd = String(d.getDate()).padStart(2, '0');
-  return `${dd} ${MONTH_ABBR[d.getMonth()]} ${d.getFullYear()}`;
+  return `${dd}-${MONTH_ABBR[d.getMonth()]}-${d.getFullYear()}`;
 }
 function weekdayName(raw: any): string {
   if (!raw) return '—';
@@ -128,9 +128,8 @@ export default function HrHoliday() {
   const groupName = (id: number | null | undefined) =>
     id ? (groups.find(g => g.id === id)?.name || '—') : '—';
 
-  // Groups that are assigned to at least one employee. Holidays inside such a
-  // group are locked (no edit/delete) — changing them would rewrite the
-  // calendar those employees depend on. Mirrors the backend guard.
+  // Groups assigned to ≥1 employee. A holiday in such a group can still be
+  // EDITED (auto-propagates), but it can't be DELETED — employees depend on it.
   const inUseGroupIds = useMemo(
     () => new Set(groups.filter(g => (g.employees_count ?? 0) > 0).map(g => g.id)),
     [groups],
@@ -193,13 +192,16 @@ export default function HrHoliday() {
   };
 
   const downloadTemplate = () => {
+    // Use real group names from this tenant in the sample so the Group column
+    // is self-explanatory; fall back to a generic example when none exist.
+    const sampleGroup = groups[0]?.name || 'Indian Employees';
     const sample = [
-      { Name: 'Republic Day',           Date: '2026-01-26', Type: 'Public',   Recurring: 'Yes', Description: 'National holiday' },
-      { Name: 'Holi',                   Date: '2026-03-04', Type: 'Regional',  Recurring: 'No',  Description: '' },
-      { Name: 'Company Foundation Day', Date: '2026-08-12', Type: 'Company',   Recurring: 'Yes', Description: 'Office closed' },
+      { Name: 'Republic Day',           Date: '2026-01-26', Type: 'Public',   Recurring: 'Yes', Group: sampleGroup, Description: 'National holiday' },
+      { Name: 'Holi',                   Date: '2026-03-04', Type: 'Regional',  Recurring: 'No',  Group: sampleGroup, Description: '' },
+      { Name: 'Company Foundation Day', Date: '2026-08-12', Type: 'Company',   Recurring: 'Yes', Group: sampleGroup, Description: 'Office closed' },
     ];
     const ws = XLSX.utils.json_to_sheet(sample);
-    ws['!cols'] = [{ wch: 26 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 30 }];
+    ws['!cols'] = [{ wch: 26 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 22 }, { wch: 30 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Holidays');
     XLSX.writeFile(wb, 'Holiday_Import_Template.xlsx');
@@ -211,11 +213,9 @@ export default function HrHoliday() {
     if (fileRef.current) fileRef.current.value = '';
     if (!file) return;
 
-    if (groups.length > 0 && !targetGroupId) {
-      toast.error('Pick a holiday group first', 'Select a group above so imported holidays are filed under it.');
-      return;
-    }
-
+    // No hard "pick a group first" gate — each Excel row carries its own Group
+    // column now. Rows with a blank/unknown Group fall back to the group
+    // selected in the filter above (if any).
     setImporting(true);
     try {
       const buf = await file.arrayBuffer();
@@ -241,6 +241,7 @@ export default function HrHoliday() {
           : String(pick(r, ['date', 'holiday date']) || '').trim(),
         type: String(pick(r, ['type', 'category']) || 'Public').trim(),
         is_recurring: /^(y|yes|true|1)$/i.test(String(pick(r, ['recurring', 'is_recurring', 'repeats']) || '').trim()),
+        group: String(pick(r, ['group', 'holiday group', 'group name']) || '').trim(),
         description: String(pick(r, ['description', 'note', 'notes', 'remark', 'remarks']) || '').trim(),
       }));
 
@@ -377,7 +378,6 @@ export default function HrHoliday() {
                 <div className="min-w-0">
                   <div className="d-flex align-items-center gap-2 flex-wrap">
                     <span className="frm-cstrip-title">Holiday Calendar</span>
-                    <span className="rec-pill" style={{ background: 'rgba(56,189,248,0.16)', color: '#0284c7', fontSize: 11 }}>Time Off</span>
                   </div>
                   <div className="frm-cstrip-sub">
                     Create holiday groups (e.g. “Indian Employees”), add holidays to them, then assign a group to each employee
@@ -417,11 +417,6 @@ export default function HrHoliday() {
                     </div>
 
                     <div className="hol-actions d-flex align-items-center gap-2 ms-auto">
-                      <Tooltip label="Create & manage holiday groups (types)">
-                        <button type="button" className="rec-btn-ghost" onClick={() => setManageGroupsOpen(true)}>
-                          <i className="ri-folder-settings-line" />Groups
-                        </button>
-                      </Tooltip>
                       <Tooltip label="Download Excel template">
                         <button type="button" className="rec-btn-ghost" onClick={downloadTemplate}>
                           <i className="ri-download-2-line" />Template
@@ -430,6 +425,14 @@ export default function HrHoliday() {
                       <button type="button" className="rec-btn-ghost" onClick={() => fileRef.current?.click()} disabled={importing}>
                         {importing ? <Spinner size="sm" /> : <i className="ri-file-excel-2-line" />}Import Excel
                       </button>
+                      {/* Groups — moved beside "Add Holiday" and highlighted so it's
+                          clear this is where you create/manage holiday groups first. */}
+                      <Tooltip label="Create & manage holiday groups — add a group here first, then assign holidays to it">
+                        <button type="button" className="rec-btn-ghost hol-groups-btn" onClick={() => setManageGroupsOpen(true)}
+                          style={{ background: 'linear-gradient(135deg,#ede9fe,#ddd6fe)', border: '1px solid #c4b5fd', color: '#6d28d9', fontWeight: 700 }}>
+                          <i className="ri-folder-add-line" />Groups
+                        </button>
+                      </Tooltip>
                       <button type="button" className="rec-btn-primary" onClick={() => { setEditingRow(null); setCreateOpen(true); }}>
                         <i className="ri-add-line" />Add Holiday
                       </button>
@@ -466,10 +469,10 @@ export default function HrHoliday() {
                             </span>
                           </th>
                           <th>Holiday Name</th>
-                          <th style={{ width: 160 }}>Group</th>
-                          <th style={{ width: 125 }}>Date</th>
-                          <th style={{ width: 100 }}>Day</th>
-                          <th style={{ width: 130 }}>Type</th>
+                          <th className="text-center" style={{ width: 160 }}>Group</th>
+                          <th className="text-center" style={{ width: 125 }}>Date</th>
+                          <th className="text-center" style={{ width: 100 }}>Day</th>
+                          <th className="text-center" style={{ width: 130 }}>Type</th>
                           <th className="text-center pe-3" style={{ width: 110 }}>Actions</th>
                         </tr>
                       </thead>
@@ -483,9 +486,6 @@ export default function HrHoliday() {
                           </td></tr>
                         ) : visible.map((r, idx) => {
                           const tone = TYPE_TONES[r.type] || TYPE_TONES.Public;
-                          // Locked when the holiday's group is assigned to employees —
-                          // edit/delete would rewrite a calendar people depend on.
-                          const locked = r.holiday_group_id != null && inUseGroupIds.has(r.holiday_group_id);
                           return (
                             <tr key={r.id}>
                               <td className="ps-3 text-center text-muted fs-13">{sliceFrom + idx + 1}</td>
@@ -494,34 +494,39 @@ export default function HrHoliday() {
                                 <div className="fw-bold fs-13">{r.name}</div>
                                 {r.description && <div className="text-muted" style={{ fontSize: 11.5 }}>{r.description}</div>}
                               </td>
-                              <td className="fs-13">
+                              <td className="fs-13 text-center">
                                 {r.holiday_group_id
                                   ? <span className="rec-pill" style={{ background: 'rgba(56,189,248,0.16)', color: '#0284c7' }}>{r.group?.name || groupName(r.holiday_group_id)}</span>
                                   : <span className="text-muted">Ungrouped</span>}
                               </td>
-                              <td className="fs-13"><span className="rec-date">{formatDate(r.date)}</span></td>
-                              <td className="fs-13 text-muted">{weekdayName(r.date)}</td>
-                              <td><span className="rec-pill" style={{ background: tone.bg, color: tone.fg, ['--pill-fg' as any]: tone.fg }}>{r.type}</span></td>
+                              <td className="fs-13 text-center"><span className="rec-date">{formatDate(r.date)}</span></td>
+                              <td className="fs-13 text-muted text-center">{weekdayName(r.date)}</td>
+                              <td className="text-center"><span className="rec-pill" style={{ background: tone.bg, color: tone.fg, ['--pill-fg' as any]: tone.fg }}>{r.type}</span></td>
                               <td className="pe-3 text-center">
-                                {/* When the holiday's group is assigned to employees the
-                                    row is locked — both icons greyed/disabled with a
-                                    tooltip explaining why (mirrors the backend guard). */}
-                                <div className="rec-row-actions justify-content-center">
-                                  <Tooltip label={locked ? 'Group in use by employees' : 'Edit'}>
-                                    <button type="button" className="rec-act rec-act-view rec-act--icon" aria-label="Edit" aria-disabled={locked}
-                                      onClick={() => { if (locked) return; setEditingRow(r); setCreateOpen(true); }}
-                                      style={locked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}>
-                                      <i className="ri-pencil-line" />
-                                    </button>
-                                  </Tooltip>
-                                  <Tooltip label={locked ? 'Group in use by employees' : 'Delete'}>
-                                    <button type="button" className="rec-act rec-act-reject rec-act--icon" aria-label="Delete" aria-disabled={locked}
-                                      onClick={() => { if (locked) return; handleDelete(r); }}
-                                      style={locked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}>
-                                      <i className="ri-delete-bin-line" />
-                                    </button>
-                                  </Tooltip>
-                                </div>
+                                {/* Edit always allowed (change auto-propagates to the
+                                    group's employees). Delete is blocked while the
+                                    holiday's group is assigned to employees — they
+                                    depend on this date. */}
+                                {(() => {
+                                  const delLocked = r.holiday_group_id != null && inUseGroupIds.has(r.holiday_group_id);
+                                  return (
+                                    <div className="rec-row-actions justify-content-center">
+                                      <Tooltip label="Edit">
+                                        <button type="button" className="rec-act rec-act-view rec-act--icon" aria-label="Edit"
+                                          onClick={() => { setEditingRow(r); setCreateOpen(true); }}>
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                                        </button>
+                                      </Tooltip>
+                                      <Tooltip label={delLocked ? 'Group is assigned to employees — can’t delete' : 'Delete'}>
+                                        <button type="button" className="rec-act rec-act-reject rec-act--icon" aria-label="Delete" aria-disabled={delLocked}
+                                          onClick={() => { if (delLocked) return; handleDelete(r); }}
+                                          style={delLocked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}>
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                                        </button>
+                                      </Tooltip>
+                                    </div>
+                                  );
+                                })()}
                               </td>
                             </tr>
                           );
@@ -681,7 +686,7 @@ function HolidayModal({
 
         <div style={{ padding: '18px 20px', maxHeight: '70vh', overflowY: 'auto' }}>
           <Row className="g-3">
-            <Col md={12}>
+            <Col md={6}>
               <label className="rec-form-label">Holiday Name<span className="req">*</span></label>
               {/* Letters, numbers, spaces and basic name punctuation only — strips
                   special chars (@, #, $, …) as the user types/pastes. */}
@@ -691,13 +696,14 @@ function HolidayModal({
             </Col>
 
             <Col md={6}>
-              <label className="rec-form-label">Holiday Group<span className="req">*</span></label>
+              <label className="rec-form-label">
+                Holiday Group<span className="req">*</span>
+                <span className="text-muted" style={{ fontWeight: 400, fontSize: 10.5, marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>(The group decides which employees get this holiday.)</span>
+              </label>
               <MasterSelect value={groupId} onChange={(v) => { setGroupId(v); setErrors(e => ({ ...e, group: '' })); }}
                 options={groupOptions} invalid={!!errors.group}
                 placeholder={groupOptions.length ? 'Select group' : 'No active groups — create one via Groups'} />
-              {errors.group
-                ? <div className="rec-error"><i className="ri-error-warning-line" />{errors.group}</div>
-                : <div className="text-muted mt-1" style={{ fontSize: 11.5 }}>The group decides which employees get this holiday.</div>}
+              {errors.group && <div className="rec-error"><i className="ri-error-warning-line" />{errors.group}</div>}
             </Col>
 
             <Col md={6}>
@@ -710,17 +716,6 @@ function HolidayModal({
               <MasterDatePicker value={date} onChange={setDate} invalid={!!errors.date} minDate={todayStr} />
               {date && <div className="text-muted mt-1" style={{ fontSize: 11.5 }}>{weekdayName(date)}</div>}
               {errors.date && <div className="rec-error"><i className="ri-error-warning-line" />{errors.date}</div>}
-            </Col>
-
-            <Col md={6} className="d-flex flex-column">
-              {/* Hidden spacer matches the DATE label's height so the checkbox
-                  lines up with the date INPUT — not the column bottom, which
-                  grows when the weekday hint appears under a picked date. */}
-              <label className="rec-form-label" aria-hidden="true" style={{ visibility: 'hidden' }}>Repeats</label>
-              <label className="d-inline-flex align-items-center gap-2" style={{ cursor: 'pointer', fontSize: 13, minHeight: 38 }}>
-                <input type="checkbox" className="form-check-input mt-0" checked={isRecurring} onChange={e => setIsRecurring(e.target.checked)} />
-                <span>Repeats every year on this date</span>
-              </label>
             </Col>
 
             <Col md={12}>
@@ -758,15 +753,21 @@ function ManageGroupsModal({
   const [status, setStatus] = useState('Active');
   const [saving, setSaving] = useState(false);
   const [nameErr, setNameErr] = useState('');
+  // The add/edit form is now hidden until the user clicks "Add Group" (header)
+  // or the Edit icon — keeps the popup clean instead of an always-open form.
+  const [formOpen, setFormOpen] = useState(false);
 
   useEffect(() => {
-    if (!isOpen) { setEditing(null); setName(''); setDescription(''); setStatus('Active'); setNameErr(''); }
+    if (!isOpen) { setEditing(null); setName(''); setDescription(''); setStatus('Active'); setNameErr(''); setFormOpen(false); }
   }, [isOpen]);
 
   const startEdit = (g: HolidayGroup) => {
     setEditing(g); setName(g.name); setDescription(g.description || ''); setStatus(g.status || 'Active'); setNameErr('');
+    setFormOpen(true);
   };
   const resetForm = () => { setEditing(null); setName(''); setDescription(''); setStatus('Active'); setNameErr(''); };
+  const openAdd = () => { resetForm(); setFormOpen(true); };
+  const closeForm = () => { resetForm(); setFormOpen(false); };
 
   const save = async () => {
     if (!name.trim()) { setNameErr('Group name is required'); return; }
@@ -781,6 +782,7 @@ function ManageGroupsModal({
         toast.success('Group created', `${name.trim()} added.`);
       }
       resetForm();
+      setFormOpen(false);
       onChanged();
     } catch (err: any) {
       if (err?.response?.status === 422 && err?.response?.data?.errors?.name) {
@@ -830,51 +832,37 @@ function ManageGroupsModal({
                 <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>Holiday lists you assign to employees</div>
               </div>
             </div>
-            <button type="button" onClick={onClose} style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 32, height: 32 }}>
-              <i className="ri-close-line" style={{ fontSize: 18 }} />
-            </button>
+            <div className="d-flex align-items-center gap-2">
+              <button
+                type="button"
+                onClick={openAdd}
+                style={{ background: 'rgba(255,255,255,0.92)', border: 0, color: '#6d28d9', borderRadius: 8, padding: '5px 11px', fontWeight: 700, fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
+              >
+                <i className="ri-add-line" style={{ fontSize: 14 }} /> Add Group
+              </button>
+              <button type="button" onClick={onClose} style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 32, height: 32 }}>
+                <i className="ri-close-line" style={{ fontSize: 18 }} />
+              </button>
+            </div>
           </div>
         </div>
 
         <div style={{ padding: '16px 20px', maxHeight: '70vh', overflowY: 'auto' }}>
-          <Row className="g-2 align-items-end mb-3">
-            <Col md={4}>
-              <label className="rec-form-label">Group Name<span className="req">*</span></label>
-              <input type="text" className={`rec-input${nameErr ? ' is-invalid' : ''}`} placeholder="e.g. Indian Employees"
-                value={name} onChange={e => { setName(e.target.value); setNameErr(''); }} maxLength={191} />
-              {nameErr && <div className="rec-error"><i className="ri-error-warning-line" />{nameErr}</div>}
-            </Col>
-            <Col md={4}>
-              <label className="rec-form-label">Description</label>
-              <input type="text" className="rec-input" placeholder="Optional" value={description} onChange={e => setDescription(e.target.value)} maxLength={1000} />
-            </Col>
-            <Col md={2}>
-              <label className="rec-form-label">Status</label>
-              <MasterSelect value={status} onChange={setStatus} options={[{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }]} placeholder="Status" />
-            </Col>
-            <Col md={2} className="d-flex gap-2">
-              <button type="button" className="rec-btn-primary w-100" onClick={save} disabled={saving}>
-                {saving ? <Spinner size="sm" /> : <i className={editing ? 'ri-save-line' : 'ri-add-line'} />}{editing ? 'Update' : 'Add'}
-              </button>
-              {editing && <button type="button" className="rec-btn-ghost" onClick={resetForm} disabled={saving}>Cancel</button>}
-            </Col>
-          </Row>
 
           <div className="rec-list-scroll" style={{ maxHeight: 320 }}>
             <table className="rec-list-table align-middle table-nowrap mb-0">
               <thead>
                 <tr>
-                  <th className="text-center" style={{ width: 56 }}>#</th>
+                  <th className="text-center" style={{ width: 64 }}>Sr No</th>
                   <th style={{ width: 110 }}>Code</th>
                   <th>Group Name</th>
                   <th style={{ width: 90 }}>Holidays</th>
-                  <th style={{ width: 90 }}>Status</th>
                   <th className="text-center" style={{ width: 100 }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {groups.length === 0 ? (
-                  <tr><td colSpan={6} className="text-center py-4 text-muted">No groups yet — add one above.</td></tr>
+                  <tr><td colSpan={5} className="text-center py-4 text-muted">No groups yet — click “Add Group” to create one.</td></tr>
                 ) : groups.map((g, idx) => (
                   <tr key={g.id}>
                     <td className="text-center text-muted fs-13">{idx + 1}</td>
@@ -884,13 +872,23 @@ function ManageGroupsModal({
                       {g.description && <div className="text-muted" style={{ fontSize: 11.5 }}>{g.description}</div>}
                     </td>
                     <td className="fs-13">{g.holidays_count ?? 0}</td>
-                    <td>
-                      <span className="rec-pill holiday-status-pill" data-status={g.status} style={g.status === 'Active' ? { background: '#d8f5e6', color: '#0f8a4d' } : { background: '#f1f1f4', color: '#5b6270' }}>{g.status}</span>
-                    </td>
                     <td className="text-center">
                       <div className="rec-row-actions justify-content-center">
-                        <Tooltip label="Edit"><button type="button" className="rec-act rec-act-view rec-act--icon" onClick={() => startEdit(g)}><i className="ri-pencil-line" /></button></Tooltip>
-                        <Tooltip label="Delete"><button type="button" className="rec-act rec-act-reject rec-act--icon" onClick={() => remove(g)}><i className="ri-delete-bin-line" /></button></Tooltip>
+                        <Tooltip label="Edit"><button type="button" className="rec-act rec-act-view rec-act--icon" onClick={() => startEdit(g)}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                        </button></Tooltip>
+                        {(() => {
+                          const inUse = (g.employees_count ?? 0) > 0;
+                          return (
+                            <Tooltip label={inUse ? `Assigned to ${g.employees_count} employee${g.employees_count === 1 ? '' : 's'} — reassign them first` : 'Delete'}>
+                              <button type="button" className="rec-act rec-act-reject rec-act--icon" aria-disabled={inUse}
+                                onClick={() => { if (inUse) return; remove(g); }}
+                                style={inUse ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                              </button>
+                            </Tooltip>
+                          );
+                        })()}
                       </div>
                     </td>
                   </tr>
@@ -903,6 +901,43 @@ function ManageGroupsModal({
         <div style={{ padding: '12px 16px', borderTop: '1px solid var(--vz-border-color, #e5e7eb)', background: 'var(--vz-secondary-bg, #fafafa)', display: 'flex', justifyContent: 'flex-end' }}>
           <button type="button" className="rec-btn-ghost" onClick={onClose}>Done</button>
         </div>
+
+        {/* Add / Edit Group — a separate popup over the groups list (opened from
+            the header "Add Group" button or a row's Edit icon). */}
+        <Modal isOpen={formOpen} toggle={closeForm} centered backdrop="static" keyboard={false}
+          zIndex={1060} modalClassName="rec-form-modal" contentClassName="rec-form-content border-0"
+          style={{ maxWidth: 540, width: '94vw' }}>
+          <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
+            <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #6d28d9 0%, #8b5cf6 60%, #a78bfa 100%)' }}>
+              <div className="d-flex align-items-center justify-content-between">
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15 }}>{editing ? 'Edit Group' : 'Add Group'}</h5>
+                <button type="button" onClick={closeForm} style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 30, height: 30 }}>
+                  <i className="ri-close-line" style={{ fontSize: 18 }} />
+                </button>
+              </div>
+            </div>
+            <div style={{ padding: '18px 20px' }}>
+              <Row className="g-3">
+                <Col md={12}>
+                  <label className="rec-form-label">Group Name<span className="req">*</span></label>
+                  <input type="text" className={`rec-input${nameErr ? ' is-invalid' : ''}`} placeholder="e.g. Indian Employees"
+                    value={name} onChange={e => { setName(e.target.value); setNameErr(''); }} maxLength={191} autoFocus />
+                  {nameErr && <div className="rec-error"><i className="ri-error-warning-line" />{nameErr}</div>}
+                </Col>
+                <Col md={12}>
+                  <label className="rec-form-label">Description</label>
+                  <input type="text" className="rec-input" placeholder="Optional" value={description} onChange={e => setDescription(e.target.value)} maxLength={1000} />
+                </Col>
+              </Row>
+            </div>
+            <div style={{ padding: '12px 16px', borderTop: '1px solid var(--vz-border-color, #e5e7eb)', background: 'var(--vz-secondary-bg, #fafafa)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button type="button" className="rec-btn-ghost" onClick={closeForm} disabled={saving}>Cancel</button>
+              <button type="button" className="rec-btn-primary" onClick={save} disabled={saving}>
+                {saving ? <Spinner size="sm" /> : <i className={editing ? 'ri-save-line' : 'ri-add-line'} />}{editing ? 'Update Group' : 'Save Group'}
+              </button>
+            </div>
+          </ModalBody>
+        </Modal>
       </ModalBody>
     </Modal>
   );

@@ -33,7 +33,12 @@
    selector, `dark:` Tailwind classes never activated on theme switch. */
 @custom-variant dark (&:where([data-theme="dark"] *, [data-bs-theme="dark"] *));
 
-[data-theme="dark"] {
+/* Drive the dark CSS-vars off the CANONICAL [data-bs-theme] (the attribute the
+   Velzon theme toggle actually sets) — not the legacy [data-theme]. When the two
+   briefly desync (toggle sets only data-bs-theme), keying on data-theme left the
+   page background (--color-bg) stuck dark while every component went light,
+   showing a dark/black band below short pages. */
+[data-bs-theme="dark"] {
   --color-bg: #090E1A;
   --color-surface: #111827;
   --color-surface-2: #161E30;

@@ -127,6 +127,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [payrollTab, setPayrollTab] = useState<PayrollTab>('summary');
   const [vaultTab, setVaultTab] = useState<VaultTab>('employee');
   const [expenseFilter, setExpenseFilter] = useState<ExpenseFilter>('all');
+  // Free-text search over the Expense / Advance tables. Applied on top of the
+  // status filter so the table, the "Showing N" counter and Export all narrow
+  // to matching rows. Empty = no narrowing.
+  const [expenseSearch, setExpenseSearch] = useState('');
 
   // ── Manager detection — the "Hiring Requests" tab is gated to people
   //   who actually manage someone (i.e. someone else's reporting_manager
@@ -607,16 +611,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
   // Categories pulled from the expense_category master so the dropdown stays
   // in sync with what admins configure (and so we save the master id, not a
-  // free-text label). `monthly_limit` and `yearly_limit` are also fetched
-  // so we can warn the user on the form when a draft amount exceeds the
-  // per-category budget the admin set in Master > Expense Categories.
+  // free-text label). Categories no longer carry spending limits — claims can
+  // be any amount — so only id + name are needed.
   type ClaimCategory = {
     id: number; name: string;
-    monthly_limit: number | null; yearly_limit: number | null;
-    // Per-employee usage for the current period, computed server-side so the
-    // form can show "₹X remaining this month" and block over-limit claims.
-    spent_month: number; remaining_month: number | null;
-    spent_year: number; remaining_year: number | null;
   };
   const [claimCategories, setClaimCategories] = useState<ClaimCategory[]>([]);
   useEffect(() => {
@@ -639,12 +637,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             .map((r: any) => ({
               id: Number(r.id),
               name: String(r.name ?? ''),
-              monthly_limit: r.monthly_limit != null && r.monthly_limit !== '' ? Number(r.monthly_limit) : null,
-              yearly_limit:  r.yearly_limit  != null && r.yearly_limit  !== '' ? Number(r.yearly_limit)  : null,
-              spent_month:     Number(r.spent_month ?? 0),
-              remaining_month: r.remaining_month != null ? Number(r.remaining_month) : null,
-              spent_year:      Number(r.spent_year ?? 0),
-              remaining_year:  r.remaining_year != null ? Number(r.remaining_year) : null,
             })),
         );
       })
@@ -946,23 +938,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     claimCurrencies.find(c => c.code === claimCurrency)?.symbol
     || ({ INR: '₹', USD: '$', EUR: '€', GBP: '£', JPY: '¥', AUD: 'A$', CAD: 'C$', AED: 'AED', SGD: 'S$' } as Record<string, string>)[claimCurrency]
     || (claimCurrency || '₹');
-  // Selected category's configured budget, surfaced on the form so the user
-  // sees the cap before they exceed it (the submit-time validation blocks it).
-  const claimCategoryMeta = categoryById(claimCategory);
-  // Live monthly-limit check — flips true as soon as the typed amount goes
-  // past the selected category's monthly cap, so the form shows "exceeded"
-  // before the user even submits.
   const claimAmountNum = Number(String(claimAmount).replace(/[^0-9.]/g, ''));
-  // Remaining budget for THIS employee this month (limit − already spent).
-  // Falls back to the full limit if the server didn't compute a remaining.
-  const claimMonthlyRemaining =
-    claimCategoryMeta?.remaining_month != null
-      ? claimCategoryMeta.remaining_month
-      : (claimCategoryMeta?.monthly_limit ?? null);
-  const monthlyLimitExceeded =
-    claimMonthlyRemaining != null &&
-    Number.isFinite(claimAmountNum) && claimAmountNum > 0 &&
-    claimAmountNum > claimMonthlyRemaining;
 
   // Per-field error map for the active expense draft — wired to red
   // borders + inline error messages on every input, same pattern the
@@ -1567,6 +1543,29 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, profileEmpIdNum, isOwnProfile]);
 
+  // Keep an already-open Expense Overview in sync with approve/reject
+  // decisions made elsewhere (a manager / HR acting in another tab or
+  // session). There's no realtime push, so without this the status pill
+  // keeps showing the stale value until a full page reload. Refetch both
+  // claims and advances whenever the tab regains focus / becomes visible.
+  // The guards inside refreshClaims / refreshAdvances no-op unless the
+  // Expense Details tab is active, so this stays cheap.
+  useEffect(() => {
+    if (tab !== 'expense') return;
+    const resync = () => {
+      if (document.visibilityState === 'hidden') return;
+      refreshClaims();
+      refreshAdvances();
+    };
+    window.addEventListener('focus', resync);
+    document.addEventListener('visibilitychange', resync);
+    return () => {
+      window.removeEventListener('focus', resync);
+      document.removeEventListener('visibilitychange', resync);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, profileEmpIdNum, isOwnProfile]);
+
   /** Dispatcher for inline Approve / Reject buttons on advance-request
    *  rows. Same shape as `actOnClaim`, just a different REST collection. */
   const actOnAdvance = async (
@@ -1609,9 +1608,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     //     not currently visible), but the toast still names them.
     const errors: string[] = [];
     const firstFieldErrors: Record<string, string> = {};
-    // Running per-category total for THIS session's drafts, so several drafts
-    // under the same category are capped cumulatively (not each in isolation).
-    const monthlyDraftByCat: Record<number, number> = {};
     claimDrafts.forEach((d, idx) => {
       const label = `Claim ${idx + 1}`;
       const title = d.title.trim();
@@ -1656,21 +1652,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       if (!(d.files && d.files.length > 0)) {
         draftErrs.files = 'At least one proof / receipt is required';
         errors.push(`${label}: At least one proof / receipt is required`);
-      }
-      // Budget cap — block when this claim, added to the employee's already
-      // spent amount for the period (remaining_month, computed server-side)
-      // PLUS any earlier same-category drafts in this session, exceeds the
-      // monthly limit. The backend re-checks cumulatively as the safety net.
-      const cat = categoryById(d.category);
-      if (cat?.monthly_limit != null && Number.isFinite(amt) && amt > 0) {
-        const remaining = cat.remaining_month != null ? cat.remaining_month : cat.monthly_limit;
-        const priorDrafts = monthlyDraftByCat[cat.id] ?? 0;
-        if (priorDrafts + amt > remaining + 0.005) {
-          const left = Math.max(0, remaining - priorDrafts);
-          draftErrs.amount = `Monthly limit reached for "${cat.name}" — only ₹${left.toLocaleString('en-IN')} remaining`;
-          errors.push(`${label}: ₹${amt.toLocaleString('en-IN')} exceeds the remaining monthly budget for "${cat.name}" (₹${left.toLocaleString('en-IN')} left).`);
-        }
-        monthlyDraftByCat[cat.id] = priorDrafts + amt;
       }
       if (idx === activeClaimIdx) Object.assign(firstFieldErrors, draftErrs);
     });
@@ -1855,10 +1836,26 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     rejected: activeClaimsSource.filter(c => c.status === 'rejected').length,
     pending:  activeClaimsSource.filter(c => c.status === 'pending').length,
   };
-  const totalClaimed = activeClaimsSource.reduce((sum, c) => sum + Number(c.amount || 0), 0);
-  const filteredExpenses: ApiClaim[] = expenseFilter === 'all'
+  // Total Claimed reflects only approved claims — pending/rejected rows are
+  // excluded so the hero figure represents money actually owed/reimbursed.
+  const totalClaimed = activeClaimsSource
+    .filter(c => c.status === 'approved')
+    .reduce((sum, c) => sum + Number(c.amount || 0), 0);
+  // Status filter first, then the free-text search. The search matches across
+  // the columns the table renders (claim no, description, category, supplier,
+  // project, employee, status, amount) so a search for any visible token finds
+  // the row.
+  const expenseQuery = expenseSearch.trim().toLowerCase();
+  const filteredExpenses: ApiClaim[] = (expenseFilter === 'all'
     ? activeClaimsSource
-    : activeClaimsSource.filter(c => c.status === expenseFilter);
+    : activeClaimsSource.filter(c => c.status === expenseFilter)
+  ).filter(c => {
+    if (!expenseQuery) return true;
+    return [
+      c.claim_no, c.title, c.category_name, c.vendor, c.project,
+      c.employee_name, c.employee_code, c.status, c.amount,
+    ].some(v => v != null && String(v).toLowerCase().includes(expenseQuery));
+  });
 
   // Mirror counts/filtering for the Advance Requests tab so the same set
   // of filter pills (All/Approved/Rejected/Pending) drives the advance
@@ -1872,9 +1869,16 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     rejected: activeAdvancesSource.filter(a => a.status === 'rejected').length,
     pending:  activeAdvancesSource.filter(a => a.status === 'pending').length,
   };
-  const filteredAdvances: AdvanceRequestRow[] = expenseFilter === 'all'
+  const filteredAdvances: AdvanceRequestRow[] = (expenseFilter === 'all'
     ? activeAdvancesSource
-    : activeAdvancesSource.filter(a => a.status === expenseFilter);
+    : activeAdvancesSource.filter(a => a.status === expenseFilter)
+  ).filter(a => {
+    if (!expenseQuery) return true;
+    return [
+      a.advance_no, a.employee_name, a.employee_code, a.advance_type,
+      a.advance_type_other, a.reason, a.status, a.amount,
+    ].some(v => v != null && String(v).toLowerCase().includes(expenseQuery));
+  });
 
   // ── Export (Excel / PDF / CSV) for the active module's filtered rows ──
   // The Export button used to be a no-op (no onClick) — clicking it did
@@ -1990,7 +1994,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // tab needs a new field — tsc enforces both sides stay in sync.
   const ctx: EmployeeProfileCtx = {
     employeeId, employee, displayEmpCode, initials, accent, ancillaryList,
-    empDetail, empDetailLoading,
+    empDetail, empDetailLoading, setEmpDetail,
     fmtDate, fmtRupee,
     // Profile tab
     profilePct, profilePhotoSrc, profilePhotoFile, setProfilePhotoFile, savingPhoto,
@@ -2006,6 +2010,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     authUser, isOwnProfile,
     expenseModuleTab, setExpenseModuleTab, expenseSubTab, setExpenseSubTab,
     advanceSubTab, setAdvanceSubTab, expenseFilter, setExpenseFilter,
+    expenseSearch, setExpenseSearch,
     expenseCounts, advanceCounts, totalClaimed,
     activeClaimsSource, filteredExpenses, activeAdvancesSource,
     apiClaims, teamClaims, apiAdvances, teamAdvances,
@@ -2674,29 +2679,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       invalid={!!claimErrors.category}
                     />
                     {claimErrors.category && <div className="ep-claim-err"><i className="ri-error-warning-line" />{claimErrors.category}</div>}
-                    {claimCategoryMeta && (claimCategoryMeta.monthly_limit != null || claimCategoryMeta.yearly_limit != null) && (
-                      <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 4 }}>
-                        <i className="ri-information-line me-1" />
-                        {claimCategoryMeta.monthly_limit != null && (
-                          <>
-                            Monthly: ₹{claimCategoryMeta.monthly_limit.toLocaleString('en-IN')}
-                            {' · used ₹'}{claimCategoryMeta.spent_month.toLocaleString('en-IN')}
-                            {' · '}
-                            <strong style={{ color: claimMonthlyRemaining != null && claimMonthlyRemaining <= 0 ? 'var(--vz-danger)' : 'var(--vz-success)' }}>
-                              ₹{(claimMonthlyRemaining ?? claimCategoryMeta.monthly_limit).toLocaleString('en-IN')} left
-                            </strong>
-                          </>
-                        )}
-                        {claimCategoryMeta.monthly_limit != null && claimCategoryMeta.yearly_limit != null && <br />}
-                        {claimCategoryMeta.yearly_limit != null && (
-                          <>
-                            Yearly: ₹{claimCategoryMeta.yearly_limit.toLocaleString('en-IN')}
-                            {' · '}
-                            <strong>₹{(claimCategoryMeta.remaining_year ?? claimCategoryMeta.yearly_limit).toLocaleString('en-IN')} left</strong>
-                          </>
-                        )}
-                      </div>
-                    )}
                   </Col>
                   <Col md={6}>
                     <div className="ep-claim-label">Currency</div>
@@ -2773,9 +2755,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       />
                     </div>
                     {claimErrors.amount && <div className="ep-claim-err"><i className="ri-error-warning-line" />{claimErrors.amount}</div>}
-                    {!claimErrors.amount && monthlyLimitExceeded && (
-                      <div className="ep-claim-err"><i className="ri-error-warning-line" />Monthly limit reached — only ₹{(claimMonthlyRemaining ?? 0).toLocaleString('en-IN')} remaining for this category</div>
-                    )}
                   </Col>
                   <Col md={6}>
                     <div className="ep-claim-label">Expense Date <span className="ep-claim-req">*</span></div>

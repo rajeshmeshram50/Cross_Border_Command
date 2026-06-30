@@ -14,6 +14,7 @@ export default function ExpenseTab() {
     employee, employeeId, initials, accent, authUser, isOwnProfile,
     expenseModuleTab, setExpenseModuleTab, expenseSubTab, setExpenseSubTab,
     advanceSubTab, setAdvanceSubTab, expenseFilter, setExpenseFilter,
+    expenseSearch, setExpenseSearch,
     expenseCounts, advanceCounts, totalClaimed,
     activeClaimsSource, filteredExpenses, filteredAdvances, activeAdvancesSource,
     apiClaims, teamClaims, apiAdvances, teamAdvances,
@@ -44,7 +45,11 @@ export default function ExpenseTab() {
                     {expenseModuleTab === 'advance' ? 'Total Requested' : 'Total Claimed'}:{' '}
                     <span className="ext-hero-amount">
                       ₹{(expenseModuleTab === 'advance'
-                          ? activeAdvancesSource.reduce((s, a) => s + Number(a.amount || 0), 0)
+                          // Only approved advances count toward Total Requested —
+                          // pending/rejected are excluded (mirrors Total Claimed).
+                          ? activeAdvancesSource
+                              .filter(a => a.status === 'approved')
+                              .reduce((s, a) => s + Number(a.amount || 0), 0)
                           : totalClaimed
                         ).toLocaleString('en-IN')}
                     </span>
@@ -163,7 +168,13 @@ export default function ExpenseTab() {
               </div>
               <div className="d-flex align-items-center gap-2 flex-wrap">
                 <div className="search-box ep-exp-search ext-search">
-                  <input type="text" className="form-control form-control-sm ext-search-input" placeholder="Search…" />
+                  <input
+                    type="text"
+                    className="form-control form-control-sm ext-search-input"
+                    placeholder="Search…"
+                    value={expenseSearch}
+                    onChange={e => setExpenseSearch(e.target.value)}
+                  />
                   <i className="ri-search-line search-icon ext-search-icon" />
                 </div>
                 {/* Export — opens a format picker (Excel / PDF / CSV) and
