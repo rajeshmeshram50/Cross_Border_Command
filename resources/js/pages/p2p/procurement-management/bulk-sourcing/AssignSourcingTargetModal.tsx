@@ -6,6 +6,7 @@ import { type ReportRow } from './SourcingReportModal';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import { useModalGuard } from './useModalGuard';
 import Tooltip from '../../../../components/ui/Tooltip';
+import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import './bulk-sourcing.css';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -35,6 +36,41 @@ function ClarityBtn({ clarity, onClick }: { clarity?: Clarity; onClick: () => vo
         : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>}
       {set ? (clarity!.type.charAt(0).toUpperCase() + clarity!.type.slice(1)) : 'Add clarity'}
     </button>
+  );
+}
+
+// Clarity cell — renders the saved clarity inline so the value is visible in
+// the table: a PDF shows a download link, a link is clickable, text shows as a
+// tooltip-truncated note. A small pencil re-opens the editor. When nothing is
+// set yet, it falls back to the "Add clarity" button.
+function ClarityCell({ clarity, onEdit }: { clarity?: Clarity; onEdit: () => void }) {
+  if (!clarity?.type) return <ClarityBtn clarity={clarity} onClick={onEdit} />;
+  return (
+    <div className="ast-clarity-cell">
+      <Tooltip label="Edit clarity"><button type="button" className="ast-clarity-edit" onClick={onEdit}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg></button></Tooltip>
+      {clarity.type === 'pdf' ? (
+        <Tooltip label="Download PDF specification">
+          <a className="ast-clarity-chip is-pdf" href={resolveFileUrl(clarity.val)} target="_blank" rel="noopener noreferrer" download>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+            <span className="ast-clarity-chip-txt">Download PDF</span>
+          </a>
+        </Tooltip>
+      ) : clarity.type === 'link' ? (
+        <Tooltip label={clarity.val}>
+          <a className="ast-clarity-chip is-link" href={clarity.val} target="_blank" rel="noopener noreferrer">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
+            <span className="ast-clarity-chip-txt">Open link</span>
+          </a>
+        </Tooltip>
+      ) : (
+        <Tooltip label={clarity.val}>
+          <span className="ast-clarity-chip is-text">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="14" y2="17" /></svg>
+            <span className="ast-clarity-chip-txt">{clarity.val}</span>
+          </span>
+        </Tooltip>
+      )}
+    </div>
   );
 }
 
@@ -75,6 +111,9 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
   const [clType, setClType] = useState<'text' | 'link' | 'pdf'>('text');
   const [clVal, setClVal] = useState('');
   const [clUploading, setClUploading] = useState(false);
+  const [clSaving, setClSaving] = useState(false);
+  const [mAdding, setMAdding] = useState(false);
+  const [teamAssigning, setTeamAssigning] = useState(false);
   const [saving, setSaving] = useState(false);
   // Inline-validation triggers: show red borders/messages only after the user
   // tries to advance (Next) / save (Assign), then live-clear as they fix fields.
@@ -115,9 +154,16 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
     }
     const has = clType === 'pdf' ? !!clVal : !!clVal.trim();
     const c: Clarity = has ? { type: clType, val: clVal } : null;
-    if (clarity.kind === 'master') setMasterRows(rows => rows.map((x, i) => i === clarity.idx ? { ...x, clarity: c } : x));
-    else setManualRows(rows => rows.map((x, i) => i === clarity.idx ? { ...x, clarity: c } : x));
-    setClarity(null);
+    const target = clarity;
+    // Brief loader so the save reads as a deliberate action, then confirm.
+    setClSaving(true);
+    setTimeout(() => {
+      if (target.kind === 'master') setMasterRows(rows => rows.map((x, i) => i === target.idx ? { ...x, clarity: c } : x));
+      else setManualRows(rows => rows.map((x, i) => i === target.idx ? { ...x, clarity: c } : x));
+      setClSaving(false);
+      setClarity(null);
+      toast.success(c ? 'Clarity saved' : 'Clarity cleared', c ? `${c.type.charAt(0).toUpperCase() + c.type.slice(1)} added to the product.` : 'Removed the clarity from this product.');
+    }, 500);
   };
   // Upload a clarity PDF and keep its /storage/... path in clVal (saveClarity
   // then stores it on the row). Previously only the filename was kept, so the
@@ -154,8 +200,14 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
     const num = parseFloat(mPrice.replace(/,/g, ''));
     if (isNaN(num) || num <= 0) { toast.warning('Invalid price', 'Target price must be a positive number.'); return; }
     if (manualRows.some(r => r.name.trim().toLowerCase() === mName.trim().toLowerCase())) { toast.warning('Duplicate product', 'That product is already in the manual list.'); return; }
-    setManualRows(rows => [...rows, { name: mName.trim(), price: mPrice.trim() }]);
-    setMName(''); setMPrice(''); setListTab('manual');
+    const name = mName.trim(); const price = mPrice.trim();
+    setMAdding(true);
+    setTimeout(() => {
+      setManualRows(rows => [...rows, { name, price }]);
+      setMName(''); setMPrice(''); setListTab('manual');
+      setMAdding(false);
+      toast.success('Added', `“${name}” added to the list.`);
+    }, 500);
   };
   const goAssign = () => {
     setPriceTried(true);
@@ -313,7 +365,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                     <div className="ast-grid ast-grid-3">
                       <div className="ast-field"><label>Product Name <span className="ast-req">*</span></label><input type="text" value={mName} placeholder="e.g. Office Printer A4" onChange={e => setMName(e.target.value)} /></div>
                       <div className="ast-field"><label>Target Price (₹) <span className="ast-req">*</span></label><input type="text" value={mPrice} placeholder="Required" onChange={e => setMPrice(e.target.value)} /></div>
-                      <div className="ast-field"><label>&nbsp;</label><button type="button" className="ast-btn ast-btn-primary" style={{ height: 42, justifyContent: 'center' }} onClick={addManual}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg> Add to List</button></div>
+                      <div className="ast-field"><label>&nbsp;</label><button type="button" className="ast-btn ast-btn-primary" style={{ height: 42, justifyContent: 'center' }} onClick={addManual} disabled={mAdding}>{mAdding ? <><svg className="ast-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> Adding…</> : <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg> Add to List</>}</button></div>
                     </div>
                   )}
                 </div>
@@ -346,7 +398,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                             <span data-label="Segment"><span className={`srpt-seg ${(r.segment || 'General').replace(/ /g, '-')}`}>{r.segment}</span></span>
                             <span className="asrc-hsn" data-label="HSN Code"><span className="srpt-hsn">{r.hsn}</span></span>
                             <span data-label="Target Price (₹)"><input type="text" className="ast-pl-price" style={priceTried && isBadPrice(r.price) ? { borderColor: '#ef4444', background: 'rgba(239,68,68,.06)' } : undefined} value={r.price} placeholder="Required" onChange={e => setMasterRows(rows => rows.map((x, xi) => xi === i ? { ...x, price: e.target.value } : x))} /></span>
-                            <span data-label="Clarity"><ClarityBtn clarity={r.clarity} onClick={() => openClarity('master', i)} /></span>
+                            <span data-label="Clarity"><ClarityCell clarity={r.clarity} onEdit={() => openClarity('master', i)} /></span>
                             <span data-label=""><Tooltip label={r.mapped ? 'Mapped to a supplier — can’t be removed' : 'Delete'}><button type="button" className="ast-pl-del" style={r.mapped ? { opacity: 0.4, cursor: 'not-allowed' } : undefined} onClick={() => r.mapped ? toast.info('Can’t remove product', `“${r.name}” is mapped to a supplier in the Sourcing Report. Unmap its suppliers there first.`) : setMasterRows(rows => rows.filter((_, xi) => xi !== i))}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button></Tooltip></span>
                           </div>
                         ))}
@@ -361,7 +413,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                             <span className="asrc-sr" data-label="Sr">{i + 1}</span>
                             <span data-label="Product Name"><input type="text" className="ast-pl-price" style={{ fontWeight: 600 }} value={r.name} onChange={e => setManualRows(rows => rows.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x))} /></span>
                             <span data-label="Target Price (₹)"><input type="text" className="ast-pl-price" style={priceTried && isBadPrice(r.price) ? { borderColor: '#ef4444', background: 'rgba(239,68,68,.06)' } : undefined} value={r.price} placeholder="Required" onChange={e => setManualRows(rows => rows.map((x, xi) => xi === i ? { ...x, price: e.target.value } : x))} /></span>
-                            <span data-label="Clarity"><ClarityBtn clarity={r.clarity} onClick={() => openClarity('manual', i)} /></span>
+                            <span data-label="Clarity"><ClarityCell clarity={r.clarity} onEdit={() => openClarity('manual', i)} /></span>
                             <span data-label=""><Tooltip label={r.mapped ? 'Mapped to a supplier — can’t be removed' : 'Delete'}><button type="button" className="ast-pl-del" style={r.mapped ? { opacity: 0.4, cursor: 'not-allowed' } : undefined} onClick={() => r.mapped ? toast.info('Can’t remove product', `“${r.name}” is mapped to a supplier in the Sourcing Report. Unmap its suppliers there first.`) : setManualRows(rows => rows.filter((_, xi) => xi !== i))}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button></Tooltip></span>
                           </div>
                         ))}
@@ -413,8 +465,23 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
               ))}
             </div>
             <div className="astp-foot">
-              <button className="ast-btn ast-btn-ghost" onClick={() => setTeamOpen(false)}>Cancel</button>
-              <button className="ast-btn ast-btn-primary" disabled={!teamPick} onClick={() => { const m = teamMembers.find(x => x.id === teamPick); if (m) setTeam(m.name); setTeamOpen(false); }}>Assign Member</button>
+              <button className="ast-btn ast-btn-ghost" onClick={() => setTeamOpen(false)} disabled={teamAssigning}>Cancel</button>
+              <button className="ast-btn ast-btn-primary" disabled={!teamPick || teamAssigning} onClick={() => {
+                const m = teamMembers.find(x => x.id === teamPick);
+                if (!m) return;
+                // Brief loader before closing — a direct close felt abrupt.
+                setTeamAssigning(true);
+                setTimeout(() => {
+                  setTeam(m.name);
+                  setTeamAssigning(false);
+                  setTeamOpen(false);
+                  toast.success('Team member assigned', `${m.name} has been assigned to this sourcing successfully.`);
+                }, 500);
+              }}>
+                {teamAssigning
+                  ? <><svg className="ast-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> Assigning…</>
+                  : 'Assign Member'}
+              </button>
             </div>
           </div>
         </div>
@@ -456,10 +523,12 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 9, marginTop: 14 }}>
                 <button className="ast-btn ast-btn-ghost" onClick={() => setClarity(null)}>Cancel</button>
-                <button className="ast-btn ast-btn-primary" onClick={saveClarity} disabled={clUploading}>
+                <button className="ast-btn ast-btn-primary" onClick={saveClarity} disabled={clUploading || clSaving}>
                   {clUploading
                     ? <><svg className="ast-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> Uploading…</>
-                    : 'Save Clarity'}
+                    : clSaving
+                      ? <><svg className="ast-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> Saving…</>
+                      : 'Save Clarity'}
                 </button>
               </div>
             </div>

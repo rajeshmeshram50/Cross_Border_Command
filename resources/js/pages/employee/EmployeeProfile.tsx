@@ -989,15 +989,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     // a plain string compare. Both dates must be today or later; recovery
     // additionally must be on/after the requested date.
     const todayIso = new Date().toISOString().slice(0, 10);
-    const oneYearAheadIso = (() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().slice(0, 10); })();
-    // Requested date is when the advance is needed — today up to one year out.
-    // Past dates and anything beyond a year from today are rejected.
-    if (advRequestedDate && advRequestedDate < todayIso) {
-      errs.requested = 'Requested date cannot be in the past';
-      summary.push('Requested date cannot be in the past');
-    } else if (advRequestedDate && advRequestedDate > oneYearAheadIso) {
-      errs.requested = 'Requested date cannot be more than one year from today';
-      summary.push('Requested date cannot be more than one year from today');
+    // Requested date IS the request creation date — it must be today. No future
+    // (the request is created now) and no past.
+    if (advRequestedDate && advRequestedDate !== todayIso) {
+      errs.requested = 'Requested date must be today (the request creation date)';
+      summary.push('Requested date must be today (the request creation date)');
     }
     if (advRecoveryStart && advRecoveryStart < todayIso) {
       errs.recovery_start = 'Recovery start cannot be in the past';
@@ -1667,6 +1663,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     }
     setClaimSubmitting(true);
     try {
+      const created: ApiClaim[] = [];
       for (const d of valid) {
         const fd = new FormData();
         fd.append('title', d.title.trim());
@@ -1692,9 +1689,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         // active-draft's files for every claim, so every backend row got
         // an identical copy of whichever attachment list was showing.
         for (const f of (d.files || [])) fd.append('files[]', f);
-        await api.post('/expense-claims', fd, {
+        const res = await api.post('/expense-claims', fd, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
+        if (res?.data?.id) created.push(res.data as ApiClaim);
       }
       toast.success('Claim submitted', `${valid.length} claim${valid.length > 1 ? 's' : ''} sent for approval`);
       // If this submission resumed a parked draft entry, drop only that
@@ -1710,6 +1708,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       }
       setEditingDraftId(null);
       setClaimOpen(false);
+      // Show the new claim(s) in the All Claims list immediately — the POST
+      // returns the fully-serialized row, so prepend it (newest first) without
+      // waiting on the refetch. Fixes "claim not displayed until page refresh".
+      // refreshClaims() then reconciles (claim_no / approval routing); the
+      // server replace de-dupes since the row is already committed.
+      if (created.length) {
+        setApiClaims(prev => {
+          const seen = new Set(prev.map(c => c.id));
+          return [...created.slice().reverse().filter(c => c.id && !seen.has(c.id)), ...prev];
+        });
+      }
       await refreshClaims();
     } catch (err: any) {
       // Pick the most useful message out of the response:
@@ -1748,7 +1757,15 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     comment?: string,
   ) => {
     try {
-      await api.post(`/expense-claims/${claimId}/${action}`, comment ? { comment } : {});
+      const res = await api.post(`/expense-claims/${claimId}/${action}`, comment ? { comment } : {});
+      // Patch the row in both lists so the Approval Audit Log reflects the
+      // new Reporting Manager / HR status immediately (no page refresh). The
+      // manager acts from the Team sub-tab, so teamClaims must update too.
+      if (res?.data?.id) {
+        const updated = res.data as ApiClaim;
+        setApiClaims(prev => prev.map(c => c.id === updated.id ? updated : c));
+        setTeamClaims(prev => prev.map(c => c.id === updated.id ? updated : c));
+      }
       toast.success('Updated', 'Claim status updated');
       await refreshClaims();
     } catch (err: any) {
@@ -2980,10 +2997,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       value={advRequestedDate}
                       onChange={(v) => { setAdvRequestedDate(v); clearAdvErr('requested'); }}
                       invalid={!!advErrors.requested}
-                      // Requested date is when the advance is needed — today up to
-                      // one year ahead. Past dates and beyond +1yr are disabled.
+                      // Requested date IS the request's creation date — locked to
+                      // today. No future (or past): only today is selectable.
                       minDate={new Date().toISOString().slice(0, 10)}
-                      maxDate={(() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().slice(0, 10); })()}
+                      maxDate={new Date().toISOString().slice(0, 10)}
                     />
                     {advErrors.requested && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.requested}</div>}
                   </Col>
@@ -3049,10 +3066,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <textarea
                     className={`ep-claim-input${advErrors.reason ? ' is-invalid' : ''}`}
                     rows={3}
+                    maxLength={500}
                     placeholder="Describe why this advance is needed..."
                     value={advReason}
-                    onChange={e => { setAdvReason(e.target.value); clearAdvErr('reason'); }}
+                    onChange={e => { setAdvReason(e.target.value.slice(0, 500)); clearAdvErr('reason'); }}
                   />
+                  <div style={{ textAlign: 'right', fontSize: 11, color: advReason.length >= 500 ? '#ef4444' : 'var(--vz-secondary-color, #6b7280)', marginTop: 2 }}>{advReason.length}/500</div>
                   {advErrors.reason && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.reason}</div>}
                 </div>
               </Col>

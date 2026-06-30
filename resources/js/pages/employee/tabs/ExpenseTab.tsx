@@ -195,9 +195,6 @@ export default function ExpenseTab() {
                     <DropdownItem onClick={() => runProfileExport('xlsx')}>
                       <i className="ri-file-excel-2-line me-2 text-success" />Excel (.xlsx)
                     </DropdownItem>
-                    <DropdownItem onClick={() => runProfileExport('pdf')}>
-                      <i className="ri-file-pdf-2-line me-2 text-danger" />PDF (.pdf)
-                    </DropdownItem>
                     <DropdownItem onClick={() => runProfileExport('csv')}>
                       <i className="ri-file-text-line me-2 text-primary" />CSV (.csv)
                     </DropdownItem>

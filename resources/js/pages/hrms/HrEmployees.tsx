@@ -827,7 +827,7 @@ export default function HrEmployees() {
     setEAadharFile(null); setEPanFile(null); setEPhotoFile(null);
     setEExistingDocs({}); setEDocBusy({});
     setEEnablePayroll(true); setEPayGroup('');
-    setEAnnualSalary(''); setESalaryFreq(''); setESalaryFrom('');
+    setEAnnualSalary(''); setESalaryFreq('Per annum'); setESalaryFrom('');
     setEBonusInAnnual(false); setEPfEligible(false); setEDetailedBreakup(false);
     setEEarnings([]); setEDeductions([]); setEEsiApplicable(false); setEPtApplicable(true);
     setEBreakupLoading(false);
@@ -1408,7 +1408,7 @@ export default function HrEmployees() {
       if (raw.enable_payroll !== undefined && raw.enable_payroll !== null) setEEnablePayroll(!!raw.enable_payroll);
       if (raw.pay_group !== undefined && raw.pay_group !== null) setEPayGroup(raw.pay_group);
       if (raw.annual_salary !== undefined && raw.annual_salary !== null) setEAnnualSalary(String(raw.annual_salary));
-      if (raw.salary_frequency !== undefined && raw.salary_frequency !== null) setESalaryFreq(raw.salary_frequency);
+      setESalaryFreq(raw.salary_frequency || 'Per annum');
       if (raw.salary_effective_from) setESalaryFrom(String(raw.salary_effective_from).slice(0, 10));
       if (raw.bonus_in_annual !== undefined && raw.bonus_in_annual !== null) setEBonusInAnnual(!!raw.bonus_in_annual);
       if (raw.pf_eligible !== undefined && raw.pf_eligible !== null) setEPfEligible(!!raw.pf_eligible);
@@ -1577,9 +1577,9 @@ export default function HrEmployees() {
     } else if (amt > 999999999999.99) {
       e.annual_salary = 'Salary amount must be ≤ 999,999,999,999.99';
     }
-    if (!eSalaryFreq) {
-      e.salary_frequency = 'Frequency is required';
-    }
+    // Frequency picker was removed — salary is always entered "Per annum",
+    // so it's never user-editable and must not block the form. (Defaulted to
+    // 'Per annum' on load/reset.)
     if (!eSalaryFrom) {
       e.salary_effective_from = 'Effective-from date is required';
     } else if (eJoinDate && eSalaryFrom < eJoinDate) {
