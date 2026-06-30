@@ -36,6 +36,17 @@ export type StageProps = {
    * become read-only (Stage 5 disables Create Quotation / Create PI / convert).
    * Stage 6 ignores it so "Create Shipment" stays usable. */
   locked?: boolean;
+  /* Bumped by the parent whenever the opportunity's product mappings change
+   * outside this stage (e.g. the toolbar Product Directory popup maps/edits/
+   * removes a product). Stage 3 watches it to re-fetch its product list so the
+   * inline view + count badges stay live without a page refresh. */
+  refreshTick?: number;
+  /* Emitted by Stage 3 after one of ITS OWN in-table actions changes a product
+   * (set sourcing status, mark sourced, create procurement). The parent wires
+   * this to bump `refreshTick`, so the OTHER Stage 3 instance (the inline
+   * pipeline view vs. the Product Sourcing popup — they hold separate state)
+   * re-syncs without a page refresh. */
+  onProductsChanged?: () => void;
 };
 
 /* Shared stage shell styles — each stage imports SHARED_STAGE_CSS once. */
