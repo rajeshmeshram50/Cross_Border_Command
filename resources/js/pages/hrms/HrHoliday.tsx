@@ -492,7 +492,15 @@ export default function HrHoliday() {
                               <td><span className="rec-id-pill">{r.code || `HOL-${r.id}`}</span></td>
                               <td>
                                 <div className="fw-bold fs-13">{r.name}</div>
-                                {r.description && <div className="text-muted" style={{ fontSize: 11.5 }}>{r.description}</div>}
+                                {r.description && (
+                                  r.description.length > 100 ? (
+                                    <Tooltip label={r.description}>
+                                      <div className="text-muted" style={{ fontSize: 11.5, width: 'fit-content' }}>{r.description.slice(0, 100)}…</div>
+                                    </Tooltip>
+                                  ) : (
+                                    <div className="text-muted" style={{ fontSize: 11.5 }}>{r.description}</div>
+                                  )
+                                )}
                               </td>
                               <td className="fs-13 text-center">
                                 {r.holiday_group_id
@@ -582,7 +590,7 @@ function HolidayModal({
 
   const [name, setName] = useState('');
   const [date, setDate] = useState('');
-  const [type, setType] = useState<HolidayType>('Public');
+  const [type, setType] = useState<HolidayType | ''>('');
   const [groupId, setGroupId] = useState('');
   const [isRecurring, setIsRecurring] = useState(false);
   const [description, setDescription] = useState('');
@@ -590,10 +598,12 @@ function HolidayModal({
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Today (browser-local) as YYYY-MM-DD — the earliest selectable holiday date.
-  // A holiday can only be today or in the future; past dates are disabled.
-  const todayStr = useMemo(() => {
+  // TOMORROW (browser-local) as YYYY-MM-DD — the earliest selectable holiday
+  // date. A holiday must be planned at least a day ahead, so today and all
+  // past dates are disabled (setDate(+1) rolls month/year over correctly).
+  const minDateStr = useMemo(() => {
     const d = new Date();
+    d.setDate(d.getDate() + 1);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }, []);
 
@@ -611,12 +621,12 @@ function HolidayModal({
     if (editing) {
       setName(editing.name || '');
       setDate((editing.date || '').slice(0, 10));
-      setType(editing.type || 'Public');
+      setType(editing.type || '');
       setGroupId(editing.holiday_group_id ? String(editing.holiday_group_id) : '');
       setIsRecurring(!!editing.is_recurring);
       setDescription(editing.description || '');
     } else {
-      setName(''); setDate(''); setType('Public');
+      setName(''); setDate(''); setType('');
       setGroupId(defaultGroupId ? String(defaultGroupId) : '');
       setIsRecurring(false); setDescription('');
     }
@@ -626,6 +636,7 @@ function HolidayModal({
     const local: Record<string, string> = {};
     if (!name.trim()) local.name = 'Holiday name is required';
     if (!groupId) local.group = 'Holiday group is required';
+    if (!type) local.type = 'Type is required';
     if (!date) local.date = 'Date is required';
     if (Object.keys(local).length) { setErrors(local); return; }
 
@@ -707,13 +718,15 @@ function HolidayModal({
             </Col>
 
             <Col md={6}>
-              <label className="rec-form-label">Type</label>
-              <MasterSelect value={type} onChange={(v) => setType(v as HolidayType)} options={TYPE_OPTIONS} placeholder="Select type" />
+              <label className="rec-form-label">Type<span className="req">*</span></label>
+              <MasterSelect value={type} onChange={(v) => { setType(v as HolidayType); setErrors(e => ({ ...e, type: '' })); }}
+                options={TYPE_OPTIONS} invalid={!!errors.type} placeholder="Select type" />
+              {errors.type && <div className="rec-error"><i className="ri-error-warning-line" />{errors.type}</div>}
             </Col>
 
             <Col md={6}>
               <label className="rec-form-label">Date<span className="req">*</span></label>
-              <MasterDatePicker value={date} onChange={setDate} invalid={!!errors.date} minDate={todayStr} />
+              <MasterDatePicker value={date} onChange={setDate} invalid={!!errors.date} minDate={minDateStr} />
               {date && <div className="text-muted mt-1" style={{ fontSize: 11.5 }}>{weekdayName(date)}</div>}
               {errors.date && <div className="rec-error"><i className="ri-error-warning-line" />{errors.date}</div>}
             </Col>

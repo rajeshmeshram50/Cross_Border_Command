@@ -156,8 +156,9 @@ class HolidayController extends Controller
 
         // Each row can name its own Group (Excel "Group" column). Build a
         // case-insensitive name → id map of THIS tenant's groups so a row's
-        // group resolves without the user pre-selecting one in the UI. Rows
-        // with no/unknown group fall back to the UI-selected group ($groupId).
+        // group resolves without the user pre-selecting one in the UI. A row
+        // naming an UNKNOWN group is rejected (we never auto-create groups from
+        // an import); a row with a BLANK group falls back to $groupId.
         $groupMapQ = \App\Models\HolidayGroup::query();
         $this->applyScope($groupMapQ, $auth, null);
         $groupMap = [];
@@ -194,11 +195,26 @@ class HolidayController extends Controller
                     continue;
                 }
 
-                // Per-row group from the Excel "Group" column; fall back to the
-                // UI-selected group when the cell is blank or names an unknown group.
+                // Per-row group from the Excel "Group" column. A named group MUST
+                // already exist — the import never creates groups "from outside", so
+                // an unknown name is REJECTED (not silently re-pointed to another
+                // group). A blank cell falls back to the UI-selected group; if
+                // neither resolves, the row is skipped (a holiday must belong to an
+                // existing group).
                 $rowGroupName = trim((string) ($raw['group'] ?? ''));
-                $rowGroupId = $rowGroupName !== '' ? ($groupMap[mb_strtolower($rowGroupName)] ?? null) : null;
-                if ($rowGroupId === null) $rowGroupId = $groupId;
+                if ($rowGroupName !== '') {
+                    $rowGroupId = $groupMap[mb_strtolower($rowGroupName)] ?? null;
+                    if ($rowGroupId === null) {
+                        $errors[] = ['row' => $line, 'message' => "Group \"{$rowGroupName}\" does not exist. Create it under Groups first, then re-import."];
+                        continue;
+                    }
+                } else {
+                    $rowGroupId = $groupId;
+                }
+                if ($rowGroupId === null) {
+                    $errors[] = ['row' => $line, 'message' => 'No holiday group — set the Group column to an existing group, or pick a group before importing.'];
+                    continue;
+                }
 
                 // De-dupe against the DB and earlier rows — scoped to (group, date).
                 $dupeKey = ($rowGroupId ?? 'null') . '|' . $date;
