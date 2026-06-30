@@ -659,6 +659,8 @@ export default function HrPayroll() {
         'LOP Days': lopDays,
         'Unpaid Leave': r.unpaidLeave,
         'Late Marks': r.lateMarks,
+        'Missing Punch': r.missingPunch,
+        'Mismatch': r.mismatch ?? '',
         'Gross Earnings': r.earnings,
         'PF (Emp)': r.pfEmp,
         'ESI': r.esi,
@@ -719,6 +721,7 @@ export default function HrPayroll() {
         'Paid Leave': r.paid_leave_days,
         'Unpaid Leave': r.unpaid_leave_days,
         'Late Marks': r.late_marks,
+        'Missing Punch': r.missing_punches,
         'Gross': r.gross_earnings,
         'Basic': r.basic,
         'PF': r.pf_employee,
@@ -1283,13 +1286,23 @@ export default function HrPayroll() {
                         <td className="text-end fs-13 fw-semibold" style={{ color: '#b1401d' }}>−₹{fmtINR(r.deductions)}</td>
                         <td className="text-end fs-13 fw-bold">₹{fmtINR(r.netPay)}</td>
                         <td className="text-center">
-                          <span
-                            className="onb-role-pill pay-att-badge"
-                            data-att={r.attendance < 30 ? 'low' : 'ok'}
-                            style={r.attendance < 30 ? { background: '#fde8c4', color: '#a4661c' } : undefined}
-                          >
-                            {r.attendance}/30
-                          </span>
+                          {/* Att. = days actually PRESENT per the attendance
+                              record (not paid_days, which also counts paid
+                              leave/holidays). Denominator is the cycle's
+                              working days, so full attendance reads green. (#36) */}
+                          {(() => {
+                            const wd = periodMeta?.working_days || 26;
+                            const low = r.present < wd;
+                            return (
+                              <span
+                                className="onb-role-pill pay-att-badge"
+                                data-att={low ? 'low' : 'ok'}
+                                style={low ? { background: '#fde8c4', color: '#a4661c' } : undefined}
+                              >
+                                {r.present}/{wd}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td>
                           <span className="onb-pill" style={{ background: tone.bg, color: tone.fg }}>

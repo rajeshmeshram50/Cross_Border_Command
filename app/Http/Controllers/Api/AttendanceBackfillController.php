@@ -26,11 +26,29 @@ class AttendanceBackfillController extends Controller
 
     private const DISPLAY_TZ = 'Asia/Kolkata';
 
-    /** employee_id => EMP code (code only for readability). */
+    /** employee_id list — the 20 seeded test employees (EMP-001..EMP-020,
+     *  client_id=1 / branch_id=3). */
     private const EMPLOYEES = [
-        109, 108, 107, 104, 100, 99, 98, 97, 96, 94, 93, 92, 91, 90, 89, 88,
-        87, 86, 85, 84, 83, 82, 81, 80, 79, 78, 77, 76, 75, 74, 73, 72, 71,
-        70, 69, 68,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
     ];
 
     public function run(Request $request)
@@ -39,10 +57,10 @@ class AttendanceBackfillController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $clientId = (int) $request->input('client_id', 10);
-        $branchId = (int) $request->input('branch_id', 27);
-        $start    = Carbon::parse($request->input('from', '2026-02-25'), self::DISPLAY_TZ)->startOfDay();
-        $end      = Carbon::parse($request->input('to',   '2026-06-24'), self::DISPLAY_TZ)->startOfDay();
+        $clientId = (int) $request->input('client_id', 1);
+        $branchId = (int) $request->input('branch_id', 3);
+        $start    = Carbon::parse($request->input('from', '2026-01-25'), self::DISPLAY_TZ)->startOfDay();
+        $end      = Carbon::parse($request->input('to',   '2026-06-29'), self::DISPLAY_TZ)->startOfDay();
         $employees = $request->input('employees', self::EMPLOYEES);
         if (is_string($employees)) {
             $employees = array_filter(array_map('intval', explode(',', $employees)));
@@ -58,8 +76,8 @@ class AttendanceBackfillController extends Controller
         $rows   = [];
         $dayIdx = 0;
         for ($day = $start->copy(); $day->lte($end); $day->addDay()) {
-            if ($day->isWeekend()) {
-                continue; // Mon-Fri only
+            if ($day->dayOfWeek === Carbon::SUNDAY) {
+                continue; // Mon-Sat working week (only Sunday off)
             }
             $dayIdx++;
             $date = $day->toDateString();
@@ -119,31 +137,33 @@ class AttendanceBackfillController extends Controller
                 DB::table('attendances')->insertOrIgnore($chunk);
             }
 
-            // Derive Check In / Check Out punches straight from the rows we just
-            // inserted — two statements total, guarded so they never duplicate.
-            DB::statement("
-                INSERT INTO attendance_punches
-                    (attendance_id, employee_id, punched_at, direction, label, method, created_at, updated_at)
-                SELECT a.id, a.employee_id, a.check_in_at, 'in', 'Check In', 'manual', NOW(), NOW()
-                FROM attendances a
-                WHERE a.client_id = ? AND a.branch_id = ?
-                  AND a.employee_id IN ($idList)
-                  AND a.attendance_date BETWEEN ? AND ?
-                  AND a.check_in_at IS NOT NULL
-                  AND NOT EXISTS (SELECT 1 FROM attendance_punches p WHERE p.attendance_id = a.id AND p.direction = 'in')
-            ", [$clientId, $branchId, $startStr, $endStr]);
-
-            DB::statement("
-                INSERT INTO attendance_punches
-                    (attendance_id, employee_id, punched_at, direction, label, method, created_at, updated_at)
-                SELECT a.id, a.employee_id, a.check_out_at, 'out', 'Check Out', 'manual', NOW(), NOW()
-                FROM attendances a
-                WHERE a.client_id = ? AND a.branch_id = ?
-                  AND a.employee_id IN ($idList)
-                  AND a.attendance_date BETWEEN ? AND ?
-                  AND a.check_out_at IS NOT NULL
-                  AND NOT EXISTS (SELECT 1 FROM attendance_punches p WHERE p.attendance_id = a.id AND p.direction = 'out')
-            ", [$clientId, $branchId, $startStr, $endStr]);
+            // Derive the full 4-tap punch sequence straight from the rows we
+            // just inserted: Check In → Lunch Out → Lunch In → Check Out. The
+            // two lunch taps are computed as fixed offsets from check_in_at
+            // (in UTC, so no timezone math), keeping the strict in/out/in/out
+            // alternation the attendance model enforces. Each statement is
+            // guarded by LABEL so re-runs never duplicate AND the lunch
+            // in/out taps don't collide with the check-in/out guards.
+            $punches = [
+                // [label, direction, punched_at expression, source-column NOT NULL]
+                ['Check In',  'in',  'a.check_in_at',                                     'a.check_in_at'],
+                ['Lunch Out', 'out', "a.check_in_at + interval '3 hours 35 minutes'",     'a.check_in_at'],
+                ['Lunch In',  'in',  "a.check_in_at + interval '4 hours 20 minutes'",     'a.check_in_at'],
+                ['Check Out', 'out', 'a.check_out_at',                                    'a.check_out_at'],
+            ];
+            foreach ($punches as [$label, $dir, $atExpr, $notNullCol]) {
+                DB::statement("
+                    INSERT INTO attendance_punches
+                        (attendance_id, employee_id, punched_at, direction, label, method, created_at, updated_at)
+                    SELECT a.id, a.employee_id, {$atExpr}, '{$dir}', '{$label}', 'manual', NOW(), NOW()
+                    FROM attendances a
+                    WHERE a.client_id = ? AND a.branch_id = ?
+                      AND a.employee_id IN ($idList)
+                      AND a.attendance_date BETWEEN ? AND ?
+                      AND {$notNullCol} IS NOT NULL
+                      AND NOT EXISTS (SELECT 1 FROM attendance_punches p WHERE p.attendance_id = a.id AND p.label = '{$label}')
+                ", [$clientId, $branchId, $startStr, $endStr]);
+            }
         });
 
         $after = DB::table('attendances')

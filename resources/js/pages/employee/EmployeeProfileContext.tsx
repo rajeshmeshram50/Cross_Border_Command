@@ -14,6 +14,7 @@ export interface EmployeeProfileCtx {
   // ── Core employee record ──
   empDetail: any;
   empDetailLoading: boolean;
+  setEmpDetail: (updater: any) => void;
 
   // ── Shared formatters ──
   fmtDate: (raw: any) => string;
