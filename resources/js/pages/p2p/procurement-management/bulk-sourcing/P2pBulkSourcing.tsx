@@ -302,7 +302,7 @@ export default function P2pBulkSourcing() {
         {(assignOpen || editRow) && (
           <AssignSourcingTargetModal key={editRow ? editRow.id : 'new'} editRow={editRow} onClose={() => { setAssignOpen(false); setEditRow(null); }} onSaved={load} />
         )}
-        {reportRow && <SourcingReportModal key={reportRow.id} row={reportRow} onClose={() => { setReportRow(null); load(); }} />}
+        {reportRow && <SourcingReportModal key={reportRow.id} row={reportRow} canMap={tab === 'assigned'} onClose={() => { setReportRow(null); load(); }} />}
         {productsRow && <ProductListModal key={productsRow.id} row={productsRow} onClose={() => setProductsRow(null)} />}
       </div>
   );

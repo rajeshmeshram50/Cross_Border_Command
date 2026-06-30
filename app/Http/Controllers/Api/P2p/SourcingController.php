@@ -93,7 +93,12 @@ class SourcingController extends Controller
     public function products(Request $request)
     {
         $user = $request->user();
+        // Branch-scope the picker: a branch user sees only their own branch's
+        // products; the active branch from the switcher (?branch_id) is the
+        // fallback for tenant-wide users. Mirrors teamMembers().
+        $branch = ($user->branch_id ?: null) ?: ($request->integer('branch_id') ?: null);
         $rows = Product::where('client_id', $user->client_id)
+            ->when($branch, fn($q) => $q->where('branch_id', $branch))
             ->with(['segment:id,name', 'hsn:id,hsn_code'])
             ->orderBy('name')
             ->get()
@@ -486,6 +491,17 @@ class SourcingController extends Controller
     {
         $user = $request->user();
         $t    = $this->target($request, $target);
+
+        // The creator of a sourcing target gets a view-only report — supplier
+        // mapping is the assignee's job. You can't map vendors to a target you
+        // raised yourself.
+        if ((int) $t->created_by === (int) $user->id && $user->user_type !== 'super_admin') {
+            return response()->json([
+                'status'  => false,
+                'message' => 'You created this sourcing target — vendor mapping is done by the assignee, not the creator.',
+            ], 403);
+        }
+
         $p    = $t->products()->where('id', $product)->firstOrFail();
 
         $request->validate([

@@ -849,18 +849,7 @@ export default function HrLeave() {
                     <table className="rec-list-table align-middle table-nowrap mb-0">
                       <thead>
                         <tr>
-                          <th scope="col" className="ps-3 text-center" style={{ width: 38 }}>
-                            <input
-                              type="checkbox"
-                              className="form-check-input"
-                              checked={allVisibleChecked}
-                              ref={el => { if (el) el.indeterminate = someVisibleChecked; }}
-                              disabled={visiblePending.length === 0 || !canApprove}
-                              onChange={togglePageSelection}
-                              aria-label="Select all pending requests on this page"
-                            />
-                          </th>
-                          <th scope="col" className="text-center" style={{ width: 50 }}>SR.</th>
+                          <th scope="col" className="ps-3 text-center" style={{ width: 50 }}>SR.</th>
                           <th scope="col" style={{ width: 240 }}>Employee</th>
                           <th scope="col" style={{ width: 100 }}>Type</th>
                           <th scope="col" style={{ width: 80 }}>Duration</th>
@@ -875,7 +864,6 @@ export default function HrLeave() {
                         {requestsLoading ? (
                           Array.from({ length: pageSize }).map((_, i) => (
                             <tr key={`sk-${i}`}>
-                              <td className="text-center"><Shimmer width={16} height={16} radius={4} /></td>
                               <td className="text-center"><Shimmer width={18} height={12} /></td>
                               <td>
                                 <div className="d-flex align-items-center gap-2">
@@ -897,7 +885,7 @@ export default function HrLeave() {
                           ))
                         ) : visible.length === 0 ? (
                           <tr>
-                            <td colSpan={10} className="text-center py-5 text-muted">
+                            <td colSpan={9} className="text-center py-5 text-muted">
                               <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
                               No leave requests match your filters
                             </td>
@@ -907,22 +895,9 @@ export default function HrLeave() {
                           const tType = TYPE_TONE[r.type];
                           const tPay = PAYROLL_TONE[r.payroll];
                           const isPending = r.stage.startsWith('Pending');
-                          const isSelected = selectedIds.has(r.id);
                           return (
-                            <tr key={r.id} className={isSelected ? 'table-active' : undefined}>
-                              <td className="ps-3 text-center">
-                                <Tooltip label={!isPending ? 'Only pending requests can be bulk-actioned' : !r.canActNow ? 'Waiting on the reporting manager — HR can act once the manager approves' : 'Select for bulk action'}>
-                                  <input
-                                    type="checkbox"
-                                    className="form-check-input"
-                                    checked={isSelected}
-                                    disabled={!isPending || !canApprove || !r.canActNow}
-                                    onChange={() => toggleRow(r.id)}
-                                    aria-label={`Select request ${r.id}`}
-                                  />
-                                </Tooltip>
-                              </td>
-                              <td className="text-center text-muted fs-13">{sliceFrom + idx + 1}</td>
+                            <tr key={r.id}>
+                              <td className="ps-3 text-center text-muted fs-13">{sliceFrom + idx + 1}</td>
                               <td>
                                 <div className="d-flex align-items-center gap-2">
                                   <div

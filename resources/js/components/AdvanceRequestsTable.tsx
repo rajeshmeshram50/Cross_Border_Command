@@ -279,7 +279,7 @@ function AdvanceRequestRowView({
           {typeLabel}
         </span>
       </td>
-      <td style={{ maxWidth: 240, whiteSpace: 'normal' }}>{r.reason}</td>
+      <td style={{ maxWidth: 240 }}><div style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.reason}>{r.reason}</div></td>
       <td className="fw-bold">₹{Number(r.amount || 0).toLocaleString('en-IN')}</td>
       <td className="text-muted">{fmtDate(r.requested_date)}</td>
       <td className="text-muted">{fmtDate(r.recovery_start)}</td>
