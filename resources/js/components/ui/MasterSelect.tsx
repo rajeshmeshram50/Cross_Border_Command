@@ -178,6 +178,15 @@ export function MasterSelect({
           className="master-select-menu"
           container="body"
           strategy="fixed"
+          /* Pin the portalled menu to the viewport so it can never drift
+             off-screen or strand away from its trigger on smaller screens /
+             browser zoom: preventOverflow clamps it inside the viewport (both
+             axes), and flip swaps top/bottom when space runs out. */
+          modifiers={[
+            { name: 'preventOverflow', options: { boundary: 'viewport', padding: 8, altAxis: true } },
+            { name: 'flip', options: { boundary: 'viewport', fallbackPlacements: ['top', 'bottom'] } },
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ] as any}
           style={menuWidth ? { width: menuWidth, minWidth: menuWidth } : undefined}
         >
           {showSearch && (

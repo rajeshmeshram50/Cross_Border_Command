@@ -563,6 +563,9 @@ class LeavePlanController extends Controller
                 'used' => $used,
                 'available' => $available,
                 'unlimited' => $unlimited,
+                // Whether this leave type permits half-day requests (drives the
+                // Custom / half-day option in the Request Leave modal).
+                'allow_half_day' => (bool) ($cfg['leaveApp']['allowHalfDay'] ?? false),
                 'transactions' => $transactions,
             ];
         })->values();
