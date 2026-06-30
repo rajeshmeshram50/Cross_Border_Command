@@ -866,16 +866,30 @@ export default function HrLeavePlans() {
         }
         onClose={() => setSetupTypeId(null)}
         onChange={(next) => {
+          // Update the working draft only. Persistence happens on Save & Next /
+          // Save & Close (see onSave) so the footer button can show a spinner
+          // and prevent duplicate submissions.
           if (!setupTypeId || !activePlan) return;
           setTypeConfigs(prev => ({
             ...prev,
             [`${activePlan.id}::${setupTypeId}`]: next,
           }));
+        }}
+        onSave={async () => {
+          if (!setupTypeId || !activePlan) return;
+          const next = typeConfigs[`${activePlan.id}::${setupTypeId}`] ?? defaultLeaveTypeConfig();
           const quotaLabel = next.accrual.unlimited ? 'Unlimited' : `${next.accrual.yearlyQuota} ${next.accrual.unit}/year`;
           const eoyLabel =
             next.yearEnd.carryForward === 'reset'   ? 'Reset to zero'
             : next.yearEnd.carryForward === 'carry_all' ? 'Carry all forward'
             : `Carry up to ${next.yearEnd.carryForwardCap || 0}`;
+          try {
+            await leavePlansApi.saveTypeConfig(Number(activePlan.id), Number(setupTypeId), next as any, quotaLabel, eoyLabel);
+          } catch (err: any) {
+            toast.error('Could not save configuration', err?.response?.data?.message || err?.message || 'Please try again.');
+            throw err; // keep the modal open + spinner off
+          }
+          // Reflect the saved setup in the Configuration table.
           setPlans(prev => prev.map(p =>
             p.id === activePlan.id
               ? {
@@ -888,9 +902,6 @@ export default function HrLeavePlans() {
                 }
               : p
           ));
-          leavePlansApi
-            .saveTypeConfig(Number(activePlan.id), Number(setupTypeId), next as any, quotaLabel, eoyLabel)
-            .catch(err => console.error('[HrLeavePlans] save type config failed', err));
         }}
       />
 
@@ -2195,15 +2206,19 @@ const SETUP_SECTIONS: { key: SetupSection; label: string; icon: string; tone: st
 ];
 
 function LeaveTypeSetupModal({
-  isOpen, leaveType, config, onClose, onChange,
+  isOpen, leaveType, config, onClose, onChange, onSave,
 }: {
   isOpen: boolean;
   leaveType: LeaveTypeRow | null;
   config: LeaveTypeConfig;
   onClose: () => void;
   onChange: (next: LeaveTypeConfig) => void;
+  /** Persist the current config. Resolves on success; rejects on failure so
+   *  the modal keeps the spinner off and stays open. */
+  onSave?: () => Promise<void>;
 }) {
   const [active, setActive] = useState<SetupSection>('accrual');
+  const [saving, setSaving] = useState(false);
   const sectionIndex = SETUP_SECTIONS.findIndex(s => s.key === active);
   const sectionMeta = SETUP_SECTIONS[sectionIndex] ?? SETUP_SECTIONS[0];
 
@@ -2216,7 +2231,21 @@ function LeaveTypeSetupModal({
 
   if (!leaveType) return null;
 
-  const goNext = () => {
+  const goNext = async () => {
+    if (saving) return;
+    // Persist the current config before advancing / closing. The button shows
+    // a spinner and is disabled meanwhile so a double-click can't fire two
+    // submissions. If the save fails the modal stays open (no navigation).
+    if (onSave) {
+      setSaving(true);
+      try {
+        await onSave();
+      } catch {
+        setSaving(false);
+        return;
+      }
+      setSaving(false);
+    }
     if (sectionIndex < SETUP_SECTIONS.length - 1) {
       setActive(SETUP_SECTIONS[sectionIndex + 1].key);
     } else {
@@ -2291,9 +2320,13 @@ function LeaveTypeSetupModal({
               {sectionMeta.label}
             </span>
             <div className="d-flex gap-2">
-              <button type="button" className="rec-btn-ghost" onClick={onClose}>Cancel</button>
-              <button type="button" className="rec-btn-primary" onClick={goNext}>
-                {sectionIndex === SETUP_SECTIONS.length - 1 ? 'Save & Close' : 'Save & Next'}
+              <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+              <button type="button" className="rec-btn-primary" onClick={goNext} disabled={saving}>
+                {saving ? (
+                  <><i className="ri-loader-4-line" style={{ animation: 'spin 1s linear infinite' }} /> Saving…</>
+                ) : (
+                  sectionIndex === SETUP_SECTIONS.length - 1 ? 'Save & Close' : 'Save & Next'
+                )}
               </button>
             </div>
           </div>
@@ -2322,27 +2355,33 @@ function SectionCard({
 }
 
 function CheckRow({
-  checked, onChange, label, sub, children,
+  checked, onChange, label, sub, children, locked,
 }: {
   checked: boolean; onChange: (v: boolean) => void;
   label: React.ReactNode; sub?: React.ReactNode; children?: React.ReactNode;
+  /** When true the checkbox is forced checked and disabled (mandatory). */
+  locked?: boolean;
 }) {
   return (
     <div className="lts-check-row">
-      <label className="d-flex align-items-start gap-2 mb-0" style={{ cursor: 'pointer' }}>
+      <label className="d-flex align-items-start gap-2 mb-0" style={{ cursor: locked ? 'default' : 'pointer' }}>
         <input
           type="checkbox"
           className="form-check-input mt-1"
-          checked={checked}
-          onChange={e => onChange(e.target.checked)}
+          checked={locked ? true : checked}
+          disabled={locked}
+          onChange={e => { if (!locked) onChange(e.target.checked); }}
           style={{ accentColor: '#7c5cfc' }}
         />
         <div className="flex-grow-1 min-w-0">
-          <div className="fw-semibold" style={{ fontSize: 13 }}>{label}</div>
+          <div className="fw-semibold d-flex align-items-center gap-1" style={{ fontSize: 13 }}>
+            {label}
+            {locked && <i className="ri-lock-2-line text-muted" style={{ fontSize: 12 }} title="Mandatory — cannot be turned off" />}
+          </div>
           {sub && <div className="text-muted" style={{ fontSize: 11.5, marginTop: 2 }}>{sub}</div>}
         </div>
       </label>
-      {checked && children && <div className="lts-check-nested">{children}</div>}
+      {(locked || checked) && children && <div className="lts-check-nested">{children}</div>}
     </div>
   );
 }
@@ -2793,12 +2832,14 @@ function ApprovalSectionView({ cfg, update }: { cfg: ApprovalConfig; update: (p:
   }));
 
   // Normalize any legacy / two-step chain down to Reporting Manager only so
-  // saving the plan persists the view-only-HR rule.
+  // saving the plan persists the view-only-HR rule. Approval is MANDATORY —
+  // force `required` true so a legacy plan saved with it off is corrected and
+  // the (locked) checkbox stays consistent with what's persisted.
   useEffect(() => {
     const c = cfg.chain;
-    const ok = Array.isArray(c) && c.length === 1
+    const chainOk = Array.isArray(c) && c.length === 1
       && c[0]?.approver_kind === 'reporting_manager';
-    if (!ok) update({ chain });
+    if (!chainOk || !cfg.required) update({ chain, required: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -2810,6 +2851,7 @@ function ApprovalSectionView({ cfg, update }: { cfg: ApprovalConfig; update: (p:
         <CheckRow
           checked={cfg.required}
           onChange={v => update({ required: v })}
+          locked
           label="Leave request requires an approval"
         >
           <div className="lts-approval-chain">

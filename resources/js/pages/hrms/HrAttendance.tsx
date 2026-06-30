@@ -762,13 +762,33 @@ function PunchTimelineCard({ employee }: { employee: AttendanceEmployee }) {
   );
 }
 
-function AttendanceVisualBar({ segments }: { segments: Array<{ start: number; end: number }> }) {
+/** Non-working day bands shown across the visual bar when there are no work
+ *  segments (e.g. Leave / On Duty / WFH) — otherwise the graph looked empty. */
+const VBAR_BANDS: Partial<Record<DayStatus, { label: string; fg: string; bg: string }>> = {
+  'Leave':          { label: 'On Leave', fg: '#5a3fd1', bg: '#ede9fe' },
+  'On Duty':        { label: 'On Duty',  fg: '#0d9488', bg: '#ccfbf1' },
+  'Work From Home': { label: 'WFH',      fg: '#0d9488', bg: '#ccfbf1' },
+};
+
+function AttendanceVisualBar({ segments, status }: { segments: Array<{ start: number; end: number }>; status?: DayStatus }) {
   const ticks = Array.from({ length: 24 }, (_, h) => h);
+  const band = status && segments.length === 0 ? VBAR_BANDS[status] : undefined;
   return (
     <div className="att-vbar">
       <div className="att-vbar-track">
         {ticks.map(h => <span key={h} className={`att-vbar-tick ${h % 6 === 0 ? 'is-major' : ''}`} />)}
-        {segments.map((s, i) => (
+        {band ? (
+          <span
+            className="att-vbar-band"
+            style={{
+              position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 11, fontWeight: 700, letterSpacing: 0.3,
+              color: band.fg, background: band.bg, borderRadius: 6,
+            }}
+          >
+            {band.label}
+          </span>
+        ) : segments.map((s, i) => (
           <span
             key={i}
             className="att-vbar-block"
@@ -962,7 +982,7 @@ function LogsRequestsCard({
                       <tr key={pageStart + i} className={isOpen ? 'is-open' : ''}>
                         <td className="att-log-datecell">{formattedDate}</td>
                         <td>
-                          <AttendanceVisualBar segments={l.workSegments || []} />
+                          <AttendanceVisualBar segments={l.workSegments || []} status={l.status} />
                         </td>
                         <td>
                           {isAbsent ? <span className="text-muted">—</span> : (

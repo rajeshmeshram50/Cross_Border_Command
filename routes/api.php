@@ -724,6 +724,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/leave-requests/{id}/approve',                [LeaveRequestController::class, 'approve']);
     Route::post  ('/leave-requests/{id}/reject',                 [LeaveRequestController::class, 'reject']);
     Route::post  ('/leave-requests/{id}/cancel',                 [LeaveRequestController::class, 'cancel']);
+    Route::post  ('/leave-requests/{id}/hr-view',                [LeaveRequestController::class, 'hrView']);
 
     // Attendance regularization (correct a past day) — mirrors leave-requests.
     Route::get   ('/regularizations',                            [AttendanceRegularizationController::class, 'index']);

@@ -150,13 +150,18 @@ class AttendanceController extends Controller
         [$shiftStart, $shiftEnd] = $this->parseShiftWindow((string) ($emp->shift ?? ''));
         $shiftStart = $shiftStart ?: '09:30';
         $shiftEnd   = $shiftEnd   ?: '18:30';
+        $todayStr = self::todayLocal();
         $present  = 0; $late = 0; $missingBio = 0; $leaveDays = 0;
         foreach ($history as $row) {
             $status = (string) ($row->status ?? '');
+            $rowIso = \Carbon\Carbon::parse($row->attendance_date)->toDateString();
             if (strcasecmp($status, 'Present') === 0)  $present++;
             if (strcasecmp($status, 'Late') === 0)     { $late++; $present++; } // late still counts as present
             if (strcasecmp($status, 'Leave') === 0)    $leaveDays++;
             if (strcasecmp($status, 'Missing In') === 0 || strcasecmp($status, 'Missing Out') === 0) {
+                $missingBio++;
+            } elseif ($rowIso < $todayStr && $row->check_in_at && !$row->check_out_at) {
+                // Clocked in on a past day but never clocked out → missing punch.
                 $missingBio++;
             }
             // Heuristic late check on top of stored status. Must match the
@@ -190,6 +195,23 @@ class AttendanceController extends Controller
             ],
             'today'   => $today,
             'history' => $history,
+            // Rich per-day logs (same shape the HR Attendance "Logs & Requests"
+            // view consumes) so the employee profile can render the identical
+            // visual-bar / effective-gross / arrival / calendar UI.
+            'shift'            => (string) ($emp->shift ?: '—'),
+            'shift_start'      => $shiftStart,
+            'shift_end'        => $shiftEnd,
+            'weekly_off'       => (string) ($emp->weekly_off ?? ''),
+            'expected_minutes' => $this->expectedMinutesFromWindow($shiftStart, $shiftEnd),
+            'logs'             => $this->buildHistoryLogs(
+                $history,
+                $emp,
+                $shiftStart,
+                $this->expectedMinutesFromWindow($shiftStart, $shiftEnd),
+                $this->parseWeeklyOff((string) ($emp->weekly_off ?? '')),
+                $start->toDateString(),
+                $end->toDateString()
+            ),
         ]);
     }
 
@@ -355,7 +377,24 @@ class AttendanceController extends Controller
         // stay meaningful even when shift data is incomplete.
         $defaultShiftStart = '09:30';
         $defaultShiftEnd   = '18:30';
-        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $date, $histStart, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $mtdEndC, $dateC) {
+
+        // Approved-leave overlay — an employee with an approved leave covering
+        // the selected date should read "Leave", not "Absent", even though they
+        // have no attendance row for the day. (Bug: on-leave employees showed
+        // Absent in the list and Today's Record.)
+        $onLeaveSet = [];
+        $empIdsForLeave = $employees->pluck('id')->filter()->all();
+        if (!empty($empIdsForLeave)) {
+            $leaveEmpIds = \App\Models\LeaveRequest::query()
+                ->whereIn('employee_id', $empIdsForLeave)
+                ->where('status', 'Approved')
+                ->whereDate('from_date', '<=', $date)
+                ->whereDate('to_date', '>=', $date)
+                ->pluck('employee_id')->all();
+            foreach ($leaveEmpIds as $lid) $onLeaveSet[(int) $lid] = true;
+        }
+
+        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $date, $histStart, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $mtdEndC, $dateC, $onLeaveSet) {
             [$parsedStart, $parsedEnd] = $this->parseShiftWindow((string) ($emp->shift ?? ''));
             $shiftStart = $parsedStart ?: $defaultShiftStart;
             $shiftEnd   = $parsedEnd   ?: $defaultShiftEnd;
@@ -368,6 +407,10 @@ class AttendanceController extends Controller
 
             // Determine status for the selected date.
             $statusToday = $this->resolveDayStatus($today, $isWeeklyOff, $shiftStart, $date);
+            // Approved leave wins over an "Absent" reading (no attendance row).
+            if (isset($onLeaveSet[$emp->id]) && strcasecmp($statusToday, 'Absent') === 0) {
+                $statusToday = 'Leave';
+            }
             $firstIn     = $today?->check_in_at ? $today->check_in_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i') : null;
             $lastOut     = $today?->check_out_at ? $today->check_out_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i') : null;
             // Full worked total (completed pairs + any open pair auto-closed at
@@ -407,7 +450,13 @@ class AttendanceController extends Controller
                     $presentDays++;
                 }
                 if ($st === 'late' || $st === 'half day') $lateMarks++;
-                if ($st === 'missing in' || $st === 'missing out') $missingPunch++;
+                if ($st === 'missing in' || $st === 'missing out') {
+                    $missingPunch++;
+                } elseif ($r->check_in_at && !$r->check_out_at
+                    && \Carbon\Carbon::parse($r->attendance_date)->toDateString() < self::todayLocal()) {
+                    // Clocked in on a past day but never clocked out → missing punch.
+                    $missingPunch++;
+                }
                 // Heuristic late on top of stored status — shift_start is in
                 // local time, so the punch timestamp must be converted from
                 // UTC before comparing.
@@ -709,6 +758,15 @@ class AttendanceController extends Controller
                     && $this->minutesBetween($shiftStart, $firstIn) > 10) {
                     $status = 'Late';
                 }
+                // Missing checkout: a PAST day with a check-in but no check-out
+                // is a missing punch (the face-clock flow leaves status as
+                // Present/Late). Today is exempt — the person may still be in.
+                if (!$isFuture && $iso < $todayLocal
+                    && $r->check_in_at && !$r->check_out_at
+                    && in_array(strtolower($status), ['present', 'late'], true)) {
+                    $status = 'Missing Out';
+                    $lastOut = '—';
+                }
 
                 $segments = [];
                 $pairs = $r->punches?->sortBy('punched_at')->values() ?? collect();
@@ -760,7 +818,7 @@ class AttendanceController extends Controller
                 'lastOut'          => $lastOut,
                 'worked'           => $worked === 0 ? '—' : sprintf('%dh %02dm', intdiv($worked, 60), $worked % 60),
                 'deviation'        => $deviation,
-                'exception'        => in_array(strtolower($status), ['late', 'half day', 'absent', 'corrected'], true) ? $status : null,
+                'exception'        => in_array(strtolower($status), ['late', 'half day', 'absent', 'corrected', 'missing in', 'missing out'], true) ? $status : null,
                 'workSegments'     => $segments,
                 'effectiveMinutes' => $worked,
                 'grossMinutes'     => $worked,

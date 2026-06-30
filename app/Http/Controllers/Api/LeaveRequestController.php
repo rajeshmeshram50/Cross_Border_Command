@@ -55,7 +55,7 @@ class LeaveRequestController extends Controller
         $q = LeaveRequest::query()
             ->where('employee_id', $employeeId)
             ->with([
-                'leaveType:id,name,short_code,type',
+                'leaveType:id,name,short_code,type,paid_unpaid',
                 'leavePlan:id,plan_name',
                 'coverPerson:id,first_name,last_name,display_name',
                 'approver:id,name',
@@ -440,7 +440,7 @@ class LeaveRequestController extends Controller
                 // (Client/Branch admin); load both so the name resolves either way.
                 'employee.reportingManager:id,first_name,middle_name,last_name,display_name',
                 'employee.reportingManagerUser:id,name',
-                'leaveType:id,name,short_code,type',
+                'leaveType:id,name,short_code,type,paid_unpaid',
             ])
             ->orderByDesc('created_at');
 
@@ -574,6 +574,30 @@ class LeaveRequestController extends Controller
     public function reject(Request $request, int $id)
     {
         return $this->setStatus($request, $id, 'Rejected');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // HR view acknowledgement — leave is reporting-manager-only, so HR never
+    // acts on the chain, but the UI shows an "HR" node that turns green once HR
+    // has reviewed the request. This records the FIRST such view (idempotent —
+    // set once, never overwritten) so the green state persists across reloads.
+    // Only HR / admin tiers can mark a request viewed; the requester opening
+    // their own request does not count.
+    // ─────────────────────────────────────────────────────────────────────
+    public function hrView(Request $request, int $id)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        $row = $this->findScopedOrFail($id, $user);
+
+        $isHr = in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true);
+        if ($isHr && $row->hr_viewed_at === null) {
+            $row->hr_viewed_at = now();
+            $row->hr_viewed_by = $user->id;
+            $row->save();
+        }
+
+        return response()->json(['data' => $row]);
     }
 
     public function cancel(Request $request, int $id)

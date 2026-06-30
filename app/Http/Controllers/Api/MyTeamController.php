@@ -361,9 +361,12 @@ class MyTeamController extends Controller
     private function actedExpenseClaims($user): array
     {
         $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
-        $canHrApprove = $this->userCanHrApproveExpense($user);
-        if (!$myEmployeeId && !$canHrApprove) return [];
+        $uid = (int) $user->id;
 
+        // History = claims THIS user personally acted on — either as the
+        // assigned reporting manager, OR as the HR/Finance approver (hr_user_id
+        // records who acted). Without the hr_user_id check the queue leaked
+        // every HR-acted claim in the tenant to any HR user. (Bug 50)
         $q = ExpenseClaim::query()
             ->with([
                 'employee:id,display_name,first_name,last_name,emp_code,department_id,branch_id,client_id',
@@ -371,18 +374,17 @@ class MyTeamController extends Controller
                 'category:id,name',
                 'manager:id,display_name,first_name,last_name,emp_code',
             ])
-            ->where(function ($w) use ($myEmployeeId, $canHrApprove) {
+            ->where(function ($w) use ($myEmployeeId, $uid) {
                 if ($myEmployeeId) {
                     $w->orWhere(function ($wm) use ($myEmployeeId) {
                         $wm->where('manager_id', $myEmployeeId)
                            ->whereIn('manager_status', ['approved', 'rejected']);
                     });
                 }
-                if ($canHrApprove) {
-                    $w->orWhere(function ($wh) {
-                        $wh->whereIn('hr_status', ['approved', 'rejected']);
-                    });
-                }
+                $w->orWhere(function ($wh) use ($uid) {
+                    $wh->where('hr_user_id', $uid)
+                       ->whereIn('hr_status', ['approved', 'rejected']);
+                });
             });
 
         $this->applyExpenseTenantScope($q, $user, $myEmployeeId);
@@ -390,12 +392,14 @@ class MyTeamController extends Controller
         $out = [];
         foreach ($q->orderByDesc('updated_at')->limit(60)->get() as $row) {
             // Which stage did THIS user act at? Prefer the manager stage when
-            // they're the assigned manager and acted, else the HR stage.
+            // they're the assigned manager and acted, else the HR stage they
+            // personally recorded.
             $stage = null; $verdict = null;
             if ($myEmployeeId && (int) $row->manager_id === (int) $myEmployeeId
                 && in_array($row->manager_status, ['approved', 'rejected'], true)) {
                 $stage = 'manager'; $verdict = $row->manager_status;
-            } elseif ($canHrApprove && in_array($row->hr_status, ['approved', 'rejected'], true)) {
+            } elseif ((int) $row->hr_user_id === $uid
+                && in_array($row->hr_status, ['approved', 'rejected'], true)) {
                 $stage = 'hr'; $verdict = $row->hr_status;
             }
             if (!$stage) continue;
@@ -533,27 +537,27 @@ class MyTeamController extends Controller
     private function actedAdvanceRequests($user): array
     {
         $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
-        $canHrApprove = $this->userCanHrApproveExpense($user);
-        if (!$myEmployeeId && !$canHrApprove) return [];
+        $uid = (int) $user->id;
 
+        // History = advances THIS user personally acted on (manager stage, or
+        // the HR stage they recorded via hr_user_id). (Bug 50)
         $q = AdvanceRequest::query()
             ->with([
                 'employee:id,display_name,first_name,last_name,emp_code,department_id,branch_id,client_id',
                 'employee.department:id,name',
                 'manager:id,display_name,first_name,last_name,emp_code',
             ])
-            ->where(function ($w) use ($myEmployeeId, $canHrApprove) {
+            ->where(function ($w) use ($myEmployeeId, $uid) {
                 if ($myEmployeeId) {
                     $w->orWhere(function ($wm) use ($myEmployeeId) {
                         $wm->where('manager_id', $myEmployeeId)
                            ->whereIn('manager_status', ['approved', 'rejected']);
                     });
                 }
-                if ($canHrApprove) {
-                    $w->orWhere(function ($wh) {
-                        $wh->whereIn('hr_status', ['approved', 'rejected']);
-                    });
-                }
+                $w->orWhere(function ($wh) use ($uid) {
+                    $wh->where('hr_user_id', $uid)
+                       ->whereIn('hr_status', ['approved', 'rejected']);
+                });
             });
 
         $this->applyExpenseTenantScope($q, $user, $myEmployeeId);
@@ -564,7 +568,8 @@ class MyTeamController extends Controller
             if ($myEmployeeId && (int) $row->manager_id === (int) $myEmployeeId
                 && in_array($row->manager_status, ['approved', 'rejected'], true)) {
                 $stage = 'manager'; $verdict = $row->manager_status;
-            } elseif ($canHrApprove && in_array($row->hr_status, ['approved', 'rejected'], true)) {
+            } elseif ((int) $row->hr_user_id === $uid
+                && in_array($row->hr_status, ['approved', 'rejected'], true)) {
                 $stage = 'hr'; $verdict = $row->hr_status;
             }
             if (!$stage) continue;

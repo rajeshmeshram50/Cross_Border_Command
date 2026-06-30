@@ -5,6 +5,7 @@ import { Shimmer } from '../../../components/ui/Shimmer';
 import { KpiTile, AnimatedNumber } from '../EmployeeProfileShared';
 import RegularizationModal, { type RegPrefillPunch } from '../../hrms/RegularizationModal';
 import { regularizationApi, type ApiRegularization } from '../../hrms/regularizationApi';
+import AttendanceLogsView, { type AttLog } from './AttendanceLogsView';
 
 interface AttendancePanelPunch {
   id: number;
@@ -29,6 +30,13 @@ interface AttendancePanelResponse {
   stats: { present_days: number; late_marks: number; missing_biometric: number; total_leaves: number };
   today: AttendancePanelRecord | null;
   history: AttendancePanelRecord[];
+  // Rich per-day logs (same shape the HR Attendance "Logs & Requests" view uses).
+  shift?: string | null;
+  shift_start?: string | null;
+  shift_end?: string | null;
+  weekly_off?: string | null;
+  expected_minutes?: number;
+  logs?: AttLog[];
 }
 
 
@@ -56,7 +64,6 @@ const attFmtDate  = (iso: string) => {
   const d = new Date(iso);
   return d.toLocaleDateString([], { day: '2-digit', month: 'short' });
 };
-const attDayName  = (iso: string) => new Date(iso).toLocaleDateString([], { weekday: 'short' });
 
 export default function AttendanceTab({ employeeId }: { employeeId: string }) {
   const [data, setData] = useState<AttendancePanelResponse | null>(null);
@@ -66,9 +73,6 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
-  const [page, setPage] = useState(0);
-  const PAGE_SIZE = 8;
-
   // Regularization (attendance correction) — self-service. The modal needs the
   // numeric employee id, which comes back on the summary payload.
   const [regOpen, setRegOpen]     = useState(false);
@@ -82,7 +86,7 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
     setLoading(true);
     setError(null);
     api.get(`/attendance/employee/${encodeURIComponent(employeeId)}/summary`, { params: { month } })
-      .then((r: any) => { if (!cancelled) { setData(r.data); setPage(0); } })
+      .then((r: any) => { if (!cancelled) { setData(r.data); } })
       .catch((err: any) => {
         if (cancelled) return;
         setError(err?.response?.data?.message || err?.message || 'Failed to load attendance.');
@@ -124,12 +128,6 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
     setRegOpen(true);
   };
 
-  const stepMonth = (delta: number) => {
-    const [y, m] = month.split('-').map(Number);
-    const d = new Date(y, m - 1 + delta, 1);
-    setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
-  };
-
   if (loading) {
     return (
       <div className="att-loading-root">
@@ -160,10 +158,21 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
 
   const { stats, today, history } = data;
   const todayPunches = today?.punches || [];
-  const pageStart = page * PAGE_SIZE;
-  const pageEnd   = pageStart + PAGE_SIZE;
-  const pageRows  = history.slice(pageStart, pageEnd);
-  const pageCount = Math.max(1, Math.ceil(history.length / PAGE_SIZE));
+
+  // Rich Logs & Requests view (mirrors the HR Attendance module). Built from
+  // the per-day `logs` the summary endpoint now returns.
+  const logsEmployee = numericEmployeeId ? {
+    id: numericEmployeeId,
+    shiftStart: data.shift_start || data.employee.shift_start || '09:30',
+    shiftEnd:   data.shift_end   || data.employee.shift_end   || '18:30',
+    weeklyOff:  data.weekly_off || '',
+    logs:       data.logs || [],
+  } : null;
+  const recForIso = (iso: string): AttendancePanelRecord | null => {
+    if (today && today.attendance_date.slice(0, 10) === iso) return today;
+    return history.find(r => r.attendance_date.slice(0, 10) === iso) || null;
+  };
+  const onRegularizeDate = (iso: string) => openReg(recForIso(iso), iso);
   const G_SUCCESS = 'linear-gradient(135deg, #0ab39c 0%, #30d5b5 100%)';
   const G_WARNING = 'linear-gradient(135deg, #f7b84b 0%, #ffd47a 100%)';
   const G_DANGER  = 'linear-gradient(135deg, #f06548 0%, #ff9e7c 100%)';
@@ -303,136 +312,17 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
         </Col>
       </Row>
 
-      {/* Attendance Timelog History */}
+      {/* Attendance Timelog History — same rich Logs & Requests view as the HR Attendance module */}
       <Row className="g-3 flex-grow-1 align-items-stretch">
         <Col xs={12}>
-          <div className="ep-section-card-flat ep-section-card ep-ct-amber h-100 d-flex flex-column">
-            <div
-              className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 flex-wrap ep-hd-amber"
-            >
-              <div className="d-flex align-items-center gap-2">
-                <span className="ep-section-icon ep-icon-amber">
-                  <i className="ri-history-line" />
-                </span>
-                <h6 className="mb-0 fw-bold ep-fs-12">Attendance Timelog History</h6>
-              </div>
-              <div className="d-flex align-items-center gap-2">
-                {numericEmployeeId && (
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-primary"
-                    onClick={() => openReg(today, today?.attendance_date || new Date().toISOString().slice(0, 10))}
-                  >
-                    <i className="ri-edit-circle-line me-1" /> Request Regularization
-                  </button>
-                )}
-                <button type="button" className="btn btn-sm btn-light" onClick={() => stepMonth(-1)} aria-label="Previous month">
-                  <i className="ri-arrow-left-s-line" />
-                </button>
-                <span className="fw-semibold att-month-label">
-                  {new Date(month + '-01').toLocaleDateString([], { month: 'long', year: 'numeric' })}
-                </span>
-                <button type="button" className="btn btn-sm btn-light" onClick={() => stepMonth(1)} aria-label="Next month">
-                  <i className="ri-arrow-right-s-line" />
-                </button>
-              </div>
-            </div>
-            <div className="px-3 py-3 flex-grow-1 d-flex flex-column">
-              {history.length === 0 ? (
-                <div className="text-center text-muted py-4 ep-fs-13 my-auto">
-                  No attendance records for {new Date(month + '-01').toLocaleDateString([], { month: 'long', year: 'numeric' })}.
-                </div>
-              ) : (
-                <>
-                
-                  <style>{`
-                    [data-bs-theme="dark"] .att-tl-badge.att-tl-present { background: rgba(16,185,129,0.18) !important; color: #6ee7b7 !important; }
-                    [data-bs-theme="dark"] .att-tl-badge.att-tl-late    { background: rgba(245,158,11,0.18) !important; color: #fcd34d !important; }
-                    [data-bs-theme="dark"] .att-tl-badge.att-tl-leave   { background: rgba(99,102,241,0.20) !important; color: #c4b5fd !important; }
-                    [data-bs-theme="dark"] .att-tl-badge.att-tl-other   { background: rgba(255,255,255,0.08) !important; color: #cbd5e1 !important; }
-                  `}</style>
-                  <div className="table-responsive">
-                    <table className="table table-sm mb-0 att-table">
-                      <thead>
-                        <tr className="att-thead-row">
-                          <th>Date</th>
-                          <th>Day</th>
-                          <th>First In</th>
-                          <th>Last Out</th>
-                          <th>Punches</th>
-                          <th>Worked</th>
-                          <th>Status</th>
-                          <th className="text-end">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pageRows.map(r => (
-                          <tr key={r.id}>
-                            <td className="fw-semibold">{attFmtDate(r.attendance_date)}</td>
-                            <td>{attDayName(r.attendance_date)}</td>
-                            <td className="font-monospace">{attFmtClock(r.check_in_at)}</td>
-                            <td className="font-monospace">{attFmtClock(r.check_out_at)}</td>
-                            <td>{r.punches_count}</td>
-                            <td>{attFmtHM(r.total_worked_seconds)}</td>
-                            <td>
-                              <span
-                                className={`att-tl-badge att-status-badge att-tl-${r.status === 'Present' ? 'present' : r.status === 'Late' ? 'late' : r.status === 'Leave' ? 'leave' : 'other'} d-inline-flex align-items-center gap-1 fw-semibold`}
-                                style={{
-                                  ['--att-status-bg' as any]: r.status === 'Present' ? '#d6f4e3' :
-                                              r.status === 'Late'    ? '#fef3c7' :
-                                              r.status === 'Leave'   ? '#e0e7ff' : '#f1f5f9',
-                                  ['--att-status-fg' as any]: r.status === 'Present' ? '#108548' :
-                                         r.status === 'Late'    ? '#92400e' :
-                                         r.status === 'Leave'   ? '#3730a3' : '#475569',
-                                }}
-                              >
-                                {r.status}
-                              </span>
-                            </td>
-                            <td className="text-end">
-                              <button
-                                type="button"
-                                className="btn btn-sm btn-soft-primary"
-                                title="Request regularization for this day"
-                                onClick={() => openReg(r, r.attendance_date.slice(0, 10))}
-                              >
-                                <i className="ri-edit-2-line" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {pageCount > 1 && (
-                    <div className="d-flex align-items-center justify-content-between mt-2 pt-2 border-top">
-                      <small className="text-muted">
-                        Showing {pageStart + 1}–{Math.min(pageEnd, history.length)} of {history.length}
-                      </small>
-                      <ul className="pagination pagination-sm mb-0">
-                        <li className={page === 0 ? 'page-item disabled' : 'page-item'}>
-                          <a href="#" className="page-link" onClick={e => { e.preventDefault(); if (page > 0) setPage(p => p - 1); }}>
-                            <i className="ri-arrow-left-s-line" />
-                          </a>
-                        </li>
-                        {Array.from({ length: pageCount }, (_, i) => (
-                          <li key={i} className={page === i ? 'page-item active' : 'page-item'}>
-                            <a href="#" className="page-link" onClick={e => { e.preventDefault(); setPage(i); }}>{i + 1}</a>
-                          </li>
-                        ))}
-                        <li className={page >= pageCount - 1 ? 'page-item disabled' : 'page-item'}>
-                          <a href="#" className="page-link" onClick={e => { e.preventDefault(); if (page < pageCount - 1) setPage(p => p + 1); }}>
-                            <i className="ri-arrow-right-s-line" />
-                          </a>
-                        </li>
-                      </ul>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
+          {logsEmployee && (
+            <AttendanceLogsView
+              employee={logsEmployee}
+              month={month}
+              onMonthChange={setMonth}
+              onRegularize={onRegularizeDate}
+            />
+          )}
         </Col>
       </Row>
 
