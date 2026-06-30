@@ -252,6 +252,8 @@ class PayrollController extends Controller
                 'paid_leave_days'  => (float) $s->paid_leave_days,
                 'unpaid_leave_days'=> (float) $s->unpaid_leave_days,
                 'late_marks'       => (int) $s->late_marks,
+                'missing_punches'  => (int) $s->missing_punches,
+                'att_source'       => $s->att_source,
                 'gross_earnings'   => (float) $s->gross_earnings,
                 'basic'            => (float) $s->basic,
                 'pf_employee'      => (float) $s->pf_employee,
@@ -986,7 +988,13 @@ class PayrollController extends Controller
             'unpaidLeave' => (float) $p->unpaid_leave_days,
             'paidLeave'   => (float) $p->paid_leave_days,
             'attSource'   => $p->att_source,
-            'mismatch'    => $p->missing_punches > 0 ? 'Missing punches' : null,
+            // Mismatch label mirrors WHY the row is flagged for review: a
+            // missing-punch day, or (when punches are complete) late marks that
+            // tripped the Review threshold. Previously only missing punches set
+            // this, so late-only Review rows showed a blank Mismatch cell.
+            'mismatch'    => $p->missing_punches > 0
+                ? 'Missing punches'
+                : ($p->att_source === 'Review' ? 'Late marks' : null),
             'attMismatch' => $p->att_source === 'Review',
             'pfEmp'       => (float) $p->pf_employee,
             'esi'         => (float) $p->esi,
