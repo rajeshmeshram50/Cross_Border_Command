@@ -1786,7 +1786,9 @@ function AddLeaveTypeModal({
   const reset = () => { setName(''); setType('Regular'); setIsPaid('Paid'); setCode(''); setErrors({}); setSaving(false); };
   const handleClose = () => { reset(); onClose(); };
 
-  const TYPE_OPTIONS = ['Regular', 'Compensatory offs', 'Unpaid', 'Incident based'];
+  // 'Unpaid' is intentionally NOT a category — Paid/Unpaid is set by the
+  // Compensation section below, so it would be a redundant/contradictory choice.
+  const TYPE_OPTIONS = ['Regular', 'Compensatory offs', 'Incident based'];
   const group: CatalogType['group'] = type === 'Incident based' ? 'incidental' : 'regular';
 
   const handleSave = async () => {
@@ -2463,41 +2465,19 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
         />
         {cfg.mode === 'periodic' && (
           <div className="lts-nested-block">
-            <div className="d-flex align-items-center gap-2 flex-wrap mb-2">
+            <div className="d-flex align-items-center gap-2 flex-wrap">
               <span className="text-muted" style={{ fontSize: 12.5 }}>Accrue leave</span>
               <div style={{ width: 170 }}>
                 <MasterSelect
                   value={cfg.frequency}
                   onChange={v => update({ frequency: v as AccrualConfig['frequency'] })}
                   options={[
-                    { value: 'monthly',     label: 'Once every month' },
-                    { value: 'quarterly',   label: 'Once every quarter' },
-                    { value: 'half_yearly', label: 'Twice a year' },
-                    { value: 'yearly',      label: 'Once a year' },
+                    { value: 'monthly', label: 'Once every month' },
+                    { value: 'yearly',  label: 'Once a year' },
                   ]}
                 />
               </div>
-              <span className="text-muted" style={{ fontSize: 12.5 }}>on</span>
-              <select
-                className="lts-input"
-                style={{ width: 70 }}
-                value={cfg.dayOfMonth}
-                onChange={e => update({ dayOfMonth: Number(e.target.value) })}
-              >
-                {Array.from({ length: 28 }, (_, i) => i + 1).map(n => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
-              <span className="text-muted" style={{ fontSize: 12.5 }}>{cfg.dayOfMonth === 1 ? 'st' : cfg.dayOfMonth === 2 ? 'nd' : cfg.dayOfMonth === 3 ? 'rd' : 'th'} day of the month</span>
             </div>
-            <div className="lts-info-row">
-              Employee will accrue {(cfg.yearlyQuota / 12).toFixed(0)} day(s) of leave once every month
-            </div>
-            <CheckRow
-              checked={cfg.variesEachMonth}
-              onChange={v => update({ variesEachMonth: v })}
-              label="Leave accrual varies each month"
-            />
           </div>
         )}
         <RadioRow
@@ -2517,16 +2497,13 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
                 value={cfg.attendanceDaysWorked || ''}
                 onChange={e => update({ attendanceDaysWorked: Number(e.target.value) || 0 })}
               />
-              <span className="text-muted" style={{ fontSize: 12.5 }}>days worked, accrue</span>
-              <input
-                type="number"
-                className="lts-input"
-                style={{ width: 80 }}
-                placeholder="Ex: 4"
-                value={cfg.attendanceDaysAccrued || ''}
-                onChange={e => update({ attendanceDaysAccrued: Number(e.target.value) || 0 })}
-              />
-              <span className="text-muted" style={{ fontSize: 12.5 }}>days of leave</span>
+              <span className="text-muted" style={{ fontSize: 12.5 }}>
+                days worked in a month, accrue <strong>{Number((cfg.yearlyQuota / 12).toFixed(2))}</strong> day(s) of leave for that month
+              </span>
+            </div>
+            <div className="text-muted" style={{ fontSize: 11.5, marginTop: 4 }}>
+              <i className="ri-information-line me-1" />
+              The monthly credit is the yearly quota ÷ 12 ({cfg.yearlyQuota} ÷ 12), applied when the worked-days target is met that month.
             </div>
           </div>
         )}
@@ -2537,118 +2514,7 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
         />
       </SectionCard>
 
-      {/* Accrual Restrictions are day-centric — always shown now that leave is
-          days-only. */}
-      <SectionCard icon="ri-prohibited-line" iconBg="#fde8c4" title="Accrual Restrictions">
-        <CheckRow
-          checked={cfg.leaveExpires.enabled}
-          onChange={v => update({ leaveExpires: { ...cfg.leaveExpires, enabled: v } })}
-          label={
-            <span className="d-inline-flex align-items-center gap-2 flex-wrap">
-              Leave expires
-              <select
-                className="lts-input"
-                style={{ width: 100 }}
-                value={cfg.leaveExpires.unit}
-                onChange={e => update({ leaveExpires: { ...cfg.leaveExpires, unit: e.target.value as 'day' | 'month' | 'year' } })}
-                disabled={!cfg.leaveExpires.enabled}
-              >
-                <option value="day">Day</option>
-                <option value="month">Month</option>
-                <option value="year">Year</option>
-              </select>
-            </span>
-          }
-        >
-          <div className="d-flex align-items-center gap-2 flex-wrap">
-            <span style={{ fontSize: 12.5 }}>Leave expires after</span>
-            <input
-              type="number"
-              className="lts-input"
-              style={{ width: 80 }}
-              value={cfg.leaveExpires.days}
-              onChange={e => update({ leaveExpires: { ...cfg.leaveExpires, days: Number(e.target.value) || 0 } })}
-            />
-            <span className="text-muted" style={{ fontSize: 12.5 }}>days from the date of credit</span>
-          </div>
-        </CheckRow>
-
-        <CheckRow
-          checked={cfg.restrictByAttendance}
-          onChange={v => update({ restrictByAttendance: v })}
-          label="Restrict accrual based on attendance"
-        />
-
-        <CheckRow
-          checked={cfg.noAccrualIfOnLeaveFor.enabled}
-          onChange={v => update({ noAccrualIfOnLeaveFor: { ...cfg.noAccrualIfOnLeaveFor, enabled: v } })}
-          label={
-            <span className="d-inline-flex align-items-center gap-2 flex-wrap">
-              No leave is accrued if an employee is on leave for more than
-              <input
-                type="number"
-                className="lts-input"
-                style={{ width: 80 }}
-                placeholder="Ex: 30"
-                value={cfg.noAccrualIfOnLeaveFor.days || ''}
-                onChange={e => update({ noAccrualIfOnLeaveFor: { ...cfg.noAccrualIfOnLeaveFor, days: Number(e.target.value) || 0 } })}
-                disabled={!cfg.noAccrualIfOnLeaveFor.enabled}
-              />
-              days in previous accrual period
-            </span>
-          }
-        />
-
-        <CheckRow
-          checked={cfg.noAccrualIfBalanceExceeds.enabled}
-          onChange={v => update({ noAccrualIfBalanceExceeds: { ...cfg.noAccrualIfBalanceExceeds, enabled: v } })}
-          label={
-            <span className="d-inline-flex align-items-center gap-2 flex-wrap">
-              No leave is accrued when the total leave balance exceeds
-              <input
-                type="number"
-                className="lts-input"
-                style={{ width: 80 }}
-                placeholder="Ex: 20"
-                value={cfg.noAccrualIfBalanceExceeds.days || ''}
-                onChange={e => update({ noAccrualIfBalanceExceeds: { ...cfg.noAccrualIfBalanceExceeds, days: Number(e.target.value) || 0 } })}
-                disabled={!cfg.noAccrualIfBalanceExceeds.enabled}
-              />
-              days
-            </span>
-          }
-        />
-
-        <CheckRow
-          checked={cfg.noAccrualIfJoiningAfter.enabled}
-          onChange={v => update({ noAccrualIfJoiningAfter: { ...cfg.noAccrualIfJoiningAfter, enabled: v } })}
-          label={
-            <span className="d-inline-flex align-items-center gap-2 flex-wrap">
-              No leave is awarded to employees if the joining date is after
-              <select
-                className="lts-input"
-                style={{ width: 90 }}
-                value={cfg.noAccrualIfJoiningAfter.day}
-                onChange={e => update({ noAccrualIfJoiningAfter: { ...cfg.noAccrualIfJoiningAfter, day: Number(e.target.value) } })}
-                disabled={!cfg.noAccrualIfJoiningAfter.enabled}
-              >
-                {Array.from({ length: 28 }, (_, i) => i + 1).map(n => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
-              <span>th day of the month.</span>
-            </span>
-          }
-        />
-      </SectionCard>
-
       <SectionCard icon="ri-add-circle-line" iconBg="#d3f0ee" title="Extra Leave">
-        <CheckRow
-          checked={cfg.managersCanGrantExtra}
-          onChange={v => update({ managersCanGrantExtra: v })}
-          label="Allow Reporting Managers to grant more leave than accrued balance"
-          sub="Global admins, HR managers, etc., retain the authority to do so regardless."
-        />
         <CheckRow
           checked={cfg.employeeOverdraft.enabled}
           onChange={v => update({ employeeOverdraft: { ...cfg.employeeOverdraft, enabled: v } })}
@@ -2668,12 +2534,6 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
             </span>
           }
         />
-        <CheckRow
-          checked={cfg.accrueByTenure}
-          onChange={v => update({ accrueByTenure: v })}
-          label="Accrue leave based on employee tenure"
-          sub="Calculated from employee's joining date"
-        />
       </SectionCard>
         </>
       )}
@@ -2688,7 +2548,6 @@ function LeaveAppSectionView({ cfg, update }: { cfg: LeaveAppConfig; update: (p:
 
       <SectionCard icon="ri-file-list-3-line" iconBg="#dbeafe" title="Leave Application Rules">
         <CheckRow checked={cfg.allowHalfDay}      onChange={v => update({ allowHalfDay: v })}      label="Allow half day leave" />
-        <CheckRow checked={cfg.priorNoticeNeeded} onChange={v => update({ priorNoticeNeeded: v })} label="Prior notice needed" />
         <CheckRow
           checked={cfg.limitBackdated}
           onChange={v => update({ limitBackdated: v })}

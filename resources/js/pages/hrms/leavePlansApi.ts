@@ -299,6 +299,8 @@ export interface ApiEmployeeBalanceType {
   used: number;
   available: number | null;
   unlimited: boolean;
+  /** Whether this leave type permits half-day (first/second half) requests. */
+  allow_half_day?: boolean;
   transactions: ApiEmployeeBalanceTransaction[];
 }
 
