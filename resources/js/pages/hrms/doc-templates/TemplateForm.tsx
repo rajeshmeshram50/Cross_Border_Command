@@ -260,7 +260,18 @@ export default function TemplateFormPage() {
     }
     if (s === 2) {
       if (!triggerPointId) e.trigger_point_id = 'Select a lifecycle event';
-      if (requiresSig && signers.length === 0) e.signers = 'Add at least one signer';
+      // Signing workflow must have at least one signer with a role selected —
+      // a blank signer row (the default) doesn't count. The form seeds one
+      // empty row, so length alone isn't enough to guarantee a real role.
+      if (requiresSig) {
+        const hasRole = signers.some(s =>
+          (s.role_name && s.role_name.trim() !== '')
+          || s.role_id != null
+          || (s.designation_name && s.designation_name.trim() !== '')
+          || s.designation_id != null
+        );
+        if (!hasRole) e.signers = 'Add at least one signer and select its role';
+      }
     }
     if (s === 3) {
       const missing = missingSignerSlots();
@@ -881,7 +892,7 @@ function Step2(props: {
 
         <div className="tpl-sign-body" style={{ padding: 14, background: '#fff' }}>
           <div className="tpl-sign-header" style={{ display: 'grid', gridTemplateColumns: '36px 1.6fr 1.2fr 100px 36px', gap: 10, padding: '0 6px 8px', fontSize: 11, fontWeight: 800, color: '#6b7280', textTransform: 'uppercase' }}>
-            <div>#</div><div>Role / Position</div><div>Action</div><div>Days</div><div />
+            <div>#</div><div>Role / Position <span style={{ color: '#ef4444' }}>*</span></div><div>Action</div><div>Days</div><div />
           </div>
           {props.signers.map((s, i) => (
             <div key={i} style={{ display: 'grid', gridTemplateColumns: '36px 1.6fr 1.2fr 100px 36px', gap: 10, padding: '6px', alignItems: 'center' }}>

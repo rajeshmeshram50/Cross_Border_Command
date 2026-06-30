@@ -90,7 +90,14 @@ export function MasterSelect({
     };
     update();
     window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
+    // capture:true so scrolls inside ANY ancestor (modals, panels) also
+    // recompute the open direction — keeps the menu attached to its trigger
+    // on scroll/resize instead of stranding it at a stale position.
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
   }, [open]);
   const selected = options.find(o => o.value === currentValue);
   /* Always show the search input — keeps every MasterSelect across

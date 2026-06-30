@@ -1,11 +1,26 @@
 // Job tab — employment details, reporting, assets, leave/holiday summary.
 // Extracted from EmployeeProfile.tsx; shared state via useEmployeeProfile().
+import { useEffect, useState } from 'react';
 import { Col, Row } from 'reactstrap';
 import { useEmployeeProfile } from '../EmployeeProfileContext';
 import { AncillaryRolesChip } from '../../../components/AncillaryRolesChip';
+import { leavePlansApi } from '../../hrms/leavePlansApi';
 
 export default function JobTab() {
   const { empDetail, employee, employeeId, fmtDate, ancillaryList } = useEmployeeProfile();
+
+  // `leave_plan` stores the plan ID — resolve it to the plan name for display
+  // (the field shows a bare id like "3" otherwise).
+  const [leavePlanName, setLeavePlanName] = useState('');
+  useEffect(() => {
+    const id = empDetail?.leave_plan;
+    if (!id) { setLeavePlanName(''); return; }
+    let alive = true;
+    leavePlansApi.list()
+      .then(plans => { if (alive) setLeavePlanName(plans.find(p => String(p.id) === String(id))?.plan_name || ''); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [empDetail?.leave_plan]);
 
   return (
         <>
@@ -123,16 +138,15 @@ export default function JobTab() {
                       Attendance Number, Overtime, Expense Policy) bound to real
                       data. Fields with no form equivalent (Time Tracking,
                       Penalization, Shift Allowance) were removed. */}
+                  {/* 6 fields, 3-per-row — mirrors the Edit Employee form's
+                      "Leave & Attendance" step (Expense Policy removed). */}
                   <Row className="g-3">
-                    {/* Top row holds 4 fields (incl. Attendance Number); the
-                        bottom row holds the remaining 3. */}
-                    <Col xs={3}><div className="ep-field-label">Leave Plan</div><div className="ep-field-value">{empDetail?.leave_plan || '—'}</div></Col>
-                    <Col xs={3}><div className="ep-field-label">Holiday List</div><div className="ep-field-value">{empDetail?.holidayGroup?.name || empDetail?.holiday_group?.name || '—'}</div></Col>
-                    <Col xs={3}><div className="ep-field-label">Shift</div><div className="ep-field-value">{empDetail?.shift || '—'}</div></Col>
-                    <Col xs={3}><div className="ep-field-label">Attendance Number</div><div className="ep-field-value font-monospace">{empDetail?.attendance_number || '—'}</div></Col>
+                    <Col xs={4}><div className="ep-field-label">Leave Plan</div><div className="ep-field-value">{leavePlanName || empDetail?.leave_plan || '—'}</div></Col>
+                    <Col xs={4}><div className="ep-field-label">Holiday List</div><div className="ep-field-value">{empDetail?.holidayGroup?.name || empDetail?.holiday_group?.name || '—'}</div></Col>
+                    <Col xs={4}><div className="ep-field-label">Shift</div><div className="ep-field-value">{empDetail?.shift || '—'}</div></Col>
                     <Col xs={4}><div className="ep-field-label">Weekly Off</div><div className="ep-field-value">{empDetail?.weekly_off || '—'}</div></Col>
+                    <Col xs={4}><div className="ep-field-label">Attendance Number</div><div className="ep-field-value font-monospace">{empDetail?.attendance_number || '—'}</div></Col>
                     <Col xs={4}><div className="ep-field-label">Overtime</div><div className="ep-field-value">{empDetail?.overtime || '—'}</div></Col>
-                    <Col xs={4}><div className="ep-field-label">Expense Policy</div><div className="ep-field-value">{empDetail?.expense_policy || '—'}</div></Col>
                   </Row>
                 </div>
               </div>

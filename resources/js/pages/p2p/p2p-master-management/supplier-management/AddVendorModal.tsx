@@ -6,6 +6,8 @@ import { useToast } from '../../../../contexts/ToastContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { MasterMultiSelect } from '../../../master/masterFormKit';
+import { MasterRecordModal } from '../../../master/MasterRecordModal';
+import { SegmentTags } from '../../procurement-management/bulk-sourcing/SegmentTags';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import {
   validateEmail, validatePincode, validateWebsite,
@@ -167,6 +169,7 @@ export type GstScrutinyRow = {
   id: string;
   gstNumber: string;
   status: 'Active' | 'Suspended' | 'Cancelled';
+  scrutinyDate?: string;   // server-set creation date (Figma "Scrutiny Date")
   lastFilingDate: string;
   prevNonGst2aInvoice: string;
   redFlags: string;
@@ -456,6 +459,13 @@ export default function AddVendorModal(props: {
   type SegmentDocs = { kyc: SegDocRow[]; dd: SegDocRow[]; tl: SegDocRow[]; td: SegDocRow[]; qc: SegDocRow[] };
   const EMPTY_SEG_DOCS: SegmentDocs = { kyc:[], dd:[], tl:[], td:[], qc:[] };
   const [segmentDocs, setSegmentDocs] = useState<SegmentDocs>(EMPTY_SEG_DOCS);
+
+  /* Maps each selected segment id → the upload keys (`company::dd`,
+   * `owner::kyc`, `license::tl`) its segment rules require. Used to work out
+   * WHICH segments actually have a document uploaded (segmentRefUploads), so
+   * only those get locked from removal — the rest, and adding new segments,
+   * stay free. Built by the segment-rules effect below. */
+  const [segmentDocKeys, setSegmentDocKeys] = useState<Record<string, string[]>>({});
 
   /* Per-row file uploads against the segment-rule reference rows in
    * Step 2 (Company DD / Owner KYC / Trade License). Key:
@@ -878,12 +888,15 @@ export default function AddVendorModal(props: {
      * fetches once the user reaches Step 2 or higher. Step 1 only
      * edits identity + address; it doesn't need this data. Mirrors
      * the same gate added to AddCustomerModal / AddConsigneeModal. */
-    if (step < 2) return;
+    // In EDIT mode we also load at Step 1 so we know which segments already
+    // have uploaded documents (to lock just those in the picker). Add mode
+    // keeps the lazy Step-2 gate — a brand-new supplier has no uploads.
+    if (step < 2 && !initialVendorId) return;
 
     const ids = (segment ?? [])
       .map(s => Number(s))
       .filter(n => Number.isFinite(n) && n > 0);
-    if (ids.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setTradeDocRows([]); return; }
+    if (ids.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setTradeDocRows([]); setSegmentDocKeys({}); return; }
 
     let cancelled = false;
     Promise.all([
@@ -903,6 +916,17 @@ export default function AddVendorModal(props: {
         .catch(() => [] as Array<{ code: string; name: string }>),
     ]).then(([results, partyDocs]) => {
       if (cancelled) return;
+      // Per-segment → required upload keys. results[i] aligns with ids[i].
+      // Only dd/kyc/tl have file uploads (company/owner/license sub-tabs).
+      const docKeyMap: Record<string, string[]> = {};
+      results.forEach((r: any, i: number) => {
+        const keys: string[] = [];
+        for (const d of (Array.isArray(r?.dd)  ? r.dd  : [])) keys.push(`company::${d.code}`);
+        for (const d of (Array.isArray(r?.kyc) ? r.kyc : [])) keys.push(`owner::${d.code}`);
+        for (const d of (Array.isArray(r?.tl)  ? r.tl  : [])) keys.push(`license::${d.code}`);
+        docKeyMap[String(ids[i])] = keys;
+      });
+      setSegmentDocKeys(docKeyMap);
       const mergeCat = (cat: 'kyc'|'dd'|'tl'|'td'|'qc'): SegDocRow[] => {
         const map = new Map<string, SegDocRow>();
         for (const r of results) {
@@ -945,6 +969,19 @@ export default function AddVendorModal(props: {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, segment]);
+
+  /* Segments that already have ≥1 document uploaded against them — these
+   * can't be removed/deselected (it would orphan the uploads) but adding
+   * new segments stays allowed. A segment is locked only if one of its own
+   * required docs has an upload, so a saved-but-empty segment stays free. */
+  const lockedSegments = useMemo<string[]>(() => {
+    const out: string[] = [];
+    for (const s of (segment ?? [])) {
+      const keys = segmentDocKeys[String(s)] || [];
+      if (keys.some(k => segmentRefUploads[k])) out.push(String(s));
+    }
+    return out;
+  }, [segment, segmentDocKeys, segmentRefUploads]);
 
   /* Apply the bundled segment_uploads payload to segmentRefUploads.
    * Declared AFTER the segment-rules effect above so it fires LATER in
@@ -1108,7 +1145,7 @@ export default function AddVendorModal(props: {
     type ApiOwner = { id: number; code?: string | null; document_name?: string | null; issuing_authority?: string | null; document_number?: string | null; issue_date?: string | null; expiry?: string | null; status?: string | null; attachment_path?: string | null; attachment_url?: string | null };
     type ApiTl = { id: number; code?: string | null; license_type_id?: number | null; license_type_name?: string | null; license_number?: string | null; issuing_authority?: string | null; issue_date?: string | null; expiry_date?: string | null; attachment_path?: string | null; attachment_url?: string | null };
     type ApiBank = { id: number; bank_name?: string | null; branch_name?: string | null; account_number?: string | null; ifsc?: string | null; branch_address?: string | null; cheque_path?: string | null; cheque_url?: string | null };
-    type ApiGst = { id: number; gst_number?: string | null; status?: string | null; last_filing_date?: string | null; prev_non_gst_2a_invoice?: string | null; red_flags?: string | null };
+    type ApiGst = { id: number; gst_number?: string | null; status?: string | null; scrutiny_date?: string | null; last_filing_date?: string | null; prev_non_gst_2a_invoice?: string | null; red_flags?: string | null };
     type ApiMapping = { id: number; product_id?: number | null; product_code?: string | null; product_name?: string | null; batch_serial_lot?: string | null; purchase_price?: number | string | null; gst_percentage?: number | string | null; gst_amount?: number | string | null; total_amount?: number | string | null };
     type ApiVendor = {
       id: number;
@@ -1297,6 +1334,7 @@ export default function AddVendorModal(props: {
           id: String(r.id),
           gstNumber: r.gst_number ?? '',
           status: (r.status === 'Suspended' || r.status === 'Cancelled' ? r.status : 'Active'),
+          scrutinyDate: r.scrutiny_date ?? '',
           lastFilingDate: r.last_filing_date ?? '',
           prevNonGst2aInvoice: r.prev_non_gst_2a_invoice ?? '',
           redFlags: r.red_flags ?? '',
@@ -1747,7 +1785,7 @@ export default function AddVendorModal(props: {
     return f.includes('__') ? f.slice(f.indexOf('__') + 2) : f;
   };
   type ApiBankRow = { id: number; bank_name?: string | null; branch_name?: string | null; account_number?: string | null; ifsc?: string | null; branch_address?: string | null; cheque_path?: string | null; cheque_url?: string | null };
-  type ApiGstRow = { id: number; gst_number?: string | null; status?: string | null; last_filing_date?: string | null; prev_non_gst_2a_invoice?: string | null; red_flags?: string | null };
+  type ApiGstRow = { id: number; gst_number?: string | null; status?: string | null; scrutiny_date?: string | null; last_filing_date?: string | null; prev_non_gst_2a_invoice?: string | null; red_flags?: string | null };
 
   const openBankPopup = () => { setBankDraft(EMPTY_BANK_DRAFT); setBankPopupOpen(true); };
   const saveBankDraft = async () => {
@@ -1835,6 +1873,7 @@ export default function AddVendorModal(props: {
         id: String(g.id),
         gstNumber: g.gst_number ?? '',
         status: (g.status === 'Suspended' || g.status === 'Cancelled' ? g.status : 'Active'),
+        scrutinyDate: g.scrutiny_date ?? new Date().toISOString().slice(0, 10),
         lastFilingDate: g.last_filing_date ?? '',
         prevNonGst2aInvoice: g.prev_non_gst_2a_invoice ?? '',
         redFlags: g.red_flags ?? '',
@@ -2379,9 +2418,16 @@ export default function AddVendorModal(props: {
             </div>
           </div>
           <div className="avm-head-right">
-            {/* Map Product — opens the Mapped Products list popup (Figma). */}
-            <button className="avm-map-btn" onClick={() => setMappedListOpen(true)}>
-              <i className="ri-price-tag-3-line" /> Map Product
+            {/* Map Product — opens the Mapped Products list popup (Figma).
+                Disabled until the supplier exists (Stage 1 saved → vendorId set);
+                you can't map products to a supplier that hasn't been created. */}
+            <button
+              className="avm-map-btn"
+              onClick={() => setMappedListOpen(true)}
+              disabled={!vendorId}
+              title={!vendorId ? 'Save the Supplier Legal Identity step first to map products' : 'Map products to this supplier'}
+            >
+              <i className="ri-price-tag-line" /> Map Product
             </button>
             <button className="avm-close" onClick={onClose} aria-label="Close">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -2570,8 +2616,8 @@ export default function AddVendorModal(props: {
                     <div className="avm-prev-subtitle">Stage {step - 1} completed — review your entry below</div>
                   </div>
                   <button className="avm-prev-toggle" onClick={() => setPrevOpen(o => !o)}>
-                    {step - 1} stage{step - 1 > 1 ? 's' : ''} completed
-                    <i className="ri-arrow-down-s-line" style={{ transform: prevOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
+                    <span className="avm-prev-toggle-pill">{step - 1} stage{step - 1 > 1 ? 's' : ''} completed</span>
+                    <i className="ri-arrow-down-s-line avm-prev-toggle-chev" style={{ transform: prevOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
                   </button>
                 </div>
                 {prevOpen && (
@@ -2649,7 +2695,8 @@ export default function AddVendorModal(props: {
                     <Field label="Company Website">
                       <input className="avm-input" placeholder="https://abclogistics.com" value={website} onChange={e => setWebsite(e.target.value)} />
                     </Field>
-                    <Field label="Supplier Segment" required addNew onAdd={() => setQuickAdd('segments')} error={fieldErrors.segment}>
+                    <Field label="Supplier Segment" required addNew onAdd={() => setQuickAdd('segments')} error={fieldErrors.segment}
+                      hint={lockedSegments.length > 0 ? <span className="avm-seg-hint" title="Segments with uploaded documents can’t be removed"><i className="ri-lock-2-line" />(locked)</span> : undefined}>
                       {/* masterFormKit's MasterMultiSelect renders visible violet
                           chips with × buttons + a checkbox-marked dropdown so
                           multi-select is obvious. `value` prop is plural despite
@@ -2661,16 +2708,14 @@ export default function AddVendorModal(props: {
                           value={segment}
                           options={segmentOpts}
                           placeholder="Select Segment"
-                          /* Once documents have been uploaded against the selected
-                             segments, lock the picker — changing/removing a segment
-                             would orphan those uploads. */
-                          disabled={Object.keys(segmentRefUploads).length > 0}
+                          /* Only the segments that already have a document
+                             uploaded are locked (can't be removed — that would
+                             orphan the uploads). Adding new segments, and
+                             removing ones without docs, stays allowed. */
+                          lockedValues={lockedSegments}
                           onChange={vs => { setSegment(vs); clearFieldError('segment'); }}
                         />
                       </div>
-                      {Object.keys(segmentRefUploads).length > 0 && (
-                        <span className="avm-segment-lock-note"><i className="ri-lock-2-line" /> Locked — documents uploaded for these segments</span>
-                      )}
                     </Field>
                     <Field label="Risk Level" required addNew onAdd={() => setQuickAdd('risk_levels')} error={fieldErrors.riskLevel}>
                       <SelectInput value={riskLevel} onChange={(v) => { setRiskLevel(v); clearFieldError('riskLevel'); }} placeholder="Select" options={riskLevelOpts} />
@@ -2810,7 +2855,7 @@ export default function AddVendorModal(props: {
                       we know about". Marked with a "Primary" pill and
                       not deletable — the user has to go back to the
                       first sub-tab to change it. */}
-                  <SectionCard tone="violet" icon={<i className="ri-user-add-line" />} title="Additional Contact Persons" subtitle="Add more points of contact for this supplier" headerAction={
+                  <SectionCard tone="violet" className="avm-section-grow" icon={<i className="ri-user-add-line" />} title="Additional Contact Persons" subtitle="Add more points of contact for this supplier" headerAction={
                     <button className="avm-section-add-btn" onClick={openContactPopup}>+ Add More Contact Person</button>
                   }>
                     {(() => {
@@ -2865,7 +2910,7 @@ export default function AddVendorModal(props: {
                         return <div className="avm-empty">No contact persons added yet.</div>;
                       }
                       return (
-                        <div className="table-responsive table-card border rounded avm-contacts-scroll">
+                        <div className="table-responsive avm-contacts-scroll">
                           <table className="table align-middle table-nowrap mb-0 avm-mini-table">
                             <thead className="table-light">
                               <tr>
@@ -2886,16 +2931,14 @@ export default function AddVendorModal(props: {
                                   <td>
                                     <strong>{r.name || '—'}</strong>
                                     {r.isPrimary && (
-                                      <span className="badge bg-primary-subtle text-primary ms-2" style={{ padding: '3px 8px', fontSize: 10 }}>
-                                        Primary
-                                      </span>
+                                      <span className="avm-primary-tag ms-2">Primary</span>
                                     )}
                                   </td>
                                   <td>{r.designation || '—'}</td>
                                   <td><span className="font-monospace fs-13">{r.phone || '—'}</span></td>
                                   <td>{r.email || '—'}</td>
                                   <td>
-                                    <span className={`avm-pill ${r.whatsapp ? 'avm-pill-success' : 'avm-pill-muted'}`}>
+                                    <span className={r.whatsapp ? 'avm-wa-yes' : 'avm-wa-no'}>
                                       {r.whatsapp ? '✓ Yes' : '— No'}
                                     </span>
                                   </td>
@@ -2921,16 +2964,16 @@ export default function AddVendorModal(props: {
                                     )}
                                   </td>
                                   <td>
-                                    <div className="hstack gap-1">
+                                    <div className="avm-row-actions">
                                       {r.isPrimary ? (
                                         <span className="text-muted fs-13" title="Edit in the Primary Contact Person card above">—</span>
                                       ) : (
                                         <>
-                                          <button type="button" className="btn btn-sm btn-soft-info" onClick={() => r.contactId !== undefined && openContactEdit(r.contactId)} data-tooltip="Edit" aria-label="Edit">
-                                            <i className="ri-pencil-line" />
+                                          <button type="button" className="avm-row-btn" onClick={() => r.contactId !== undefined && openContactEdit(r.contactId)} data-tooltip="Edit" aria-label="Edit">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                                           </button>
-                                          <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => r.contactId !== undefined && removeExtraContact(r.contactId)} data-tooltip="Remove" aria-label="Remove">
-                                            <i className="ri-delete-bin-line" />
+                                          <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => r.contactId !== undefined && removeExtraContact(r.contactId)} data-tooltip="Remove" aria-label="Remove">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
                                           </button>
                                         </>
                                       )}
@@ -3070,7 +3113,10 @@ export default function AddVendorModal(props: {
                 {saving ? (
                   <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
                 ) : (
-                  <>{isEdit ? 'Update' : 'Save'} &amp; Next →</>
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v13a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+                    {isEdit ? 'Update' : 'Save'} &amp; Next →
+                  </>
                 )}
               </button>
             ) : (
@@ -3079,7 +3125,10 @@ export default function AddVendorModal(props: {
                 {saving ? (
                   <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
                 ) : (
-                  <><i className="ri-check-line" /> {isEdit ? 'Update Supplier' : 'Save Supplier'}</>
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v13a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+                    {isEdit ? 'Update Supplier' : 'Save Supplier'}
+                  </>
                 )}
               </button>
             )}
@@ -3170,7 +3219,7 @@ export default function AddVendorModal(props: {
       )}
 
       {quickAdd && (
-        <MasterQuickAddPopup
+        <MasterRecordModal
           slug={quickAdd}
           onClose={() => setQuickAdd(null)}
           onSaved={(row) => {
@@ -3274,15 +3323,45 @@ export default function AddVendorModal(props: {
  * ────────────────────────────────────────────────────────────────────── */
 type VendorMasterSlug = 'vendor_types' | 'risk_levels' | 'vendor_behaviour' | 'segments' | 'compliance_behaviours' | 'countries';
 
-type QaField = { name: string; label: string; type?: 'text' | 'number'; required?: boolean; placeholder?: string };
+type QaField = { name: string; label: string; type?: 'text' | 'number' | 'textarea' | 'select'; required?: boolean; placeholder?: string; options?: string[] };
 
-const QUICK_ADD_SCHEMAS: Record<VendorMasterSlug, { title: string; fields: QaField[] }> = {
-  vendor_types:          { title: 'Add Supplier Type',       fields: [{ name: 'name',  label: 'Supplier Type',       required: true, placeholder: 'e.g. Genuine / Verified' }] },
-  risk_levels:           { title: 'Add Risk Level',          fields: [{ name: 'name',  label: 'Risk Level',          required: true, placeholder: 'e.g. Low, Medium, High' }] },
-  vendor_behaviour:      { title: 'Add Supplier Behaviour',  fields: [{ name: 'name',  label: 'Supplier Behaviour',  required: true, placeholder: 'e.g. Excellent / Good' }] },
-  segments:              { title: 'Add Segment',             fields: [{ name: 'title', label: 'Segment Name',        required: true, placeholder: 'e.g. Dry Fruits' }] },
-  compliance_behaviours: { title: 'Add Compliance Behaviour', fields: [{ name: 'name',  label: 'Behaviour Name',      required: true, placeholder: 'e.g. Compliant, Under Review' }] },
-  countries:             { title: 'Add Country',             fields: [{ name: 'name',  label: 'Country Name',        required: true, placeholder: 'e.g. India' }] },
+/* Fields mirror each master's full form in masterConfigs.ts so Quick Add
+   captures the SAME data as the dedicated /master/{slug} page — not just the
+   name. status defaults to Active. */
+const STATUS_FIELD: QaField = { name: 'status', label: 'Status', type: 'select', required: true, options: ['Active', 'Inactive'] };
+/* title / icon / singular mirror each master's own Add modal (masterConfigs.ts)
+   so this popup reads as the SAME form: purple header, master icon, and the
+   "Fill in the details to register a new X" subtitle. */
+const QUICK_ADD_SCHEMAS: Record<VendorMasterSlug, { title: string; singular: string; icon: string; fields: QaField[] }> = {
+  vendor_types:          { title: 'Add Supplier Type', singular: 'Supplier Type', icon: 'ri-shield-check-line', fields: [
+    { name: 'name',  label: 'Supplier Type', required: true, placeholder: 'e.g. Genuine / Verified' },
+    STATUS_FIELD,
+  ] },
+  risk_levels:           { title: 'Add Risk Level', singular: 'Risk Level', icon: 'ri-flashlight-line', fields: [
+    { name: 'name',            label: 'Risk Level',      type: 'select', required: true, options: ['Low', 'Medium', 'High', 'Critical'] },
+    { name: 'description',     label: 'Description',      placeholder: 'Risk criteria' },
+    { name: 'action_required', label: 'Action Required',  placeholder: 'e.g. Escalate' },
+    STATUS_FIELD,
+  ] },
+  vendor_behaviour:      { title: 'Add Supplier Behaviour', singular: 'Supplier Behaviour', icon: 'ri-pulse-line', fields: [
+    { name: 'name',        label: 'Behaviour Type', required: true, placeholder: 'e.g. Excellent, Good' },
+    { name: 'description', label: 'Description', type: 'textarea', placeholder: 'Behaviour definition' },
+    STATUS_FIELD,
+  ] },
+  segments:              { title: 'Add Segment', singular: 'Segment', icon: 'ri-focus-3-line', fields: [
+    { name: 'title', label: 'Segment Name', required: true, placeholder: 'e.g. Dry Fruits' },
+    STATUS_FIELD,
+  ] },
+  compliance_behaviours: { title: 'Add Compliance Behaviour', singular: 'Compliance Behaviour', icon: 'ri-scales-3-line', fields: [
+    { name: 'name',            label: 'Behaviour Name',  required: true, placeholder: 'e.g. Compliant, Under Review' },
+    { name: 'action_required', label: 'Action Required', placeholder: 'Next steps' },
+    STATUS_FIELD,
+  ] },
+  countries:             { title: 'Add Country', singular: 'Country', icon: 'ri-earth-line', fields: [
+    { name: 'name',     label: 'Country Name', required: true, placeholder: 'e.g. India' },
+    { name: 'iso_code', label: 'ISO Code', placeholder: 'e.g. IN' },
+    STATUS_FIELD,
+  ] },
 };
 
 function MasterQuickAddPopup(props: {
@@ -3293,7 +3372,12 @@ function MasterQuickAddPopup(props: {
   const { slug, onClose, onSaved } = props;
   const toast = useToast();
   const schema = QUICK_ADD_SCHEMAS[slug];
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, string>>(() => {
+    // Seed Status to "Active" so the required select isn't empty on open.
+    const init: Record<string, string> = {};
+    if (schema.fields.some(f => f.name === 'status')) init.status = 'Active';
+    return init;
+  });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
@@ -3346,7 +3430,8 @@ function MasterQuickAddPopup(props: {
     }
     setSaving(true);
     try {
-      const payload: Record<string, unknown> = { ...values, status: 'Active' };
+      // Default status to Active but let the user's pick win (it's in values).
+      const payload: Record<string, unknown> = { status: 'Active', ...values };
       schema.fields.forEach(f => {
         if (f.type === 'number' && payload[f.name] !== undefined) {
           payload[f.name] = Number(payload[f.name]);
@@ -3377,8 +3462,15 @@ function MasterQuickAddPopup(props: {
     <div className="avm-qa-backdrop">
       <div className="avm-qa-popup">
         <div className="avm-qa-head">
-          <div className="avm-qa-title">
-            <i className="ri-add-circle-line" /> {schema.title}
+          {/* Mirrors the master Add modal: frosted icon badge + title +
+              "Fill in the details to register a new X" subtitle. */}
+          <span className="avm-qa-head-glow" aria-hidden />
+          <div className="avm-qa-head-main">
+            <span className="avm-qa-head-ico"><i className={schema.icon} /></span>
+            <div className="avm-qa-head-text">
+              <div className="avm-qa-title">{schema.title}</div>
+              <div className="avm-qa-sub">Fill in the details to register a new {schema.singular.toLowerCase()}</div>
+            </div>
           </div>
           <button className="avm-close avm-qa-close" onClick={onClose} aria-label="Close">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -3387,20 +3479,40 @@ function MasterQuickAddPopup(props: {
         <div className="avm-qa-body">
           {schema.fields.map(f => (
             <Field key={f.name} label={f.label} required={f.required} error={errors[f.name]}>
-              <input
-                className="avm-input"
-                type={f.type === 'number' ? 'number' : 'text'}
-                placeholder={f.placeholder ?? ''}
-                value={values[f.name] ?? ''}
-                onChange={(e) => set(f.name, e.target.value)}
-              />
+              {f.type === 'textarea' ? (
+                <textarea
+                  className="avm-input"
+                  rows={3}
+                  placeholder={f.placeholder ?? ''}
+                  value={values[f.name] ?? ''}
+                  onChange={(e) => set(f.name, e.target.value)}
+                  style={{ resize: 'vertical' }}
+                />
+              ) : f.type === 'select' ? (
+                <select
+                  className="avm-input"
+                  value={values[f.name] ?? ''}
+                  onChange={(e) => set(f.name, e.target.value)}
+                >
+                  <option value="">— Select —</option>
+                  {(f.options ?? []).map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : (
+                <input
+                  className="avm-input"
+                  type={f.type === 'number' ? 'number' : 'text'}
+                  placeholder={f.placeholder ?? ''}
+                  value={values[f.name] ?? ''}
+                  onChange={(e) => set(f.name, e.target.value)}
+                />
+              )}
             </Field>
           ))}
         </div>
         <div className="avm-qa-foot">
           <button className="avm-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
           <button className="avm-btn-primary" onClick={submit} disabled={saving}>
-            <i className="ri-save-line" /> Save
+            <i className="ri-save-line" /> {saving ? 'Saving…' : `Save ${schema.singular}`}
           </button>
         </div>
       </div>
@@ -3486,7 +3598,7 @@ function ContactAddPopup(props: {
             <Field label="Contact No" required>
               <input
                 className="avm-input"
-                placeholder="Enter 6-15 digit number"
+                placeholder="Enter contact number"
                 inputMode="numeric"
                 pattern="\d*"
                 maxLength={15}
@@ -3500,7 +3612,7 @@ function ContactAddPopup(props: {
           </div>
 
           <div className="avm-grid-2">
-            <Field label="WhatsApp Enabled?" required>
+            <Field label="WhatsApp Enabled?">
               <div className="avm-radio-row">
                 <label className="avm-radio">
                   <input type="radio" checked={draft.whatsapp} onChange={() => set('whatsapp', true)} /> Yes
@@ -3557,7 +3669,7 @@ function StepperItem(props: {
     <div className={`avm-step avm-step-${state} avm-step-${props.tone}`}>
       <div className="avm-step-ico">
         {state === 'done'
-          ? <i className="ri-check-line" />
+          ? <><i className="ri-check-line" /><span className="avm-step-ico-check"><i className="ri-check-line" /></span></>
           : <><i className={props.icon} /><span className="avm-step-ico-num">{props.n}</span></>}
       </div>
       <div className="avm-step-text">
@@ -3576,10 +3688,11 @@ function SectionCard(props: {
   title: string;
   subtitle: string;
   headerAction?: ReactNode;
+  className?: string;
   children: ReactNode;
 }) {
   return (
-    <div className={`avm-section avm-section-${props.tone}`}>
+    <div className={`avm-section avm-section-${props.tone}${props.className ? ` ${props.className}` : ''}`}>
       <div className="avm-section-head">
         <div className="avm-section-head-left">
           <div className="avm-section-icon">{props.icon}</div>
@@ -3601,6 +3714,7 @@ function Field(props: {
   addNew?: boolean;
   onAdd?: () => void;
   error?: string;
+  hint?: ReactNode;
   children: ReactNode;
 }) {
   /* Renders as a <div>, NOT a <label>. A <label> proxies clicks anywhere
@@ -3622,6 +3736,7 @@ function Field(props: {
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); props.onAdd?.(); }}
           >+</button>
         )}
+        {props.hint}
       </span>
       {props.children}
       {props.error && (
@@ -4258,6 +4373,7 @@ function GstScrutinyTable(props: { rows: GstScrutinyRow[]; onRemove?: (id: strin
         <thead className="table-light">
           <tr>
             <th>SR NO</th>
+            <th>SCRUTINY DATE</th>
             <th>GST NUMBER</th>
             <th>STATUS</th>
             <th>LAST FILING</th>
@@ -4270,6 +4386,7 @@ function GstScrutinyTable(props: { rows: GstScrutinyRow[]; onRemove?: (id: strin
           {props.rows.map((r, i) => (
             <tr key={r.id}>
               <td>{String(i + 1).padStart(2, '0')}</td>
+              <td>{r.scrutinyDate || '—'}</td>
               <td><span className="font-monospace fs-13">{r.gstNumber}</span></td>
               <td>
                 <span className={`avm-pill ${r.status === 'Active' ? 'avm-pill-success' : (r.status === 'Suspended' ? 'avm-pill-warning' : 'avm-pill-danger')}`}>
@@ -4508,20 +4625,20 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
               <td><strong>{r.productName}</strong></td>
               <td><span className="avm-auto-code">{r.productCode}</span></td>
               <td><span className="font-monospace fs-13">{r.hsnSacCode || '—'}</span></td>
-              <td>{r.segment || '—'}</td>
+              <td>{r.segment ? <SegmentTags segment={r.segment} tagClassName="avm-seg-tag" /> : '—'}</td>
               <td className="text-end font-monospace fs-13">₹{r.purchasePrice.toFixed(2)}</td>
               <td className="text-end font-monospace fs-13">{r.gstPercentage ? `${r.gstPercentage.toFixed(2)}%` : '—'}</td>
               <td className="text-end font-monospace fs-13">₹{r.gstAmount.toFixed(2)}</td>
               <td className="text-end font-monospace fs-13"><strong>₹{r.totalAmount.toFixed(2)}</strong></td>
               <td>
-                <div className="avm-kyc-actions">
+                <div className="avm-row-actions">
                   {props.onEdit && (
-                    <button type="button" className="avm-kyc-act edit" onClick={() => props.onEdit?.(r.id)} data-tooltip="Edit product" aria-label="Edit product">
-                      <i className="ri-pencil-line" />
+                    <button type="button" className="avm-row-btn" onClick={() => props.onEdit?.(r.id)} data-tooltip="Edit product" aria-label="Edit product">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                     </button>
                   )}
-                  <button type="button" className="avm-kyc-act del" onClick={() => props.onRemove(r.id)} data-tooltip="Remove product" aria-label="Remove product">
-                    <i className="ri-delete-bin-line" />
+                  <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => props.onRemove(r.id)} data-tooltip="Remove product" aria-label="Remove product">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
                   </button>
                 </div>
               </td>
@@ -5368,9 +5485,8 @@ const SCOPED_CSS = `
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
   padding: 14px 22px;
   position: relative; overflow: hidden;
-  /* Matches the Add Product Mapping popup header (.avm-cp-head): 135deg,
-     deep purple #5b21b6 -> light purple #a78bfa. */
-  background: linear-gradient(135deg, #5b21b6, #a78bfa);
+  /* Exact Figma header gradient — deep violet → light violet across 5 stops. */
+  background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 28%, #6d28d9 55%, #7c3aed 80%, #8b5cf6 100%);
   color: #fff;
   border-bottom: 1px solid rgba(255, 255, 255, .22);
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, .35);
@@ -5393,7 +5509,8 @@ const SCOPED_CSS = `
   font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
   transition: background .15s, transform .12s;
 }
-.avm-map-btn:hover { background: rgba(255,255,255,.25); transform: translateY(-1px); }
+.avm-map-btn:hover:not(:disabled) { background: rgba(255,255,255,.25); transform: translateY(-1px); }
+.avm-map-btn:disabled { opacity: .45; cursor: not-allowed; }
 .avm-close {
   width: 32px; height: 32px; border-radius: 9px;
   border: 1px solid rgba(255,255,255,.25);
@@ -5454,13 +5571,27 @@ const SCOPED_CSS = `
 }
 .avm-step-active .avm-step-ico { background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6); box-shadow: 0 6px 16px rgba(124,58,237,.55), 0 1px 0 rgba(255,255,255,.4) inset; }
 
-/* Completed card — green wash + green check chip */
+/* Completed card — green wash + green check chip. Matches Figma exactly:
+   vivid green border, mint gradient, and the green elevation glow + inset
+   white highlight (this glow was missing, which made dev look flat). */
 .avm-step-done {
-  border-color: #bbf7d0;
-  background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+  border-color: #86efac;
+  background: linear-gradient(135deg, #f0fdf4, #d6fadf);
+  box-shadow: 0 8px 22px rgba(34, 197, 94, .18), 0 1px 0 rgba(255, 255, 255, .7) inset;
 }
 .avm-step-done .avm-step-ico { background: linear-gradient(135deg, #22c55e, #16a34a); box-shadow: 0 4px 12px rgba(22,163,74,.4); }
-.avm-step-done .avm-step-ico i { font-size: 22px; }
+.avm-step-done .avm-step-ico > i { font-size: 22px; }
+/* Small green check sub-badge at the icon corner (Figma) — mirrors the
+   number badge slot but renders a green tick on white. */
+.avm-step-ico-check {
+  position: absolute; right: -4px; bottom: -4px;
+  width: 17px; height: 17px; border-radius: 50%;
+  /* Figma: green gradient fill, white tick, white ring. */
+  background: linear-gradient(135deg, #16a34a, #15803d); color: #fff; border: 1.5px solid #fff;
+  box-shadow: 0 1px 3px rgba(22,163,74,.3);
+  display: flex; align-items: center; justify-content: center;
+}
+.avm-step-ico-check i { font-size: 11px; font-weight: 800; line-height: 1; }
 .avm-step-done .avm-step-title { color: #15803d; }
 .avm-step-done .avm-step-sub   { color: #4d9e6a; }
 
@@ -5509,17 +5640,25 @@ const SCOPED_CSS = `
 .avm-prev-headtext { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .avm-prev-title { font-size: 13px; font-weight: 700; color: #3b0764; letter-spacing: -0.01em; }
 .avm-prev-subtitle { font-size: 10.5px; font-weight: 500; color: #7c3aed; }
+/* Pill + chevron are split: the chevron sits OUTSIDE the purple pill (Figma).
+   The button itself is a transparent wrapper. */
 .avm-prev-toggle {
   flex-shrink: 0;
-  display: inline-flex; align-items: center; gap: 4px;
-  height: 30px; padding: 0 8px 0 14px;
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed); border: none; color: #fff;
-  border-radius: 99px; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
-  box-shadow: 0 3px 9px rgba(124,58,237,.4);
+  display: inline-flex; align-items: center; gap: 8px;
+  background: none; border: none; padding: 0; cursor: pointer; font-family: inherit;
+}
+.avm-prev-toggle-pill {
+  z-index: 1; flex-shrink: 0;
+  display: inline-flex; align-items: center;
+  padding: 4px 10px;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff;
+  border-radius: 20px;
+  font-size: 8.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
+  box-shadow: 0 3px 8px rgba(124,58,237,.35);
   transition: filter .15s, box-shadow .15s;
 }
-.avm-prev-toggle i { font-size: 17px; }
-.avm-prev-toggle:hover { filter: brightness(1.06); box-shadow: 0 5px 13px rgba(124,58,237,.5); }
+.avm-prev-toggle-chev { font-size: 20px; color: #7c3aed; line-height: 1; }
+.avm-prev-toggle:hover .avm-prev-toggle-pill { filter: brightness(1.06); box-shadow: 0 5px 13px rgba(124,58,237,.5); }
 .avm-prev-body { padding: 10px 16px 12px; display: flex; flex-direction: column; gap: 9px; border-top: 1px solid rgba(196,181,253,.4); }
 /* Step-grouped summary — each stage's label uses the same muted violet
  * tone so the header reads as a single block rather than several panels
@@ -5603,8 +5742,11 @@ const SCOPED_CSS = `
   display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 14px;
   padding: 5px;
   background: #f3eefc;
-  border: 1px solid #e9e2f7;
+  /* Crisper outline + subtle lift so the strip reads as a defined card on the
+     lavender modal body (Figma). The old #e9e2f7 was near-invisible against it. */
+  border: 1px solid #ddd6fe;
   border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(124, 58, 237, .07);
 }
 .avm-pill-tabs .avm-pill {
   display: inline-flex; align-items: center;
@@ -5678,12 +5820,15 @@ const SCOPED_CSS = `
 .avm-section-green  .avm-section-icon { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
 .avm-section-purple .avm-section-icon { background: #f5f1fe; color: #7c3aed; border-color: #e2d4fa; }
 .avm-section-headtext { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-width: 0; }
-.avm-section-title { font-size: 11px; font-weight: 600; color: #5b21b6; letter-spacing: 0.02em; text-transform: uppercase; }
+.avm-section-title { font-size: 11px; font-weight: 700; color: #5b21b6; letter-spacing: 0.02em; text-transform: uppercase; }
 .avm-section-sub   { font-size: 10.5px; font-weight: 500; color: #a78bfa; letter-spacing: 0; }
 .avm-section-sub::before { content: '|'; margin-right: 7px; color: #c4b5fd; font-weight: 600; }
 /* Amber section keeps its amber icon, but the title + subtitle use the same
    purple as every other section heading (user request). */
 .avm-section-body { padding: 8px 14px 10px; display: flex; flex-direction: column; gap: 9px; }
+/* Additional Contact Persons card — stretch its body so the card fills the
+   empty space below in the modal instead of leaving a big gap. */
+.avm-section-grow .avm-section-body { min-height: 230px; }
 
 .avm-section-add-btn {
   display: inline-flex; align-items: center; gap: 6px;
@@ -5700,15 +5845,47 @@ const SCOPED_CSS = `
    keep the lavender-gradient gray header. */
 .avm-modal .table.avm-mini-table thead tr { background: transparent !important; }
 .avm-modal .table.avm-mini-table thead th {
-  color: #7c3aed; font-size: 9.5px; font-weight: 800; letter-spacing: .06em;
-  padding: 7px 10px; border-bottom: 1px solid #ece7f8;
+  color: #7c3aed; font-size: 10.5px; font-weight: 800; letter-spacing: .05em;
+  padding: 11px 14px; border-bottom: 1px solid #ece7f8;
 }
+/* Figma spacing — airier rows: larger cell padding + 13px body text. */
+.avm-modal .table.avm-mini-table tbody td {
+  padding: 13px 14px; font-size: 13px; vertical-align: middle;
+  border-bottom: 1px solid #f3eefc;
+}
+.avm-modal .table.avm-mini-table tbody tr:last-child td { border-bottom: none; }
 [data-bs-theme="dark"] .avm-modal .table.avm-mini-table thead tr { background: transparent !important; }
 [data-bs-theme="dark"] .avm-modal .table.avm-mini-table thead th { color: #c4b5fd; border-bottom-color: #3b2a6b; }
+[data-bs-theme="dark"] .avm-modal .table.avm-mini-table tbody td { border-bottom-color: #2a2150; }
+
+/* Row action buttons — match the Customer form (acm-row-btn): pastel square. */
+.avm-row-actions { display: inline-flex; gap: 5px; }
+.avm-row-btn {
+  width: 28px; height: 28px; border-radius: 7px; border: 1px solid #e0d9f7;
+  background: #fff; color: #7c3aed; cursor: pointer; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background .15s, border-color .15s;
+}
+.avm-row-btn:hover { background: #ede9fe; border-color: #c4b5fd; }
+.avm-row-btn-del { color: #ef4444; }
+.avm-row-btn-del:hover { background: #fee2e2; border-color: #fca5a5; }
+[data-bs-theme="dark"] .avm-row-btn { background: #1a1430; border-color: #3b2a6b; }
+[data-bs-theme="dark"] .avm-row-btn:hover { background: #2a1d5c; border-color: #6d28d9; }
+
+/* WhatsApp pills + Primary tag — Customer-form gradient style. */
+.avm-wa-yes, .avm-wa-no { display: inline-block; padding: 3px 11px; border-radius: 20px; font-size: 10.5px; font-weight: 700; }
+.avm-wa-yes { background: linear-gradient(135deg,#dcfce7,#bbf7d0); color: #15803d; border: 1px solid #86efac; }
+.avm-wa-no  { background: linear-gradient(135deg,#fee2e2,#fecaca); color: #b91c1c; border: 1px solid #fca5a5; }
+.avm-primary-tag {
+  display: inline-block; padding: 2px 9px; border-radius: 20px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe); color: #5b21b6; border: 1px solid #c4b5fd;
+}
 /* Additional Contacts list — show ~3 rows then scroll; min-height stops the
    card collapsing to a single thin row (fills the empty space a bit). The
    header stays pinned while the body scrolls. */
-.avm-contacts-scroll { min-height: 132px; max-height: 172px; overflow-y: auto; }
+/* Show ~3 contact rows + the sticky header, then scroll for the rest. */
+.avm-contacts-scroll { max-height: 174px; overflow-y: auto; }
 .avm-contacts-scroll thead th { position: sticky; top: 0; z-index: 2; background: #fbfaff; }
 [data-bs-theme="dark"] .avm-contacts-scroll thead th { background: #1a1430; }
 
@@ -5736,6 +5913,7 @@ const SCOPED_CSS = `
   letter-spacing: 0; text-transform: none;
   color: #3b0764;
   margin-bottom: 0;
+  white-space: nowrap;
 }
 [data-bs-theme="dark"] .avm-field-label,
 [data-layout-mode="dark"] .avm-field-label { color: #c4b5fd; }
@@ -5744,6 +5922,10 @@ const SCOPED_CSS = `
 .avm-segment-lock-note { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 10.5px; font-weight: 600; color: #b45309; }
 .avm-segment-lock-note i { font-size: 12px; }
 [data-bs-theme="dark"] .avm-segment-lock-note { color: #fbbf24; }
+/* Inline lock hint beside the Supplier Segment label (no extra row → no gap). */
+.avm-seg-hint { display: inline-flex; align-items: center; gap: 3px; margin-left: 4px; font-size: 9.5px; font-weight: 500; color: #b45309; text-transform: none; letter-spacing: 0; white-space: nowrap; cursor: help; }
+.avm-seg-hint i { font-size: 11px; }
+[data-bs-theme="dark"] .avm-seg-hint { color: #fbbf24; }
 /* Inline quick-add (+) buttons — let the user add a new master entry
    (Risk Level / Supplier Behaviour / Segment / Compliance / Country)
    without leaving the form. */
@@ -6008,6 +6190,11 @@ const SCOPED_CSS = `
   border-bottom: 1.5px solid #ece7f8;
   white-space: nowrap;
 }
+/* KYC / DD / License / Bank / GST document tables — Figma header th is
+   "9px DM Sans" which is weight 400 (normal). The general rule above uses 800,
+   so even at the same 9px the dev headers read heavier/larger. Match the Figma
+   weight here; scoped to avm-kyc-table so contacts and mapped tables keep theirs. */
+.avm-modal .table.avm-kyc-table thead th { font-weight: 400; letter-spacing: 0.04em; }
 .avm-modal .table tbody td {
   font-size: 13px;
   font-weight: 400;
@@ -6304,16 +6491,40 @@ const SCOPED_CSS = `
 /* The row fits the body, so kill the spurious table-responsive scrollbar — the
    table then spans the full body width (aligned with the toolbar: pill left →
    +Map Product right) and the action icons sit INSIDE as the last column. */
-.avm-mapped-wrap { overflow-x: visible !important; border-color: #f1ecfb !important; border-radius: 12px !important; }
+/* visible: the compacted table fits the popup so no scrollbar is needed, and
+   visible lets the SEGMENT "+N" segment popover overflow the row instead of
+   being clipped (overflow-x:auto would force overflow-y:auto and cut it off). */
+.avm-mapped-wrap { overflow: visible !important; border-color: #f1ecfb !important; border-radius: 12px !important; }
 .avm-mapped-table th.text-end, .avm-mapped-table td.text-end { text-align: left !important; }
 .avm-mapped-table thead tr { background: linear-gradient(135deg, #faf8ff, #f3eefe); }
 .avm-mapped-table thead th {
   background: transparent;
-  font-size: 9px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase;
-  color: #8b7bb8; padding: 10px 13px; border-bottom: 1.5px solid #ece7f8;
+  font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  color: #8b7bb8; padding: 10px 7px; border-bottom: 1.5px solid #ece7f8;
 }
-.avm-mapped-table tbody td { padding: 9px 13px; font-size: 12px; color: #475569; }
+.avm-mapped-table tbody td { padding: 9px 7px; font-size: 12px; color: #475569; }
 .avm-mapped-table tbody td strong { font-weight: 800; color: #1e293b; }
+/* Numeric + CODE columns stay on one line (server showed "P-18" wrapping to two
+   lines). Smaller mono font keeps the wide ₹ amounts narrow so all 10 columns
+   fit the popup with NO horizontal scroll; PRODUCT & SEGMENT still wrap. */
+.avm-mapped-table td.font-monospace { white-space: nowrap; font-size: 11px; }
+.avm-mapped-table th.text-end { white-space: nowrap; }
+.avm-mapped-table .avm-auto-code { white-space: nowrap; }
+/* SEGMENT column — SegmentTags: first segment as a teal chip + a "+N" pill that
+   opens a popover listing every segment (for multi-segment products). */
+.avm-mapped-table .seg-tags { position: relative; display: inline-flex; align-items: center; gap: 4px; }
+.avm-seg-tag { display: inline-block; font-size: 10.5px; font-weight: 600; color: #0e7490; background: #f0fdff; border: 1px solid #bdf0f7; border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+.avm-mapped-table .seg-more-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 19px; padding: 0 6px; border-radius: 6px; border: 1px solid #bdf0f7; background: #e0fbff; color: #0e7490; font-family: inherit; font-size: 10px; font-weight: 700; cursor: pointer; line-height: 1; transition: background .15s, border-color .15s; }
+.avm-mapped-table .seg-more-pill:hover { background: #cffafe; border-color: #67e8f9; }
+.avm-mapped-table .seg-more-pop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 60; min-width: 150px; max-width: 240px; padding: 8px; border-radius: 10px; background: #fff; border: 1px solid #e2e8f0; box-shadow: 0 8px 24px rgba(15,23,42,.18); }
+.avm-mapped-table .seg-more-pop-hdr { font-size: 9.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #64748b; margin-bottom: 6px; }
+.avm-mapped-table .seg-more-pop-list { display: flex; flex-wrap: wrap; gap: 5px; }
+.avm-mapped-table .seg-more-pop-item { display: inline-block; font-size: 10.5px; font-weight: 600; color: #0e7490; background: #f0fdff; border: 1px solid #bdf0f7; border-radius: 999px; padding: 3px 9px; }
+[data-bs-theme="dark"] .avm-seg-tag,
+[data-bs-theme="dark"] .avm-mapped-table .seg-more-pop-item { background: rgba(8,145,178,.15); border-color: rgba(103,232,249,.25); color: #a5f3fc; }
+[data-bs-theme="dark"] .avm-mapped-table .seg-more-pill { background: rgba(8,145,178,.18); border-color: rgba(103,232,249,.3); color: #67e8f9; }
+[data-bs-theme="dark"] .avm-mapped-table .seg-more-pop { background: #0f1e2e; border-color: rgba(255,255,255,.12); box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+[data-bs-theme="dark"] .avm-mapped-table .seg-more-pop-hdr { color: #94a3b8; }
 .avm-sr-pill {
   display: inline-flex; align-items: center; justify-content: center;
   width: 24px; height: 24px; border-radius: 7px;
@@ -6331,8 +6542,12 @@ const SCOPED_CSS = `
   box-shadow: 0 3px 9px rgba(124,58,237,.42);
 }
 /* Popup Close/Cancel — match Figma .sf-btn-cancel (light slate border, radius 12px). */
-.avm-cp-foot .avm-btn-ghost { color: #475569; border: 1.5px solid #e2e8f0; border-radius: 12px; font-weight: 700; }
+/* Footer buttons — exact Figma .sf-pop-foot .sf-btn: 13px / 700, padding
+   10px 22px, radius 12px. Cancel = white + #475569 text; Save keeps the base
+   violet gradient (which already matches Figma's .sf-btn-primary). */
+.avm-cp-foot .avm-btn-ghost { color: #475569; background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px; font-weight: 700; font-size: 13px; height: auto; padding: 10px 22px; box-shadow: none; }
 .avm-cp-foot .avm-btn-ghost:hover { background: #f8fafc; border-color: #cbd5e1; color: #334155; }
+.avm-cp-foot .avm-btn-primary { font-weight: 700; font-size: 13px; height: auto; padding: 10px 22px; border-radius: 12px; }
 [data-bs-theme="dark"] .avm-mapped-table thead tr { background: rgba(124,58,237,.12); }
 [data-bs-theme="dark"] .avm-mapped-table thead th { color: #c4b5fd; border-bottom-color: rgba(167,139,250,.2); }
 [data-bs-theme="dark"] .avm-mapped-table tbody td { color: #cbd5e1; }
@@ -6479,8 +6694,9 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-prev { background: linear-gradient(180deg, #1a1538 0%, #14102a 100%); border-color: #3b2a6b; }
 [data-bs-theme="dark"] .avm-prev-head { background: transparent; border-bottom-color: rgba(167,139,250,.25); }
 [data-bs-theme="dark"] .avm-prev-title { color: #ddd6fe; }
-[data-bs-theme="dark"] .avm-prev-toggle { background: #221940; color: #c4b5fd; border-color: rgba(167,139,250,.35); }
-[data-bs-theme="dark"] .avm-prev-toggle:hover { background: #2a1d5c; border-color: #a78bfa; }
+[data-bs-theme="dark"] .avm-prev-toggle-pill { background: #221940; color: #c4b5fd; box-shadow: none; }
+[data-bs-theme="dark"] .avm-prev-toggle:hover .avm-prev-toggle-pill { background: #2a1d5c; }
+[data-bs-theme="dark"] .avm-prev-toggle-chev { color: #c4b5fd; }
 [data-bs-theme="dark"] .avm-prev-chip { background: #221940; border-color: rgba(167,139,250,.35); color: #ddd6fe; }
 [data-bs-theme="dark"] .avm-prev-pair:hover { background: rgba(167,139,250,0.10); }
 [data-bs-theme="dark"] .avm-prev-k { color: #94a3b8; }
@@ -6510,14 +6726,31 @@ const SCOPED_CSS = `
   box-shadow: 0 30px 80px rgba(15, 23, 42, .5);
 }
 .avm-qa-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 18px;
-  background: linear-gradient(135deg, #5b21b6, #a78bfa);
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 16px 18px;
+  background: linear-gradient(115deg, #4c1d95 0%, #6d28d9 55%, #8b5cf6 100%);
   color: #fff;
 }
-.avm-qa-title { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
-.avm-qa-title i { font-size: 18px; }
+/* Soft radial glow — same accent the master Add modal header uses. */
+.avm-qa-head-glow {
+  position: absolute; bottom: -50px; left: -30px; width: 160px; height: 160px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.18) 0%, transparent 70%);
+  pointer-events: none;
+}
+.avm-qa-head-main { display: flex; align-items: center; gap: 12px; min-width: 0; position: relative; }
+.avm-qa-head-ico {
+  width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.25);
+  backdrop-filter: blur(6px);
+}
+.avm-qa-head-ico i { font-size: 20px; color: #fff; }
+.avm-qa-head-text { min-width: 0; }
+.avm-qa-title { font-size: 16px; font-weight: 800; letter-spacing: .01em; line-height: 1.2; }
+.avm-qa-sub { font-size: 12px; color: rgba(255,255,255,0.82); margin-top: 1px; }
 .avm-qa-close {
+  position: relative; flex-shrink: 0;
   width: 30px; height: 30px; border-radius: 8px;
   border: 1px solid rgba(255,255,255,.25);
   background: rgba(255,255,255,.12); color: #fff;
@@ -6532,7 +6765,7 @@ const SCOPED_CSS = `
 }
 
 [data-bs-theme="dark"] .avm-qa-popup { background: #14102a; color: #ede9fe; }
-[data-bs-theme="dark"] .avm-qa-head  { background: linear-gradient(135deg, #5b21b6, #a78bfa); }
+[data-bs-theme="dark"] .avm-qa-head  { background: linear-gradient(115deg, #4c1d95 0%, #6d28d9 55%, #8b5cf6 100%); }
 [data-bs-theme="dark"] .avm-qa-foot  { border-top-color: #3b2a6b; }
 
 /* ─── Contact Person popup ─── */
@@ -6592,7 +6825,10 @@ const SCOPED_CSS = `
 .avm-section-add-btn.amber:hover { box-shadow: 0 6px 14px rgba(217,119,6,.5); }
 /* Figma .sf-pop-head layout — icon chip beside a tight title/subtitle column,
    vertically centred. Keeps the header compact (no taller than the icon). */
-.avm-cp-title { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 12px; }
+/* font-size here drives the Add Contact Person popup title (it renders text
+   directly in .avm-cp-title, not .avm-cp-htitle) — match Figma's 16px DM Sans.
+   PopupShell titles use .avm-cp-htitle, which keeps its own size. */
+.avm-cp-title { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 800; letter-spacing: -0.2px; }
 .avm-cp-title i {
   width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0; font-size: 18px;
   display: inline-flex; align-items: center; justify-content: center;
@@ -6612,10 +6848,12 @@ const SCOPED_CSS = `
   transition: background .15s, transform .12s;
 }
 .avm-cp-close:hover { background: rgba(255,255,255,.32); transform: rotate(90deg); }
-.avm-cp-body  { padding: 22px; display: flex; flex-direction: column; gap: 14px; }
+.avm-cp-body  { padding: 22px; display: flex; flex-direction: column; gap: 12px; }
 /* Popup field labels — match the Figma .sf-pop-body .sf-label: 11.5px, bold,
    dark-purple (the main form uses a lighter slate medium-weight label). */
-.avm-cp-body .avm-field-label { font-size: 11.5px; font-weight: 700; color: #3b0764; margin-bottom: 5px; }
+/* No margin-bottom here — the .avm-field flex gap (5px) already spaces the
+   label from the input. The extra 5px margin doubled the gap (Figma is ~5px). */
+.avm-cp-body .avm-field-label { font-size: 11.5px; font-weight: 700; color: #3b0764; margin-bottom: 0; }
 [data-bs-theme="dark"] .avm-cp-body .avm-field-label,
 [data-layout-mode="dark"] .avm-cp-body .avm-field-label { color: #c4b5fd; }
 /* Figma .sf-pop-body .sf-input — popup inputs sit a touch taller/rounder than
@@ -6635,7 +6873,7 @@ const SCOPED_CSS = `
   background: color-mix(in srgb, #a78bfa 12%, #110c25);
   border-color: rgba(167,139,250,.3); color: #a89fc7;
 }
-.avm-cp-body .avm-grid-2, .avm-cp-body .avm-grid-3 { gap: 14px; }
+.avm-cp-body .avm-grid-2, .avm-cp-body .avm-grid-3 { gap: 12px; }
 .avm-cp-foot {
   display: flex; justify-content: flex-end; gap: 11px;
   padding: 14px 22px 20px;

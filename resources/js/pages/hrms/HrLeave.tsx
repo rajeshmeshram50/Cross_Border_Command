@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardBody, Col, Row, Input, Modal, ModalBody } from 'reactstrap';
+import { Card, CardBody, Col, Row, Input, Modal, ModalBody, Spinner } from 'reactstrap';
 import { MasterFormStyles, MasterSelect, MasterDatePicker } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
 import WorklistPager from '../../components/ui/WorklistPager';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
+import { useTheme } from '../../contexts/ThemeContext';
 import api from '../../api';
 import { leaveRequestsApi, ApiLeaveRequest } from './leavePlansApi';
 import '../../../css/recruitment.css';
@@ -54,7 +55,8 @@ interface LeaveRequest {
   location: string;
   legalEntity: string;
   accent: string;
-  type: LeaveType;
+  type: LeaveType;        // coarse bucket — drives the badge COLOUR only
+  typeName: string;       // the real leave-type name as configured (badge LABEL)
   durationDays: number;
   durationLabel: string;
   fromDate: string;
@@ -267,9 +269,15 @@ function apiToLeaveRequest(api: ApiLeaveRequest, idx: number): LeaveRequest {
     'Sick Leave': 'Sick', 'Casual Leave': 'Casual', 'Annual Leave': 'Annual',
     'Earned Leave': 'Earned', 'Comp Off': 'Comp Off',
   };
+  // `type` is only a COARSE colour bucket. Any leave type not in typeMap
+  // (e.g. "Emergency Leave") used to be silently shown AS 'Casual' — the
+  // badge label must instead reflect the real configured name, so we keep
+  // that separately in `typeName`. The colour falls back to Casual/LOP tone
+  // for unmapped names, which is fine; the label stays accurate.
   const type: LeaveType = typeMap[api.leave_type?.name ?? ''] ?? (
     (api.leave_type?.type === 'Unpaid Leave') ? 'LOP' : 'Casual'
   );
+  const typeName: string = (api.leave_type?.name ?? '').trim() || type;
 
   const days = Number(api.days);
   return {
@@ -283,6 +291,7 @@ function apiToLeaveRequest(api: ApiLeaveRequest, idx: number): LeaveRequest {
     legalEntity: '—',
     accent: accent(idx),
     type,
+    typeName,
     durationDays: days,
     durationLabel: days === 1 ? '1 day' : `${days} days`,
     fromDate: typeof api.from_date === 'string' ? api.from_date.slice(0, 10) : '',
@@ -398,6 +407,45 @@ export default function HrLeave() {
   };
   const clearSelection = () => setSelectedIds(new Set());
 
+  // Bulk approve / reject for every selected (always pending — the row
+  // checkbox is disabled otherwise) request. Each id hits the same
+  // approve/reject endpoint as the single-row action; allSettled lets the
+  // batch finish even if one request fails, then we reload, clear the
+  // selection, and surface a single summary toast.
+  // Tracks which bulk action is in flight ('approve' | 'reject') so only the
+  // clicked button shows its spinner while both stay disabled; null when idle.
+  const [bulkBusy, setBulkBusy] = useState<'approve' | 'reject' | null>(null);
+  const runBulkAction = async (action: 'approve' | 'reject') => {
+    if (bulkBusy) return;
+    const ids = requests
+      .filter(r => selectedIds.has(r.id) && isPendingRow(r) && r.canActNow)
+      .map(r => Number(r.id))
+      .filter(id => Number.isFinite(id));
+    if (ids.length === 0) return;
+    setBulkBusy(action);
+    try {
+      const results = await Promise.allSettled(
+        ids.map(id => (action === 'approve' ? leaveRequestsApi.approve(id) : leaveRequestsApi.reject(id))),
+      );
+      const ok = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.length - ok;
+      await loadRequests();
+      clearSelection();
+      if (ok > 0) {
+        toast.success(
+          action === 'approve' ? 'Leaves approved' : 'Leaves rejected',
+          `${ok} request${ok === 1 ? '' : 's'} ${action === 'approve' ? 'approved' : 'rejected'}${failed ? `, ${failed} failed` : ''}.`,
+        );
+      } else {
+        toast.error('Bulk action failed', `Could not ${action} the selected request${failed === 1 ? '' : 's'}.`);
+      }
+    } catch (err: any) {
+      toast.error('Bulk action failed', err?.response?.data?.message || err?.message || 'Action failed');
+    } finally {
+      setBulkBusy(null);
+    }
+  };
+
   const counts = useMemo(() => {
     const approved = requests.filter(r => r.stage === 'Approved');
     const pending  = requests.filter(r => r.stage.startsWith('Pending'));
@@ -511,13 +559,6 @@ export default function HrLeave() {
               <div className="d-flex align-items-center gap-2 flex-wrap">
                 <button type="button" className="rec-btn-ghost" onClick={() => setHolidaysOpen(true)}>
                   <i className="ri-calendar-event-line" />Holidays
-                </button>
-                <button
-                  type="button"
-                  className="rec-btn-ghost"
-                  onClick={() => navigate('/hr/leave-approvals')}
-                >
-                  <i className="ri-check-double-line" />Approvals
                 </button>
                 {canManagePlans && (
                   <button
@@ -664,7 +705,7 @@ export default function HrLeave() {
                           type="button"
                           className="lv-today-chip"
                           onClick={() => setDetail(r)}
-                          title={`${r.empName} · ${r.type} · until ${formatDate(r.toDate)}`}
+                          title={`${r.empName} · ${r.typeName} · until ${formatDate(r.toDate)}`}
                         >
                           <span
                             className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
@@ -679,7 +720,7 @@ export default function HrLeave() {
                             <span className="lv-today-chip-name">{r.empName}</span>
                             <span className="lv-today-chip-meta">
                               <span className="rec-pill lv-tone-pill" style={{ ['--lvp-bg' as string]: tType.bg, ['--lvp-fg' as string]: tType.fg, ['--lvp-accent' as string]: tType.fg, padding: '1px 7px', fontSize: 10 } as CSSProperties}>
-                                {r.type}
+                                {r.typeName}
                               </span>
                               <span className="text-muted" style={{ fontSize: 10.5 }}>
                                 <i className="ri-arrow-right-line me-1" />till {formatDate(r.toDate)}
@@ -720,13 +761,17 @@ export default function HrLeave() {
                   <span className="dot" />
                   {selectedIds.size} selected
                 </span>
-                <button type="button" className="rec-btn-primary">
-                  <i className="ri-check-double-line" />Approve Selected
+                <button type="button" className="rec-btn-primary" disabled={!!bulkBusy} onClick={() => void runBulkAction('approve')}>
+                  {bulkBusy === 'approve'
+                    ? <><Spinner size="sm" className="me-1" style={{ width: 14, height: 14 }} />Approving…</>
+                    : <><i className="ri-check-double-line" />Approve Selected</>}
                 </button>
-                <button type="button" className="rec-btn-soft">
-                  <i className="ri-close-line" />Reject Selected
+                <button type="button" className="rec-btn-soft" disabled={!!bulkBusy} onClick={() => void runBulkAction('reject')}>
+                  {bulkBusy === 'reject'
+                    ? <><Spinner size="sm" className="me-1" style={{ width: 14, height: 14 }} />Rejecting…</>
+                    : <><i className="ri-close-line" />Reject Selected</>}
                 </button>
-                <button type="button" className="rec-btn-ghost ms-auto" onClick={clearSelection}>
+                <button type="button" className="rec-btn-ghost ms-auto" disabled={!!bulkBusy} onClick={clearSelection}>
                   <i className="ri-close-circle-line" />Clear
                 </button>
               </div>
@@ -767,7 +812,12 @@ export default function HrLeave() {
 
                   <div className="rec-list-scroll">
                     {(() => {
-                      const visiblePending = visible.filter(isPendingRow);
+                      // Only rows it's actually the viewer's turn to act on are
+                      // bulk-selectable — pending AND canActNow. This keeps the
+                      // manager→HR hierarchy: HR can see a manager-level request
+                      // but can't select (and so can't bulk-approve) it until the
+                      // reporting manager has approved and it advances to HR.
+                      const visiblePending = visible.filter(r => isPendingRow(r) && r.canActNow);
                       const visiblePendingIds = visiblePending.map(r => r.id);
                       const selectedVisible = visiblePendingIds.filter(id => selectedIds.has(id)).length;
                       const allVisibleChecked = visiblePending.length > 0 && selectedVisible === visiblePending.length;
@@ -826,12 +876,12 @@ export default function HrLeave() {
                           return (
                             <tr key={r.id} className={isSelected ? 'table-active' : undefined}>
                               <td className="ps-3 text-center">
-                                <Tooltip label={isPending ? 'Select for bulk action' : 'Only pending requests can be bulk-actioned'}>
+                                <Tooltip label={!isPending ? 'Only pending requests can be bulk-actioned' : !r.canActNow ? 'Waiting on the reporting manager — HR can act once the manager approves' : 'Select for bulk action'}>
                                   <input
                                     type="checkbox"
                                     className="form-check-input"
                                     checked={isSelected}
-                                    disabled={!isPending || !canApprove}
+                                    disabled={!isPending || !canApprove || !r.canActNow}
                                     onChange={() => toggleRow(r.id)}
                                     aria-label={`Select request ${r.id}`}
                                   />
@@ -854,7 +904,7 @@ export default function HrLeave() {
                               </td>
                               <td>
                                 <span className="rec-pill lv-tone-pill" style={{ ['--lvp-bg' as string]: tType.bg, ['--lvp-fg' as string]: tType.fg, ['--lvp-accent' as string]: tType.fg } as CSSProperties}>
-                                  {r.type}
+                                  {r.typeName}
                                 </span>
                               </td>
                               <td className="fs-13">{r.durationLabel}</td>
@@ -945,6 +995,8 @@ export default function HrLeave() {
 }
 
 function HolidayListModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { theme } = useTheme();
+  const dark = theme === 'dark';
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   useEffect(() => {
@@ -970,7 +1022,7 @@ function HolidayListModal({ open, onClose }: { open: boolean; onClose: () => voi
 
   return (
     <Modal isOpen={open} toggle={onClose} centered size="lg" scrollable contentClassName="border-0">
-      <ModalBody className="p-0">
+      <ModalBody className="p-0" style={{ background: dark ? '#1f2937' : '#fff', color: dark ? '#e5e7eb' : undefined }}>
         <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #6d28d9 0%, #8b5cf6 60%, #a78bfa 100%)' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-2">
@@ -1004,26 +1056,26 @@ function HolidayListModal({ open, onClose }: { open: boolean; onClose: () => voi
           ) : (
             <div className="table-responsive">
               <table className="table align-middle table-nowrap mb-0">
-                <thead className="table-light">
+                <thead style={{ background: dark ? 'rgba(255,255,255,0.06)' : '#f8f9fa', color: dark ? 'rgba(255,255,255,0.65)' : undefined }}>
                   <tr>
-                    <th className="text-center" style={{ width: 50 }}>#</th>
-                    <th>Holiday</th>
-                    <th style={{ width: 135 }}>Date</th>
-                    <th style={{ width: 110 }}>Day</th>
-                    <th style={{ width: 120 }}>Type</th>
+                    <th className="text-center" style={{ width: 60, background: 'transparent', color: 'inherit' }}>Sr No</th>
+                    <th style={{ background: 'transparent', color: 'inherit' }}>Holiday</th>
+                    <th style={{ width: 135, background: 'transparent', color: 'inherit' }}>Date</th>
+                    <th style={{ width: 110, background: 'transparent', color: 'inherit' }}>Day</th>
+                    <th style={{ width: 120, background: 'transparent', color: 'inherit' }}>Type</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sorted.map((h, i) => (
                     <tr key={h.id ?? i}>
-                      <td className="text-center text-muted" style={{ fontSize: 12.5 }}>{i + 1}</td>
-                      <td>
-                        <div className="fw-semibold" style={{ fontSize: 13 }}>{h.name}</div>
+                      <td className="text-center text-muted" style={{ fontSize: 12.5, background: 'transparent' }}>{i + 1}</td>
+                      <td style={{ background: 'transparent' }}>
+                        <div className="fw-semibold" style={{ fontSize: 13, color: dark ? '#f1f5f9' : undefined }}>{h.name}</div>
                         {h.group?.name && <div className="text-muted" style={{ fontSize: 11 }}>{h.group.name}</div>}
                       </td>
-                      <td style={{ fontSize: 13 }}>{fmt(h.date)}</td>
-                      <td className="text-muted" style={{ fontSize: 13 }}>{weekday(h.date)}</td>
-                      <td><span className="rec-pill" style={{ background: '#ede9fe', color: '#5b3fd1', fontSize: 11 }}>{h.type || '—'}</span></td>
+                      <td style={{ fontSize: 13, background: 'transparent', color: dark ? '#e5e7eb' : undefined }}>{fmt(h.date)}</td>
+                      <td className="text-muted" style={{ fontSize: 13, background: 'transparent' }}>{weekday(h.date)}</td>
+                      <td style={{ background: 'transparent' }}><span className="rec-pill" style={{ background: dark ? 'rgba(124,92,252,0.20)' : '#ede9fe', color: dark ? '#c4b5fd' : '#5b3fd1', fontSize: 11 }}>{h.type || '—'}</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -1037,6 +1089,8 @@ function HolidayListModal({ open, onClose }: { open: boolean; onClose: () => voi
 }
 
 function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose: () => void }) {
+  const { theme } = useTheme();
+  const dark = theme === 'dark';
   if (!row) return null;
 
   const tType = TYPE_TONE[row.type];
@@ -1099,7 +1153,7 @@ function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose
           <div className="rec-view-card">
             <div className="rec-view-grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0,1fr))' }}>
               <Field label="Leave Type" value={
-                <span className="rec-pill" style={{ background: tType.bg, color: tType.fg }}>{row.type}</span>
+                <span className="rec-pill lv-tone-pill" style={{ ['--lvp-bg' as string]: tType.bg, ['--lvp-fg' as string]: tType.fg, ['--lvp-accent' as string]: tType.fg } as CSSProperties}>{row.typeName}</span>
               } />
               <Field label="Duration" value={row.durationLabel} />
               <Field label="Dates" value={formatRange(row.fromDate, row.toDate)} />
@@ -1111,10 +1165,10 @@ function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose
               } />
               <Field label="Submitted" value={formatDate(row.appliedOn)} />
               <Field label="Payroll" value={
-                <span className="rec-pill" style={{ background: tPay.bg, color: tPay.fg }}>{row.payroll}</span>
+                <span className="rec-pill lv-tone-pill" style={{ ['--lvp-bg' as string]: tPay.bg, ['--lvp-fg' as string]: tPay.fg, ['--lvp-accent' as string]: tPay.fg } as CSSProperties}>{row.payroll}</span>
               } />
               <Field label="Status" value={
-                <span className="rec-pill d-inline-flex align-items-center gap-1" style={{ background: tStage.bg, color: tStage.fg }}>
+                <span className="rec-pill lv-tone-pill d-inline-flex align-items-center gap-1" style={{ ['--lvp-bg' as string]: tStage.bg, ['--lvp-fg' as string]: tStage.fg, ['--lvp-accent' as string]: tStage.dot } as CSSProperties}>
                   <span style={{ width: 6, height: 6, borderRadius: '50%', background: tStage.dot }} />
                   {row.stage}
                 </span>
@@ -1127,7 +1181,7 @@ function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose
             <div className="rec-view-label mb-2">Approval Timeline</div>
             <ApprovalTimelineList chain={chain} reportingManager={row.reportingManager} appliedOn={row.appliedOn} />
             {row.escalatedToHr && (
-              <div className="mt-2 d-flex align-items-start gap-2 p-2 rounded" style={{ background: '#fef3c7', border: '1px solid #fde68a', color: '#78350f' }}>
+              <div className="mt-2 d-flex align-items-start gap-2 p-2 rounded" style={{ background: dark ? 'rgba(245,158,11,0.16)' : '#fef3c7', border: `1px solid ${dark ? 'rgba(245,158,11,0.35)' : '#fde68a'}`, color: dark ? '#fcd34d' : '#78350f' }}>
                 <i className="ri-information-line" style={{ fontSize: 16, marginTop: 1 }} />
                 <div style={{ fontSize: 11.5, lineHeight: 1.4 }}>
                   <strong style={{ display: 'block' }}>
@@ -1167,6 +1221,8 @@ function ApprovalTimelineList({
   reportingManager: PersonRef;
   appliedOn: string;
 }) {
+  const { theme } = useTheme();
+  const dark = theme === 'dark';
   const comments = chain
     .filter(n => !!n.comment)
     .map(n => ({
@@ -1196,10 +1252,10 @@ function ApprovalTimelineList({
             isApproved ? 'linear-gradient(135deg,#0ab39c,#108548)'
             : isRejected ? 'linear-gradient(135deg,#f06548,#dc2626)'
             : isPending  ? 'linear-gradient(135deg,#f59e0b,#d97706)'
-            : isSkipped  ? '#f3f4f6'
-            : '#fff';
-          const dotColor = isApproved || isRejected || isPending ? '#fff' : '#9ca3af';
-          const dotBorder = isSkipped ? '1.5px dashed #d1d5db' : !isApproved && !isRejected && !isPending ? '1.5px solid #e5e7eb' : 'none';
+            : isSkipped  ? (dark ? 'rgba(255,255,255,0.06)' : '#f3f4f6')
+            : (dark ? 'rgba(255,255,255,0.08)' : '#fff');
+          const dotColor = isApproved || isRejected || isPending ? '#fff' : (dark ? 'rgba(255,255,255,0.55)' : '#9ca3af');
+          const dotBorder = isSkipped ? `1.5px dashed ${dark ? 'rgba(255,255,255,0.20)' : '#d1d5db'}` : !isApproved && !isRejected && !isPending ? `1.5px solid ${dark ? 'rgba(255,255,255,0.18)' : '#e5e7eb'}` : 'none';
           const dotIcon =
             isApproved ? 'ri-check-line'
             : isRejected ? 'ri-close-line'
@@ -1265,10 +1321,10 @@ function ApprovalTimelineList({
       </div>
 
       {comments.length > 0 && (
-        <div className="mt-3 px-3 py-2 rounded" style={{ background: '#f3eeff', border: '1px solid #d8c8ff' }}>
+        <div className="mt-3 px-3 py-2 rounded" style={{ background: dark ? 'rgba(124,92,252,0.16)' : '#f3eeff', border: `1px solid ${dark ? 'rgba(124,92,252,0.35)' : '#d8c8ff'}` }}>
           {comments.map((c, i) => (
             <div key={i} className="text-body" style={{ fontSize: 11.5, marginTop: i > 0 ? 6 : 0 }}>
-              <span className="fw-bold" style={{ color: '#5a3fd1' }}>{c.role}</span>
+              <span className="fw-bold" style={{ color: dark ? '#c4b5fd' : '#5a3fd1' }}>{c.role}</span>
               <span className="text-muted"> · {c.name}: </span>
               <span className="fst-italic">"{c.comment}"</span>
             </div>
@@ -1344,7 +1400,7 @@ function ConfirmActionModal({
           <div className="lv-confirm-meta">
             <div>
               <div className="lv-confirm-label">Type</div>
-              <span className="rec-pill" style={{ background: tType.bg, color: tType.fg }}>{row.type}</span>
+              <span className="rec-pill" style={{ background: tType.bg, color: tType.fg }}>{row.typeName}</span>
             </div>
             <div>
               <div className="lv-confirm-label">Duration</div>

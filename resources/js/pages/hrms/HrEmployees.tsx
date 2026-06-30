@@ -1478,7 +1478,6 @@ export default function HrEmployees() {
     }
     if (!eShift)              e.shift               = 'Shift is required';
     if (!eWeeklyOff)          e.weekly_off          = 'Weekly off is required';
-    if (!eExpensePolicy)      e.expense_policy      = 'Expense policy is required';
 
     if (!eAadharFile && !existing['aadhaar']) {
       e.doc_aadhaar = 'Aadhar Card upload is required';
@@ -1541,7 +1540,7 @@ export default function HrEmployees() {
     const STEP_KEYS: Array<{ step: 1 | 2 | 3 | 4; keys: Set<string> }> = [
       { step: 1, keys: new Set(['work_country_id','first_name','middle_name','last_name','display_name','actual_name','gender','date_of_birth','nationality_country_id','email','mobile','address_line1','city','country_id','state_id','pincode']) },
       { step: 2, keys: new Set(['date_of_joining','department_id','designation_id','primary_role_id','legal_entity_id','probation_policy','notice_period']) },
-      { step: 3, keys: new Set(['leave_plan','holiday_list','shift','weekly_off','expense_policy','doc_aadhaar','doc_pan','laptop_master_asset_id','mobile_master_asset_id']) },
+      { step: 3, keys: new Set(['leave_plan','holiday_list','shift','weekly_off','doc_aadhaar','doc_pan','laptop_master_asset_id','mobile_master_asset_id']) },
       { step: 4, keys: new Set(['annual_salary','salary_frequency','salary_effective_from','salary_breakup']) },
     ];
     for (const s of STEP_KEYS) {
@@ -3420,17 +3419,17 @@ export default function HrEmployees() {
                     <i className="ri-calendar-2-line" style={{ color: '#0ab39c' }} /> Leave &amp; Attendance
                   </div>
                   <Row className="g-3">
-                    <Col md={6}>
+                    <Col md={4}>
                       <label className="emp-label">Leave Plan<span className="req">*</span></label>
                       <MasterSelect value={eLeavePlan} onChange={(v) => { setELeavePlan(v); clearEErr('leave_plan'); }} options={leavePlanOptions} placeholder={leavePlanOptions.length ? 'Select a leave plan' : 'No plans found — create one in HR > Leave'} invalid={!!eErrors.leave_plan} />
                       {eErrors.leave_plan && <small className="emp-err">{eErrors.leave_plan}</small>}
                     </Col>
-                    <Col md={6}>
+                    <Col md={4}>
                       <label className="emp-label">Holiday List (Group)<span className="req">*</span></label>
                       <MasterSelect value={eHolidayList} onChange={(v) => { setEHolidayList(v); clearEErr('holiday_list'); }} options={holidayGroupSelectOptions} placeholder={holidayGroupOptions.length ? 'Select holiday group' : 'No groups — create in HR › Holiday › Groups'} invalid={!!eErrors.holiday_list} />
                       {eErrors.holiday_list && <small className="emp-err">{eErrors.holiday_list}</small>}
                     </Col>
-                    <Col md={6}>
+                    <Col md={4}>
                       <label className="emp-label">Shift<span className="req">*</span></label>
                       <MasterSelect value={eShift} onChange={(v) => { setEShift(v); clearEErr('shift'); }} options={SHIFT_OPTIONS} placeholder="Select shift" invalid={!!eErrors.shift} />
                       {eErrors.shift && <small className="emp-err">{eErrors.shift}</small>}
@@ -3455,11 +3454,6 @@ export default function HrEmployees() {
                     <Col md={4}>
                       <label className="emp-label">Overtime</label>
                       <MasterSelect value={eOvertime} onChange={setEOvertime} options={OVERTIME_OPTIONS} placeholder="Select overtime policy" />
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Expense Policy<span className="req">*</span></label>
-                      <MasterSelect value={eExpensePolicy} onChange={(v) => { setEExpensePolicy(v); clearEErr('expense_policy'); }} placeholder="Select policy" options={EXPENSE_POLICY_OPTIONS} invalid={!!eErrors.expense_policy} />
-                      {eErrors.expense_policy && <small className="emp-err">{eErrors.expense_policy}</small>}
                     </Col>
                   </Row>
                 </div>

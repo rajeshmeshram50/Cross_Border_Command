@@ -432,7 +432,21 @@
   color: var(--vz-secondary-color, #6b7280); text-transform: uppercase;
   margin-top: 4px;
 }
-.lp-plan-list { display: flex; flex-direction: column; gap: 6px; }
+.lp-plan-list {
+  display: flex; flex-direction: column; gap: 6px;
+  /* Cap the list height so a long plan list scrolls inside the sidebar
+     instead of stretching the whole page. */
+  max-height: 390px;
+  overflow-y: auto;
+  /* Room for the scrollbar so it doesn't overlap the plan cards. */
+  padding-right: 4px;
+}
+/* Slim, theme-aware scrollbar for the plan list. */
+.lp-plan-list::-webkit-scrollbar { width: 6px; }
+.lp-plan-list::-webkit-scrollbar-thumb {
+  background: var(--vz-border-color, #d1d5db); border-radius: 999px;
+}
+.lp-plan-list::-webkit-scrollbar-track { background: transparent; }
 .lp-plan-item {
   background: transparent; border: 1px solid transparent;
   border-radius: 10px; padding: 10px 12px;

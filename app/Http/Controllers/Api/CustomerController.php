@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\CustomerAddress;
+use App\Models\CustomerGstScrutiny;
 use App\Models\Masters\AddressTypes;
 use App\Models\Masters\Countries;
 use App\Models\Masters\CustomerClassifications;
@@ -150,7 +151,7 @@ class CustomerController extends Controller
         $user = $request->user();
         $row = Customer::query()
             ->forUser($user)
-            ->with(['primaryAddress', 'addresses'])
+            ->with(['primaryAddress', 'addresses', 'gstScrutiny'])
             ->findOrFail($id);
 
         /* Stage 2 + Stage 3 data embedded inline.
@@ -194,6 +195,8 @@ class CustomerController extends Controller
             // bucketing in Stage 2 KYC. Fallback to a stable empty shape so
             // consumers don't have to null-check.
             'segment_uploads' => $segmentUploads ?: ['data' => [], 'by_category' => [], 'count' => 0],
+            // GST Scrutiny history for the popup (domestic customers).
+            'gst_scrutiny'    => $row->gstScrutiny->map(fn ($g) => $this->shapeGst($g))->all(),
         ]);
     }
 
@@ -249,6 +252,7 @@ class CustomerController extends Controller
                 'segment'        => $data['segment']        ?? null,
                 'classification' => $data['classification'] ?? null,
                 'risk_level'     => $data['risk_level']     ?? null,
+                'gst_applicable' => $data['gst_applicable'] ?? null,
                 'website'        => $data['website']        ?? null,
                 'primary_email'  => $primary['cp_email']    ?? null,
                 'status'         => $data['status']         ?? 'Active',
@@ -313,6 +317,7 @@ class CustomerController extends Controller
                 'segment'        => $data['segment']        ?? null,
                 'classification' => $data['classification'] ?? null,
                 'risk_level'     => $data['risk_level']     ?? null,
+                'gst_applicable' => $data['gst_applicable'] ?? null,
                 'website'        => $data['website']        ?? null,
                 'primary_email'  => $primary['cp_email']    ?? null,
                 'status'         => $data['status']         ?? $customer->status,
@@ -365,6 +370,117 @@ class CustomerController extends Controller
         return response()->json(['id' => $customer->id, 'deleted' => true]);
     }
 
+    /* ──────────────────────────────────────────────────────────────────
+     * GST Scrutiny — one row per GST number a domestic customer is
+     * registered under. Mirrors VendorController's gst-scrutiny CRUD.
+     * Each row persists on its own (separate from the Stage 1 save), so
+     * the popup can add/remove entries without resubmitting the whole
+     * customer. Tenant scope rides on Customer::forUser + hierarchical
+     * edit denial, identical to the vendor side.
+     * ────────────────────────────────────────────────────────────────── */
+
+    public function indexGstScrutiny(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        $customer = Customer::query()->forUser($user)->with('gstScrutiny')->findOrFail($id);
+        return response()->json(['data' => $customer->gstScrutiny->map(fn ($g) => $this->shapeGst($g))->all()]);
+    }
+
+    public function storeGstScrutiny(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        $customer = Customer::query()->forUser($user)->findOrFail($id);
+        if ($denial = MasterVisibility::hierarchicalDenial($user, $customer, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
+        $data = $this->validateGst($request, $customer->id);
+        $row = CustomerGstScrutiny::create([
+            'customer_id'             => $customer->id,
+            'gst_number'              => strtoupper($data['gst_number']),
+            'status'                  => $data['status'] ?? 'Active',
+            'last_filing_date'        => $data['last_filing_date'] ?? null,
+            'prev_non_gst_2a_invoice' => $data['prev_non_gst_2a_invoice'] ?? null,
+            'red_flags'               => $data['red_flags'] ?? null,
+            'created_by'              => $user->id,
+        ]);
+
+        return response()->json(['data' => $this->shapeGst($row)], 201);
+    }
+
+    public function updateGstScrutiny(Request $request, int $id, int $gstId): JsonResponse
+    {
+        $user = $request->user();
+        $customer = Customer::query()->forUser($user)->findOrFail($id);
+        if ($denial = MasterVisibility::hierarchicalDenial($user, $customer, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
+        $row = CustomerGstScrutiny::where('customer_id', $customer->id)->findOrFail($gstId);
+        $data = $this->validateGst($request, $customer->id, $row->id);
+        $row->update([
+            'gst_number'              => strtoupper($data['gst_number']),
+            'status'                  => $data['status'] ?? 'Active',
+            'last_filing_date'        => $data['last_filing_date'] ?? null,
+            'prev_non_gst_2a_invoice' => $data['prev_non_gst_2a_invoice'] ?? null,
+            'red_flags'               => $data['red_flags'] ?? null,
+        ]);
+
+        return response()->json(['data' => $this->shapeGst($row->fresh())]);
+    }
+
+    public function destroyGstScrutiny(Request $request, int $id, int $gstId): JsonResponse
+    {
+        $user = $request->user();
+        $customer = Customer::query()->forUser($user)->findOrFail($id);
+        if ($denial = MasterVisibility::hierarchicalDenial($user, $customer, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
+        CustomerGstScrutiny::where('customer_id', $customer->id)->findOrFail($gstId)->forceDelete();
+        return response()->json(['message' => 'GST scrutiny deleted']);
+    }
+
+    private function validateGst(Request $request, int $customerId, ?int $ignoreId = null): array
+    {
+        // Normalise to uppercase before the unique check so a lowercase
+        // duplicate (e.g. via API) still collides with the stored value.
+        $request->merge(['gst_number' => strtoupper((string) $request->input('gst_number'))]);
+
+        return $request->validate([
+            // 15-char GSTIN: 2-digit state code, 10-char PAN, entity char,
+            // 'Z', checksum char (e.g. 27AADCI6120M1ZH). Unique PER CUSTOMER
+            // — the same customer can't list the same GST number twice
+            // (rows are force-deleted, so no soft-deleted ghosts to dodge).
+            'gst_number'              => [
+                'required', 'string',
+                'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/',
+                Rule::unique('customer_gst_scrutiny', 'gst_number')
+                    ->where(fn ($q) => $q->where('customer_id', $customerId)->whereNull('deleted_at'))
+                    ->ignore($ignoreId),
+            ],
+            'status'                  => ['nullable', Rule::in(['Active', 'Inactive'])],
+            'last_filing_date'        => 'nullable|date',
+            'prev_non_gst_2a_invoice' => 'nullable|string|max:255',
+            'red_flags'               => 'nullable|string|max:2000',
+        ], [
+            'gst_number.regex'  => 'Invalid GST format. Expected 15 characters: 2 digits, 5 letters, 4 digits, 1 letter, 1 digit/letter, Z, 1 digit/letter (e.g. 27AADCI6120M1ZH).',
+            'gst_number.unique' => 'This GST number is already added for this customer.',
+        ]);
+    }
+
+    private function shapeGst(CustomerGstScrutiny $g): array
+    {
+        return [
+            'id'                       => $g->id,
+            'gst_number'               => $g->gst_number,
+            'status'                   => $g->status,
+            'last_filing_date'         => optional($g->last_filing_date)->toDateString(),
+            'prev_non_gst_2a_invoice'  => $g->prev_non_gst_2a_invoice,
+            'red_flags'                => $g->red_flags,
+        ];
+    }
+
     /* ── Helpers ──────────────────────────────────────────────────── */
 
     /**
@@ -396,6 +512,7 @@ class CustomerController extends Controller
             'segment'         => $c->segment,
             'classification'  => $c->classification,
             'riskLevel'       => $c->risk_level,
+            'gstApplicable'   => $c->gst_applicable,
             'website'         => $c->website,
             'status'          => $c->status,
             'country'         => $primary?->country,
@@ -483,6 +600,8 @@ class CustomerController extends Controller
             'segment'        => 'nullable|string|max:1024',
             'classification' => 'nullable|string|max:64',
             'risk_level'     => 'nullable|string|max:32',
+            // Stage 1 — domestic GST flag. 'Yes' gates the GST Scrutiny popup.
+            'gst_applicable' => ['nullable', Rule::in(['Yes', 'No'])],
             'website'        => 'nullable|string|max:500',
             'status'         => 'nullable|in:Active,Inactive',
 

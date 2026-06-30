@@ -271,6 +271,9 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
   // (case-to-case overview shows one shipment's docs at a time).
   const [overviewPage, setOverviewPage] = useState(1);
   const [ovShip, setOvShip] = useState<number | null>(null);
+  // Row currently being downloaded in the Document Overview (server streaming
+  // can take a few seconds — show a spinner so the user knows it's working).
+  const [ovDownloadingKey, setOvDownloadingKey] = useState<string | null>(null);
   const [shipmentFilter, setShipmentFilter] = useState<'buyer-eq-consignee' | 'buyer-neq-consignee'>('buyer-eq-consignee');
 
   /* Switch the active group and jump to its first sub-tab. */
@@ -893,14 +896,26 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                           <td className="cev-ov-name">{d.name}</td>
                           <td><StatusPill s={d.status as VaultStatus} /></td>
                           <td>
-                            <button
-                              type="button"
-                              className="cev-ov-dl"
-                              disabled={!url}
-                              onClick={() => { if (url) void downloadFile(url, fname); }}
-                            >
-                              <i className="ri-download-2-line" aria-hidden /> Download
-                            </button>
+                            {(() => {
+                              const dlKey = `${activeShip?.id ?? 'std'}-${absIdx}`;
+                              const dling = ovDownloadingKey === dlKey;
+                              return (
+                                <button
+                                  type="button"
+                                  className="cev-ov-dl"
+                                  disabled={!url || dling}
+                                  onClick={async () => {
+                                    if (!url) return;
+                                    setOvDownloadingKey(dlKey);
+                                    try { await downloadFile(url, fname); } finally { setOvDownloadingKey(null); }
+                                  }}
+                                >
+                                  {dling
+                                    ? <><i className="ri-loader-4-line cev-spin" aria-hidden /> Downloading…</>
+                                    : <><i className="ri-download-2-line" aria-hidden /> Download</>}
+                                </button>
+                              );
+                            })()}
                           </td>
                         </tr>
                       );
@@ -1606,7 +1621,8 @@ export const CEV_CSS = `
 .cev-card {
   position: relative;
   width: min(1280px, 90vw);
-  height: 100vh;
+  height: 100vh;        /* fallback for old browsers */
+  height: 100dvh;       /* dynamic viewport — mobile address bar no longer hides the footer */
   background: #f0fdff;
   /* No curve — straight edges so the drawer feels like a flush
      extension of the page rather than a floating card. */
@@ -1849,18 +1865,20 @@ export const CEV_CSS = `
   text-align: left; font-family: inherit;
 }
 /* "Document Overview" button on the right of each group card. */
+/* INACTIVE card → ghost button (secondary). */
 .cev-group-overview {
   flex-shrink: 0;
   display: inline-flex; align-items: center; gap: 6px;
   padding: 7px 13px; border-radius: 9px;
-  background: #ecfeff; color: #0e7490; border: 1.5px solid #a5f3fc;
+  background: rgba(8,145,178,.08); color: #0e7490; border: 1.5px solid #a5f3fc;
   font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
   white-space: nowrap; transition: all .18s ease;
 }
-.cev-group-overview:hover { background: #fff; border-color: #06b6d4; color: #0891b2; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(8,145,178,.22); }
+.cev-group-overview:hover { background: #ecfeff; border-color: #06b6d4; color: #0891b2; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(8,145,178,.22); }
 .cev-group-overview i { font-size: 14px; }
-.cev-group.is-active .cev-group-overview { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.35); }
-.cev-group.is-active .cev-group-overview:hover { background: #fff; color: #0891b2; border-color: #fff; }
+/* ACTIVE (selected) card → SOLID WHITE button (the prominent one). */
+.cev-group.is-active .cev-group-overview { background: #fff; color: #0891b2; border-color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.14); }
+.cev-group.is-active .cev-group-overview:hover { background: #f0fdff; color: #0891b2; border-color: #fff; }
 
 /* ─── Document Overview popup ─── */
 .cev-ov-overlay {
@@ -2375,6 +2393,11 @@ export const CEV_CSS = `
 [data-bs-theme="dark"] .cev-group { background: #0a2a33; border-color: rgba(34,211,238,.30); }
 [data-bs-theme="dark"] .cev-group:hover { background: #0c3540; border-color: rgba(34,211,238,.5); }
 [data-bs-theme="dark"] .cev-group.is-active { background: linear-gradient(120deg,#0c4a6e,#0891b2); border-color: #06b6d4; }
+/* Inactive ghost button readable on the dark card; active stays solid white. */
+[data-bs-theme="dark"] .cev-group-overview { background: rgba(103,232,249,.10); color: #a5f3fc; border-color: rgba(103,232,249,.35); }
+[data-bs-theme="dark"] .cev-group-overview:hover { background: rgba(103,232,249,.18); color: #cffafe; border-color: #67e8f9; }
+[data-bs-theme="dark"] .cev-group.is-active .cev-group-overview { background: #fff; color: #0891b2; border-color: #fff; }
+[data-bs-theme="dark"] .cev-group.is-active .cev-group-overview:hover { background: #f0fdff; color: #0891b2; }
 [data-bs-theme="dark"] .cev-group-icon { background: rgba(8,145,178,.22); color: #67e8f9; border-color: rgba(34,211,238,.3); }
 [data-bs-theme="dark"] .cev-group.is-active .cev-group-icon { background: rgba(255,255,255,.18); color: #fff; }
 [data-bs-theme="dark"] .cev-group-title { color: #cffafe; }
@@ -2396,7 +2419,10 @@ export const CEV_CSS = `
 [data-bs-theme="dark"] .cev-kpi-tile { background: #0a2a33; border-color: rgba(8,145,178,.28); box-shadow: 0 2px 10px rgba(0,0,0,0.30); }
 [data-bs-theme="dark"] .cev-kpi-tile:hover { border-color: rgba(8,145,178,.45); box-shadow: 0 6px 18px rgba(0,0,0,0.40); }
 [data-bs-theme="dark"] .cev-kpi-label { color: #94a3b8; }
-[data-bs-theme="dark"] .cev-kpi-value { color: #cffafe; }
+/* KPI numbers carry per-tile accent colours via inline style; in dark mode
+   those light-mode hues read dim. brightness/saturate lifts whatever colour is
+   applied, and the currentColor glow makes each number "shine" in its own hue. */
+[data-bs-theme="dark"] .cev-kpi-value { color: #cffafe; filter: brightness(1.3) saturate(1.25); }
 [data-bs-theme="dark"] .cev-body { background: #08222b; scrollbar-color: #0891b2 transparent; }
 [data-bs-theme="dark"] .cev-body::-webkit-scrollbar-thumb { background: #0891b2; }
 [data-bs-theme="dark"] .cev-body::-webkit-scrollbar-thumb:hover { background: #22d3ee; }
@@ -2505,5 +2531,27 @@ export const CEV_CSS = `
   .cev-tab { padding: 6px 12px; font-size: 11.5px; }
   .cev-tab-icon { width: 14px; height: 14px; font-size: 12px; }
   .cev-tab-count { font-size: 9.5px; padding: 1px 6px; }
+  /* Tabs scroll sideways instead of squashing when they don't fit. */
+  .cev-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .cev-tab { flex: 0 0 auto; }
+  /* Section header (title + status pills) stacks so pills don't overflow. */
+  .cev-section { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .cev-section-right { width: 100%; flex-wrap: wrap; }
+}
+@media (max-width: 480px) {
+  .cev-header { padding: 10px 12px; }
+  .cev-header-title { font-size: 15px; margin-bottom: 5px; }
+  .cev-header-eyebrow { font-size: 9px; }
+  .cev-vault-icon { width: 34px; height: 34px; border-radius: 9px; }
+  .cev-header-meta { font-size: 10px; }
+  .cev-kpi-strip { padding: 8px 10px; }
+  /* Exactly two KPI tiles per row on phones. */
+  .cev-kpi-tile { flex: 1 1 calc(50% - 2px); padding: 7px 10px; }
+  .cev-kpi-value { font-size: 19px; }
+  .cev-groups-wrap { padding: 10px 12px 0; }
+  .cev-tabs-wrap { padding: 8px 10px; }
+  .cev-body { padding: 12px 12px 16px; }
+  .cev-footer { padding: 10px 12px; }
+  .cev-footer-meta { font-size: 11px; }
 }
 `;

@@ -281,6 +281,13 @@ export interface ApiEmployeeBalanceType {
   category: string | null;
   paid_unpaid: 'Paid' | 'Unpaid' | null;
   quota: number;
+  /** Days vested so far this plan year (periodic accrual grows over the year).
+   *  `available` is derived from this, not the full `quota`. */
+  accrued: number;
+  /** Extra/overdraft days the employee may avail beyond the accrued quota
+   *  (from the plan's "Extra Leave" setup). 0 when not enabled. Shown as a
+   *  breakdown — it is NOT added to `quota` / `available`. */
+  extra: number;
   used: number;
   available: number | null;
   unlimited: boolean;

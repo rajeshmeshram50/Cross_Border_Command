@@ -7,6 +7,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { useSelectionLock } from '../../../hooks/useSelectionLock';
 import { CLM_CSS, PER_PAGE, paginate } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
+import Tooltip from '../../../components/ui/Tooltip';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { MasterMultiSelect } from '../../master/masterFormKit';
 import { KycModal } from './ClmKycPage';
@@ -387,9 +388,8 @@ export default function ClmDcpPage() {
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
                                 <span className="clm-code-pill">{auths[0]}</span>
                                 {extra > 0 && (
-                                  <button
+                                  <Tooltip label="View all authorities"><button
                                     type="button"
-                                    title="View all authorities"
                                     onClick={e => {
                                       if (authOpen?.id === r.id) { setAuthOpen(null); return; }
                                       const b = e.currentTarget.getBoundingClientRect();
@@ -403,7 +403,7 @@ export default function ClmDcpPage() {
                                     }}
                                     style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
                                     +{extra}
-                                  </button>
+                                  </button></Tooltip>
                                 )}
                               </span>
                             );
@@ -414,12 +414,11 @@ export default function ClmDcpPage() {
                           return (
                             <td key={c} style={{ textAlign: 'center' }}>
                               {n > 0 ? (
-                                <button
+                                <Tooltip label={`View ${CAT_LABELS[c]} documents`}><button
                                   type="button"
                                   className="clm-count-btn"
                                   onClick={() => setViewDocs({ rule: r, cat: c })}
-                                  title={`View ${CAT_LABELS[c]} documents`}
-                                >{n}</button>
+                                >{n}</button></Tooltip>
                               ) : (
                                 <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>
                               )}
@@ -428,7 +427,7 @@ export default function ClmDcpPage() {
                         })}
                         <td style={{ textAlign: 'center' }}>
                           <div className="clm-actions">
-                            <button className="clm-act clm-act-edit" title="Edit rule" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                            <Tooltip label="Edit rule"><button className="clm-act clm-act-edit" aria-label="Edit rule" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></Tooltip>
                           </div>
                         </td>
                       </tr>

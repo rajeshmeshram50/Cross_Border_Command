@@ -258,7 +258,23 @@ class LeaveRequestController extends Controller
         $accrual   = (is_array($ptConfig) ? $ptConfig['accrual'] ?? [] : []);
         $unlimited = (bool) ($accrual['unlimited'] ?? false);
         if (!$unlimited) {
-            $quota     = (float) ($accrual['yearlyQuota'] ?? 0);
+            // Gate against what has ACCRUED by the time the leave is taken, not
+            // the full yearly quota. A "1 day/month" plan vests one day per
+            // month, so a request can't draw on days that haven't accrued yet
+            // (HRMS-BUG-107). Accrued is measured as of the leave's end date so
+            // an employee can still book ahead for a period that will have
+            // vested by then. An opt-in per-type overdraft extends the ceiling.
+            $planMeta = DB::table('master_leave_plans')
+                ->where('id', $planId)
+                ->select('from_month', 'calendar_year')
+                ->first();
+            $asOf = \Illuminate\Support\Carbon::parse($data['to_date']);
+            $accrued = \App\Http\Controllers\Api\LeavePlanController::accruedToDate(
+                $accrual,
+                $planMeta->from_month ?? null,
+                $planMeta->calendar_year ?? null,
+                $asOf
+            );
             $overdraft = !empty($accrual['employeeOverdraft']['enabled'])
                 ? (float) ($accrual['employeeOverdraft']['days'] ?? 0)
                 : 0.0;
@@ -267,7 +283,7 @@ class LeaveRequestController extends Controller
                 ->where('leave_type_id', $data['leave_type_id'])
                 ->whereIn('status', ['Approved', 'Pending'])
                 ->sum('days');
-            $available = max(0.0, $quota - $usedDays) + $overdraft;
+            $available = max(0.0, $accrued - $usedDays) + $overdraft;
             if ($days > $available) {
                 $fmt = fn (float $n) => rtrim(rtrim(number_format($n, 2), '0'), '.');
                 abort(422, "Not enough leave balance — only {$fmt($available)} day(s) available for this leave type, but you requested {$fmt($days)}.");
@@ -610,10 +626,18 @@ class LeaveRequestController extends Controller
 
         $chain = $row->approval_chain ?? [];
         $level = max(1, (int) ($row->current_approval_level ?? 1));
-        $isAdminOverride = in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true);
+        // Hierarchy gate: only super admins may act out of turn. HR
+        // (client_admin / branch_user) must wait for the chain to reach a level
+        // they own — the leave goes to the reporting manager FIRST; HR can view
+        // a manager-level request but cannot approve/reject it until the manager
+        // has confirmed and it advances to the HR level. This matches the
+        // per-row `can_act_now` flag the approvals() list already exposes (only
+        // super_admin overrides there), so the API can no longer be used to
+        // bypass the manager via a direct call.
+        $isSuperOverride = $user->user_type === 'super_admin';
         $isApproverForLevel = $this->canActOnLevel($user, $chain, $level - 1, $row);
-        if (!$isApproverForLevel && !$isAdminOverride) {
-            abort(403, 'You are not the approver for the current level of this request.');
+        if (!$isApproverForLevel && !$isSuperOverride) {
+            abort(403, 'You cannot act on this leave request yet — it is awaiting approval from the reporting manager before HR can act.');
         }
 
         // LV-11: no one may APPROVE their own leave — not even via the admin
@@ -806,7 +830,23 @@ class LeaveRequestController extends Controller
             }
         }
         if ($rawChain === null) {
-            // No config — default to reporting manager.
+            // No saved config — default to Reporting Manager only. The manager
+            // approves or rejects and that decision is final; HR is view-only.
+            $rawChain = [
+                ['approver_kind' => 'reporting_manager'],
+            ];
+        }
+
+        // HR is view-only: strip any HR role level from the chain so it ends at
+        // the reporting manager, even for leave types whose config_json still
+        // carries a legacy RM → HR chain. If filtering empties the chain (e.g. a
+        // legacy HR-only config), fall back to the reporting manager.
+        $rawChain = array_values(array_filter($rawChain, function ($r) {
+            $kind = $r['approver_kind'] ?? ($r['kind'] ?? null);
+            $role = strtolower((string) ($r['approver_role'] ?? ($r['role'] ?? '')));
+            return !($kind === 'role' && $role === 'hr');
+        }));
+        if (empty($rawChain)) {
             $rawChain = [['approver_kind' => 'reporting_manager']];
         }
 

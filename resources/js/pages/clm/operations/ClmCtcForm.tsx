@@ -13,6 +13,7 @@ import { pad2, type CtcContract } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
 import { VersionHistoryModal, type CtcVersion } from './clmCtcModals';
 import ClmCtcSignPositionModal from './ClmCtcSignPositionModal';
+import Tooltip from '../../../components/ui/Tooltip';
 import { Shimmer } from '../../../components/ui/Shimmer';
 import { checkSpelling } from '../../../utils/spellCheck';
 
@@ -615,9 +616,11 @@ function Stage1(p: {
               const safe = Math.min(cpPage, pages - 1);
               const visible = p.cps.slice(safe * 2, safe * 2 + 2);
               const navBtn = (dir: 'l' | 'r', dis: boolean, onClick: () => void) => (
-                <button onClick={onClick} disabled={dis} title={dir === 'l' ? 'Previous' : 'Next'} style={{ width: 26, height: 26, borderRadius: 8, flexShrink: 0, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: dis ? 'transparent' : (t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF'), cursor: dis ? 'not-allowed' : 'pointer', opacity: dis ? .4 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">{dir === 'l' ? <polyline points="15 18 9 12 15 6" /> : <polyline points="9 18 15 12 9 6" />}</svg>
-                </button>
+                <Tooltip label={dir === 'l' ? 'Previous' : 'Next'}>
+                  <button onClick={onClick} disabled={dis} style={{ width: 26, height: 26, borderRadius: 8, flexShrink: 0, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: dis ? 'transparent' : (t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF'), cursor: dis ? 'not-allowed' : 'pointer', opacity: dis ? .4 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">{dir === 'l' ? <polyline points="15 18 9 12 15 6" /> : <polyline points="9 18 15 12 9 6" />}</svg>
+                  </button>
+                </Tooltip>
               );
               return (
                 <>
@@ -757,9 +760,11 @@ function Stage1(p: {
                   const safe = Math.min(midCpPage, pages - 1);
                   const visible = p.cps.slice(safe * 2, safe * 2 + 2);
                   const arrow = (dir: 'l' | 'r', dis: boolean, onClick: () => void) => (
-                    <button onClick={onClick} disabled={dis} title={dir === 'l' ? 'Previous' : 'Next'} style={{ width: 30, height: 30, flexShrink: 0, alignSelf: 'center', borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: dis ? 'transparent' : (t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF'), cursor: dis ? 'not-allowed' : 'pointer', opacity: dis ? .35 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">{dir === 'l' ? <polyline points="15 18 9 12 15 6" /> : <polyline points="9 18 15 12 9 6" />}</svg>
-                    </button>
+                    <Tooltip label={dir === 'l' ? 'Previous' : 'Next'}>
+                      <button onClick={onClick} disabled={dis} style={{ width: 30, height: 30, flexShrink: 0, alignSelf: 'center', borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: dis ? 'transparent' : (t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF'), cursor: dis ? 'not-allowed' : 'pointer', opacity: dis ? .35 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">{dir === 'l' ? <polyline points="15 18 9 12 15 6" /> : <polyline points="9 18 15 12 9 6" />}</svg>
+                      </button>
+                    </Tooltip>
                   );
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1701,11 +1706,13 @@ function ContractHistoryPanel({ t, draftCount, signedUrl, signatureRequestId, on
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#a78bfa' : '#C4B5FD'} strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0 }}><polyline points="9 18 15 12 9 6" /></svg>
           </button>
           {/* Download the fully-signed copy */}
-          <button onClick={downloadSigned} disabled={!signedUrl || downloading} title={signedUrl ? '' : 'Available once all parties have signed'} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '10px', borderRadius: 10, border: 'none', background: (signedUrl && !downloading) ? 'linear-gradient(135deg,#059669,#047857)' : (t.dark ? 'rgba(255,255,255,.06)' : '#E2E8F0'), cursor: (!signedUrl || downloading) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', boxShadow: (signedUrl && !downloading) ? '0 4px 12px rgba(5,150,105,.3)' : 'none' }}>
+          <Tooltip label={signedUrl ? '' : 'Available once all parties have signed'}>
+          <button onClick={downloadSigned} disabled={!signedUrl || downloading} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '10px', borderRadius: 10, border: 'none', background: (signedUrl && !downloading) ? 'linear-gradient(135deg,#059669,#047857)' : (t.dark ? 'rgba(255,255,255,.06)' : '#E2E8F0'), cursor: (!signedUrl || downloading) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', boxShadow: (signedUrl && !downloading) ? '0 4px 12px rgba(5,150,105,.3)' : 'none' }}>
             {downloading
               ? <><svg className="ctc-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg><span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>Downloading…</span></>
               : <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={signedUrl ? '#fff' : (t.dark ? '#94a3b8' : '#94A3B8')} strokeWidth="2.3" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg><span style={{ fontSize: 10, fontWeight: 800, color: signedUrl ? '#fff' : (t.dark ? '#94a3b8' : '#94A3B8') }}>{signedUrl ? 'Download Signed Copy' : 'Awaiting Signed Copy'}</span></>}
           </button>
+          </Tooltip>
           {/* Back to the CTC list */}
           <button onClick={onExit} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px', borderRadius: 10, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.1)' : '#F5F0FF', color: t.dark ? '#c4b5fd' : '#6D28D9', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 700 }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
@@ -2050,9 +2057,11 @@ function Panel({ t, header, title, headGrad, children, onCollapse, collapseDir, 
         <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, position: 'relative', zIndex: 1 }}>{icon ?? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}</div>
         <div style={{ flex: 1, minWidth: 0, position: 'relative', zIndex: 1 }}><div style={{ fontSize: 7, fontWeight: 800, letterSpacing: '.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,.65)', marginBottom: 2 }}>{header}</div><div style={{ fontSize: 13, fontWeight: 800, color: '#fff', letterSpacing: '-.25px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div></div>
         {onCollapse && (
-          <button onClick={onCollapse} title="Collapse panel" style={{ width: 26, height: 26, borderRadius: 8, flexShrink: 0, position: 'relative', zIndex: 1, background: 'rgba(255,255,255,.16)', border: '1.5px solid rgba(255,255,255,.3)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">{collapseDir === 'right' ? <polyline points="9 18 15 12 9 6" /> : <polyline points="15 18 9 12 15 6" />}</svg>
-          </button>
+          <Tooltip label="Collapse panel">
+            <button onClick={onCollapse} style={{ width: 26, height: 26, borderRadius: 8, flexShrink: 0, position: 'relative', zIndex: 1, background: 'rgba(255,255,255,.16)', border: '1.5px solid rgba(255,255,255,.3)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">{collapseDir === 'right' ? <polyline points="9 18 15 12 9 6" /> : <polyline points="15 18 9 12 15 6" />}</svg>
+            </button>
+          </Tooltip>
         )}
       </div>
       {children}
@@ -2063,7 +2072,8 @@ function Panel({ t, header, title, headGrad, children, onCollapse, collapseDir, 
 /* ── Collapsed side-panel rail (click the arrow to expand) ── */
 function CollapsedBar({ t, title, headGrad, dir, onExpand }: { t: OpsTokens; title: string; headGrad: string; dir: 'left' | 'right'; onExpand: () => void }) {
   return (
-    <div onClick={onExpand} title={`Expand ${title}`} style={{ flex: 1, minHeight: 0, width: 48, cursor: 'pointer', background: t.dark ? '#161226' : 'linear-gradient(160deg,#faf8ff 0%,#f5f0fe 35%,#ede8fd 100%)', borderRadius: 16, border: `1.5px solid ${t.dark ? 'rgba(139,92,246,.3)' : 'rgba(139,92,246,.28)'}`, boxShadow: '0 6px 32px rgba(109,40,217,.12)', display: 'flex', flexDirection: 'column', alignItems: 'center', overflow: 'hidden' }}>
+    <Tooltip label={`Expand ${title}`}>
+    <div onClick={onExpand} style={{ flex: 1, minHeight: 0, width: 48, cursor: 'pointer', background: t.dark ? '#161226' : 'linear-gradient(160deg,#faf8ff 0%,#f5f0fe 35%,#ede8fd 100%)', borderRadius: 16, border: `1.5px solid ${t.dark ? 'rgba(139,92,246,.3)' : 'rgba(139,92,246,.28)'}`, boxShadow: '0 6px 32px rgba(109,40,217,.12)', display: 'flex', flexDirection: 'column', alignItems: 'center', overflow: 'hidden' }}>
       <div style={{ width: '100%', padding: '11px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', background: `linear-gradient(160deg,${headGrad})`, flexShrink: 0 }}>
         <div style={{ width: 26, height: 26, borderRadius: 8, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">{dir === 'left' ? <polyline points="9 18 15 12 9 6" /> : <polyline points="15 18 9 12 15 6" />}</svg>
@@ -2071,6 +2081,7 @@ function CollapsedBar({ t, title, headGrad, dir, onExpand }: { t: OpsTokens; tit
       </div>
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', writingMode: 'vertical-rl', transform: 'rotate(180deg)', fontSize: 11, fontWeight: 800, letterSpacing: '.04em', color: t.dark ? '#c4b5fd' : '#5B21B6', whiteSpace: 'nowrap', padding: '12px 0' }}>{title}</div>
     </div>
+    </Tooltip>
   );
 }
 

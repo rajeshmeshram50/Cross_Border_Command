@@ -374,13 +374,14 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                                 <span className="clm-badge clm-badge-teal">{segList[0]}</span>
                               </Tooltip>
                               {extra > 0 && (
-                                <button
-                                  type="button"
-                                  title="View all segments"
-                                  onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(segOpen?.id === r.id ? null : { id: r.id, names: segList, x: b.left, y: b.bottom + 4 }); }}
-                                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
-                                  +{extra}
-                                </button>
+                                <Tooltip label="View all segments">
+                                  <button
+                                    type="button"
+                                    onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(segOpen?.id === r.id ? null : { id: r.id, names: segList, x: b.left, y: b.bottom + 4 }); }}
+                                    style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
+                                    +{extra}
+                                  </button>
+                                </Tooltip>
                               )}
                             </span>
                           );
@@ -398,13 +399,14 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                                 <span className="clm-badge clm-badge-teal">{partyList[0]}</span>
                               </Tooltip>
                               {extra > 0 && (
-                                <button
-                                  type="button"
-                                  title="View all parties"
-                                  onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setPartyOpen(partyOpen?.id === r.id ? null : { id: r.id, names: partyList, x: b.left, y: b.bottom + 4 }); }}
-                                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
-                                  +{extra}
-                                </button>
+                                <Tooltip label="View all parties">
+                                  <button
+                                    type="button"
+                                    onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setPartyOpen(partyOpen?.id === r.id ? null : { id: r.id, names: partyList, x: b.left, y: b.bottom + 4 }); }}
+                                    style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
+                                    +{extra}
+                                  </button>
+                                </Tooltip>
                               )}
                             </span>
                           );

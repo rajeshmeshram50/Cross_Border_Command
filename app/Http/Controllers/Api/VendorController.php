@@ -713,6 +713,7 @@ class VendorController extends Controller
             'id'                       => $g->id,
             'gst_number'               => $g->gst_number,
             'status'                   => $g->status,
+            'scrutiny_date'            => optional($g->created_at)->toDateString(),
             'last_filing_date'         => optional($g->last_filing_date)->toDateString(),
             'prev_non_gst_2a_invoice'  => $g->prev_non_gst_2a_invoice,
             'red_flags'                => $g->red_flags,
@@ -1083,8 +1084,15 @@ class VendorController extends Controller
             'segment_id'               => $v->segment_id,
             'segment_name'             => optional($v->segment)->title,
             // Full multi-select set (ids + labels) from the vendor_segments pivot.
-            'segment_ids'              => $v->segments->pluck('id')->all(),
-            'segments'                 => $v->segments->map(fn ($s) => ['id' => $s->id, 'name' => $s->name])->all(),
+            // Older suppliers (created before multi-segment) have an EMPTY pivot
+            // but a scalar segment_id — fall back to it so the list + edit form
+            // still show the segment without needing a re-save.
+            'segment_ids'              => $v->segments->isNotEmpty()
+                ? $v->segments->pluck('id')->all()
+                : array_values(array_filter([$v->segment_id])),
+            'segments'                 => $v->segments->isNotEmpty()
+                ? $v->segments->map(fn ($s) => ['id' => $s->id, 'name' => $s->name])->all()
+                : ($v->segment_id ? [['id' => $v->segment_id, 'name' => optional($v->segment)->title]] : []),
             'compliance_behaviour_id'  => $v->compliance_behaviour_id,
             'compliance_behaviour_name'=> optional($v->complianceBehaviour)->name,
             'classification_id'        => $v->classification_id,
@@ -1171,6 +1179,7 @@ class VendorController extends Controller
                 'id'                       => $g->id,
                 'gst_number'               => $g->gst_number,
                 'status'                   => $g->status,
+                'scrutiny_date'            => optional($g->created_at)->toDateString(),
                 'last_filing_date'         => optional($g->last_filing_date)->toDateString(),
                 'prev_non_gst_2a_invoice'  => $g->prev_non_gst_2a_invoice,
                 'red_flags'                => $g->red_flags,

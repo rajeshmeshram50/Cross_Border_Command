@@ -51,6 +51,7 @@ export function MasterMultiSelect({
   invalid,
   onChange,
   maxChips = 3,
+  lockedValues,
 }: {
   name?: string;
   value: string[];
@@ -60,7 +61,12 @@ export function MasterMultiSelect({
   invalid?: boolean;
   onChange?: (value: string[]) => void;
   maxChips?: number;
+  /* Selected values that can't be removed (× hidden, can't be unchecked) but
+     don't block adding others. Used e.g. for Supplier Segments that already
+     have documents uploaded against them. */
+  lockedValues?: string[];
 }) {
+  const lockedSet = new Set(lockedValues ?? []);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   /* Clicking "+N more" flips this — the chip strip then shows every selected
@@ -95,11 +101,14 @@ export function MasterMultiSelect({
     ? options.filter(o => o.label.toLowerCase().includes(search.trim().toLowerCase()))
     : options;
   const toggleVal = (v: string) => {
+    // Locked values can be added but never unchecked.
+    if (selectedSet.has(v) && lockedSet.has(v)) return;
     const next = selectedSet.has(v) ? value.filter(x => x !== v) : [...value, v];
     onChange?.(next);
   };
   const removeVal = (v: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (lockedSet.has(v)) return; // locked → can't remove
     onChange?.(value.filter(x => x !== v));
   };
 
@@ -164,14 +173,22 @@ export function MasterMultiSelect({
                     }}
                   >
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
-                    <span
-                      role="button"
-                      onClick={(e) => removeVal(o.value, e)}
-                      style={{ marginLeft: 4, cursor: 'pointer', lineHeight: 1, fontSize: 14, flexShrink: 0 }}
-                      aria-label={`Remove ${o.label}`}
-                    >
-                      ×
-                    </span>
+                    {lockedSet.has(o.value) ? (
+                      <i
+                        className="ri-lock-2-line"
+                        title="Documents uploaded — can't be removed"
+                        style={{ marginLeft: 4, fontSize: 12, flexShrink: 0, opacity: 0.7 }}
+                      />
+                    ) : (
+                      <span
+                        role="button"
+                        onClick={(e) => removeVal(o.value, e)}
+                        style={{ marginLeft: 4, cursor: 'pointer', lineHeight: 1, fontSize: 14, flexShrink: 0 }}
+                        aria-label={`Remove ${o.label}`}
+                      >
+                        ×
+                      </span>
+                    )}
                   </span>
                 ))}
               </span>
@@ -235,13 +252,16 @@ export function MasterMultiSelect({
               </div>
             ) : filtered.map(opt => {
               const checked = selectedSet.has(opt.value);
+              const locked = checked && lockedSet.has(opt.value);
               return (
                 <DropdownItem
                   key={opt.value}
                   toggle={false}
                   active={checked}
+                  disabled={locked}
                   onClick={() => toggleVal(opt.value)}
                   className="master-select-item d-flex align-items-center"
+                  title={locked ? "Documents uploaded — can't be removed" : undefined}
                 >
                   <span
                     style={{
@@ -259,7 +279,8 @@ export function MasterMultiSelect({
                   >
                     {checked && <i className="ri-check-line" style={{ color: '#fff', fontSize: 12 }} />}
                   </span>
-                  {opt.label}
+                  <span style={{ flex: 1 }}>{opt.label}</span>
+                  {locked && <i className="ri-lock-2-line" style={{ fontSize: 12, opacity: 0.6, marginLeft: 6 }} />}
                 </DropdownItem>
               );
             })}
