@@ -3,10 +3,13 @@ import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { useToast } from '../../../../contexts/ToastContext';
+import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { MasterMultiSelect } from '../../../master/masterFormKit';
 import { MasterRecordModal } from '../../../master/MasterRecordModal';
+import { SegmentModal, nextSegmentCode, type SegmentForm } from '../../../clm/compliance/ClmSegmentPage';
+import { CLM_CSS } from '../../../clm/shared/clmShared';
 import { SegmentTags } from '../../procurement-management/bulk-sourcing/SegmentTags';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import {
@@ -301,6 +304,7 @@ export default function AddVendorModal(props: {
 }) {
   const { onClose, onSubmit, vendorId: initialVendorId, initialStep } = props;
   const toast = useToast();
+  const confirm = useConfirm();
   const isEdit = !!initialVendorId;
 
   /* ─── Wizard navigation ─── */
@@ -411,6 +415,21 @@ export default function AddVendorModal(props: {
 
   /* ─── Master Quick-Add state (matches the Add Product wizard pattern) ─── */
   const [quickAdd, setQuickAdd] = useState<VendorMasterSlug | null>(null);
+
+  /* Segment "+" opens the REAL CLM "Add New Segment" form (auto SG- code,
+   * regulatory status, customer≠consignee rule) instead of the bare master
+   * quick-add. We fetch current segments first so the previewed code + the
+   * duplicate-name guard are accurate. */
+  const [segAdd, setSegAdd] = useState<{ nextCode: string; names: string[] } | null>(null);
+  const openSegmentAdd = async () => {
+    try {
+      const { data } = await api.get<{ data: { code: string; name: string }[] }>('/clm/segments');
+      const segRows = data.data ?? [];
+      setSegAdd({ nextCode: nextSegmentCode(segRows), names: segRows.map(r => r.name) });
+    } catch {
+      setSegAdd({ nextCode: 'SG-001', names: [] });
+    }
+  };
 
   /* Persisted vendor id — null until the first step (Identity) is saved.
      Every subsequent step PUT/POST targets /vendors/{vendorId}/step/… so
@@ -1838,6 +1857,15 @@ export default function AddVendorModal(props: {
     }
   };
   const removeBankRow = async (id: string) => {
+    const ok = await confirm({
+      title: 'Remove Bank Details?',
+      message: 'This bank account will be permanently removed from this supplier. This action cannot be undone.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      tone: 'danger',
+      icon: 'delete-bin-line',
+    });
+    if (!ok) return;
     if (!vendorId || !/^\d+$/.test(id)) { setBankRows(prev => prev.filter(r => r.id !== id)); return; }
     setSaving(true);
     try {
@@ -1888,6 +1916,15 @@ export default function AddVendorModal(props: {
     }
   };
   const removeGstRow = async (id: string) => {
+    const ok = await confirm({
+      title: 'Remove GST Scrutiny?',
+      message: 'This GST scrutiny entry will be permanently removed from this supplier. This action cannot be undone.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      tone: 'danger',
+      icon: 'delete-bin-line',
+    });
+    if (!ok) return;
     if (!vendorId || !/^\d+$/.test(id)) { setGstRows(prev => prev.filter(r => r.id !== id)); return; }
     setSaving(true);
     try {
@@ -2179,6 +2216,15 @@ export default function AddVendorModal(props: {
     toast.success('Product mapped', `${row.productCode} ${row.productName} added`);
   };
   const removeMapRow = async (id: string) => {
+    const ok = await confirm({
+      title: 'Remove Mapped Product?',
+      message: 'This product mapping will be permanently removed from this supplier. This action cannot be undone.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      tone: 'danger',
+      icon: 'delete-bin-line',
+    });
+    if (!ok) return;
     const next = productMappings.filter(r => r.id !== id);
     if (!(await persistMappings(next))) return;
     setProductMappings(next);
@@ -2343,7 +2389,10 @@ export default function AddVendorModal(props: {
     if (contactDraft.attachmentFile) fd.append('attachment', contactDraft.attachmentFile);
     else if (contactDraft.attachmentPath) fd.append('attachment_path', contactDraft.attachmentPath);
 
-    setSaving(true);
+    // The "Add Contact Person" popup drives its OWN in-flight spinner (local
+    // state in ContactAddPopup), so we deliberately do NOT toggle the shared
+    // `saving` flag here — that flag belongs to the outer "Update & Next"
+    // button, which was lighting up instead of the popup's Save button.
     try {
       if (contactEditingId !== null) {
         fd.append('_method', 'PUT');  // PHP parses multipart only on POST
@@ -2362,12 +2411,19 @@ export default function AddVendorModal(props: {
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save contact';
       toast.error('Save failed', msg);
-    } finally {
-      setSaving(false);
     }
   };
 
   const removeExtraContact = async (id: number) => {
+    const ok = await confirm({
+      title: 'Remove Contact Person?',
+      message: 'This contact person will be permanently removed from this supplier. This action cannot be undone.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      tone: 'danger',
+      icon: 'delete-bin-line',
+    });
+    if (!ok) return;
     if (!vendorId) { setExtraContacts(prev => prev.filter(c => c.id !== id)); return; }
     setSaving(true);
     try {
@@ -2695,7 +2751,7 @@ export default function AddVendorModal(props: {
                     <Field label="Company Website">
                       <input className="avm-input" placeholder="https://abclogistics.com" value={website} onChange={e => setWebsite(e.target.value)} />
                     </Field>
-                    <Field label="Supplier Segment" required addNew onAdd={() => setQuickAdd('segments')} error={fieldErrors.segment}
+                    <Field label="Supplier Segment" required addNew onAdd={openSegmentAdd} error={fieldErrors.segment}
                       hint={lockedSegments.length > 0 ? <span className="avm-seg-hint" title="Segments with uploaded documents can’t be removed"><i className="ri-lock-2-line" />(locked)</span> : undefined}>
                       {/* masterFormKit's MasterMultiSelect renders visible violet
                           chips with × buttons + a checkbox-marked dropdown so
@@ -3010,7 +3066,7 @@ export default function AddVendorModal(props: {
               <div className="d-inline-flex align-items-center gap-2">
                 <span className="avm-doc-count">{kycDocCount} document{kycDocCount === 1 ? '' : 's'}</span>
                 {(kycTab === 'bank' || kycTab === 'gst') && (
-                  <button className={`avm-section-add-btn${kycTab === 'gst' ? ' amber' : ''}`} onClick={kycTabAddMeta[kycTab].onClick}>
+                  <button className="avm-section-add-btn" onClick={kycTabAddMeta[kycTab].onClick}>
                     {kycTabAddMeta[kycTab].label}
                   </button>
                 )}
@@ -3216,6 +3272,38 @@ export default function AddVendorModal(props: {
           onClose={() => setMapPopupOpen(false)}
           onSave={saveMapDraft}
         />
+      )}
+
+      {segAdd && (
+        <>
+          {/* CLM modal styles aren't injected by SegmentModal itself (the CLM
+              page normally provides them), so load them here while it's open. */}
+          <style>{CLM_CSS}</style>
+          <SegmentModal
+            existing={null}
+            nextCode={segAdd.nextCode}
+            existingNames={segAdd.names}
+            onClose={() => setSegAdd(null)}
+            onSave={async (form: SegmentForm) => {
+              try {
+                const { data } = await api.post<{ data: { id: number; name: string } }>('/clm/segments', form);
+                const created = data?.data;
+                if (created?.id) {
+                  const id = String(created.id);
+                  setSegmentOpts(prev => [...prev, { value: id, label: String(created.name ?? form.name) }]);
+                  setSegment(prev => prev.includes(id) ? prev : [...prev, id]);
+                  clearFieldError('segment');
+                }
+                bustVendorMasterBundle();
+                setSegAdd(null);
+                return { ok: true } as const;
+              } catch (e: any) {
+                toast.error('Save failed', e?.response?.data?.message ?? 'Could not save segment');
+                return { ok: false } as const;
+              }
+            }}
+          />
+        </>
       )}
 
       {quickAdd && (
@@ -3545,11 +3633,14 @@ function ContactAddPopup(props: {
   draft: ContactDraft;
   setDraft: (next: ContactDraft) => void;
   onClose: () => void;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
 }) {
   const { draft, setDraft, onClose, onSave } = props;
   const set = <K extends keyof ContactDraft>(k: K, v: ContactDraft[K]) => setDraft({ ...draft, [k]: v });
   const [errors, setErrors] = useState<{ name?: string; designation?: string }>({});
+  /* Local in-flight flag so the popup's OWN Save button shows the spinner
+   * (the save no longer toggles the parent's shared `saving`). */
+  const [saving, setSaving] = useState(false);
   const handleNameChange = (raw: string) => {
     const { cleaned, error } = sanitizeKycAlpha(raw, 60);
     setDraft({ ...draft, name: cleaned });
@@ -3646,9 +3737,19 @@ function ContactAddPopup(props: {
         </div>
 
         <div className="avm-cp-foot">
-          <button className="avm-btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="avm-btn-primary" onClick={onSave}>
-            <i className="ri-save-line" /> Save
+          <button className="avm-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+          <button
+            className="avm-btn-primary"
+            disabled={saving}
+            onClick={async () => {
+              if (saving) return;
+              setSaving(true);
+              try { await onSave(); } finally { setSaving(false); }
+            }}
+          >
+            {saving
+              ? <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
+              : <><i className="ri-save-line" /> Save</>}
           </button>
         </div>
       </div>
@@ -4795,10 +4896,14 @@ function PopupShell(props: {
   subtitle?: string;
   tone?: 'purple' | 'amber';
   onClose: () => void;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
   children: ReactNode;
 }) {
   const amber = props.tone === 'amber';
+  /* Local in-flight flag so the popup's OWN Save button shows the spinner
+   * (rather than the outer wizard button) — shared by every popup that uses
+   * this shell: DD / Owner KYC / Trade License / Bank / GST / Map Product. */
+  const [saving, setSaving] = useState(false);
   return createPortal((
     /* Backdrop click does NOT dismiss — these popups (DD / Owner
        KYC / Trade License / Bank / GST / Product Mapping) all
@@ -4819,9 +4924,19 @@ function PopupShell(props: {
         </div>
         <div className="avm-cp-body">{props.children}</div>
         <div className="avm-cp-foot">
-          <button className="avm-btn-ghost" onClick={props.onClose}>Cancel</button>
-          <button className={`avm-btn-primary${amber ? ' avm-btn-amber' : ''}`} onClick={props.onSave}>
-            Save
+          <button className="avm-btn-ghost" onClick={props.onClose} disabled={saving}>Cancel</button>
+          <button
+            className={`avm-btn-primary${amber ? ' avm-btn-amber' : ''}`}
+            disabled={saving}
+            onClick={async () => {
+              if (saving) return;
+              setSaving(true);
+              try { await props.onSave(); } finally { setSaving(false); }
+            }}
+          >
+            {saving
+              ? <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
+              : 'Save'}
           </button>
         </div>
       </div>
@@ -5330,7 +5445,7 @@ function GstScrutinyAddPopup(props: {
     onSave();
   };
   return (
-    <PopupShell title="Add GST Scrutiny" icon="ri-file-text-line" tone="amber" onClose={onClose} onSave={handleSave}>
+    <PopupShell title="Add GST Scrutiny" icon="ri-file-text-line" onClose={onClose} onSave={handleSave}>
       <div className="avm-grid-3">
         <Field label="GST Number" required error={errors.gstNumber}>
           <input
@@ -5886,8 +6001,19 @@ const SCOPED_CSS = `
    header stays pinned while the body scrolls. */
 /* Show ~3 contact rows + the sticky header, then scroll for the rest. */
 .avm-contacts-scroll { max-height: 174px; overflow-y: auto; }
-.avm-contacts-scroll thead th { position: sticky; top: 0; z-index: 2; background: #fbfaff; }
-[data-bs-theme="dark"] .avm-contacts-scroll thead th { background: #1a1430; }
+.avm-contacts-scroll thead th {
+  position: sticky; top: 0; z-index: 3;
+  /* The base rule ".avm-modal .table thead th" sets background:transparent — the
+     header's visible colour normally comes from the thead TR gradient, which does
+     NOT stick (only the TH does). So !important gives the sticky TH its OWN opaque
+     fill; without it the header is see-through and rows bleed up into it. */
+  background: #f7f3fd !important;
+  box-shadow: inset 0 -1px 0 0 #ece7f8;
+}
+[data-bs-theme="dark"] .avm-contacts-scroll thead th {
+  background: #251d47 !important;
+  box-shadow: inset 0 -1px 0 0 rgba(167,139,250,.22);
+}
 
 /* "N documents" count badge on the KYC section header (Figma) */
 .avm-doc-count {

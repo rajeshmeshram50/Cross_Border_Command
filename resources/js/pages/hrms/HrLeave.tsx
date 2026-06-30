@@ -4,6 +4,7 @@ import { Card, CardBody, Col, Row, Input, Modal, ModalBody, Spinner } from 'reac
 import { MasterFormStyles, MasterSelect, MasterDatePicker } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
 import WorklistPager from '../../components/ui/WorklistPager';
+import { Shimmer } from '../../components/ui/Shimmer';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -74,6 +75,9 @@ interface LeaveRequest {
   hrStatus: ApprovalState;
   hrActionAt?: string;
   hrComment?: string;
+  /** Set when a view-only HR user has opened the request — drives the green
+   *  "Reviewed by HR" node. Persisted server-side. */
+  hrViewedAt?: string;
 
   escalatedToHr: boolean;
   escalationReason: EscalationReason;
@@ -148,7 +152,7 @@ interface ApprovalNode {
   initials: string;
   name: string;
   role: 'Self' | 'Manager' | 'HR';
-  decision: 'approved' | 'pending' | 'idle' | 'rejected' | 'skipped';
+  decision: 'approved' | 'viewed' | 'pending' | 'idle' | 'rejected' | 'skipped';
   detail?: string;
   actionAt?: string;
   comment?: string;
@@ -187,14 +191,20 @@ const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
     comment: r.managerComment,
   };
 
+  // HR is view-only (leave is reporting-manager-only). When HR isn't an acting
+  // level, the node only turns green ("Reviewed by HR") once HR has opened the
+  // request (r.hrViewedAt) AND the reporting manager has already decided — it
+  // stays idle/grey while the request is still awaiting the manager.
+  const rmDecided = r.managerStatus === 'Approved' || r.managerStatus === 'Rejected';
+  const hrReviewed = !!r.hrViewedAt && rmDecided;
   const hrDecision: ApprovalNode['decision'] =
-    !r.escalatedToHr ? 'idle'
+    !r.escalatedToHr ? (hrReviewed ? 'viewed' : 'idle')
     : r.hrStatus === 'Approved' ? 'approved'
     : r.hrStatus === 'Rejected' ? 'rejected'
     : r.hrStatus === 'Pending'  ? 'pending'
     : 'idle';
   const hrDetail =
-    !r.escalatedToHr ? 'CC — informational only'
+    !r.escalatedToHr ? (hrReviewed ? 'Reviewed by HR' : 'CC — informational only')
     : r.escalationReason === 'manager_rejected' && r.hrStatus === 'Approved' ? 'Override approved'
     : r.escalationReason === 'manager_rejected' && r.hrStatus === 'Rejected' ? 'Concurred with manager'
     : r.escalationReason === 'aged_out'         ? 'Auto-escalated · 7-day rule'
@@ -209,7 +219,7 @@ const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
     role: 'HR',
     decision: hrDecision,
     detail: hrDetail,
-    actionAt: r.hrActionAt,
+    actionAt: r.hrActionAt || (hrDecision === 'viewed' ? r.hrViewedAt : undefined),
     comment: r.hrComment,
   };
 
@@ -315,12 +325,16 @@ function apiToLeaveRequest(api: ApiLeaveRequest, idx: number): LeaveRequest {
     hrStatus,
     hrActionAt: chain?.[1]?.acted_at ? chain[1].acted_at.slice(0, 10) : undefined,
     hrComment: chain?.[1]?.comment ?? undefined,
+    hrViewedAt: (api as any).hr_viewed_at ? String((api as any).hr_viewed_at).slice(0, 10) : undefined,
     escalatedToHr: hasHrLevel,
     escalationReason: 'none',
     canActNow: !!(api as any).can_act_now,
     stage,
     stageNote: undefined,
-    payroll: (api.leave_type?.type === 'Unpaid Leave' ? 'Unpaid' : 'Paid Leave') as PayrollMode,
+    // Payroll classification comes from the master leave type's Paid/Unpaid
+    // setting (fallback to the legacy 'Unpaid Leave' type for older rows).
+    payroll: ((api.leave_type?.paid_unpaid === 'Unpaid' || api.leave_type?.type === 'Unpaid Leave')
+      ? 'Unpaid' : 'Paid Leave') as PayrollMode,
     proof: 'N/A',
     reason: api.reason ?? '',
   };
@@ -342,14 +356,18 @@ export default function HrLeave() {
   const canApprove = isSuperAdmin || !!leavePerm?.can_approve;
   const canManagePlans = isSuperAdmin || !!leavePerm?.can_add || !!leavePerm?.can_edit;
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
+  const [requestsLoading, setRequestsLoading] = useState(true);
 
   const loadRequests = useCallback(async () => {
+    setRequestsLoading(true);
     try {
       const list = await leaveRequestsApi.approvals({ status: 'All' });
       setRequests(list.map(apiToLeaveRequest));
     } catch (err) {
       console.warn('[HrLeave] failed to load leave requests', err);
       setRequests([]);
+    } finally {
+      setRequestsLoading(false);
     }
   }, []);
   useEffect(() => { loadRequests(); }, [loadRequests]);
@@ -386,12 +404,24 @@ export default function HrLeave() {
   const [status,  setStatus]  = useState<string>('All');
   const [department, setDepartment] = useState<string>('All');
   const [type,    setType]    = useState<string>('All');
-  const [stage,   setStage]   = useState<string>('All');
   const [payroll, setPayroll] = useState<string>('All');
   const [page,    setPage]    = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
   const [detail, setDetail] = useState<LeaveRequest | null>(null);
+
+  // Open a request's detail. Leave is reporting-manager-only, so HR/admins are
+  // view-only — opening the detail marks it "Reviewed by HR" (persisted), which
+  // turns the HR node green. Idempotent server-side; fire-and-forget.
+  const isHrViewer = ['super_admin', 'client_admin', 'branch_user'].includes(String(user?.user_type || ''));
+  const openDetail = (r: LeaveRequest) => {
+    setDetail(r);
+    if (!isHrViewer || r.hrViewedAt) return;
+    const stamp = new Date().toISOString().slice(0, 10);
+    setDetail(prev => (prev && prev.id === r.id ? { ...prev, hrViewedAt: stamp } : prev));
+    setRequests(prev => prev.map(x => (x.id === r.id ? { ...x, hrViewedAt: stamp } : x)));
+    leaveRequestsApi.hrView(Number(r.id)).catch(err => console.warn('[HrLeave] hr-view failed', err));
+  };
   const [holidaysOpen, setHolidaysOpen] = useState(false);
   const [todayOpen, setTodayOpen] = useState(true);
   const [onLeaveDate, setOnLeaveDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
@@ -450,17 +480,20 @@ export default function HrLeave() {
     const approved = requests.filter(r => r.stage === 'Approved');
     const pending  = requests.filter(r => r.stage.startsWith('Pending'));
     const rejected = requests.filter(r => r.stage === 'Rejected');
+    const cancelled = requests.filter(r => r.stage === 'Cancelled');
     return {
       total:        requests.length,
       pending:      pending.length,
       approved:     approved.length,
       approvedDays: approved.reduce((s, r) => s + r.durationDays, 0),
       rejected:     rejected.length,
+      cancelled:    cancelled.length,
       tabs: {
-        All:      requests.length,
-        Pending:  pending.length,
-        Approved: approved.length,
-        Rejected: rejected.length,
+        All:       requests.length,
+        Pending:   pending.length,
+        Approved:  approved.length,
+        Rejected:  rejected.length,
+        Cancelled: cancelled.length,
       },
     };
   }, [requests]);
@@ -477,25 +510,16 @@ export default function HrLeave() {
       if (status === 'Pending'  && !r.stage.startsWith('Pending')) return false;
       if (status === 'Approved' && r.stage !== 'Approved')          return false;
       if (status === 'Rejected' && r.stage !== 'Rejected')          return false;
+      if (status === 'Cancelled' && r.stage !== 'Cancelled')        return false;
 
-      if (stage !== 'All') {
-        const matchesStage =
-            stage === 'Manager Review' ? r.stage === 'Pending (Manager)'
-          : stage === 'HR Review'      ? r.stage === 'Pending (HR)'
-          : stage === 'Approved'       ? r.stage === 'Approved'
-          : stage === 'Rejected'       ? r.stage === 'Rejected'
-          : true;
-        if (!matchesStage) return false;
-      }
-
-      if (type       !== 'All' && r.type       !== type)       return false;
+      if (type       !== 'All' && r.typeName   !== type)       return false;
       if (payroll    !== 'All' && r.payroll    !== payroll)    return false;
       if (department !== 'All' && r.department !== department) return false;
 
       if (!q) return true;
       return [r.empName, r.empRole, r.id, r.empCode, r.type].some(v => v.toLowerCase().includes(q));
     });
-  }, [requests, search, status, type, stage, payroll, department]);
+  }, [requests, search, status, type, payroll, department]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage  = Math.min(Math.max(1, page), pageCount);
@@ -508,22 +532,13 @@ export default function HrLeave() {
     ...Array.from(new Set(requests.map(r => r.department))).filter(Boolean).sort()
       .map(v => ({ value: v, label: v })),
   ];
-  const STAGE_OPTIONS = [
-    { value: 'All',             label: 'All Stages' },
-    { value: 'Manager Review',  label: 'Manager Review' },
-    { value: 'HR Review',       label: 'HR Review' },
-    { value: 'Approved',        label: 'Approved' },
-    { value: 'Rejected',        label: 'Rejected' },
-  ];
+  // Only the real, operational leave types that actually appear in requests
+  // (i.e. types assigned inside active plans) — NOT a hardcoded list of generic
+  // categories that may not exist in any plan.
   const TYPE_OPTIONS = [
-    { value: 'All',       label: 'All' },
-    { value: 'Annual',    label: 'Annual' },
-    { value: 'Sick',      label: 'Sick' },
-    { value: 'Casual',    label: 'Casual' },
-    { value: 'Earned',    label: 'Earned' },
-    { value: 'Maternity', label: 'Maternity' },
-    { value: 'Comp Off',  label: 'Comp Off' },
-    { value: 'LOP',       label: 'LOP' },
+    { value: 'All', label: 'All' },
+    ...Array.from(new Set(requests.map(r => r.typeName))).filter(Boolean).sort()
+      .map(v => ({ value: v, label: v })),
   ];
   const PAYROLL_OPTIONS = [
     { value: 'All',        label: 'All' },
@@ -704,7 +719,7 @@ export default function HrLeave() {
                           key={r.id}
                           type="button"
                           className="lv-today-chip"
-                          onClick={() => setDetail(r)}
+                          onClick={() => openDetail(r)}
                           title={`${r.empName} · ${r.typeName} · until ${formatDate(r.toDate)}`}
                         >
                           <span
@@ -741,6 +756,7 @@ export default function HrLeave() {
                 { key: 'Pending',  label: 'Pending',         count: counts.tabs.Pending,  icon: 'ri-time-line',           variant: 'in-progress' },
                 { key: 'Approved', label: 'Approved',        count: counts.tabs.Approved, icon: 'ri-checkbox-circle-line',variant: 'completed'   },
                 { key: 'Rejected', label: 'Rejected',        count: counts.tabs.Rejected, icon: 'ri-close-circle-line',   variant: 'cancelled'   },
+                { key: 'Cancelled', label: 'Cancelled',      count: counts.tabs.Cancelled, icon: 'ri-forbid-line',        variant: 'cancelled'   },
               ] as const).map(t => (
                 <button
                   key={t.key}
@@ -799,10 +815,6 @@ export default function HrLeave() {
                     <div style={{ minWidth: 140 }}>
                       <MasterSelect value={type} onChange={v => { setType(v); setPage(1); }} options={TYPE_OPTIONS} placeholder="All" />
                     </div>
-                    <span className="text-uppercase fw-semibold text-muted" style={{ fontSize: 10.5, letterSpacing: '0.06em' }}>Stage</span>
-                    <div style={{ minWidth: 160 }}>
-                      <MasterSelect value={stage} onChange={v => { setStage(v); setPage(1); }} options={STAGE_OPTIONS} placeholder="All Stages" />
-                    </div>
                     <span className="text-uppercase fw-semibold text-muted" style={{ fontSize: 10.5, letterSpacing: '0.06em' }}>Payroll</span>
                     <div style={{ minWidth: 140 }}>
                       <MasterSelect value={payroll} onChange={v => { setPayroll(v); setPage(1); }} options={PAYROLL_OPTIONS} placeholder="All" />
@@ -860,9 +872,32 @@ export default function HrLeave() {
                         </tr>
                       </thead>
                       <tbody>
-                        {visible.length === 0 ? (
+                        {requestsLoading ? (
+                          Array.from({ length: pageSize }).map((_, i) => (
+                            <tr key={`sk-${i}`}>
+                              <td className="text-center"><Shimmer width={16} height={16} radius={4} /></td>
+                              <td className="text-center"><Shimmer width={18} height={12} /></td>
+                              <td>
+                                <div className="d-flex align-items-center gap-2">
+                                  <Shimmer width={30} height={30} radius={999} />
+                                  <div className="flex-grow-1">
+                                    <Shimmer height={12} width="70%" />
+                                    <Shimmer height={10} width="40%" style={{ marginTop: 4 }} />
+                                  </div>
+                                </div>
+                              </td>
+                              <td><Shimmer height={20} width={70} radius={999} /></td>
+                              <td><Shimmer height={12} width={40} /></td>
+                              <td><Shimmer height={12} width={150} /></td>
+                              <td><Shimmer height={24} width={120} radius={999} /></td>
+                              <td><Shimmer height={20} width={70} radius={999} /></td>
+                              <td><Shimmer height={20} width={90} radius={999} /></td>
+                              <td className="text-center"><Shimmer height={26} width={90} radius={6} /></td>
+                            </tr>
+                          ))
+                        ) : visible.length === 0 ? (
                           <tr>
-                            <td colSpan={9} className="text-center py-5 text-muted">
+                            <td colSpan={10} className="text-center py-5 text-muted">
                               <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
                               No leave requests match your filters
                             </td>
@@ -934,7 +969,7 @@ export default function HrLeave() {
                                     title="View details"
                                     icon="ri-eye-line"
                                     tone="info"
-                                    onClick={() => setDetail(r)}
+                                    onClick={() => openDetail(r)}
                                   />
                                   {/* Approve / Reject appear ONLY when it's the
                                       viewer's turn in the manager→HR chain
@@ -1243,21 +1278,24 @@ function ApprovalTimelineList({
       >
         {chain.map((n, i) => {
           const isApproved = n.decision === 'approved';
+          const isViewed   = n.decision === 'viewed'; // HR reviewed (view-only)
           const isPending  = n.decision === 'pending';
           const isRejected = n.decision === 'rejected';
           const isSkipped  = n.decision === 'skipped';
+          const isGreen    = isApproved || isViewed;
           const isLast = i === chain.length - 1;
 
           const dotBg =
-            isApproved ? 'linear-gradient(135deg,#0ab39c,#108548)'
+            isGreen ? 'linear-gradient(135deg,#0ab39c,#108548)'
             : isRejected ? 'linear-gradient(135deg,#f06548,#dc2626)'
             : isPending  ? 'linear-gradient(135deg,#f59e0b,#d97706)'
             : isSkipped  ? (dark ? 'rgba(255,255,255,0.06)' : '#f3f4f6')
             : (dark ? 'rgba(255,255,255,0.08)' : '#fff');
-          const dotColor = isApproved || isRejected || isPending ? '#fff' : (dark ? 'rgba(255,255,255,0.55)' : '#9ca3af');
-          const dotBorder = isSkipped ? `1.5px dashed ${dark ? 'rgba(255,255,255,0.20)' : '#d1d5db'}` : !isApproved && !isRejected && !isPending ? `1.5px solid ${dark ? 'rgba(255,255,255,0.18)' : '#e5e7eb'}` : 'none';
+          const dotColor = isGreen || isRejected || isPending ? '#fff' : (dark ? 'rgba(255,255,255,0.55)' : '#9ca3af');
+          const dotBorder = isSkipped ? `1.5px dashed ${dark ? 'rgba(255,255,255,0.20)' : '#d1d5db'}` : !isGreen && !isRejected && !isPending ? `1.5px solid ${dark ? 'rgba(255,255,255,0.18)' : '#e5e7eb'}` : 'none';
           const dotIcon =
-            isApproved ? 'ri-check-line'
+            isViewed   ? 'ri-eye-line'
+            : isApproved ? 'ri-check-line'
             : isRejected ? 'ri-close-line'
             : isSkipped  ? 'ri-subtract-line'
             : isPending  ? 'ri-time-line'
@@ -1269,7 +1307,7 @@ function ApprovalTimelineList({
           const dateLabel = formatDate(n.actionAt || (n.role === 'Self' ? appliedOn : ''));
 
           const connectorColor =
-            isApproved ? '#10b981' : isRejected ? '#dc2626' : '#e5e7eb';
+            isGreen ? '#10b981' : isRejected ? '#dc2626' : '#e5e7eb';
 
           return (
             <div key={i} className="text-center position-relative" style={{ minWidth: 0, opacity: isSkipped ? 0.6 : 1 }}>
@@ -1497,7 +1535,7 @@ function ChainDots({ row }: { row: LeaveRequest }) {
     <div>
       <div className="d-inline-flex align-items-center">
         {chain.map((n, i) => {
-          const isApproved = n.decision === 'approved';
+          const isApproved = n.decision === 'approved' || n.decision === 'viewed'; // HR-viewed reads green
           const isRejected = n.decision === 'rejected';
           const isPending  = n.decision === 'pending';
           const isSkipped  = n.decision === 'skipped';

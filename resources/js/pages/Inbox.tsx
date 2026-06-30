@@ -151,7 +151,9 @@ export default function Inbox() {
       api.get('/my-team/approvals', { params: { history: 1 } }),
       api.get<SignatureRun[]>('/hr-document-signatures/inbox', { params: { history: 1 } }),
     ]);
-    setHistLeave(lv.status === 'fulfilled' ? (Array.isArray(lv.value) ? lv.value : []).filter(r => r.status === 'Approved' || r.status === 'Rejected') : []);
+    // History = leave THIS user actually decided (RM). Without the approved_by
+    // check, HR/admins would see every decided leave in the tenant here.
+    setHistLeave(lv.status === 'fulfilled' ? (Array.isArray(lv.value) ? lv.value : []).filter(r => (r.status === 'Approved' || r.status === 'Rejected') && r.approved_by === user?.id) : []);
     setHistExpense(ex.status === 'fulfilled' ? ((ex.value.data?.approvals ?? []) as any[]).filter(a => a.module === 'expense' || a.module === 'advance') : []);
     setHistDocs(dc.status === 'fulfilled' ? (Array.isArray(dc.value.data) ? dc.value.data : []) : []);
     setHistLoading(false);
@@ -211,7 +213,12 @@ export default function Inbox() {
     setLeaveLoading(true);
     try {
       const list = await leaveRequestsApi.approvals({ status: 'Pending' });
-      setLeaveRows(list);
+      // Leave is reporting-manager-only — the inbox is a personal action queue,
+      // so only surface leave the signed-in user can actually act on right now
+      // (the RM). HR/admins get can_act_now = false and are filtered out here,
+      // even though the endpoint returns them tenant-wide for the dedicated
+      // (view-only) Leave Approvals page.
+      setLeaveRows((Array.isArray(list) ? list : []).filter(r => r.can_act_now));
     } catch (err: any) {
       console.warn('[Inbox] leave approvals load failed', err);
       setLeaveRows([]);

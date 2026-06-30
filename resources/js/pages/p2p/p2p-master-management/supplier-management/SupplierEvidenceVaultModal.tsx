@@ -244,6 +244,9 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
   const toast = useToast();
   const [tab, setTab] = useState<TabKey>('company-dd');
   const [group, setGroup] = useState<GroupKey>('standard');
+  /* "+N more" segment overflow popover — a titled list (matches the CLM pages'
+   * authority/segment popovers), opened on click from the header chip. */
+  const [segPop, setSegPop] = useState<{ names: string[]; x: number; y: number } | null>(null);
   // "Document Overview" popup — set to a group key to open the all-docs list.
   const [overview, setOverview] = useState<GroupKey | null>(null);
   const [overviewPage, setOverviewPage] = useState(1);
@@ -656,10 +659,29 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
             </div>
             <div className="cev-header-right">
               <div className="cev-header-meta">
-                {(supplier.segments && supplier.segments.length > 0
-                  ? supplier.segments
-                  : (supplier.segment ? [supplier.segment] : [])
-                ).map((s, i) => <span key={`${s}-${i}`}>{s}</span>)}
+                {(() => {
+                  /* Cap the inline segment list at 5; the rest collapse into a
+                   * "+N more" chip whose tooltip lists every segment, so a
+                   * supplier with many segments no longer overflows the header. */
+                  const segs = (supplier.segments && supplier.segments.length > 0
+                    ? supplier.segments
+                    : (supplier.segment ? [supplier.segment] : [])
+                  ).map(s => String(s).trim()).filter(Boolean);
+                  const shown = segs.slice(0, 5);
+                  const extra = segs.length - shown.length;
+                  return (
+                    <>
+                      {shown.map((s, i) => <span key={`${s}-${i}`}>{s}</span>)}
+                      {extra > 0 && (
+                        <button
+                          type="button"
+                          className="cev-seg-more"
+                          onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(prev => prev ? null : { names: segs, x: b.left, y: b.bottom + 6 }); }}
+                        >+{extra} more</button>
+                      )}
+                    </>
+                  );
+                })()}
                 {supplier.country && <span>· {supplier.country}</span>}
               </div>
               <button type="button" className="cev-close" onClick={onClose} aria-label="Close vault">
@@ -933,6 +955,21 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           </div>
         );
       })()}
+
+      {segPop && createPortal(
+        <>
+          <div onClick={() => setSegPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 13000 }} />
+          <div className="cev-seg-pop" style={{ position: 'fixed', left: Math.min(segPop.x, window.innerWidth - 250), top: segPop.y, zIndex: 13001, width: 232, maxHeight: 320, overflowY: 'auto' }}>
+            <div className="cev-seg-pop-title">Segments ({segPop.names.length})</div>
+            {segPop.names.map((name, i) => (
+              <div key={i} className={`cev-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
+                <span className="cev-seg-pop-pill">{name}</span>
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
     </div>,
     document.body
   );

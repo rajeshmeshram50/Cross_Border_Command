@@ -34,6 +34,7 @@ export type Vendor = {
   legalName: string;
   type: string;
   state: string;
+  stateCode?: string | null;
   city: string;
   contactName: string;
   designation: string;
@@ -182,15 +183,19 @@ export default function Vendors() {
       .sort((x, y) => Number(y.isPrimary) - Number(x.isPrimary));
     return {
       id:          row.id,
-      code:        row.vendor_code ?? `SUP-${row.id}`,
+      code:        row.vendor_code ?? `S-${String(row.id).padStart(3, '0')}`,
       companyName: row.company_name ?? 'Untitled Supplier',
       legalName:   row.legal_name ?? row.company_name ?? '—',
       type:        row.vendor_type?.name ?? 'Pending',
-      /* Show the state NAME (e.g. "Maharashtra"), not the raw state_id.
-         Fall back to the state code, then a dash. */
+      /* State NAME (e.g. "Maharashtra"); falls back to the code, then a dash.
+         The code is kept separately in `stateCode` so the cell can render it
+         BOLD in brackets — e.g. "Maharashtra (27)". */
       state:       row.primary_address?.state?.name
                      || row.primary_address?.state_code
                      || '—',
+      stateCode:   (row.primary_address?.state?.name && row.primary_address?.state_code)
+                     ? row.primary_address.state_code
+                     : null,
       city:        row.primary_address?.city ?? '—',
       contactName: contacts[0]?.name || row.primary_address?.contact_name || '—',
       designation: '—',
@@ -303,7 +308,8 @@ useEffect(() => {
         || v.email.toLowerCase().includes(lo)
         || v.phone.toLowerCase().includes(lo)
         || v.city.toLowerCase().includes(lo)
-        || v.state.toLowerCase().includes(lo));
+        || v.state.toLowerCase().includes(lo)
+        || (v.stateCode ?? '').toLowerCase().includes(lo));
   }, [vendors, search, tab]);
 
   /* Client-side pagination math — page size is the dynamic `rpp`. */
@@ -529,7 +535,7 @@ useEffect(() => {
                                 ) : <span className="sl-seg">—</span>}
                               </span>
                             </td>
-                            <td><span className="sl-state">{v.state}</span></td>
+                            <td><span className="sl-state">{v.state}{v.stateCode ? <> (<strong>{v.stateCode}</strong>)</> : ''}</span></td>
                             <td><span className="sl-country">{v.country || 'India'}</span></td>
                             <td>
                               <span className="sl-contact-wrap">

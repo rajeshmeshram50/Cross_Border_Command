@@ -50,6 +50,10 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
    * the search term or underlying row set changes so the user never
    * lands on an empty page beyond the new last page. */
   const [page, setPage] = useState(1);
+  /* "+N" segment-overflow popover — shows the first segment as a pill plus a
+   * "+N" badge that reveals the rest (mirrors the SalesCustomers table) so the
+   * cell never wraps a long comma list. */
+  const [segOpen, setSegOpen] = useState<{ id: string | number; names: string[]; x: number; y: number } | null>(null);
 
   const fetchRows = useCallback(async () => {
     if (!customer?.db_id) return;
@@ -234,7 +238,26 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                         <td><span className="ccm-srno">{(page - 1) * ROWS_PER_PAGE + i + 1}</span></td>
                         <td><span className="ccm-id-chip">{c.id}</span></td>
                         <td className="ccm-company">{c.company || '—'}</td>
-                        <td>{c.segment ? <span className="ccm-seg">{c.segment}</span> : '—'}</td>
+                        <td>
+                          {(() => {
+                            const segList = String(c.segment ?? '').split(',').map(s => s.trim()).filter(Boolean);
+                            if (segList.length === 0) return '—';
+                            const extra = segList.length - 1;
+                            return (
+                              <span className="d-inline-flex align-items-center" style={{ gap: 4 }}>
+                                <span className="ccm-seg">{segList[0]}</span>
+                                {extra > 0 && (
+                                  <button
+                                    type="button"
+                                    className="ccm-seg-more"
+                                    title="View all segments"
+                                    onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(prev => prev?.id === c.id ? null : { id: c.id, names: segList, x: b.left, y: b.bottom + 4 }); }}
+                                  >+{extra}</button>
+                                )}
+                              </span>
+                            );
+                          })()}
+                        </td>
                         <td><span className={`ccm-pill ${riskColor}`}>{c.risk || '—'}</span></td>
                         <td><span className={`ccm-sac ${c.same_as_customer ? 'is-yes' : 'is-no'}`}>{c.same_as_customer ? 'Yes' : 'No'}</span></td>
                         <td>{c.contact || '—'}</td>
@@ -315,6 +338,21 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
         onClose={() => { setAddOpen(false); setEditing(null); }}
         onSaved={() => fetchRows()}
       />
+
+      {segOpen && createPortal(
+        <>
+          <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 1090 }} />
+          <div className="ccm-seg-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 230), top: segOpen.y, zIndex: 1091, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+            <div className="ccm-seg-pop-title">Segments ({segOpen.names.length})</div>
+            {segOpen.names.map((name, i) => (
+              <div key={i} className={`ccm-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
+                <span className="ccm-seg">{name}</span>
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body,
+      )}
 
     </>,
     document.body,
@@ -514,6 +552,29 @@ const SCOPED_CSS = `
   padding: 3px 10px; white-space: nowrap;
 }
 .ccm-seg::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+/* "+N" segment overflow pill + popover — emerald accent to match the modal. */
+.ccm-seg-more {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 20px;
+  border: 0; cursor: pointer; flex-shrink: 0;
+  font-size: 10px; font-weight: 800; color: #fff; font-family: inherit;
+  background: linear-gradient(135deg, #059669, #047857);
+  box-shadow: 0 2px 8px rgba(5,150,105,.35);
+}
+.ccm-seg-more:hover { filter: brightness(1.06); }
+.ccm-seg-pop {
+  background: #fff; border: 1.5px solid #a7f3d0;
+  box-shadow: 0 16px 40px rgba(0,0,0,.18);
+}
+.ccm-seg-pop-title {
+  font-size: 8px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  color: #047857; padding: 4px 8px 7px;
+}
+.ccm-seg-pop-row { display: flex; align-items: center; padding: 6px 8px; border-radius: 8px; }
+.ccm-seg-pop-row.alt { background: #f0fdf9; }
+[data-bs-theme="dark"] .ccm-seg-pop { background: #0f2a24; border-color: rgba(52,211,153,.30); box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+[data-bs-theme="dark"] .ccm-seg-pop-title { color: #6ee7b7; }
+[data-bs-theme="dark"] .ccm-seg-pop-row.alt { background: rgba(255,255,255,.04); }
 .ccm-empty td {
   text-align: center;
   padding: 48px 16px !important;

@@ -500,7 +500,7 @@ export default function ClmAnalyticsPage() {
     const roster = WOS_SUPPLIERS[wosScope];
     const off = WOS_OFFSET[wosScope];
     const n = off + (abs + 1);
-    return { proc: 'PROC-' + pad3(n), code: 'S-' + pad3(n), name: roster.length ? roster[abs % roster.length] : '—' };
+    return { proc: 'PROC-' + pad3(n), code: 'SG-' + pad3(n), name: roster.length ? roster[abs % roster.length] : '—' };
   };
   const wosTitle = wosScope === 'svc' ? 'Service Suppliers' : wosScope === 'mat' ? 'Material Suppliers' : 'Logistics Suppliers';
 
@@ -625,7 +625,7 @@ export default function ClmAnalyticsPage() {
       // Live rows carry the real supplier code + procurement id; demo maps by index.
       if (row._name !== undefined) return { code: row._code ?? '—', name: row._name, proc: row._proc ?? '—' };
       const sp = SUPPLIERS[abs % SUPPLIERS.length];
-      return { code: 'S-' + pad3(abs + 1), name: sp ? sp.name : '—', proc: 'PROC-' + pad3(abs + 1) };
+      return { code: 'SG-' + pad3(abs + 1), name: sp ? sp.name : '—', proc: 'PROC-' + pad3(abs + 1) };
     }
     if (wsScope === 'consignee') {
       // Live rows carry a pre-resolved consignee; demo rows map by index.
