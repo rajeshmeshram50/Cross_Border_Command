@@ -14,6 +14,8 @@ export interface SalaryEmployeeLite {
   department?: string | null;
   designation?: string | null;
   pf_eligible?: boolean;
+  pf_type?: string | null; // 'statutory' | 'standard'
+  esi_applicable?: boolean;
   annual_salary?: number | null;
   has_structure?: boolean;
   structure_id?: number | null;
@@ -74,9 +76,11 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
     if (!open || !employee) return;
     setEffectiveFrom(todayISO());
     setNote('');
+    // PF / ESI applicability mirror the employee record (set on the Employee
+    // form); they're locked here. PT defaults on (no employee-level flag).
     setPfApplicable(!!employee.pf_eligible);
+    setEsiApplicable(!!employee.esi_applicable);
     setPtApplicable(true);
-    setEsiApplicable(false);
 
     if (employee.structure_id) {
       // Revising — load the current active structure to prefill.
@@ -102,7 +106,58 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
   const grossTotal = useMemo(() => earnings.reduce((s, c) => s + (Number(c.amount) || 0), 0), [earnings]);
   const dedTotal = useMemo(() => deductions.reduce((s, c) => s + (Number(c.amount) || 0), 0), [deductions]);
 
+  // Live PF estimate off the basic component — Statutory caps the basic at the
+  // ₹15k EPF ceiling, Standard uses the full basic (per the employee's PF Type).
+  const basicAmt = useMemo(() => Number(earnings.find(c => c.code === 'basic')?.amount) || 0, [earnings]);
+  const pfStandard = String(employee?.pf_type ?? '').toLowerCase() === 'standard';
+  const pfAmt = useMemo(() => {
+    if (!pfApplicable) return 0;
+    const base = pfStandard ? basicAmt : Math.min(basicAmt, 15000);
+    return Math.round(base * 0.12);
+  }, [pfApplicable, pfStandard, basicAmt]);
+
+  // Ticking PF / ESI / Professional Tax drops a labelled row into Fixed
+  // Deductions; unticking removes it. PF's amount is auto (12% of basic, by
+  // type) and read-only; ESI / PT amounts are entered by HR. None can be
+  // deleted directly — untick the box to remove.
+  useEffect(() => {
+    setDeductions(prev => {
+      let next = prev;
+      const syncManual = (on: boolean, code: string, label: string) => {
+        const has = next.some(d => d.code === code);
+        if (on && !has) next = [...next, { code, label, amount: 0 }];
+        else if (!on && has) next = next.filter(d => d.code !== code);
+      };
+      syncManual(esiApplicable, 'esi', 'ESI');
+      syncManual(ptApplicable, 'pt', 'Professional Tax');
+      // PF — auto amount, kept in sync with the 12% calc.
+      const pfIdx = next.findIndex(d => d.code === 'pf');
+      if (pfApplicable) {
+        if (pfIdx === -1) next = [...next, { code: 'pf', label: 'Provident Fund (PF)', amount: pfAmt }];
+        else if (next[pfIdx].amount !== pfAmt) { next = next.map(d => d.code === 'pf' ? { ...d, amount: pfAmt } : d); }
+      } else if (pfIdx !== -1) {
+        next = next.filter(d => d.code !== 'pf');
+      }
+      return next === prev ? prev : next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [esiApplicable, ptApplicable, pfApplicable, pfAmt]);
+
   if (!open || !employee) return null;
+
+  // Net = Gross − PF − fixed deductions. Salary comparison: breakup annualised
+  // (gross × 12) vs the employee's annual salary — red over, green at/under.
+  const netMonthly = Math.max(0, grossTotal - dedTotal); // PF is now a Fixed Deduction row
+  const salaryAnnual = employee.annual_salary ? Math.round(employee.annual_salary) : 0;
+  const breakupAnnual = Math.round(grossTotal * 12);
+  const salaryDiff = salaryAnnual > 0 ? breakupAnnual - salaryAnnual : 0; // + over, − under
+  const overSalary = salaryDiff > 0;
+
+  // A box is LOCKED only when the employee already has it applicable (set on the
+  // Employee form) — you can't turn it off here. If it's NOT applicable yet, you
+  // CAN enable it here; saving propagates the flag back to the employee record.
+  const pfLocked = !!employee.pf_eligible;
+  const esiLocked = !!employee.esi_applicable;
 
   const updateRow = (
     list: SalaryComponent[],
@@ -144,7 +199,10 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
         employee_id: employee.employee_id,
         effective_from: effectiveFrom,
         earnings: clean.map((c, i) => ({ code: c.code || `comp_${i + 1}`, label: c.label.trim(), amount: c.amount })),
-        deductions: deductions.filter(c => c.label.trim()).map((c, i) => ({ code: c.code || `ded_${i + 1}`, label: c.label.trim(), amount: c.amount })),
+        // Exclude the auto PF row — payroll recomputes PF from pf_applicable
+        // + the employee's PF Type, so it's display-only here. ESI / PT rows
+        // are saved (payroll honours their manual amounts).
+        deductions: deductions.filter(c => c.label.trim() && c.code !== 'pf').map((c, i) => ({ code: c.code || `ded_${i + 1}`, label: c.label.trim(), amount: c.amount })),
         pf_applicable: pfApplicable,
         esi_applicable: esiApplicable,
         pt_applicable: ptApplicable,
@@ -165,6 +223,7 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
     setList: (v: SalaryComponent[]) => void,
     accent: string,
     label: string,
+    kind: 'earn' | 'ded' = 'earn',
   ) => (
     <div>
       <div className="d-flex align-items-center justify-content-between mb-2">
@@ -175,21 +234,33 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
         </button>
       </div>
       {list.length === 0 && <div className="text-muted mb-2" style={{ fontSize: 12 }}>No components.</div>}
-      {list.map((c, i) => (
+      {list.map((c, i) => {
+        // ESI / PT / PF rows are tied to their checkbox: the name is fixed and
+        // the row can't be deleted directly (untick to remove). ESI / PT
+        // amounts are editable; PF's amount is auto (12%) and read-only.
+        const locked = kind === 'ded' && (c.code === 'esi' || c.code === 'pt' || c.code === 'pf');
+        const amountLocked = kind === 'ded' && c.code === 'pf';
+        return (
         <div key={i} className="d-flex align-items-center gap-2 mb-2">
-          <input className="form-control form-control-sm" style={{ flex: 2 }} placeholder="Component name"
-            value={c.label} onChange={e => updateRow(list, setList, i, 'label', e.target.value)} />
+          <input className="form-control form-control-sm" style={{ flex: 2, background: locked ? 'var(--vz-light, #f3f3f9)' : undefined }} placeholder="Component name"
+            value={c.label} readOnly={locked} onChange={e => updateRow(list, setList, i, 'label', e.target.value)} />
           <div className="d-flex align-items-center" style={{ flex: 1, position: 'relative' }}>
             <span style={{ position: 'absolute', left: 8, fontSize: 12, color: 'var(--vz-secondary-color)' }}>₹</span>
-            <input type="number" min={0} className="form-control form-control-sm" style={{ paddingLeft: 18, textAlign: 'right' }}
-              value={c.amount} onChange={e => updateRow(list, setList, i, 'amount', e.target.value)} />
+            <input type="number" min={0} className="form-control form-control-sm" style={{ paddingLeft: 18, textAlign: 'right', background: amountLocked ? 'var(--vz-light, #f3f3f9)' : undefined }}
+              value={c.amount} readOnly={amountLocked} title={amountLocked ? 'Auto — 12% of basic (by PF Type)' : undefined}
+              onChange={e => updateRow(list, setList, i, 'amount', e.target.value)} />
           </div>
-          <button type="button" className="btn btn-sm" style={{ color: '#dc2626', padding: '2px 6px' }}
-            onClick={() => removeRow(list, setList, i)} title="Remove">
-            <i className="ri-delete-bin-line" />
-          </button>
+          {locked ? (
+            <span title="Untick the box above to remove" style={{ width: 28, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}><i className="ri-lock-line" /></span>
+          ) : (
+            <button type="button" className="btn btn-sm" style={{ color: '#dc2626', padding: '2px 6px' }}
+              onClick={() => removeRow(list, setList, i)} title="Remove">
+              <i className="ri-delete-bin-line" />
+            </button>
+          )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 
@@ -226,32 +297,76 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                 <label className="form-label fw-semibold" style={{ fontSize: 12 }}>Effective From</label>
                 <MasterDatePicker value={effectiveFrom} onChange={setEffectiveFrom} placeholder="Select date" />
               </div>
-              <div className="col-md-8 d-flex align-items-end gap-3 flex-wrap">
-                <label className="d-flex align-items-center gap-1" style={{ fontSize: 12.5 }}>
-                  <input type="checkbox" checked={pfApplicable} onChange={e => setPfApplicable(e.target.checked)} /> PF (12%)
-                </label>
-                <label className="d-flex align-items-center gap-1" style={{ fontSize: 12.5 }}>
-                  <input type="checkbox" checked={esiApplicable} onChange={e => setEsiApplicable(e.target.checked)} /> ESI
-                </label>
-                <label className="d-flex align-items-center gap-1" style={{ fontSize: 12.5 }}>
-                  <input type="checkbox" checked={ptApplicable} onChange={e => setPtApplicable(e.target.checked)} /> Professional Tax
-                </label>
+              <div className="col-md-8">
+                {/* Locked (✓ from the Employee form) → can't turn off, edit amount
+                    only. Unlocked → you can enable it here; it updates the
+                    employee + onboarding forms on save. */}
+                <div className="d-flex align-items-end gap-3 flex-wrap">
+                  <label className="d-flex align-items-center gap-1" style={{ fontSize: 12.5, color: pfLocked ? 'var(--vz-secondary-color)' : undefined, cursor: pfLocked ? 'not-allowed' : 'pointer' }} title={pfLocked ? 'Set on the Employee form' : ''}>
+                    <input type="checkbox" checked={pfApplicable} disabled={pfLocked} onChange={e => { if (!pfLocked) setPfApplicable(e.target.checked); }} /> PF (12%){pfLocked && <i className="ri-lock-line" style={{ fontSize: 11, color: '#9ca3af' }} />}
+                  </label>
+                  <label className="d-flex align-items-center gap-1" style={{ fontSize: 12.5, color: esiLocked ? 'var(--vz-secondary-color)' : undefined, cursor: esiLocked ? 'not-allowed' : 'pointer' }} title={esiLocked ? 'Set on the Employee form' : ''}>
+                    <input type="checkbox" checked={esiApplicable} disabled={esiLocked} onChange={e => { if (!esiLocked) setEsiApplicable(e.target.checked); }} /> ESI{esiLocked && <i className="ri-lock-line" style={{ fontSize: 11, color: '#9ca3af' }} />}
+                  </label>
+                  <label className="d-flex align-items-center gap-1" style={{ fontSize: 12.5, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={ptApplicable} onChange={e => setPtApplicable(e.target.checked)} /> Professional Tax
+                  </label>
+                </div>
+                <small className="text-muted" style={{ fontSize: 10.5 }}>🔒 = already set on the Employee form (locked). Enable an unlocked one here and it updates the Employee &amp; onboarding forms too.</small>
               </div>
             </div>
 
+            {/* How the split + PF are derived, so anyone reading the breakup
+                understands the figures (same statements as the Employee form). */}
+            <ul style={{ fontSize: 11, color: '#6b7280', lineHeight: 1.7, paddingLeft: 16, marginBottom: 12 }}>
+              <li><strong>Basic Salary</strong> — 50% of monthly gross (statutory minimum, Code on Wages 2019).</li>
+              <li><strong>House Rent Allowance (HRA)</strong> — 30% of monthly gross.</li>
+              <li><strong>Special Allowance</strong> — the remaining balance after Basic + HRA.</li>
+              <li><strong>PF Deduction</strong> — 12% of basic; capped at <strong>₹15,000</strong> for <strong>Statutory</strong>, or on the <strong>full basic</strong> for <strong>Standard</strong> (per the employee's PF Type). ESI / PT are the fixed-deduction rows you enter.</li>
+            </ul>
+
             <div className="row g-4">
               <div className="col-md-6">{compTable(earnings, setEarnings, '#108548', 'Earnings')}</div>
-              <div className="col-md-6">{compTable(deductions, setDeductions, '#b91c1c', 'Fixed Deductions (optional)')}</div>
+              <div className="col-md-6">{compTable(deductions, setDeductions, '#b91c1c', 'Fixed Deductions (optional)', 'ded')}</div>
             </div>
 
-            {/* Totals */}
+            {/* Totals + live PF / Net — mirrors the Employee form breakup. */}
             <div className="d-flex align-items-center justify-content-between mt-3 p-2 px-3" style={{ background: 'var(--vz-secondary-bg)', borderRadius: 10, border: '1px solid var(--vz-border-color)' }}>
-              <span className="fw-semibold" style={{ fontSize: 13 }}>Monthly Gross (CTC)</span>
-              <span className="fw-bold" style={{ fontSize: 18, color: '#5a3fd1' }}>₹{fmtINR(grossTotal)}</span>
+              <span className="fw-semibold" style={{ fontSize: 13 }}>Monthly Gross</span>
+              <div className="text-end">
+                <div className="fw-bold" style={{ fontSize: 18, color: '#5a3fd1' }}>₹{fmtINR(grossTotal)}</div>
+                {/* Annualised gross vs the employee's salary — red over, green at/under. */}
+                <div style={{ fontSize: 11.5, fontWeight: 600, color: salaryAnnual <= 0 ? 'var(--vz-secondary-color)' : (overSalary ? '#dc2626' : '#0a8754') }}>
+                  ≈ ₹{fmtINR(breakupAnnual)} / year
+                </div>
+                {salaryAnnual > 0 && salaryDiff !== 0 && (
+                  <div style={{ fontSize: 10.5, fontWeight: 600, color: overSalary ? '#dc2626' : '#0a8754' }}>
+                    {overSalary
+                      ? `₹${fmtINR(salaryDiff)} over the salary (₹${fmtINR(salaryAnnual)})`
+                      : `₹${fmtINR(Math.abs(salaryDiff))} under the salary (₹${fmtINR(salaryAnnual)})`}
+                  </div>
+                )}
+                {salaryAnnual > 0 && salaryDiff === 0 && (
+                  <div style={{ fontSize: 10.5, fontWeight: 600, color: '#0a8754' }}>Matches the salary amount</div>
+                )}
+              </div>
             </div>
             {dedTotal > 0 && (
-              <div className="text-muted text-end mt-1" style={{ fontSize: 11.5 }}>Fixed deductions: ₹{fmtINR(dedTotal)} · PF/ESI/PT/LOP are computed at payroll run-time.</div>
+              <div className="d-flex align-items-center justify-content-between mt-2 px-3" style={{ fontSize: 12.5 }}>
+                <span className="text-muted">Fixed Deductions (incl. PF)</span>
+                <span className="fw-semibold" style={{ color: '#b91c1c' }}>− ₹{fmtINR(dedTotal)}/mo</span>
+              </div>
             )}
+            {dedTotal > 0 && (
+              <div className="d-flex align-items-center justify-content-between mt-2 p-2 px-3" style={{ background: 'var(--vz-secondary-bg)', borderRadius: 10, border: '1px solid var(--vz-border-color)' }}>
+                <span className="fw-semibold" style={{ fontSize: 13 }}>Net (Monthly)</span>
+                <div className="text-end">
+                  <div className="fw-bold" style={{ fontSize: 18, color: '#0a8754' }}>₹{fmtINR(netMonthly)}</div>
+                  <div className="text-muted" style={{ fontSize: 11 }}>Gross ₹{fmtINR(grossTotal)} − Deductions ₹{fmtINR(dedTotal)}</div>
+                </div>
+              </div>
+            )}
+            <div className="text-muted mt-2" style={{ fontSize: 11 }}>Net shown is an estimate (PF + fixed deductions); ESI / PT / LOP further apply at payroll run-time.</div>
 
             <div className="mt-3">
               <label className="form-label fw-semibold" style={{ fontSize: 12 }}>Revision note <span className="text-muted">(optional)</span></label>

@@ -2,7 +2,7 @@
 
 use App\Http\Controllers\Api\AnnouncementController;
 use App\Http\Controllers\Api\AttendanceController;
-use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\AuthController; 
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\FaceBiometricController;
 use App\Http\Controllers\Api\CandidateController;
@@ -527,6 +527,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
 
     Route::get   ('/employees/{id}/holidays',     [EmployeeController::class, 'holidays']);
     Route::post  ('/employees/{id}/set-password', [EmployeeController::class, 'setPassword']);
+    Route::put   ('/employees/{id}/bank-details', [EmployeeController::class, 'updateBankDetails']);
     Route::apiResource('employees', EmployeeController::class);
 
 

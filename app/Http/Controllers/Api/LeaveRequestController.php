@@ -830,16 +830,24 @@ class LeaveRequestController extends Controller
             }
         }
         if ($rawChain === null) {
-            // No saved config — default to the standard two-step flow:
-            // Reporting Manager first, then HR. (Was reporting-manager-only,
-            // which finalized the request at manager approval and left HR as a
-            // CC/informational node. The leave-plan editor is already locked to
-            // RM → HR, so the default now matches that intent for any leave
-            // type that hasn't had its chain explicitly saved.)
+            // No saved config — default to Reporting Manager only. The manager
+            // approves or rejects and that decision is final; HR is view-only.
             $rawChain = [
                 ['approver_kind' => 'reporting_manager'],
-                ['approver_kind' => 'role', 'approver_role' => 'hr'],
             ];
+        }
+
+        // HR is view-only: strip any HR role level from the chain so it ends at
+        // the reporting manager, even for leave types whose config_json still
+        // carries a legacy RM → HR chain. If filtering empties the chain (e.g. a
+        // legacy HR-only config), fall back to the reporting manager.
+        $rawChain = array_values(array_filter($rawChain, function ($r) {
+            $kind = $r['approver_kind'] ?? ($r['kind'] ?? null);
+            $role = strtolower((string) ($r['approver_role'] ?? ($r['role'] ?? '')));
+            return !($kind === 'role' && $role === 'hr');
+        }));
+        if (empty($rawChain)) {
+            $rawChain = [['approver_kind' => 'reporting_manager']];
         }
 
         $chain = [];

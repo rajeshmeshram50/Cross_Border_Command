@@ -560,13 +560,6 @@ export default function HrLeave() {
                 <button type="button" className="rec-btn-ghost" onClick={() => setHolidaysOpen(true)}>
                   <i className="ri-calendar-event-line" />Holidays
                 </button>
-                <button
-                  type="button"
-                  className="rec-btn-ghost"
-                  onClick={() => navigate('/hr/leave-approvals')}
-                >
-                  <i className="ri-check-double-line" />Approvals
-                </button>
                 {canManagePlans && (
                   <button
                     type="button"

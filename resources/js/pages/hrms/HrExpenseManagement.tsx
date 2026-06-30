@@ -25,6 +25,21 @@ const DATE_FILTER_LABELS: Record<DateFilter, string> = {
   year:  'This Year',
 };
 
+/**
+ * Compact ₹ formatter for chart axis ticks and bar labels. Uses the Indian
+ * Cr / L / K scale so large spends (or one outlier category dwarfing the rest)
+ * stay readable instead of overflowing as a 12-digit number or a malformed
+ * "₹34567890.0L" tick.
+ */
+function fmtINRShort(v: number): string {
+  const n = Math.abs(v);
+  const sign = v < 0 ? '-' : '';
+  if (n >= 1_00_00_000) return `${sign}₹${(n / 1_00_00_000).toFixed(2)}Cr`;
+  if (n >= 1_00_000)    return `${sign}₹${(n / 1_00_000).toFixed(1)}L`;
+  if (n >= 1_000)       return `${sign}₹${(n / 1_000).toFixed(0)}K`;
+  return `${sign}₹${Math.round(n)}`;
+}
+
 function withinDateFilter(iso: string | null | undefined, filter: DateFilter): boolean {
   if (filter === 'all' || !iso) return filter === 'all';
   const d = new Date(iso);
@@ -128,15 +143,13 @@ export default function HrExpenseManagement() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
-  const [categories, setCategories] = useState<{ id: number; name: string; monthly_limit: number | null; yearly_limit: number | null }[]>([]);
+  const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
   useEffect(() => {
     api.get('/master/expense_category').then((res: any) => {
       const arr = Array.isArray(res?.data) ? res.data : [];
       setCategories(arr.map((c: any) => ({
         id: Number(c.id),
         name: String(c.name ?? ''),
-        monthly_limit: c.monthly_limit != null ? Number(c.monthly_limit) : null,
-        yearly_limit:  c.yearly_limit  != null ? Number(c.yearly_limit)  : null,
       })));
     }).catch(() => setCategories([]));
   }, []);
@@ -256,17 +269,6 @@ export default function HrExpenseManagement() {
     return CAT_PALETTE[Math.abs(h) % CAT_PALETTE.length];
   };
 
-  const periodLimit = (monthly: number | null): number => {
-    if (monthly == null || monthly <= 0) return 0;
-    switch (dateFilter) {
-      case 'today': return monthly / 30;
-      case 'week':  return monthly / 4.345;
-      case 'month': return monthly;
-      case 'year':  return monthly * 12;
-      case 'all':   return monthly;
-    }
-  };
-
   const categoryRollup = useMemo(() => {
     const byKey = new Map<string, { id: number | null; name: string; spent: number }>();
     for (const r of dateFilteredRows) {
@@ -283,20 +285,12 @@ export default function HrExpenseManagement() {
         byKey.set(key, { id: c.id, name: c.name, spent: 0 });
       }
     }
-    return Array.from(byKey.values()).map(row => {
-      const master = row.id != null ? categories.find(c => c.id === row.id) : null;
-      const limit  = periodLimit(master?.monthly_limit ?? null);
-      return {
-        ...row,
-        color: colorForCat(`${row.id ?? ''}:${row.name}`),
-        monthlyLimit: master?.monthly_limit ?? null,
-        limit,
-        over: limit > 0 && row.spent > limit,
-        usedPct: limit > 0 ? Math.min(100, (row.spent / limit) * 100) : 0,
-      };
-    });
+    return Array.from(byKey.values()).map(row => ({
+      ...row,
+      color: colorForCat(`${row.id ?? ''}:${row.name}`),
+    }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateFilteredRows, categories, dateFilter]);
+  }, [dateFilteredRows, categories]);
 
   const spendByCategory = useMemo(
     () => [...categoryRollup].sort((a, b) => {
@@ -304,15 +298,6 @@ export default function HrExpenseManagement() {
       if (b.spent !== a.spent) return b.spent - a.spent;
       return a.name.localeCompare(b.name);
     }),
-    [categoryRollup],
-  );
-  const policyLimitRows = useMemo(
-    () => categoryRollup
-      .filter(c => (c.monthlyLimit ?? 0) > 0 || c.spent > 0)
-      .sort((a, b) => {
-        if (a.over !== b.over) return a.over ? -1 : 1;
-        return b.spent - a.spent;
-      }),
     [categoryRollup],
   );
   const dateSubLabel = useMemo(() => {
@@ -668,7 +653,7 @@ export default function HrExpenseManagement() {
           {analyticsOpen && (
           <div style={{ padding: '0 14px 14px' }}>
         <Row className="g-3 align-items-stretch">
-          <Col xl={8} lg={7} xs={12}>
+          <Col xs={12}>
             <div
               className="hrexp-surface"
               style={{
@@ -721,12 +706,8 @@ export default function HrExpenseManagement() {
                           tick={{ fontSize: 10, fill: chartTheme.axisTickMuted }}
                           axisLine={false}
                           tickLine={false}
-                          width={55}
-                          tickFormatter={(v: number) =>
-                            v >= 1_00_000 ? `₹${(v / 1_00_000).toFixed(1)}L`
-                            : v >= 1_000   ? `₹${(v / 1_000).toFixed(0)}K`
-                            : `₹${v}`
-                          }
+                          width={64}
+                          tickFormatter={fmtINRShort}
                         />
                         <Tooltip
                           cursor={{ fill: 'rgba(124,92,252,0.06)' }}
@@ -747,7 +728,7 @@ export default function HrExpenseManagement() {
                           <LabelList
                             dataKey="spent"
                             position="top"
-                            formatter={(v: any) => Number(v) > 0 ? `₹${Number(v).toLocaleString('en-IN')}` : ''}
+                            formatter={(v: any) => Number(v) > 0 ? fmtINRShort(Number(v)) : ''}
                             style={{ fontSize: 10.5, fontWeight: 700, fill: chartTheme.axisTick }}
                           />
                         </Bar>
@@ -766,95 +747,6 @@ export default function HrExpenseManagement() {
                     ))}
                   </div>
                 </>
-              )}
-            </div>
-          </Col>
-
-          <Col xl={4} lg={5} xs={12}>
-            <div
-              className="hrexp-surface"
-              style={{
-                borderRadius: 14,
-                border: '1px solid var(--vz-border-color)',
-                boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
-                padding: '16px 20px',
-                height: '100%',
-              }}
-            >
-              <div className="d-flex align-items-center justify-content-between mb-3">
-                <div className="d-flex align-items-center gap-2">
-                  <span
-                    className="d-inline-flex align-items-center justify-content-center hrexp-card-ic--policy"
-                    style={{ width: 28, height: 28, borderRadius: 8, background: '#fdd9d6', color: '#b1401d', fontSize: 14 }}
-                  >
-                    <i className="ri-shield-check-line" />
-                  </span>
-                  <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Policy Limits</h6>
-                </div>
-                <small className="text-muted" style={{ fontSize: 11 }}>
-                  {dateFilter === 'month' ? 'Monthly cap' : `Pro-rated · ${DATE_FILTER_LABELS[dateFilter].toLowerCase()}`}
-                </small>
-              </div>
-              {policyLimitRows.length === 0 ? (
-                <div className="text-center text-muted py-4" style={{ fontSize: 12 }}>
-                  <i className="ri-shield-line d-block mb-2" style={{ fontSize: 24, opacity: 0.45 }} />
-                  No policy limits configured.<br />
-                  <span style={{ fontSize: 11 }}>Set monthly limits in the Expense Categories master.</span>
-                </div>
-              ) : (
-                <div className="d-flex flex-column" style={{ gap: 12 }}>
-                  {policyLimitRows.map(c => {
-                    const limitTxt = c.limit > 0 ? `₹${Math.round(c.limit).toLocaleString('en-IN')}` : '—';
-                    const spentTxt = `₹${Number(c.spent).toLocaleString('en-IN')}`;
-                    const barColor = c.over ? '#ef4444' : c.usedPct >= 75 ? '#f59e0b' : '#22c55e';
-                    const remaining = c.limit > 0 ? c.limit - c.spent : null;
-                    return (
-                      <div key={`pol:${c.id}:${c.name}`} className="d-flex flex-column" style={{ gap: 4 }}>
-                        <div className="d-flex align-items-center justify-content-between" style={{ fontSize: 12 }}>
-                          <span className="fw-semibold" style={{ color: 'var(--vz-body-color, #1f2937)' }}>{c.name}</span>
-                          <div className="d-flex align-items-center gap-2">
-                            <span
-                              className="text-muted"
-                              style={{ fontSize: 11.5, fontVariantNumeric: 'tabular-nums' }}
-                            >
-                              {spentTxt} / {limitTxt}
-                            </span>
-                            {c.over && (
-                              <span
-                                className="d-inline-flex align-items-center fw-bold hrexp-over-badge"
-                                style={{
-                                  fontSize: 9.5, padding: '1px 7px', borderRadius: 999,
-                                  background: '#fdd9d6', color: '#b1401d',
-                                  letterSpacing: '0.06em', textTransform: 'uppercase',
-                                }}
-                              >
-                                Over
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div style={{ height: 5, borderRadius: 999, background: 'var(--vz-secondary-bg, #f3f4f6)', overflow: 'hidden' }}>
-                          <div
-                            style={{
-                              width: `${c.limit > 0 ? c.usedPct : 0}%`,
-                              height: '100%',
-                              background: barColor,
-                              borderRadius: 999,
-                              transition: 'width .3s ease',
-                            }}
-                          />
-                        </div>
-                        {remaining != null && (
-                          <div className="text-end" style={{ fontSize: 10.5, fontVariantNumeric: 'tabular-nums' }}>
-                            {remaining >= 0
-                              ? <span style={{ color: '#108548', fontWeight: 600 }}>₹{Math.round(remaining).toLocaleString('en-IN')} remaining</span>
-                              : <span style={{ color: '#b1401d', fontWeight: 600 }}>Over by ₹{Math.round(-remaining).toLocaleString('en-IN')}</span>}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
               )}
             </div>
           </Col>

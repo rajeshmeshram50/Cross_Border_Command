@@ -45,7 +45,11 @@ export default function ExpenseTab() {
                     {expenseModuleTab === 'advance' ? 'Total Requested' : 'Total Claimed'}:{' '}
                     <span className="ext-hero-amount">
                       ₹{(expenseModuleTab === 'advance'
-                          ? activeAdvancesSource.reduce((s, a) => s + Number(a.amount || 0), 0)
+                          // Only approved advances count toward Total Requested —
+                          // pending/rejected are excluded (mirrors Total Claimed).
+                          ? activeAdvancesSource
+                              .filter(a => a.status === 'approved')
+                              .reduce((s, a) => s + Number(a.amount || 0), 0)
                           : totalClaimed
                         ).toLocaleString('en-IN')}
                     </span>

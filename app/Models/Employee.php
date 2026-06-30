@@ -71,7 +71,7 @@ class Employee extends Model
         'bank_name', 'bank_account_number', 'ifsc_code',
         'account_holder_name', 'bank_branch', 'bank_account_type',
         'uan_number',
-        'pan_number', 'pf_deduction', 'esi_applicable',
+        'pan_number', 'pf_deduction', 'pf_type', 'esi_applicable',
         'gratuity_nominee_name', 'agreed_ctc_lpa',
         'stage4_completed_at',
 

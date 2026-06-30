@@ -173,8 +173,10 @@ const defaultLeaveTypeConfig = (): LeaveTypeConfig => ({
   approval: {
     required: true, approverRole: 'reporting_manager',
     autoApproveIfMissing: false, doNotEmailEveryRequest: false,
-    // Fixed two-step signing flow: Reporting Manager → HR.
-    chain: [{ approver_kind: 'reporting_manager' }, { approver_kind: 'role', approver_role: 'hr' }],
+    // Approval is the reporting manager only — they approve or reject. HR is
+    // view-only (can see every request but cannot act), so it is NOT part of
+    // the acting chain.
+    chain: [{ approver_kind: 'reporting_manager' }],
   },
   yearEnd: {
     encashmentAllowed: false, carryForward: 'reset', carryForwardCap: 0,
@@ -2739,44 +2741,35 @@ function LeaveAppSectionView({ cfg, update }: { cfg: LeaveAppConfig; update: (p:
   );
 }
 
-/* Fixed two-step signing flow. The leave approval hierarchy is locked to
- * Reporting Manager → HR — no other approver types are offered, matching the
- * business rule that a leave first goes to the reporting manager and only
- * after their approval reaches HR. */
+/* Leave approval is the Reporting Manager only — they approve or reject and
+ * that decision is final. HR is view-only: HR can see every request (via the
+ * approvals queue / inbox) but is NOT an acting level on the chain. */
 const FIXED_APPROVAL_LEVELS: Array<{
   kind: ApprovalLevel['approver_kind'];
   role: string | null;
   title: string; bg: string; fg: string; initials: string; desc: string;
 }> = [
   { kind: 'reporting_manager', role: null, title: 'Reporting Manager', bg: '#d3f0ee', fg: '#0a716a', initials: 'RM',
-    desc: 'Resolves to each requestor\'s reporting manager at submission time. Acts first.' },
-  { kind: 'role', role: 'hr', title: 'HR', bg: '#ece6ff', fg: '#5a3fd1', initials: 'HR',
-    desc: 'Any user holding the HR role can approve — only after the reporting manager has approved.' },
+    desc: 'Resolves to each requestor\'s reporting manager at submission time. Approves or rejects — their decision is final.' },
 ];
 
 function ApprovalSectionView({ cfg, update }: { cfg: ApprovalConfig; update: (p: Partial<ApprovalConfig>) => void }) {
-  // The chain is fixed to Reporting Manager → HR. Skip rules per level are the
-  // only configurable bit, preserved across the fixed levels.
-  const chain: ApprovalLevel[] = FIXED_APPROVAL_LEVELS.map((lv, i) => ({
+  // The acting chain is the Reporting Manager only. HR is view-only and is not
+  // part of the saved chain.
+  const chain: ApprovalLevel[] = FIXED_APPROVAL_LEVELS.map(lv => ({
     approver_kind: lv.kind,
     approver_role: lv.role,
-    skip_if: cfg.chain?.[i]?.skip_if ?? null,
   }));
 
-  // Normalize any legacy / custom chain to the fixed two-step flow so saving
-  // the plan persists exactly Reporting Manager → HR.
+  // Normalize any legacy / two-step chain down to Reporting Manager only so
+  // saving the plan persists the view-only-HR rule.
   useEffect(() => {
     const c = cfg.chain;
-    const ok = Array.isArray(c) && c.length === 2
-      && c[0]?.approver_kind === 'reporting_manager'
-      && c[1]?.approver_kind === 'role' && c[1]?.approver_role === 'hr';
+    const ok = Array.isArray(c) && c.length === 1
+      && c[0]?.approver_kind === 'reporting_manager';
     if (!ok) update({ chain });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const setSkip = (idx: number, next: ApprovalLevel['skip_if'] | null) => {
-    update({ chain: chain.map((c, i) => i === idx ? { ...c, skip_if: next } : c) });
-  };
 
   return (
     <>
@@ -2810,102 +2803,45 @@ function ApprovalSectionView({ cfg, update }: { cfg: ApprovalConfig; update: (p:
                   >{lv.initials}</span>
                   <span className="text-muted" style={{ fontSize: 12 }}>{lv.desc}</span>
                 </div>
-
-                <SkipRuleEditor
-                  rule={chain[idx].skip_if ?? null}
-                  onChange={(next) => setSkip(idx, next)}
-                />
               </div>
             ))}
 
+            {/* HR — view only. Not an approval level: HR can see every request
+                but cannot approve or reject. */}
+            <div className="lts-approval-card" style={{ marginBottom: 10, opacity: 0.9 }}>
+              <div className="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                <span
+                  className="lts-kind-pill"
+                  style={{ ['--kp-bg' as string]: '#ece6ff', ['--kp-fg' as string]: '#5a3fd1' } as CSSProperties}
+                >
+                  HR
+                </span>
+                <span
+                  className="lts-kind-pill"
+                  style={{ ['--kp-bg' as string]: '#eef2f6', ['--kp-fg' as string]: '#5b6478' } as CSSProperties}
+                >
+                  VIEW ONLY
+                </span>
+              </div>
+              <div className="lts-assignee-row" style={{ marginTop: 2 }}>
+                <span
+                  className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold"
+                  style={{ width: 28, height: 28, fontSize: 10, background: '#5a3fd1' }}
+                >HR</span>
+                <span className="text-muted" style={{ fontSize: 12 }}>
+                  HR can view every leave request but cannot approve or reject.
+                </span>
+              </div>
+            </div>
+
             <div className="text-muted" style={{ fontSize: 11.5, marginTop: 4 }}>
               <i className="ri-information-line me-1" />
-              Leave goes to the reporting manager first; HR can act only after the manager approves. Any rejection terminates the chain.
+              The reporting manager approves or rejects each request — their decision is final. HR has view-only access.
             </div>
           </div>
         </CheckRow>
       </SectionCard>
     </>
-  );
-}
-
-type SkipOp = '' | 'days_lt' | 'days_lte' | 'days_gt' | 'days_gte';
-const SKIP_OP_LABELS: Record<SkipOp, string> = {
-  '':         'No auto-skip',
-  'days_lt':  'less than',
-  'days_lte': 'at most',
-  'days_gt':  'more than',
-  'days_gte': 'at least',
-};
-
-function SkipRuleEditor({
-  rule, onChange,
-}: {
-  rule: ApprovalLevel['skip_if'] | null;
-  onChange: (next: ApprovalLevel['skip_if'] | null) => void;
-}) {
-  const activeOp: SkipOp = (() => {
-    if (!rule) return '';
-    if (rule.days_lt  != null) return 'days_lt';
-    if (rule.days_lte != null) return 'days_lte';
-    if (rule.days_gt  != null) return 'days_gt';
-    if (rule.days_gte != null) return 'days_gte';
-    return '';
-  })();
-  const activeValue: number | '' = activeOp ? (rule?.[activeOp] ?? '') : '';
-
-  const setOp = (op: SkipOp) => {
-    if (op === '') { onChange(null); return; }
-    const v = typeof activeValue === 'number' ? activeValue : 1;
-    onChange({ [op]: v });
-  };
-  const setValue = (v: number) => {
-    if (!activeOp) return;
-    onChange({ [activeOp]: v });
-  };
-
-  return (
-    <div className="lts-skip-rule" style={{
-      marginTop: 8, padding: '8px 10px', borderRadius: 8,
-    }}>
-      <div className="d-flex align-items-center gap-2 flex-wrap">
-        <span className="text-muted" style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.3 }}>
-          AUTO-SKIP RULE
-        </span>
-        <div style={{ minWidth: 170 }}>
-          <MasterSelect
-            value={activeOp}
-            onChange={v => setOp(v as SkipOp)}
-            options={(Object.keys(SKIP_OP_LABELS) as SkipOp[]).map(op => ({
-              value: op,
-              label: op === '' ? SKIP_OP_LABELS[op] : `Days are ${SKIP_OP_LABELS[op]}…`,
-            }))}
-            placeholder="No auto-skip"
-          />
-        </div>
-        {activeOp !== '' && (
-          <>
-            <input
-              type="number"
-              className="lts-input"
-              style={{ width: 80, padding: '4px 8px', fontSize: 12 }}
-              min={0}
-              step={0.5}
-              value={activeValue === '' ? '' : activeValue}
-              onChange={e => setValue(Number(e.target.value))}
-            />
-            <span className="text-muted" style={{ fontSize: 11 }}>days</span>
-          </>
-        )}
-      </div>
-      {activeOp !== '' && (
-        <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>
-          <i className="ri-information-line me-1" />
-          When a request matches this rule, this level is auto-Skipped
-          and the chain advances to the next level.
-        </div>
-      )}
-    </div>
   );
 }
 
