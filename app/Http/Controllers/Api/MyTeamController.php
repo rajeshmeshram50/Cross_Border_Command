@@ -184,9 +184,7 @@ class MyTeamController extends Controller
      */
     private function pendingLeaveRequests($user): array
     {
-        $isAdminScope = in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true);
         $myEmployeeId = $user->employee_id ?: Employee::where('user_id', $user->id)->value('id');
-        if (!$isAdminScope && !$myEmployeeId) return [];
 
         $q = LeaveRequest::query()
             ->with([
@@ -200,24 +198,35 @@ class MyTeamController extends Controller
         if ($user->user_type !== 'super_admin' && $user->client_id) {
             $q->where('client_id', $user->client_id);
         }
-        // Non-admins: narrow to requests from my direct reports OR where the
-        // approval chain explicitly names me, then per-level filter in PHP.
-        if (!$isAdminScope) {
+
+        // Leave is reporting-manager-only: HR is view-only on the dedicated
+        // Leave Approvals page and must NOT receive leave in their personal My
+        // Team / Inbox action queue. So — unlike expense/advance — there is NO
+        // admin blanket here. A request surfaces only to whoever can act on its
+        // current chain level: the reporting manager (an Employee RM, or a
+        // login-User RM such as a Client/Branch admin who is set as the RM), or
+        // anyone explicitly named on the chain. super_admin keeps its global
+        // override below.
+        if ($user->user_type !== 'super_admin') {
             $uid = (int) $user->id;
-            $eid = (int) $myEmployeeId;
+            $eid = (int) ($myEmployeeId ?: 0);
             $q->where(function ($w) use ($myEmployeeId, $uid, $eid) {
-                $w->whereIn('employee_id', function ($sub) use ($myEmployeeId) {
-                    $sub->select('id')->from('employees')->where('reporting_manager_id', $myEmployeeId);
-                })
-                  ->orWhere('approval_chain', 'ilike', '%"approver_user_id":' . $uid . '%')
+                $w->orWhere('approval_chain', 'ilike', '%"approver_user_id":' . $uid . '%')
                   ->orWhere('approval_chain', 'ilike', '%"approver_employee_id":' . $eid . '%');
+                if ($myEmployeeId) {
+                    $w->orWhereIn('employee_id', function ($sub) use ($myEmployeeId) {
+                        $sub->select('id')->from('employees')->where('reporting_manager_id', $myEmployeeId);
+                    });
+                }
             });
         }
 
         $leaveCtrl = app(LeaveRequestController::class);
         $items = [];
         foreach ($q->get() as $row) {
-            if (!$isAdminScope) {
+            // Per-level precision for everyone except super_admin — only the
+            // current-level approver (the reporting manager) sees it.
+            if ($user->user_type !== 'super_admin') {
                 $chain = is_array($row->approval_chain) ? $row->approval_chain : [];
                 $idx   = max(0, ((int) ($row->current_approval_level ?? 1)) - 1);
                 if (!$leaveCtrl->canActOnLevel($user, $chain, $idx, $row)) continue;

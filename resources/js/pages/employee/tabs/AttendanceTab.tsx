@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { Row, Col } from 'reactstrap';
 import api from '../../../api';
 import { Shimmer } from '../../../components/ui/Shimmer';
 import { KpiTile, AnimatedNumber } from '../EmployeeProfileShared';
+import RegularizationModal, { type RegPrefillPunch } from '../../hrms/RegularizationModal';
+import { regularizationApi, type ApiRegularization } from '../../hrms/regularizationApi';
 
 interface AttendancePanelPunch {
   id: number;
@@ -22,7 +24,7 @@ interface AttendancePanelRecord {
   punches: AttendancePanelPunch[];
 }
 interface AttendancePanelResponse {
-  employee: { id: number; emp_code: string | null; name: string; face_registered: boolean };
+  employee: { id: number; emp_code: string | null; name: string; face_registered: boolean; shift_start?: string | null; shift_end?: string | null };
   month: string;
   stats: { present_days: number; late_marks: number; missing_biometric: number; total_leaves: number };
   today: AttendancePanelRecord | null;
@@ -67,6 +69,14 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 8;
 
+  // Regularization (attendance correction) — self-service. The modal needs the
+  // numeric employee id, which comes back on the summary payload.
+  const [regOpen, setRegOpen]     = useState(false);
+  const [regDate, setRegDate]     = useState<string>('');
+  const [regPunches, setRegPunches] = useState<RegPrefillPunch[]>([]);
+  const [myRegs, setMyRegs]       = useState<ApiRegularization[]>([]);
+  const numericEmployeeId = data?.employee?.id ?? null;
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -81,6 +91,38 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [employeeId, month]);
+
+  const loadRegs = useCallback(() => {
+    if (!numericEmployeeId) return;
+    regularizationApi.list({ employee_id: numericEmployeeId })
+      .then(setMyRegs)
+      .catch(() => { /* non-blocking — history just stays empty */ });
+  }, [numericEmployeeId]);
+
+  useEffect(() => { loadRegs(); }, [loadRegs]);
+
+  // Open the regularization modal for a given day, prefilling the punch rows
+  // from that day's first-in / last-out when available.
+  const openReg = (record: AttendancePanelRecord | null, dateIso: string) => {
+    const punches: RegPrefillPunch[] = [];
+    const hhmm = (iso: string | null) => iso
+      ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+      : null;
+    if (record?.punches?.length) {
+      for (const p of record.punches) {
+        const t = hhmm(p.punched_at);
+        if (t) punches.push({ time: t, type: p.direction });
+      }
+    } else if (record) {
+      const ci = hhmm(record.check_in_at);
+      const co = hhmm(record.check_out_at);
+      if (ci) punches.push({ time: ci, type: 'in' });
+      if (co) punches.push({ time: co, type: 'out' });
+    }
+    setRegPunches(punches);
+    setRegDate(dateIso);
+    setRegOpen(true);
+  };
 
   const stepMonth = (delta: number) => {
     const [y, m] = month.split('-').map(Number);
@@ -275,6 +317,15 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
                 <h6 className="mb-0 fw-bold ep-fs-12">Attendance Timelog History</h6>
               </div>
               <div className="d-flex align-items-center gap-2">
+                {numericEmployeeId && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    onClick={() => openReg(today, today?.attendance_date || new Date().toISOString().slice(0, 10))}
+                  >
+                    <i className="ri-edit-circle-line me-1" /> Request Regularization
+                  </button>
+                )}
                 <button type="button" className="btn btn-sm btn-light" onClick={() => stepMonth(-1)} aria-label="Previous month">
                   <i className="ri-arrow-left-s-line" />
                 </button>
@@ -311,6 +362,7 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
                           <th>Punches</th>
                           <th>Worked</th>
                           <th>Status</th>
+                          <th className="text-end">Action</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -336,6 +388,16 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
                               >
                                 {r.status}
                               </span>
+                            </td>
+                            <td className="text-end">
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-soft-primary"
+                                title="Request regularization for this day"
+                                onClick={() => openReg(r, r.attendance_date.slice(0, 10))}
+                              >
+                                <i className="ri-edit-2-line" />
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -373,6 +435,71 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
           </div>
         </Col>
       </Row>
+
+      {/* My Regularization Requests — the employee's own history + live status */}
+      {myRegs.length > 0 && (
+        <Row className="g-3 mt-1">
+          <Col xs={12}>
+            <div className="ep-section-card-flat ep-section-card ep-ct-indigo">
+              <div className="d-flex align-items-center gap-2 px-3 py-2 ep-hd-indigo">
+                <span className="ep-section-icon ep-icon-indigo"><i className="ri-file-edit-line" /></span>
+                <h6 className="mb-0 fw-bold ep-fs-12">My Regularization Requests</h6>
+              </div>
+              <div className="px-3 py-3">
+                <div className="table-responsive">
+                  <table className="table table-sm align-middle mb-0">
+                    <thead>
+                      <tr className="att-thead-row">
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Requested Punches</th>
+                        <th>Reason</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {myRegs.map(rg => {
+                        const punches = (rg.punches ?? []).map(p => `${p.in ?? '—'}–${p.out ?? '—'}`).join(', ');
+                        const tone =
+                          rg.status === 'Approved' ? { bg: '#dcfce7', fg: '#15803d' } :
+                          rg.status === 'Rejected' ? { bg: '#fee2e2', fg: '#b91c1c' } :
+                          rg.status === 'Cancelled' ? { bg: '#f1f5f9', fg: '#475569' } :
+                                                      { bg: '#fef3c7', fg: '#92400e' };
+                        return (
+                          <tr key={rg.id}>
+                            <td className="fw-semibold">{attFmtDate(rg.regularization_date)}</td>
+                            <td className="ep-fs-12">{rg.mode === 'exempt' ? 'Exempt day' : 'Adjust log'}{rg.type ? ` · ${rg.type}` : ''}</td>
+                            <td className="font-monospace ep-fs-12">{rg.mode === 'exempt' ? '—' : (punches || '—')}</td>
+                            <td className="ep-fs-12" style={{ maxWidth: 240 }}>{rg.reason || '—'}</td>
+                            <td>
+                              <span className="d-inline-flex align-items-center fw-semibold ep-fs-11 px-2 py-1 rounded" style={{ background: tone.bg, color: tone.fg }}>
+                                {rg.status}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </Col>
+        </Row>
+      )}
+
+      {numericEmployeeId && (
+        <RegularizationModal
+          open={regOpen}
+          employeeId={numericEmployeeId}
+          dateIso={regDate}
+          shiftStart={data?.employee?.shift_start ?? undefined}
+          shiftEnd={data?.employee?.shift_end ?? undefined}
+          initialPunches={regPunches}
+          onClose={() => setRegOpen(false)}
+          onSubmitted={() => loadRegs()}
+        />
+      )}
     </div>
   );
 }

@@ -147,8 +147,9 @@ class AttendanceController extends Controller
         // employee's shift start, falling back to 09:30 when the shift
         // string has no parseable time pair. Without the tz conversion the
         // comparison ran against UTC time and never flagged anyone late.
-        [$shiftStart, ] = $this->parseShiftWindow((string) ($emp->shift ?? ''));
+        [$shiftStart, $shiftEnd] = $this->parseShiftWindow((string) ($emp->shift ?? ''));
         $shiftStart = $shiftStart ?: '09:30';
+        $shiftEnd   = $shiftEnd   ?: '18:30';
         $present  = 0; $late = 0; $missingBio = 0; $leaveDays = 0;
         foreach ($history as $row) {
             $status = (string) ($row->status ?? '');
@@ -177,6 +178,8 @@ class AttendanceController extends Controller
                 'emp_code'        => $emp->emp_code,
                 'name'            => $emp->display_name,
                 'face_registered' => !empty($emp->face_descriptor) && $emp->face_registered_at !== null,
+                'shift_start'     => $shiftStart,
+                'shift_end'       => $shiftEnd,
             ],
             'month' => $monthQ,
             'stats' => [

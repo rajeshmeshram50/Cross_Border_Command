@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Card, CardBody, Col, Row, Input, Modal, ModalBody, Popover, PopoverBody } from 'reactstrap';
+import { Card, CardBody, Col, Row, Input, Popover, PopoverBody } from 'reactstrap';
 import { MasterFormStyles, MasterDatePicker } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import { Turtle } from 'lucide-react';
 import api from '../../api';
+import RegularizationModal from './RegularizationModal';
+import RegularizationApprovals from './RegularizationApprovals';
+import type { ApiRegularization } from './regularizationApi';
 import WorklistPager from '../../components/ui/WorklistPager';
 import { Shimmer, ShimmerTable } from '../../components/ui/Shimmer';
 import '../../../css/recruitment.css';
@@ -34,18 +37,7 @@ type DayStatus =
   | 'Leave'
   | 'Corrected';
 
-type RegMode = 'adjust' | 'exempt';
 type CorrStatus = 'Pending' | 'Approved' | 'Rejected';
-
-interface PunchEdit {
-  action: 'add' | 'edit' | 'keep' | 'delete';
-  oldIn?: string;
-  oldOut?: string;
-  newIn: string;
-  newOut: string;
-}
-
-const WORK_LOCATIONS = ['Baner Office', 'Wakad Office', 'WFH', 'Client Site', 'Field Visit'];
 
 interface AttendanceEmployee {
   id: number;
@@ -244,10 +236,18 @@ export default function HrAttendance() {
     [employees, selectedId]
   );
 
-  const onSubmitRegularization = (req: Omit<CorrectionRequest, 'id' | 'status' | 'raisedAt'>) => {
+  // After a regularization is persisted, reflect a Pending correction on the
+  // selected employee so the Logs/Requests card updates immediately. The
+  // request itself is already saved server-side and routed for approval.
+  const onRegularizationSubmitted = (row: ApiRegularization) => {
+    const firstPunch = (row.punches ?? [])[0];
     const newReq: CorrectionRequest = {
-      ...req,
-      id: `CR-${Date.now().toString().slice(-6)}`,
+      id: `REG-${row.id}`,
+      date: row.regularization_date,
+      type: row.type || (row.mode === 'exempt' ? 'On Duty (OD)' : 'Forgot to Punch'),
+      requestedIn: firstPunch?.in ?? undefined,
+      requestedOut: firstPunch?.out ?? undefined,
+      reason: row.reason || '',
       status: 'Pending',
       raisedAt: new Date().toLocaleString(),
     };
@@ -542,16 +542,25 @@ export default function HrAttendance() {
                 hour24={hour24} setHour24={setHour24}
               />
             </div>
+
+            <RegularizationApprovals />
           </div>
         </Col>
       </Row>
 
-      <RegularizationModal
-        open={regOpen}
-        employee={selected}
-        onClose={() => setRegOpen(false)}
-        onSubmit={onSubmitRegularization}
-      />
+      {selected && (
+        <RegularizationModal
+          open={regOpen}
+          employeeId={selected.id}
+          managerName={selected.managerName}
+          dateIso={viewDate}
+          shiftStart={selected.shiftStart}
+          shiftEnd={selected.shiftEnd}
+          initialPunches={selected.punches}
+          onClose={() => setRegOpen(false)}
+          onSubmitted={onRegularizationSubmitted}
+        />
+      )}
     </>
   );
 }
@@ -1203,213 +1212,5 @@ function CalendarMonthGrid({
         })}
       </div>
     </div>
-  );
-}
-
-function RegularizationModal({
-  open, employee, onClose, onSubmit,
-}: {
-  open: boolean;
-  employee: AttendanceEmployee;
-  onClose: () => void;
-  onSubmit: (req: Omit<CorrectionRequest, 'id' | 'status' | 'raisedAt'>) => void;
-}) {
-  const toast = useToast();
-
-  const [date]                    = useState('2 May 2026');
-  const [mode, setMode]           = useState<RegMode>('adjust');
-  const initialEdits = useMemo<PunchEdit[]>(() => {
-    const inOuts: { in?: string; out?: string }[] = [];
-    let cur: { in?: string; out?: string } = {};
-    for (const p of employee.punches) {
-      if (p.type === 'in')  { cur = { in: p.time.replace(/\s?(AM|PM)/i, '') }; }
-      if (p.type === 'out') { cur.out = p.time.replace(/\s?(AM|PM)/i, ''); inOuts.push(cur); cur = {}; }
-    }
-    if (cur.in) inOuts.push(cur);
-    return inOuts.length === 0
-      ? [{ action: 'add' as const, newIn: '', newOut: '' }]
-      : inOuts.map(io => ({ action: 'keep' as const, oldIn: io.in, oldOut: io.out, newIn: io.in ?? '', newOut: io.out ?? '' }));
-  }, [employee.punches]);
-  const [punchEdits, setPunchEdits] = useState<PunchEdit[]>(initialEdits);
-  const [workLocations, setWorkLocations] = useState<string[]>(['Baner Office']);
-  const [reason, setReason]       = useState('');
-  const [errors, setErrors]       = useState<Partial<Record<'reason' | 'punches' | 'locations', string>>>({});
-
-  useEffect(() => { setPunchEdits(initialEdits); }, [initialEdits]);
-
-  const updateEdit = (idx: number, patch: Partial<PunchEdit>) => {
-    setPunchEdits(prev => prev.map((e, i) => {
-      if (i !== idx) return e;
-      const next = { ...e, ...patch };
-      if (e.action === 'keep' && (next.newIn !== e.oldIn || next.newOut !== e.oldOut)) {
-        next.action = 'edit';
-      }
-      return next;
-    }));
-  };
-  const addEdit = () => setPunchEdits(prev => [...prev, { action: 'add', newIn: '', newOut: '' }]);
-  const removeEdit = (idx: number) => {
-    setPunchEdits(prev => prev.flatMap((e, i) => {
-      if (i !== idx) return [e];
-      if (e.action === 'add') return [];
-      return [{ ...e, action: 'delete' as const, newIn: '', newOut: '' }];
-    }));
-  };
-
-  const addLocation = (loc: string) => {
-    if (!loc || workLocations.includes(loc)) return;
-    setWorkLocations(prev => [...prev, loc]);
-  };
-  const removeLocation = (loc: string) => setWorkLocations(prev => prev.filter(l => l !== loc));
-
-  const submit = () => {
-    const errs: typeof errors = {};
-    if (!reason.trim()) errs.reason = 'Reason is required';
-    if (workLocations.length === 0) errs.locations = 'Pick at least one work location';
-    if (mode === 'adjust') {
-      const valid = punchEdits.some(e => e.action !== 'delete');
-      const allOk = punchEdits.every(e =>
-        e.action === 'delete' ||
-        (e.newIn && /^\d{2}:\d{2}$/.test(e.newIn) && (!e.newOut || /^\d{2}:\d{2}$/.test(e.newOut)))
-      );
-      if (!valid) errs.punches = 'Add at least one punch entry';
-      else if (!allOk) errs.punches = 'All punch entries need a valid HH:MM time';
-    }
-    if (Object.keys(errs).length) {
-      setErrors(errs);
-      toast.error('Validation', 'Fix the highlighted fields');
-      return;
-    }
-    setErrors({});
-    const firstEdit = punchEdits.find(e => e.action !== 'delete');
-    onSubmit({
-      date,
-      type: mode === 'exempt' ? 'On Duty (OD)' : 'Forgot to Punch',
-      requestedIn:  firstEdit?.newIn || undefined,
-      requestedOut: firstEdit?.newOut || undefined,
-      reason: reason.trim(),
-    });
-    toast.success('Submitted', `Routed to ${employee.managerName} for approval`);
-    setReason(''); setErrors({});
-  };
-
-  return (
-    <Modal isOpen={open} toggle={onClose} centered size="lg" backdrop="static" className="att-reg-modal-keka">
-      <ModalBody className="p-0">
-        <div className="att-reg-modal-v3">
-          <div className="att-reg-keka-head">
-            <div className="att-reg-keka-title">Request Attendance Regularization</div>
-            <button type="button" className="att-reg-keka-close" onClick={onClose} aria-label="Close">
-              <i className="ri-close-line" />
-            </button>
-          </div>
-
-          <div className="att-reg-keka-body">
-            <div className="att-reg-keka-field">
-              <label className="att-reg-keka-label">Selected Date</label>
-              <div className="att-reg-keka-readonly">{date}</div>
-            </div>
-
-            <div className="att-reg-keka-modes">
-              <label className={`att-reg-keka-radio ${mode === 'adjust' ? 'is-active' : ''}`}>
-                <input type="radio" name="reg-mode" checked={mode === 'adjust'} onChange={() => setMode('adjust')} />
-                <span className="att-reg-keka-radio-dot" />
-                <span>Add/update time entries to adjust attendance logs.</span>
-              </label>
-              <label className={`att-reg-keka-radio ${mode === 'exempt' ? 'is-active' : ''}`}>
-                <input type="radio" name="reg-mode" checked={mode === 'exempt'} onChange={() => setMode('exempt')} />
-                <span className="att-reg-keka-radio-dot" />
-                <span>Raise regularization request to exempt this day from penalization policy.</span>
-              </label>
-              <div className="att-reg-keka-hint">
-                {mode === 'adjust'
-                  ? 'Click and select time stamp box that you would like to adjust and make changes to the time'
-                  : 'No time edits — the day will be exempted from late / absent / penalty policy after manager approval'}
-              </div>
-            </div>
-
-            {mode === 'adjust' && (
-              <>
-                <div className="att-reg-keka-section-head">
-                  <div className="att-reg-keka-section-title">Attendance Adjustment</div>
-                  <button type="button" className="att-reg-keka-addlog" onClick={addEdit}>
-                    <i className="ri-add-line" />Add Log
-                  </button>
-                </div>
-
-                <div className="att-reg-keka-loc-pick">
-                  <i className="ri-map-pin-line" />
-                  <select
-                    className="att-reg-keka-loc-select"
-                    value={workLocations[0] || ''}
-                    onChange={e => setWorkLocations([e.target.value])}
-                  >
-                    {WORK_LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
-                  </select>
-                </div>
-
-                <div className="att-reg-keka-rows">
-                  {punchEdits.filter(e => e.action !== 'delete').map((e) => {
-                    const realIdx = punchEdits.indexOf(e);
-                    const outMissing = !e.newOut;
-                    return (
-                      <div key={realIdx} className="att-reg-keka-row">
-                        <i className="ri-arrow-left-down-line att-reg-keka-arrow att-reg-keka-arrow--in" />
-                        <Input
-                          type="time"
-                          className="att-reg-keka-time"
-                          value={e.newIn}
-                          onChange={ev => updateEdit(realIdx, { newIn: ev.target.value })}
-                        />
-                        <i className="ri-arrow-right-up-line att-reg-keka-arrow att-reg-keka-arrow--out" />
-                        {outMissing ? (
-                          <span className="att-reg-keka-missing" onClick={() => updateEdit(realIdx, { newOut: '12:00' })}>
-                            MISSING
-                          </span>
-                        ) : (
-                          <Input
-                            type="time"
-                            className="att-reg-keka-time"
-                            value={e.newOut}
-                            onChange={ev => updateEdit(realIdx, { newOut: ev.target.value })}
-                          />
-                        )}
-                        <button type="button" className="att-reg-keka-rm" onClick={() => removeEdit(realIdx)} title="Remove">
-                          <i className="ri-subtract-line" />
-                        </button>
-                      </div>
-                    );
-                  })}
-                  {punchEdits.filter(e => e.action !== 'delete').length === 0 && (
-                    <div className="att-reg-keka-empty">Click <strong>Add Log</strong> to add a punch entry.</div>
-                  )}
-                  <button type="button" className="d-none" onClick={() => addLocation('')} aria-hidden></button>
-                  <button type="button" className="d-none" onClick={() => removeLocation('')} aria-hidden></button>
-                </div>
-                {errors.punches && <small className="att-reg-keka-error">{errors.punches}</small>}
-              </>
-            )}
-
-            <div className="att-reg-keka-field">
-              <label className="att-reg-keka-label">Note</label>
-              <textarea
-                className="form-control att-reg-keka-note"
-                rows={3}
-                value={reason}
-                onChange={e => setReason(e.target.value)}
-                placeholder="Enter note"
-              />
-              {errors.reason && <small className="att-reg-keka-error">{errors.reason}</small>}
-              {errors.locations && <small className="att-reg-keka-error">{errors.locations}</small>}
-            </div>
-          </div>
-
-          <div className="att-reg-keka-foot">
-            <button type="button" className="att-reg-keka-cancel" onClick={onClose}>Cancel</button>
-            <button type="button" className="att-reg-keka-submit" onClick={submit}>Request</button>
-          </div>
-        </div>
-      </ModalBody>
-    </Modal>
   );
 }

@@ -581,6 +581,14 @@ export default function HrLeavePlans() {
 
   const activePlan = plans.find(p => p.id === activePlanId) ?? plans[0];
 
+  // A plan locks once it is fully set up — it has ≥1 leave type AND every type
+  // has its quota configured. Locked plans are view-only: no editing the setup,
+  // assigning/removing types, or re-running Setup. Changes are made by cloning.
+  // (Mirrors the backend `setup_complete` guard in LeavePlanController.)
+  const isPlanLocked = (p?: LeavePlan | null): boolean =>
+    !!p && p.leaveTypes.length > 0 && p.leaveTypes.every(t => t.configured);
+  const activePlanLocked = isPlanLocked(activePlan);
+
   const onSavePlan = async (
     plan: Omit<LeavePlan, 'id' | 'employees' | 'leaveTypes'>,
   ): Promise<Record<string, string> | null> => {
@@ -744,7 +752,18 @@ export default function HrLeavePlans() {
                     <>
                       <div className="lp-main-head">
                         <div className="min-w-0">
-                          <h5 className="fw-bold mb-1">{activePlan.name}</h5>
+                          <h5 className="fw-bold mb-1 d-flex align-items-center gap-2">
+                            {activePlan.name}
+                            {activePlanLocked && (
+                              <span
+                                className="badge d-inline-flex align-items-center gap-1"
+                                style={{ background: '#eef2f6', color: '#475569', fontWeight: 600 }}
+                                title="This plan is fully set up and locked. Clone it to make changes."
+                              >
+                                <i className="ri-lock-2-line" /> Locked
+                              </span>
+                            )}
+                          </h5>
                           <div className="text-muted fs-13 d-flex align-items-center gap-1">
                             <i className="ri-calendar-line" />
                             Apr – Mar
@@ -756,7 +775,7 @@ export default function HrLeavePlans() {
                             <i className="ri-more-2-fill" />
                           </DropdownToggle>
                           <DropdownMenu end className="lp-plan-menu">
-                            {canEdit && (
+                            {canEdit && !activePlanLocked && (
                             <DropdownItem onClick={onEditPlan}>
                               <i className="ri-pencil-line me-2" />Edit
                             </DropdownItem>
@@ -787,6 +806,7 @@ export default function HrLeavePlans() {
 
                       <ConfigurationTab
                         plan={activePlan}
+                        locked={activePlanLocked}
                         onAssignTypes={() => setShowAssignTypes(true)}
                         onSetupType={(typeId) => setSetupTypeId(typeId)}
                         onShowGuide={() => setShowGuide(true)}
@@ -891,9 +911,10 @@ export default function HrLeavePlans() {
 }
 
 function ConfigurationTab({
-  plan, onAssignTypes, onSetupType, onShowGuide, canEdit,
+  plan, locked, onAssignTypes, onSetupType, onShowGuide, canEdit,
 }: {
   plan: LeavePlan;
+  locked: boolean;
   onAssignTypes: () => void;
   onSetupType: (typeId: string) => void;
   onShowGuide: () => void;
@@ -902,10 +923,18 @@ function ConfigurationTab({
   return (
     <div className="lp-config">
       <div className="lp-config-actions">
-        {canEdit && (
+        {canEdit && !locked && (
         <button type="button" className="rec-btn-primary" onClick={onAssignTypes}>
           <i className="ri-add-line" />Assign Leave Type
         </button>
+        )}
+        {locked && (
+        <span
+          className="d-inline-flex align-items-center gap-1 px-2 py-1 rounded"
+          style={{ background: '#eef2f6', color: '#475569', fontSize: 12.5, fontWeight: 600 }}
+        >
+          <i className="ri-lock-2-line" /> This plan is fully set up — view only. Clone it to make changes.
+        </span>
         )}
         <span className="lp-help-chip">
           <i className="ri-information-line" />
@@ -961,9 +990,11 @@ function ConfigurationTab({
                   </span>
                 </td>
                 <td style={{ textAlign: 'right' }}>
-                  {canEdit
-                    ? <button type="button" className="lp-setup-btn" onClick={() => onSetupType(t.id)}>Setup</button>
-                    : <span className="text-muted fs-13">—</span>}
+                  {locked
+                    ? <span className="text-muted fs-13 d-inline-flex align-items-center gap-1"><i className="ri-lock-2-line" /> Locked</span>
+                    : canEdit
+                      ? <button type="button" className="lp-setup-btn" onClick={() => onSetupType(t.id)}>Setup</button>
+                      : <span className="text-muted fs-13">—</span>}
                 </td>
               </tr>
             ))}

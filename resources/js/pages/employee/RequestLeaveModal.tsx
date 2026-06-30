@@ -36,6 +36,11 @@ function diffDaysInclusive(from: string, to: string): number {
   return Math.round(ms / 86400000) + 1;
 }
 
+const fmtNiceDate = (iso: string) => {
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
 const ACCENT_PALETTE = ['#7c5cfc', '#0ab39c', '#f7b84b', '#f06548', '#0ea5e9', '#e83e8c', '#0c63b0', '#22c55e'];
 const accentFor = (id: number) => ACCENT_PALETTE[id % ACCENT_PALETTE.length];
 const initialsOf = (name: string) =>
@@ -46,6 +51,10 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [leaveTypeId, setLeaveTypeId] = useState<string>('');
+  // Full day vs. Custom (half day). Half-day only applies to a single date and
+  // maps to the backend day_type first_half / second_half.
+  const [dayMode, setDayMode] = useState<'full' | 'custom'>('full');
+  const [halfType, setHalfType] = useState<'first_half' | 'second_half'>('first_half');
   const [note, setNote] = useState('');
   const [notifySearch, setNotifySearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -59,6 +68,7 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
     if (!isOpen) return;
     setFromDate(''); setToDate('');
     setLeaveTypeId('');
+    setDayMode('full'); setHalfType('first_half');
     setNote('');
     setNotifySearch(''); setDebouncedSearch('');
     setNotifyOptions([]); setSelectedNotify([]);
@@ -105,7 +115,20 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
     return () => { alive = false; };
   }, [debouncedSearch]);
 
-  const totalDays = useMemo(() => diffDaysInclusive(fromDate, toDate), [fromDate, toDate]);
+  // Half-day is only meaningful on a single calendar day (matches the backend
+  // rule). A multi-day range is always Full day.
+  const singleDay = !!fromDate && fromDate === toDate;
+  const isHalf = dayMode === 'custom' && singleDay;
+  const totalDays = useMemo(
+    () => (isHalf ? 0.5 : diffDaysInclusive(fromDate, toDate)),
+    [isHalf, fromDate, toDate],
+  );
+
+  // If the picked range stops being a single day, snap back to Full day so a
+  // stale "Custom" half-day selection can't ride along on a multi-day request.
+  useEffect(() => {
+    if (!singleDay && dayMode === 'custom') setDayMode('full');
+  }, [singleDay, dayMode]);
 
   const { user } = useAuth();
   // Admins (client/super) may file a genuine same-day absence on behalf of an
@@ -173,7 +196,7 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
         leave_type_id: Number(leaveTypeId),
         from_date: fromDate,
         to_date: toDate,
-        day_type: 'full',
+        day_type: isHalf ? halfType : 'full',
         reason: note || undefined,
         notify: { employee_ids: selectedNotify.map(s => s.id) },
       });
@@ -280,6 +303,70 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
               />
             )}
           </div>
+
+          {fromDate && toDate && (
+            <div className="lvr-section">
+              <div className="lvr-section-title">
+                <i className="ri-time-line" />
+                <span>Duration</span>
+              </div>
+              <div
+                className="d-inline-flex"
+                role="group"
+                style={{ border: '1px solid var(--vz-border-color)', borderRadius: 8, overflow: 'hidden', background: 'var(--vz-light, #f1f3f6)' }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setDayMode('full')}
+                  aria-pressed={dayMode === 'full'}
+                  style={{
+                    padding: '6px 18px', border: 'none', fontWeight: 600, fontSize: 13, cursor: 'pointer',
+                    background: dayMode === 'full' ? '#fff' : 'transparent',
+                    color: dayMode === 'full' ? '#212529' : '#6b7280',
+                    boxShadow: dayMode === 'full' ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
+                  }}
+                >
+                  Full day
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { if (singleDay) setDayMode('custom'); }}
+                  disabled={!singleDay}
+                  aria-pressed={dayMode === 'custom'}
+                  title={!singleDay ? 'Half day applies to a single date only' : undefined}
+                  style={{
+                    padding: '6px 18px', border: 'none', fontWeight: 600, fontSize: 13,
+                    cursor: singleDay ? 'pointer' : 'not-allowed',
+                    background: dayMode === 'custom' ? '#fff' : 'transparent',
+                    color: !singleDay ? '#aab2bd' : dayMode === 'custom' ? '#212529' : '#6b7280',
+                    boxShadow: dayMode === 'custom' ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
+                  }}
+                >
+                  Custom
+                </button>
+              </div>
+
+              {isHalf && (
+                <div className="mt-2">
+                  <div className="text-muted mb-1" style={{ fontSize: 12 }}>On {fmtNiceDate(fromDate)}</div>
+                  <select
+                    className="lvr-input"
+                    value={halfType}
+                    onChange={e => setHalfType(e.target.value as 'first_half' | 'second_half')}
+                    style={{ maxWidth: 240 }}
+                  >
+                    <option value="first_half">First Half</option>
+                    <option value="second_half">Second Half</option>
+                  </select>
+                </div>
+              )}
+
+              <div className="text-muted mt-2 d-flex align-items-center gap-1" style={{ fontSize: 12.5 }}>
+                <i className="ri-time-line" />
+                You are requesting for <strong>{totalDays} {totalDays === 1 ? 'day' : 'days'}</strong> of leave
+              </div>
+            </div>
+          )}
 
           <div className="lvr-section">
             <div className="lvr-section-title">

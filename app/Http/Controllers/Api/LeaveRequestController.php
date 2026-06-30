@@ -258,23 +258,12 @@ class LeaveRequestController extends Controller
         $accrual   = (is_array($ptConfig) ? $ptConfig['accrual'] ?? [] : []);
         $unlimited = (bool) ($accrual['unlimited'] ?? false);
         if (!$unlimited) {
-            // Gate against what has ACCRUED by the time the leave is taken, not
-            // the full yearly quota. A "1 day/month" plan vests one day per
-            // month, so a request can't draw on days that haven't accrued yet
-            // (HRMS-BUG-107). Accrued is measured as of the leave's end date so
-            // an employee can still book ahead for a period that will have
-            // vested by then. An opt-in per-type overdraft extends the ceiling.
-            $planMeta = DB::table('master_leave_plans')
-                ->where('id', $planId)
-                ->select('from_month', 'calendar_year')
-                ->first();
-            $asOf = \Illuminate\Support\Carbon::parse($data['to_date']);
-            $accrued = \App\Http\Controllers\Api\LeavePlanController::accruedToDate(
-                $accrual,
-                $planMeta->from_month ?? null,
-                $planMeta->calendar_year ?? null,
-                $asOf
-            );
+            // Gate against the FULL annual entitlement (yearly quota + any
+            // opt-in overdraft), available from day one — no monthly vesting.
+            // Both Approved and still-Pending days count so a user can't stack
+            // several over-quota requests before any is acted on. This mirrors
+            // the "Available" figure shown on the employee profile.
+            $quotaDays = (float) ($accrual['yearlyQuota'] ?? 0);
             $overdraft = !empty($accrual['employeeOverdraft']['enabled'])
                 ? (float) ($accrual['employeeOverdraft']['days'] ?? 0)
                 : 0.0;
@@ -283,7 +272,7 @@ class LeaveRequestController extends Controller
                 ->where('leave_type_id', $data['leave_type_id'])
                 ->whereIn('status', ['Approved', 'Pending'])
                 ->sum('days');
-            $available = max(0.0, $accrued - $usedDays) + $overdraft;
+            $available = max(0.0, ($quotaDays + $overdraft) - $usedDays);
             if ($days > $available) {
                 $fmt = fn (float $n) => rtrim(rtrim(number_format($n, 2), '0'), '.');
                 abort(422, "Not enough leave balance — only {$fmt($available)} day(s) available for this leave type, but you requested {$fmt($days)}.");
