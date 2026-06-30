@@ -2,7 +2,8 @@
 
 use App\Http\Controllers\Api\AnnouncementController;
 use App\Http\Controllers\Api\AttendanceController;
-use App\Http\Controllers\Api\AuthController; 
+use App\Http\Controllers\Api\AttendanceRegularizationController;
+use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\FaceBiometricController;
 use App\Http\Controllers\Api\CandidateController;
@@ -723,6 +724,17 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/leave-requests/{id}/approve',                [LeaveRequestController::class, 'approve']);
     Route::post  ('/leave-requests/{id}/reject',                 [LeaveRequestController::class, 'reject']);
     Route::post  ('/leave-requests/{id}/cancel',                 [LeaveRequestController::class, 'cancel']);
+    Route::post  ('/leave-requests/{id}/hr-view',                [LeaveRequestController::class, 'hrView']);
+
+    // Attendance regularization (correct a past day) — mirrors leave-requests.
+    Route::get   ('/regularizations',                            [AttendanceRegularizationController::class, 'index']);
+    Route::post  ('/regularizations',                            [AttendanceRegularizationController::class, 'store']);
+    Route::get   ('/regularizations/approvals',                  [AttendanceRegularizationController::class, 'approvals']);
+    Route::get   ('/regularizations/{id}',                       [AttendanceRegularizationController::class, 'show']);
+    Route::get   ('/regularizations/{id}/approvers',             [AttendanceRegularizationController::class, 'approvers']);
+    Route::post  ('/regularizations/{id}/approve',               [AttendanceRegularizationController::class, 'approve']);
+    Route::post  ('/regularizations/{id}/reject',                [AttendanceRegularizationController::class, 'reject']);
+    Route::post  ('/regularizations/{id}/cancel',                [AttendanceRegularizationController::class, 'cancel']);
 
     Route::get   ('/notifications',                              [NotificationController::class, 'index']);
     Route::get   ('/notifications/unread-count',                 [NotificationController::class, 'unreadCount']);

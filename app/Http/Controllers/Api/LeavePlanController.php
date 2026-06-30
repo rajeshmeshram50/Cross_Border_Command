@@ -125,6 +125,9 @@ class LeavePlanController extends Controller
         if (!$user) abort(401);
 
         $plan = $this->findPlanOrFail($user, $id);
+        // Locked once fully set up — edit by cloning. (make-default has its own
+        // endpoint and stays allowed.)
+        $this->assertPlanEditable($plan->id);
 
         $data = $request->validate([
             'plan_name' => ['sometimes', 'required', 'string', 'max:255'],
@@ -253,6 +256,7 @@ class LeavePlanController extends Controller
         if (!$user) abort(401);
 
         $plan = $this->findPlanOrFail($user, $id);
+        $this->assertPlanEditable($plan->id);
 
         $data = $request->validate([
             'leave_type_ids' => ['required', 'array'],
@@ -296,6 +300,7 @@ class LeavePlanController extends Controller
         if (!$user) abort(401);
 
         $plan = $this->findPlanOrFail($user, $id);
+        $this->assertPlanEditable($plan->id);
 
         LeavePlanLeaveType::where('leave_plan_id', $plan->id)
             ->where('leave_type_id', $typeId)
@@ -315,6 +320,9 @@ class LeavePlanController extends Controller
         if (!$user) abort(401);
 
         $plan = $this->findPlanOrFail($user, $id);
+        // Allowed while the plan is still incomplete (incl. the save that
+        // completes the last type); blocked once every type is configured.
+        $this->assertPlanEditable($plan->id);
 
         $data = $request->validate([
             'config' => ['required', 'array'],
@@ -493,29 +501,30 @@ class LeavePlanController extends Controller
                 : 0.0;
             $reqs = $requestsByType[$row->leave_type_id] ?? collect();
 
-            // Build the ledger: one accrual entry per elapsed accrual period
-            // (so a "1 day/month" plan shows the balance growing month by month
-            // rather than the full year dropping in on day one), then each
-            // approved leave as a deduction. Pending entries surface in the
+            // Build the ledger: the FULL annual entitlement is granted upfront
+            // at the plan-year start (no monthly vesting) — a single opening
+            // grant for the quota, plus an optional extra-allowance grant — then
+            // each approved leave as a deduction. Pending entries surface in the
             // request list but don't affect the running balance.
             $transactions = [];
             $balance = 0.0;
-            $accrued = 0.0;
             if (!$unlimited && $quota > 0) {
-                $events = self::accrualEvents(
-                    is_array($accrual) ? $accrual : [],
-                    $planRow->from_month,
-                    $planRow->calendar_year
-                );
-                foreach ($events as $ev) {
-                    $accrued += $ev['amount'];
-                    $balance += $ev['amount'];
-                    $fmtAmt = rtrim(rtrim(number_format($ev['amount'], 2), '0'), '.');
+                $yearStart = self::planYearStart($planRow->from_month, $planRow->calendar_year);
+                $balance = $quota;
+                $transactions[] = [
+                    'date' => $yearStart->format('d M Y'),
+                    'change' => "+ " . rtrim(rtrim(number_format($quota, 2), '0'), '.'),
+                    'balance' => round($balance, 2),
+                    'reason' => 'Annual leave quota granted for the year.',
+                    'kind' => 'accrual',
+                ];
+                if ($extra > 0) {
+                    $balance += $extra;
                     $transactions[] = [
-                        'date' => $ev['date']->format('d M Y'),
-                        'change' => "+ {$fmtAmt}",
+                        'date' => $yearStart->format('d M Y'),
+                        'change' => "+ " . rtrim(rtrim(number_format($extra, 2), '0'), '.'),
                         'balance' => round($balance, 2),
-                        'reason' => 'Leave accrued for the period.',
+                        'reason' => 'Extra leave allowance.',
                         'kind' => 'accrual',
                     ];
                 }
@@ -530,12 +539,16 @@ class LeavePlanController extends Controller
                     $transactions[] = [
                         'date' => optional($r->from_date)->format('d M Y') ?? '',
                         'change' => "- " . rtrim(rtrim(number_format($days, 2), '0'), '.'),
-                        'balance' => $balance,
+                        'balance' => round($balance, 2),
                         'reason' => 'Leave taken (' . optional($r->from_date)->format('d M') . ' – ' . optional($r->to_date)->format('d M') . ')',
                         'kind' => 'approved',
                     ];
                 }
             }
+            $used      = round($used, 2);
+            // Full entitlement (quota + extra) is available from day one; only
+            // approved leave reduces it.
+            $available = $unlimited ? null : round(max(0, ($quota + $extra) - $used), 2);
 
             return [
                 'leave_type_id' => (int) $row->leave_type_id,
@@ -544,12 +557,11 @@ class LeavePlanController extends Controller
                 'category' => $row->category,
                 'paid_unpaid' => $row->paid_unpaid,
                 'quota' => $quota,
-                // Days accrued so far this plan year — drives Available so an
-                // employee can only avail what has accrued to date.
-                'accrued' => $accrued,
+                // Full quota is available upfront, so "accrued" == the quota.
+                'accrued' => $unlimited ? null : round($quota, 2),
                 'extra' => $extra,
                 'used' => $used,
-                'available' => $unlimited ? null : max(0, $accrued - $used),
+                'available' => $available,
                 'unlimited' => $unlimited,
                 'transactions' => $transactions,
             ];
@@ -598,6 +610,22 @@ class LeavePlanController extends Controller
      * (sensible fallbacks when unset). Before the year starts → no events; after
      * it ends → the full quota.
      */
+    /** Resolve the plan-year start = the 1st of the plan's `from_month` in its
+     *  `calendar_year` (Jan / current year fallbacks when unset). */
+    public static function planYearStart(?string $fromMonth, $calendarYear): \Illuminate\Support\Carbon
+    {
+        $startMonth = 1;
+        if ($fromMonth) {
+            try {
+                $startMonth = \Illuminate\Support\Carbon::parse('01 ' . substr($fromMonth, 0, 3) . ' 2000')->month;
+            } catch (\Throwable $e) {
+                $startMonth = 1;
+            }
+        }
+        $year = is_numeric($calendarYear) ? (int) $calendarYear : \Illuminate\Support\Carbon::now()->year;
+        return \Illuminate\Support\Carbon::create($year, $startMonth, 1)->startOfDay();
+    }
+
     public static function accrualEvents(array $accrual, ?string $fromMonth, $calendarYear, ?\Illuminate\Support\Carbon $asOf = null): array
     {
         $quota = (float) ($accrual['yearlyQuota'] ?? 0);
@@ -721,13 +749,17 @@ class LeavePlanController extends Controller
             $accrual = $cfg['accrual'] ?? null;
             $unlimited = (bool) ($accrual['unlimited'] ?? false);
             $quota = (float) ($accrual['yearlyQuota'] ?? 0); // LV-05: keep fractional (½-day) quotas; enforcement uses float too
-            $meta = $planMeta->get($row->leave_plan_id);
-            $accrued = (!$unlimited && $quota > 0)
-                ? self::accruedToDate(is_array($accrual) ? $accrual : [], $meta->from_month ?? null, $meta->calendar_year ?? null)
-                : $quota;
+            // Extra/overdraft allowance — added to the entitlement (available
+            // upfront alongside the quota).
+            $overdraft = $accrual['employeeOverdraft'] ?? null;
+            $extra = (!$unlimited && ($overdraft['enabled'] ?? false))
+                ? (float) ($overdraft['days'] ?? 0)
+                : 0.0;
+            // Full quota is available upfront (no monthly vesting).
             $quotaByPlanType[$row->leave_plan_id][$row->leave_type_id] = [
                 'quota' => $quota,
-                'accrued' => $accrued,
+                'accrued' => $quota,
+                'extra' => $extra,
                 'unlimited' => $unlimited,
             ];
         }
@@ -818,16 +850,16 @@ class LeavePlanController extends Controller
                     ];
                     continue;
                 }
-                $used = (float) ($empUsed[$col['leave_type_id']] ?? 0);
+                $used = round((float) ($empUsed[$col['leave_type_id']] ?? 0), 2);
                 $balances[] = [
                     'leave_type_id' => $col['leave_type_id'],
                     'applies' => true,
                     'unlimited' => $entry['unlimited'],
                     'quota' => $entry['quota'],
                     'used' => $used,
-                    // Available is gated by what has accrued so far, not the
-                    // full yearly quota (periodic accrual vests over the year).
-                    'available' => $entry['unlimited'] ? null : max(0, ($entry['accrued'] ?? $entry['quota']) - $used),
+                    // Full entitlement (quota + extra) is available upfront;
+                    // only approved leave reduces it.
+                    'available' => $entry['unlimited'] ? null : round(max(0, ($entry['quota'] + ($entry['extra'] ?? 0)) - $used), 2),
                 ];
             }
 
@@ -875,6 +907,35 @@ class LeavePlanController extends Controller
         $plan = $q->where('id', $id)->first();
         if (!$plan) abort(404, 'Leave plan not found.');
         return $plan;
+    }
+
+    /**
+     * A plan is "setup-complete" once it has at least one assigned leave type
+     * AND every assigned type has its quota config saved (config_json non-null).
+     * Same definition as the `setup_complete` flag returned by index().
+     */
+    private function isPlanSetupComplete(int $planId): bool
+    {
+        $stat = DB::table('leave_plan_leave_types')
+            ->where('leave_plan_id', $planId)
+            ->selectRaw('COUNT(*) as total, COUNT(config_json) as configured')
+            ->first();
+        $total = (int) ($stat->total ?? 0);
+        $configured = (int) ($stat->configured ?? 0);
+        return $total > 0 && $configured === $total;
+    }
+
+    /**
+     * Block mutations to a plan's SETUP once it is fully configured. A
+     * completed plan is view-only — changes are made by cloning it into a new
+     * plan. (Assigning/removing employees, cloning and make-default stay
+     * allowed; this only guards the leave-policy setup itself.)
+     */
+    private function assertPlanEditable(int $planId): void
+    {
+        if ($this->isPlanSetupComplete($planId)) {
+            abort(422, 'This leave plan is fully set up and locked. To change it, clone it into a new plan and edit that.');
+        }
     }
 
     private function clearDefaultForBranch(?int $clientId, ?int $branchId, ?int $exceptId = null): void

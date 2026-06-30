@@ -2012,12 +2012,12 @@ export default function HrEmployees() {
     });
   }, [q, tab, deptFilter, statusFilter, apiRows]);
 
-  const ROWS_PER_PAGE = 5;
+  const [rowsPerPage, setRowsPerPage] = useState(10);
   const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / ROWS_PER_PAGE));
-  useEffect(() => { setPage(1); }, [q, tab, deptFilter, statusFilter, apiRows]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
+  useEffect(() => { setPage(1); }, [q, tab, deptFilter, statusFilter, apiRows, rowsPerPage]);
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
-  const pageRows = filtered.slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE);
+  const pageRows = filtered.slice((page - 1) * rowsPerPage, page * rowsPerPage);
 
   const listRootRef   = useRef<HTMLDivElement | null>(null);
   const listScrollRef = useRef<HTMLDivElement | null>(null);
@@ -2192,9 +2192,9 @@ export default function HrEmployees() {
             </div>
 
             <div className="p-3 d-flex flex-column" ref={listScrollRef} style={{ minHeight: listFillH }}>
-                <div className="table-responsive flex-grow-1">
+                <div className="table-responsive flex-grow-1" style={{ maxHeight: listFillH ? Math.max(280, listFillH - 64) : undefined, overflowY: 'auto' }}>
                   <table className="table align-middle table-nowrap mb-0">
-                    <thead className="table-light">
+                    <thead className="table-light" style={{ position: 'sticky', top: 0, zIndex: 2 }}>
                       <tr>
                         <th scope="col" className="ps-3 text-center" style={{ width: 56 }}>Sr No</th>
                         <th scope="col">Employee</th>
@@ -2229,7 +2229,7 @@ export default function HrEmployees() {
                               : () => navigate(`/hr/employees/${encodeURIComponent(e.encryptedId || e.id)}/profile`, { state: { employee: e } })}
                             style={{ cursor: tab === 'disabled' ? 'default' : 'pointer' }}
                           >
-                            <td className="ps-3 text-center fs-13 hr-emp-srno">{(page - 1) * ROWS_PER_PAGE + idx + 1}</td>
+                            <td className="ps-3 text-center fs-13 hr-emp-srno">{(page - 1) * rowsPerPage + idx + 1}</td>
                             <td>
                               <div className="d-flex align-items-center gap-2">
                                 {e.photoUrl ? (
@@ -2444,7 +2444,14 @@ export default function HrEmployees() {
                   </table>
                 </div>
 
-                <WorklistPager total={filtered.length} page={page} pageSize={ROWS_PER_PAGE} onPage={setPage} />
+                <WorklistPager
+                  total={filtered.length}
+                  page={page}
+                  pageSize={rowsPerPage}
+                  onPage={setPage}
+                  onPageSize={setRowsPerPage}
+                  pageSizeOptions={[5, 10, 25, 50, 100]}
+                />
             </div>
             </div>
           </div>
