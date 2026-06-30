@@ -192,16 +192,19 @@ const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
   };
 
   // HR is view-only (leave is reporting-manager-only). When HR isn't an acting
-  // level, the node is green ("Reviewed by HR") once an HR user has opened the
-  // request (r.hrViewedAt set), otherwise idle/grey informational.
+  // level, the node only turns green ("Reviewed by HR") once HR has opened the
+  // request (r.hrViewedAt) AND the reporting manager has already decided — it
+  // stays idle/grey while the request is still awaiting the manager.
+  const rmDecided = r.managerStatus === 'Approved' || r.managerStatus === 'Rejected';
+  const hrReviewed = !!r.hrViewedAt && rmDecided;
   const hrDecision: ApprovalNode['decision'] =
-    !r.escalatedToHr ? (r.hrViewedAt ? 'viewed' : 'idle')
+    !r.escalatedToHr ? (hrReviewed ? 'viewed' : 'idle')
     : r.hrStatus === 'Approved' ? 'approved'
     : r.hrStatus === 'Rejected' ? 'rejected'
     : r.hrStatus === 'Pending'  ? 'pending'
     : 'idle';
   const hrDetail =
-    !r.escalatedToHr ? (r.hrViewedAt ? 'Reviewed by HR' : 'CC — informational only')
+    !r.escalatedToHr ? (hrReviewed ? 'Reviewed by HR' : 'CC — informational only')
     : r.escalationReason === 'manager_rejected' && r.hrStatus === 'Approved' ? 'Override approved'
     : r.escalationReason === 'manager_rejected' && r.hrStatus === 'Rejected' ? 'Concurred with manager'
     : r.escalationReason === 'aged_out'         ? 'Auto-escalated · 7-day rule'
