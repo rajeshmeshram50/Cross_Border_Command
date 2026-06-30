@@ -1994,7 +1994,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // tab needs a new field — tsc enforces both sides stay in sync.
   const ctx: EmployeeProfileCtx = {
     employeeId, employee, displayEmpCode, initials, accent, ancillaryList,
-    empDetail, empDetailLoading,
+    empDetail, empDetailLoading, setEmpDetail,
     fmtDate, fmtRupee,
     // Profile tab
     profilePct, profilePhotoSrc, profilePhotoFile, setProfilePhotoFile, savingPhoto,

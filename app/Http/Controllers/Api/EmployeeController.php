@@ -136,6 +136,64 @@ class EmployeeController extends Controller
     }
 
     /**
+     * Self-service / HR update of an employee's bank & payment details only.
+     *
+     * The full update() requires master.employees can_edit, which an ordinary
+     * employee never holds — so once bank details were captured at onboarding,
+     * nobody could correct them afterwards (#35: "no one can edit the bank
+     * details"). This narrow endpoint lets the employee fix their OWN payout
+     * account, while HR / branch users (holding can_edit) can fix anyone's in
+     * their tenant. Only the bank columns are written — pay, status and every
+     * other field are left untouched.
+     */
+    public function updateBankDetails(Request $request, $id)
+    {
+        $row = $this->resolveRow($request, $this->resolveIdParam($id));
+
+        // Self may edit their own payout account without the module grant;
+        // editing someone else's still requires can_edit (mirrors show()).
+        $isSelf = (int) ($row->user_id ?? 0) === (int) $request->user()->id;
+        if (!$isSelf) {
+            $this->authorize($request, 'can_edit');
+        }
+
+        // A disabled (soft-deleted / terminated) employee accepts no edits —
+        // same gate as update().
+        if ($row->isDisabled()) {
+            return response()->json([
+                'message' => 'This employee is disabled — restore/re-activate them before editing bank details.',
+            ], 422);
+        }
+
+        $data = $request->validate([
+            'salary_payment_mode' => 'nullable|in:bank,cheque,cash',
+            'bank_name'           => 'nullable|string|max:150',
+            // PAN-style account numbers can include letters (NRE/NRO), so we
+            // don't enforce digits-only — same rule as the onboarding wizard.
+            'bank_account_number' => 'nullable|string|max:30',
+            // IFSC: 4 letters, 0, 6 alphanumeric (case-insensitive).
+            'ifsc_code'           => 'nullable|string|regex:/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/',
+            'account_holder_name' => 'nullable|string|max:150',
+            'bank_branch'         => 'nullable|string|max:150',
+            'bank_account_type'   => 'nullable|string|max:30',
+        ], [
+            'ifsc_code.regex' => 'Enter a valid IFSC code (e.g. HDFC0001234).',
+        ]);
+
+        // Store IFSC uppercased, the way the onboarding wizard persists it.
+        if (!empty($data['ifsc_code'])) {
+            $data['ifsc_code'] = strtoupper($data['ifsc_code']);
+        }
+
+        $row->fill($data)->save();
+
+        return response()->json([
+            'message' => 'Bank details updated.',
+            'data'    => $row->only(array_keys($data)),
+        ]);
+    }
+
+    /**
      * Holidays for THIS employee's assigned Holiday Group, resolved for a given
      * year — recurring holidays shift onto the requested year (mirrors
      * HolidayController::my). Gated by the employee can_view permission the

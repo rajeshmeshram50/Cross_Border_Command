@@ -1,14 +1,77 @@
 // Payroll tab — compensation summary, salary-revision timeline and payslip
 // access. Extracted from EmployeeProfile.tsx; shared state via useEmployeeProfile().
-import { Card, Col, Row } from 'reactstrap';
+import { useState } from 'react';
+import {
+  Button, Card, Col, FormGroup, Input, Label, Modal, ModalBody, ModalFooter, ModalHeader, Row,
+} from 'reactstrap';
 import { useEmployeeProfile } from '../EmployeeProfileContext';
+import { useToast } from '../../../contexts/ToastContext';
+import api from '../../../api';
 
 export default function PayrollTab() {
   const {
-    employee, fmtRupee, fmtDate, empDetail, payrollTab, setPayrollTab,
+    employee, fmtRupee, fmtDate, empDetail, setEmpDetail, payrollTab, setPayrollTab,
     salaryStruct, realMonthlyGross, realAnnualCtc, realTimeline,
     openLatestPayslip, setSalaryModalOpen, setBreakdownOpen, setBreakdownRowId,
   } = useEmployeeProfile();
+  const toast = useToast();
+
+  // ── Bank / payment-details edit ────────────────────────────────────────
+  // Bank details were previously captured only at onboarding with no way to
+  // correct them afterwards (#35). This modal writes the bank columns via the
+  // dedicated PUT /employees/{id}/bank-details endpoint (self-or-can_edit).
+  const [bankOpen, setBankOpen] = useState(false);
+  const [savingBank, setSavingBank] = useState(false);
+  const [bankForm, setBankForm] = useState<Record<string, string>>({});
+
+  const openBankModal = () => {
+    setBankForm({
+      salary_payment_mode: empDetail?.salary_payment_mode || 'bank',
+      bank_name: empDetail?.bank_name || '',
+      bank_account_number: empDetail?.bank_account_number || '',
+      ifsc_code: empDetail?.ifsc_code || '',
+      account_holder_name: empDetail?.account_holder_name || employee?.name || '',
+      bank_branch: empDetail?.bank_branch || '',
+      bank_account_type: empDetail?.bank_account_type || '',
+    });
+    setBankOpen(true);
+  };
+
+  const setBankField = (k: string, v: string) => setBankForm(p => ({ ...p, [k]: v }));
+
+  const saveBank = async () => {
+    const f = bankForm;
+    // Mirror the server-side IFSC rule so the user gets instant feedback.
+    if (f.ifsc_code && !/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/.test(f.ifsc_code.trim())) {
+      toast.error('Invalid IFSC', 'Enter a valid IFSC code (e.g. HDFC0001234).');
+      return;
+    }
+    if (!empDetail?.id) return;
+    setSavingBank(true);
+    try {
+      const payload: Record<string, string | null> = {
+        salary_payment_mode: f.salary_payment_mode || null,
+        bank_name: f.bank_name?.trim() || null,
+        bank_account_number: f.bank_account_number?.trim() || null,
+        ifsc_code: f.ifsc_code ? f.ifsc_code.trim().toUpperCase() : null,
+        account_holder_name: f.account_holder_name?.trim() || null,
+        bank_branch: f.bank_branch?.trim() || null,
+        bank_account_type: f.bank_account_type?.trim() || null,
+      };
+      await api.put(`/employees/${empDetail.id}/bank-details`, payload);
+      // Merge locally so the read-only cards reflect the change without a refetch.
+      setEmpDetail((prev: any) => (prev ? { ...prev, ...payload } : prev));
+      toast.success('Bank details updated', 'Payout account has been saved.');
+      setBankOpen(false);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message
+        || (Object.values(err?.response?.data?.errors || {})[0] as any)?.[0]
+        || 'Could not update bank details.';
+      toast.error('Update failed', String(msg));
+    } finally {
+      setSavingBank(false);
+    }
+  };
 
   // Mask a sensitive number, keeping the last `visible` characters.
   const mask = (val: any, visible = 4): string => {
@@ -120,9 +183,19 @@ export default function PayrollTab() {
                         </span>
                         <h6 className="mb-0 fw-bold pyt-section-title">Payment Information</h6>
                       </div>
-                      <span className="d-inline-flex align-items-center gap-1 fw-semibold pyt-pill-amber">
-                        <span className="pyt-dot-amber" /> Not Initiated
-                      </span>
+                      <div className="d-flex align-items-center gap-2">
+                        <span className="d-inline-flex align-items-center gap-1 fw-semibold pyt-pill-amber">
+                          <span className="pyt-dot-amber" /> Not Initiated
+                        </span>
+                        <button
+                          type="button"
+                          onClick={openBankModal}
+                          className="d-inline-flex align-items-center gap-1 fw-semibold pyt-revise-btn"
+                          title="Edit bank / payment details"
+                        >
+                          <i className="ri-edit-line pyt-icon-13" /> Edit
+                        </button>
+                      </div>
                     </div>
                     <div className="px-3 py-3 flex-grow-1">
                       <p className="mb-3 pyt-text-12-5">
@@ -406,6 +479,110 @@ export default function PayrollTab() {
               </div>
             </div>
           )}
+
+          {/* Bank / payment-details editor — fixes #35 (details were write-once
+              at onboarding). Saves via PUT /employees/{id}/bank-details. */}
+          <Modal isOpen={bankOpen} toggle={() => !savingBank && setBankOpen(false)} centered size="lg">
+            <ModalHeader toggle={() => !savingBank && setBankOpen(false)}>
+              Edit Bank &amp; Payment Details
+            </ModalHeader>
+            <ModalBody>
+              <Row className="g-3">
+                <Col md={6}>
+                  <FormGroup className="mb-0">
+                    <Label className="ep-field-label">Salary Payment Mode</Label>
+                    <Input
+                      type="select"
+                      value={bankForm.salary_payment_mode || 'bank'}
+                      onChange={e => setBankField('salary_payment_mode', e.target.value)}
+                    >
+                      <option value="bank">Bank Transfer</option>
+                      <option value="cheque">Cheque</option>
+                      <option value="cash">Cash</option>
+                    </Input>
+                  </FormGroup>
+                </Col>
+                <Col md={6}>
+                  <FormGroup className="mb-0">
+                    <Label className="ep-field-label">Bank Name</Label>
+                    <Input
+                      value={bankForm.bank_name || ''}
+                      maxLength={150}
+                      onChange={e => setBankField('bank_name', e.target.value)}
+                      placeholder="e.g. HDFC Bank"
+                    />
+                  </FormGroup>
+                </Col>
+                <Col md={6}>
+                  <FormGroup className="mb-0">
+                    <Label className="ep-field-label">Account Number</Label>
+                    <Input
+                      value={bankForm.bank_account_number || ''}
+                      maxLength={30}
+                      onChange={e => setBankField('bank_account_number', e.target.value)}
+                      placeholder="Account number"
+                    />
+                  </FormGroup>
+                </Col>
+                <Col md={6}>
+                  <FormGroup className="mb-0">
+                    <Label className="ep-field-label">IFSC Code</Label>
+                    <Input
+                      value={bankForm.ifsc_code || ''}
+                      maxLength={11}
+                      onChange={e => setBankField('ifsc_code', e.target.value.toUpperCase())}
+                      placeholder="e.g. HDFC0001234"
+                    />
+                  </FormGroup>
+                </Col>
+                <Col md={6}>
+                  <FormGroup className="mb-0">
+                    <Label className="ep-field-label">Name on Account</Label>
+                    <Input
+                      value={bankForm.account_holder_name || ''}
+                      maxLength={150}
+                      onChange={e => setBankField('account_holder_name', e.target.value)}
+                      placeholder="Account holder name"
+                    />
+                  </FormGroup>
+                </Col>
+                <Col md={6}>
+                  <FormGroup className="mb-0">
+                    <Label className="ep-field-label">Branch</Label>
+                    <Input
+                      value={bankForm.bank_branch || ''}
+                      maxLength={150}
+                      onChange={e => setBankField('bank_branch', e.target.value)}
+                      placeholder="Branch name"
+                    />
+                  </FormGroup>
+                </Col>
+                <Col md={6}>
+                  <FormGroup className="mb-0">
+                    <Label className="ep-field-label">Account Type</Label>
+                    <Input
+                      type="select"
+                      value={bankForm.bank_account_type || ''}
+                      onChange={e => setBankField('bank_account_type', e.target.value)}
+                    >
+                      <option value="">—</option>
+                      <option value="Savings">Savings</option>
+                      <option value="Current">Current</option>
+                      <option value="Salary">Salary</option>
+                    </Input>
+                  </FormGroup>
+                </Col>
+              </Row>
+            </ModalBody>
+            <ModalFooter>
+              <Button color="light" onClick={() => setBankOpen(false)} disabled={savingBank}>
+                Cancel
+              </Button>
+              <Button color="primary" onClick={saveBank} disabled={savingBank}>
+                {savingBank ? 'Saving…' : 'Save Changes'}
+              </Button>
+            </ModalFooter>
+          </Modal>
         </div>
   );
 }
