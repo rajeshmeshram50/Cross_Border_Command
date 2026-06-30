@@ -106,13 +106,17 @@ type Props = {
   leadId:  number | null;
   onClose: () => void;
   onAddProduct?: () => void;   // header "+ Add Product Master" — opens AddProductModal
+  /* Fired after a product mapping changes here (map / edit / remove) so the
+   * parent can refresh the inline Stage 3 view + its count badges without a
+   * page reload. */
+  onChanged?: () => void;
   /* Furthest stage the opportunity has reached (1..6). When Product Sourcing
    * (Stage 3) is complete — i.e. the lead is at Stage 4+ — the mapped products
    * feed downstream price/quotation/PI data and may no longer be unmapped. */
   leadStage?: number;
 };
 
-export default function ProductDirectoryModal({ open, leadId, onClose, onAddProduct, leadStage }: Props) {
+export default function ProductDirectoryModal({ open, leadId, onClose, onAddProduct, onChanged, leadStage }: Props) {
   const toast = useToast();
 
   /* Sourcing complete → product list is locked from unmapping (and the
@@ -326,6 +330,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
         toast.success('Product mapped', 'Added to the directory');
       }
       setDraft(EMPTY_DRAFT); setEditingId(null); setDraftOpen(false); setErrors({});
+      onChanged?.();   // refresh inline Stage 3 (list + count badges) without a page reload
     } catch (e: any) {
       toast.error(editingId ? 'Update failed' : 'Save failed', e?.response?.data?.message ?? 'Could not save this product');
     } finally {
@@ -359,6 +364,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
       setRows(prev => prev.filter(r => r.id !== row.id));
       toast.success('Unmapped', 'Removed from the directory');
       setPendingDelete(null);
+      onChanged?.();   // refresh inline Stage 3 (list + count badges) without a page reload
     } catch (e: any) {
       toast.error('Remove failed', e?.response?.data?.message ?? 'Could not unmap');
     } finally {
