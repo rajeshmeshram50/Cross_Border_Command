@@ -1,27 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { useToast } from '../../../../contexts/ToastContext';
 import Tooltip from '../../../../components/ui/Tooltip';
 import AddProductModal from './AddProductModal';
 
-/* ────────────────────────────────────────────────────────────────────────────
- * Product Detail view (route: /products/:id) — matches the shared design:
- *
- *   ┌─ rainbow accent bar ─────────────────────────────────────────────────┐
- *   │  thumbs │ main image    │  P-XXX | Name             Back   Edit     │
- *   │         │               │  [Sold N]  [Active]                       │
- *   │         │               │  Total: ₹X                                │
- *   │         │               │                                            │
- *   │         │               │  ┌─PRODUCT─┐  ┌─BOX MATRIX─┐  ┌─PRICING─┐ │
- *   │         │               │  │ ...     │  │ ...        │  │ ...     │ │
- *   │         │               │  └─────────┘  └────────────┘  └─────────┘ │
- *   │  Wishlist · Add to Cart                                              │
- *   └────────────────────────────────────────────────────────────────────────┘
- *   ┌─ Tabs (Description / Make / Confidential / QC) ─────┬─ Vendors table ┐
- *   └──────────────────────────────────────────────────────┴─────────────────┘
- * ──────────────────────────────────────────────────────────────────────── */
 
 type AnyRec = Record<string, unknown>;
 
@@ -66,16 +51,28 @@ type ProductDto = {
   updated_at?: string | null;
 };
 
-export default function ProductView() {
-  const { id } = useParams<{ id: string }>();
+export default function ProductView(props: { productId?: number; onClose?: () => void } = {}) {
+  // Dual-mode: as a route it reads the :id param and "Back" navigates to the
+  // list; as a popup (opened from a product card) it takes `productId` and
+  // `onClose`, so it renders over the list instead of full-screen.
+  const params = useParams<{ id: string }>();
+  const id = props.productId != null ? String(props.productId) : params.id;
   const navigate = useNavigate();
+  const goBack = () => { if (props.onClose) props.onClose(); else navigate('/products'); };
   const toast = useToast();
 
   const [product, setProduct] = useState<ProductDto | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'desc' | 'brand' | 'confidential' | 'qc'>('desc');
+  const [tab, setTab] = useState<'desc' | 'brand' | 'confidential' | 'qc' | 'suppliers'>('desc');
   const [activeImg, setActiveImg] = useState(0);
   const [editOpen, setEditOpen] = useState(false);
+  // Qty stepper for the buy bar (presentation only — mirrors the prototype).
+  // Declared with the other hooks so it always runs before any early return.
+  const [qty, setQty] = useState(1);
+  // Mapped Suppliers popup (opened from the header button).
+  const [suppliersOpen, setSuppliersOpen] = useState(false);
+  // When true, the Edit modal opens straight into the Map Supplier form.
+  const [supplierMapMode, setSupplierMapMode] = useState(false);
 
   /* QC documents come from the same `segment_doc_uploads` table the Add
    * Product wizard writes to (category = 'qc'). Surfaced here so the
@@ -140,7 +137,7 @@ export default function ProductView() {
       }
     } catch {
       toast.error('Not Found', 'Product not available');
-      navigate('/products');
+      goBack();
     } finally {
       if (!silent) setLoading(false);
     }
@@ -215,31 +212,61 @@ export default function ProductView() {
   const packagingName  = (product.packaging_material?.title as string) ?? '—';
   const gstPct         = Number(product.gst_percentage?.percentage ?? 0);
 
-  const fmtNum = (v: string | number | null | undefined, unit = '') =>
-    v == null || v === '' ? '—' : `${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 3 })}${unit ? ' ' + unit : ''}`;
   const fmtMoney = (v: string | number | null | undefined) =>
     v == null || v === '' ? '—' : `₹${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
-  // Mocked sold-count badge (no backend field yet). Replace with real value when available.
-  const soldCount = '35,000';
+  const gstAmtStr = fmtMoney(product.gst_amount);
+  const baseStr   = fmtMoney(product.base_price);
+  const totalStr  = fmtMoney(product.total_price);
 
   return (
-    <div className="pv2-root">
+    <div className="pv2-root pv2pd-root">
       <style>{SCOPED_CSS}</style>
 
-      {/* ─── Top card ─── */}
-      <div className="pv2-card pv2-top">
-        <div className="pv2-top-grid">
-          {/* Left: gallery */}
-          <div className="pv2-gallery">
-            <div className="pv2-thumbs">
-              {images.length === 0 && (
-                <div className="pv2-thumb pv2-thumb-empty">{product.name?.charAt(0)?.toUpperCase() || 'P'}</div>
-              )}
+      {/* ─── HERO ─── */}
+      <div className="pv2pd-hero">
+        <div className="pv2pd-hero-row">
+          <div className="pv2pd-hero-main">
+            <h2 className="pv2pd-title">
+              <span className="pv2pd-code">{product.product_code}</span>
+              <span className="pv2pd-title-sep">|</span> {product.name}
+            </h2>
+          </div>
+          <div className="pv2pd-hero-btns">
+            <button className="pv2pd-hbtn pv2pd-hbtn--edit" onClick={() => setEditOpen(true)}>
+              <i className="ri-edit-box-line" /> Edit Product
+            </button>
+            <button className="pv2pd-hbtn pv2pd-hbtn--suppliers" onClick={() => setSuppliersOpen(true)}>
+              <i className="ri-team-line" /> Mapped Suppliers
+            </button>
+            <button className="pv2pd-hbtn pv2pd-hbtn--ghost" onClick={goBack}>
+              <i className="ri-arrow-left-s-line" /> Back to Product List
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── BODY ─── */}
+      <div className="pv2pd-body">
+        {/* LEFT: gallery + price card + buy bar */}
+        <div className="pv2pd-gallery">
+          <div className="pv2pd-main-img">
+            {images.length > 0 ? (
+              <img src={images[activeImg]} alt={product.name} />
+            ) : (
+              <span className="pv2pd-main-empty">{product.name?.charAt(0)?.toUpperCase() || 'P'}</span>
+            )}
+            <span className={`pv2pd-chip pv2pd-chip--onimg pv2pd-chip--${isActive ? 'active' : 'inactive'}`}>
+              <span className="pv2pd-chip-dot" />{statusText}
+            </span>
+          </div>
+
+          {images.length > 0 && (
+            <div className="pv2pd-thumbs">
               {images.map((src, i) => (
                 <button
                   key={i}
-                  className={`pv2-thumb ${i === activeImg ? 'on' : ''}`}
+                  className={`pv2pd-thumb ${i === activeImg ? 'is-active' : ''}`}
                   onClick={() => setActiveImg(i)}
                   aria-label={`Thumbnail ${i + 1}`}
                 >
@@ -247,233 +274,122 @@ export default function ProductView() {
                 </button>
               ))}
             </div>
-            <div className="pv2-main-image">
-              {images.length > 0 ? (
-                <img src={images[activeImg]} alt={product.name} />
-              ) : (
-                <div className="pv2-main-empty">{product.name?.charAt(0)?.toUpperCase() || 'P'}</div>
-              )}
-            </div>
-          </div>
-
-          {/* Right: header + 3 info columns */}
-          <div className="pv2-right">
-            <div className="pv2-head">
-              <div className="pv2-head-text">
-                <div className="pv2-title">
-                  <span className="pv2-code">{product.product_code}</span>
-                  <span className="pv2-sep">|</span>
-                  <span className="pv2-name">{product.name}</span>
-                </div>
-                <div className="pv2-meta-row">
-                  <span className="pv2-sold-chip">
-                    <i className="ri-price-tag-3-fill" /> {soldCount}
-                  </span>
-                  <span className="pv2-sold-text">This product sold out {soldCount} times</span>
-                </div>
-                <div className="pv2-price-row">
-                  <span className="pv2-price-label">Total Selling Price:</span>
-                  <span className="pv2-price-val">{fmtMoney(product.total_price)}</span>
-                  <span className={`pv2-status-text ${isActive ? 'is-active' : 'is-inactive'}`}>● {statusText}</span>
-                </div>
-              </div>
-              <div className="pv2-head-actions">
-                {/* Back-to-list pill — matches the master pages so the
-                    visual language is consistent across detail screens. */}
-                {/* Uses the .pv2-back class (which already defines a proper
-                    hover: bg + border + colour + lift, plus a dark-mode
-                    variant) instead of inline styles with a JS hover whose
-                    8%->14% colour-mix delta was imperceptible — QA reported
-                    "no hover effect". rounded-pill keeps the pill shape. */}
-                <button
-                  type="button"
-                  onClick={() => navigate('/products')}
-                  title="Back to Products"
-                  className="pv2-back rounded-pill"
-                >
-                  <i className="ri-arrow-left-line"></i>
-                  Back to Products
-                </button>
-                <button className="pv2-edit" onClick={() => setEditOpen(true)}>
-                  <i className="ri-edit-box-line" /> Edit Product
-                </button>
-              </div>
-            </div>
-
-            <div className="pv2-info-grid">
-              {/* Product Details */}
-              <div className="pv2-info-block">
-                <h6 className="pv2-info-heading">Product Details:</h6>
-                <div className="pv2-info-body">
-                  <Row k="Product Generic Name" v={product.generic_name || '—'} />
-                  <Row k="HSN / SAC"            v={hsnCode} />
-                  <Row k="Segment"              v={segmentName} />
-                  <Row k="Haz / Non-Haz"        v={product.haz_type || '—'} accent={isHaz ? 'danger' : 'success'} />
-                  <Row k="Haz Class"            v={isHaz ? hazClassName : '—'} />
-                  <Row k="Unit Of Measurement"  v={uomName} />
-                  <Row k="Condition"            v={conditionName} />
-                  <Row k="Packaging Material"   v={packagingName} />
-                  <Row k="Bottom / Non-Bottom"  v={product.mark_bottom || '—'} />
-                </div>
-              </div>
-
-              {/* Box Matrix + Inventory (stacked in one column) */}
-              <div className="pv2-info-block">
-                <h6 className="pv2-info-heading">Box Matrix Details:</h6>
-                <div className="pv2-info-body">
-                  <Row k="Per Box Net Weight"   v={fmtNum(product.net_weight, 'kg')} />
-                  <Row k="Per Box Gross Weight" v={fmtNum(product.gross_weight, 'kg')} />
-                  <Row k="Per Box Length"       v={fmtNum(product.length_cm, 'cm')} />
-                  <Row k="Per Box Width"        v={fmtNum(product.width_cm, 'cm')} />
-                  <Row k="Per Box Height"       v={fmtNum(product.height_cm, 'cm')} />
-                </div>
-
-                <h6 className="pv2-info-heading pv2-info-heading-sub">Inventory Details:</h6>
-                <div className="pv2-info-body">
-                  <Row k="Batch No"  v={product.batch_no  || '—'} />
-                  <Row k="Serial No" v={product.serial_no || '—'} />
-                  <Row k="Cat No"    v={product.cat_no    || '—'} />
-                  <Row k="Lot No"    v={product.lot_no    || '—'} />
-                </div>
-              </div>
-
-              {/* Pricing */}
-              <div className="pv2-info-block">
-                <h6 className="pv2-info-heading">Product Pricing Details:</h6>
-                <div className="pv2-info-body">
-                  <Row k="Product Base Price" v={fmtMoney(product.base_price)} />
-                  <Row k="GST %"              v={gstPct ? `${gstPct.toFixed(2)}%` : '—'} />
-                  <Row k="GST Amount"         v={fmtMoney(product.gst_amount)} />
-                  <div className="pv2-info-divider" />
-                  <div className="pv2-info-row pv2-total-line">
-                    <span className="pv2-info-key">Total Selling Price:</span>
-                    <span className="pv2-total-strong">{fmtMoney(product.total_price)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ─── Bottom row: tabs + vendors table ─── */}
-      <div className="pv2-bottom">
-        <div className="pv2-card pv2-tabs-card">
-          <div className="pv2-tabs">
-            <button className={`pv2-tab ${tab === 'desc' ? 'on' : ''}`}         onClick={() => setTab('desc')}>Product Description</button>
-            <button className={`pv2-tab ${tab === 'brand' ? 'on' : ''}`}        onClick={() => setTab('brand')}>Make / Brand / Specifications</button>
-            <button className={`pv2-tab ${tab === 'confidential' ? 'on' : ''}`} onClick={() => setTab('confidential')}>Confidential Info</button>
-            <button className={`pv2-tab ${tab === 'qc' ? 'on' : ''}`}           onClick={() => setTab('qc')}>QC &amp; Compliance</button>
-          </div>
-          <div className="pv2-tab-body">
-            {tab === 'desc' && (
-              <p className="pv2-tab-text">{product.description || <em className="pv2-muted">No description provided.</em>}</p>
-            )}
-            {tab === 'brand' && (
-              <p className="pv2-tab-text">{product.brand || <em className="pv2-muted">No brand / make / specifications recorded.</em>}</p>
-            )}
-            {tab === 'confidential' && (
-              <p className="pv2-tab-text">{product.confidential_info || <em className="pv2-muted">No confidential information.</em>}</p>
-            )}
-            {tab === 'qc' && (
-              qcUploads.length === 0 ? (
-                <p className="pv2-tab-text"><em className="pv2-muted">No QC documents uploaded yet.</em></p>
-              ) : (
-                <div className="table-responsive">
-                  <table className="table align-middle table-nowrap mb-0">
-                    <thead className="table-light">
-                      <tr>
-                        <th>SR</th>
-                        <th>Auto Code</th>
-                        <th>QC Document Name</th>
-                        <th>Status</th>
-                        <th>File</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {qcUploads.map((q, i) => (
-                        <tr key={q.id}>
-                          <td>{String(i + 1).padStart(2, '0')}</td>
-                          <td><span className="pv2-qc-code">{q.doc_code}</span></td>
-                          <td><strong>{q.doc_name}</strong></td>
-                          <td>
-                            <span className={`badge ${q.requirement === 'M' ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary'}`}>
-                              {q.requirement === 'M' ? '✓ Mandatory' : 'Optional'}
-                            </span>
-                          </td>
-                          <td>
-                            {q.attachment_url
-                              ? <a href={q.attachment_url} target="_blank" rel="noreferrer" className="pv2-attach-link">{q.attachment_name || 'View attachment'}</a>
-                              : <span className="pv2-muted">Not uploaded</span>}
-                          </td>
-                          <td>
-                            <QcRowActions
-                              doc={q}
-                              productId={product.id}
-                              onReload={loadQcUploads}
-                              toast={toast}
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )
-            )}
-          </div>
-        </div>
-
-        <div className="pv2-card pv2-vendors-card">
-          <div className="pv2-vendors-head">
-            <i className="ri-links-line" />
-            Product Suppliers
-            <span className="pv2-vendors-count">{product.vendor_maps.length}</span>
-          </div>
-          {product.vendor_maps.length === 0 ? (
-            <div className="pv2-vendors-empty">No suppliers mapped to this product.</div>
-          ) : (
-            <div className="pv2-vendor-table-wrap">
-              <table className="pv2-vendor-table">
-                <thead>
-                  <tr>
-                    <th className="pv2-vt-num">Sr No</th>
-                    <th>Supplier Code</th>
-                    <th>Supplier Company Name</th>
-                    <th>Contact Person Name</th>
-                    <th>Contact No</th>
-                    <th className="pv2-vt-num">Purchase Price</th>
-                    <th className="pv2-vt-num">GST %</th>
-                    <th className="pv2-vt-num">GST Amount</th>
-                    <th className="pv2-vt-num">Total Amount</th>
-                    <th>Map Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {product.vendor_maps.map((v, i) => {
-                    const mapDate = (v.map_date as string | null) ?? '';
-                    return (
-                      <tr key={String(v.id ?? i)}>
-                        <td className="pv2-vt-num">{i + 1}</td>
-                        <td><span className="pv2-vendor-code">{String(v.vendor_code ?? '—')}</span></td>
-                        <td className="pv2-vt-strong">{String(v.vendor_name ?? '—')}</td>
-                        <td>{String(v.contact_person ?? '—')}</td>
-                        <td>{String(v.contact_no ?? '—')}</td>
-                        <td className="pv2-vt-num">{fmtMoney(v.purchase_price as string | number | null)}</td>
-                        <td className="pv2-vt-num">{`${Number(v.gst_percentage ?? 0).toFixed(2)}%`}</td>
-                        <td className="pv2-vt-num">{fmtMoney(v.gst_amount as string | number | null)}</td>
-                        <td className="pv2-vt-num pv2-vt-total">{fmtMoney(v.total_amount as string | number | null)}</td>
-                        <td>{mapDate
-                          ? new Date(mapDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-                          : '—'}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
           )}
+
+          {/* Dark purple price card */}
+          <div className="pv2pd-pricecard">
+            <div className="pv2pd-pc-top">
+              <div>
+                <div className="pv2pd-pc-label">Selling Price</div>
+                <div className="pv2pd-pc-price">{baseStr}<small>/-</small></div>
+                <div className="pv2pd-pc-uom">per {uomName}</div>
+              </div>
+              <div className="pv2pd-pc-break">
+                Base {baseStr}<br />GST {gstPct.toFixed(0)}% &nbsp;{gstAmtStr}
+              </div>
+            </div>
+            <div className="pv2pd-pc-total">
+              <span>Total incl. GST</span><b>{totalStr}/-</b>
+            </div>
+          </div>
+
+          {/* Buy bar (presentation only) */}
+          <div className="pv2pd-buybar">
+            <div className="pv2pd-qty">
+              <button onClick={() => setQty(q => Math.max(1, q - 1))} aria-label="Decrease">−</button>
+              <input value={qty} readOnly />
+              <button onClick={() => setQty(q => q + 1)} aria-label="Increase">+</button>
+            </div>
+            <button className="pv2pd-act pv2pd-act--wish" onClick={() => toast.info('Wishlist', `${product.name} added to wishlist`)}>
+              <i className="ri-heart-line" /> Add to Wishlist
+            </button>
+            <button className="pv2pd-act pv2pd-act--cart" onClick={() => toast.success('Cart', `${product.name} added to cart`)}>
+              <i className="ri-shopping-cart-2-line" /> Add to Cart
+            </button>
+          </div>
+        </div>
+
+        {/* RIGHT: Product Details highlights + tabs */}
+        <div className="pv2pd-infocol">
+          <div className="pv2pd-info">
+            {/* Product Details card */}
+            <div className="pv2pd-sec pv2pd-details">
+              <div className="pv2pd-sec__title">
+                <span className="pv2pd-sec__ico"><i className="ri-file-list-3-line" /></span>
+                Product Details
+              </div>
+              <div className="pv2pd-highlights">
+                <div className="pv2pd-hl pv2pd-hl--v">
+                  <span className="pv2pd-hl__ico"><i className="ri-price-tag-3-line" /></span>
+                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">HSN Code</span><span className="pv2pd-hl__v" title={hsnCode}>{hsnCode}</span></span>
+                </div>
+                <div className="pv2pd-hl pv2pd-hl--g">
+                  <span className="pv2pd-hl__ico"><i className="ri-price-tag-line" /></span>
+                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">Segment</span><span className="pv2pd-hl__v" title={segmentName}>{segmentName}</span></span>
+                </div>
+                <div className={`pv2pd-hl ${isHaz ? 'pv2pd-hl--h' : 'pv2pd-hl--c'}`}>
+                  <span className="pv2pd-hl__ico"><i className={isHaz ? 'ri-alarm-warning-line' : 'ri-checkbox-circle-line'} /></span>
+                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">{isHaz ? 'Hazardous' : 'Non-Hazardous'}</span><span className="pv2pd-hl__v" title={isHaz ? hazClassName : 'No'}>{isHaz ? (hazClassName !== '—' ? hazClassName : 'Yes') : 'No'}</span></span>
+                </div>
+                <div className="pv2pd-hl pv2pd-hl--c">
+                  <span className="pv2pd-hl__ico"><i className="ri-scales-3-line" /></span>
+                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">UOM</span><span className="pv2pd-hl__v" title={uomName}>{uomName}</span></span>
+                </div>
+                <div className="pv2pd-hl pv2pd-hl--a">
+                  <span className="pv2pd-hl__ico"><i className="ri-shield-check-line" /></span>
+                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">Condition</span><span className="pv2pd-hl__v" title={conditionName}>{conditionName}</span></span>
+                </div>
+                <div className="pv2pd-hl pv2pd-hl--p">
+                  <span className="pv2pd-hl__ico"><i className="ri-archive-line" /></span>
+                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">Packaging Material</span><span className="pv2pd-hl__v" title={packagingName}>{packagingName}</span></span>
+                </div>
+              </div>
+            </div>
+
+            {/* Tabs card */}
+            <div className="pv2pd-sec pv2pd-sec--tabs">
+              <div className="pv2pd-tabs">
+                <button className={`pv2pd-tab ${tab === 'desc' ? 'is-active' : ''}`}         onClick={() => setTab('desc')}>Product Description</button>
+                <button className={`pv2pd-tab ${tab === 'brand' ? 'is-active' : ''}`}        onClick={() => setTab('brand')}>Make / Brand / Specifications</button>
+                <button className={`pv2pd-tab ${tab === 'confidential' ? 'is-active' : ''}`} onClick={() => setTab('confidential')}>Confidential Info</button>
+              </div>
+              <div className="pv2pd-tab-body">
+                {tab === 'desc' && (
+                  <p className="pv2pd-tab-text">{product.description || <em className="pv2pd-muted">No description provided.</em>}</p>
+                )}
+                {tab === 'brand' && (
+                  <div className="pv2pd-tab-rich">
+                    <h4 className="pv2pd-tab-h">Make / Brand</h4>
+                    <p className="pv2pd-tab-text">{product.brand || <em className="pv2pd-muted">No brand / make / specifications recorded.</em>}</p>
+                    <h4 className="pv2pd-tab-h">Specifications</h4>
+                    <div className="pv2pd-tab-rows">
+                      <SpecRow k="Generic Name"       v={product.generic_name || '—'} />
+                      <SpecRow k="Segment"            v={segmentName} />
+                      <SpecRow k="HSN Code"           v={hsnCode} />
+                      <SpecRow k="UOM"                v={uomName} />
+                      <SpecRow k="Condition"          v={conditionName} />
+                      <SpecRow k="Packaging Material" v={packagingName} />
+                      <SpecRow k="Hazard"             v={isHaz ? (hazClassName !== '—' ? hazClassName : 'Hazardous') : 'Non-Hazardous'} accent={isHaz ? 'amber' : 'green'} />
+                    </div>
+                  </div>
+                )}
+                {tab === 'confidential' && (
+                  <div className="pv2pd-tab-rich">
+                    <h4 className="pv2pd-tab-h">Restricted Information</h4>
+                    <p className="pv2pd-tab-text">{product.confidential_info || 'Confidential pricing, margin structure and preferred-supplier terms are restricted to authorised procurement users only.'}</p>
+                    <h4 className="pv2pd-tab-h">Commercials</h4>
+                    <div className="pv2pd-tab-rows">
+                      <SpecRow k="Base Price"       v={baseStr} />
+                      <SpecRow k="GST"              v={gstPct ? `${gstPct.toFixed(2)}%` : '—'} />
+                      <SpecRow k="Mapped Suppliers" v={String(product.vendor_maps.length)} />
+                    </div>
+                    <h4 className="pv2pd-tab-h">Notes</h4>
+                    <p className="pv2pd-tab-text">Negotiated rates, rebate slabs and exclusive supplier agreements are visible only to users with procurement-admin access. Do not share outside the authorised group.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -484,7 +400,8 @@ export default function ProductView() {
            * own /products/{id} refetch. Production network panel
            * showed that duplicate call costing ~2 sec. */
           initialProduct={product}
-          onClose={() => setEditOpen(false)}
+          openSupplierMap={supplierMapMode}
+          onClose={() => { setEditOpen(false); setSupplierMapMode(false); }}
           onSaved={(_pid, finalised) => {
             // Silent refresh — see load()'s note. We want the underlying
             // ProductView card to reflect the new data once the user
@@ -495,23 +412,86 @@ export default function ProductView() {
           }}
         />
       )}
+
+      {/* Mapped Suppliers popup — opened from the header "Mapped Suppliers"
+          button. Lists this product's vendor mappings (prototype design). */}
+      {suppliersOpen && createPortal((
+        <div className="pv2pd-sup-overlay" onClick={() => setSuppliersOpen(false)}>
+          <div className="pv2pd-sup-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="pv2pd-sup-head">
+              <div className="pv2pd-sup-head-ico"><i className="ri-team-line" /></div>
+              <div className="pv2pd-sup-head-txt">
+                <div className="pv2pd-sup-title">Mapped Suppliers</div>
+                <div className="pv2pd-sup-sub">Suppliers linked to this product with purchase price &amp; GST</div>
+              </div>
+              <button className="pv2pd-sup-close" onClick={() => setSuppliersOpen(false)} aria-label="Close">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </div>
+            <div className="pv2pd-sup-body">
+              <div className="pv2pd-sup-bar">
+                <span className="pv2pd-sup-countpill">{product.vendor_maps.length} supplier{product.vendor_maps.length !== 1 ? 's' : ''} mapped</span>
+                <button className="pv2pd-sup-map" onClick={() => { setSuppliersOpen(false); setSupplierMapMode(true); setEditOpen(true); }}>
+                  <i className="ri-add-line" /> Map Supplier
+                </button>
+              </div>
+              {product.vendor_maps.length === 0 ? (
+                <div className="pv2pd-sup-empty">No suppliers mapped yet. Click "Map Supplier" to begin.</div>
+              ) : (
+                <div className="pv2pd-sup-tablewrap">
+                  <table className="pv2pd-sup-table">
+                    <thead>
+                      <tr>
+                        <th>Sr No</th><th>Supplier</th><th>Code</th><th>Type</th><th>State</th><th>Contact</th>
+                        <th>Price (₹)</th><th>GST %</th><th>GST (₹)</th><th>Total (₹)</th><th aria-label="Remove" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {product.vendor_maps.map((v, i) => (
+                        <tr key={String((v.id as number | string) ?? i)}>
+                          <td><span className="pv2pd-sup-sr">{String(i + 1).padStart(2, '0')}</span></td>
+                          <td className="pv2pd-sup-cname">{String(v.vendor_name ?? '—')}</td>
+                          <td><span className="pv2pd-sup-code">{String(v.vendor_code ?? '—')}</span></td>
+                          <td>{String(v.vendor_type ?? v.type ?? '—')}</td>
+                          <td>{String(v.state ?? '—')}</td>
+                          <td className="pv2pd-sup-cperson">{String(v.contact_person ?? '—')}</td>
+                          <td>{fmtMoney(v.purchase_price as string | number | null)}</td>
+                          <td>{`${Number(v.gst_percentage ?? 0).toFixed(0)}%`}</td>
+                          <td>{fmtMoney(v.gst_amount as string | number | null)}</td>
+                          <td className="pv2pd-sup-ctotal">{fmtMoney(v.total_amount as string | number | null)}</td>
+                          <td>
+                            <button
+                              className="pv2pd-sup-del"
+                              title="Manage mappings from Edit Product"
+                              onClick={() => toast.info('Manage suppliers', 'Add or remove supplier mappings from Edit Product.')}
+                            >×</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            <div className="pv2pd-sup-foot">
+              <button className="pv2pd-sup-closebtn" onClick={() => setSuppliersOpen(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      ), document.body)}
     </div>
   );
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
-function Row(props: { k: string; v: string; accent?: 'success' | 'danger' }) {
+/* Spec / commercial key-value row — matches the prototype's .pd-tab-row. */
+function SpecRow(props: { k: string; v: string; accent?: 'green' | 'amber' }) {
   const hasValue = props.v && props.v !== '—';
+  const val = <span className={`pv2pd-tab-row__v${props.accent ? ` pv2pd-tab-row__v--${props.accent}` : ''}`}>{props.v}</span>;
   return (
-    <div className="pv2-info-row">
-      <span className="pv2-info-key">{props.k}</span>
-      {hasValue ? (
-        <Tooltip label={props.v} position="top" maxWidth={320}>
-          <span className={`pv2-info-val${props.accent ? ` pv2-info-val-${props.accent}` : ''}`}>{props.v}</span>
-        </Tooltip>
-      ) : (
-        <span className={`pv2-info-val${props.accent ? ` pv2-info-val-${props.accent}` : ''}`}>{props.v}</span>
-      )}
+    <div className="pv2pd-tab-row">
+      <span className="pv2pd-tab-row__k">{props.k}</span>
+      {hasValue ? <Tooltip label={props.v} position="top" maxWidth={320}>{val}</Tooltip> : val}
     </div>
   );
 }
@@ -859,6 +839,10 @@ const SCOPED_CSS = `
 .pv2-tab.on { color: #4f46e5; border-bottom-color: #4f46e5; }
 .pv2-tab-body { min-height: 80px; }
 .pv2-tab-text { font-size: 13px; color: #475569; line-height: 1.55; margin: 0; }
+.pv2-tab-rich { display: flex; flex-direction: column; gap: 8px; }
+.pv2-tab-h { font-size: 12px; font-weight: 800; letter-spacing: .01em; color: #4338ca; margin: 8px 0 2px; }
+.pv2-tab-rich .pv2-tab-h:first-child { margin-top: 0; }
+.pv2-tab-rich .pv2-info-body { margin-top: 2px; }
 .pv2-muted { color: #94a3b8; font-style: italic; }
 
 .pv2-vendors-head {
@@ -1058,6 +1042,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .pv2-tab:hover { color: #a8b6e9; }
 [data-bs-theme="dark"] .pv2-tab.on { color: #a8b6e9; border-bottom-color: #6366f1; }
 [data-bs-theme="dark"] .pv2-tab-text { color: #ced4da; }
+[data-bs-theme="dark"] .pv2-tab-h { color: #a5b4fc; }
 [data-bs-theme="dark"] .pv2-vendors-head { color: #ede9fe; }
 [data-bs-theme="dark"] .pv2-vendors-empty { border-color: rgba(255,255,255,.08); color: #6b7280; }
 [data-bs-theme="dark"] .pv2-vendor-card { background: #161c24; border-color: rgba(255,255,255,.08); }
@@ -1076,4 +1061,167 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .pv2-status.is-active { background: rgba(34,197,94,.12); color: #4ade80; border-color: rgba(34,197,94,.3); }
 [data-bs-theme="dark"] .pv2-status.is-inactive { background: rgba(245,158,11,.12); color: #fcd34d; border-color: rgba(245,158,11,.3); }
+
+/* ═══ Product detail — prototype pd-* popup design (ported as pv2pd-*) ═══ */
+.pv2pd-root { padding: 0; gap: 0; min-height: 0; background: linear-gradient(160deg,#f5f1fe 0%,#efe7fc 45%,#e9dcf8 100%); }
+.pv2pd-hero { position: relative; padding: 13px 22px; background: linear-gradient(120deg,#4c1d95 0%,#6d28d9 48%,#7c3aed 100%); overflow: hidden; }
+.pv2pd-hero::before { content: ''; position: absolute; top: -60%; right: -10%; width: 320px; height: 320px; background: radial-gradient(circle,rgba(255,255,255,.16),transparent 70%); pointer-events: none; }
+.pv2pd-hero::after { content: ''; position: absolute; bottom: -50%; left: -5%; width: 260px; height: 260px; background: radial-gradient(circle,rgba(6,182,212,.22),transparent 70%); pointer-events: none; }
+.pv2pd-hero-row { position: relative; display: flex; justify-content: space-between; align-items: center; gap: 14px; z-index: 1; }
+.pv2pd-hero-main { min-width: 0; }
+.pv2pd-title { font-size: 16px; font-weight: 800; color: #fff; letter-spacing: -.3px; line-height: 1.25; margin: 0; }
+.pv2pd-code { color: #c4b5fd; font-weight: 900; }
+.pv2pd-title-sep { color: rgba(255,255,255,.4); font-weight: 400; margin: 0 1px; }
+.pv2pd-hero-btns { display: flex; gap: 8px; flex-shrink: 0; z-index: 1; }
+.pv2pd-hbtn { display: inline-flex; align-items: center; gap: 6px; font-family: inherit; font-size: 11px; font-weight: 700; border-radius: 9px; padding: 7px 13px; cursor: pointer; transition: all .15s; white-space: nowrap; }
+.pv2pd-hbtn--ghost { background: rgba(255,255,255,.14); color: #fff; border: 1px solid rgba(255,255,255,.25); }
+.pv2pd-hbtn--ghost:hover { background: rgba(255,255,255,.24); }
+.pv2pd-hbtn--edit { background: #fff; color: #6d28d9; border: none; box-shadow: 0 5px 14px rgba(0,0,0,.16); }
+.pv2pd-hbtn--edit:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(0,0,0,.22); }
+.pv2pd-hbtn--suppliers { background: rgba(255,255,255,.14); color: #fff; border: 1px solid rgba(255,255,255,.3); }
+.pv2pd-hbtn--suppliers:hover { background: rgba(255,255,255,.24); transform: translateY(-1px); }
+.pv2pd-body { display: grid; grid-template-columns: minmax(250px,.82fr) 1.5fr; gap: 16px; padding: 16px 18px 18px; align-items: start; }
+@media (max-width: 860px) { .pv2pd-body { grid-template-columns: 1fr; } }
+.pv2pd-infocol { min-width: 0; }
+.pv2pd-info { display: flex; flex-direction: column; }
+.pv2pd-gallery { display: flex; flex-direction: column; gap: 8px; }
+.pv2pd-main-img { position: relative; border-radius: 14px; overflow: hidden; background: #f1edfa; aspect-ratio: 1/.72; box-shadow: 0 10px 26px rgba(76,29,149,.15); display: flex; align-items: center; justify-content: center; }
+.pv2pd-main-img img { width: 100%; height: 100%; object-fit: cover; transition: transform .5s cubic-bezier(.22,1,.36,1); }
+.pv2pd-main-img:hover img { transform: scale(1.05); }
+.pv2pd-main-empty { font-size: 44px; font-weight: 800; color: #a78bfa; }
+.pv2pd-thumbs { display: flex; gap: 8px; }
+.pv2pd-thumb { width: 50px; height: 50px; border-radius: 11px; overflow: hidden; border: 2px solid transparent; cursor: pointer; background: #f1edfa; transition: border-color .18s, transform .18s; box-shadow: 0 2px 8px rgba(76,29,149,.1); padding: 0; }
+.pv2pd-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.pv2pd-thumb.is-active { border-color: #7c3aed; }
+.pv2pd-thumb:hover { transform: translateY(-2px); }
+.pv2pd-chip { font-size: 10px; font-weight: 800; border-radius: 6px; padding: 3px 9px; display: inline-flex; align-items: center; gap: 5px; }
+.pv2pd-chip-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.pv2pd-chip--onimg { position: absolute; top: 9px; right: 9px; z-index: 3; padding: 3px 9px 3px 7px; font-size: 9.5px; letter-spacing: .03em; text-transform: uppercase; border-radius: 999px; gap: 4px; backdrop-filter: blur(8px) saturate(1.2); box-shadow: 0 3px 10px rgba(0,0,0,.22),0 1px 0 rgba(255,255,255,.4) inset; }
+.pv2pd-chip--onimg .pv2pd-chip-dot { width: 6px; height: 6px; }
+.pv2pd-chip--onimg.pv2pd-chip--active { color: #047857; background: linear-gradient(135deg,rgba(209,250,229,.95),rgba(167,243,208,.95)); border: 1px solid rgba(16,185,129,.45); }
+.pv2pd-chip--onimg.pv2pd-chip--active .pv2pd-chip-dot { background: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,.28); }
+.pv2pd-chip--onimg.pv2pd-chip--inactive { color: #b91c1c; background: linear-gradient(135deg,rgba(254,226,226,.95),rgba(254,202,202,.95)); border: 1px solid rgba(239,68,68,.45); }
+.pv2pd-chip--onimg.pv2pd-chip--inactive .pv2pd-chip-dot { background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.28); }
+.pv2pd-pricecard { background: linear-gradient(135deg,#1e1b4b,#4c1d95); border-radius: 14px; padding: 12px 14px; color: #fff; box-shadow: 0 10px 26px rgba(76,29,149,.26); position: relative; overflow: hidden; }
+.pv2pd-pricecard::before { content: ''; position: absolute; top: -50%; right: -20%; width: 180px; height: 180px; background: radial-gradient(circle,rgba(139,92,246,.4),transparent 70%); pointer-events: none; }
+.pv2pd-pc-top { display: flex; justify-content: space-between; align-items: flex-end; position: relative; z-index: 1; }
+.pv2pd-pc-label { font-size: 8.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: #c4b5fd; }
+.pv2pd-pc-price { font-size: 23px; font-weight: 900; letter-spacing: -1px; line-height: 1; margin-top: 2px; }
+.pv2pd-pc-price small { font-size: 13px; font-weight: 800; color: #ddd6fe; }
+.pv2pd-pc-uom { font-size: 10px; color: #c4b5fd; font-weight: 600; margin-top: 2px; }
+.pv2pd-pc-break { text-align: right; font-size: 9.5px; color: #c4b5fd; font-weight: 600; line-height: 1.55; }
+.pv2pd-pc-total { display: flex; justify-content: space-between; align-items: center; margin-top: 9px; padding-top: 9px; border-top: 1px solid rgba(255,255,255,.16); position: relative; z-index: 1; }
+.pv2pd-pc-total span { font-size: 10.5px; font-weight: 700; color: #ddd6fe; }
+.pv2pd-pc-total b { font-size: 18px; font-weight: 900; color: #6ee7b7; letter-spacing: -.5px; }
+.pv2pd-buybar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+.pv2pd-qty { display: inline-flex; align-items: center; border: 1.5px solid #e2d4fa; border-radius: 11px; overflow: hidden; background: #fff; height: 42px; }
+.pv2pd-qty button { width: 34px; height: 100%; border: none; background: #f6f2ff; color: #6d28d9; font-size: 17px; font-weight: 800; cursor: pointer; }
+.pv2pd-qty button:hover { background: #ede4fc; }
+.pv2pd-qty input { width: 40px; height: 100%; border: none; text-align: center; font-family: inherit; font-size: 13px; font-weight: 800; color: #1e1b4b; background: transparent; }
+.pv2pd-act { flex: 1; min-width: 120px; height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; font-family: inherit; font-size: 12px; font-weight: 800; border-radius: 11px; padding: 0 11px; cursor: pointer; transition: all .16s; border: none; }
+.pv2pd-act--wish { background: #fff; color: #7c3aed; border: 1.5px solid #d8cef0; }
+.pv2pd-act--wish:hover { background: #f6f2ff; transform: translateY(-1px); }
+.pv2pd-act--cart { flex: 1 1 100%; background: linear-gradient(135deg,#8b5cf6,#7c3aed,#6d28d9); color: #fff; box-shadow: 0 7px 18px rgba(124,58,237,.38); }
+.pv2pd-act--cart:hover { background: linear-gradient(135deg,#7c3aed,#6d28d9,#5b21b6); transform: translateY(-1px); box-shadow: 0 10px 24px rgba(124,58,237,.48); }
+.pv2pd-sec { background: #fff; border: 1px solid #efeafa; border-radius: 13px; padding: 11px 14px; margin-bottom: 9px; box-shadow: 0 2px 9px rgba(76,29,149,.04); }
+.pv2pd-sec__title { display: flex; align-items: center; gap: 8px; font-size: 11.5px; font-weight: 800; color: #4c1d95; margin-bottom: 9px; }
+.pv2pd-sec__ico { width: 23px; height: 23px; border-radius: 7px; background: linear-gradient(135deg,#8b5cf6,#7c3aed); display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #fff; }
+.pv2pd-highlights { display: grid; grid-template-columns: repeat(3,1fr); gap: 9px; margin-bottom: 0; }
+@media (max-width: 560px) { .pv2pd-highlights { grid-template-columns: repeat(2,1fr); } }
+.pv2pd-hl { --acc: #7c3aed; --acc2: #8b5cf6; display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid #efe9fb; border-radius: 13px; padding: 10px 12px 10px 13px; position: relative; overflow: hidden; box-shadow: 0 1px 2px rgba(76,29,149,.05),0 4px 12px rgba(76,29,149,.05); transition: transform .2s cubic-bezier(.22,1,.36,1), box-shadow .2s, border-color .2s; }
+.pv2pd-hl::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: linear-gradient(180deg,var(--acc2),var(--acc)); opacity: .9; }
+.pv2pd-hl:hover { transform: translateY(-2px); box-shadow: 0 2px 4px rgba(76,29,149,.06),0 10px 22px rgba(76,29,149,.14); }
+.pv2pd-hl__ico { width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; flex-shrink: 0; background: linear-gradient(140deg,var(--acc2),var(--acc)); box-shadow: 0 4px 10px rgba(76,29,149,.3), inset 0 1px 0 rgba(255,255,255,.4); }
+.pv2pd-hl--v { --acc: #7c3aed; --acc2: #a78bfa; }
+.pv2pd-hl--c { --acc: #0891b2; --acc2: #22d3ee; }
+.pv2pd-hl--g { --acc: #059669; --acc2: #34d399; }
+.pv2pd-hl--a { --acc: #d97706; --acc2: #fbbf24; }
+.pv2pd-hl--h { --acc: #dc2626; --acc2: #f87171; }
+.pv2pd-hl--p { --acc: #4f46e5; --acc2: #818cf8; }
+.pv2pd-hl__txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pv2pd-hl__k { font-size: 8px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: #a99cc4; line-height: 1.1; }
+.pv2pd-hl__v { font-size: 13.5px; font-weight: 800; color: #2e1065; letter-spacing: -.3px; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pv2pd-sec--tabs { margin-bottom: 0; }
+.pv2pd-tabs { display: flex; gap: 5px; background: #f3eefc; border-radius: 10px; padding: 4px; margin-bottom: 10px; flex-wrap: wrap; }
+.pv2pd-tab { flex: 1; min-width: 100px; text-align: center; font-size: 11px; font-weight: 700; color: #7c6fa0; padding: 7px 10px; border-radius: 8px; cursor: pointer; transition: all .15s; border: none; background: transparent; }
+.pv2pd-tab.is-active { color: #fff; background: linear-gradient(135deg,#8b5cf6,#7c3aed); box-shadow: 0 3px 10px rgba(124,58,237,.3); }
+.pv2pd-tab:not(.is-active):hover { color: #6d28d9; background: rgba(255,255,255,.6); }
+.pv2pd-tab-body { font-size: 11.5px; color: #475569; line-height: 1.65; height: 360px; overflow-y: auto; padding-right: 6px; }
+.pv2pd-tab-body::-webkit-scrollbar { width: 7px; }
+.pv2pd-tab-body::-webkit-scrollbar-thumb { background: #d8cef0; border-radius: 6px; }
+.pv2pd-tab-body::-webkit-scrollbar-track { background: transparent; }
+[data-bs-theme="dark"] .pv2pd-tab-body::-webkit-scrollbar-thumb { background: rgba(167,139,250,.3); }
+.pv2pd-tab-text { margin: 0 0 9px; }
+.pv2pd-muted { color: #94a3b8; }
+.pv2pd-tab-rich { display: flex; flex-direction: column; }
+.pv2pd-tab-h { font-size: 11.5px; font-weight: 800; color: #4c1d95; margin: 12px 0 5px; }
+.pv2pd-tab-rich .pv2pd-tab-h:first-child { margin-top: 0; }
+.pv2pd-tab-row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px dashed #eee6fa; font-size: 11.5px; }
+.pv2pd-tab-row:last-child { border-bottom: none; }
+.pv2pd-tab-row__k { color: #7c8499; font-weight: 600; }
+.pv2pd-tab-row__v { color: #1e1b4b; font-weight: 800; text-align: right; }
+.pv2pd-tab-row__v--green { color: #059669; }
+.pv2pd-tab-row__v--amber { color: #b45309; }
+.pv2pd-supplier { border: 1px solid #efe9fb; border-radius: 11px; padding: 10px 12px; margin-bottom: 9px; }
+.pv2pd-supplier-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; color: #1e1b4b; font-size: 12.5px; }
+.pv2pd-supplier-code { font-size: 10px; font-weight: 800; color: #5b21b6; background: #f5f1fe; border: 1px solid #e2d4fa; border-radius: 6px; padding: 2px 7px; }
+/* Dark mode */
+[data-bs-theme="dark"] .pv2pd-root { background: #1c1633; }
+[data-bs-theme="dark"] .pv2pd-sec,
+[data-bs-theme="dark"] .pv2pd-hl,
+[data-bs-theme="dark"] .pv2pd-supplier { background: #241a47; border-color: rgba(167,139,250,.16); }
+[data-bs-theme="dark"] .pv2pd-hl__v { color: #ede9fe; }
+[data-bs-theme="dark"] .pv2pd-sec__title,
+[data-bs-theme="dark"] .pv2pd-tab-h { color: #c4b5fd; }
+[data-bs-theme="dark"] .pv2pd-tabs { background: rgba(124,58,237,.14); }
+[data-bs-theme="dark"] .pv2pd-tab-body { color: #ced4da; }
+[data-bs-theme="dark"] .pv2pd-tab-row__k { color: #9a93b3; }
+[data-bs-theme="dark"] .pv2pd-tab-row__v { color: #ede9fe; }
+[data-bs-theme="dark"] .pv2pd-qty { background: #1a1430; border-color: rgba(167,139,250,.25); }
+[data-bs-theme="dark"] .pv2pd-qty button { background: rgba(124,58,237,.2); color: #c4b5fd; }
+[data-bs-theme="dark"] .pv2pd-qty input { color: #ede9fe; }
+[data-bs-theme="dark"] .pv2pd-act--wish { background: rgba(124,58,237,.16); border-color: rgba(167,139,250,.3); color: #d6c9f5; }
+
+/* ═══ Mapped Suppliers popup ═══ */
+.pv2pd-sup-overlay { position: fixed; inset: 0; z-index: 1060; background: rgba(30,20,60,.55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 24px; overflow-y: auto; font-family: var(--font-sans); }
+.pv2pd-sup-modal { width: 100%; max-width: 1060px; margin: auto; background: linear-gradient(180deg,#fbf9ff,#f5f1fe); border: 1px solid rgba(196,181,253,.6); border-radius: 18px; overflow: hidden; box-shadow: 0 30px 80px rgba(20,10,60,.45); animation: pv2pdSupPop .24s cubic-bezier(.22,1,.36,1); }
+@keyframes pv2pdSupPop { from { transform: translateY(16px) scale(.98); opacity: 0; } to { transform: none; opacity: 1; } }
+.pv2pd-sup-head { position: relative; display: flex; align-items: center; gap: 12px; padding: 15px 20px; background: linear-gradient(115deg,#4c1d95 0%,#6d28d9 50%,#8b5cf6 100%); color: #fff; }
+.pv2pd-sup-head-ico { width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.25); display: flex; align-items: center; justify-content: center; font-size: 18px; }
+.pv2pd-sup-head-txt { flex: 1; min-width: 0; }
+.pv2pd-sup-title { font-size: 16px; font-weight: 800; letter-spacing: -.2px; }
+.pv2pd-sup-sub { font-size: 11.5px; color: rgba(255,255,255,.82); margin-top: 1px; }
+.pv2pd-sup-close { width: 32px; height: 32px; border-radius: 9px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.14); color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: background .15s; }
+.pv2pd-sup-close:hover { background: rgba(255,255,255,.26); }
+.pv2pd-sup-body { padding: 16px 20px; background: #fff; }
+.pv2pd-sup-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.pv2pd-sup-countpill { font-size: 12px; font-weight: 700; color: #6d28d9; background: #f5f1fe; border: 1px solid #e2d4fa; border-radius: 20px; padding: 6px 14px; }
+.pv2pd-sup-map { display: inline-flex; align-items: center; gap: 6px; font-family: inherit; font-size: 12.5px; font-weight: 700; color: #fff; border: none; border-radius: 10px; padding: 8px 16px; cursor: pointer; background: linear-gradient(135deg,#8b5cf6,#7c3aed,#6d28d9); box-shadow: 0 5px 14px rgba(124,58,237,.4); transition: transform .15s, box-shadow .15s; }
+.pv2pd-sup-map:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(124,58,237,.5); }
+.pv2pd-sup-empty { text-align: center; color: #7c3aed; font-weight: 600; font-size: 13px; padding: 34px 16px; border: 1.5px dashed #d6cbf7; border-radius: 12px; background: #fbf9ff; }
+.pv2pd-sup-tablewrap { overflow-x: auto; border: 1px solid #efe9fb; border-radius: 12px; }
+.pv2pd-sup-table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
+.pv2pd-sup-table thead th { text-align: left; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #94a3b8; padding: 10px 14px; border-bottom: 1px solid #efe9fb; }
+.pv2pd-sup-table tbody td { padding: 11px 14px; border-bottom: 1px solid #f4f0fc; color: #334155; font-weight: 600; vertical-align: middle; }
+.pv2pd-sup-table tbody tr:last-child td { border-bottom: none; }
+.pv2pd-sup-table tbody tr:hover { background: #faf8ff; }
+.pv2pd-sup-sr { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; border-radius: 6px; font-size: 10.5px; font-weight: 800; color: #6d28d9; background: #f5f1fe; border: 1px solid #e2d4fa; }
+.pv2pd-sup-cname { font-weight: 800; color: #1e1b4b; }
+.pv2pd-sup-cperson { color: #7c3aed; font-weight: 700; }
+.pv2pd-sup-code { font-size: 10.5px; font-weight: 800; color: #5b21b6; background: #f5f1fe; border: 1px solid #e2d4fa; border-radius: 6px; padding: 2px 8px; }
+.pv2pd-sup-ctotal { font-weight: 800; color: #0f172a; }
+.pv2pd-sup-del { width: 26px; height: 26px; border-radius: 7px; border: 1px solid #fecaca; background: #fef2f2; color: #dc2626; font-size: 15px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .14s, color .14s; }
+.pv2pd-sup-del:hover { background: #dc2626; color: #fff; border-color: transparent; }
+.pv2pd-sup-foot { display: flex; justify-content: flex-end; padding: 12px 20px; background: #faf8ff; border-top: 1px solid #efe9fb; }
+.pv2pd-sup-closebtn { font-family: inherit; font-size: 13px; font-weight: 700; color: #475569; background: #fff; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 9px 22px; cursor: pointer; transition: background .15s, border-color .15s; }
+.pv2pd-sup-closebtn:hover { background: #f8fafc; border-color: #cbd5e1; }
+[data-bs-theme="dark"] .pv2pd-sup-modal { background: #1c1633; border-color: rgba(167,139,250,.28); }
+[data-bs-theme="dark"] .pv2pd-sup-body { background: #1a1430; }
+[data-bs-theme="dark"] .pv2pd-sup-table thead th { color: #9a93b3; border-bottom-color: rgba(167,139,250,.16); }
+[data-bs-theme="dark"] .pv2pd-sup-table tbody td { color: #cbd5e1; border-bottom-color: rgba(167,139,250,.1); }
+[data-bs-theme="dark"] .pv2pd-sup-table tbody tr:hover { background: rgba(124,58,237,.12); }
+[data-bs-theme="dark"] .pv2pd-sup-cname { color: #f1f5f9; }
+[data-bs-theme="dark"] .pv2pd-sup-ctotal { color: #f1f5f9; }
+[data-bs-theme="dark"] .pv2pd-sup-foot { background: rgba(255,255,255,.03); border-top-color: rgba(167,139,250,.16); }
+[data-bs-theme="dark"] .pv2pd-sup-closebtn { background: #241a47; color: #cbd5e1; border-color: rgba(167,139,250,.25); }
 `;
