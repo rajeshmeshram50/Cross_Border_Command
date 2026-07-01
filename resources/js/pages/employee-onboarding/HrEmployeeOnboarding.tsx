@@ -3747,6 +3747,9 @@ const validateStage1 = (): boolean => {
   if (!s1.legal_entity_id?.toString().trim()) errors.legal_entity_id = 'Legal entity is required';
   if (!s1.reporting_manager?.toString().trim()) errors.reporting_manager = 'Reporting manager is required';
 
+  // Work Details — Expense Policy is required (marked * in the form).
+  if (!s1.expense_policy?.toString().trim()) errors.expense_policy = 'Expense policy is required';
+
   setS1Errors(errors);
 
   if (Object.keys(errors).length > 0) {
@@ -4816,7 +4819,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 
                 <p className="onb-init-subgroup">Employment Terms</p>
                 <Row className="g-3">
-                  <Col md={3}><label className="onb-init-label">Probation Policy<span className="req">*</span></label><MasterSelect options={ONB_PROBATION} value={s1.probation_policy} placeholder="Select probation policy" onChange={(v) => setS1(p => ({ ...p, probation_policy: v }))} /></Col>
+                  <Col md={3}><label className="onb-init-label">Probation Policy (Month)<span className="req">*</span></label><MasterSelect options={ONB_PROBATION} value={s1.probation_policy} placeholder="Select months (1–12)" onChange={(v) => setS1(p => ({ ...p, probation_policy: v }))} /></Col>
                   <Col md={3}><label className="onb-init-label">Probation End Date <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly tabIndex={-1} value={onbProbation.endDisplay} placeholder={!s1.date_of_joining ? 'Set joining date' : (onbProbation.months > 0 ? '' : 'No probation')} /></Col>
                   <Col md={3}><label className="onb-init-label">Notice Period<span className="req">*</span></label><MasterSelect options={ONB_NOTICE} value={s1.notice_period} placeholder="Select notice period" onChange={(v) => setS1(p => ({ ...p, notice_period: v }))} /></Col>
                   <Col md={3}><label className="onb-init-label">Work Mode <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly value="On-site" /></Col>
@@ -4843,7 +4846,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                   <Col md={4}><label className="onb-init-label">Weekly Off<span className="req">*</span></label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off} placeholder="Select weekly off" onChange={(v) => setS1(p => ({ ...p, weekly_off: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Attendance Number</label><input className="onb-init-input" placeholder="Attendance number" value={s1.attendance_number} onChange={e => setS1(p => ({ ...p, attendance_number: e.target.value }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Overtime</label><MasterSelect options={ONB_OVERTIME} value={s1.overtime} placeholder="Select overtime policy" onChange={(v) => setS1(p => ({ ...p, overtime: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Expense Policy<span className="req">*</span></label><MasterSelect options={ONB_EXPENSE} placeholder="Select policy" value={s1.expense_policy} onChange={(v) => setS1(p => ({ ...p, expense_policy: v }))} /></Col>
+                  <Col md={4} data-field="expense_policy"><label className="onb-init-label">Expense Policy<span className="req">*</span></label><MasterSelect options={ONB_EXPENSE} placeholder="Select policy" value={s1.expense_policy} invalid={!!s1Errors.expense_policy} onChange={(v) => { setS1(p => ({ ...p, expense_policy: v })); setS1Errors(p => ({ ...p, expense_policy: '' })); }} />{s1Errors.expense_policy && <div className="onb-error-msg">{s1Errors.expense_policy}</div>}</Col>
                 </Row>
 
                 <div
