@@ -350,6 +350,21 @@ export default function PublicOnboarding() {
     return e;
   };
 
+  // Overall completion across the required fields of all three steps. Drives
+  // the footer progress bar so it reflects the data actually entered (not just
+  // which step you're on, which was the old step-number-only calculation).
+  const completionPct = useMemo(() => {
+    const required = [
+      firstName, lastName, gender, dob, nationality, workCountry, mobile,      // Step 1 · Basic Info
+      curAddr1, curCity, curCountry, curState, curPin,                         // Step 2 · Address
+      departmentId, designationId, primaryRoleId, legalEntityId, joiningDate,  // Step 3 · Job Details
+    ];
+    const filled = required.filter(v => String(v ?? '').trim() !== '').length;
+    return Math.round((filled / required.length) * 100);
+  }, [firstName, lastName, gender, dob, nationality, workCountry, mobile,
+      curAddr1, curCity, curCountry, curState, curPin,
+      departmentId, designationId, primaryRoleId, legalEntityId, joiningDate]);
+
   const intOrNull = (s: string) => {
     const n = parseInt(s, 10);
     return Number.isFinite(n) ? n : null;
@@ -791,8 +806,13 @@ export default function PublicOnboarding() {
           z-index: 1;
           /* Hard cap — anything inside that tries to extend past viewport
              width (decorative wave SVG, runaway long text, etc.) gets
-             clipped instead of triggering a horizontal scrollbar. */
-          overflow-x: hidden;
+             clipped instead of triggering a horizontal scrollbar.
+             Use clip (NOT hidden): overflow-x hidden on this 100vh frame
+             forces overflow-y to compute to auto, turning the shell into a
+             SECOND vertical scroll container alongside the page — the
+             duplicate-scrollbar bug. clip clips horizontally without that
+             side-effect, leaving the body as the single scroller. */
+          overflow-x: clip;
         }
         .onb-layout {
           /* Natural height — sizes to its content (sidebar + form).
@@ -810,9 +830,10 @@ export default function PublicOnboarding() {
           z-index: 1;
           background: transparent;
           /* Hard guard — content can never push the layout horizontally
-             off the viewport even if a child has runaway long text. */
+             off the viewport even if a child has runaway long text.
+             clip (not hidden) so it never becomes a vertical scroller. */
           max-width: min(1440px, 100vw);
-          overflow-x: hidden;
+          overflow-x: clip;
         }
         /* Laptop screens (1024–1280px) — narrower sidebar so the form
            area gets more breathing room. */
@@ -1955,11 +1976,11 @@ export default function PublicOnboarding() {
                 <div className="onb-progress-track">
                   <div
                     className="onb-progress-fill"
-                    style={{ width: `${Math.round(((step - 1) / 3) * 100)}%` }}
+                    style={{ width: `${completionPct}%` }}
                   />
                 </div>
                 <div className="onb-progress-label">
-                  {100 - Math.round(((step - 1) / 3) * 100)}% Left
+                  {completionPct}% Completed
                 </div>
               </div>
 

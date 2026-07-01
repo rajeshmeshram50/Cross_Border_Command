@@ -1507,9 +1507,22 @@ export default function HrEmployees() {
     if (!eCurState)           e.state_id        = 'State is required';
     if (!eCurPin.trim())      e.pincode         = 'Pincode is required';
     else if (!/^\d{6}$/.test(eCurPin.trim())) e.pincode = 'Pincode must be exactly 6 digits';
+
+    // Permanent address is mandatory too — but only when it's NOT mirrored
+    // from the current address (the "Same as Current Address" toggle copies
+    // the already-validated current values).
+    if (!eSameAsCurrent) {
+      if (!ePermAddr1.trim())  e.perm_address_line1 = 'Address Line 1 is required';
+      if (!ePermCity.trim())   e.perm_city          = 'City is required';
+      if (!ePermCountry)       e.perm_country_id    = 'Country is required';
+      if (!ePermState)         e.perm_state_id      = 'State is required';
+      if (!ePermPin.trim())    e.perm_pincode       = 'Pincode is required';
+      else if (!/^\d{6}$/.test(ePermPin.trim())) e.perm_pincode = 'Pincode must be exactly 6 digits';
+    }
     return e;
   }, [eWorkCountry, eFirstName, eLastName, eDisplayName, eActualName, eGender, eDob, eNationality,
-      eWorkEmail, eMobile, eCurAddr1, eCurCity, eCurCountry, eCurState, eCurPin, eMiddleName]);
+      eWorkEmail, eMobile, eCurAddr1, eCurCity, eCurCountry, eCurState, eCurPin, eMiddleName,
+      eSameAsCurrent, ePermAddr1, ePermCity, ePermCountry, ePermState, ePermPin]);
 
   const validateStep2 = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
@@ -1521,8 +1534,10 @@ export default function HrEmployees() {
     if (!eLegalEntity)     e.legal_entity_id   = 'Legal entity is required';
     if (!eReportingMgr)    e.reporting_manager_id = 'Reporting manager is required';
     if (!eProbationPolicy) e.probation_policy  = 'Probation policy is required';
-    if (eProbationPolicy === CUSTOM_PROBATION_VALUE && !eCustomProbation.trim()) {
-      e.probation_policy = 'Please describe the custom probation policy';
+    if (eProbationPolicy === CUSTOM_PROBATION_VALUE) {
+      const n = parseInt(eCustomProbation, 10);
+      if (!eCustomProbation.trim()) e.probation_policy = 'Please enter the probation months (1–12)';
+      else if (!Number.isInteger(n) || n < 1 || n > 12) e.probation_policy = 'Probation months must be between 1 and 12';
     }
     if (!eNoticePeriod)    e.notice_period     = 'Notice period is required';
     if (eNoticePeriod === CUSTOM_NOTICE_VALUE && !eCustomNotice.trim()) {
@@ -1905,6 +1920,13 @@ export default function HrEmployees() {
       setEPermState(eCurState);
       setEPermCountry(eCurCountry);
       setEPermPin(eCurPin);
+      // Mirrored from current → drop any pending permanent-address errors.
+      setEErrors(prev => {
+        const next = { ...prev };
+        delete next.perm_address_line1; delete next.perm_city; delete next.perm_country_id;
+        delete next.perm_state_id; delete next.perm_pincode;
+        return next;
+      });
     } else {
       setEPermAddr1('');
       setEPermAddr2('');
@@ -3333,40 +3355,70 @@ export default function HrEmployees() {
                   </div>
                   <Row className="g-3">
                     <Col md={6}>
-                      <label className="emp-label">Address Line 1</label>
-                      <input className="emp-input" type="text" placeholder="House / Flat No., Building, Street" value={ePermAddr1} onChange={e => setEPermAddr1(e.target.value)} disabled={eSameAsCurrent} />
+                      <label className="emp-label">Address Line 1{!eSameAsCurrent && <span className="req">*</span>}</label>
+                      <input
+                        className={`emp-input${eErrors.perm_address_line1 ? ' is-invalid' : ''}`}
+                        type="text"
+                        placeholder="House / Flat No., Building, Street"
+                        value={ePermAddr1}
+                        onChange={e => { setEPermAddr1(e.target.value); clearEErr('perm_address_line1'); }}
+                        disabled={eSameAsCurrent}
+                      />
+                      {eErrors.perm_address_line1 && <small className="emp-err">{eErrors.perm_address_line1}</small>}
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Address Line 2</label>
                       <input className="emp-input" type="text" placeholder="Area, Locality (optional)" value={ePermAddr2} onChange={e => setEPermAddr2(e.target.value)} disabled={eSameAsCurrent} />
                     </Col>
                     <Col md={3}>
-                      <label className="emp-label">City</label>
-                      <input className="emp-input" type="text" placeholder="e.g. Pune" value={ePermCity} onChange={e => setEPermCity(e.target.value)} disabled={eSameAsCurrent} />
+                      <label className="emp-label">City{!eSameAsCurrent && <span className="req">*</span>}</label>
+                      <input
+                        className={`emp-input${eErrors.perm_city ? ' is-invalid' : ''}`}
+                        type="text"
+                        placeholder="e.g. Pune"
+                        value={ePermCity}
+                        onChange={e => { setEPermCity(e.target.value); clearEErr('perm_city'); }}
+                        disabled={eSameAsCurrent}
+                      />
+                      {eErrors.perm_city && <small className="emp-err">{eErrors.perm_city}</small>}
                     </Col>
                     <Col md={3}>
-                      <label className="emp-label">Country</label>
+                      <label className="emp-label">Country{!eSameAsCurrent && <span className="req">*</span>}</label>
                       <MasterSelect
                         value={ePermCountry}
-                        onChange={(v) => { setEPermCountry(v); if (ePermState) setEPermState(''); }}
+                        onChange={(v) => { setEPermCountry(v); if (ePermState) setEPermState(''); clearEErr('perm_country_id'); clearEErr('perm_state_id'); }}
                         placeholder="Select country"
                         options={countryOptions}
                         disabled={eSameAsCurrent}
+                        invalid={!!eErrors.perm_country_id}
                       />
+                      {eErrors.perm_country_id && <small className="emp-err">{eErrors.perm_country_id}</small>}
                     </Col>
                     <Col md={3}>
-                      <label className="emp-label">State</label>
+                      <label className="emp-label">State{!eSameAsCurrent && <span className="req">*</span>}</label>
                       <MasterSelect
                         value={ePermState}
-                        onChange={setEPermState}
+                        onChange={(v) => { setEPermState(v); clearEErr('perm_state_id'); }}
                         placeholder={ePermCountry ? 'Select state' : 'Pick country first'}
                         options={permanentAddressStates}
                         disabled={eSameAsCurrent || !ePermCountry}
+                        invalid={!!eErrors.perm_state_id}
                       />
+                      {eErrors.perm_state_id && <small className="emp-err">{eErrors.perm_state_id}</small>}
                     </Col>
                     <Col md={3}>
-                      <label className="emp-label">Pincode</label>
-                      <input className="emp-input" type="text" inputMode="numeric" maxLength={6} placeholder="6-digit pincode" value={ePermPin} onChange={e => setEPermPin(e.target.value.replace(/\D/g, '').slice(0, 6))} disabled={eSameAsCurrent} />
+                      <label className="emp-label">Pincode{!eSameAsCurrent && <span className="req">*</span>}</label>
+                      <input
+                        className={`emp-input${eErrors.perm_pincode ? ' is-invalid' : ''}`}
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        placeholder="6-digit pincode"
+                        value={ePermPin}
+                        onChange={e => { setEPermPin(e.target.value.replace(/\D/g, '').slice(0, 6)); clearEErr('perm_pincode'); }}
+                        disabled={eSameAsCurrent}
+                      />
+                      {eErrors.perm_pincode && <small className="emp-err">{eErrors.perm_pincode}</small>}
                     </Col>
                   </Row>
                 </div>
@@ -3471,15 +3523,25 @@ export default function HrEmployees() {
                   </div>
                   <Row className="g-3">
                     <Col md={4}>
-                      <label className="emp-label">Probation Policy<span className="req">*</span></label>
+                      <label className="emp-label">Probation Policy (Month)<span className="req">*</span></label>
                       <MasterSelect value={eProbationPolicy} onChange={(v) => { setEProbationPolicy(v); clearEErr('probation_policy'); }} options={PROBATION_POLICY_OPTIONS} placeholder="Select probation policy" invalid={!!eErrors.probation_policy} />
                       {eProbationPolicy === CUSTOM_PROBATION_VALUE && (
                         <input
                           className={`emp-input mt-2${eErrors.probation_policy ? ' is-invalid' : ''}`}
-                          type="text"
-                          placeholder="e.g. 4-month probation, monthly review"
+                          type="number"
+                          min={1}
+                          max={12}
+                          step={1}
+                          inputMode="numeric"
+                          placeholder="Enter months (1–12)"
                           value={eCustomProbation}
-                          onChange={e => { setECustomProbation(e.target.value); clearEErr('probation_policy'); }}
+                          onChange={e => {
+                            // Integer 1–12 only.
+                            const digits = e.target.value.replace(/\D/g, '');
+                            const v = digits === '' ? '' : String(Math.max(1, Math.min(12, parseInt(digits, 10))));
+                            setECustomProbation(v);
+                            clearEErr('probation_policy');
+                          }}
                           autoFocus
                         />
                       )}

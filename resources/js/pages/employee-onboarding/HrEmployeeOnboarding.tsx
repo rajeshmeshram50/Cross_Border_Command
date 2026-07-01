@@ -4816,7 +4816,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 
                 <p className="onb-init-subgroup">Employment Terms</p>
                 <Row className="g-3">
-                  <Col md={3}><label className="onb-init-label">Probation Policy<span className="req">*</span></label><MasterSelect options={ONB_PROBATION} value={s1.probation_policy} placeholder="Select probation policy" onChange={(v) => setS1(p => ({ ...p, probation_policy: v }))} /></Col>
+                  <Col md={3}><label className="onb-init-label">Probation Policy (Month)<span className="req">*</span></label><MasterSelect options={ONB_PROBATION} value={s1.probation_policy} placeholder="Select months (1–12)" onChange={(v) => setS1(p => ({ ...p, probation_policy: v }))} /></Col>
                   <Col md={3}><label className="onb-init-label">Probation End Date <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly tabIndex={-1} value={onbProbation.endDisplay} placeholder={!s1.date_of_joining ? 'Set joining date' : (onbProbation.months > 0 ? '' : 'No probation')} /></Col>
                   <Col md={3}><label className="onb-init-label">Notice Period<span className="req">*</span></label><MasterSelect options={ONB_NOTICE} value={s1.notice_period} placeholder="Select notice period" onChange={(v) => setS1(p => ({ ...p, notice_period: v }))} /></Col>
                   <Col md={3}><label className="onb-init-label">Work Mode <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly value="On-site" /></Col>
