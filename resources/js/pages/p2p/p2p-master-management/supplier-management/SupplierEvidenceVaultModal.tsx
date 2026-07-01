@@ -872,11 +872,9 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           ? 'All Company Due Diligence, Owner KYC & Trade Licenses documents in one list'
           : 'All Trade Documents & Agreements in one list';
         const docs: VaultDoc[] = isStd ? stdDocs : c2cDocs;
-        // 5 rows per page with a compact prev/next pager.
-        const OV_PER_PAGE = 5;
-        const ovTotalPages = Math.max(1, Math.ceil(docs.length / OV_PER_PAGE));
-        const ovPageSafe = Math.min(overviewPage, ovTotalPages);
-        const pageDocs = docs.slice((ovPageSafe - 1) * OV_PER_PAGE, (ovPageSafe - 1) * OV_PER_PAGE + OV_PER_PAGE);
+        // Full list — the body scrolls after ~5 rows (see .cev-ov-body
+        // min/max-height) instead of paginating.
+        void overviewPage;
         return (
           <div className="cev-ov-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) setOverview(null); }}>
             <div className="cev-ov-card">
@@ -894,8 +892,8 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                   <tbody>
                     {docs.length === 0 ? (
                       <tr><td colSpan={4} className="cev-ov-empty">No documents available.</td></tr>
-                    ) : pageDocs.map((d, i) => {
-                      const absIdx = (ovPageSafe - 1) * OV_PER_PAGE + i;
+                    ) : docs.map((d, i) => {
+                      const absIdx = i;
                       const raw = d.attachment_url;
                       const url = raw ? resolveFileUrl(raw) : null;
                       const fname = d.attachment || `${d.name}.pdf`;
@@ -932,23 +930,11 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                   </tbody>
                 </table>
               </div>
-              {/* Pager — 5 per page. */}
-              {docs.length > OV_PER_PAGE && (
+              {docs.length > 0 && (
                 <div className="cev-ov-pager">
                   <span className="cev-ov-pager-info">
-                    Showing <strong>{(ovPageSafe - 1) * OV_PER_PAGE + 1}–{Math.min(ovPageSafe * OV_PER_PAGE, docs.length)}</strong> of <strong>{docs.length}</strong>
+                    Showing all <strong>{docs.length}</strong> document{docs.length === 1 ? '' : 's'}
                   </span>
-                  <div className="cev-ov-pager-btns">
-                    <button type="button" className="cev-ov-pager-nav" disabled={ovPageSafe === 1} onClick={() => setOverviewPage((p) => Math.max(1, p - 1))} aria-label="Previous">
-                      <i className="ri-arrow-left-s-line" aria-hidden />
-                    </button>
-                    {[ovPageSafe, ovPageSafe + 1].filter((p) => p >= 1 && p <= ovTotalPages).map((p) => (
-                      <button type="button" key={p} className={`cev-ov-pager-num ${p === ovPageSafe ? 'is-active' : ''}`} onClick={() => setOverviewPage(p)}>{p}</button>
-                    ))}
-                    <button type="button" className="cev-ov-pager-nav" disabled={ovPageSafe === ovTotalPages} onClick={() => setOverviewPage((p) => Math.min(ovTotalPages, p + 1))} aria-label="Next">
-                      <i className="ri-arrow-right-s-line" aria-hidden />
-                    </button>
-                  </div>
                 </div>
               )}
             </div>

@@ -134,6 +134,9 @@ class SegmentDocUploadController extends Controller
             'doc_code'    => ['required', 'string', 'max:32'],
             'doc_name'    => ['required', 'string', 'max:255'],
             'requirement' => ['nullable', Rule::in(['M', 'O'])],
+            // Optional expiry date from the upload popup's Yes/No toggle.
+            // Absent / null ⇒ the document carries no expiry.
+            'expiry_date' => ['nullable', 'date'],
             // 2 MB cap + restricted to PDF / JPG / JPEG / PNG only — these all
             // preview in-browser via the row's View action. Word (doc/docx)
             // and spreadsheets are NOT accepted: browsers download Office
@@ -141,6 +144,7 @@ class SegmentDocUploadController extends Controller
             'attachment'  => ['required', 'file', 'max:2048', 'mimes:pdf,jpg,jpeg,png'],
         ]);
         $requirement = $data['requirement'] ?? 'O';
+        $expiryDate  = $data['expiry_date'] ?? null;
 
         // Re-upload semantics: if a row already exists for the same
         // (entity, category, doc_code) tuple, drop its previous file
@@ -165,6 +169,7 @@ class SegmentDocUploadController extends Controller
                 'requirement'      => $requirement,
                 'attachment_path'  => $path,
                 'attachment_name'  => $name,
+                'expiry_date'      => $expiryDate,
                 'uploaded_by'      => optional($request->user())->id,
             ]);
             return response()->json(['data' => $this->shape($existing->fresh())], 200);
@@ -180,6 +185,7 @@ class SegmentDocUploadController extends Controller
             'requirement'     => $requirement,
             'attachment_path' => $path,
             'attachment_name' => $name,
+            'expiry_date'     => $expiryDate,
             'uploaded_by'     => optional($request->user())->id,
         ]);
         return response()->json(['data' => $this->shape($row)], 201);
@@ -334,7 +340,10 @@ class SegmentDocUploadController extends Controller
                     'reference'       => $master['code'] ?? $code,
                     'authority'       => $master['authority'] ?? null,
                     'issue_date'      => null,
-                    'expiry'          => $master['expiry'] ?? '—',
+                    // Prefer the expiry the user picked at upload time; fall
+                    // back to the segment-rule master's generic validity text.
+                    'expiry'          => optional($upload?->expiry_date)->format('d/m/Y')
+                                          ?? ($master['expiry'] ?? '—'),
                     'attachment'      => $upload?->attachment_name,
                     'attachment_url'  => $upload?->attachment_url,
                     'status'          => $upload ? 'Verified' : 'Pending',
@@ -1332,6 +1341,7 @@ class SegmentDocUploadController extends Controller
             'attachment_path' => $row->attachment_path,
             'attachment_url'  => $row->attachment_url,
             'attachment_name' => $row->attachment_name,
+            'expiry_date'     => optional($row->expiry_date)->format('Y-m-d'),
             'uploaded_by'     => $row->uploaded_by,
             'created_at'      => optional($row->created_at)->toIso8601String(),
             'updated_at'      => optional($row->updated_at)->toIso8601String(),

@@ -149,6 +149,19 @@ export default function Vendors() {
   const CONTACTS_PER_PAGE = 5;
   const [contactsPage, setContactsPage] = useState(1);
   useEffect(() => { setContactsPage(1); }, [contactsTarget]);
+
+  /* Scroll lock — while ANY overlay (Segments / Contact Persons) is open, freeze
+     the page behind it. Lock BOTH <html> and <body>; a body-only lock still lets
+     the html element scroll on some layouts. */
+  useEffect(() => {
+    const anyOpen = segPop !== null || contactsTarget !== null;
+    if (!anyOpen) return;
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
+  }, [segPop, contactsTarget]);
   const [loading, setLoading] = useState(true);
   /* "What We Are Doing Here" stepper — collapsible, open by default to
      mirror the Figma. Purely presentational. */
@@ -633,13 +646,27 @@ useEffect(() => {
       {/* Segment "+N" popover — small floating card listing every segment. */}
       {segPop && (
         <div className="sup-fig">
-          <div className="sl-seg-pop-ov" onClick={() => setSegPop(null)} />
-          <div className="sl-seg-pop" style={{ left: segPop.x, top: segPop.y }} role="dialog">
-            <div className="sl-seg-pop-head">Segments ({segPop.segments.length})</div>
-            <div className="sl-seg-pop-body">
-              {segPop.segments.map((s, idx) => (
-                <span key={`${s}-${idx}`} className="sl-seg-chip">{s}</span>
-              ))}
+          <div className="sc-ov" onClick={(e) => { if (e.target === e.currentTarget) setSegPop(null); }}>
+            <div className="sc-pop seg-modal" role="dialog" aria-modal="true">
+              <div className="sc-head">
+                <div className="sc-head-ico">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></svg>
+                </div>
+                <div className="min-w-0">
+                  <div className="sc-title">Segments</div>
+                  <div className="sc-sub">{segPop.segments.length} segment{segPop.segments.length !== 1 ? 's' : ''}</div>
+                </div>
+                <button type="button" className="sc-close" onClick={() => setSegPop(null)} aria-label="Close">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                </button>
+              </div>
+              <div className="sc-body">
+                <div className="seg-modal-grid">
+                  {segPop.segments.map((s, idx) => (
+                    <span key={`${s}-${idx}`} className="seg-modal-chip" title={s}>{s}</span>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>

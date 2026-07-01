@@ -443,6 +443,10 @@ export default function AddVendorModal(props: {
      their code only after Step 1 saves, so it stays blank until then. */
   const [vendorCode, setVendorCode] = useState<string>('');
   const [saving,   setSaving]   = useState(false);
+  /* True while advancing to the next tab/step (Save & Next). Drives a
+     page-level shimmer so it's clear the next step is loading — the button
+     spinner alone wasn't obvious enough. */
+  const [advancing, setAdvancing] = useState(false);
   const [loadingEdit, setLoadingEdit] = useState(isEdit);
   /* True until the bundled master fetch (/vendors/master-bundle) resolves.
    * While true, the modal body shows a shimmer skeleton so the user sees
@@ -492,7 +496,7 @@ export default function AddVendorModal(props: {
    * `${kycTab}::${doc.code}`. Value: File + blob URL. Reset on modal
    * close — held at this level (not inside SupplierSegmentRefTable)
    * so switching sub-tabs doesn't drop uploads. */
-  type SegRefUpload = { file: File | null; url: string; name: string };
+  type SegRefUpload = { file: File | null; url: string; name: string; expiry?: string };
   const [segmentRefUploads, setSegmentRefUploads] = useState<Record<string, SegRefUpload>>({});
 
   /* Stash for the segment_uploads array that now arrives bundled with
@@ -511,7 +515,7 @@ export default function AddVendorModal(props: {
     owner:   'kyc',
     license: 'tl',
   };
-  const persistSegmentRefUpload = async (refKey: string, file: File, docName: string) => {
+  const persistSegmentRefUpload = async (refKey: string, file: File, docName: string, expiryDate?: string) => {
     const ownerId = vendorId || initialVendorId || null;
     if (!ownerId) {
       // Vendor row needs to exist before /segment-uploads/supplier/{id}
@@ -526,6 +530,7 @@ export default function AddVendorModal(props: {
     fd.append('category', category);
     fd.append('doc_code', doc_code);
     fd.append('doc_name', docName || doc_code);
+    if (expiryDate) fd.append('expiry_date', expiryDate);
     fd.append('attachment', file);
     try {
       const { data } = await api.post(`/segment-uploads/supplier/${ownerId}`, fd, {
@@ -540,7 +545,7 @@ export default function AddVendorModal(props: {
           }
           return {
             ...prev,
-            [refKey]: { file: null, url: row.attachment_url, name: row.attachment_name || file.name },
+            [refKey]: { file: null, url: row.attachment_url, name: row.attachment_name || file.name, expiry: row.expiry_date || expiryDate || undefined },
           };
         });
       }
@@ -653,6 +658,8 @@ export default function AddVendorModal(props: {
   const [ownerPopupOpen, setOwnerPopupOpen] = useState(false);
   const [licPopupOpen,   setLicPopupOpen]   = useState(false);
   const [bankPopupOpen,  setBankPopupOpen]  = useState(false);
+  /* Id of the bank row being edited (null = the popup is in Add mode). */
+  const [editingBankId,  setEditingBankId]  = useState<string | null>(null);
   const [gstPopupOpen,   setGstPopupOpen]   = useState(false);
 
   const [ddDraft,    setDdDraft]    = useState<DdDraft>(EMPTY_DD_DRAFT);
@@ -1039,6 +1046,7 @@ export default function AddVendorModal(props: {
         file: null,
         url:  x.attachment_url || '',
         name: x.attachment_name || '',
+        expiry: x.expiry_date || undefined,
       };
     }
     if (Object.keys(hydrated).length > 0) setSegmentRefUploads(hydrated);
@@ -1667,35 +1675,44 @@ export default function AddVendorModal(props: {
   };
 
   const goNext = async () => {
-    if (saving) return;
-    if (step === 1 && idTab === 'identification') {
-      const okId = await saveIdentity();
-      const okAddr = validateAddress();
-      if (okId && okAddr) setIdTab('address');
-      else if (okId && !okAddr) toast.error('Missing required fields', 'Please fix the highlighted address fields');
-    } else if (step === 1 && idTab === 'address') {
-      const ok = await saveContacts();
-      if (ok) setStep(2);
-    } else if (step === 2) {
-      // Bank Details is MANDATORY — at least one bank account must be on record
-      // before leaving the Bank Details sub-tab.
-      if (kycTab === 'bank' && bankRows.length === 0) {
-        toast.error('Bank Details required', 'Add at least one bank account before continuing.');
-        return;
+    if (saving || advancing) return;
+    // Page-level shimmer while the step's save is in flight + we advance, so
+    // the transition to the next tab is obvious (not just the button spinner).
+    // Synchronous validation-only early-returns below batch true→false, so they
+    // never flash the shimmer — only the awaited saves show it.
+    setAdvancing(true);
+    try {
+      if (step === 1 && idTab === 'identification') {
+        const okId = await saveIdentity();
+        const okAddr = validateAddress();
+        if (okId && okAddr) setIdTab('address');
+        else if (okId && !okAddr) toast.error('Missing required fields', 'Please fix the highlighted address fields');
+      } else if (step === 1 && idTab === 'address') {
+        const ok = await saveContacts();
+        if (ok) setStep(2);
+      } else if (step === 2) {
+        // Bank Details is MANDATORY — at least one bank account must be on record
+        // before leaving the Bank Details sub-tab.
+        if (kycTab === 'bank' && bankRows.length === 0) {
+          toast.error('Bank Details required', 'Add at least one bank account before continuing.');
+          return;
+        }
+        // Step 2 has 5 sub-tabs (Company DD → Owner KYC → Trade License →
+        // Bank → GST). Save & Next persists the full KYC payload AND
+        // walks one sub-tab forward. Only on the last sub-tab (gst) does
+        // the wizard advance to Step 3.
+        const ok = await saveKyc();
+        if (!ok) return;
+        const idx = KYC_TAB_ORDER.indexOf(kycTab);
+        if (idx >= 0 && idx < KYC_TAB_ORDER.length - 1) {
+          setKycTab(KYC_TAB_ORDER[idx + 1]);
+        }
+        // Last KYC sub-tab is the final step — the Save/Update button
+        // (finishSupplier) closes the wizard; there is no Product step to
+        // advance to here.
       }
-      // Step 2 has 5 sub-tabs (Company DD → Owner KYC → Trade License →
-      // Bank → GST). Save & Next persists the full KYC payload AND
-      // walks one sub-tab forward. Only on the last sub-tab (gst) does
-      // the wizard advance to Step 3.
-      const ok = await saveKyc();
-      if (!ok) return;
-      const idx = KYC_TAB_ORDER.indexOf(kycTab);
-      if (idx >= 0 && idx < KYC_TAB_ORDER.length - 1) {
-        setKycTab(KYC_TAB_ORDER[idx + 1]);
-      }
-      // Last KYC sub-tab is the final step — the Save/Update button
-      // (finishSupplier) closes the wizard; there is no Product step to
-      // advance to here.
+    } finally {
+      setAdvancing(false);
     }
   };
 
@@ -1824,27 +1841,43 @@ export default function AddVendorModal(props: {
   type ApiBankRow = { id: number; bank_name?: string | null; branch_name?: string | null; account_number?: string | null; ifsc?: string | null; branch_address?: string | null; cheque_path?: string | null; cheque_url?: string | null };
   type ApiGstRow = { id: number; gst_number?: string | null; status?: string | null; scrutiny_date?: string | null; last_filing_date?: string | null; prev_non_gst_2a_invoice?: string | null; red_flags?: string | null };
 
-  const openBankPopup = () => { setBankDraft(EMPTY_BANK_DRAFT); setBankPopupOpen(true); };
+  const openBankPopup = () => { setEditingBankId(null); setBankDraft(EMPTY_BANK_DRAFT); setBankPopupOpen(true); };
+  /* Load a saved bank row back into the popup for editing. The cancelled
+     cheque is carried as existingPath/Url so the user can keep it without
+     re-uploading (the update endpoint treats cheque as optional). */
+  const openBankEdit = (row: BankRow) => {
+    setEditingBankId(row.id);
+    setBankDraft({
+      bankName: row.bankName, branchName: row.branchName,
+      accountNumber: row.accountNumber, ifsc: row.ifsc,
+      branchAddress: row.branchAddress,
+      chequeFile: null, chequeFileName: row.chequeFileName,
+      existingPath: row.existingPath, existingUrl: row.existingUrl,
+    });
+    setBankPopupOpen(true);
+  };
   const saveBankDraft = async () => {
     if (!bankDraft.bankName.trim())      { toast.error('Missing field', 'Bank Name is required'); return; }
     if (!bankDraft.branchName.trim())    { toast.error('Missing field', 'Branch is required'); return; }
     if (!bankDraft.accountNumber.trim()) { toast.error('Missing field', 'Account Number is required'); return; }
     if (!bankDraft.ifsc.trim())          { toast.error('Missing field', 'IFSC Code is required'); return; }
-    if (!bankDraft.chequeFile)           { toast.error('Missing field', 'Cancelled Cheque is required'); return; }
+    // On edit the previously-saved cheque stands in for a fresh upload.
+    if (!bankDraft.chequeFile && !bankDraft.existingPath) { toast.error('Missing field', 'Cancelled Cheque is required'); return; }
     const accErr = validateAccountNumber(bankDraft.accountNumber); if (accErr) { toast.error('Invalid Account Number', accErr); return; }
     const ifscErr = validateIfsc(bankDraft.ifsc); if (ifscErr) { toast.error('Invalid IFSC', ifscErr); return; }
     // No-duplicate guard — the same account number can't be added twice for this
-    // supplier (the account number uniquely identifies a bank account).
+    // supplier (the account number uniquely identifies a bank account). The row
+    // being edited is excluded so re-saving it unchanged doesn't trip the guard.
     const accNorm  = bankDraft.accountNumber.trim();
     const ifscNorm = bankDraft.ifsc.trim().toUpperCase();
-    if (bankRows.some(b => b.accountNumber.trim() === accNorm)) {
+    if (bankRows.some(b => b.id !== editingBankId && b.accountNumber.trim() === accNorm)) {
       toast.error('Duplicate Account Number', `Account number ${accNorm} is already added for this supplier.`);
       return;
     }
     if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return; }
 
     // Persist immediately via the bank-accounts CRUD endpoint (multipart for
-    // the cancelled-cheque upload).
+    // the cancelled-cheque upload). Editing PUTs to the row; adding POSTs.
     const fd = new FormData();
     fd.append('bank_name', bankDraft.bankName);
     fd.append('branch_name', bankDraft.branchName);
@@ -1855,18 +1888,37 @@ export default function AddVendorModal(props: {
 
     setSaving(true);
     try {
-      const { data } = await api.post<{ data: ApiBankRow }>(`/vendors/${vendorId}/bank-accounts`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      const b = data.data;
-      setBankRows(prev => [...prev, {
-        id: String(b.id),
-        bankName: b.bank_name ?? '', branchName: b.branch_name ?? '',
-        accountNumber: b.account_number ?? '', ifsc: b.ifsc ?? '',
-        branchAddress: b.branch_address ?? '',
-        chequeFile: null, chequeFileName: lastName(b.cheque_path),
-        existingPath: b.cheque_path ?? undefined, existingUrl: b.cheque_url ?? undefined,
-      }]);
-      setBankPopupOpen(false);
-      toast.success('Bank saved', `${b.bank_name} (${b.branch_name})`);
+      if (editingBankId) {
+        // Laravel doesn't parse multipart bodies on PUT — POST with a method
+        // override so the file part still arrives.
+        fd.append('_method', 'PUT');
+        const { data } = await api.post<{ data: ApiBankRow }>(`/vendors/${vendorId}/bank-accounts/${editingBankId}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        const b = data.data;
+        setBankRows(prev => prev.map(r => r.id === editingBankId ? {
+          id: String(b.id),
+          bankName: b.bank_name ?? '', branchName: b.branch_name ?? '',
+          accountNumber: b.account_number ?? '', ifsc: b.ifsc ?? '',
+          branchAddress: b.branch_address ?? '',
+          chequeFile: null, chequeFileName: lastName(b.cheque_path),
+          existingPath: b.cheque_path ?? undefined, existingUrl: b.cheque_url ?? undefined,
+        } : r));
+        setBankPopupOpen(false);
+        setEditingBankId(null);
+        toast.success('Bank updated', `${b.bank_name} (${b.branch_name})`);
+      } else {
+        const { data } = await api.post<{ data: ApiBankRow }>(`/vendors/${vendorId}/bank-accounts`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        const b = data.data;
+        setBankRows(prev => [...prev, {
+          id: String(b.id),
+          bankName: b.bank_name ?? '', branchName: b.branch_name ?? '',
+          accountNumber: b.account_number ?? '', ifsc: b.ifsc ?? '',
+          branchAddress: b.branch_address ?? '',
+          chequeFile: null, chequeFileName: lastName(b.cheque_path),
+          existingPath: b.cheque_path ?? undefined, existingUrl: b.cheque_url ?? undefined,
+        }]);
+        setBankPopupOpen(false);
+        toast.success('Bank saved', `${b.bank_name} (${b.branch_name})`);
+      }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save bank';
       toast.error('Save failed', msg);
@@ -1898,7 +1950,14 @@ export default function AddVendorModal(props: {
     }
   };
 
-  const openGstPopup = () => { setGstDraft(EMPTY_GST_DRAFT); setGstPopupOpen(true); };
+  const openGstPopup = () => {
+    // A supplier's GSTIN stays the same across scrutiny records (only the
+    // filing period changes), so pre-fill the GST number from the last
+    // entry to save re-typing. Still fully editable in case it differs.
+    const prevGst = gstRows.length ? gstRows[gstRows.length - 1].gstNumber : '';
+    setGstDraft({ ...EMPTY_GST_DRAFT, gstNumber: prevGst });
+    setGstPopupOpen(true);
+  };
   const saveGstDraft = async () => {
     if (!gstDraft.gstNumber.trim())     { toast.error('Missing field', 'GST Number is required'); return; }
     if (!gstDraft.lastFilingDate)       { toast.error('Missing field', 'GST Last Filing Date is required'); return; }
@@ -2537,7 +2596,7 @@ export default function AddVendorModal(props: {
 
         {/* ─── Body ─── */}
         <div className="avm-body">
-          {(loadingEdit || mastersLoading) ? (
+          {(loadingEdit || mastersLoading || advancing) ? (
             /* Shimmer skeleton — replaces the form entirely while
                /vendors/master-bundle (or the edit-mode prefill) is in
                flight. Previously this was an overlay sitting ON TOP of
@@ -2718,7 +2777,7 @@ export default function AddVendorModal(props: {
                     Identification is valid. Mirrors Save & Next: validates +
                     persists (so the contact step has a vendorId to attach to)
                     and only switches when clean — else inline errors show. */}
-                <button className={`avm-tab ${idTab === 'address' ? 'on' : ''}`} disabled={saving} onClick={async () => { if (saving || idTab === 'address') return; const okId = await saveIdentity(); const okAddr = validateAddress(); if (okId && okAddr) setIdTab('address'); else if (okId && !okAddr) toast.error('Missing required fields', 'Please fix the highlighted address fields'); }}>Contact Person Details</button>
+                <button className={`avm-tab ${idTab === 'address' ? 'on' : ''}`} disabled={saving || advancing} onClick={async () => { if (saving || advancing || idTab === 'address') return; setAdvancing(true); try { const okId = await saveIdentity(); const okAddr = validateAddress(); if (okId && okAddr) setIdTab('address'); else if (okId && !okAddr) toast.error('Missing required fields', 'Please fix the highlighted address fields'); } finally { setAdvancing(false); } }}>Contact Person Details</button>
               </div>
 
               {idTab === 'identification' && (
@@ -3044,13 +3103,18 @@ export default function AddVendorModal(props: {
                                             </button>
                                           </Tooltip>
                                           <Tooltip label="Primary contact can’t be deleted">
-                                            {/* Wrapper span — a disabled button doesn't fire hover, so
-                                                the tooltip anchors to the span instead. */}
-                                            <span style={{ display: 'inline-flex' }}>
-                                              <button type="button" className="avm-row-btn avm-row-btn-del" disabled aria-label="Delete (disabled)" style={{ opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' }}>
-                                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
-                                              </button>
-                                            </span>
+                                            {/* Kept clickable (not disabled) so a click can surface the
+                                                toast — a truly-disabled button fires nothing. Styled to
+                                                read as non-actionable. */}
+                                            <button
+                                              type="button"
+                                              className="avm-row-btn avm-row-btn-del"
+                                              aria-label="Delete (not allowed)"
+                                              style={{ opacity: 0.4, cursor: 'not-allowed' }}
+                                              onClick={() => toast.info('Primary contact locked', 'The primary contact can’t be deleted here.')}
+                                            >
+                                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                                            </button>
                                           </Tooltip>
                                         </>
                                       ) : (
@@ -3166,6 +3230,7 @@ export default function AddVendorModal(props: {
                 <BankTable
                   rows={bankRows}
                   onRemove={removeBankRow}
+                  onEdit={openBankEdit}
                   onClearFile={(id) => setBankRows(prev => prev.map(r => r.id === id ? { ...r, chequeFile: null, chequeFileName: '', existingPath: undefined } : r))}
                 />
               )}
@@ -3266,9 +3331,10 @@ export default function AddVendorModal(props: {
         <BankAddPopup
           draft={bankDraft}
           setDraft={setBankDraft}
-          onClose={() => setBankPopupOpen(false)}
+          onClose={() => { setBankPopupOpen(false); setEditingBankId(null); }}
           onSave={saveBankDraft}
-          existingAccounts={bankRows.map(b => b.accountNumber.trim())}
+          isEdit={editingBankId !== null}
+          existingAccounts={bankRows.filter(b => b.id !== editingBankId).map(b => b.accountNumber.trim())}
         />
       )}
       {gstPopupOpen && (
@@ -4106,33 +4172,50 @@ function EmptyTable(props: { label: string }) {
  * row's Actions cell starts as a single Upload button; on file pick
  * it flips to View / Download / Delete via a blob URL held in the
  * parent's `uploads` map. */
+/* Format an ISO (YYYY-MM-DD) upload expiry into the compact display the
+ * reference table's EXPIRY pill shows once a document is uploaded. */
+function fmtSegRefExpiry(iso?: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+type SegRefRow = { code: string; name: string; authority?: string | null; expiry?: string | null; requirement: 'M' | 'O' };
+
 function SupplierSegmentRefTable(props: {
   title: string;
   tabKey: string;
-  rows: { code: string; name: string; authority?: string | null; expiry?: string | null; requirement: 'M' | 'O' }[];
-  uploads: Record<string, { file: File | null; url: string; name: string }>;
-  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
-  persistUpload: (refKey: string, file: File, docName: string) => Promise<void> | void;
+  rows: SegRefRow[];
+  uploads: Record<string, { file: File | null; url: string; name: string; expiry?: string }>;
+  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string; expiry?: string }>>>;
+  persistUpload: (refKey: string, file: File, docName: string, expiryDate?: string) => Promise<void> | void;
 }) {
   const { title, tabKey, rows, uploads, setUploads, persistUpload } = props;
   const toast = useToast();
+  /* Which reference row's upload popup is open (null = closed). The popup
+   * collects the file + optional expiry before the row flips to Uploaded. */
+  const [popupRow, setPopupRow] = useState<SegRefRow | null>(null);
   /* Show the blob URL immediately for instant feedback, then fire the
    * server upload — the persist callback swaps the blob URL for a
    * permanent attachment_url once the row lands in segment_doc_uploads. */
-  const onPick = (refKey: string, docName: string, f: File | undefined) => {
-    if (!f) return;
+  const onSubmit = async (row: SegRefRow, f: File, expiryDate?: string): Promise<boolean> => {
+    const refKey = `${tabKey}::${row.code}`;
     /* Reject unsupported / oversized files BEFORE the optimistic UI shows
        the row as uploaded (QA: Company DD / Trade Document accepted .exe). */
     const err = validateVendorUpload(f);
-    if (err) { toast.error(err.title, err.body); return; }
+    if (err) { toast.error(err.title, err.body); return false; }
     setUploads(prev => {
       const existing = prev[refKey];
       if (existing?.url && existing.url.startsWith('blob:')) {
         try { URL.revokeObjectURL(existing.url); } catch {}
       }
-      return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name } };
+      return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name, expiry: expiryDate || undefined } };
     });
-    void persistUpload(refKey, f, docName);
+    // Awaited (not fire-and-forget) so the popup's Save button spinner tracks
+    // the real upload before the popup closes.
+    await persistUpload(refKey, f, row.name, expiryDate);
+    return true;
   };
   const [q, setQ] = useState('');
   const lo = q.trim().toLowerCase();
@@ -4148,30 +4231,39 @@ function SupplierSegmentRefTable(props: {
         {q && <button type="button" className="avm-kyc-search-clear" onClick={() => setQ('')} aria-label="Clear"><i className="ri-close-line" /></button>}
       </div>
       <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
-        <table className="table align-middle mb-0 avm-kyc-table">
+        <table className="table align-middle mb-0 avm-kyc-table avm-segref-table">
+          {/* Fixed column widths (table-layout: fixed, see .avm-segref-table)
+              so every header sits exactly over its data — an auto layout
+              stretched the columns unevenly and made them look misaligned.
+              The Document Name column has no width, so it absorbs the slack. */}
           <thead className="table-light">
             <tr>
-              <th>SR NO</th>
-              <th>AUTO CODE</th>
+              <th style={{ width: 64 }}>SR NO</th>
+              <th style={{ width: 130 }}>AUTO CODE</th>
               <th>{title}</th>
-              <th>ISSUING AUTHORITY</th>
-              <th>EXPIRY</th>
-              <th>STATUS</th>
-              <th>ACTIONS</th>
+              <th style={{ width: 180 }}>ISSUING AUTHORITY</th>
+              <th style={{ width: 150 }}>EXPIRY</th>
+              <th style={{ width: 150 }}>REQUIREMENT</th>
+              <th style={{ width: 140 }}>ACTIONS</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((r, i) => {
               const refKey = `${tabKey}::${r.code}`;
               const uploaded = uploads[refKey];
-              const isDate = !!(r.expiry && /\d/.test(r.expiry));
+              /* Once uploaded, the EXPIRY pill shows the date the user
+                 picked in the popup (if any); otherwise it falls back to
+                 the segment-rule master's generic validity text. */
+              const uploadedExpiry = uploaded?.expiry ? fmtSegRefExpiry(uploaded.expiry) : '';
+              const expiryText = uploadedExpiry || r.expiry || 'N/A';
+              const isDate = !!uploadedExpiry || !!(r.expiry && /\d/.test(r.expiry));
               return (
                 <tr key={r.code}>
                   <td><span className="avm-sr-badge">{String(i + 1).padStart(2, '0')}</span></td>
                   <td><span className="avm-auto-code">{r.code}</span></td>
                   <td><strong>{r.name}</strong></td>
                   <td>{r.authority || '—'}</td>
-                  <td><span className={`avm-exp-pill ${isDate ? 'is-date' : 'is-na'}`}>{r.expiry || 'N/A'}</span></td>
+                  <td><span className={`avm-exp-pill ${isDate ? 'is-date' : 'is-na'}`}>{expiryText}</span></td>
                   <td>
                     <div className="avm-req-pair">
                       {r.requirement === 'M'
@@ -4185,16 +4277,14 @@ function SupplierSegmentRefTable(props: {
                         <>
                           <a href={uploaded.url} target="_blank" rel="noreferrer" className="avm-kyc-act view" data-tooltip={`View ${uploaded.name}`} aria-label="View"><i className="ri-eye-line" /></a>
                           <a href={uploaded.url} download={uploaded.name} className="avm-kyc-act down" data-tooltip={`Download ${uploaded.name}`} aria-label="Download"><i className="ri-download-2-line" /></a>
-                          <label className="avm-kyc-act reup" data-tooltip="Re-upload" aria-label="Re-upload">
+                          <button type="button" className="avm-kyc-act reup" data-tooltip="Re-upload" aria-label="Re-upload" onClick={() => setPopupRow(r)}>
                             <i className="ri-refresh-line" />
-                            <input type="file" hidden accept={FILE_ACCEPT} onChange={e => onPick(refKey, r.name, e.target.files?.[0])} />
-                          </label>
+                          </button>
                         </>
                       ) : (
-                        <label className="avm-kyc-act up" data-tooltip="Upload" aria-label="Upload">
+                        <button type="button" className="avm-kyc-act up" data-tooltip="Upload" aria-label="Upload" onClick={() => setPopupRow(r)}>
                           <i className="ri-upload-2-line" />
-                          <input type="file" hidden accept={FILE_ACCEPT} onChange={e => onPick(refKey, r.name, e.target.files?.[0])} />
-                        </label>
+                        </button>
                       )}
                     </div>
                   </td>
@@ -4207,7 +4297,85 @@ function SupplierSegmentRefTable(props: {
           </tbody>
         </table>
       </div>
+      {popupRow && (
+        <SegmentRefUploadPopup
+          title={title}
+          row={popupRow}
+          existing={uploads[`${tabKey}::${popupRow.code}`]}
+          onClose={() => setPopupRow(null)}
+          onSubmit={async (f, expiryDate) => { const ok = await onSubmit(popupRow, f, expiryDate); if (ok) setPopupRow(null); }}
+        />
+      )}
     </>
+  );
+}
+
+/* Upload popup for a segment-rule reference row (Company DD / Owner KYC /
+ * Trade License). The document's identity — Auto Code, Doc Name, Issuing
+ * Authority — is fixed by the segment rule, so those show read-only. The
+ * user only chooses whether the document has an expiry (Yes → date picker,
+ * No → N/A) and picks the file. Save fires the optimistic upload; the row
+ * then flips to "Uploaded" in the list. */
+function SegmentRefUploadPopup(props: {
+  title: string;
+  row: SegRefRow;
+  existing?: { file: File | null; url: string; name: string; expiry?: string };
+  onClose: () => void;
+  onSubmit: (file: File, expiryDate?: string) => void | Promise<void>;
+}) {
+  const { title, row, existing, onClose, onSubmit } = props;
+  const toast = useToast();
+  const [file, setFile] = useState<File | null>(existing?.file ?? null);
+  const [hasExpiry, setHasExpiry] = useState<boolean>(!!existing?.expiry);
+  const [expiryDate, setExpiryDate] = useState<string>(existing?.expiry ?? '');
+  /* Label the popup by the document category the table is showing —
+     "DD DOCUMENT NAME" → "Due Diligence", etc. */
+  const catLabel = title.replace(/ (DOCUMENT )?NAME$/i, '').replace(/\bDD\b/i, 'Due Diligence');
+  // Async + awaited so PopupShell's Save spinner shows during the upload.
+  const save = async () => {
+    if (!file) { toast.error('File required', 'Choose a document to upload.'); return; }
+    if (hasExpiry && !expiryDate) { toast.error('Expiry date required', 'Pick the expiry date, or switch Expiry to No.'); return; }
+    await onSubmit(file, hasExpiry ? expiryDate : undefined);
+  };
+  return (
+    <PopupShell title={`Upload ${catLabel} Document`} icon="ri-upload-cloud-2-line" subtitle={row.name} onClose={onClose} onSave={save}>
+      <div className="avm-grid-2">
+        <Field label="Auto Code">
+          <input className="avm-input" value={row.code} readOnly style={{ color: '#d97706', fontFamily: 'monospace', fontWeight: 600 }} />
+        </Field>
+        <Field label="Document Name">
+          <input className="avm-input" value={row.name} readOnly />
+        </Field>
+      </div>
+      <div className="avm-grid-2">
+        <Field label="Issuing Authority">
+          <input className="avm-input" value={row.authority || '—'} readOnly />
+        </Field>
+        <Field label="Expiry" hint={!hasExpiry ? <span className="avm-field-hint">Has an expiry date?</span> : undefined}>
+          <div className="avm-expiry-row">
+            <div className="avm-yesno" role="radiogroup" aria-label="Does this document have an expiry date?">
+              <button type="button" role="radio" aria-checked={hasExpiry} className={`avm-yesno-btn${hasExpiry ? ' on' : ''}`} onClick={() => setHasExpiry(true)}>Yes</button>
+              <button type="button" role="radio" aria-checked={!hasExpiry} className={`avm-yesno-btn${!hasExpiry ? ' on' : ''}`} onClick={() => { setHasExpiry(false); setExpiryDate(''); }}>No</button>
+            </div>
+            {hasExpiry && (
+              <div className="avm-expiry-date">
+                <MasterDatePicker value={expiryDate} onChange={setExpiryDate} placeholder="Select expiry date" />
+              </div>
+            )}
+          </div>
+        </Field>
+      </div>
+      <div className="avm-grid-1">
+        <Field label="Upload Document" required>
+          <FileChooser
+            file={file}
+            existingUrl={existing && !existing.file ? existing.url : undefined}
+            onPick={f => setFile(f)}
+            placeholder="Upload document (JPG / PNG / PDF, max 2 MB)"
+          />
+        </Field>
+      </div>
+    </PopupShell>
   );
 }
 
@@ -4243,12 +4411,10 @@ function AttachmentCell(props: {
       style={{ maxWidth: 260, color: '#6d28d9', textDecoration: 'underline', textUnderlineOffset: 2 }}
       title={`Open ${fileName}`}
     >
-      <i className="ri-attachment-line me-1" />
       {fileName || 'Attachment'}
     </a>
   ) : (
     <span className="fs-13 text-truncate d-inline-flex align-items-center" style={{ maxWidth: 260 }} title={fileName}>
-      <i className="ri-attachment-line text-muted me-1" />
       {fileName || 'Attachment'}
     </span>
   );
@@ -4467,7 +4633,7 @@ function TradeLicenseTable(props: {
   );
 }
 
-function BankTable(props: { rows: BankRow[]; onRemove?: (id: string) => void; onClearFile?: (id: string) => void }) {
+function BankTable(props: { rows: BankRow[]; onRemove?: (id: string) => void; onEdit?: (row: BankRow) => void; onClearFile?: (id: string) => void }) {
   if (props.rows.length === 0) return <EmptyTable label="No bank records added yet." />;
   return (
     <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
@@ -4503,9 +4669,16 @@ function BankTable(props: { rows: BankRow[]; onRemove?: (id: string) => void; on
                 />
               </td>
               <td>
-                <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} data-tooltip="Remove" aria-label="Remove">
-                  <i className="ri-delete-bin-line" />
-                </button>
+                <div className="d-inline-flex gap-1">
+                  {props.onEdit && (
+                    <button type="button" className="btn btn-sm btn-soft-primary" onClick={() => props.onEdit?.(r)} data-tooltip="Edit" aria-label="Edit">
+                      <i className="ri-pencil-line" />
+                    </button>
+                  )}
+                  <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} data-tooltip="Remove" aria-label="Remove">
+                    <i className="ri-delete-bin-line" />
+                  </button>
+                </div>
               </td>
             </tr>
           ))}
@@ -5353,22 +5526,26 @@ function TradeLicenseAddPopup(props: {
   );
 }
 
-type BankAddPopupDraft = { bankName: string; branchName: string; accountNumber: string; ifsc: string; branchAddress: string; chequeFile: File | null; chequeFileName: string };
+type BankAddPopupDraft = { bankName: string; branchName: string; accountNumber: string; ifsc: string; branchAddress: string; chequeFile: File | null; chequeFileName: string; existingPath?: string; existingUrl?: string };
 function BankAddPopup(props: {
   draft: BankAddPopupDraft;
   setDraft: Setter<BankAddPopupDraft>;
   onClose: () => void;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
   /** Account numbers already on this supplier — used to highlight a duplicate
    *  on the field itself (not just a toast). */
   existingAccounts: string[];
+  /** Edit mode — retitles the popup and lets the existing cheque stand in for
+   *  a fresh upload. */
+  isEdit?: boolean;
 }) {
-  const { draft, setDraft, onClose, onSave, existingAccounts } = props;
+  const { draft, setDraft, onClose, onSave, existingAccounts, isEdit } = props;
   const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
   const [errors, setErrors] = useState<{ bankName?: string; branchName?: string; branchAddress?: string; accountNumber?: string; ifsc?: string; cheque?: string }>({});
   /* Highlight empty required fields when the user hits Save without filling
      them (the parent's toast-only check never reached the field state). */
-  const handleSave = () => {
+  // Async + awaited so PopupShell's Save spinner shows while the row saves.
+  const handleSave = async () => {
     const e: typeof errors = {};
     if (!draft.bankName.trim())      e.bankName = 'Bank Name is required';
     if (!draft.branchName.trim())    e.branchName = 'Branch is required';
@@ -5382,7 +5559,7 @@ function BankAddPopup(props: {
       e.accountNumber = 'This account number is already added for this supplier.';
     }
     if (Object.keys(e).length) { setErrors(prev => ({ ...prev, ...e })); return; }
-    onSave();
+    await onSave();
   };
   const handleBankNameChange = (raw: string) => {
     const { cleaned, error } = sanitizeKycName(raw, 80);
@@ -5400,7 +5577,7 @@ function BankAddPopup(props: {
     setErrors(prev => ({ ...prev, branchAddress: error }));
   };
   return (
-    <PopupShell title="Add Bank Details" icon="ri-bank-card-line" onClose={onClose} onSave={handleSave}>
+    <PopupShell title={isEdit ? 'Edit Bank Details' : 'Add Bank Details'} icon="ri-bank-card-line" onClose={onClose} onSave={handleSave}>
       <div className="avm-grid-4">
         <Field label="Bank Name" required error={errors.bankName}>
           <input
@@ -5441,7 +5618,8 @@ function BankAddPopup(props: {
           <FileChooser
             file={draft.chequeFile}
             existingPath={draft.existingPath}
-            onPick={f => { setDraft({ ...draft, chequeFile: f, chequeFileName: f?.name ?? '', existingPath: f ? undefined : draft.existingPath }); setErrors(p => ({ ...p, cheque: undefined })); }}
+            existingUrl={draft.existingUrl}
+            onPick={f => { setDraft({ ...draft, chequeFile: f, chequeFileName: f?.name ?? '', existingPath: f ? undefined : draft.existingPath, existingUrl: f ? undefined : draft.existingUrl }); setErrors(p => ({ ...p, cheque: undefined })); }}
             placeholder="Upload Cancelled Cheque"
           />
         </Field>
@@ -5455,7 +5633,7 @@ function GstScrutinyAddPopup(props: {
   draft: GstScrutinyAddPopupDraft;
   setDraft: Setter<GstScrutinyAddPopupDraft>;
   onClose: () => void;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
 }) {
   const { draft, setDraft, onClose, onSave } = props;
   const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
@@ -5486,12 +5664,13 @@ function GstScrutinyAddPopup(props: {
     setErrors(prev => ({ ...prev, redFlags: error }));
   };
   /* Highlight empty required fields on Save (GST Number + Last Filing Date). */
-  const handleSave = () => {
+  // Async + awaited so PopupShell's Save spinner shows while the row saves.
+  const handleSave = async () => {
     const e: typeof errors = {};
     if (!draft.gstNumber.trim())  e.gstNumber = 'GST Number is required';
     if (!draft.lastFilingDate)    e.lastFilingDate = 'GST Last Filing Date is required';
     if (Object.keys(e).length) { setErrors(prev => ({ ...prev, ...e })); return; }
-    onSave();
+    await onSave();
   };
   return (
     <PopupShell title="Add GST Scrutiny" icon="ri-file-text-line" onClose={onClose} onSave={handleSave}>
@@ -6049,7 +6228,7 @@ const SCOPED_CSS = `
    card collapsing to a single thin row (fills the empty space a bit). The
    header stays pinned while the body scrolls. */
 /* Show ~3 contact rows + the sticky header, then scroll for the rest. */
-.avm-contacts-scroll { max-height: 174px; overflow-y: auto; }
+.avm-contacts-scroll { max-height: 250px; overflow-y: auto; }
 .avm-contacts-scroll thead th {
   position: sticky; top: 0; z-index: 3;
   /* The base rule ".avm-modal .table thead th" sets background:transparent — the
@@ -6074,6 +6253,7 @@ const SCOPED_CSS = `
 }
 
 /* Form */
+.avm-grid-1 { display: grid; grid-template-columns: 1fr; gap: 11px; }
 .avm-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
 .avm-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 11px; }
 .avm-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 11px; }
@@ -6590,11 +6770,18 @@ const SCOPED_CSS = `
 .avm-kyc-table-wrap.table-card { margin: 0 !important; }
 /* Fill the card width so columns spread to fit (no bleed, no scroll on desktop). */
 .avm-kyc-table-wrap .avm-kyc-table { width: 100%; }
+/* Segment-rule reference table (Company DD / Owner KYC / Trade Licence): a
+   FIXED layout so the explicit per-column th widths are authoritative and the
+   header lines up exactly over its data. Auto layout stretched the columns
+   unevenly, which read as header/content misalignment. The Document Name
+   column carries no width, so it soaks up the remaining space. */
+.avm-kyc-table-wrap .avm-segref-table { table-layout: fixed; width: 100%; }
+.avm-segref-table td, .avm-segref-table th { max-width: none; }
 /* On small / mobile screens the table can't compress to readable widths, so let
    it keep a min width and scroll HORIZONTALLY instead of clipping the columns. */
 @media (max-width: 820px) {
   .avm-kyc-table-wrap { overflow-x: auto !important; }
-  .avm-kyc-table-wrap .avm-kyc-table { min-width: 680px; }
+  .avm-kyc-table-wrap .avm-kyc-table { min-width: 700px; }
   .avm-kyc-table th, .avm-kyc-table td { white-space: nowrap; max-width: none; }
 }
 /* KYC step card (purple tone) — extend down to fill the modal body instead of
@@ -7218,6 +7405,33 @@ const SCOPED_CSS = `
 .avm-uploaded-dot { display: inline-flex; align-items: center; color: #16a34a; font-size: 16px; margin-right: 1px; }
 .avm-kyc-act.is-disabled { opacity: .45; cursor: not-allowed; }
 .avm-kyc-act.is-disabled:hover { background: #f0fdf4; color: #16a34a; transform: none; }
+/* The Upload / Re-upload actions are now <button>s that open a popup (no
+   longer <label>s wrapping a hidden <input>) — strip the native button
+   padding so they stay square inside the fixed 27x27 chip. */
+button.avm-kyc-act { padding: 0; font: inherit; }
+/* Expiry field: the Yes/No control and, once Yes is chosen, the date picker
+   sit on ONE inline row — the calendar opens right beside the buttons. */
+.avm-expiry-row { display: flex; align-items: center; gap: 10px; }
+.avm-expiry-date { flex: 1 1 auto; min-width: 0; }
+/* Yes/No segmented toggle — a single joined pill (shared border, no gap)
+   so it reads as one compact control instead of two loose buttons. */
+.avm-yesno {
+  display: inline-flex; flex-shrink: 0; height: 38px; border-radius: 9px;
+  border: 1.5px solid #e9e2f7; background: #faf8ff; overflow: hidden;
+}
+.avm-yesno-btn {
+  min-width: 46px; padding: 0 15px; border: 0; background: transparent; cursor: pointer;
+  font-family: inherit; font-size: 13px; font-weight: 600; color: #6b7280;
+  border-right: 1.5px solid #e9e2f7; transition: background .14s, color .14s;
+}
+.avm-yesno-btn:last-child { border-right: 0; }
+.avm-yesno-btn:hover { background: #f1ebfe; color: #7c3aed; }
+.avm-yesno-btn.on { background: #7c3aed; color: #fff; }
+.avm-yesno-btn.on:hover { background: #6d28d9; color: #fff; }
+[data-bs-theme="dark"] .avm-yesno { background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.12); }
+[data-bs-theme="dark"] .avm-yesno-btn { color: #adb5bd; border-right-color: rgba(255,255,255,.12); }
+[data-bs-theme="dark"] .avm-yesno-btn.on { background: #7c3aed; color: #fff; }
+.avm-field-hint { margin-left: 6px; font-size: 11px; font-weight: 500; color: #94a3b8; }
 .avm-kyc-search {
   position: relative; display: flex; align-items: center; gap: 9px;
   height: 38px; margin-bottom: 6px; padding: 0 12px 0 14px;

@@ -655,6 +655,7 @@ class VendorController extends Controller
         }
 
         $data = $this->validateGst($request);
+        $this->assertGstNumberUnique($vendor, $data['gst_number']);
         $row = VendorGstScrutiny::create([
             'vendor_id'               => $vendor->id,
             'gst_number'              => strtoupper($data['gst_number']),
@@ -678,6 +679,7 @@ class VendorController extends Controller
 
         $row = VendorGstScrutiny::where('vendor_id', $vendor->id)->findOrFail($gstId);
         $data = $this->validateGst($request);
+        $this->assertGstNumberUnique($vendor, $data['gst_number']);
         $row->update([
             'gst_number'              => strtoupper($data['gst_number']),
             'status'                  => $data['status'] ?? 'Active',
@@ -699,6 +701,29 @@ class VendorController extends Controller
 
         VendorGstScrutiny::where('vendor_id', $vendor->id)->findOrFail($gstId)->forceDelete();
         return response()->json(['message' => 'GST scrutiny deleted']);
+    }
+
+    /**
+     * Guard: a GST number may belong to only ONE supplier within the tenant.
+     * The SAME vendor can keep / re-save its own GST (vendor_id excluded), but
+     * a DIFFERENT supplier cannot register a GST another supplier already holds.
+     * Aborts with a 422 (field-keyed) so the form highlights the GST field.
+     */
+    private function assertGstNumberUnique(Vendor $vendor, string $gstNumber): void
+    {
+        $gst = strtoupper(trim($gstNumber));
+        $clientId = (int) $vendor->client_id;
+        $takenByOther = VendorGstScrutiny::query()
+            ->where('gst_number', $gst)
+            ->where('vendor_id', '!=', $vendor->id)
+            ->whereHas('vendor', fn ($q) => $q->where('client_id', $clientId))
+            ->exists();
+        if ($takenByOther) {
+            abort(response()->json([
+                'message' => "GST number {$gst} is already registered to another supplier.",
+                'errors'  => ['gst_number' => ['This GST number is already registered to another supplier.']],
+            ], 422));
+        }
     }
 
     private function validateGst(Request $request): array
