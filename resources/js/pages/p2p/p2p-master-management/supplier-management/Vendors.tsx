@@ -497,7 +497,7 @@ useEffect(() => {
                         <th>Country</th>
                         <th>Contact Person</th>
                         <th>Contact No</th>
-                        <th>Email</th>
+                        <th className="sl-th-email">Email</th>
                         <th>WhatsApp</th>
                         <th>Actions</th>
                       </tr>
@@ -554,7 +554,7 @@ useEffect(() => {
                               </span>
                             </td>
                             <td><span className="sl-phone">{v.phone}</span></td>
-                            <td><Tooltip label={v.email}><a className="sl-email sl-trunc" href={`mailto:${v.email}`}>{v.email}</a></Tooltip></td>
+                            <td className="sl-td-email"><Tooltip label={v.email}><a className="sl-email sl-trunc" href={`mailto:${v.email}`}>{v.email}</a></Tooltip></td>
                             <td>
                               {hasWa
                                 ? <span className="sl-wa sl-wa--yes"><span className="sl-wa-dot" />Yes</span>

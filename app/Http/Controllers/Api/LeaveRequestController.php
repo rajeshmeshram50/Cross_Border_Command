@@ -168,7 +168,7 @@ class LeaveRequestController extends Controller
             abort(422, 'Half-day requests are only valid for a single calendar day. Please pick the same from/to date or switch day type to "Full Day".');
         }
         // NOTE: $days (chargeable day count) is computed further down, once the
-        // leave-type config is loaded — it applies the Sandwich Policy.
+        // leave-type config is loaded.
 
         // Overlap guard — same employee already has a Pending or Approved
         // request whose date range intersects the new one. Two ranges
@@ -252,19 +252,12 @@ class LeaveRequestController extends Controller
         $accrual   = (is_array($ptConfig) ? $ptConfig['accrual'] ?? [] : []);
         $unlimited = (bool) ($accrual['unlimited'] ?? false);
 
-        // Chargeable day count — applies the Sandwich Policy. A half-day is 0.5;
-        // otherwise count working days in the range, plus any weekly-off /
-        // holiday that is sandwiched BETWEEN leave days when its sandwich toggle
-        // is on. This same count flows into the balance check, attendance
-        // (approved leave overlays the date range) and payroll.
+        // Chargeable day count — a half-day is 0.5; otherwise count the working
+        // days in the range (weekly-offs and holidays inside the range are never
+        // charged). This count flows into the balance check, attendance (approved
+        // leave overlays the date range) and payroll.
         $leaveApp = (is_array($ptConfig) ? $ptConfig['leaveApp'] ?? [] : []);
-        $days = $this->computeLeaveDays(
-            $from, $to, $dayType, $employee,
-            (bool) ($leaveApp['sandwichWeeklyOff'] ?? false),
-            (bool) ($leaveApp['sandwichHoliday'] ?? false),
-            (int) $data['leave_type_id'],
-            (bool) ($leaveApp['sandwichClub'] ?? false),
-        );
+        $days = $this->computeLeaveDays($from, $to, $dayType, $employee);
 
         // Half-day gate — only leave types whose setup enables "Allow half day
         // leave" may be requested as first/second half. (This also blocks the
@@ -1094,117 +1087,26 @@ class LeaveRequestController extends Controller
     }
 
     /**
-     * Chargeable leave days for [from, to] applying the Sandwich Policy.
-     * Working days each count 1; a single half-day is 0.5. Weekly-offs and
-     * holidays are NOT charged UNLESS sandwiched — i.e. a leave (working) day
-     * exists on BOTH sides of the off through an unbroken run of off-days — and
-     * the matching sandwich toggle is enabled.
-     *
-     * Crucially the sandwich spans ADJOINING leave requests, not just this one's
-     * own range (Bug 58/59): if the employee already has a Pending/Approved
-     * leave day on the far side of a weekend/holiday run, that run is sandwiched.
-     * A run that touches this request on ONE side and a neighbouring request on
-     * the other is charged to THIS request; a run sitting purely between two
-     * OTHER requests was already charged when the later of those two was filed,
-     * so we never double-count it. Different-leave-type neighbours only anchor a
-     * sandwich when the "club across leave types" toggle is on.
+     * Chargeable leave days for [from, to]. A single half-day is 0.5; otherwise
+     * each working day in the range counts 1. Weekly-offs and holidays inside
+     * the range are never charged. (The Sandwich Policy was removed, so off-days
+     * are always excluded.)
      */
-    private function computeLeaveDays(Carbon $from, Carbon $to, string $dayType, Employee $employee, bool $sandwichWeeklyOff, bool $sandwichHoliday, int $leaveTypeId = 0, bool $sandwichClub = false): float
+    private function computeLeaveDays(Carbon $from, Carbon $to, string $dayType, Employee $employee): float
     {
         if ($dayType !== 'full' && $from->isSameDay($to)) return 0.5;
 
-        // A sandwich only ever bridges an unbroken run of off-days, so scanning
-        // ±31 days past the request is a safe cap for reaching an adjoining one.
-        $winStart = $from->copy()->startOfDay()->subDays(31);
-        $winEnd   = $to->copy()->startOfDay()->addDays(31);
-
         $woSet = $this->parseWeeklyOffSet((string) ($employee->weekly_off ?? ''));
         $holidaySet = $employee->holiday_group_id
-            ? $this->holidayDatesInRange((int) $employee->holiday_group_id, $winStart, $winEnd)
+            ? $this->holidayDatesInRange((int) $employee->holiday_group_id, $from, $to)
             : [];
 
-        // Working days already committed on OTHER live requests — these anchor a
-        // cross-request sandwich. (The new request isn't persisted yet, so it can
-        // never appear here.)
-        $anchorDays = $this->adjoiningLeaveDays($employee, $leaveTypeId, $sandwichClub, $winStart, $winEnd, $woSet, $holidaySet);
-
-        $fromStr = $from->toDateString();
-        $toStr   = $to->toDateString();
-
-        $marks = [];
-        foreach (CarbonPeriod::create($winStart, $winEnd) as $d) {
-            $ds    = $d->toDateString();
-            $wo    = isset($woSet[$d->dayOfWeek]);
-            $hol   = isset($holidaySet[$ds]);
-            $off   = $wo || $hol;
-            $inReq = ($ds >= $fromStr && $ds <= $toStr);
-            // A "leave day" is a WORKING day this request or a neighbour covers.
-            // It anchors a sandwich and, being non-off, breaks any run scan.
-            $leave = !$off && ($inReq || isset($anchorDays[$ds]));
-            $marks[] = ['wo' => $wo, 'hol' => $hol, 'off' => $off, 'inReq' => $inReq, 'leave' => $leave];
-        }
-
-        $n = count($marks);
         $total = 0.0;
-        for ($i = 0; $i < $n; $i++) {
-            // Base: only THIS request's own working days count toward its charge.
-            if (!$marks[$i]['off']) {
-                if ($marks[$i]['inReq']) $total += 1.0;
-                continue;
-            }
-            $applies = ($marks[$i]['wo'] && $sandwichWeeklyOff) || ($marks[$i]['hol'] && $sandwichHoliday);
-            if (!$applies) continue;
-            // Nearest leave day on each side, reachable through off-days only (a
-            // working non-leave "gap" day breaks the bridge).
-            $left = null;
-            for ($j = $i - 1; $j >= 0; $j--) {
-                if ($marks[$j]['leave']) { $left = $j; break; }
-                if (!$marks[$j]['off']) break;
-            }
-            if ($left === null) continue;
-            $right = null;
-            for ($j = $i + 1; $j < $n; $j++) {
-                if ($marks[$j]['leave']) { $right = $j; break; }
-                if (!$marks[$j]['off']) break;
-            }
-            if ($right === null) continue;
-            // Charge it here only when THIS request supplies one of the anchors,
-            // else it belongs to two other requests and is already accounted for.
-            if (!$marks[$left]['inReq'] && !$marks[$right]['inReq']) continue;
-            $total += 1.0;
+        foreach (CarbonPeriod::create($from->copy()->startOfDay(), $to->copy()->startOfDay()) as $d) {
+            $off = isset($woSet[$d->dayOfWeek]) || isset($holidaySet[$d->toDateString()]);
+            if (!$off) $total += 1.0;
         }
         return $total;
-    }
-
-    /**
-     * Working (non-off) dates covered by the employee's other Pending/Approved
-     * leave requests within [start, end], as a Y-m-d => true set. These anchor a
-     * cross-request sandwich (see computeLeaveDays). A different-leave-type
-     * request only qualifies when the "club across leave types" toggle is on.
-     */
-    private function adjoiningLeaveDays(Employee $employee, int $leaveTypeId, bool $club, Carbon $start, Carbon $end, array $woSet, array $holidaySet): array
-    {
-        $rows = LeaveRequest::where('employee_id', $employee->id)
-            ->whereIn('status', ['Pending', 'Approved'])
-            ->where('from_date', '<=', $end->toDateString())
-            ->where('to_date', '>=', $start->toDateString())
-            ->get(['from_date', 'to_date', 'leave_type_id']);
-
-        $out = [];
-        foreach ($rows as $r) {
-            if (!$r->from_date || !$r->to_date) continue;
-            if ((int) $r->leave_type_id !== $leaveTypeId && !$club) continue;
-            $rs = Carbon::parse($r->from_date)->startOfDay();
-            $re = Carbon::parse($r->to_date)->startOfDay();
-            if ($rs->lt($start)) $rs = $start->copy();
-            if ($re->gt($end))   $re = $end->copy();
-            foreach (CarbonPeriod::create($rs, $re) as $d) {
-                $ds = $d->toDateString();
-                if (isset($woSet[$d->dayOfWeek]) || isset($holidaySet[$ds])) continue;
-                $out[$ds] = true;
-            }
-        }
-        return $out;
     }
 
     /** Weekly-off day-of-week set from the employee's weekly_off label. Mirrors
@@ -1296,6 +1198,18 @@ class LeaveRequestController extends Controller
         //    to multiple users, e.g. all HRs in the tenant).
         foreach ($this->resolveApproverNotifiables($row, 1, $employee) as $r) {
             $this->safeSend($r, new LeaveRequestNotification($row, 'submitted_to_approver'));
+        }
+
+        // 1b) Deadlock escape (Bug 55): if the reporting manager is unavailable
+        //     (on approved leave, disabled, or unassigned), the only level-1
+        //     recipient above is an absent manager — the request would sit
+        //     silently. Also notify HR (every branch_user / client_admin in the
+        //     tenant) so they know to step in and approve/reject in the RM's
+        //     place. Backend already permits HR to act in this case.
+        if ($this->isReportingManagerUnavailable($row)) {
+            foreach ($this->resolveRoleRecipients('hr', $employee) as $r) {
+                $this->safeSend($r, new LeaveRequestNotification($row, 'escalated_to_hr'));
+            }
         }
 
         // 2) CC'd colleagues from notify.employee_ids

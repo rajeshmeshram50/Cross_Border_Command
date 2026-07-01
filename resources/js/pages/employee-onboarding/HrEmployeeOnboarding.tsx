@@ -575,14 +575,14 @@ export default function HrEmployeeOnboarding() {
   };
   const closeEdit = () => { setEditOpen(false); setEditRow(null); };
 
-  // Pagination — match the master tables (7 per page).
+  // Pagination — mirrors the Employee page (rows-per-page dropdown, default 10).
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 7;
+  const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  // Reset filters and page when tabbing across; also reset page when filters
-  // change so the user always lands on page 1 of the new filtered set.
+  // Reset filters and page when tabbing across; also reset page when filters or
+  // the rows-per-page choice change so the user always lands on page 1.
   useEffect(() => { setStatusFilter('All'); setQ(''); setPage(1); }, [tab]);
-  useEffect(() => { setPage(1); }, [q, deptFilter, statusFilter]);
+  useEffect(() => { setPage(1); }, [q, deptFilter, statusFilter, rowsPerPage]);
 
   const counts = useMemo(() => {
     const pendingRows   = liveSplit.pending;
@@ -618,10 +618,10 @@ export default function HrEmployeeOnboarding() {
       });
   }, [rows, q, deptFilter, statusFilter]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
   const safePage  = Math.min(page, pageCount);
-  const sliceFrom = (safePage - 1) * PAGE_SIZE;
-  const visible   = filtered.slice(sliceFrom, sliceFrom + PAGE_SIZE);
+  const sliceFrom = (safePage - 1) * rowsPerPage;
+  const visible   = filtered.slice(sliceFrom, sliceFrom + rowsPerPage);
   const goto = (p: number) => setPage(Math.min(Math.max(1, p), pageCount));
 
   // ── Dynamic fill height — stretch the list body to the bottom of the
@@ -960,7 +960,7 @@ export default function HrEmployeeOnboarding() {
                 </div>
 
           {/* Pagination — My Workplace / Client-table style */}
-          <WorklistPager total={filtered.length} page={safePage} pageSize={PAGE_SIZE} onPage={goto} />
+          <WorklistPager total={filtered.length} page={safePage} pageSize={rowsPerPage} onPage={goto} onPageSize={setRowsPerPage} pageSizeOptions={[5, 10, 25, 50, 100]} />
         </div>
       </div>
 

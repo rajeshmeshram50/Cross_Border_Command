@@ -27,6 +27,9 @@ use Illuminate\Notifications\Notification;
  *   - rejected              — sent to the requester when any level rejects
  *   - cancelled             — sent to the current-level approver (so they
  *     can drop the item from their queue)
+ *   - escalated_to_hr       — sent to HR (branch_user / client_admin) when the
+ *     requester's reporting manager is unavailable (on leave / disabled /
+ *     unassigned) so the request doesn't deadlock — HR may act in their place
  */
 class LeaveRequestNotification extends Notification implements ShouldQueue
 {
@@ -110,6 +113,15 @@ class LeaveRequestNotification extends Notification implements ShouldQueue
                     ->action('Review Request', $this->actionUrl());
                 break;
 
+            case 'escalated_to_hr':
+                $mail->line("**{$employeeName}**'s reporting manager is currently unavailable (on approved leave or inactive), so this leave request needs **HR** to review it.")
+                    ->line("**Leave type:** {$type}")
+                    ->line("**Dates:** {$rangeLine} ({$dayLabel})")
+                    ->when($reason, fn($m, $reason) => $m->line("**Reason:** " . $reason))
+                    ->line('You can approve or reject it in the manager\'s place.')
+                    ->action('Review Request', $this->actionUrl());
+                break;
+
             case 'cc_submitted':
                 $mail->line("**{$employeeName}** has applied for leave and added you as a colleague to notify.")
                     ->line("**Leave type:** {$type}")
@@ -155,6 +167,7 @@ class LeaveRequestNotification extends Notification implements ShouldQueue
     {
         return match ($this->kind) {
             'submitted_to_approver' => "Action required: {$employeeName} requested {$type}",
+            'escalated_to_hr'       => "HR action needed: {$employeeName}'s manager is away — {$type} request",
             'cc_submitted'          => "FYI: {$employeeName} applied for {$type}",
             'approved'              => "Your {$type} request is approved",
             'rejected'              => "Your {$type} request was rejected",
@@ -171,7 +184,7 @@ class LeaveRequestNotification extends Notification implements ShouldQueue
     {
         $base = rtrim(config('app.url') ?? '', '/');
         $path = match ($this->kind) {
-            'submitted_to_approver', 'cancelled' => '/hr/leave-approvals',
+            'submitted_to_approver', 'escalated_to_hr', 'cancelled' => '/hr/leave-approvals',
             default                              => '/hr/leave',
         };
         return $base . $path;

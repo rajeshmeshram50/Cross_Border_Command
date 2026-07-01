@@ -100,6 +100,55 @@ export function ShimmerCards({ count = 6 }: { count?: number }) {
   );
 }
 
+/* ── Form (card-per-section) ─────────────────────────────────────────
+ * Card-wise form skeleton: an optional header card (icon + title + action)
+ * plus N section cards, each with a header row and a field grid (label +
+ * input). Matches the Client / Branch / Supplier edit forms so every form's
+ * loading state looks the same. Pass `header={false}` when the surrounding
+ * shell (e.g. a modal) already renders its own header. */
+export function ShimmerForm({
+  sections = 4,
+  cols = 3,
+  fieldsPerSection = 6,
+  header = true,
+}: {
+  sections?: number;
+  cols?: number;
+  fieldsPerSection?: number;
+  header?: boolean;
+}) {
+  return (
+    <div style={{ width: '100%' }}>
+      {header && (
+        <div style={{ ...card, padding: 24, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 18 }}>
+          <Shimmer width={64} height={64} radius={14} />
+          <div style={{ flex: 1, ...stack(10) }}>
+            <Shimmer width={220} height={18} />
+            <Shimmer width={320} height={12} />
+          </div>
+          <Shimmer width={120} height={36} radius={10} />
+        </div>
+      )}
+      {Array.from({ length: sections }).map((_, s) => (
+        <div key={s} style={{ ...card, padding: 20, marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+            <Shimmer width={32} height={32} radius={8} />
+            <Shimmer width={180} height={14} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: 14 }}>
+            {Array.from({ length: fieldsPerSection }).map((__, f) => (
+              <div key={f} style={stack(8)}>
+                <Shimmer width={`${50 + (f % 4) * 10}%`} height={10} />
+                <Shimmer width="100%" height={38} radius={8} />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ── Table Rows (for use INSIDE an existing <tbody>) ─────────────────
  * Drop-in replacement for the inline `Array.from(...).map(...)<tr><td><Shimmer/></td>...</tr>`
  * pattern that every page was repeating. Keeps the same look across the
