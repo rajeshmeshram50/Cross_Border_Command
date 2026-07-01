@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../../../api';
 import { MasterSelect, MasterDatePicker, MasterMultiSelect } from '../../../master/masterFormKit';
 import Tooltip from '../../../../components/ui/Tooltip';
+import WorklistPager from '../../../../components/ui/WorklistPager';
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import { Shimmer, ShimmerTableRows } from '../../../../components/ui/Shimmer';
 import { downloadFile } from '../../../../utils/downloadFile';
@@ -2223,11 +2224,8 @@ function GstScrutinyManagePopup(props: {
     const e: typeof errs = {};
     const gstErr = gstNumberError(draft.gstNumber);
     if (gstErr) e.gstNumber = gstErr;
-    // No duplicate GST number for the same customer (the backend enforces
-    // this too; this gives instant feedback without a round-trip).
-    else if (rows.some(r => String(r.gst_number).toUpperCase() === draft.gstNumber.toUpperCase())) {
-      e.gstNumber = 'This GST number is already added for this customer.';
-    }
+    // The same GSTIN recurs across a customer's periodic scrutiny entries, so
+    // no per-customer duplicate check — only the format is enforced.
     if (!draft.lastFilingDate) e.lastFilingDate = 'GST Last Filing Date is required';
     if (Object.keys(e).length) { setErrs(e); return; }
     setBusy(true);
@@ -2239,7 +2237,10 @@ function GstScrutinyManagePopup(props: {
 
   const today = new Date().toISOString().slice(0, 10);
 
+  const closeForm = () => { setAdding(false); setDraft(EMPTY_GST_DRAFT); setErrs({}); };
+
   return (
+    <>
     <div className="acm-gst-overlay" role="dialog" aria-modal="true">
       <div className="acm-gst-card">
         <div className="acm-gst-head">
@@ -2254,7 +2255,7 @@ function GstScrutinyManagePopup(props: {
           </div>
           <div className="acm-gst-head-actions">
             {!adding && (
-              <button type="button" className="acm-add-pill" onClick={() => { setAdding(true); setErrs({}); }}>
+              <button type="button" className="acm-add-pill" onClick={() => { setDraft({ ...EMPTY_GST_DRAFT, gstNumber: rows[0]?.gst_number ? String(rows[0].gst_number).toUpperCase() : '' }); setErrs({}); setAdding(true); }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Add GST Scrutiny
               </button>
@@ -2266,9 +2267,70 @@ function GstScrutinyManagePopup(props: {
         </div>
 
         <div className="acm-gst-body">
-          {/* Add form REPLACES the table while open — one focused view at a
-              time. Cancel/Save returns to the history list. */}
-          {adding ? (
+          <div className="acm-gst-table-wrap">
+            <table className="acm-gst-table">
+              <thead>
+                <tr>
+                  <th className="acm-gst-srno-col">SR NO</th>
+                  <th>GST Number</th>
+                  <th>Status</th>
+                  <th>Last Filing Date</th>
+                  <th>Prev Non-GST 2A Invoice</th>
+                  <th>Red Flags</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length === 0 ? (
+                  <tr><td colSpan={6} className="acm-gst-empty">No GST scrutiny entries added yet. Click “Add GST Scrutiny” to create one.</td></tr>
+                ) : pageRows.map((r, i) => {
+                  const sr = (safePage - 1) * GST_PER_PAGE + i + 1;
+                  return (
+                    <tr key={r.id}>
+                      <td className="acm-gst-srno-col"><span className="acm-gst-sr">{String(sr).padStart(2, '0')}</span></td>
+                      <td style={{ fontWeight: 600 }}>{r.gst_number}</td>
+                      <td><span className={`acm-gst-status acm-gst-status-${String(r.status).toLowerCase()}`}>{r.status}</span></td>
+                      <td>{r.last_filing_date || '—'}</td>
+                      <td>{r.prev_non_gst_2a_invoice || '—'}</td>
+                      <td>{r.red_flags || '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            {/* Pager sits INSIDE the table card as a footer strip (standard
+                app pager) — only once there's more than a page of entries. */}
+            {rows.length > GST_PER_PAGE && (
+              <WorklistPager total={rows.length} page={safePage} pageSize={GST_PER_PAGE} onPage={setPage} />
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* Add form is its OWN popup, stacked ABOVE the list popup (higher
+        z-index). The list stays visible/dimmed behind it. */}
+    {adding && (
+      <div className="acm-gst-overlay" style={{ zIndex: 1300, background: 'rgba(6,4,18,0.82)', backdropFilter: 'blur(3px)' }} role="dialog" aria-modal="true">
+        <div className="acm-gst-card acm-gst-form-card" style={{ width: 'min(900px, 96vw)' }}>
+          <div className="acm-gst-head">
+            <div className="acm-gst-head-left">
+              <div className="acm-gst-head-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+              </div>
+              <div>
+                <div className="acm-gst-title">GST Scrutiny</div>
+                <div className="acm-gst-sub">GST profile, filing status &amp; compliance red-flags</div>
+              </div>
+            </div>
+            <div className="acm-gst-head-actions">
+              <button type="button" className="acm-close" onClick={closeForm} aria-label="Close">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div className="acm-gst-body">
             <div className="acm-gst-form">
               <div className="acm-row acm-row-3">
                 <Field label="GST Number" required error={errs.gstNumber}>
@@ -2290,60 +2352,15 @@ function GstScrutinyManagePopup(props: {
                 </Field>
               </div>
               <div className="acm-gst-form-actions">
-                <button type="button" className="acm-btn-ghost" onClick={() => { setAdding(false); setDraft(EMPTY_GST_DRAFT); setErrs({}); }} disabled={busy}>Cancel</button>
+                <button type="button" className="acm-btn-ghost" onClick={closeForm} disabled={busy}>Cancel</button>
                 <button type="button" className="acm-btn-primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
               </div>
             </div>
-          ) : (
-            <div className="acm-gst-table-wrap">
-              <table className="acm-gst-table">
-                <thead>
-                  <tr>
-                    <th className="acm-gst-srno-col">SR NO</th>
-                    <th>GST Number</th>
-                    <th>Status</th>
-                    <th>Last Filing Date</th>
-                    <th>Prev Non-GST 2A Invoice</th>
-                    <th>Red Flags</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.length === 0 ? (
-                    <tr><td colSpan={6} className="acm-gst-empty">No GST scrutiny entries added yet. Click “Add GST Scrutiny” to create one.</td></tr>
-                  ) : pageRows.map((r, i) => {
-                    const sr = (safePage - 1) * GST_PER_PAGE + i + 1;
-                    return (
-                      <tr key={r.id}>
-                        <td className="acm-gst-srno-col"><span className="acm-gst-sr">{String(sr).padStart(2, '0')}</span></td>
-                        <td style={{ fontWeight: 600 }}>{r.gst_number}</td>
-                        <td><span className={`acm-gst-status acm-gst-status-${String(r.status).toLowerCase()}`}>{r.status}</span></td>
-                        <td>{r.last_filing_date || '—'}</td>
-                        <td>{r.prev_non_gst_2a_invoice || '—'}</td>
-                        <td>{r.red_flags || '—'}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {/* Pagination — 5 rows per page; only shown once there are more
-              than a page's worth of entries. */}
-          {!adding && rows.length > GST_PER_PAGE && (
-            <div className="acm-gst-pager">
-              <span className="acm-gst-pager-info">
-                {(safePage - 1) * GST_PER_PAGE + 1}–{Math.min(safePage * GST_PER_PAGE, rows.length)} of {rows.length}
-              </span>
-              <div className="acm-gst-pager-btns">
-                <button type="button" className="acm-gst-page-btn" disabled={safePage === 1} onClick={() => setPage(p => Math.max(1, p - 1))} aria-label="Previous page">‹</button>
-                <span className="acm-gst-page-cur">{safePage} / {pageCount}</span>
-                <button type="button" className="acm-gst-page-btn" disabled={safePage === pageCount} onClick={() => setPage(p => Math.min(pageCount, p + 1))} aria-label="Next page">›</button>
-              </div>
-            </div>
-          )}
+          </div>
         </div>
       </div>
-    </div>
+    )}
+    </>
   );
 }
 
@@ -5106,6 +5123,10 @@ const SCOPED_CSS = `
 .acm-gst-body { padding: 20px 22px 22px; overflow-y: auto; }
 /* Borderless form — the fields sit directly on the body (no boxed panel). */
 .acm-gst-form { padding: 0; margin: 0; }
+/* Wider add-form popup: equal 2-col rows so the long "Previous Non-GST 2A
+   Reflected Invoice" label sits on a single line. */
+.acm-gst-form-card .acm-gst-form .acm-row-2 { grid-template-columns: 1fr 1fr; }
+.acm-gst-form-card .acm-gst-form .acm-field label { white-space: nowrap; }
 .acm-gst-form-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 18px; }
 /* Keep form inputs solid white even in the error state (red border only). */
 .acm-gst-card .acm-field input.acm-input-error { background: #fff; }
@@ -5114,6 +5135,9 @@ const SCOPED_CSS = `
 .acm-btn-primary { padding: 8px 18px; border-radius: 9px; border: none; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
 .acm-btn-primary:disabled, .acm-btn-ghost:disabled { opacity: 0.6; cursor: not-allowed; }
 .acm-gst-table-wrap { border: 1px solid #ece9f6; border-radius: 12px; overflow: hidden; }
+/* Pager lives INSIDE the table card — flush footer strip, no gap, corners
+   clipped by the wrap's overflow:hidden. */
+.acm-gst-table-wrap .wl-pager { margin-top: 0; border-radius: 0; }
 .acm-gst-table { width: 100%; border-collapse: collapse; }
 .acm-gst-table thead tr { background: linear-gradient(135deg, #faf8ff, #f3eefe); }
 .acm-gst-table th { text-align: left; background: transparent; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #8b7bb8; padding: 10px 12px; border-bottom: 1.5px solid #ece7f8; white-space: nowrap; }

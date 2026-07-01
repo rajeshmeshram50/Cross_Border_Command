@@ -18,6 +18,7 @@ import WorklistPager from '../../components/ui/WorklistPager';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
+import { resolveProbation } from '../../utils/probation';
 import './HrEmployeeOnboarding.css';
 
 import '../../../css/recruitment.css';
@@ -47,6 +48,7 @@ const ONB_SAL_STRUCT   = OPT('Range Based', 'Fixed', 'Component Based');
 const ONB_TAX_REGIME   = OPT('New Regime (115BAC)', 'Old Regime');
 const ONB_ACCOUNT_TYPE = OPT('Salary', 'Savings', 'Current');
 const ONB_PF_DEDUCT    = OPT('Employee + Employer', 'Employee only');
+const ONB_PF_TYPE      = OPT('Statutory', 'Standard');
 const ONB_BLOOD_GROUP  = OPT('A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-');
 
 
@@ -573,14 +575,14 @@ export default function HrEmployeeOnboarding() {
   };
   const closeEdit = () => { setEditOpen(false); setEditRow(null); };
 
-  // Pagination — match the master tables (7 per page).
+  // Pagination — mirrors the Employee page (rows-per-page dropdown, default 10).
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 7;
+  const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  // Reset filters and page when tabbing across; also reset page when filters
-  // change so the user always lands on page 1 of the new filtered set.
+  // Reset filters and page when tabbing across; also reset page when filters or
+  // the rows-per-page choice change so the user always lands on page 1.
   useEffect(() => { setStatusFilter('All'); setQ(''); setPage(1); }, [tab]);
-  useEffect(() => { setPage(1); }, [q, deptFilter, statusFilter]);
+  useEffect(() => { setPage(1); }, [q, deptFilter, statusFilter, rowsPerPage]);
 
   const counts = useMemo(() => {
     const pendingRows   = liveSplit.pending;
@@ -616,10 +618,10 @@ export default function HrEmployeeOnboarding() {
       });
   }, [rows, q, deptFilter, statusFilter]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
   const safePage  = Math.min(page, pageCount);
-  const sliceFrom = (safePage - 1) * PAGE_SIZE;
-  const visible   = filtered.slice(sliceFrom, sliceFrom + PAGE_SIZE);
+  const sliceFrom = (safePage - 1) * rowsPerPage;
+  const visible   = filtered.slice(sliceFrom, sliceFrom + rowsPerPage);
   const goto = (p: number) => setPage(Math.min(Math.max(1, p), pageCount));
 
   // ── Dynamic fill height — stretch the list body to the bottom of the
@@ -958,7 +960,7 @@ export default function HrEmployeeOnboarding() {
                 </div>
 
           {/* Pagination — My Workplace / Client-table style */}
-          <WorklistPager total={filtered.length} page={safePage} pageSize={PAGE_SIZE} onPage={goto} />
+          <WorklistPager total={filtered.length} page={safePage} pageSize={rowsPerPage} onPage={goto} onPageSize={setRowsPerPage} pageSizeOptions={[5, 10, 25, 50, 100]} />
         </div>
       </div>
 
@@ -3474,6 +3476,7 @@ function InitiateOnboardingModal({
     pay_group: '', annual_salary: '', salary_frequency: 'Per annum',
     salary_effective_from: '', salary_structure: '', tax_regime: '',
     bonus_in_annual: false, pf_eligible: false, detailed_breakup: false,
+    pf_type: 'Statutory',   // 'Statutory' (₹15k cap) | 'Standard' (full basic)
   });
 
   // Snapshot of the name as last persisted on the server. Drives the
@@ -3565,6 +3568,7 @@ useEffect(() => {
     tax_regime:            String(x.tax_regime            ?? ''),
     bonus_in_annual:       !!x.bonus_in_annual,
     pf_eligible:           !!x.pf_eligible,
+    pf_type:               String(x.pf_type ?? '').toLowerCase() === 'standard' ? 'Standard' : 'Statutory',
     detailed_breakup:      !!x.detailed_breakup,
   });
   // Pin the actual-name display to whatever the server currently has —
@@ -3613,6 +3617,11 @@ const joinMax = _shiftYears(1);
 // "2050" by mistake.
 const salaryMin = s1.date_of_joining || _shiftYears(-1);
 const salaryMax = _shiftYears(1);
+
+// Probation length + end date, derived live from the joining date + probation
+// policy. Stored on save (probation_months / probation_end_date) so the daily
+// probation-completion email job reads it directly. Read-only in the UI.
+const onbProbation = resolveProbation(s1.probation_policy, s1.date_of_joining);
 
 // Ordered list of required field keys — drives both validation and
 // scroll-to-first-error so the user lands on the topmost missing field
@@ -3738,6 +3747,9 @@ const validateStage1 = (): boolean => {
   if (!s1.legal_entity_id?.toString().trim()) errors.legal_entity_id = 'Legal entity is required';
   if (!s1.reporting_manager?.toString().trim()) errors.reporting_manager = 'Reporting manager is required';
 
+  // Work Details — Expense Policy is required (marked * in the form).
+  if (!s1.expense_policy?.toString().trim()) errors.expense_policy = 'Expense policy is required';
+
   setS1Errors(errors);
 
   if (Object.keys(errors).length > 0) {
@@ -3810,6 +3822,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       reporting_manager_id:      rmIds.emp,
       reporting_manager_user_id: rmIds.user,
       annual_salary:    s1.annual_salary === '' ? null : Number(s1.annual_salary),
+      // PF type → backend expects lowercase; only meaningful when PF applies.
+      pf_type:     s1.pf_eligible ? String(s1.pf_type).toLowerCase() : null,
       // Empty strings to null for nullable string columns
       first_name:  s1.first_name.trim() || null,
       middle_name: s1.middle_name.trim() || null,
@@ -3824,6 +3838,9 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       other_master_asset_ids: s1.other_master_asset_ids
         .map(v => parseInt(v, 10))
         .filter(n => Number.isFinite(n)),
+      // Derived from probation policy + joining date; read-only in the UI.
+      probation_months:   onbProbation.months,
+      probation_end_date: onbProbation.endIso || null,
     };
     // Strip the composite picker key — backend doesn't know about it.
     delete payload.reporting_manager;
@@ -3927,12 +3944,27 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       uan_number:          String(x.uan_number          ?? ''),
       pan_number:          String(x.pan_number          ?? ''),
       tax_regime:          String(x.tax_regime          ?? ''),
-      pf_deduction:        String(x.pf_deduction        ?? ''),
+      pf_deduction:        String(x.pf_type ?? '').toLowerCase() === 'standard' ? 'Standard' : 'Statutory', // repurposed: holds PF Type
       esi_applicable:      String(x.esi_applicable      ?? 'No'),
       gratuity_nominee_name: String(x.gratuity_nominee_name ?? ''),
       agreed_ctc_lpa:      x.agreed_ctc_lpa != null ? String(x.agreed_ctc_lpa) : '',
     });
   }, [isOpen, emp?.id, emp?.raw]);
+
+  // Stage 4 "Agreed CTC (LPA)" mirrors the Stage 1 annual salary (₹ → lakhs
+  // per annum) — read-only here, so always keep it in sync.
+  useEffect(() => {
+    const annual = Number(s1.annual_salary);
+    const lpa = annual > 0 ? String(+(annual / 100000).toFixed(2)) : '';
+    setS4(p => (p.agreed_ctc_lpa === lpa ? p : { ...p, agreed_ctc_lpa: lpa }));
+  }, [s1.annual_salary]);
+
+  // Stage 4 "PF Type" (held in pf_deduction) mirrors the Stage 1 PF Type —
+  // read-only here, so always keep it in sync.
+  useEffect(() => {
+    const t = s1.pf_type || 'Statutory';
+    setS4(p => (p.pf_deduction === t ? p : { ...p, pf_deduction: t }));
+  }, [s1.pf_type]);
 
   /** PUT s4 fields back to the employee row. `markComplete` stamps
    *  `stage4_completed_at` so the sidebar marks Stage 4 done and Next
@@ -4040,7 +4072,9 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       uan_number:          trimOrNull(s4.uan_number),
       pan_number:          s4.pan_number.trim() ? s4.pan_number.trim().toUpperCase() : null,
       tax_regime:          trimOrNull(s4.tax_regime),
-      pf_deduction:        trimOrNull(s4.pf_deduction),
+      // The "PF Type" dropdown (Statutory / Standard) is held in pf_deduction
+      // and saved to the pf_type column the payroll engine reads.
+      pf_type:             s4.pf_deduction ? s4.pf_deduction.toLowerCase() : null,
       esi_applicable:      trimOrNull(s4.esi_applicable),
       gratuity_nominee_name: trimOrNull(s4.gratuity_nominee_name),
       agreed_ctc_lpa:      s4.agreed_ctc_lpa === '' ? null : Number(s4.agreed_ctc_lpa),
@@ -4785,9 +4819,10 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 
                 <p className="onb-init-subgroup">Employment Terms</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Probation Policy<span className="req">*</span></label><MasterSelect options={ONB_PROBATION} value={s1.probation_policy} placeholder="Select probation policy" onChange={(v) => setS1(p => ({ ...p, probation_policy: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Notice Period<span className="req">*</span></label><MasterSelect options={ONB_NOTICE} value={s1.notice_period} placeholder="Select notice period" onChange={(v) => setS1(p => ({ ...p, notice_period: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Work Mode <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly value="On-site" /></Col>
+                  <Col md={3}><label className="onb-init-label">Probation Policy (Month)<span className="req">*</span></label><MasterSelect options={ONB_PROBATION} value={s1.probation_policy} placeholder="Select months (1–12)" onChange={(v) => setS1(p => ({ ...p, probation_policy: v }))} /></Col>
+                  <Col md={3}><label className="onb-init-label">Probation End Date <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly tabIndex={-1} value={onbProbation.endDisplay} placeholder={!s1.date_of_joining ? 'Set joining date' : (onbProbation.months > 0 ? '' : 'No probation')} /></Col>
+                  <Col md={3}><label className="onb-init-label">Notice Period<span className="req">*</span></label><MasterSelect options={ONB_NOTICE} value={s1.notice_period} placeholder="Select notice period" onChange={(v) => setS1(p => ({ ...p, notice_period: v }))} /></Col>
+                  <Col md={3}><label className="onb-init-label">Work Mode <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly value="On-site" /></Col>
                 </Row>
               </div>
             </div>
@@ -4811,7 +4846,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                   <Col md={4}><label className="onb-init-label">Weekly Off<span className="req">*</span></label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off} placeholder="Select weekly off" onChange={(v) => setS1(p => ({ ...p, weekly_off: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Attendance Number</label><input className="onb-init-input" placeholder="Attendance number" value={s1.attendance_number} onChange={e => setS1(p => ({ ...p, attendance_number: e.target.value }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Overtime</label><MasterSelect options={ONB_OVERTIME} value={s1.overtime} placeholder="Select overtime policy" onChange={(v) => setS1(p => ({ ...p, overtime: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Expense Policy<span className="req">*</span></label><MasterSelect options={ONB_EXPENSE} placeholder="Select policy" value={s1.expense_policy} onChange={(v) => setS1(p => ({ ...p, expense_policy: v }))} /></Col>
+                  <Col md={4} data-field="expense_policy"><label className="onb-init-label">Expense Policy<span className="req">*</span></label><MasterSelect options={ONB_EXPENSE} placeholder="Select policy" value={s1.expense_policy} invalid={!!s1Errors.expense_policy} onChange={(v) => { setS1(p => ({ ...p, expense_policy: v })); setS1Errors(p => ({ ...p, expense_policy: '' })); }} />{s1Errors.expense_policy && <div className="onb-error-msg">{s1Errors.expense_policy}</div>}</Col>
                 </Row>
 
                 <div
@@ -4947,7 +4982,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       overflow". The validator gives the friendly error. */}
 <Col md={4} data-field="annual_salary">
   <label className="onb-init-label">
-    Salary Amount {s1.enable_payroll !== false && <span className="req">*</span>}
+    Annual CTC {s1.enable_payroll !== false && <span className="req">*</span>}
   </label>
   <input
     className={`onb-init-input ${s1Errors.annual_salary ? 'is-invalid' : ''}`}
@@ -4991,6 +5026,29 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   />
   {s1Errors.salary_effective_from && <div className="onb-error-msg">{s1Errors.salary_effective_from}</div>}
 </Col>
+                  {/* PF setup — lives here with the salary so the amount can be
+                      previewed in the breakup below. Applicable → on/off gate;
+                      Type → Statutory (₹15k cap) vs Standard (full basic). */}
+                  {s1.enable_payroll !== false && (
+                    <Col md={4} data-field="pf_applicable">
+                      <label className="onb-init-label">PF Applicable</label>
+                      <MasterSelect
+                        options={ONB_YES_NO}
+                        value={s1.pf_eligible ? 'Yes' : 'No'}
+                        onChange={(v) => setS1(p => ({ ...p, pf_eligible: v === 'Yes' }))}
+                      />
+                    </Col>
+                  )}
+                  {s1.enable_payroll !== false && s1.pf_eligible && (
+                    <Col md={4} data-field="pf_type">
+                      <label className="onb-init-label">PF Type</label>
+                      <MasterSelect
+                        options={ONB_PF_TYPE}
+                        value={s1.pf_type || 'Statutory'}
+                        onChange={(v) => setS1(p => ({ ...p, pf_type: v }))}
+                      />
+                    </Col>
+                  )}
                 </Row>
 
                 <div className="onb-init-breakup">
@@ -5090,7 +5148,10 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       const basic = useSaved
                         ? Number(savedBreakup!.earnings.find((c: any) => c.code === 'basic')?.amount ?? earnLines[0]?.value ?? 0)
                         : (earnLines[0]?.value ?? 0);
-                      const pf = s1.pf_eligible ? Math.round(basic * 0.12) : 0;
+                      // Statutory caps basic at the ₹15k EPF ceiling; Standard uses full basic.
+                      const pf = s1.pf_eligible
+                        ? Math.round((s1.pf_type === 'Standard' ? basic : Math.min(basic, 15000)) * 0.12)
+                        : 0;
                       const fixedDed = useSaved ? savedBreakup!.deductions.reduce((s: number, c: any) => s + (Number(c.amount) || 0), 0) : 0;
                       const net = Math.max(0, monthlyGross - pf - fixedDed);
                       const ctcAnnual = useSaved ? monthlyGross * 12 : total;
@@ -5102,11 +5163,19 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       );
                       return (
                         <div>
-                          <p className="text-muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                          <p className="text-muted" style={{ fontSize: 12, marginBottom: 6 }}>
                             {useSaved
                               ? "Monthly component breakup — the employee's saved salary structure."
                               : 'Monthly component breakup (auto-split from the annual salary).'}
                           </p>
+                          {/* How the split + PF are derived, so anyone reading
+                              the breakup understands the figures. */}
+                          <ul style={{ fontSize: 11, color: '#6b7280', lineHeight: 1.7, paddingLeft: 16, marginBottom: 10 }}>
+                            <li><strong>Basic Salary</strong> — 50% of the monthly gross (statutory minimum, Code on Wages 2019).</li>
+                            <li><strong>House Rent Allowance (HRA)</strong> — 30% of the monthly gross.</li>
+                            <li><strong>Special Allowance</strong> — the remaining balance after Basic + HRA.</li>
+                            <li><strong>PF Deduction</strong> — 12% of basic; capped at <strong>₹15,000</strong> for <strong>Statutory</strong>, or on the <strong>full basic</strong> for <strong>Standard</strong> (set by <em>PF Type</em> above).</li>
+                          </ul>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20 }}>
                             <div style={{ flex: '1 1 240px', minWidth: 220 }}>
                               <div style={{ fontSize: 11.5, fontWeight: 700, color: '#108548', textTransform: 'uppercase', letterSpacing: .4, marginBottom: 2 }}>Earnings</div>
@@ -5116,13 +5185,12 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                             <div style={{ flex: '1 1 240px', minWidth: 220 }}>
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
                                 <span style={{ fontSize: 11.5, fontWeight: 700, color: '#b91c1c', textTransform: 'uppercase', letterSpacing: .4 }}>Deductions</span>
-                                <label className="d-flex align-items-center gap-1 mb-0" style={{ fontSize: 12, cursor: 'pointer' }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={s1.pf_eligible}
-                                    onChange={e => setS1(p => ({ ...p, pf_eligible: e.target.checked }))}
-                                  /> PF (12%)
-                                </label>
+                                {/* PF on/off is now the "PF Applicable" field above. */}
+                                {s1.pf_eligible && (
+                                  <span style={{ fontSize: 11, fontWeight: 600, color: '#6d28d9' }}>
+                                    PF: {s1.pf_type === 'Standard' ? 'Standard (full basic)' : 'Statutory (₹15k cap)'}
+                                  </span>
+                                )}
                               </div>
                               <Line label="Provident Fund (PF)" value={pf} />
                               {useSaved && savedBreakup!.deductions.map((c: any, i: number) => (
@@ -7273,8 +7341,9 @@ function Stage4Payroll({
               <MasterSelect options={ONB_TAX_REGIME} value={s4.tax_regime || 'New Regime (115BAC)'} onChange={(v) => setS4(p => ({ ...p, tax_regime: v }))} />
             </Col>
             <Col md={4}>
-              <label className="onb-init-label">PF Deduction <span className="req">*</span></label>
-              <MasterSelect options={ONB_PF_DEDUCT} value={s4.pf_deduction} onChange={(v) => setS4(p => ({ ...p, pf_deduction: v }))} invalid={invalid.pf_deduction} />
+              <label className="onb-init-label">PF Type</label>
+              <MasterSelect options={ONB_PF_TYPE} value={s4.pf_deduction || 'Statutory'} onChange={() => { /* read-only — set in Stage 1 */ }} disabled />
+              <small style={{ display: 'block', marginTop: 3, fontSize: 10.5, color: '#9ca3af' }}>Set in Stage 1 (Compensation) — read-only here.</small>
             </Col>
             <Col md={4}>
               <label className="onb-init-label">ESI Applicable</label>
@@ -7285,14 +7354,15 @@ function Stage4Payroll({
               <input className="onb-init-input" placeholder="Full legal name" value={s4.gratuity_nominee_name} onChange={e => setS4(p => ({ ...p, gratuity_nominee_name: e.target.value }))} />
             </Col>
             <Col md={4}>
-              <label className="onb-init-label">Agreed CTC (LPA) <span className="req">*</span></label>
+              <label className="onb-init-label">Agreed CTC (LPA)</label>
               <input
-                className={`onb-init-input is-required${invalid.agreed_ctc_lpa ? ' is-invalid' : ''}`}
-                placeholder="e.g. 12"
-                inputMode="decimal"
+                className="onb-init-input"
+                placeholder="—"
                 value={s4.agreed_ctc_lpa}
-                onChange={e => setS4(p => ({ ...p, agreed_ctc_lpa: e.target.value.replace(/[^0-9.]/g, '') }))}
+                readOnly
+                style={{ background: 'var(--vz-light, #f3f3f9)', cursor: 'not-allowed' }}
               />
+              <small style={{ display: 'block', marginTop: 3, fontSize: 10.5, color: '#9ca3af' }}>From the Stage 1 salary — read-only here.</small>
             </Col>
           </Row>
         </div>

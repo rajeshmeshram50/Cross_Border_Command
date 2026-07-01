@@ -257,6 +257,10 @@ class ExpenseClaimController extends Controller
                 'branch_id'        => $employee->branch_id,
                 'claim_no'         => $this->nextClaimNo($employee->client_id, $employee->branch_id),
                 'employee_id'      => $employee->id,
+                // Snapshot the name so the claim still shows it if the
+                // employee is later deleted (soft or hard).
+                'employee_name'    => $employee->display_name
+                    ?: trim(($employee->first_name ?? '') . ' ' . ($employee->last_name ?? '')) ?: null,
                 'manager_id'       => $employee->reporting_manager_id,
                 'category_id'      => $data['category_id'] ?? null,
                 'category_name'    => $categoryName,
@@ -666,10 +670,12 @@ class ExpenseClaimController extends Controller
     {
         $employee = $row->employee;
         $manager  = $row->manager;
-        $employeeName = $employee
+        // Prefer the live relation; fall back to the name snapshot stored on
+        // the claim so a deleted (soft or hard) employee's name still shows.
+        $employeeName = ($employee
             ? ($employee->display_name
                 ?: trim(($employee->first_name ?? '') . ' ' . ($employee->last_name ?? '')))
-            : null;
+            : null) ?: $row->employee_name;
         $managerName = $manager
             ? ($manager->display_name
                 ?: trim(($manager->first_name ?? '') . ' ' . ($manager->last_name ?? '')))

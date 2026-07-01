@@ -7,6 +7,7 @@ use App\Models\Lead;
 use App\Models\ProformaInvoice;
 use App\Models\ShipmentOrder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 
@@ -94,7 +95,14 @@ class ShipmentOrderController extends Controller
             // branch (falling back to the creator's branch when the lead has
             // none) so the counter is scoped correctly.
             $branchId = Lead::where('id', $data['lead_id'])->value('branch_id') ?? $user->branch_id;
-            $shipment = ShipmentOrder::create([
+            // Allocate the code + insert inside a transaction that locks the
+            // client row, so two concurrent saves can't read the same MAX and
+            // collide or skip a number (mirrors Quotation/PI — CLAUDE rule #3).
+            // This is what keeps the sequence gap-free and deterministic, so the
+            // create-form preview and the saved code agree.
+            $shipment = DB::transaction(function () use ($user, $branchId, $data, $paths) {
+                DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
+                return ShipmentOrder::create([
                 'client_id'           => $user->client_id,
                 'branch_id'           => $branchId,
                 'shipment_code'       => $this->nextShipmentCode($user->client_id, $branchId),
@@ -113,7 +121,8 @@ class ShipmentOrderController extends Controller
                 'attachments'         => $paths ?: null,
                 'remarks'             => $data['remarks']              ?? null,
                 'created_by'          => $user->id,
-            ]);
+                ]);
+            });
         } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
             // B21: covers the race where two concurrent POSTs both pass
             // the exists() pre-check above. Returning 409 keeps the
@@ -135,23 +144,25 @@ class ShipmentOrderController extends Controller
      * highest existing numeric suffix for the branch and adds one. Postgres
      * `regexp_replace` strips non-digits so legacy/odd codes don't break it.
      * Each branch keeps its own SHP sequence (scoped within the client tenant).
+     *
+     * Purely `highest_code + 1` — deterministic and gap-free going forward.
+     * (The old `max(highest_code, row_count)` term made the number jump ahead
+     * whenever the branch had uncoded/legacy rows, so the create-form preview
+     * and the saved code disagreed. `highest_code + 1` is always above every
+     * existing code, so it can never collide.)
      */
     private function nextShipmentCode(int $clientId, ?int $branchId): string
     {
-        // Take the GREATER of (highest existing code number) and (row count) so
-        // legacy rows with a NULL shipment_code (created before the column
-        // existed) are still counted — e.g. 2 un-coded rows ⇒ next is SHP-003.
         $row = ShipmentOrder::query()
             ->where('client_id', $clientId)
             ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
             ->when($branchId === null, fn ($q) => $q->whereNull('branch_id'))
             ->selectRaw("
-                COALESCE(MAX(CAST(NULLIF(regexp_replace(COALESCE(shipment_code, ''), '\\D', '', 'g'), '') AS INTEGER)), 0) AS max_code,
-                COUNT(*) AS cnt
+                COALESCE(MAX(CAST(NULLIF(regexp_replace(COALESCE(shipment_code, ''), '\\D', '', 'g'), '') AS INTEGER)), 0) AS max_code
             ")
             ->first();
 
-        $next = max((int) ($row->max_code ?? 0), (int) ($row->cnt ?? 0)) + 1;
+        $next = (int) ($row->max_code ?? 0) + 1;
         return 'SHP-' . str_pad((string) $next, 3, '0', STR_PAD_LEFT);
     }
 

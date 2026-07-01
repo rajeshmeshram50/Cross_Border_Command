@@ -1,8 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { Row, Col } from 'reactstrap';
 import api from '../../../api';
 import { Shimmer } from '../../../components/ui/Shimmer';
 import { KpiTile, AnimatedNumber } from '../EmployeeProfileShared';
+import RegularizationModal, { type RegPrefillPunch } from '../../hrms/RegularizationModal';
+import { regularizationApi, type ApiRegularization } from '../../hrms/regularizationApi';
+import AttendanceLogsView, { type AttLog } from './AttendanceLogsView';
 
 interface AttendancePanelPunch {
   id: number;
@@ -22,11 +25,18 @@ interface AttendancePanelRecord {
   punches: AttendancePanelPunch[];
 }
 interface AttendancePanelResponse {
-  employee: { id: number; emp_code: string | null; name: string; face_registered: boolean };
+  employee: { id: number; emp_code: string | null; name: string; face_registered: boolean; shift_start?: string | null; shift_end?: string | null };
   month: string;
   stats: { present_days: number; late_marks: number; missing_biometric: number; total_leaves: number };
   today: AttendancePanelRecord | null;
   history: AttendancePanelRecord[];
+  // Rich per-day logs (same shape the HR Attendance "Logs & Requests" view uses).
+  shift?: string | null;
+  shift_start?: string | null;
+  shift_end?: string | null;
+  weekly_off?: string | null;
+  expected_minutes?: number;
+  logs?: AttLog[];
 }
 
 
@@ -54,7 +64,6 @@ const attFmtDate  = (iso: string) => {
   const d = new Date(iso);
   return d.toLocaleDateString([], { day: '2-digit', month: 'short' });
 };
-const attDayName  = (iso: string) => new Date(iso).toLocaleDateString([], { weekday: 'short' });
 
 export default function AttendanceTab({ employeeId }: { employeeId: string }) {
   const [data, setData] = useState<AttendancePanelResponse | null>(null);
@@ -64,15 +73,20 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
-  const [page, setPage] = useState(0);
-  const PAGE_SIZE = 8;
+  // Regularization (attendance correction) — self-service. The modal needs the
+  // numeric employee id, which comes back on the summary payload.
+  const [regOpen, setRegOpen]     = useState(false);
+  const [regDate, setRegDate]     = useState<string>('');
+  const [regPunches, setRegPunches] = useState<RegPrefillPunch[]>([]);
+  const [myRegs, setMyRegs]       = useState<ApiRegularization[]>([]);
+  const numericEmployeeId = data?.employee?.id ?? null;
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
     api.get(`/attendance/employee/${encodeURIComponent(employeeId)}/summary`, { params: { month } })
-      .then((r: any) => { if (!cancelled) { setData(r.data); setPage(0); } })
+      .then((r: any) => { if (!cancelled) { setData(r.data); } })
       .catch((err: any) => {
         if (cancelled) return;
         setError(err?.response?.data?.message || err?.message || 'Failed to load attendance.');
@@ -82,10 +96,36 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
     return () => { cancelled = true; };
   }, [employeeId, month]);
 
-  const stepMonth = (delta: number) => {
-    const [y, m] = month.split('-').map(Number);
-    const d = new Date(y, m - 1 + delta, 1);
-    setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  const loadRegs = useCallback(() => {
+    if (!numericEmployeeId) return;
+    regularizationApi.list({ employee_id: numericEmployeeId })
+      .then(setMyRegs)
+      .catch(() => { /* non-blocking — history just stays empty */ });
+  }, [numericEmployeeId]);
+
+  useEffect(() => { loadRegs(); }, [loadRegs]);
+
+  // Open the regularization modal for a given day, prefilling the punch rows
+  // from that day's first-in / last-out when available.
+  const openReg = (record: AttendancePanelRecord | null, dateIso: string) => {
+    const punches: RegPrefillPunch[] = [];
+    const hhmm = (iso: string | null) => iso
+      ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+      : null;
+    if (record?.punches?.length) {
+      for (const p of record.punches) {
+        const t = hhmm(p.punched_at);
+        if (t) punches.push({ time: t, type: p.direction });
+      }
+    } else if (record) {
+      const ci = hhmm(record.check_in_at);
+      const co = hhmm(record.check_out_at);
+      if (ci) punches.push({ time: ci, type: 'in' });
+      if (co) punches.push({ time: co, type: 'out' });
+    }
+    setRegPunches(punches);
+    setRegDate(dateIso);
+    setRegOpen(true);
   };
 
   if (loading) {
@@ -118,10 +158,21 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
 
   const { stats, today, history } = data;
   const todayPunches = today?.punches || [];
-  const pageStart = page * PAGE_SIZE;
-  const pageEnd   = pageStart + PAGE_SIZE;
-  const pageRows  = history.slice(pageStart, pageEnd);
-  const pageCount = Math.max(1, Math.ceil(history.length / PAGE_SIZE));
+
+  // Rich Logs & Requests view (mirrors the HR Attendance module). Built from
+  // the per-day `logs` the summary endpoint now returns.
+  const logsEmployee = numericEmployeeId ? {
+    id: numericEmployeeId,
+    shiftStart: data.shift_start || data.employee.shift_start || '09:30',
+    shiftEnd:   data.shift_end   || data.employee.shift_end   || '18:30',
+    weeklyOff:  data.weekly_off || '',
+    logs:       data.logs || [],
+  } : null;
+  const recForIso = (iso: string): AttendancePanelRecord | null => {
+    if (today && today.attendance_date.slice(0, 10) === iso) return today;
+    return history.find(r => r.attendance_date.slice(0, 10) === iso) || null;
+  };
+  const onRegularizeDate = (iso: string) => openReg(recForIso(iso), iso);
   const G_SUCCESS = 'linear-gradient(135deg, #0ab39c 0%, #30d5b5 100%)';
   const G_WARNING = 'linear-gradient(135deg, #f7b84b 0%, #ffd47a 100%)';
   const G_DANGER  = 'linear-gradient(135deg, #f06548 0%, #ff9e7c 100%)';
@@ -261,118 +312,84 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
         </Col>
       </Row>
 
-      {/* Attendance Timelog History */}
+      {/* Attendance Timelog History — same rich Logs & Requests view as the HR Attendance module */}
       <Row className="g-3 flex-grow-1 align-items-stretch">
         <Col xs={12}>
-          <div className="ep-section-card-flat ep-section-card ep-ct-amber h-100 d-flex flex-column">
-            <div
-              className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 flex-wrap ep-hd-amber"
-            >
-              <div className="d-flex align-items-center gap-2">
-                <span className="ep-section-icon ep-icon-amber">
-                  <i className="ri-history-line" />
-                </span>
-                <h6 className="mb-0 fw-bold ep-fs-12">Attendance Timelog History</h6>
+          {logsEmployee && (
+            <AttendanceLogsView
+              employee={logsEmployee}
+              month={month}
+              onMonthChange={setMonth}
+              onRegularize={onRegularizeDate}
+            />
+          )}
+        </Col>
+      </Row>
+
+      {/* My Regularization Requests — the employee's own history + live status */}
+      {myRegs.length > 0 && (
+        <Row className="g-3 mt-1">
+          <Col xs={12}>
+            <div className="ep-section-card-flat ep-section-card ep-ct-indigo">
+              <div className="d-flex align-items-center gap-2 px-3 py-2 ep-hd-indigo">
+                <span className="ep-section-icon ep-icon-indigo"><i className="ri-file-edit-line" /></span>
+                <h6 className="mb-0 fw-bold ep-fs-12">My Regularization Requests</h6>
               </div>
-              <div className="d-flex align-items-center gap-2">
-                <button type="button" className="btn btn-sm btn-light" onClick={() => stepMonth(-1)} aria-label="Previous month">
-                  <i className="ri-arrow-left-s-line" />
-                </button>
-                <span className="fw-semibold att-month-label">
-                  {new Date(month + '-01').toLocaleDateString([], { month: 'long', year: 'numeric' })}
-                </span>
-                <button type="button" className="btn btn-sm btn-light" onClick={() => stepMonth(1)} aria-label="Next month">
-                  <i className="ri-arrow-right-s-line" />
-                </button>
-              </div>
-            </div>
-            <div className="px-3 py-3 flex-grow-1 d-flex flex-column">
-              {history.length === 0 ? (
-                <div className="text-center text-muted py-4 ep-fs-13 my-auto">
-                  No attendance records for {new Date(month + '-01').toLocaleDateString([], { month: 'long', year: 'numeric' })}.
-                </div>
-              ) : (
-                <>
-                
-                  <style>{`
-                    [data-bs-theme="dark"] .att-tl-badge.att-tl-present { background: rgba(16,185,129,0.18) !important; color: #6ee7b7 !important; }
-                    [data-bs-theme="dark"] .att-tl-badge.att-tl-late    { background: rgba(245,158,11,0.18) !important; color: #fcd34d !important; }
-                    [data-bs-theme="dark"] .att-tl-badge.att-tl-leave   { background: rgba(99,102,241,0.20) !important; color: #c4b5fd !important; }
-                    [data-bs-theme="dark"] .att-tl-badge.att-tl-other   { background: rgba(255,255,255,0.08) !important; color: #cbd5e1 !important; }
-                  `}</style>
-                  <div className="table-responsive">
-                    <table className="table table-sm mb-0 att-table">
-                      <thead>
-                        <tr className="att-thead-row">
-                          <th>Date</th>
-                          <th>Day</th>
-                          <th>First In</th>
-                          <th>Last Out</th>
-                          <th>Punches</th>
-                          <th>Worked</th>
-                          <th>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pageRows.map(r => (
-                          <tr key={r.id}>
-                            <td className="fw-semibold">{attFmtDate(r.attendance_date)}</td>
-                            <td>{attDayName(r.attendance_date)}</td>
-                            <td className="font-monospace">{attFmtClock(r.check_in_at)}</td>
-                            <td className="font-monospace">{attFmtClock(r.check_out_at)}</td>
-                            <td>{r.punches_count}</td>
-                            <td>{attFmtHM(r.total_worked_seconds)}</td>
+              <div className="px-3 py-3">
+                <div className="table-responsive">
+                  <table className="table table-sm align-middle mb-0">
+                    <thead>
+                      <tr className="att-thead-row">
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Requested Punches</th>
+                        <th>Reason</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {myRegs.map(rg => {
+                        const punches = (rg.punches ?? []).map(p => `${p.in ?? '—'}–${p.out ?? '—'}`).join(', ');
+                        const tone =
+                          rg.status === 'Approved' ? { bg: '#dcfce7', fg: '#15803d' } :
+                          rg.status === 'Rejected' ? { bg: '#fee2e2', fg: '#b91c1c' } :
+                          rg.status === 'Cancelled' ? { bg: '#f1f5f9', fg: '#475569' } :
+                                                      { bg: '#fef3c7', fg: '#92400e' };
+                        return (
+                          <tr key={rg.id}>
+                            <td className="fw-semibold">{attFmtDate(rg.regularization_date)}</td>
+                            <td className="ep-fs-12">{rg.mode === 'exempt' ? 'Exempt day' : 'Adjust log'}{rg.type ? ` · ${rg.type}` : ''}</td>
+                            <td className="font-monospace ep-fs-12">{rg.mode === 'exempt' ? '—' : (punches || '—')}</td>
+                            <td className="ep-fs-12" style={{ maxWidth: 240 }}>{rg.reason || '—'}</td>
                             <td>
-                              <span
-                                className={`att-tl-badge att-status-badge att-tl-${r.status === 'Present' ? 'present' : r.status === 'Late' ? 'late' : r.status === 'Leave' ? 'leave' : 'other'} d-inline-flex align-items-center gap-1 fw-semibold`}
-                                style={{
-                                  ['--att-status-bg' as any]: r.status === 'Present' ? '#d6f4e3' :
-                                              r.status === 'Late'    ? '#fef3c7' :
-                                              r.status === 'Leave'   ? '#e0e7ff' : '#f1f5f9',
-                                  ['--att-status-fg' as any]: r.status === 'Present' ? '#108548' :
-                                         r.status === 'Late'    ? '#92400e' :
-                                         r.status === 'Leave'   ? '#3730a3' : '#475569',
-                                }}
-                              >
-                                {r.status}
+                              <span className="d-inline-flex align-items-center fw-semibold ep-fs-11 px-2 py-1 rounded" style={{ background: tone.bg, color: tone.fg }}>
+                                {rg.status}
                               </span>
                             </td>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {pageCount > 1 && (
-                    <div className="d-flex align-items-center justify-content-between mt-2 pt-2 border-top">
-                      <small className="text-muted">
-                        Showing {pageStart + 1}–{Math.min(pageEnd, history.length)} of {history.length}
-                      </small>
-                      <ul className="pagination pagination-sm mb-0">
-                        <li className={page === 0 ? 'page-item disabled' : 'page-item'}>
-                          <a href="#" className="page-link" onClick={e => { e.preventDefault(); if (page > 0) setPage(p => p - 1); }}>
-                            <i className="ri-arrow-left-s-line" />
-                          </a>
-                        </li>
-                        {Array.from({ length: pageCount }, (_, i) => (
-                          <li key={i} className={page === i ? 'page-item active' : 'page-item'}>
-                            <a href="#" className="page-link" onClick={e => { e.preventDefault(); setPage(i); }}>{i + 1}</a>
-                          </li>
-                        ))}
-                        <li className={page >= pageCount - 1 ? 'page-item disabled' : 'page-item'}>
-                          <a href="#" className="page-link" onClick={e => { e.preventDefault(); if (page < pageCount - 1) setPage(p => p + 1); }}>
-                            <i className="ri-arrow-right-s-line" />
-                          </a>
-                        </li>
-                      </ul>
-                    </div>
-                  )}
-                </>
-              )}
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
-          </div>
-        </Col>
-      </Row>
+          </Col>
+        </Row>
+      )}
+
+      {numericEmployeeId && (
+        <RegularizationModal
+          open={regOpen}
+          employeeId={numericEmployeeId}
+          dateIso={regDate}
+          shiftStart={data?.employee?.shift_start ?? undefined}
+          shiftEnd={data?.employee?.shift_end ?? undefined}
+          initialPunches={regPunches}
+          onClose={() => setRegOpen(false)}
+          onSubmitted={() => loadRegs()}
+        />
+      )}
     </div>
   );
 }

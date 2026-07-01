@@ -3,10 +3,14 @@ import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { useToast } from '../../../../contexts/ToastContext';
+import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import Tooltip from '../../../../components/ui/Tooltip';
+import { ShimmerForm } from '../../../../components/ui/Shimmer';
 import { MasterMultiSelect } from '../../../master/masterFormKit';
 import { MasterRecordModal } from '../../../master/MasterRecordModal';
+import { SegmentModal, nextSegmentCode, type SegmentForm } from '../../../clm/compliance/ClmSegmentPage';
+import { CLM_CSS } from '../../../clm/shared/clmShared';
 import { SegmentTags } from '../../procurement-management/bulk-sourcing/SegmentTags';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import {
@@ -301,6 +305,7 @@ export default function AddVendorModal(props: {
 }) {
   const { onClose, onSubmit, vendorId: initialVendorId, initialStep } = props;
   const toast = useToast();
+  const confirm = useConfirm();
   const isEdit = !!initialVendorId;
 
   /* ─── Wizard navigation ─── */
@@ -411,6 +416,21 @@ export default function AddVendorModal(props: {
 
   /* ─── Master Quick-Add state (matches the Add Product wizard pattern) ─── */
   const [quickAdd, setQuickAdd] = useState<VendorMasterSlug | null>(null);
+
+  /* Segment "+" opens the REAL CLM "Add New Segment" form (auto SG- code,
+   * regulatory status, customer≠consignee rule) instead of the bare master
+   * quick-add. We fetch current segments first so the previewed code + the
+   * duplicate-name guard are accurate. */
+  const [segAdd, setSegAdd] = useState<{ nextCode: string; names: string[] } | null>(null);
+  const openSegmentAdd = async () => {
+    try {
+      const { data } = await api.get<{ data: { code: string; name: string }[] }>('/clm/segments');
+      const segRows = data.data ?? [];
+      setSegAdd({ nextCode: nextSegmentCode(segRows), names: segRows.map(r => r.name) });
+    } catch {
+      setSegAdd({ nextCode: 'SG-001', names: [] });
+    }
+  };
 
   /* Persisted vendor id — null until the first step (Identity) is saved.
      Every subsequent step PUT/POST targets /vendors/{vendorId}/step/… so
@@ -562,11 +582,21 @@ export default function AddVendorModal(props: {
      Contact card, the contact surfaces as a locked (non-edit/non-delete)
      "Primary" row in the contacts table below. Edit-mode starts saved. */
   const [primarySaved, setPrimarySaved] = useState(false);
+  /* In-flight flag for the primary contact's own "Save Contact" button. */
+  const [savingPrimary, setSavingPrimary] = useState(false);
+  /* When the user clicks Edit on the primary row, this overrides the
+     saved/edit lock so the Primary Contact card becomes editable again. */
+  const [editingPrimary, setEditingPrimary] = useState(false);
+  /* Scroll target — the Primary Contact card, so Edit jumps the user to it. */
+  const primaryCardRef = useRef<HTMLDivElement>(null);
   /* Server-side path for the primary contact's previously uploaded
      business card. Hydrated from primary_address.attachment_path on
      edit-mode load so the table cell can render a working View link
      without a fresh upload. */
   const [primaryAttachmentPath, setPrimaryAttachmentPath] = useState<string>('');
+  /* Backend-resolved file_url() for the primary contact attachment — used
+     for view/download so it works on the server (Azure / real host). */
+  const [primaryAttachmentUrl, setPrimaryAttachmentUrl] = useState<string>('');
 
   type ContactRow = {
     id: number;
@@ -580,6 +610,10 @@ export default function AddVendorModal(props: {
        /vendors/{id}. Empty for freshly-added rows that haven't been
        saved yet. */
     attachmentPath?: string;
+    /* Backend-resolved file_url() — the AUTHORITATIVE view/download URL
+       (knows Azure Blob + the real host). Use this over composing a URL
+       from attachmentPath, which breaks on the server. */
+    attachmentUrl?: string;
     /* Freshly-picked File — set while the popup is open so the
        FileChooser can render a blob: preview URL with View + Delete
        buttons before the row is persisted. Cleared on save. */
@@ -1258,6 +1292,7 @@ export default function AddVendorModal(props: {
           setEmail(pa.email ?? '');
           setWhatsappEnabled(pa.whatsapp_enabled ?? true);
           setPrimaryAttachmentPath(pa.attachment_path ?? '');
+          setPrimaryAttachmentUrl(pa.attachment_url ?? '');
         }
         setExtraContacts((v.extra_contacts ?? []).map(c => ({
           id: c.id,
@@ -1268,6 +1303,7 @@ export default function AddVendorModal(props: {
           whatsapp: c.whatsapp_enabled ?? true,
           attachmentName: basename(c.attachment_path),
           attachmentPath: c.attachment_path ?? undefined,
+          attachmentUrl: c.attachment_url ?? undefined,
         })));
 
         // Step 2 — KYC sub-collections (file fields restored via existingPath
@@ -1499,8 +1535,9 @@ export default function AddVendorModal(props: {
       });
       // Sync the stored business-card path back so a re-save echoes it
       // (instead of re-uploading) and the chooser reflects the saved file.
-      const savedPath = (data?.data?.primary_address as { attachment_path?: string } | undefined)?.attachment_path;
-      setPrimaryAttachmentPath(savedPath ?? '');
+      const savedPa = data?.data?.primary_address as { attachment_path?: string; attachment_url?: string } | undefined;
+      setPrimaryAttachmentPath(savedPa?.attachment_path ?? '');
+      setPrimaryAttachmentUrl(savedPa?.attachment_url ?? '');
       if (attachment) setAttachment(null);
       setFieldErrors({});
       toast.success('Contacts saved', 'Address & contact persons captured');
@@ -1838,6 +1875,15 @@ export default function AddVendorModal(props: {
     }
   };
   const removeBankRow = async (id: string) => {
+    const ok = await confirm({
+      title: 'Remove Bank Details?',
+      message: 'This bank account will be permanently removed from this supplier. This action cannot be undone.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      tone: 'danger',
+      icon: 'delete-bin-line',
+    });
+    if (!ok) return;
     if (!vendorId || !/^\d+$/.test(id)) { setBankRows(prev => prev.filter(r => r.id !== id)); return; }
     setSaving(true);
     try {
@@ -1888,6 +1934,15 @@ export default function AddVendorModal(props: {
     }
   };
   const removeGstRow = async (id: string) => {
+    const ok = await confirm({
+      title: 'Remove GST Scrutiny?',
+      message: 'This GST scrutiny entry will be permanently removed from this supplier. This action cannot be undone.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      tone: 'danger',
+      icon: 'delete-bin-line',
+    });
+    if (!ok) return;
     if (!vendorId || !/^\d+$/.test(id)) { setGstRows(prev => prev.filter(r => r.id !== id)); return; }
     setSaving(true);
     try {
@@ -2179,6 +2234,15 @@ export default function AddVendorModal(props: {
     toast.success('Product mapped', `${row.productCode} ${row.productName} added`);
   };
   const removeMapRow = async (id: string) => {
+    const ok = await confirm({
+      title: 'Remove Mapped Product?',
+      message: 'This product mapping will be permanently removed from this supplier. This action cannot be undone.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      tone: 'danger',
+      icon: 'delete-bin-line',
+    });
+    if (!ok) return;
     const next = productMappings.filter(r => r.id !== id);
     if (!(await persistMappings(next))) return;
     setProductMappings(next);
@@ -2258,8 +2322,20 @@ export default function AddVendorModal(props: {
       toast.error('Missing required fields', 'Please fix the highlighted fields');
       return;
     }
-    const ok = await saveContacts();   // persists primary_address + business card
-    if (ok) setPrimarySaved(true);
+    setSavingPrimary(true);
+    try {
+      const ok = await saveContacts();   // persists primary_address + business card
+      if (ok) { setPrimarySaved(true); setEditingPrimary(false); }
+    } finally {
+      setSavingPrimary(false);
+    }
+  };
+  /* The Primary Contact card is read-only once saved (or on edit), UNLESS the
+     user clicked Edit on its row — then editingPrimary re-opens it. */
+  const primaryLocked = (primarySaved || isEdit) && !editingPrimary;
+  const startEditPrimary = () => {
+    setEditingPrimary(true);
+    primaryCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
   const openContactPopup = () => {
@@ -2287,7 +2363,7 @@ export default function AddVendorModal(props: {
   type ApiContactRow = {
     id: number; contact_name?: string | null; designation?: string | null;
     contact_no?: string | null; email?: string | null; whatsapp_enabled?: boolean;
-    attachment_path?: string | null;
+    attachment_path?: string | null; attachment_url?: string | null;
   };
   const mapApiContact = (c: ApiContactRow): ContactRow => {
     const raw = (c.attachment_path ?? '').split('/').pop() ?? '';
@@ -2301,6 +2377,7 @@ export default function AddVendorModal(props: {
       whatsapp: c.whatsapp_enabled ?? true,
       attachmentName: label,
       attachmentPath: c.attachment_path ?? undefined,
+      attachmentUrl: c.attachment_url ?? undefined,
     };
   };
 
@@ -2342,8 +2419,12 @@ export default function AddVendorModal(props: {
     fd.append('whatsapp_enabled', contactDraft.whatsapp ? '1' : '0');
     if (contactDraft.attachmentFile) fd.append('attachment', contactDraft.attachmentFile);
     else if (contactDraft.attachmentPath) fd.append('attachment_path', contactDraft.attachmentPath);
+    else fd.append('remove_attachment', '1');  // no file + no path = user cleared it → backend drops the old file
 
-    setSaving(true);
+    // The "Add Contact Person" popup drives its OWN in-flight spinner (local
+    // state in ContactAddPopup), so we deliberately do NOT toggle the shared
+    // `saving` flag here — that flag belongs to the outer "Update & Next"
+    // button, which was lighting up instead of the popup's Save button.
     try {
       if (contactEditingId !== null) {
         fd.append('_method', 'PUT');  // PHP parses multipart only on POST
@@ -2362,12 +2443,19 @@ export default function AddVendorModal(props: {
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save contact';
       toast.error('Save failed', msg);
-    } finally {
-      setSaving(false);
     }
   };
 
   const removeExtraContact = async (id: number) => {
+    const ok = await confirm({
+      title: 'Remove Contact Person?',
+      message: 'This contact person will be permanently removed from this supplier. This action cannot be undone.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      tone: 'danger',
+      icon: 'delete-bin-line',
+    });
+    if (!ok) return;
     if (!vendorId) { setExtraContacts(prev => prev.filter(c => c.id !== id)); return; }
     setSaving(true);
     try {
@@ -2458,39 +2546,10 @@ export default function AddVendorModal(props: {
                Mutually-exclusive rendering is simpler and reliable.
                Skeleton hits 0ms when the sessionStorage cache is fresh. */
             <div className="avm-load-overlay avm-load-overlay-static" role="status" aria-live="polite" aria-label="Loading supplier form">
-              <div className="avm-load-skeleton">
-                {/* Section heading + 4 fields */}
-                <div className="avm-load-bar avm-load-heading" />
-                <div className="avm-load-grid">
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                </div>
-                {/* Address section heading + grid */}
-                <div className="avm-load-bar avm-load-heading" style={{ marginTop: 18 }} />
-                <div className="avm-load-grid">
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                </div>
-                {/* Contact section heading + grid */}
-                <div className="avm-load-bar avm-load-heading" style={{ marginTop: 18 }} />
-                <div className="avm-load-grid">
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                </div>
-                {/* Bottom section — KYC docs / product mappings */}
-                <div className="avm-load-bar avm-load-heading" style={{ marginTop: 18 }} />
-                <div className="avm-load-grid">
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                </div>
+              {/* Shared ShimmerForm — identical to the Client / Branch form
+                  loading shimmer (header card + 4 section cards, 3-col grids). */}
+              <div style={{ width: '100%', maxWidth: 1100 }}>
+                <ShimmerForm sections={4} cols={3} fieldsPerSection={6} header />
               </div>
             </div>
           ) : (<>
@@ -2575,7 +2634,7 @@ export default function AddVendorModal(props: {
               }
               if (dd) {
                 const fileLabel = dd.fileName || (dd.existingPath ? dd.existingPath.split('/').pop() ?? '' : '');
-                const href = dd.existingPath ? resolveFileUrl(dd.existingPath) : (dd.file ? URL.createObjectURL(dd.file) : '');
+                const href = dd.existingUrl || (dd.existingPath ? resolveFileUrl(dd.existingPath) : (dd.file ? URL.createObjectURL(dd.file) : ''));
                 kycRows.push([
                   {
                     label: dd.documentName || 'Document',
@@ -2695,7 +2754,7 @@ export default function AddVendorModal(props: {
                     <Field label="Company Website">
                       <input className="avm-input" placeholder="https://abclogistics.com" value={website} onChange={e => setWebsite(e.target.value)} />
                     </Field>
-                    <Field label="Supplier Segment" required addNew onAdd={() => setQuickAdd('segments')} error={fieldErrors.segment}
+                    <Field label="Supplier Segment" required addNew onAdd={openSegmentAdd} error={fieldErrors.segment}
                       hint={lockedSegments.length > 0 ? <span className="avm-seg-hint" title="Segments with uploaded documents can’t be removed"><i className="ri-lock-2-line" />(locked)</span> : undefined}>
                       {/* masterFormKit's MasterMultiSelect renders visible violet
                           chips with × buttons + a checkbox-marked dropdown so
@@ -2806,47 +2865,57 @@ export default function AddVendorModal(props: {
                       Identification tab to mirror the Figma's "Contact Person
                       Details" tab. Same component state, so saveContacts()
                       still validates + persists it on Save & Next. */}
+                  <div ref={primaryCardRef}>
                   <SectionCard tone="violet" icon={<i className="ri-user-3-line" />} title="Primary Contact Person Details" subtitle="Primary point of contact for this supplier" headerAction={
-                    (primarySaved || isEdit)
+                    primaryLocked
                       ? <span className="avm-doc-count"><i className="ri-lock-2-line" /> Saved — locked</span>
                       : (
-                        <button className="avm-section-add-btn" onClick={savePrimaryContact}>
-                          <i className="ri-save-line" /> Save Contact
+                        <button className="avm-section-add-btn" onClick={savePrimaryContact} disabled={savingPrimary}>
+                          {savingPrimary
+                            ? <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
+                            : <><i className="ri-save-line" /> Save Contact</>}
                         </button>
                       )
                   }>
-                    <div className="avm-grid-4">
+                    <div
+                      className="avm-grid-4"
+                      /* The primary contact locks after saving. Clicking the
+                         locked fields does nothing, so surface a toast telling
+                         the user why it can't be edited here. */
+                      onClick={() => { if (primaryLocked) toast.info('Primary contact locked', 'Click the Edit icon on the primary row below to change it.'); }}
+                    >
                       <Field label="Contact Person Name" required error={fieldErrors.contactName}>
-                        <input className="avm-input" placeholder="Rahul Sharma" value={contactName} maxLength={60} readOnly={primarySaved || isEdit} onChange={e => applySanitizer(e.target.value, 'contactName', setContactName, raw => sanitizeKycAlpha(raw, 60))} />
+                        <input className="avm-input" placeholder="Rahul Sharma" value={contactName} maxLength={60} readOnly={primaryLocked} onChange={e => applySanitizer(e.target.value, 'contactName', setContactName, raw => sanitizeKycAlpha(raw, 60))} />
                       </Field>
                       <Field label="Designation" required error={fieldErrors.designation}>
-                        <input className="avm-input" placeholder="Manager" value={designation} maxLength={60} readOnly={primarySaved || isEdit} onChange={e => applySanitizer(e.target.value, 'designation', setDesignation, raw => sanitizeKycDesignation(raw, 60))} />
+                        <input className="avm-input" placeholder="Manager" value={designation} maxLength={60} readOnly={primaryLocked} onChange={e => applySanitizer(e.target.value, 'designation', setDesignation, raw => sanitizeKycDesignation(raw, 60))} />
                       </Field>
                       <Field label="Contact No" required error={fieldErrors.contactNo}>
-                        <input className="avm-input" placeholder="9876543210" inputMode="numeric" pattern="\d*" maxLength={15} value={contactNo} readOnly={primarySaved || isEdit} onChange={e => { setContactNo(digitsOnly(e.target.value)); clearFieldError('contactNo'); }} />
+                        <input className="avm-input" placeholder="9876543210" inputMode="numeric" pattern="\d*" maxLength={15} value={contactNo} readOnly={primaryLocked} onChange={e => { setContactNo(digitsOnly(e.target.value)); clearFieldError('contactNo'); }} />
                       </Field>
                       <Field label="Email" required error={fieldErrors.email}>
-                        <input className="avm-input" placeholder="rahul@abclogistics.com" value={email} readOnly={primarySaved || isEdit} onChange={e => { setEmail(e.target.value); clearFieldError('email'); }} />
+                        <input className="avm-input" placeholder="rahul@abclogistics.com" value={email} readOnly={primaryLocked} onChange={e => { setEmail(e.target.value); clearFieldError('email'); }} />
                       </Field>
                     </div>
                     <div className="avm-grid-2">
                       <Field label="WhatsApp Enabled ?">
                         <div className="avm-radio-row">
                           <label className="avm-radio">
-                            <input type="radio" checked={whatsappEnabled} disabled={primarySaved || isEdit} onChange={() => setWhatsappEnabled(true)} />
+                            <input type="radio" checked={whatsappEnabled} disabled={primaryLocked} onChange={() => setWhatsappEnabled(true)} />
                             <span>Yes</span>
                           </label>
                           <label className="avm-radio">
-                            <input type="radio" checked={!whatsappEnabled} disabled={primarySaved || isEdit} onChange={() => setWhatsappEnabled(false)} />
+                            <input type="radio" checked={!whatsappEnabled} disabled={primaryLocked} onChange={() => setWhatsappEnabled(false)} />
                             <span>No</span>
                           </label>
                         </div>
                       </Field>
                       <Field label="Attachment (Business Card)">
-                        <FileChooser file={attachment} onPick={(f) => { setAttachment(f); if (!f) setPrimaryAttachmentPath(''); }} existingPath={primaryAttachmentPath} placeholder="No files attached" readOnly={primarySaved || isEdit} />
+                        <FileChooser file={attachment} onPick={(f) => { setAttachment(f); if (!f) { setPrimaryAttachmentPath(''); setPrimaryAttachmentUrl(''); } }} existingPath={primaryAttachmentPath} existingUrl={primaryAttachmentUrl || undefined} placeholder="No files attached" readOnly={primaryLocked} />
                       </Field>
                     </div>
                   </SectionCard>
+                  </div>
 
                   {/* ── Additional Contact Persons ──
                       The primary KYC contact (captured on the Vendor
@@ -2880,7 +2949,9 @@ export default function AddVendorModal(props: {
                       const primaryHasData = !!(contactName.trim() || email.trim() || contactNo.trim());
                       if ((primarySaved || isEdit) && primaryHasData) {
                         const freshHref = attachment ? URL.createObjectURL(attachment) : '';
-                        const savedHref = primaryAttachmentPath ? resolveFileUrl(primaryAttachmentPath) : '';
+                        // Prefer the backend file_url() (works on the server / Azure);
+                        // only fall back to composing the URL from the raw path.
+                        const savedHref = primaryAttachmentUrl || (primaryAttachmentPath ? resolveFileUrl(primaryAttachmentPath) : '');
                         rows.push({
                           key: 'primary',
                           isPrimary: true,
@@ -2903,7 +2974,7 @@ export default function AddVendorModal(props: {
                         email: c.email,
                         whatsapp: c.whatsapp,
                         attachmentName: c.attachmentName,
-                        attachmentHref: c.attachmentPath ? resolveFileUrl(c.attachmentPath) : '',
+                        attachmentHref: c.attachmentUrl || (c.attachmentPath ? resolveFileUrl(c.attachmentPath) : ''),
                       }));
 
                       if (rows.length === 0) {
@@ -2966,15 +3037,34 @@ export default function AddVendorModal(props: {
                                   <td>
                                     <div className="avm-row-actions">
                                       {r.isPrimary ? (
-                                        <span className="text-muted fs-13" title="Edit in the Primary Contact Person card above">—</span>
+                                        <>
+                                          <Tooltip label="Edit primary contact">
+                                            <button type="button" className="avm-row-btn" onClick={startEditPrimary} aria-label="Edit primary contact">
+                                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                                            </button>
+                                          </Tooltip>
+                                          <Tooltip label="Primary contact can’t be deleted">
+                                            {/* Wrapper span — a disabled button doesn't fire hover, so
+                                                the tooltip anchors to the span instead. */}
+                                            <span style={{ display: 'inline-flex' }}>
+                                              <button type="button" className="avm-row-btn avm-row-btn-del" disabled aria-label="Delete (disabled)" style={{ opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' }}>
+                                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                                              </button>
+                                            </span>
+                                          </Tooltip>
+                                        </>
                                       ) : (
                                         <>
-                                          <button type="button" className="avm-row-btn" onClick={() => r.contactId !== undefined && openContactEdit(r.contactId)} data-tooltip="Edit" aria-label="Edit">
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                                          </button>
-                                          <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => r.contactId !== undefined && removeExtraContact(r.contactId)} data-tooltip="Remove" aria-label="Remove">
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
-                                          </button>
+                                          <Tooltip label="Edit">
+                                            <button type="button" className="avm-row-btn" onClick={() => r.contactId !== undefined && openContactEdit(r.contactId)} aria-label="Edit">
+                                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                                            </button>
+                                          </Tooltip>
+                                          <Tooltip label="Remove">
+                                            <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => r.contactId !== undefined && removeExtraContact(r.contactId)} aria-label="Remove">
+                                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                                            </button>
+                                          </Tooltip>
                                         </>
                                       )}
                                     </div>
@@ -3010,7 +3100,7 @@ export default function AddVendorModal(props: {
               <div className="d-inline-flex align-items-center gap-2">
                 <span className="avm-doc-count">{kycDocCount} document{kycDocCount === 1 ? '' : 's'}</span>
                 {(kycTab === 'bank' || kycTab === 'gst') && (
-                  <button className={`avm-section-add-btn${kycTab === 'gst' ? ' amber' : ''}`} onClick={kycTabAddMeta[kycTab].onClick}>
+                  <button className="avm-section-add-btn" onClick={kycTabAddMeta[kycTab].onClick}>
                     {kycTabAddMeta[kycTab].label}
                   </button>
                 )}
@@ -3216,6 +3306,38 @@ export default function AddVendorModal(props: {
           onClose={() => setMapPopupOpen(false)}
           onSave={saveMapDraft}
         />
+      )}
+
+      {segAdd && (
+        <>
+          {/* CLM modal styles aren't injected by SegmentModal itself (the CLM
+              page normally provides them), so load them here while it's open. */}
+          <style>{CLM_CSS}</style>
+          <SegmentModal
+            existing={null}
+            nextCode={segAdd.nextCode}
+            existingNames={segAdd.names}
+            onClose={() => setSegAdd(null)}
+            onSave={async (form: SegmentForm) => {
+              try {
+                const { data } = await api.post<{ data: { id: number; name: string } }>('/clm/segments', form);
+                const created = data?.data;
+                if (created?.id) {
+                  const id = String(created.id);
+                  setSegmentOpts(prev => [...prev, { value: id, label: String(created.name ?? form.name) }]);
+                  setSegment(prev => prev.includes(id) ? prev : [...prev, id]);
+                  clearFieldError('segment');
+                }
+                bustVendorMasterBundle();
+                setSegAdd(null);
+                return { ok: true } as const;
+              } catch (e: any) {
+                toast.error('Save failed', e?.response?.data?.message ?? 'Could not save segment');
+                return { ok: false } as const;
+              }
+            }}
+          />
+        </>
       )}
 
       {quickAdd && (
@@ -3545,11 +3667,15 @@ function ContactAddPopup(props: {
   draft: ContactDraft;
   setDraft: (next: ContactDraft) => void;
   onClose: () => void;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
 }) {
   const { draft, setDraft, onClose, onSave } = props;
+  const confirm = useConfirm();
   const set = <K extends keyof ContactDraft>(k: K, v: ContactDraft[K]) => setDraft({ ...draft, [k]: v });
   const [errors, setErrors] = useState<{ name?: string; designation?: string }>({});
+  /* Local in-flight flag so the popup's OWN Save button shows the spinner
+   * (the save no longer toggles the parent's shared `saving`). */
+  const [saving, setSaving] = useState(false);
   const handleNameChange = (raw: string) => {
     const { cleaned, error } = sanitizeKycAlpha(raw, 60);
     setDraft({ ...draft, name: cleaned });
@@ -3631,14 +3757,28 @@ function ContactAddPopup(props: {
               <FileChooser
                 file={draft.attachmentFile ?? null}
                 existingPath={draft.attachmentFile ? undefined : draft.attachmentPath}
-                onPick={(f) => setDraft({
-                  ...draft,
-                  attachmentFile: f,
-                  attachmentName: f?.name ?? '',
-                  // Picking null = delete. Drop the saved server path too
-                  // so the row doesn't silently re-attach it on Save.
-                  attachmentPath: f ? draft.attachmentPath : undefined,
-                })}
+                onPick={async (f) => {
+                  // Deleting an existing attachment (f === null) → confirm first.
+                  if (!f && (draft.attachmentFile || draft.attachmentPath)) {
+                    const ok = await confirm({
+                      title: 'Remove Attachment?',
+                      message: 'This attachment will be removed from this contact person. It is deleted for good once you save.',
+                      confirmLabel: 'Remove',
+                      cancelLabel: 'Cancel',
+                      tone: 'danger',
+                      icon: 'delete-bin-line',
+                    });
+                    if (!ok) return;
+                  }
+                  setDraft({
+                    ...draft,
+                    attachmentFile: f,
+                    attachmentName: f?.name ?? '',
+                    // Picking null = delete. Drop the saved server path too
+                    // so the row doesn't silently re-attach it on Save.
+                    attachmentPath: f ? draft.attachmentPath : undefined,
+                  });
+                }}
                 placeholder="No files attached"
               />
             </Field>
@@ -3646,9 +3786,19 @@ function ContactAddPopup(props: {
         </div>
 
         <div className="avm-cp-foot">
-          <button className="avm-btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="avm-btn-primary" onClick={onSave}>
-            <i className="ri-save-line" /> Save
+          <button className="avm-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+          <button
+            className="avm-btn-primary"
+            disabled={saving}
+            onClick={async () => {
+              if (saving) return;
+              setSaving(true);
+              try { await onSave(); } finally { setSaving(false); }
+            }}
+          >
+            {saving
+              ? <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
+              : <><i className="ri-save-line" /> Save</>}
           </button>
         </div>
       </div>
@@ -4795,10 +4945,14 @@ function PopupShell(props: {
   subtitle?: string;
   tone?: 'purple' | 'amber';
   onClose: () => void;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
   children: ReactNode;
 }) {
   const amber = props.tone === 'amber';
+  /* Local in-flight flag so the popup's OWN Save button shows the spinner
+   * (rather than the outer wizard button) — shared by every popup that uses
+   * this shell: DD / Owner KYC / Trade License / Bank / GST / Map Product. */
+  const [saving, setSaving] = useState(false);
   return createPortal((
     /* Backdrop click does NOT dismiss — these popups (DD / Owner
        KYC / Trade License / Bank / GST / Product Mapping) all
@@ -4819,9 +4973,19 @@ function PopupShell(props: {
         </div>
         <div className="avm-cp-body">{props.children}</div>
         <div className="avm-cp-foot">
-          <button className="avm-btn-ghost" onClick={props.onClose}>Cancel</button>
-          <button className={`avm-btn-primary${amber ? ' avm-btn-amber' : ''}`} onClick={props.onSave}>
-            Save
+          <button className="avm-btn-ghost" onClick={props.onClose} disabled={saving}>Cancel</button>
+          <button
+            className={`avm-btn-primary${amber ? ' avm-btn-amber' : ''}`}
+            disabled={saving}
+            onClick={async () => {
+              if (saving) return;
+              setSaving(true);
+              try { await props.onSave(); } finally { setSaving(false); }
+            }}
+          >
+            {saving
+              ? <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
+              : 'Save'}
           </button>
         </div>
       </div>
@@ -5330,7 +5494,7 @@ function GstScrutinyAddPopup(props: {
     onSave();
   };
   return (
-    <PopupShell title="Add GST Scrutiny" icon="ri-file-text-line" tone="amber" onClose={onClose} onSave={handleSave}>
+    <PopupShell title="Add GST Scrutiny" icon="ri-file-text-line" onClose={onClose} onSave={handleSave}>
       <div className="avm-grid-3">
         <Field label="GST Number" required error={errors.gstNumber}>
           <input
@@ -5886,8 +6050,19 @@ const SCOPED_CSS = `
    header stays pinned while the body scrolls. */
 /* Show ~3 contact rows + the sticky header, then scroll for the rest. */
 .avm-contacts-scroll { max-height: 174px; overflow-y: auto; }
-.avm-contacts-scroll thead th { position: sticky; top: 0; z-index: 2; background: #fbfaff; }
-[data-bs-theme="dark"] .avm-contacts-scroll thead th { background: #1a1430; }
+.avm-contacts-scroll thead th {
+  position: sticky; top: 0; z-index: 3;
+  /* The base rule ".avm-modal .table thead th" sets background:transparent — the
+     header's visible colour normally comes from the thead TR gradient, which does
+     NOT stick (only the TH does). So !important gives the sticky TH its OWN opaque
+     fill; without it the header is see-through and rows bleed up into it. */
+  background: #f7f3fd !important;
+  box-shadow: inset 0 -1px 0 0 #ece7f8;
+}
+[data-bs-theme="dark"] .avm-contacts-scroll thead th {
+  background: #251d47 !important;
+  box-shadow: inset 0 -1px 0 0 rgba(167,139,250,.22);
+}
 
 /* "N documents" count badge on the KYC section header (Figma) */
 .avm-doc-count {
@@ -6397,26 +6572,8 @@ const SCOPED_CSS = `
   min-height: 100%;
 }
 [data-bs-theme="dark"] .avm-load-overlay { background: #1c2531; }
-.avm-load-skeleton { width: 100%; max-width: 1100px; display: flex; flex-direction: column; gap: 10px; }
-.avm-load-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; }
-.avm-load-bar {
-  height: 38px; border-radius: 8px;
-  background: linear-gradient(90deg, #eef2f7 0%, #f8fafc 50%, #eef2f7 100%);
-  background-size: 200% 100%;
-  animation: avm-skel-shimmer 1.2s ease-in-out infinite;
-}
-.avm-load-heading { height: 18px; width: 220px; border-radius: 5px; margin-bottom: 6px; }
-[data-bs-theme="dark"] .avm-load-bar {
-  background: linear-gradient(90deg, #221940 0%, #1a1430 50%, #221940 100%);
-  background-size: 200% 100%;
-}
-@keyframes avm-skel-shimmer {
-  0%   { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-@media (max-width: 880px) {
-  .avm-load-grid { grid-template-columns: 1fr 1fr; }
-}
+/* The skeleton content now uses the shared <Shimmer> component (same as the
+   Client/Branch forms); only the overlay wrapper above stays local. */
 
 /* KYC table layout — Bootstrap's table-nowrap was forcing every cell
  * onto a single line, so long document names / addresses / red flags

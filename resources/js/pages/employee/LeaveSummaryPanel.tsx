@@ -40,6 +40,20 @@ const toneFor = (t: ApiEmployeeBalanceType) => {
   return TYPE_PALETTE.default;
 };
 
+/** Format a day count for display. Accrual produces fractions (e.g. 1/12 of a
+ *  monthly quota) and float subtraction leaves precision noise like
+ *  4.9799999999999995 — round to 2 dp and drop trailing zeros (4.98, 1.5, 2). */
+const fmtDays = (n: number | null | undefined): string => {
+  const v = Number(n ?? 0);
+  if (!Number.isFinite(v)) return '0';
+  return String(parseFloat(v.toFixed(2)));
+};
+/** Rounded numeric value — used for singular/plural checks so 1.0000002 → 1. */
+const roundDays = (n: number | null | undefined): number => {
+  const v = Number(n ?? 0);
+  return Number.isFinite(v) ? parseFloat(v.toFixed(2)) : 0;
+};
+
 function fmtDate(raw: string | null | undefined): string {
   if (!raw) return '—';
   const d = new Date(String(raw));
@@ -270,8 +284,11 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
           <div className="d-flex gap-3 flex-wrap">
             {balances.types.map(t => {
               const tone = toneFor(t);
-              const total = t.unlimited ? null : t.quota;
-              const available = t.unlimited ? null : (t.available ?? 0);
+              const total = t.unlimited ? null : roundDays(t.quota);
+              const available = t.unlimited ? null : roundDays(t.available ?? 0);
+              // Total allowance = yearly quota + any extra/overdraft days. Shown
+              // inside the donut so the circle reads "available of total".
+              const totalAllowance = t.unlimited ? null : roundDays(t.quota + (t.extra ?? 0));
               const pct = !t.unlimited && t.quota > 0 ? Math.min(100, ((t.used / t.quota) * 100)) : 0;
               return (
                 <div key={t.leave_type_id} className="lsp-balance-card flex-grow-1" style={{ minWidth: 240, background: 'var(--vz-card-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 14, padding: 18 }}>
@@ -296,6 +313,9 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
                         <>
                           <div className="fw-bold" style={{ fontSize: 18 }}>{available} {available === 1 ? 'Day' : 'Days'}</div>
                           <div className="text-muted" style={{ fontSize: 11 }}>Available</div>
+                          <div className="text-muted" style={{ fontSize: 9.5, marginTop: 2, fontWeight: 600, letterSpacing: 0.2 }}>
+                            of {fmtDays(totalAllowance)} {roundDays(totalAllowance) === 1 ? 'day' : 'days'}
+                          </div>
                         </>
                       )}
                     </Donut>
@@ -311,7 +331,7 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
                     </div>
                     <div>
                       <div className="text-muted" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.4 }}>CONSUMED</div>
-                      <div className="fw-semibold" style={{ fontSize: 13 }}>{t.used} {t.used === 1 ? 'day' : 'days'}</div>
+                      <div className="fw-semibold" style={{ fontSize: 13 }}>{fmtDays(t.used)} {roundDays(t.used) === 1 ? 'day' : 'days'}</div>
                     </div>
                     <div>
                       <div className="text-muted" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.4 }}>ANNUAL QUOTA</div>
@@ -332,10 +352,10 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
                       style={{ borderTop: '1px dashed var(--vz-border-color)' }}
                     >
                       <span className="text-muted" style={{ fontSize: 11.5 }}>
-                        {t.quota} yearly <span className="fw-semibold" style={{ color: tone.ring }}>+ {t.extra} extra</span>
+                        {fmtDays(t.quota)} yearly <span className="fw-semibold" style={{ color: tone.ring }}>+ {fmtDays(t.extra)} extra</span>
                       </span>
                       <span className="fw-semibold" style={{ fontSize: 12 }}>
-                        Total allowance: {t.quota + t.extra} {t.quota + t.extra === 1 ? 'day' : 'days'}
+                        Total allowance: {fmtDays(t.quota + t.extra)} {roundDays(t.quota + t.extra) === 1 ? 'day' : 'days'}
                       </span>
                     </div>
                   )}
@@ -505,7 +525,7 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
                             fontSize: 11,
                           }}>{tx.change}</span>
                         </td>
-                        <td style={{ padding: '10px 14px' }}>{tx.balance}</td>
+                        <td style={{ padding: '10px 14px' }}>{fmtDays(tx.balance)}</td>
                         <td style={{ padding: '10px 14px' }} className="text-muted">{tx.reason}</td>
                       </tr>
                     ))}

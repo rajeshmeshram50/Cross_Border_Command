@@ -12,7 +12,7 @@ class ExpenseClaim extends Model
 
     protected $fillable = [
         'client_id', 'branch_id', 'claim_no',
-        'employee_id', 'manager_id',
+        'employee_id', 'employee_name', 'manager_id',
         'category_id', 'category_name',
         'currency', 'project', 'payment_method',
         'title', 'amount', 'expense_date', 'vendor', 'purpose',

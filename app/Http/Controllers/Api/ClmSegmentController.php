@@ -233,7 +233,10 @@ class ClmSegmentController extends Controller
         $maxN  = 0;
         $taken = [];
         foreach ($codes as $c) {
-            if (preg_match('/^S-(\d+)$/', (string) $c, $m)) {
+            // Match both the new SG-NNN and any legacy S-NNN still around
+            // (during/after the prefix migration) so the sequence never reuses
+            // a number.
+            if (preg_match('/^SG?-(\d+)$/', (string) $c, $m)) {
                 $n = (int) $m[1];
                 if ($n > $maxN) $maxN = $n;
             }
@@ -242,7 +245,7 @@ class ClmSegmentController extends Controller
         $n = $maxN;
         do {
             $n++;
-            $code = sprintf('S-%03d', $n);
+            $code = sprintf('SG-%03d', $n);
         } while (isset($taken[$code]));
         return $code;
     }

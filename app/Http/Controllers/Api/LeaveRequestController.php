@@ -55,7 +55,7 @@ class LeaveRequestController extends Controller
         $q = LeaveRequest::query()
             ->where('employee_id', $employeeId)
             ->with([
-                'leaveType:id,name,short_code,type',
+                'leaveType:id,name,short_code,type,paid_unpaid',
                 'leavePlan:id,plan_name',
                 'coverPerson:id,first_name,last_name,display_name',
                 'approver:id,name',
@@ -148,33 +148,27 @@ class LeaveRequestController extends Controller
             abort(422, 'You cannot apply for leave in the past. Pick a date from tomorrow onward.');
         }
 
-        // Same-day guard (self-service). An employee cannot apply for leave that
-        // STARTS today — same-day requests skip any meaningful approval lead
-        // time (and were being auto-approved for the current date). They must
-        // pick tomorrow onward. Admins filing on behalf stay exempt so HR can
-        // still log a genuine same-day absence (e.g. an employee who called in
-        // sick this morning).
-        if (!$isAdmin && $fromStr === $todayStr) {
-            abort(422, 'Leave cannot be applied for today. Please select a date from tomorrow onward.');
-        }
-
-        // Compute days. Half-day requests collapse to 0.5; otherwise count
-        // the calendar span inclusive. Weekend exclusion is a future task —
-        // for now we count straight calendar days so the math is predictable.
         $from = Carbon::parse($data['from_date']);
         $to = Carbon::parse($data['to_date']);
         $dayType = $data['day_type'] ?? 'full';
+
+        // Same-day rule (self-service). The morning is already underway, so an
+        // employee applying for TODAY may only take the SECOND HALF — a full
+        // day or first-half for today is rejected (and so is a multi-day leave
+        // that starts today). Admins filing on behalf stay exempt so HR can
+        // still log a genuine same-day absence. Tomorrow onward is unrestricted.
+        if (!$isAdmin && $fromStr === $todayStr
+            && !($dayType === 'second_half' && $from->isSameDay($to))) {
+            abort(422, 'Leave for today can only be applied for the second half of the day.');
+        }
         // Half-day only makes sense on a single calendar day. Reject the
         // ambiguous "first_half across 5 days" case rather than silently
         // billing it as 5 full days.
         if ($dayType !== 'full' && !$from->isSameDay($to)) {
             abort(422, 'Half-day requests are only valid for a single calendar day. Please pick the same from/to date or switch day type to "Full Day".');
         }
-        if ($dayType !== 'full' && $from->isSameDay($to)) {
-            $days = 0.5;
-        } else {
-            $days = CarbonPeriod::create($from, $to)->count();
-        }
+        // NOTE: $days (chargeable day count) is computed further down, once the
+        // leave-type config is loaded.
 
         // Overlap guard — same employee already has a Pending or Approved
         // request whose date range intersects the new one. Two ranges
@@ -257,24 +251,27 @@ class LeaveRequestController extends Controller
         $ptConfig  = json_decode((string) $ptConfigRaw, true);
         $accrual   = (is_array($ptConfig) ? $ptConfig['accrual'] ?? [] : []);
         $unlimited = (bool) ($accrual['unlimited'] ?? false);
+
+        // Chargeable day count — a half-day is 0.5; otherwise count the working
+        // days in the range (weekly-offs and holidays inside the range are never
+        // charged). This count flows into the balance check, attendance (approved
+        // leave overlays the date range) and payroll.
+        $leaveApp = (is_array($ptConfig) ? $ptConfig['leaveApp'] ?? [] : []);
+        $days = $this->computeLeaveDays($from, $to, $dayType, $employee);
+
+        // Half-day gate — only leave types whose setup enables "Allow half day
+        // leave" may be requested as first/second half. (This also blocks the
+        // same-day second-half path for types that don't allow half days.)
+        if ($dayType !== 'full' && !(bool) ($ptConfig['leaveApp']['allowHalfDay'] ?? false)) {
+            abort(422, 'This leave type does not allow half-day leave.');
+        }
         if (!$unlimited) {
-            // Gate against what has ACCRUED by the time the leave is taken, not
-            // the full yearly quota. A "1 day/month" plan vests one day per
-            // month, so a request can't draw on days that haven't accrued yet
-            // (HRMS-BUG-107). Accrued is measured as of the leave's end date so
-            // an employee can still book ahead for a period that will have
-            // vested by then. An opt-in per-type overdraft extends the ceiling.
-            $planMeta = DB::table('master_leave_plans')
-                ->where('id', $planId)
-                ->select('from_month', 'calendar_year')
-                ->first();
-            $asOf = \Illuminate\Support\Carbon::parse($data['to_date']);
-            $accrued = \App\Http\Controllers\Api\LeavePlanController::accruedToDate(
-                $accrual,
-                $planMeta->from_month ?? null,
-                $planMeta->calendar_year ?? null,
-                $asOf
-            );
+            // Gate against the FULL annual entitlement (yearly quota + any
+            // opt-in overdraft), available from day one — no monthly vesting.
+            // Both Approved and still-Pending days count so a user can't stack
+            // several over-quota requests before any is acted on. This mirrors
+            // the "Available" figure shown on the employee profile.
+            $quotaDays = (float) ($accrual['yearlyQuota'] ?? 0);
             $overdraft = !empty($accrual['employeeOverdraft']['enabled'])
                 ? (float) ($accrual['employeeOverdraft']['days'] ?? 0)
                 : 0.0;
@@ -283,10 +280,35 @@ class LeaveRequestController extends Controller
                 ->where('leave_type_id', $data['leave_type_id'])
                 ->whereIn('status', ['Approved', 'Pending'])
                 ->sum('days');
-            $available = max(0.0, $accrued - $usedDays) + $overdraft;
+            $available = max(0.0, ($quotaDays + $overdraft) - $usedDays);
             if ($days > $available) {
                 $fmt = fn (float $n) => rtrim(rtrim(number_format($n, 2), '0'), '.');
                 abort(422, "Not enough leave balance — only {$fmt($available)} day(s) available for this leave type, but you requested {$fmt($days)}.");
+            }
+        }
+
+        // Monthly cap (Bug 60) — even when the annual quota still has balance,
+        // block draining a whole quota inside one month. A request is attributed
+        // to the calendar month it STARTS in; the cap is per leave type. Applies
+        // regardless of `unlimited`, since capping monthly usage is the point.
+        // Both Approved and Pending days count so requests can't be stacked
+        // before any is acted on.
+        $maxPerMonth = is_array($leaveApp['maxPerMonth'] ?? null) ? $leaveApp['maxPerMonth'] : [];
+        $monthlyCap = (float) ($maxPerMonth['days'] ?? 0);
+        if (!empty($maxPerMonth['enabled']) && $monthlyCap > 0) {
+            $usedThisMonth = (float) LeaveRequest::query()
+                ->where('employee_id', $employee->id)
+                ->where('leave_type_id', $data['leave_type_id'])
+                ->whereIn('status', ['Approved', 'Pending'])
+                ->whereBetween('from_date', [
+                    $from->copy()->startOfMonth()->toDateString(),
+                    $from->copy()->endOfMonth()->toDateString(),
+                ])
+                ->sum('days');
+            if ($usedThisMonth + $days > $monthlyCap) {
+                $fmt = fn (float $n) => rtrim(rtrim(number_format($n, 2), '0'), '.');
+                $remaining = max(0.0, $monthlyCap - $usedThisMonth);
+                abort(422, "Monthly limit reached — this leave type allows at most {$fmt($monthlyCap)} day(s) per month. You've already used {$fmt($usedThisMonth)} this month, so only {$fmt($remaining)} more can be applied (you requested {$fmt($days)}).");
             }
         }
 
@@ -451,7 +473,7 @@ class LeaveRequestController extends Controller
                 // (Client/Branch admin); load both so the name resolves either way.
                 'employee.reportingManager:id,first_name,middle_name,last_name,display_name',
                 'employee.reportingManagerUser:id,name',
-                'leaveType:id,name,short_code,type',
+                'leaveType:id,name,short_code,type,paid_unpaid',
             ])
             ->orderByDesc('created_at');
 
@@ -563,12 +585,16 @@ class LeaveRequestController extends Controller
         // to the HR level. Super admins keep a blanket override. This is what
         // the UI uses to show Approve/Reject vs. a View-only row, so HR can't
         // act before the manager and a manager-rejected request shows View-only.
-        $rows->each(function (LeaveRequest $row) use ($user) {
+        $isHrScope = in_array($user->user_type, ['client_admin', 'branch_user'], true);
+        $rows->each(function (LeaveRequest $row) use ($user, $isHrScope) {
             $chain = is_array($row->approval_chain) ? $row->approval_chain : [];
             $idx = max(0, ((int) ($row->current_approval_level ?? 1)) - 1);
+            // HR can act when the reporting manager is unavailable (Bug 55) —
+            // otherwise leave stays reporting-manager-only.
             $row->can_act_now = $row->status === 'Pending'
                 && ($user->user_type === 'super_admin'
-                    || $this->canActOnLevel($user, $chain, $idx, $row));
+                    || $this->canActOnLevel($user, $chain, $idx, $row)
+                    || ($isHrScope && $this->isReportingManagerUnavailable($row)));
         });
 
         return response()->json(['data' => $rows]);
@@ -585,6 +611,30 @@ class LeaveRequestController extends Controller
     public function reject(Request $request, int $id)
     {
         return $this->setStatus($request, $id, 'Rejected');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // HR view acknowledgement — leave is reporting-manager-only, so HR never
+    // acts on the chain, but the UI shows an "HR" node that turns green once HR
+    // has reviewed the request. This records the FIRST such view (idempotent —
+    // set once, never overwritten) so the green state persists across reloads.
+    // Only HR / admin tiers can mark a request viewed; the requester opening
+    // their own request does not count.
+    // ─────────────────────────────────────────────────────────────────────
+    public function hrView(Request $request, int $id)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        $row = $this->findScopedOrFail($id, $user);
+
+        $isHr = in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true);
+        if ($isHr && $row->hr_viewed_at === null) {
+            $row->hr_viewed_at = now();
+            $row->hr_viewed_by = $user->id;
+            $row->save();
+        }
+
+        return response()->json(['data' => $row]);
     }
 
     public function cancel(Request $request, int $id)
@@ -636,7 +686,12 @@ class LeaveRequestController extends Controller
         // bypass the manager via a direct call.
         $isSuperOverride = $user->user_type === 'super_admin';
         $isApproverForLevel = $this->canActOnLevel($user, $chain, $level - 1, $row);
-        if (!$isApproverForLevel && !$isSuperOverride) {
+        // Deadlock escape (Bug 55): if the reporting manager is unavailable (on
+        // approved leave, disabled, or unassigned), HR may step in and act so
+        // the request doesn't stall under an absent manager.
+        $isHr = in_array($user->user_type, ['client_admin', 'branch_user'], true);
+        $hrCanActRmAway = $isHr && $this->isReportingManagerUnavailable($row);
+        if (!$isApproverForLevel && !$isSuperOverride && !$hrCanActRmAway) {
             abort(403, 'You cannot act on this leave request yet — it is awaiting approval from the reporting manager before HR can act.');
         }
 
@@ -1031,6 +1086,106 @@ class LeaveRequestController extends Controller
         return false;
     }
 
+    /**
+     * Chargeable leave days for [from, to]. A single half-day is 0.5; otherwise
+     * each working day in the range counts 1. Weekly-offs and holidays inside
+     * the range are never charged. (The Sandwich Policy was removed, so off-days
+     * are always excluded.)
+     */
+    private function computeLeaveDays(Carbon $from, Carbon $to, string $dayType, Employee $employee): float
+    {
+        if ($dayType !== 'full' && $from->isSameDay($to)) return 0.5;
+
+        $woSet = $this->parseWeeklyOffSet((string) ($employee->weekly_off ?? ''));
+        $holidaySet = $employee->holiday_group_id
+            ? $this->holidayDatesInRange((int) $employee->holiday_group_id, $from, $to)
+            : [];
+
+        $total = 0.0;
+        foreach (CarbonPeriod::create($from->copy()->startOfDay(), $to->copy()->startOfDay()) as $d) {
+            $off = isset($woSet[$d->dayOfWeek]) || isset($holidaySet[$d->toDateString()]);
+            if (!$off) $total += 1.0;
+        }
+        return $total;
+    }
+
+    /** Weekly-off day-of-week set from the employee's weekly_off label. Mirrors
+     *  AttendanceController::parseWeeklyOff (Sunday fallback) so leave, attendance
+     *  and payroll agree on what an off day is. */
+    private function parseWeeklyOffSet(string $label): array
+    {
+        $map = ['sun' => 0, 'mon' => 1, 'tue' => 2, 'wed' => 3, 'thu' => 4, 'fri' => 5, 'sat' => 6];
+        $set = [];
+        foreach (preg_split('/[\s,]+/', strtolower($label)) as $tok) {
+            $key = substr($tok, 0, 3);
+            if (isset($map[$key])) $set[$map[$key]] = true;
+        }
+        if (empty($set)) $set[0] = true; // unparseable → Sunday off (matches attendance)
+        return $set;
+    }
+
+    /** Holiday dates (Y-m-d => true) for a group within [start, end], re-anchoring
+     *  recurring holidays to the window's year. */
+    private function holidayDatesInRange(int $groupId, Carbon $start, Carbon $end): array
+    {
+        if (!\Illuminate\Support\Facades\Schema::hasTable('holidays')) return [];
+        $rows = DB::table('holidays')
+            ->where('holiday_group_id', $groupId)
+            ->whereNull('deleted_at')
+            ->get(['date', 'is_recurring']);
+        $out = [];
+        foreach ($rows as $r) {
+            if (!$r->date) continue;
+            $d = Carbon::parse($r->date);
+            if ($r->is_recurring) $d = Carbon::create($start->year, $d->month, $d->day);
+            if ($d->lt($start) || $d->gt($end)) continue;
+            $out[$d->toDateString()] = true;
+        }
+        return $out;
+    }
+
+    /**
+     * Is the requester's reporting manager currently UNAVAILABLE to approve —
+     * i.e. on an approved leave that covers today, an inactive/soft-deleted
+     * employee, a disabled login user, or simply not assigned? When true, leave
+     * approval is allowed to fall through to HR so requests don't deadlock under
+     * a manager who is away on vacation. (Bug 55)
+     */
+    public function isReportingManagerUnavailable(LeaveRequest $row): bool
+    {
+        $emp = Employee::find($row->employee_id);
+        if (!$emp) return false;
+        $todayStr = now(self::DISPLAY_TZ)->toDateString();
+
+        // RM stored as an Employee row.
+        if ($emp->reporting_manager_id) {
+            $rm = Employee::find($emp->reporting_manager_id);
+            if (!$rm) return true; // RM record gone
+            if (strcasecmp((string) $rm->status, 'Active') !== 0) return true; // inactive
+            if ($rm->user_id) {
+                $u = User::find($rm->user_id);
+                if ($u && strcasecmp((string) $u->status, 'active') !== 0) return true; // disabled login
+            }
+            // RM on an approved leave that covers today.
+            $onLeave = LeaveRequest::where('employee_id', $rm->id)
+                ->where('status', 'Approved')
+                ->whereDate('from_date', '<=', $todayStr)
+                ->whereDate('to_date', '>=', $todayStr)
+                ->exists();
+            return $onLeave;
+        }
+
+        // RM stored as a login user (Client/Branch admin acting as manager).
+        if ($emp->reporting_manager_user_id) {
+            $u = User::find($emp->reporting_manager_user_id);
+            if (!$u) return true;
+            return strcasecmp((string) $u->status, 'active') !== 0;
+        }
+
+        // No reporting manager at all → must route to HR.
+        return true;
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // Notification dispatchers — fire and forget. Every send is wrapped
     // in try/catch + Log::warning so a flaky SMTP / missing recipient
@@ -1043,6 +1198,18 @@ class LeaveRequestController extends Controller
         //    to multiple users, e.g. all HRs in the tenant).
         foreach ($this->resolveApproverNotifiables($row, 1, $employee) as $r) {
             $this->safeSend($r, new LeaveRequestNotification($row, 'submitted_to_approver'));
+        }
+
+        // 1b) Deadlock escape (Bug 55): if the reporting manager is unavailable
+        //     (on approved leave, disabled, or unassigned), the only level-1
+        //     recipient above is an absent manager — the request would sit
+        //     silently. Also notify HR (every branch_user / client_admin in the
+        //     tenant) so they know to step in and approve/reject in the RM's
+        //     place. Backend already permits HR to act in this case.
+        if ($this->isReportingManagerUnavailable($row)) {
+            foreach ($this->resolveRoleRecipients('hr', $employee) as $r) {
+                $this->safeSend($r, new LeaveRequestNotification($row, 'escalated_to_hr'));
+            }
         }
 
         // 2) CC'd colleagues from notify.employee_ids

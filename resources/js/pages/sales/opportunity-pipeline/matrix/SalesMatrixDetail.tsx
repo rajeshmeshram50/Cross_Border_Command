@@ -197,6 +197,10 @@ export default function SalesMatrixDetail() {
 
   const [productAddOpen, setProductAddOpen] = useState(false);
   const [productDirectoryOpen, setProductDirectoryOpen] = useState(false);
+  /* Bumped whenever the Product Directory popup maps/edits/removes a product,
+   * so the inline Stage 3 (and the Product Sourcing popup) re-fetch their
+   * product list + count badges live — no page refresh needed. */
+  const [productsTick, setProductsTick]                 = useState(0);
   const [productSourcingOpen, setProductSourcingOpen]   = useState(false);
   const [priceSharedOpen, setPriceSharedOpen]           = useState(false);
   const [changeOwnerOpen, setChangeOwnerOpen] = useState(false);
@@ -1185,6 +1189,14 @@ export default function SalesMatrixDetail() {
             onPrev={goPrev}
             onNext={goNext}
             reloadLead={reloadLead}
+            /* Stage 3 watches this to re-fetch its product list when the
+               toolbar Product Directory popup maps/removes a product. Other
+               stages ignore it. */
+            refreshTick={productsTick}
+            /* Stage 3 emits this after its own in-table actions (set sourcing
+               status, mark sourced, create procurement) so the OTHER Stage 3
+               instance — the popup — re-syncs. Other stages ignore it. */
+            onProductsChanged={() => setProductsTick(t => t + 1)}
             /* Stage 5 keeps its in-stage create/edit lock; Stage 6 stays fully
                editable so the user can work there after the PI is signed. */
             locked={isSigned && stage <= 5}
@@ -1378,6 +1390,7 @@ export default function SalesMatrixDetail() {
         leadId={resolvedLeadId ?? null}
         leadStage={furthestStage}
         onClose={() => setProductDirectoryOpen(false)}
+        onChanged={() => setProductsTick(t => t + 1)}
         onAddProduct={() => {
           /* "+ New Master" inside the directory chains into the same
              Add Product wizard the toolbar pill opens; once the new
@@ -1398,6 +1411,8 @@ export default function SalesMatrixDetail() {
           onPrev={() => {}}
           onNext={() => {}}
           reloadLead={reloadLead}
+          refreshTick={productsTick}
+          onProductsChanged={() => setProductsTick(t => t + 1)}
           embedded
         />
       </StageEmbedModal>

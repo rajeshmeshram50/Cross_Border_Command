@@ -202,7 +202,11 @@ export default function HrExpenseManagement() {
     comment?: string,
   ) => {
     try {
-      await api.post(`/expense-claims/${claimId}/${action}`, comment ? { comment } : {});
+      const res = await api.post(`/expense-claims/${claimId}/${action}`, comment ? { comment } : {});
+      // Patch the row in place so the Approval Audit Log reflects the new
+      // Reporting Manager / HR status immediately, without a page refresh.
+      // The endpoint returns the fully-serialized, updated claim.
+      if (res?.data?.id) setRows(prev => prev.map(r => r.id === res.data.id ? res.data : r));
       toast.success('Updated', 'Claim status updated');
       await refresh();
     } catch (err: any) {
@@ -272,6 +276,9 @@ export default function HrExpenseManagement() {
   const categoryRollup = useMemo(() => {
     const byKey = new Map<string, { id: number | null; name: string; spent: number }>();
     for (const r of dateFilteredRows) {
+      // Spend reflects money actually owed — only APPROVED claims count.
+      // Pending / rejected claims must not inflate the category totals.
+      if (r.status !== 'approved') continue;
       const id = r.category_id ?? null;
       const name = r.category_name || '—';
       const key = id != null ? `id:${id}` : `nm:${name.toLowerCase()}`;

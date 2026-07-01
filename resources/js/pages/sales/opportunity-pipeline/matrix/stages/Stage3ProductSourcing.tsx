@@ -52,7 +52,7 @@ const SOURCING_OPTIONS = [
   { value: 'not_required', label: 'Not Required' },
 ];
 
-export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLead, embedded, locked = false }: StageProps) {
+export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLead, embedded, locked = false, refreshTick, onProductsChanged }: StageProps) {
   const toast = useToast();
 
   const [tab, setTab]                       = useState<Tab>('details');
@@ -96,6 +96,16 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
   }, [leadId, toast]);
 
   useEffect(() => { void fetchRows(true); }, [fetchRows]);
+
+  /* Re-fetch (silently — no skeleton flash) when the parent signals that the
+   * opportunity's product mappings changed elsewhere, e.g. the toolbar Product
+   * Directory popup mapped/edited/removed a product. Skip the very first run
+   * (the mount fetch above already covers it). */
+  const firstTickRef = useRef(true);
+  useEffect(() => {
+    if (firstTickRef.current) { firstTickRef.current = false; return; }
+    void fetchRows(false);
+  }, [refreshTick, fetchRows]);
 
   /* ── Bucketed views ─────────────────────────────────────────────── */
   const detailsRows     = useMemo(() => rows.filter(r => r.sourcing_status === null),         [rows]);
@@ -197,6 +207,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
         sourcing_status:  data.data.sourcing_status,
         procurement_done: data.data.procurement_done,
       } : r));
+      onProductsChanged?.();   // re-sync the sibling Stage 3 instance (inline ↔ popup)
     } catch (e: any) {
       toast.error('Update failed', e?.response?.data?.message ?? 'Could not update sourcing status');
     } finally {
@@ -255,6 +266,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
     setProcModalRows([]);
     await fetchRows(false);
     setSelectedIds(new Set());
+    onProductsChanged?.();   // re-sync the sibling Stage 3 instance (inline ↔ popup)
   };
 
   /* ── Mark Sourced ────────────────────────────────────────────────── */
@@ -274,6 +286,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
       const done = res.data?.data?.procurement_done === true;
       setRows(prev => prev.map(r => r.id === row.id ? { ...r, procurement_done: done } : r));
       toast.success('Sourced', `"${row.product_name ?? 'Product'}" marked done`);
+      onProductsChanged?.();   // re-sync the sibling Stage 3 instance (inline ↔ popup)
     } catch (e: any) {
       toast.error('Mark failed', e?.response?.data?.message ?? 'Could not mark as done');
       /* On failure, refetch the row so the UI never lies. Cheap because

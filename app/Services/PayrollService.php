@@ -712,15 +712,35 @@ class PayrollService
         // means no statutory deduction.
         $pf  = 0;
         if ($pfApplicable && $employee->pf_eligible && $this->isPfEligibleType($employee) && $earnedBasic > 0) {
-            $pf = round(min($earnedBasic, self::PF_WAGE_CEILING) * self::PF_RATE, 2);
+            // PF type (employee Stage 4): 'standard' = 12% of the FULL basic;
+            // anything else ('statutory' / null) caps the basic at the ₹15k
+            // EPF wage ceiling (max ₹1,800/month).
+            $pfBase = strtolower((string) $employee->pf_type) === 'standard'
+                ? $earnedBasic
+                : min($earnedBasic, self::PF_WAGE_CEILING);
+            $pf = round($pfBase * self::PF_RATE, 2);
         }
+        // ESI — honour a MANUAL structure 'esi' line first (HR/accounts enter
+        // the amount in the salary breakup); fall back to the statutory 0.75%
+        // of gross when no manual line exists. Manual amounts scale to earned
+        // pay like other deductions so an unpaid month doesn't over-deduct.
+        $esiManual = $this->structureDeduction($structDeductions, 'esi');
         $esi = 0;
-        if ($esiApplicable && $earnedGross > 0 && $earnedGross <= self::ESI_GROSS_LIMIT) {
+        if ($esiManual > 0) {
+            $esi = round($esiManual * $earnedFactor, 2);
+        } elseif ($esiApplicable && $earnedGross > 0 && $earnedGross <= self::ESI_GROSS_LIMIT) {
             $esi = round($earnedGross * self::ESI_RATE, 2);
         }
-        $pt = ($ptApplicable && $earnedGross > 0)
-            ? $this->professionalTax($employee, $earnedGross, $period->month)
-            : 0;
+
+        // Professional Tax — manual structure 'pt' line if present, else the
+        // statutory Maharashtra slab.
+        $ptManual = $this->structureDeduction($structDeductions, 'pt');
+        $pt = 0;
+        if ($ptManual > 0) {
+            $pt = round($ptManual * $earnedFactor, 2);
+        } elseif ($ptApplicable && $earnedGross > 0) {
+            $pt = $this->professionalTax($employee, $earnedGross, $period->month);
+        }
 
         // TDS — no slab engine yet; honour a structure 'tds' deduction line if
         // present (only when there's earned pay).
@@ -900,7 +920,10 @@ class PayrollService
             ],
             [],
             (bool) $employee->pf_eligible,
-            $gross <= self::ESI_GROSS_LIMIT,
+            // Honour the employee's own "ESI Applicable" flag (onboarding
+            // Stage 4 / Compensation). The ₹21k gross ceiling is still
+            // enforced separately where ESI is actually computed.
+            strtolower((string) ($employee->esi_applicable ?? '')) === 'yes',
             true,
         ];
     }

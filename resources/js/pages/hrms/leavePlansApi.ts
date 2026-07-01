@@ -42,6 +42,7 @@ export interface ApiLeavePlan {
    *  quota setup saved. The employee-form dropdowns hide plans where this is
    *  false (server-computed in LeavePlanController::index). */
   setup_complete?: boolean;
+  unlocked?: boolean;
   client?: { id: number; org_name: string };
   branch?: { id: number; name: string };
   leave_types?: ApiLeaveType[];
@@ -183,13 +184,17 @@ export interface ApiLeaveRequest {
   approved_by: number | null;
   approved_at: string | null;
   approver_comment: string | null;
+  /** Set the first time a view-only HR user opens the request — drives the
+   *  green "HR reviewed" node in the timeline. */
+  hr_viewed_at: string | null;
+  hr_viewed_by: number | null;
   current_approval_level?: number | null;
   // Whether the logged-in user may Approve/Reject this row right now (it's
   // pending AND they're the approver for the current level). Server-computed.
   can_act_now?: boolean;
   created_at: string;
   updated_at: string;
-  leave_type?: { id: number; name: string; short_code: string; type: string | null };
+  leave_type?: { id: number; name: string; short_code: string; type: string | null; paid_unpaid?: 'Paid' | 'Unpaid' | null };
   leave_plan?: { id: number; plan_name: string };
   cover_person?: { id: number; first_name: string; last_name: string | null; display_name: string | null; emp_code?: string };
   approver?: { id: number; name: string };
@@ -262,6 +267,10 @@ export const leaveRequestsApi = {
   cancel: (id: number) =>
     api.post<{ data: ApiLeaveRequest }>(`/leave-requests/${id}/cancel`).then(r => r.data.data),
 
+  /** Mark the request as viewed by HR (idempotent server-side). */
+  hrView: (id: number) =>
+    api.post<{ data: ApiLeaveRequest }>(`/leave-requests/${id}/hr-view`).then(r => r.data.data),
+
   approvals: (params: { status?: string; search?: string; branch_id?: number } = {}) =>
     api.get<{ data: ApiLeaveRequest[] }>('/leave-requests/approvals', { params }).then(r => r.data.data),
 };
@@ -291,6 +300,8 @@ export interface ApiEmployeeBalanceType {
   used: number;
   available: number | null;
   unlimited: boolean;
+  /** Whether this leave type permits half-day (first/second half) requests. */
+  allow_half_day?: boolean;
   transactions: ApiEmployeeBalanceTransaction[];
 }
 

@@ -89,7 +89,7 @@ function ClarityCell({ clarity }: { clarity?: Clarity }) {
   );
 }
 
-export default function SourcingReportModal({ row, onClose }: { row: ReportRow; onClose: () => void }) {
+export default function SourcingReportModal({ row, onClose, canMap = true }: { row: ReportRow; onClose: () => void; canMap?: boolean }) {
   const toast = useToast();
   const [products, setProducts] = useState<ReportProduct[]>([]);
   const [statuses, setStatuses] = useState<('Completed' | 'In Progress')[]>([]);
@@ -242,7 +242,9 @@ export default function SourcingReportModal({ row, onClose }: { row: ReportRow; 
                       <td style={{ textAlign: 'center' }}>{supCount > 0
                         ? <Tooltip label="View mapped suppliers"><span className="srpt-sup-count has-sup srpt-sup-clickable" onClick={() => setViewIdx(gi)}>{supCount}</span></Tooltip>
                         : <span className="srpt-sup-count">0</span>}</td>
-                      <td style={{ textAlign: 'center' }}><button className="srpt-map-btn" onClick={() => setMapIdx(gi)}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>Map Supplier Directory</button></td>
+                      <td style={{ textAlign: 'center' }}>{canMap
+                        ? <button className="srpt-map-btn" onClick={() => setMapIdx(gi)}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>Map Supplier Directory</button>
+                        : <Tooltip label="You created this sourcing — mapping is done by the assignee"><span className="srpt-viewonly"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg>View only</span></Tooltip>}</td>
                     </tr>
                   );
                 })}

@@ -436,7 +436,12 @@ class VendorController extends Controller
 
         $data = $this->validateContact($request);
         $old = $row->attachment_path;
-        $path = $this->absorbFile($request, 'attachment', $vendor->id, 'contact', $data['attachment_path'] ?? $old);
+        // remove_attachment=1 means the user cleared the file in the popup. With
+        // no new upload we must pass a NULL fallback so absorbFile drops it —
+        // otherwise it re-keeps $old and the deleted attachment keeps showing.
+        $removeAttachment = filter_var($request->input('remove_attachment', false), FILTER_VALIDATE_BOOLEAN);
+        $fallback = $removeAttachment ? null : ($data['attachment_path'] ?? $old);
+        $path = $this->absorbFile($request, 'attachment', $vendor->id, 'contact', $fallback);
 
         $row->update([
             'contact_name'     => $data['contact_name'],
@@ -1009,7 +1014,7 @@ class VendorController extends Controller
                 $max = max($max, (int) $m[1]);
             }
         }
-        return 'SUP-' . str_pad((string) ($max + 1), 2, '0', STR_PAD_LEFT);
+        return 'S-' . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
     }
 
     /**

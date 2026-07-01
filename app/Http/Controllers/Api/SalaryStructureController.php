@@ -60,6 +60,8 @@ class SalaryStructureController extends Controller
                 'department'    => $deptNames[$e->department_id] ?? null,
                 'designation'   => $desigNames[$e->designation_id] ?? null,
                 'pf_eligible'   => (bool) $e->pf_eligible,
+                'pf_type'       => $e->pf_type, // statutory | standard | null
+                'esi_applicable'=> strtolower((string) ($e->esi_applicable ?? '')) === 'yes',
                 'annual_salary' => $e->annual_salary !== null ? (float) $e->annual_salary : null,
                 'has_structure' => (bool) $s,
                 'structure_id'  => $s?->id,
@@ -153,7 +155,7 @@ class SalaryStructureController extends Controller
                 $prev->update(['status' => 'superseded']);
             }
 
-            return SalaryStructure::create([
+            $created = SalaryStructure::create([
                 'client_id'       => $employee->client_id,
                 'branch_id'       => $employee->branch_id,
                 'employee_id'     => $employee->id,
@@ -173,6 +175,15 @@ class SalaryStructureController extends Controller
                 'revision_note'   => $data['revision_note'] ?? null,
                 'created_by'      => $user?->id,
             ]);
+
+            // Keep the employee's PF / ESI flags in sync with the structure so
+            // the Employee form + onboarding form reflect a flag enabled here.
+            $employee->update([
+                'pf_eligible'    => (bool) $created->pf_applicable,
+                'esi_applicable' => $created->esi_applicable ? 'Yes' : 'No',
+            ]);
+
+            return $created;
         });
 
         // Propagate the new salary to any non-locked payroll already generated

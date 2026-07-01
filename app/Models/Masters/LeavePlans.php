@@ -32,6 +32,7 @@ class LeavePlans extends Model
 
     protected $casts = [
         'is_default' => 'boolean',
+        'unlocked' => 'boolean',
     ];
 
     public function client(): BelongsTo

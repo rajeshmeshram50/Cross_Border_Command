@@ -36,6 +36,11 @@ function diffDaysInclusive(from: string, to: string): number {
   return Math.round(ms / 86400000) + 1;
 }
 
+const fmtNiceDate = (iso: string) => {
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
 const ACCENT_PALETTE = ['#7c5cfc', '#0ab39c', '#f7b84b', '#f06548', '#0ea5e9', '#e83e8c', '#0c63b0', '#22c55e'];
 const accentFor = (id: number) => ACCENT_PALETTE[id % ACCENT_PALETTE.length];
 const initialsOf = (name: string) =>
@@ -46,6 +51,10 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [leaveTypeId, setLeaveTypeId] = useState<string>('');
+  // Full day vs. Custom (half day). Half-day only applies to a single date and
+  // maps to the backend day_type first_half / second_half.
+  const [dayMode, setDayMode] = useState<'full' | 'custom'>('full');
+  const [halfType, setHalfType] = useState<'first_half' | 'second_half'>('first_half');
   const [note, setNote] = useState('');
   const [notifySearch, setNotifySearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -59,6 +68,7 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
     if (!isOpen) return;
     setFromDate(''); setToDate('');
     setLeaveTypeId('');
+    setDayMode('full'); setHalfType('first_half');
     setNote('');
     setNotifySearch(''); setDebouncedSearch('');
     setNotifyOptions([]); setSelectedNotify([]);
@@ -105,7 +115,27 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
     return () => { alive = false; };
   }, [debouncedSearch]);
 
-  const totalDays = useMemo(() => diffDaysInclusive(fromDate, toDate), [fromDate, toDate]);
+  // Half-day is only meaningful on a single calendar day (matches the backend
+  // rule) AND only for leave types whose setup enables "Allow half day leave".
+  const selectedBalanceType = balanceTypes.find(t => String(t.leave_type_id) === String(leaveTypeId));
+  const allowHalf = !!selectedBalanceType?.allow_half_day;
+  const singleDay = !!fromDate && fromDate === toDate;
+  const isHalf = dayMode === 'custom' && singleDay && allowHalf;
+
+  // If the chosen leave type doesn't allow half days, snap back to Full day.
+  useEffect(() => {
+    if (!allowHalf && dayMode === 'custom') setDayMode('full');
+  }, [allowHalf, dayMode]);
+  const totalDays = useMemo(
+    () => (isHalf ? 0.5 : diffDaysInclusive(fromDate, toDate)),
+    [isHalf, fromDate, toDate],
+  );
+
+  // If the picked range stops being a single day, snap back to Full day so a
+  // stale "Custom" half-day selection can't ride along on a multi-day request.
+  useEffect(() => {
+    if (!singleDay && dayMode === 'custom') setDayMode('full');
+  }, [singleDay, dayMode]);
 
   const { user } = useAuth();
   // Admins (client/super) may file a genuine same-day absence on behalf of an
@@ -113,15 +143,18 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
   const isAdmin = user?.user_type === 'client_admin' || user?.user_type === 'super_admin';
 
   const today = new Date().toISOString().slice(0, 10);
-  const tomorrow = (() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    return d.toISOString().slice(0, 10);
-  })();
-  // Earliest start date the picker offers / the form accepts. Employees must
-  // pick tomorrow onward (no same-day leave); admins may pick today. Mirrors
-  // the backend rule in LeaveRequestController::store.
-  const minStartDate = isAdmin ? today : tomorrow;
+  // Today is now selectable for everyone — but for a self-service employee,
+  // applying for TODAY is restricted to the SECOND HALF only (the morning is
+  // already underway). Mirrors the backend rule in LeaveRequestController::store.
+  const minStartDate = today;
+  // Self-service employee picking today → must be a single second-half day.
+  const isToday = !isAdmin && !!fromDate && fromDate === today;
+
+  // Force today's leave to Custom · Second Half (the only allowed shape) — but
+  // only when the leave type permits half days.
+  useEffect(() => {
+    if (isToday && allowHalf) { setDayMode('custom'); setHalfType('second_half'); }
+  }, [isToday, allowHalf]);
 
   const isSelected = useCallback(
     (id: number) => selectedNotify.some(s => s.id === id),
@@ -137,13 +170,34 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
 
   const submit = async () => {
     if (!canSubmit) return;
-    // Same-day / past guard — leave must start on/after the minimum (tomorrow
-    // for employees, today for admins). Mirrors the backend rule so a
-    // hand-typed or stale date is caught before the API call.
+    // Past guard — leave can't start before today.
     if (fromDate < minStartDate) {
       await Swal.fire({
-        title: 'Same-day leave not allowed',
-        text: 'Leave cannot be applied for today. Please select a date from tomorrow onward.',
+        title: 'Invalid date',
+        text: 'Leave cannot be applied for a past date.',
+        icon: 'warning',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#f06548',
+      });
+      return;
+    }
+    // Today needs a second-half (half-day) request — so a type that doesn't
+    // allow half days can't be applied for today at all.
+    if (isToday && !allowHalf) {
+      await Swal.fire({
+        title: 'Not allowed for today',
+        text: 'This leave type cannot be applied for today (it does not allow half-day leave). Please pick a date from tomorrow onward.',
+        icon: 'warning',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#f06548',
+      });
+      return;
+    }
+    // Same-day rule — applying for TODAY is allowed only for the second half.
+    if (isToday && !(dayMode === 'custom' && halfType === 'second_half')) {
+      await Swal.fire({
+        title: 'Second half only',
+        text: 'Leave for today can only be applied for the second half of the day.',
         icon: 'warning',
         confirmButtonText: 'OK',
         confirmButtonColor: '#f06548',
@@ -173,7 +227,7 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
         leave_type_id: Number(leaveTypeId),
         from_date: fromDate,
         to_date: toDate,
-        day_type: 'full',
+        day_type: isHalf ? halfType : 'full',
         reason: note || undefined,
         notify: { employee_ids: selectedNotify.map(s => s.id) },
       });
@@ -280,6 +334,80 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
               />
             )}
           </div>
+
+          {fromDate && toDate && (
+            <div className="lvr-section">
+              <div className="lvr-section-title">
+                <i className="ri-time-line" />
+                <span>Duration</span>
+              </div>
+              <div
+                className="d-inline-flex"
+                role="group"
+                style={{ border: '1px solid var(--vz-border-color)', borderRadius: 8, overflow: 'hidden', background: 'var(--vz-light, #f1f3f6)' }}
+              >
+                <button
+                  type="button"
+                  onClick={() => { if (!isToday) setDayMode('full'); }}
+                  disabled={isToday}
+                  aria-pressed={dayMode === 'full'}
+                  title={isToday ? 'Leave for today can only be the second half' : undefined}
+                  style={{
+                    padding: '6px 18px', border: 'none', fontWeight: 600, fontSize: 13,
+                    cursor: isToday ? 'not-allowed' : 'pointer',
+                    background: dayMode === 'full' ? '#fff' : 'transparent',
+                    color: isToday ? '#aab2bd' : dayMode === 'full' ? '#212529' : '#6b7280',
+                    boxShadow: dayMode === 'full' ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
+                  }}
+                >
+                  Full day
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { if (singleDay && allowHalf) setDayMode('custom'); }}
+                  disabled={!singleDay || !allowHalf}
+                  aria-pressed={dayMode === 'custom'}
+                  title={!allowHalf ? 'This leave type does not allow half-day leave' : !singleDay ? 'Half day applies to a single date only' : undefined}
+                  style={{
+                    padding: '6px 18px', border: 'none', fontWeight: 600, fontSize: 13,
+                    cursor: (singleDay && allowHalf) ? 'pointer' : 'not-allowed',
+                    background: dayMode === 'custom' ? '#fff' : 'transparent',
+                    color: (!singleDay || !allowHalf) ? '#aab2bd' : dayMode === 'custom' ? '#212529' : '#6b7280',
+                    boxShadow: dayMode === 'custom' ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
+                  }}
+                >
+                  Custom
+                </button>
+              </div>
+
+              {isHalf && (
+                <div className="mt-2">
+                  <div className="text-muted mb-1" style={{ fontSize: 12 }}>On {fmtNiceDate(fromDate)}</div>
+                  <select
+                    className="lvr-input"
+                    value={halfType}
+                    onChange={e => setHalfType(e.target.value as 'first_half' | 'second_half')}
+                    style={{ maxWidth: 240 }}
+                  >
+                    {/* Today can only be the second half — first half is past. */}
+                    <option value="first_half" disabled={isToday}>First Half</option>
+                    <option value="second_half">Second Half</option>
+                  </select>
+                  {isToday && (
+                    <div className="text-muted mt-1" style={{ fontSize: 11.5 }}>
+                      <i className="ri-information-line me-1" />
+                      Leave for today can only be applied for the second half.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="text-muted mt-2 d-flex align-items-center gap-1" style={{ fontSize: 12.5 }}>
+                <i className="ri-time-line" />
+                You are requesting for <strong>{totalDays} {totalDays === 1 ? 'day' : 'days'}</strong> of leave
+              </div>
+            </div>
+          )}
 
           <div className="lvr-section">
             <div className="lvr-section-title">

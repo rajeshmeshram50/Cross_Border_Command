@@ -16,6 +16,7 @@ import { VaultModal } from '../employee-onboarding/HrEmployeeOnboarding';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import { leavePlansApi } from './leavePlansApi';
+import { resolveProbation } from '../../utils/probation';
 import '../../../css/recruitment.css';
 
 
@@ -782,10 +783,11 @@ export default function HrEmployees() {
   const [eEnablePayroll, setEEnablePayroll]      = useState(true);
   const [ePayGroup, setEPayGroup]                = useState('');
   const [eAnnualSalary, setEAnnualSalary]        = useState('');
-  const [eSalaryFreq, setESalaryFreq]            = useState('');
+  const [eSalaryFreq, setESalaryFreq]            = useState('Per annum'); // salary is always entered per annum (frequency picker removed)
   const [eSalaryFrom, setESalaryFrom]            = useState('');
   const [eBonusInAnnual, setEBonusInAnnual]      = useState(false);
   const [ePfEligible, setEPfEligible]            = useState(false);
+  const [ePfType, setEPfType]                    = useState('Statutory'); // 'Statutory' (₹15k cap) | 'Standard' (full basic)
   const [eDetailedBreakup, setEDetailedBreakup]  = useState(false);
   const [eEarnings, setEEarnings]                = useState<SalBreakComp[]>([]);
   const [eDeductions, setEDeductions]            = useState<SalBreakComp[]>([]);
@@ -826,7 +828,7 @@ export default function HrEmployees() {
     setEAadharFile(null); setEPanFile(null); setEPhotoFile(null);
     setEExistingDocs({}); setEDocBusy({});
     setEEnablePayroll(true); setEPayGroup('');
-    setEAnnualSalary(''); setESalaryFreq(''); setESalaryFrom('');
+    setEAnnualSalary(''); setESalaryFreq('Per annum'); setESalaryFrom('');
     setEBonusInAnnual(false); setEPfEligible(false); setEDetailedBreakup(false);
     setEEarnings([]); setEDeductions([]); setEEsiApplicable(false); setEPtApplicable(true);
     setEBreakupLoading(false);
@@ -916,6 +918,51 @@ export default function HrEmployees() {
 
   const breakupGross = useMemo(() => eEarnings.reduce((s, c) => s + (Number(c.amount) || 0), 0), [eEarnings]);
   const breakupDed   = useMemo(() => eDeductions.reduce((s, c) => s + (Number(c.amount) || 0), 0), [eDeductions]);
+  // Live monthly PF estimate off the basic component — Statutory caps the
+  // basic at the ₹15k EPF ceiling, Standard uses the full basic. Updates
+  // whenever the PF Type / Applicable / basic figure changes.
+  const breakupBasic = useMemo(
+    () => Number(eEarnings.find(c => c.code === 'basic')?.amount) || 0,
+    [eEarnings],
+  );
+  const breakupPf = useMemo(() => {
+    if (!ePfEligible) return 0;
+    const base = ePfType === 'Standard' ? breakupBasic : Math.min(breakupBasic, 15000);
+    return Math.round(base * 0.12);
+  }, [ePfEligible, ePfType, breakupBasic]);
+  // Net = Gross − PF estimate − fixed deductions. ESI / PT are NOT
+  // auto-computed — they're added as editable rows in Fixed Deductions
+  // (so they're part of breakupDed when present), filled by HR / accounts.
+  const breakupNet = useMemo(
+    () => Math.max(0, breakupGross - (ePfEligible ? breakupPf : 0) - breakupDed),
+    [breakupGross, ePfEligible, breakupPf, breakupDed],
+  );
+
+  // Compare the breakup's annualised gross (Monthly Gross × 12) against the
+  // entered Salary Amount. Over the salary = red (components exceed the CTC);
+  // at/under = green. `breakupDiff` is +over / −under (₹/year).
+  const salaryAnnual = useMemo(() => Math.round(monthlyGrossFromSalary() * 12), [monthlyGrossFromSalary]);
+  const breakupAnnual = useMemo(() => Math.round(breakupGross * 12), [breakupGross]);
+  const breakupDiff = salaryAnnual > 0 ? breakupAnnual - salaryAnnual : 0; // + over, − under
+  const breakupOverSalary = breakupDiff > 0;
+
+  // ESI / Professional Tax are entered manually: ticking the box drops a
+  // labelled, free-input row into Fixed Deductions for HR/accounts to fill;
+  // unticking removes it. No amount is auto-computed.
+  useEffect(() => {
+    setEDeductions(prev => {
+      let next = prev;
+      const sync = (on: boolean, code: string, label: string) => {
+        const has = next.some(d => d.code === code);
+        if (on && !has) next = [...next, { code, label, amount: 0 }];
+        else if (!on && has) next = next.filter(d => d.code !== code);
+      };
+      sync(eEsiApplicable, 'esi', 'ESI');
+      sync(ePtApplicable,  'pt',  'Professional Tax');
+      return next === prev ? prev : next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eEsiApplicable, ePtApplicable]);
 
   const breakupErrors = useMemo(() => {
     const earnings: Record<number, string> = {};
@@ -995,7 +1042,8 @@ export default function HrEmployees() {
   };
   const removeBreakRow = async (which: 'earn' | 'ded', i: number) => {
     const list = which === 'earn' ? eEarnings : eDeductions;
-    const name = list[i]?.label?.trim() || 'this component';
+    const removed = list[i];
+    const name = removed?.label?.trim() || 'this component';
     const ok = await confirmDialog({
       title: 'Remove component?',
       message: <>Remove <strong>{name}</strong> from the salary breakup? It’s applied when you save the employee.</>,
@@ -1007,7 +1055,13 @@ export default function HrEmployees() {
     if (!ok) return;
     breakupDirtyRef.current = true; // HR removed a component → stop auto-re-seeding
     if (which === 'earn') setEEarnings(eEarnings.filter((_, idx) => idx !== i));
-    else setEDeductions(eDeductions.filter((_, idx) => idx !== i));
+    else {
+      setEDeductions(eDeductions.filter((_, idx) => idx !== i));
+      // Removing the ESI / Professional Tax row also unticks its checkbox so
+      // the two stay consistent.
+      if (removed?.code === 'esi') setEEsiApplicable(false);
+      if (removed?.code === 'pt')  setEPtApplicable(false);
+    }
     clearEErr('salary_breakup');
   };
 
@@ -1031,6 +1085,10 @@ export default function HrEmployees() {
         {list.map((c, i) => {
           const rowErr = errs[i];
           const underline = rowErr ? '#dc2626' : 'transparent';
+          // ESI / PT rows are tied to their checkbox: the name is fixed and the
+          // row can't be deleted directly — only the amount is editable; untick
+          // the box above to remove it.
+          const locked = which === 'ded' && (c.code === 'esi' || c.code === 'pt');
           return (
             <div key={i} style={{ padding: '5px 0', borderBottom: '1px dashed var(--vz-border-color, #e5e7eb)' }}>
               <div className="emp-break-row" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1039,6 +1097,7 @@ export default function HrEmployees() {
                   placeholder="Component name"
                   maxLength={MAX_COMP_LABEL}
                   value={c.label}
+                  readOnly={locked}
                   onChange={e => updateBreakRow(which, i, 'label', e.target.value)}
                   onFocus={e => { if (!rowErr) e.currentTarget.style.borderBottomColor = `${accent}66`; }}
                   onBlur={e => { e.currentTarget.style.borderBottomColor = rowErr ? '#dc2626' : 'transparent'; }}
@@ -1058,11 +1117,17 @@ export default function HrEmployees() {
                     onBlur={e => { e.currentTarget.style.borderBottomColor = rowErr ? '#dc2626' : 'transparent'; }}
                   />
                 </div>
-                <button type="button"
-                  style={{ color: '#dc2626', background: 'transparent', border: 'none', padding: '2px 4px', cursor: 'pointer', flexShrink: 0, opacity: 0.65, lineHeight: 1 }}
-                  onClick={() => removeBreakRow(which, i)} title="Remove">
-                  <i className="ri-delete-bin-line" />
-                </button>
+                {locked ? (
+                  <span title="Untick the box above to remove" style={{ color: '#9ca3af', padding: '2px 4px', flexShrink: 0, lineHeight: 1, fontSize: 13 }}>
+                    <i className="ri-lock-line" />
+                  </span>
+                ) : (
+                  <button type="button"
+                    style={{ color: '#dc2626', background: 'transparent', border: 'none', padding: '2px 4px', cursor: 'pointer', flexShrink: 0, opacity: 0.65, lineHeight: 1 }}
+                    onClick={() => removeBreakRow(which, i)} title="Remove">
+                    <i className="ri-delete-bin-line" />
+                  </button>
+                )}
               </div>
               {rowErr && <small className="emp-err d-block" style={{ marginTop: 2 }}>{rowErr}</small>}
             </div>
@@ -1344,10 +1409,11 @@ export default function HrEmployees() {
       if (raw.enable_payroll !== undefined && raw.enable_payroll !== null) setEEnablePayroll(!!raw.enable_payroll);
       if (raw.pay_group !== undefined && raw.pay_group !== null) setEPayGroup(raw.pay_group);
       if (raw.annual_salary !== undefined && raw.annual_salary !== null) setEAnnualSalary(String(raw.annual_salary));
-      if (raw.salary_frequency !== undefined && raw.salary_frequency !== null) setESalaryFreq(raw.salary_frequency);
+      setESalaryFreq(raw.salary_frequency || 'Per annum');
       if (raw.salary_effective_from) setESalaryFrom(String(raw.salary_effective_from).slice(0, 10));
       if (raw.bonus_in_annual !== undefined && raw.bonus_in_annual !== null) setEBonusInAnnual(!!raw.bonus_in_annual);
       if (raw.pf_eligible !== undefined && raw.pf_eligible !== null) setEPfEligible(!!raw.pf_eligible);
+      setEPfType(String(raw.pf_type ?? '').toLowerCase() === 'standard' ? 'Standard' : 'Statutory');
       if (raw.detailed_breakup !== undefined && raw.detailed_breakup !== null) setEDetailedBreakup(!!raw.detailed_breakup);
     } else {
       const parts = row.name.split(' ');
@@ -1441,9 +1507,22 @@ export default function HrEmployees() {
     if (!eCurState)           e.state_id        = 'State is required';
     if (!eCurPin.trim())      e.pincode         = 'Pincode is required';
     else if (!/^\d{6}$/.test(eCurPin.trim())) e.pincode = 'Pincode must be exactly 6 digits';
+
+    // Permanent address is mandatory too — but only when it's NOT mirrored
+    // from the current address (the "Same as Current Address" toggle copies
+    // the already-validated current values).
+    if (!eSameAsCurrent) {
+      if (!ePermAddr1.trim())  e.perm_address_line1 = 'Address Line 1 is required';
+      if (!ePermCity.trim())   e.perm_city          = 'City is required';
+      if (!ePermCountry)       e.perm_country_id    = 'Country is required';
+      if (!ePermState)         e.perm_state_id      = 'State is required';
+      if (!ePermPin.trim())    e.perm_pincode       = 'Pincode is required';
+      else if (!/^\d{6}$/.test(ePermPin.trim())) e.perm_pincode = 'Pincode must be exactly 6 digits';
+    }
     return e;
   }, [eWorkCountry, eFirstName, eLastName, eDisplayName, eActualName, eGender, eDob, eNationality,
-      eWorkEmail, eMobile, eCurAddr1, eCurCity, eCurCountry, eCurState, eCurPin, eMiddleName]);
+      eWorkEmail, eMobile, eCurAddr1, eCurCity, eCurCountry, eCurState, eCurPin, eMiddleName,
+      eSameAsCurrent, ePermAddr1, ePermCity, ePermCountry, ePermState, ePermPin]);
 
   const validateStep2 = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
@@ -1455,8 +1534,10 @@ export default function HrEmployees() {
     if (!eLegalEntity)     e.legal_entity_id   = 'Legal entity is required';
     if (!eReportingMgr)    e.reporting_manager_id = 'Reporting manager is required';
     if (!eProbationPolicy) e.probation_policy  = 'Probation policy is required';
-    if (eProbationPolicy === CUSTOM_PROBATION_VALUE && !eCustomProbation.trim()) {
-      e.probation_policy = 'Please describe the custom probation policy';
+    if (eProbationPolicy === CUSTOM_PROBATION_VALUE) {
+      const n = parseInt(eCustomProbation, 10);
+      if (!eCustomProbation.trim()) e.probation_policy = 'Please enter the probation months (1–12)';
+      else if (!Number.isInteger(n) || n < 1 || n > 12) e.probation_policy = 'Probation months must be between 1 and 12';
     }
     if (!eNoticePeriod)    e.notice_period     = 'Notice period is required';
     if (eNoticePeriod === CUSTOM_NOTICE_VALUE && !eCustomNotice.trim()) {
@@ -1503,6 +1584,14 @@ export default function HrEmployees() {
     return `${cap.getFullYear()}-${pad(cap.getMonth() + 1)}-${pad(cap.getDate())}`;
   }, [eJoinDate]);
 
+  // Probation length + end date, derived live from the joining date and the
+  // selected probation policy. Stored on save so the daily probation-completion
+  // email job just reads probation_end_date (no backend recalculation).
+  const probationInfo = useMemo(() => {
+    const policyText = eProbationPolicy === CUSTOM_PROBATION_VALUE ? eCustomProbation : eProbationPolicy;
+    return resolveProbation(policyText, eJoinDate);
+  }, [eJoinDate, eProbationPolicy, eCustomProbation]);
+
   const validateStep4 = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
     if (!eEnablePayroll) return e;
@@ -1512,9 +1601,9 @@ export default function HrEmployees() {
     } else if (amt > 999999999999.99) {
       e.annual_salary = 'Salary amount must be ≤ 999,999,999,999.99';
     }
-    if (!eSalaryFreq) {
-      e.salary_frequency = 'Frequency is required';
-    }
+    // Frequency picker was removed — salary is always entered "Per annum",
+    // so it's never user-editable and must not block the form. (Defaulted to
+    // 'Per annum' on load/reset.)
     if (!eSalaryFrom) {
       e.salary_effective_from = 'Effective-from date is required';
     } else if (eJoinDate && eSalaryFrom < eJoinDate) {
@@ -1600,6 +1689,8 @@ export default function HrEmployees() {
       })(),
       date_of_joining: eJoinDate || null,
       probation_policy: eProbationPolicy === CUSTOM_PROBATION_VALUE ? (eCustomProbation || 'Custom') : eProbationPolicy,
+      probation_months: probationInfo.months,
+      probation_end_date: probationInfo.endIso || null,
       notice_period:    eNoticePeriod === CUSTOM_NOTICE_VALUE ? (eCustomNotice || 'Custom') : eNoticePeriod,
       designation_name: mDesignations.find(d => String(d.id) === String(eDesignation))?.name,
 
@@ -1627,6 +1718,7 @@ export default function HrEmployees() {
       salary_effective_from: eSalaryFrom || null,
       bonus_in_annual:       !!eBonusInAnnual,
       pf_eligible:           !!ePfEligible,
+      pf_type:               ePfEligible ? ePfType.toLowerCase() : null,
       detailed_breakup:      !!eDetailedBreakup,
 
       status: eStatus || 'Inactive',
@@ -1746,6 +1838,15 @@ export default function HrEmployees() {
       return;
     }
 
+    // Heads-up (non-blocking): the detailed breakup's annual total is above the
+    // entered Salary Amount — the components add up to more than the CTC.
+    if (eDetailedBreakup && breakupOverSalary) {
+      toast.warning(
+        'Breakup exceeds salary',
+        `The salary components total ₹${breakupDiff.toLocaleString('en-IN')} more per year than the Salary Amount (₹${salaryAnnual.toLocaleString('en-IN')}). Saving anyway.`,
+      );
+    }
+
     const payload = buildEmployeePayload(4);
 
     setSaving(true);
@@ -1819,6 +1920,13 @@ export default function HrEmployees() {
       setEPermState(eCurState);
       setEPermCountry(eCurCountry);
       setEPermPin(eCurPin);
+      // Mirrored from current → drop any pending permanent-address errors.
+      setEErrors(prev => {
+        const next = { ...prev };
+        delete next.perm_address_line1; delete next.perm_city; delete next.perm_country_id;
+        delete next.perm_state_id; delete next.perm_pincode;
+        return next;
+      });
     } else {
       setEPermAddr1('');
       setEPermAddr2('');
@@ -1937,12 +2045,12 @@ export default function HrEmployees() {
     });
   }, [q, tab, deptFilter, statusFilter, apiRows]);
 
-  const ROWS_PER_PAGE = 5;
+  const [rowsPerPage, setRowsPerPage] = useState(10);
   const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / ROWS_PER_PAGE));
-  useEffect(() => { setPage(1); }, [q, tab, deptFilter, statusFilter, apiRows]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
+  useEffect(() => { setPage(1); }, [q, tab, deptFilter, statusFilter, apiRows, rowsPerPage]);
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
-  const pageRows = filtered.slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE);
+  const pageRows = filtered.slice((page - 1) * rowsPerPage, page * rowsPerPage);
 
   const listRootRef   = useRef<HTMLDivElement | null>(null);
   const listScrollRef = useRef<HTMLDivElement | null>(null);
@@ -2117,9 +2225,9 @@ export default function HrEmployees() {
             </div>
 
             <div className="p-3 d-flex flex-column" ref={listScrollRef} style={{ minHeight: listFillH }}>
-                <div className="table-responsive flex-grow-1">
+                <div className="table-responsive flex-grow-1" style={{ maxHeight: listFillH ? Math.max(280, listFillH - 64) : undefined, overflowY: 'auto' }}>
                   <table className="table align-middle table-nowrap mb-0">
-                    <thead className="table-light">
+                    <thead className="table-light" style={{ position: 'sticky', top: 0, zIndex: 2 }}>
                       <tr>
                         <th scope="col" className="ps-3 text-center" style={{ width: 56 }}>Sr No</th>
                         <th scope="col">Employee</th>
@@ -2154,7 +2262,7 @@ export default function HrEmployees() {
                               : () => navigate(`/hr/employees/${encodeURIComponent(e.encryptedId || e.id)}/profile`, { state: { employee: e } })}
                             style={{ cursor: tab === 'disabled' ? 'default' : 'pointer' }}
                           >
-                            <td className="ps-3 text-center fs-13 hr-emp-srno">{(page - 1) * ROWS_PER_PAGE + idx + 1}</td>
+                            <td className="ps-3 text-center fs-13 hr-emp-srno">{(page - 1) * rowsPerPage + idx + 1}</td>
                             <td>
                               <div className="d-flex align-items-center gap-2">
                                 {e.photoUrl ? (
@@ -2369,7 +2477,14 @@ export default function HrEmployees() {
                   </table>
                 </div>
 
-                <WorklistPager total={filtered.length} page={page} pageSize={ROWS_PER_PAGE} onPage={setPage} />
+                <WorklistPager
+                  total={filtered.length}
+                  page={page}
+                  pageSize={rowsPerPage}
+                  onPage={setPage}
+                  onPageSize={setRowsPerPage}
+                  pageSizeOptions={[5, 10, 25, 50, 100]}
+                />
             </div>
             </div>
           </div>
@@ -3240,40 +3355,70 @@ export default function HrEmployees() {
                   </div>
                   <Row className="g-3">
                     <Col md={6}>
-                      <label className="emp-label">Address Line 1</label>
-                      <input className="emp-input" type="text" placeholder="House / Flat No., Building, Street" value={ePermAddr1} onChange={e => setEPermAddr1(e.target.value)} disabled={eSameAsCurrent} />
+                      <label className="emp-label">Address Line 1{!eSameAsCurrent && <span className="req">*</span>}</label>
+                      <input
+                        className={`emp-input${eErrors.perm_address_line1 ? ' is-invalid' : ''}`}
+                        type="text"
+                        placeholder="House / Flat No., Building, Street"
+                        value={ePermAddr1}
+                        onChange={e => { setEPermAddr1(e.target.value); clearEErr('perm_address_line1'); }}
+                        disabled={eSameAsCurrent}
+                      />
+                      {eErrors.perm_address_line1 && <small className="emp-err">{eErrors.perm_address_line1}</small>}
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Address Line 2</label>
                       <input className="emp-input" type="text" placeholder="Area, Locality (optional)" value={ePermAddr2} onChange={e => setEPermAddr2(e.target.value)} disabled={eSameAsCurrent} />
                     </Col>
                     <Col md={3}>
-                      <label className="emp-label">City</label>
-                      <input className="emp-input" type="text" placeholder="e.g. Pune" value={ePermCity} onChange={e => setEPermCity(e.target.value)} disabled={eSameAsCurrent} />
+                      <label className="emp-label">City{!eSameAsCurrent && <span className="req">*</span>}</label>
+                      <input
+                        className={`emp-input${eErrors.perm_city ? ' is-invalid' : ''}`}
+                        type="text"
+                        placeholder="e.g. Pune"
+                        value={ePermCity}
+                        onChange={e => { setEPermCity(e.target.value); clearEErr('perm_city'); }}
+                        disabled={eSameAsCurrent}
+                      />
+                      {eErrors.perm_city && <small className="emp-err">{eErrors.perm_city}</small>}
                     </Col>
                     <Col md={3}>
-                      <label className="emp-label">Country</label>
+                      <label className="emp-label">Country{!eSameAsCurrent && <span className="req">*</span>}</label>
                       <MasterSelect
                         value={ePermCountry}
-                        onChange={(v) => { setEPermCountry(v); if (ePermState) setEPermState(''); }}
+                        onChange={(v) => { setEPermCountry(v); if (ePermState) setEPermState(''); clearEErr('perm_country_id'); clearEErr('perm_state_id'); }}
                         placeholder="Select country"
                         options={countryOptions}
                         disabled={eSameAsCurrent}
+                        invalid={!!eErrors.perm_country_id}
                       />
+                      {eErrors.perm_country_id && <small className="emp-err">{eErrors.perm_country_id}</small>}
                     </Col>
                     <Col md={3}>
-                      <label className="emp-label">State</label>
+                      <label className="emp-label">State{!eSameAsCurrent && <span className="req">*</span>}</label>
                       <MasterSelect
                         value={ePermState}
-                        onChange={setEPermState}
+                        onChange={(v) => { setEPermState(v); clearEErr('perm_state_id'); }}
                         placeholder={ePermCountry ? 'Select state' : 'Pick country first'}
                         options={permanentAddressStates}
                         disabled={eSameAsCurrent || !ePermCountry}
+                        invalid={!!eErrors.perm_state_id}
                       />
+                      {eErrors.perm_state_id && <small className="emp-err">{eErrors.perm_state_id}</small>}
                     </Col>
                     <Col md={3}>
-                      <label className="emp-label">Pincode</label>
-                      <input className="emp-input" type="text" inputMode="numeric" maxLength={6} placeholder="6-digit pincode" value={ePermPin} onChange={e => setEPermPin(e.target.value.replace(/\D/g, '').slice(0, 6))} disabled={eSameAsCurrent} />
+                      <label className="emp-label">Pincode{!eSameAsCurrent && <span className="req">*</span>}</label>
+                      <input
+                        className={`emp-input${eErrors.perm_pincode ? ' is-invalid' : ''}`}
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        placeholder="6-digit pincode"
+                        value={ePermPin}
+                        onChange={e => { setEPermPin(e.target.value.replace(/\D/g, '').slice(0, 6)); clearEErr('perm_pincode'); }}
+                        disabled={eSameAsCurrent}
+                      />
+                      {eErrors.perm_pincode && <small className="emp-err">{eErrors.perm_pincode}</small>}
                     </Col>
                   </Row>
                 </div>
@@ -3377,22 +3522,46 @@ export default function HrEmployees() {
                     <i className="ri-file-list-3-line" /> Employment Terms
                   </div>
                   <Row className="g-3">
-                    <Col md={6}>
-                      <label className="emp-label">Probation Policy<span className="req">*</span></label>
+                    <Col md={4}>
+                      <label className="emp-label">Probation Policy (Month)<span className="req">*</span></label>
                       <MasterSelect value={eProbationPolicy} onChange={(v) => { setEProbationPolicy(v); clearEErr('probation_policy'); }} options={PROBATION_POLICY_OPTIONS} placeholder="Select probation policy" invalid={!!eErrors.probation_policy} />
                       {eProbationPolicy === CUSTOM_PROBATION_VALUE && (
                         <input
                           className={`emp-input mt-2${eErrors.probation_policy ? ' is-invalid' : ''}`}
-                          type="text"
-                          placeholder="e.g. 4-month probation, monthly review"
+                          type="number"
+                          min={1}
+                          max={12}
+                          step={1}
+                          inputMode="numeric"
+                          placeholder="Enter months (1–12)"
                           value={eCustomProbation}
-                          onChange={e => { setECustomProbation(e.target.value); clearEErr('probation_policy'); }}
+                          onChange={e => {
+                            // Integer 1–12 only.
+                            const digits = e.target.value.replace(/\D/g, '');
+                            const v = digits === '' ? '' : String(Math.max(1, Math.min(12, parseInt(digits, 10))));
+                            setECustomProbation(v);
+                            clearEErr('probation_policy');
+                          }}
                           autoFocus
                         />
                       )}
                       {eErrors.probation_policy && <small className="emp-err">{eErrors.probation_policy}</small>}
                     </Col>
-                    <Col md={6}>
+                    <Col md={4}>
+                      <label className="emp-label">
+                        Probation End Date
+                        <span className="hint">(auto-calculated)</span>
+                      </label>
+                      <input
+                        className="emp-input is-readonly"
+                        type="text"
+                        value={probationInfo.endDisplay}
+                        readOnly
+                        tabIndex={-1}
+                        placeholder={!eJoinDate ? 'Set the joining date' : (probationInfo.months > 0 ? '' : 'No probation')}
+                      />
+                    </Col>
+                    <Col md={4}>
                       <label className="emp-label">Notice Period<span className="req">*</span></label>
                       <MasterSelect value={eNoticePeriod} onChange={(v) => { setENoticePeriod(v); clearEErr('notice_period'); }} options={NOTICE_PERIOD_OPTIONS} placeholder="Select notice period" invalid={!!eErrors.notice_period} />
                       {eNoticePeriod === CUSTOM_NOTICE_VALUE && (
@@ -3703,33 +3872,25 @@ export default function HrEmployees() {
                   </div>
                   <Row className="g-3">
                     <Col md={6}>
-                      <label className="emp-label">Salary Amount{eEnablePayroll && <span className="req">*</span>}</label>
-                      <div className="d-flex gap-2 align-items-start">
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <input
-                            className={`emp-input${eErrors.annual_salary ? ' is-invalid' : ''}`}
-                            type="number"
-                            placeholder="Enter amount"
-                            value={eAnnualSalary}
-                            max={999999999999.99}
-                            step="0.01"
-                            inputMode="decimal"
-                            onChange={e => {
-                              const raw = e.target.value;
-                              if (raw === '') { setEAnnualSalary(''); clearEErr('annual_salary'); return; }
-                              if (!/^\d{0,12}(\.\d{0,2})?$/.test(raw)) return;
-                              setEAnnualSalary(raw);
-                              clearEErr('annual_salary');
-                            }}
-                            style={{ width: '100%' }}
-                          />
-                          {eErrors.annual_salary && <small className="emp-err">{eErrors.annual_salary}</small>}
-                        </div>
-                        <div style={{ width: 150, flexShrink: 0 }}>
-                          <MasterSelect value={eSalaryFreq} onChange={(v) => { setESalaryFreq(v); clearEErr('salary_frequency'); }} options={SALARY_FREQUENCY_OPTIONS} placeholder="Select frequency" invalid={!!eErrors.salary_frequency} />
-                          {eErrors.salary_frequency && <small className="emp-err">{eErrors.salary_frequency}</small>}
-                        </div>
-                      </div>
+                      <label className="emp-label">Annual CTC{eEnablePayroll && <span className="req">*</span>}</label>
+                      <input
+                        className={`emp-input${eErrors.annual_salary ? ' is-invalid' : ''}`}
+                        type="number"
+                        placeholder="Enter annual amount"
+                        value={eAnnualSalary}
+                        max={999999999999.99}
+                        step="0.01"
+                        inputMode="decimal"
+                        onChange={e => {
+                          const raw = e.target.value;
+                          if (raw === '') { setEAnnualSalary(''); clearEErr('annual_salary'); return; }
+                          if (!/^\d{0,12}(\.\d{0,2})?$/.test(raw)) return;
+                          setEAnnualSalary(raw);
+                          clearEErr('annual_salary');
+                        }}
+                        style={{ width: '100%' }}
+                      />
+                      {eErrors.annual_salary && <small className="emp-err">{eErrors.annual_salary}</small>}
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Salary Effective From{eEnablePayroll && <span className="req">*</span>}</label>
@@ -3744,6 +3905,31 @@ export default function HrEmployees() {
                       {eErrors.salary_effective_from && <small className="emp-err">{eErrors.salary_effective_from}</small>}
                     </Col>
                   </Row>
+                  {/* PF setup — Applicable on/off, then the calculation method.
+                      Statutory caps basic at ₹15k (EPF ceiling); Standard uses
+                      the full basic. Read by the payroll engine. */}
+                  {eEnablePayroll && (
+                    <Row className="g-3 mt-0">
+                      <Col md={6}>
+                        <label className="emp-label">PF Applicable</label>
+                        <MasterSelect
+                          value={ePfEligible ? 'Yes' : 'No'}
+                          onChange={(v) => setEPfEligible(v === 'Yes')}
+                          options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
+                        />
+                      </Col>
+                      {ePfEligible && (
+                        <Col md={6}>
+                          <label className="emp-label">PF Type</label>
+                          <MasterSelect
+                            value={ePfType || 'Statutory'}
+                            onChange={(v) => setEPfType(v)}
+                            options={[{ value: 'Statutory', label: 'Statutory (₹15k cap)' }, { value: 'Standard', label: 'Standard (full basic)' }]}
+                          />
+                        </Col>
+                      )}
+                    </Row>
+                  )}
                 </div>
 
                 <div className="emp-section">
@@ -3827,14 +4013,19 @@ export default function HrEmployees() {
                     </div>
                   ) : (
                     <>
-                      <div className="text-muted mb-3" style={{ fontSize: 12 }}>
+                      <div className="text-muted mb-2" style={{ fontSize: 12 }}>
                         Monthly component breakup. Saved as the employee's active salary
                         structure — payroll runs read these figures.
                       </div>
+                      {/* How the auto-split + statutory deductions are derived,
+                          so anyone reading the breakup understands the figures. */}
+                      <ul className="mb-3 ps-3" style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', lineHeight: 1.7 }}>
+                        <li><strong>Basic Salary</strong> — 50% of the monthly gross (statutory minimum under Code on Wages, 2019; you can adjust the components below).</li>
+                        <li><strong>House Rent Allowance (HRA)</strong> — 30% of the monthly gross.</li>
+                        <li><strong>Special Allowance</strong> — the remaining balance after Basic + HRA.</li>
+                        <li><strong>PF Deduction</strong> — 12% of basic; capped at <strong>₹15,000</strong> for <strong>Statutory</strong>, or on the <strong>full basic</strong> for <strong>Standard</strong> (set by the <em>PF Type</em> above). Toggle PF on/off via <em>PF Applicable</em> above.</li>
+                      </ul>
                       <div className="d-flex align-items-center gap-3 flex-wrap mb-3">
-                        <label className="d-flex align-items-center gap-1 mb-0" style={{ fontSize: 12.5, cursor: 'pointer' }}>
-                          <input type="checkbox" checked={ePfEligible} onChange={e => setEPfEligible(e.target.checked)} /> PF (12%)
-                        </label>
                         <label className="d-flex align-items-center gap-1 mb-0" style={{ fontSize: 12.5, cursor: 'pointer' }}>
                           <input type="checkbox" checked={eEsiApplicable} onChange={e => setEEsiApplicable(e.target.checked)} /> ESI
                         </label>
@@ -3856,16 +4047,63 @@ export default function HrEmployees() {
                           <div className="fw-bold" style={{ fontSize: 18, color: '#5a3fd1' }}>
                             ₹{breakupGross.toLocaleString('en-IN')}
                           </div>
-                          <div className="text-muted" style={{ fontSize: 11.5 }}>
-                            ≈ ₹{Math.round(breakupGross * 12).toLocaleString('en-IN')} / year
+                          {/* Annualised gross vs the entered Salary Amount —
+                              red when components exceed the CTC, green when at/under. */}
+                          <div style={{ fontSize: 11.5, fontWeight: 600, color: salaryAnnual <= 0 ? 'var(--vz-secondary-color)' : (breakupOverSalary ? '#dc2626' : '#0a8754') }}>
+                            ≈ ₹{breakupAnnual.toLocaleString('en-IN')} / year
                           </div>
+                          {salaryAnnual > 0 && breakupDiff !== 0 && (
+                            <div style={{ fontSize: 10.5, fontWeight: 600, color: breakupOverSalary ? '#dc2626' : '#0a8754' }}>
+                              {breakupOverSalary
+                                ? `₹${breakupDiff.toLocaleString('en-IN')} over the salary (₹${salaryAnnual.toLocaleString('en-IN')})`
+                                : `₹${Math.abs(breakupDiff).toLocaleString('en-IN')} under the salary (₹${salaryAnnual.toLocaleString('en-IN')})`}
+                            </div>
+                          )}
+                          {salaryAnnual > 0 && breakupDiff === 0 && (
+                            <div style={{ fontSize: 10.5, fontWeight: 600, color: '#0a8754' }}>Matches the salary amount</div>
+                          )}
                         </div>
                       </div>
+                      {/* Live deduction estimate + net — Net = Gross − PF − ESI −
+                          PT − fixed deductions. Updates with PF / ESI / PT
+                          selections and any Fixed Deductions added. */}
+                      {(ePfEligible || breakupDed > 0) && (
+                        <>
+                          {ePfEligible && (
+                            <div className="d-flex align-items-center justify-content-between mt-2 px-3" style={{ fontSize: 12.5 }}>
+                              <span className="text-muted">
+                                Provident Fund (PF) — {ePfType === 'Standard'
+                                  ? '12% of full basic'
+                                  : `12% of ₹${Math.min(breakupBasic, 15000).toLocaleString('en-IN')} (capped at ₹15,000)`}
+                              </span>
+                              <span className="fw-semibold" style={{ color: '#b91c1c' }}>− ₹{breakupPf.toLocaleString('en-IN')}/mo</span>
+                            </div>
+                          )}
+                          {breakupDed > 0 && (
+                            <div className="d-flex align-items-center justify-content-between mt-2 px-3" style={{ fontSize: 12.5 }}>
+                              <span className="text-muted">Fixed Deductions</span>
+                              <span className="fw-semibold" style={{ color: '#b91c1c' }}>− ₹{breakupDed.toLocaleString('en-IN')}/mo</span>
+                            </div>
+                          )}
+                          <div className="d-flex align-items-center justify-content-between mt-2 p-2 px-3"
+                            style={{ background: 'var(--vz-secondary-bg)', borderRadius: 10, border: '1px solid var(--vz-border-color)' }}>
+                            <span className="fw-semibold" style={{ fontSize: 13 }}>Net (Monthly)</span>
+                            <div className="text-end">
+                              <div className="fw-bold" style={{ fontSize: 18, color: '#0a8754' }}>
+                                ₹{breakupNet.toLocaleString('en-IN')}
+                              </div>
+                              <div className="text-muted" style={{ fontSize: 11.5 }}>
+                                Gross ₹{breakupGross.toLocaleString('en-IN')}{ePfEligible ? ` − PF ₹${breakupPf.toLocaleString('en-IN')}` : ''}{breakupDed > 0 ? ` − Deductions ₹${breakupDed.toLocaleString('en-IN')}` : ''}
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      )}
                       {(eErrors.salary_breakup || breakupErrors.form) && (
                         <small className="emp-err d-block mt-2">{eErrors.salary_breakup || breakupErrors.form}</small>
                       )}
                       <div className="text-muted mt-2" style={{ fontSize: 11 }}>
-                        PF / ESI / PT / LOP are computed at payroll run-time.
+                        Net shown is an estimate (PF / ESI / PT + fixed deductions); LOP and any final adjustments apply at payroll run-time.
                       </div>
                     </>
                   )}

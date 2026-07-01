@@ -1242,9 +1242,9 @@
 .ast-ov {
   position: fixed;
   inset: 0;
-  background: rgba(8,30,45,.58);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(8,30,45,.42);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   /* Kept below the shared MasterDatePicker popup (z-index 11100, portalled to
      <body> so it's a sibling of this overlay) — otherwise the Due Date calendar
      opens BEHIND the modal. Still far above all page chrome. */
@@ -2188,12 +2188,12 @@
   background: #f4fcfe;
 }
 .asrc-row--m {
-  grid-template-columns: 40px 86px minmax(150px,1.4fr) minmax(90px,1fr) 92px 116px 116px 64px;
-  min-width: 786px;
+  grid-template-columns: 40px 86px minmax(140px,1.3fr) minmax(86px,1fr) 90px 110px 158px 56px;
+  min-width: 800px;
 }
 .asrc-row--n {
-  grid-template-columns: 40px minmax(180px,2fr) 130px 130px 64px;
-  min-width: 586px;
+  grid-template-columns: 40px minmax(170px,2fr) 124px 162px 56px;
+  min-width: 596px;
 }
 .asrc-row--head {
   background: linear-gradient(180deg,#f4fbfd,#eef8fb);
@@ -2278,6 +2278,33 @@
 @keyframes ast-spin { to { transform: rotate(360deg); } }
 .ast-spin { animation: ast-spin .7s linear infinite; }
 .ast-btn-primary:disabled { opacity: .6; cursor: not-allowed; }
+
+/* Clarity cell — inline preview of the saved clarity (pdf/link/text). */
+.ast-clarity-cell { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; overflow: hidden; }
+.ast-clarity-chip {
+  display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 120px;
+  padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  text-decoration: none; border: 1px solid transparent; line-height: 1.1; white-space: nowrap;
+}
+.ast-clarity-chip-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ast-clarity-chip.is-pdf  { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
+.ast-clarity-chip.is-pdf:hover { background: #fee2e2; }
+.ast-clarity-chip.is-link { color: #0e7490; background: #ecfeff; border-color: #a5f3fc; }
+.ast-clarity-chip.is-link:hover { background: #cffafe; }
+.ast-clarity-chip.is-text { color: #475569; background: #f1f5f9; border-color: #e2e8f0; cursor: default; }
+.ast-clarity-edit {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0;
+  border: 1px solid #e2e8f0; background: #fff; color: #64748b; cursor: pointer;
+}
+.ast-clarity-edit:hover { background: #f8fafc; color: #0e7490; border-color: #a5f3fc; }
+
+/* Creator's report is view-only — no supplier mapping. */
+.srpt-viewonly {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  color: #64748b; background: #f1f5f9; border: 1px solid #e2e8f0; cursor: default;
+}
 .ast-pl-del {
   display: flex;
   align-items: center;
@@ -2392,8 +2419,8 @@
 .astp-ov {
   position: fixed;
   inset: 0;
-  background: rgba(15,23,42,.5);
-  backdrop-filter: blur(5px);
+  background: rgba(15,23,42,.36);
+  backdrop-filter: blur(2px);
   z-index: 2300000;
   display: flex;
   align-items: center;
@@ -2670,8 +2697,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(8,20,40,.62);
-  backdrop-filter: blur(10px);
+  background: rgba(8,20,40,.44);
+  backdrop-filter: blur(3px);
   padding: 20px;
   box-sizing: border-box;
   font-family: var(--font-sans);
@@ -3266,8 +3293,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(4,14,32,.7);
-  backdrop-filter: blur(12px);
+  background: rgba(4,14,32,.46);
+  backdrop-filter: blur(3px);
   padding: 20px;
   box-sizing: border-box;
   font-family: var(--font-sans);
