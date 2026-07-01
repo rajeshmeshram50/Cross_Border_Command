@@ -6,6 +6,7 @@ import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import Tooltip from '../../../../components/ui/Tooltip';
+import { Shimmer } from '../../../../components/ui/Shimmer';
 import { MasterMultiSelect } from '../../../master/masterFormKit';
 import { MasterRecordModal } from '../../../master/MasterRecordModal';
 import { SegmentModal, nextSegmentCode, type SegmentForm } from '../../../clm/compliance/ClmSegmentPage';
@@ -581,6 +582,13 @@ export default function AddVendorModal(props: {
      Contact card, the contact surfaces as a locked (non-edit/non-delete)
      "Primary" row in the contacts table below. Edit-mode starts saved. */
   const [primarySaved, setPrimarySaved] = useState(false);
+  /* In-flight flag for the primary contact's own "Save Contact" button. */
+  const [savingPrimary, setSavingPrimary] = useState(false);
+  /* When the user clicks Edit on the primary row, this overrides the
+     saved/edit lock so the Primary Contact card becomes editable again. */
+  const [editingPrimary, setEditingPrimary] = useState(false);
+  /* Scroll target — the Primary Contact card, so Edit jumps the user to it. */
+  const primaryCardRef = useRef<HTMLDivElement>(null);
   /* Server-side path for the primary contact's previously uploaded
      business card. Hydrated from primary_address.attachment_path on
      edit-mode load so the table cell can render a working View link
@@ -2304,8 +2312,20 @@ export default function AddVendorModal(props: {
       toast.error('Missing required fields', 'Please fix the highlighted fields');
       return;
     }
-    const ok = await saveContacts();   // persists primary_address + business card
-    if (ok) setPrimarySaved(true);
+    setSavingPrimary(true);
+    try {
+      const ok = await saveContacts();   // persists primary_address + business card
+      if (ok) { setPrimarySaved(true); setEditingPrimary(false); }
+    } finally {
+      setSavingPrimary(false);
+    }
+  };
+  /* The Primary Contact card is read-only once saved (or on edit), UNLESS the
+     user clicked Edit on its row — then editingPrimary re-opens it. */
+  const primaryLocked = (primarySaved || isEdit) && !editingPrimary;
+  const startEditPrimary = () => {
+    setEditingPrimary(true);
+    primaryCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
   const openContactPopup = () => {
@@ -2388,6 +2408,7 @@ export default function AddVendorModal(props: {
     fd.append('whatsapp_enabled', contactDraft.whatsapp ? '1' : '0');
     if (contactDraft.attachmentFile) fd.append('attachment', contactDraft.attachmentFile);
     else if (contactDraft.attachmentPath) fd.append('attachment_path', contactDraft.attachmentPath);
+    else fd.append('remove_attachment', '1');  // no file + no path = user cleared it → backend drops the old file
 
     // The "Add Contact Person" popup drives its OWN in-flight spinner (local
     // state in ContactAddPopup), so we deliberately do NOT toggle the shared
@@ -2514,39 +2535,35 @@ export default function AddVendorModal(props: {
                Mutually-exclusive rendering is simpler and reliable.
                Skeleton hits 0ms when the sessionStorage cache is fresh. */
             <div className="avm-load-overlay avm-load-overlay-static" role="status" aria-live="polite" aria-label="Loading supplier form">
-              <div className="avm-load-skeleton">
-                {/* Section heading + 4 fields */}
-                <div className="avm-load-bar avm-load-heading" />
-                <div className="avm-load-grid">
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                </div>
-                {/* Address section heading + grid */}
-                <div className="avm-load-bar avm-load-heading" style={{ marginTop: 18 }} />
-                <div className="avm-load-grid">
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                </div>
-                {/* Contact section heading + grid */}
-                <div className="avm-load-bar avm-load-heading" style={{ marginTop: 18 }} />
-                <div className="avm-load-grid">
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                </div>
-                {/* Bottom section — KYC docs / product mappings */}
-                <div className="avm-load-bar avm-load-heading" style={{ marginTop: 18 }} />
-                <div className="avm-load-grid">
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                  <div className="avm-load-bar" />
-                </div>
+              {/* Form-shaped shimmer — the SAME shared <Shimmer> the Client /
+                  Branch forms use, so the loading state matches the rest of the
+                  app (card per section, icon + label header, field grid). */}
+              <div style={{ width: '100%', maxWidth: 1100 }}>
+                {[8, 5, 4].map((fieldCount, sectionIdx) => (
+                  <div
+                    key={sectionIdx}
+                    style={{
+                      background: 'var(--shim-card-bg, #fff)',
+                      border: '1px solid var(--shim-border, #e5e7eb)',
+                      borderRadius: 16,
+                      padding: 20,
+                      marginBottom: 14,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                      <Shimmer width={32} height={32} radius={8} />
+                      <Shimmer width={180} height={14} />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 14 }}>
+                      {Array.from({ length: fieldCount }).map((_, fieldIdx) => (
+                        <div key={fieldIdx} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <Shimmer width={`${50 + (fieldIdx % 4) * 10}%`} height={10} />
+                          <Shimmer width="100%" height={38} radius={8} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           ) : (<>
@@ -2862,47 +2879,57 @@ export default function AddVendorModal(props: {
                       Identification tab to mirror the Figma's "Contact Person
                       Details" tab. Same component state, so saveContacts()
                       still validates + persists it on Save & Next. */}
+                  <div ref={primaryCardRef}>
                   <SectionCard tone="violet" icon={<i className="ri-user-3-line" />} title="Primary Contact Person Details" subtitle="Primary point of contact for this supplier" headerAction={
-                    (primarySaved || isEdit)
+                    primaryLocked
                       ? <span className="avm-doc-count"><i className="ri-lock-2-line" /> Saved — locked</span>
                       : (
-                        <button className="avm-section-add-btn" onClick={savePrimaryContact}>
-                          <i className="ri-save-line" /> Save Contact
+                        <button className="avm-section-add-btn" onClick={savePrimaryContact} disabled={savingPrimary}>
+                          {savingPrimary
+                            ? <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
+                            : <><i className="ri-save-line" /> Save Contact</>}
                         </button>
                       )
                   }>
-                    <div className="avm-grid-4">
+                    <div
+                      className="avm-grid-4"
+                      /* The primary contact locks after saving. Clicking the
+                         locked fields does nothing, so surface a toast telling
+                         the user why it can't be edited here. */
+                      onClick={() => { if (primaryLocked) toast.info('Primary contact locked', 'Click the Edit icon on the primary row below to change it.'); }}
+                    >
                       <Field label="Contact Person Name" required error={fieldErrors.contactName}>
-                        <input className="avm-input" placeholder="Rahul Sharma" value={contactName} maxLength={60} readOnly={primarySaved || isEdit} onChange={e => applySanitizer(e.target.value, 'contactName', setContactName, raw => sanitizeKycAlpha(raw, 60))} />
+                        <input className="avm-input" placeholder="Rahul Sharma" value={contactName} maxLength={60} readOnly={primaryLocked} onChange={e => applySanitizer(e.target.value, 'contactName', setContactName, raw => sanitizeKycAlpha(raw, 60))} />
                       </Field>
                       <Field label="Designation" required error={fieldErrors.designation}>
-                        <input className="avm-input" placeholder="Manager" value={designation} maxLength={60} readOnly={primarySaved || isEdit} onChange={e => applySanitizer(e.target.value, 'designation', setDesignation, raw => sanitizeKycDesignation(raw, 60))} />
+                        <input className="avm-input" placeholder="Manager" value={designation} maxLength={60} readOnly={primaryLocked} onChange={e => applySanitizer(e.target.value, 'designation', setDesignation, raw => sanitizeKycDesignation(raw, 60))} />
                       </Field>
                       <Field label="Contact No" required error={fieldErrors.contactNo}>
-                        <input className="avm-input" placeholder="9876543210" inputMode="numeric" pattern="\d*" maxLength={15} value={contactNo} readOnly={primarySaved || isEdit} onChange={e => { setContactNo(digitsOnly(e.target.value)); clearFieldError('contactNo'); }} />
+                        <input className="avm-input" placeholder="9876543210" inputMode="numeric" pattern="\d*" maxLength={15} value={contactNo} readOnly={primaryLocked} onChange={e => { setContactNo(digitsOnly(e.target.value)); clearFieldError('contactNo'); }} />
                       </Field>
                       <Field label="Email" required error={fieldErrors.email}>
-                        <input className="avm-input" placeholder="rahul@abclogistics.com" value={email} readOnly={primarySaved || isEdit} onChange={e => { setEmail(e.target.value); clearFieldError('email'); }} />
+                        <input className="avm-input" placeholder="rahul@abclogistics.com" value={email} readOnly={primaryLocked} onChange={e => { setEmail(e.target.value); clearFieldError('email'); }} />
                       </Field>
                     </div>
                     <div className="avm-grid-2">
                       <Field label="WhatsApp Enabled ?">
                         <div className="avm-radio-row">
                           <label className="avm-radio">
-                            <input type="radio" checked={whatsappEnabled} disabled={primarySaved || isEdit} onChange={() => setWhatsappEnabled(true)} />
+                            <input type="radio" checked={whatsappEnabled} disabled={primaryLocked} onChange={() => setWhatsappEnabled(true)} />
                             <span>Yes</span>
                           </label>
                           <label className="avm-radio">
-                            <input type="radio" checked={!whatsappEnabled} disabled={primarySaved || isEdit} onChange={() => setWhatsappEnabled(false)} />
+                            <input type="radio" checked={!whatsappEnabled} disabled={primaryLocked} onChange={() => setWhatsappEnabled(false)} />
                             <span>No</span>
                           </label>
                         </div>
                       </Field>
                       <Field label="Attachment (Business Card)">
-                        <FileChooser file={attachment} onPick={(f) => { setAttachment(f); if (!f) setPrimaryAttachmentPath(''); }} existingPath={primaryAttachmentPath} placeholder="No files attached" readOnly={primarySaved || isEdit} />
+                        <FileChooser file={attachment} onPick={(f) => { setAttachment(f); if (!f) setPrimaryAttachmentPath(''); }} existingPath={primaryAttachmentPath} placeholder="No files attached" readOnly={primaryLocked} />
                       </Field>
                     </div>
                   </SectionCard>
+                  </div>
 
                   {/* ── Additional Contact Persons ──
                       The primary KYC contact (captured on the Vendor
@@ -3022,7 +3049,14 @@ export default function AddVendorModal(props: {
                                   <td>
                                     <div className="avm-row-actions">
                                       {r.isPrimary ? (
-                                        <span className="text-muted fs-13" title="Edit in the Primary Contact Person card above">—</span>
+                                        <>
+                                          <button type="button" className="avm-row-btn" onClick={startEditPrimary} data-tooltip="Edit primary contact" aria-label="Edit primary contact">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                                          </button>
+                                          <button type="button" className="avm-row-btn avm-row-btn-del" disabled data-tooltip="Primary contact can’t be deleted" aria-label="Delete (disabled)" style={{ opacity: 0.4, cursor: 'not-allowed' }}>
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                                          </button>
+                                        </>
                                       ) : (
                                         <>
                                           <button type="button" className="avm-row-btn" onClick={() => r.contactId !== undefined && openContactEdit(r.contactId)} data-tooltip="Edit" aria-label="Edit">
@@ -3636,6 +3670,7 @@ function ContactAddPopup(props: {
   onSave: () => void | Promise<void>;
 }) {
   const { draft, setDraft, onClose, onSave } = props;
+  const confirm = useConfirm();
   const set = <K extends keyof ContactDraft>(k: K, v: ContactDraft[K]) => setDraft({ ...draft, [k]: v });
   const [errors, setErrors] = useState<{ name?: string; designation?: string }>({});
   /* Local in-flight flag so the popup's OWN Save button shows the spinner
@@ -3722,14 +3757,28 @@ function ContactAddPopup(props: {
               <FileChooser
                 file={draft.attachmentFile ?? null}
                 existingPath={draft.attachmentFile ? undefined : draft.attachmentPath}
-                onPick={(f) => setDraft({
-                  ...draft,
-                  attachmentFile: f,
-                  attachmentName: f?.name ?? '',
-                  // Picking null = delete. Drop the saved server path too
-                  // so the row doesn't silently re-attach it on Save.
-                  attachmentPath: f ? draft.attachmentPath : undefined,
-                })}
+                onPick={async (f) => {
+                  // Deleting an existing attachment (f === null) → confirm first.
+                  if (!f && (draft.attachmentFile || draft.attachmentPath)) {
+                    const ok = await confirm({
+                      title: 'Remove Attachment?',
+                      message: 'This attachment will be removed from this contact person. It is deleted for good once you save.',
+                      confirmLabel: 'Remove',
+                      cancelLabel: 'Cancel',
+                      tone: 'danger',
+                      icon: 'delete-bin-line',
+                    });
+                    if (!ok) return;
+                  }
+                  setDraft({
+                    ...draft,
+                    attachmentFile: f,
+                    attachmentName: f?.name ?? '',
+                    // Picking null = delete. Drop the saved server path too
+                    // so the row doesn't silently re-attach it on Save.
+                    attachmentPath: f ? draft.attachmentPath : undefined,
+                  });
+                }}
                 placeholder="No files attached"
               />
             </Field>
@@ -6523,26 +6572,8 @@ const SCOPED_CSS = `
   min-height: 100%;
 }
 [data-bs-theme="dark"] .avm-load-overlay { background: #1c2531; }
-.avm-load-skeleton { width: 100%; max-width: 1100px; display: flex; flex-direction: column; gap: 10px; }
-.avm-load-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; }
-.avm-load-bar {
-  height: 38px; border-radius: 8px;
-  background: linear-gradient(90deg, #eef2f7 0%, #f8fafc 50%, #eef2f7 100%);
-  background-size: 200% 100%;
-  animation: avm-skel-shimmer 1.2s ease-in-out infinite;
-}
-.avm-load-heading { height: 18px; width: 220px; border-radius: 5px; margin-bottom: 6px; }
-[data-bs-theme="dark"] .avm-load-bar {
-  background: linear-gradient(90deg, #221940 0%, #1a1430 50%, #221940 100%);
-  background-size: 200% 100%;
-}
-@keyframes avm-skel-shimmer {
-  0%   { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-@media (max-width: 880px) {
-  .avm-load-grid { grid-template-columns: 1fr 1fr; }
-}
+/* The skeleton content now uses the shared <Shimmer> component (same as the
+   Client/Branch forms); only the overlay wrapper above stays local. */
 
 /* KYC table layout — Bootstrap's table-nowrap was forcing every cell
  * onto a single line, so long document names / addresses / red flags
