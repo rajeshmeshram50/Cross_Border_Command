@@ -1298,6 +1298,18 @@ class LeaveRequestController extends Controller
             $this->safeSend($r, new LeaveRequestNotification($row, 'submitted_to_approver'));
         }
 
+        // 1b) Deadlock escape (Bug 55): if the reporting manager is unavailable
+        //     (on approved leave, disabled, or unassigned), the only level-1
+        //     recipient above is an absent manager — the request would sit
+        //     silently. Also notify HR (every branch_user / client_admin in the
+        //     tenant) so they know to step in and approve/reject in the RM's
+        //     place. Backend already permits HR to act in this case.
+        if ($this->isReportingManagerUnavailable($row)) {
+            foreach ($this->resolveRoleRecipients('hr', $employee) as $r) {
+                $this->safeSend($r, new LeaveRequestNotification($row, 'escalated_to_hr'));
+            }
+        }
+
         // 2) CC'd colleagues from notify.employee_ids
         $ccIds = $this->extractNotifyEmployeeIds($row);
         foreach ($ccIds as $ccEmpId) {
