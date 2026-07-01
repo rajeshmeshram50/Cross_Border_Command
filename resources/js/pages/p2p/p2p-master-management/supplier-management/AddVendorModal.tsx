@@ -6,7 +6,7 @@ import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import Tooltip from '../../../../components/ui/Tooltip';
-import { Shimmer } from '../../../../components/ui/Shimmer';
+import { ShimmerForm } from '../../../../components/ui/Shimmer';
 import { MasterMultiSelect } from '../../../master/masterFormKit';
 import { MasterRecordModal } from '../../../master/MasterRecordModal';
 import { SegmentModal, nextSegmentCode, type SegmentForm } from '../../../clm/compliance/ClmSegmentPage';
@@ -594,6 +594,9 @@ export default function AddVendorModal(props: {
      edit-mode load so the table cell can render a working View link
      without a fresh upload. */
   const [primaryAttachmentPath, setPrimaryAttachmentPath] = useState<string>('');
+  /* Backend-resolved file_url() for the primary contact attachment — used
+     for view/download so it works on the server (Azure / real host). */
+  const [primaryAttachmentUrl, setPrimaryAttachmentUrl] = useState<string>('');
 
   type ContactRow = {
     id: number;
@@ -607,6 +610,10 @@ export default function AddVendorModal(props: {
        /vendors/{id}. Empty for freshly-added rows that haven't been
        saved yet. */
     attachmentPath?: string;
+    /* Backend-resolved file_url() — the AUTHORITATIVE view/download URL
+       (knows Azure Blob + the real host). Use this over composing a URL
+       from attachmentPath, which breaks on the server. */
+    attachmentUrl?: string;
     /* Freshly-picked File — set while the popup is open so the
        FileChooser can render a blob: preview URL with View + Delete
        buttons before the row is persisted. Cleared on save. */
@@ -1285,6 +1292,7 @@ export default function AddVendorModal(props: {
           setEmail(pa.email ?? '');
           setWhatsappEnabled(pa.whatsapp_enabled ?? true);
           setPrimaryAttachmentPath(pa.attachment_path ?? '');
+          setPrimaryAttachmentUrl(pa.attachment_url ?? '');
         }
         setExtraContacts((v.extra_contacts ?? []).map(c => ({
           id: c.id,
@@ -1295,6 +1303,7 @@ export default function AddVendorModal(props: {
           whatsapp: c.whatsapp_enabled ?? true,
           attachmentName: basename(c.attachment_path),
           attachmentPath: c.attachment_path ?? undefined,
+          attachmentUrl: c.attachment_url ?? undefined,
         })));
 
         // Step 2 — KYC sub-collections (file fields restored via existingPath
@@ -1526,8 +1535,9 @@ export default function AddVendorModal(props: {
       });
       // Sync the stored business-card path back so a re-save echoes it
       // (instead of re-uploading) and the chooser reflects the saved file.
-      const savedPath = (data?.data?.primary_address as { attachment_path?: string } | undefined)?.attachment_path;
-      setPrimaryAttachmentPath(savedPath ?? '');
+      const savedPa = data?.data?.primary_address as { attachment_path?: string; attachment_url?: string } | undefined;
+      setPrimaryAttachmentPath(savedPa?.attachment_path ?? '');
+      setPrimaryAttachmentUrl(savedPa?.attachment_url ?? '');
       if (attachment) setAttachment(null);
       setFieldErrors({});
       toast.success('Contacts saved', 'Address & contact persons captured');
@@ -2353,7 +2363,7 @@ export default function AddVendorModal(props: {
   type ApiContactRow = {
     id: number; contact_name?: string | null; designation?: string | null;
     contact_no?: string | null; email?: string | null; whatsapp_enabled?: boolean;
-    attachment_path?: string | null;
+    attachment_path?: string | null; attachment_url?: string | null;
   };
   const mapApiContact = (c: ApiContactRow): ContactRow => {
     const raw = (c.attachment_path ?? '').split('/').pop() ?? '';
@@ -2367,6 +2377,7 @@ export default function AddVendorModal(props: {
       whatsapp: c.whatsapp_enabled ?? true,
       attachmentName: label,
       attachmentPath: c.attachment_path ?? undefined,
+      attachmentUrl: c.attachment_url ?? undefined,
     };
   };
 
@@ -2535,35 +2546,10 @@ export default function AddVendorModal(props: {
                Mutually-exclusive rendering is simpler and reliable.
                Skeleton hits 0ms when the sessionStorage cache is fresh. */
             <div className="avm-load-overlay avm-load-overlay-static" role="status" aria-live="polite" aria-label="Loading supplier form">
-              {/* Form-shaped shimmer — the SAME shared <Shimmer> the Client /
-                  Branch forms use, so the loading state matches the rest of the
-                  app (card per section, icon + label header, field grid). */}
+              {/* Shared ShimmerForm — identical to the Client / Branch form
+                  loading shimmer (header card + 4 section cards, 3-col grids). */}
               <div style={{ width: '100%', maxWidth: 1100 }}>
-                {[8, 5, 4].map((fieldCount, sectionIdx) => (
-                  <div
-                    key={sectionIdx}
-                    style={{
-                      background: 'var(--shim-card-bg, #fff)',
-                      border: '1px solid var(--shim-border, #e5e7eb)',
-                      borderRadius: 16,
-                      padding: 20,
-                      marginBottom: 14,
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                      <Shimmer width={32} height={32} radius={8} />
-                      <Shimmer width={180} height={14} />
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 14 }}>
-                      {Array.from({ length: fieldCount }).map((_, fieldIdx) => (
-                        <div key={fieldIdx} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                          <Shimmer width={`${50 + (fieldIdx % 4) * 10}%`} height={10} />
-                          <Shimmer width="100%" height={38} radius={8} />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+                <ShimmerForm sections={4} cols={3} fieldsPerSection={6} header />
               </div>
             </div>
           ) : (<>
@@ -2648,7 +2634,7 @@ export default function AddVendorModal(props: {
               }
               if (dd) {
                 const fileLabel = dd.fileName || (dd.existingPath ? dd.existingPath.split('/').pop() ?? '' : '');
-                const href = dd.existingPath ? resolveFileUrl(dd.existingPath) : (dd.file ? URL.createObjectURL(dd.file) : '');
+                const href = dd.existingUrl || (dd.existingPath ? resolveFileUrl(dd.existingPath) : (dd.file ? URL.createObjectURL(dd.file) : ''));
                 kycRows.push([
                   {
                     label: dd.documentName || 'Document',
@@ -2925,7 +2911,7 @@ export default function AddVendorModal(props: {
                         </div>
                       </Field>
                       <Field label="Attachment (Business Card)">
-                        <FileChooser file={attachment} onPick={(f) => { setAttachment(f); if (!f) setPrimaryAttachmentPath(''); }} existingPath={primaryAttachmentPath} placeholder="No files attached" readOnly={primaryLocked} />
+                        <FileChooser file={attachment} onPick={(f) => { setAttachment(f); if (!f) { setPrimaryAttachmentPath(''); setPrimaryAttachmentUrl(''); } }} existingPath={primaryAttachmentPath} existingUrl={primaryAttachmentUrl || undefined} placeholder="No files attached" readOnly={primaryLocked} />
                       </Field>
                     </div>
                   </SectionCard>
@@ -2963,7 +2949,9 @@ export default function AddVendorModal(props: {
                       const primaryHasData = !!(contactName.trim() || email.trim() || contactNo.trim());
                       if ((primarySaved || isEdit) && primaryHasData) {
                         const freshHref = attachment ? URL.createObjectURL(attachment) : '';
-                        const savedHref = primaryAttachmentPath ? resolveFileUrl(primaryAttachmentPath) : '';
+                        // Prefer the backend file_url() (works on the server / Azure);
+                        // only fall back to composing the URL from the raw path.
+                        const savedHref = primaryAttachmentUrl || (primaryAttachmentPath ? resolveFileUrl(primaryAttachmentPath) : '');
                         rows.push({
                           key: 'primary',
                           isPrimary: true,
@@ -2986,7 +2974,7 @@ export default function AddVendorModal(props: {
                         email: c.email,
                         whatsapp: c.whatsapp,
                         attachmentName: c.attachmentName,
-                        attachmentHref: c.attachmentPath ? resolveFileUrl(c.attachmentPath) : '',
+                        attachmentHref: c.attachmentUrl || (c.attachmentPath ? resolveFileUrl(c.attachmentPath) : ''),
                       }));
 
                       if (rows.length === 0) {
@@ -3050,21 +3038,33 @@ export default function AddVendorModal(props: {
                                     <div className="avm-row-actions">
                                       {r.isPrimary ? (
                                         <>
-                                          <button type="button" className="avm-row-btn" onClick={startEditPrimary} data-tooltip="Edit primary contact" aria-label="Edit primary contact">
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                                          </button>
-                                          <button type="button" className="avm-row-btn avm-row-btn-del" disabled data-tooltip="Primary contact can’t be deleted" aria-label="Delete (disabled)" style={{ opacity: 0.4, cursor: 'not-allowed' }}>
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
-                                          </button>
+                                          <Tooltip label="Edit primary contact">
+                                            <button type="button" className="avm-row-btn" onClick={startEditPrimary} aria-label="Edit primary contact">
+                                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                                            </button>
+                                          </Tooltip>
+                                          <Tooltip label="Primary contact can’t be deleted">
+                                            {/* Wrapper span — a disabled button doesn't fire hover, so
+                                                the tooltip anchors to the span instead. */}
+                                            <span style={{ display: 'inline-flex' }}>
+                                              <button type="button" className="avm-row-btn avm-row-btn-del" disabled aria-label="Delete (disabled)" style={{ opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' }}>
+                                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                                              </button>
+                                            </span>
+                                          </Tooltip>
                                         </>
                                       ) : (
                                         <>
-                                          <button type="button" className="avm-row-btn" onClick={() => r.contactId !== undefined && openContactEdit(r.contactId)} data-tooltip="Edit" aria-label="Edit">
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                                          </button>
-                                          <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => r.contactId !== undefined && removeExtraContact(r.contactId)} data-tooltip="Remove" aria-label="Remove">
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
-                                          </button>
+                                          <Tooltip label="Edit">
+                                            <button type="button" className="avm-row-btn" onClick={() => r.contactId !== undefined && openContactEdit(r.contactId)} aria-label="Edit">
+                                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                                            </button>
+                                          </Tooltip>
+                                          <Tooltip label="Remove">
+                                            <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => r.contactId !== undefined && removeExtraContact(r.contactId)} aria-label="Remove">
+                                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                                            </button>
+                                          </Tooltip>
                                         </>
                                       )}
                                     </div>
