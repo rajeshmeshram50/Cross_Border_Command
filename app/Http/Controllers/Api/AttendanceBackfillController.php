@@ -11,9 +11,10 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * One-off backfill endpoint — inserts ~4 months of attendance for a fixed set
- * of employees (client_id=10 / branch_id=27). Idempotent: re-hitting it will
- * NOT duplicate (attendances keyed on employee_id+date via firstOrNew;
- * punches guarded by direction existence).
+ * of employees (client_id=10 / branch_id=27). Re-runnable: a day that already
+ * has a row is OVERWRITTEN with the freshly generated values (attendances
+ * upserted on employee_id+date; punches deleted + regenerated per run) — so
+ * re-hitting it refreshes existing data instead of skipping it.
  *
  * Guarded by a static key in the query/body so it can't be triggered casually.
  * This is a temporary data-seeding tool — remove the route once the backfill is
@@ -26,29 +27,52 @@ class AttendanceBackfillController extends Controller
 
     private const DISPLAY_TZ = 'Asia/Kolkata';
 
-    /** employee_id list — the 20 seeded test employees (EMP-001..EMP-020,
-     *  client_id=1 / branch_id=3). */
+    /** employee_id list for client_id=10 / branch_id=27 (matches run()'s
+     *  defaults). Full branch roster EMP-001..EMP-040 (41 ids — a couple of
+     *  code gaps are duplicate/deleted records, kept because the backfill was
+     *  asked to cover every id). Pass ?employees=<comma-list> to override. */
     private const EMPLOYEES = [
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        8,
-        9,
-        10,
-        11,
-        12,
-        13,
-        14,
-        15,
-        16,
-        17,
-        18,
-        19,
-        20,
+        56,  // EMP-001-D56
+        69,  // EMP-002-D69
+        70,  // EMP-003
+        71,  // EMP-004
+        72,  // EMP-005
+        73,  // EMP-006
+        74,  // EMP-007
+        75,  // EMP-008
+        76,  // EMP-009
+        77,  // EMP-010
+        78,  // EMP-011
+        79,  // EMP-012
+        80,  // EMP-012-D80
+        81,  // EMP-013
+        82,  // EMP-014
+        83,  // EMP-015
+        84,  // EMP-016
+        85,  // EMP-017
+        86,  // EMP-018
+        87,  // EMP-019
+        88,  // EMP-020
+        89,  // EMP-021
+        90,  // EMP-022
+        91,  // EMP-023
+        92,  // EMP-024
+        93,  // EMP-025
+        94,  // EMP-026
+        96,  // EMP-027
+        97,  // EMP-028
+        98,  // EMP-029
+        99,  // EMP-030
+        105, // EMP-031
+        106, // EMP-032
+        107, // EMP-033
+        108, // EMP-034
+        109, // EMP-035
+        234, // EMP-036
+        236, // EMP-037
+        241, // EMP-038
+        244, // EMP-039
+        275, // EMP-040
     ];
 
     public function run(Request $request)
@@ -57,10 +81,10 @@ class AttendanceBackfillController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $clientId = (int) $request->input('client_id', 1);
-        $branchId = (int) $request->input('branch_id', 3);
-        $start    = Carbon::parse($request->input('from', '2026-01-25'), self::DISPLAY_TZ)->startOfDay();
-        $end      = Carbon::parse($request->input('to',   '2026-06-29'), self::DISPLAY_TZ)->startOfDay();
+        $clientId = (int) $request->input('client_id', 10);
+        $branchId = (int) $request->input('branch_id', 27);
+        $start    = Carbon::parse($request->input('from', '2025-01-25'), self::DISPLAY_TZ)->startOfDay();
+        $end      = Carbon::parse($request->input('to',   '2026-06-30'), self::DISPLAY_TZ)->startOfDay();
         $employees = $request->input('employees', self::EMPLOYEES);
         if (is_string($employees)) {
             $employees = array_filter(array_map('intval', explode(',', $employees)));
@@ -131,19 +155,38 @@ class AttendanceBackfillController extends Controller
             ->count();
 
         DB::transaction(function () use ($rows, $idList, $clientId, $branchId, $startStr, $endStr) {
-            // insertOrIgnore -> Postgres ON CONFLICT DO NOTHING, so the
-            // UNIQUE(employee_id, attendance_date) makes re-runs non-destructive.
+            // upsert -> Postgres INSERT ... ON CONFLICT (employee_id,
+            // attendance_date) DO UPDATE, so a day that already has a row is
+            // OVERWRITTEN with the freshly generated values (not skipped).
             foreach (array_chunk($rows, 500) as $chunk) {
-                DB::table('attendances')->insertOrIgnore($chunk);
+                DB::table('attendances')->upsert(
+                    $chunk,
+                    ['employee_id', 'attendance_date'],
+                    ['check_in_at', 'check_out_at', 'check_in_method', 'check_out_method', 'status', 'notes', 'updated_at']
+                );
             }
 
-            // Derive the full 4-tap punch sequence straight from the rows we
-            // just inserted: Check In → Lunch Out → Lunch In → Check Out. The
-            // two lunch taps are computed as fixed offsets from check_in_at
-            // (in UTC, so no timezone math), keeping the strict in/out/in/out
-            // alternation the attendance model enforces. Each statement is
-            // guarded by LABEL so re-runs never duplicate AND the lunch
-            // in/out taps don't collide with the check-in/out guards.
+            // Regenerate the punches from the (now-refreshed) attendance rows.
+            // Delete the backfill-managed taps for this window first so their
+            // times track the updated check_in_at/check_out_at (and so a day
+            // that flipped to Absent/Leave loses its old taps), then re-insert.
+            DB::statement("
+                DELETE FROM attendance_punches
+                WHERE label IN ('Check In', 'Lunch Out', 'Lunch In', 'Check Out')
+                  AND attendance_id IN (
+                    SELECT a.id FROM attendances a
+                    WHERE a.client_id = ? AND a.branch_id = ?
+                      AND a.employee_id IN ($idList)
+                      AND a.attendance_date BETWEEN ? AND ?
+                  )
+            ", [$clientId, $branchId, $startStr, $endStr]);
+
+            // Derive the full 4-tap punch sequence straight from the attendance
+            // rows: Check In → Lunch Out → Lunch In → Check Out. The two lunch
+            // taps are computed as fixed offsets from check_in_at (in UTC, so no
+            // timezone math), keeping the strict in/out/in/out alternation the
+            // attendance model enforces. The NOT EXISTS guard is now redundant
+            // (we just deleted these labels) but kept as a belt-and-suspenders.
             $punches = [
                 // [label, direction, punched_at expression, source-column NOT NULL]
                 ['Check In',  'in',  'a.check_in_at',                                     'a.check_in_at'],
@@ -184,7 +227,7 @@ class AttendanceBackfillController extends Controller
             'branch_id'            => $branchId,
             'employees'            => count($employees),
             'attendances_created'  => $after - $before,
-            'attendances_skipped'  => count($rows) - ($after - $before),
+            'attendances_updated'  => count($rows) - ($after - $before),
             'attendances_total'    => $after,
             'punches_total'        => $totalPunches,
         ]);
