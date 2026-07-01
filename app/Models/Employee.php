@@ -40,7 +40,7 @@ class Employee extends Model
         'work_type',
         'reporting_manager_id', 'reporting_manager_user_id', 'has_prior_experience', 'date_of_joining',
 
-        'probation_policy', 'probation_months', 'probation_completion_emailed_at',
+        'probation_policy', 'probation_months', 'probation_end_date', 'probation_completion_emailed_at',
         'notice_period', 'notice_period_days',
 
         // Step 3 — Work Details (added 2026-05-01)
@@ -99,6 +99,8 @@ class Employee extends Model
         'other_master_asset_ids' => 'array',
         'ancillary_role_ids' => 'array',
         'probation_months' => 'integer',
+        // Computed on the frontend from joining date + probation policy.
+        'probation_end_date' => 'date',
         'probation_completion_emailed_at' => 'datetime',
         'notice_period_days' => 'integer',
         'attendance_tracking' => 'boolean',
