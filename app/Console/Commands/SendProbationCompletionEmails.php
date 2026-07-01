@@ -41,24 +41,47 @@ class SendProbationCompletionEmails extends Command
         $q = Employee::query()
             ->with(['designation:id,name', 'department:id,name'])
             ->whereNull('probation_completion_emailed_at')
-            ->whereNotNull('date_of_joining')
-            ->where('probation_months', '>', 0);
+            // probation_end_date is stored on the employee (computed on the
+            // frontend from joining date + probation policy); it's NULL unless
+            // there's a real probation, so this one check replaces the old
+            // joining-date / probation_months guards and the per-row date maths.
+            ->whereNotNull('probation_end_date')
+            // Active employees only — never mail someone who has been disabled
+            // (Inactive/Resigned/Terminated) or exited (the exit flow stamps
+            // status Resigned/Terminated). Mirrors Employee::isDisabled(). A
+            // NULL/blank status still counts as active. Soft-deleted (Removed)
+            // rows are already excluded by the default SoftDeletes scope.
+            ->where(function ($w) {
+                $w->whereNull('status')
+                  ->orWhereNotIn(
+                      \Illuminate\Support\Facades\DB::raw('LOWER(status)'),
+                      Employee::DISABLED_STATUSES
+                  );
+            });
 
         if ($only) {
-            $q->where(fn ($w) => $w->where('id', $only)->orWhere('emp_code', $only));
+            // Match on emp_code, or on numeric id only — comparing the bigint
+            // id column against a non-numeric code (e.g. "EMP-004") trips a
+            // Postgres cast error.
+            $q->where(function ($w) use ($only) {
+                $w->where('emp_code', $only);
+                if (ctype_digit((string) $only)) {
+                    $w->orWhere('id', (int) $only);
+                }
+            });
+        } else {
+            // Catch-up window done in SQL against the indexed generated column:
+            // ended yesterday or earlier, but not older than N days.
+            $q->whereDate('probation_end_date', '<', $today)
+              ->whereDate('probation_end_date', '>=', $today->copy()->subDays($window));
         }
 
         $sent = 0; $skipped = 0;
 
         foreach ($q->cursor() as $emp) {
-            $end = Carbon::parse($emp->date_of_joining)->addMonths((int) $emp->probation_months)->startOfDay();
-
-            if (!$only) {
-                // Must have ended (yesterday or earlier) and be within the
-                // catch-up window — not today, not the future, not ancient.
-                if ($end->greaterThanOrEqualTo($today)) { continue; }
-                if ($end->lessThan($today->copy()->subDays($window))) { continue; }
-            }
+            $end = $emp->probation_end_date instanceof Carbon
+                ? $emp->probation_end_date->copy()->startOfDay()
+                : Carbon::parse($emp->probation_end_date)->startOfDay();
 
             $work     = trim((string) $emp->official_email);
             $personal = trim((string) $emp->email);

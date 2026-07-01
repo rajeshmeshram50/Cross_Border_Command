@@ -1406,6 +1406,8 @@ class EmployeeController extends Controller
 
             'probation_policy'   => 'nullable|string|max:50',
             'probation_months'   => 'nullable|integer|min:0|max:60',
+            // Computed on the frontend from joining date + probation policy.
+            'probation_end_date' => 'nullable|date',
             'notice_period'      => 'nullable|string|max:50',
             'notice_period_days' => 'nullable|integer|min:0|max:365',
 

@@ -18,6 +18,7 @@ import WorklistPager from '../../components/ui/WorklistPager';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
+import { resolveProbation } from '../../utils/probation';
 import './HrEmployeeOnboarding.css';
 
 import '../../../css/recruitment.css';
@@ -3617,6 +3618,11 @@ const joinMax = _shiftYears(1);
 const salaryMin = s1.date_of_joining || _shiftYears(-1);
 const salaryMax = _shiftYears(1);
 
+// Probation length + end date, derived live from the joining date + probation
+// policy. Stored on save (probation_months / probation_end_date) so the daily
+// probation-completion email job reads it directly. Read-only in the UI.
+const onbProbation = resolveProbation(s1.probation_policy, s1.date_of_joining);
+
 // Ordered list of required field keys — drives both validation and
 // scroll-to-first-error so the user lands on the topmost missing field
 // in form order rather than alphabetical map order.
@@ -3829,6 +3835,9 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       other_master_asset_ids: s1.other_master_asset_ids
         .map(v => parseInt(v, 10))
         .filter(n => Number.isFinite(n)),
+      // Derived from probation policy + joining date; read-only in the UI.
+      probation_months:   onbProbation.months,
+      probation_end_date: onbProbation.endIso || null,
     };
     // Strip the composite picker key — backend doesn't know about it.
     delete payload.reporting_manager;
@@ -4807,9 +4816,10 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 
                 <p className="onb-init-subgroup">Employment Terms</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Probation Policy<span className="req">*</span></label><MasterSelect options={ONB_PROBATION} value={s1.probation_policy} placeholder="Select probation policy" onChange={(v) => setS1(p => ({ ...p, probation_policy: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Notice Period<span className="req">*</span></label><MasterSelect options={ONB_NOTICE} value={s1.notice_period} placeholder="Select notice period" onChange={(v) => setS1(p => ({ ...p, notice_period: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Work Mode <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly value="On-site" /></Col>
+                  <Col md={3}><label className="onb-init-label">Probation Policy<span className="req">*</span></label><MasterSelect options={ONB_PROBATION} value={s1.probation_policy} placeholder="Select probation policy" onChange={(v) => setS1(p => ({ ...p, probation_policy: v }))} /></Col>
+                  <Col md={3}><label className="onb-init-label">Probation End Date <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly tabIndex={-1} value={onbProbation.endDisplay} placeholder={!s1.date_of_joining ? 'Set joining date' : (onbProbation.months > 0 ? '' : 'No probation')} /></Col>
+                  <Col md={3}><label className="onb-init-label">Notice Period<span className="req">*</span></label><MasterSelect options={ONB_NOTICE} value={s1.notice_period} placeholder="Select notice period" onChange={(v) => setS1(p => ({ ...p, notice_period: v }))} /></Col>
+                  <Col md={3}><label className="onb-init-label">Work Mode <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly value="On-site" /></Col>
                 </Row>
               </div>
             </div>
