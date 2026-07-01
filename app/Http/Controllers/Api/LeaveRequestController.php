@@ -167,11 +167,8 @@ class LeaveRequestController extends Controller
         if ($dayType !== 'full' && !$from->isSameDay($to)) {
             abort(422, 'Half-day requests are only valid for a single calendar day. Please pick the same from/to date or switch day type to "Full Day".');
         }
-        if ($dayType !== 'full' && $from->isSameDay($to)) {
-            $days = 0.5;
-        } else {
-            $days = CarbonPeriod::create($from, $to)->count();
-        }
+        // NOTE: $days (chargeable day count) is computed further down, once the
+        // leave-type config is loaded — it applies the Sandwich Policy.
 
         // Overlap guard — same employee already has a Pending or Approved
         // request whose date range intersects the new one. Two ranges
@@ -254,6 +251,18 @@ class LeaveRequestController extends Controller
         $ptConfig  = json_decode((string) $ptConfigRaw, true);
         $accrual   = (is_array($ptConfig) ? $ptConfig['accrual'] ?? [] : []);
         $unlimited = (bool) ($accrual['unlimited'] ?? false);
+
+        // Chargeable day count — applies the Sandwich Policy. A half-day is 0.5;
+        // otherwise count working days in the range, plus any weekly-off /
+        // holiday that is sandwiched BETWEEN leave days when its sandwich toggle
+        // is on. This same count flows into the balance check, attendance
+        // (approved leave overlays the date range) and payroll.
+        $leaveApp = (is_array($ptConfig) ? $ptConfig['leaveApp'] ?? [] : []);
+        $days = $this->computeLeaveDays(
+            $from, $to, $dayType, $employee,
+            (bool) ($leaveApp['sandwichWeeklyOff'] ?? false),
+            (bool) ($leaveApp['sandwichHoliday'] ?? false),
+        );
 
         // Half-day gate — only leave types whose setup enables "Allow half day
         // leave" may be requested as first/second half. (This also blocks the
@@ -1055,6 +1064,79 @@ class LeaveRequestController extends Controller
             }
         }
         return false;
+    }
+
+    /**
+     * Chargeable leave days for [from, to] applying the Sandwich Policy.
+     * Working days each count 1; a single half-day is 0.5. Weekly-offs and
+     * holidays inside the range are NOT charged UNLESS sandwiched — i.e. a
+     * leave (working) day exists on BOTH sides of the off within the range —
+     * and the matching sandwich toggle is enabled. Edge off-days never count.
+     */
+    private function computeLeaveDays(Carbon $from, Carbon $to, string $dayType, Employee $employee, bool $sandwichWeeklyOff, bool $sandwichHoliday): float
+    {
+        if ($dayType !== 'full' && $from->isSameDay($to)) return 0.5;
+
+        $woSet = $this->parseWeeklyOffSet((string) ($employee->weekly_off ?? ''));
+        $holidaySet = $employee->holiday_group_id
+            ? $this->holidayDatesInRange((int) $employee->holiday_group_id, $from, $to)
+            : [];
+
+        $marks = [];
+        foreach (CarbonPeriod::create($from->copy()->startOfDay(), $to->copy()->startOfDay()) as $d) {
+            $wo  = isset($woSet[$d->dayOfWeek]);
+            $hol = isset($holidaySet[$d->toDateString()]);
+            $marks[] = ['wo' => $wo, 'hol' => $hol, 'off' => $wo || $hol];
+        }
+
+        $n = count($marks);
+        $total = 0.0;
+        for ($i = 0; $i < $n; $i++) {
+            if (!$marks[$i]['off']) { $total += 1.0; continue; }
+            $applies = ($marks[$i]['wo'] && $sandwichWeeklyOff) || ($marks[$i]['hol'] && $sandwichHoliday);
+            if (!$applies) continue;
+            $before = false;
+            for ($j = $i - 1; $j >= 0; $j--) { if (!$marks[$j]['off']) { $before = true; break; } }
+            $after = false;
+            for ($j = $i + 1; $j < $n; $j++) { if (!$marks[$j]['off']) { $after = true; break; } }
+            if ($before && $after) $total += 1.0;
+        }
+        return $total;
+    }
+
+    /** Weekly-off day-of-week set from the employee's weekly_off label. Mirrors
+     *  AttendanceController::parseWeeklyOff (Sunday fallback) so leave, attendance
+     *  and payroll agree on what an off day is. */
+    private function parseWeeklyOffSet(string $label): array
+    {
+        $map = ['sun' => 0, 'mon' => 1, 'tue' => 2, 'wed' => 3, 'thu' => 4, 'fri' => 5, 'sat' => 6];
+        $set = [];
+        foreach (preg_split('/[\s,]+/', strtolower($label)) as $tok) {
+            $key = substr($tok, 0, 3);
+            if (isset($map[$key])) $set[$map[$key]] = true;
+        }
+        if (empty($set)) $set[0] = true; // unparseable → Sunday off (matches attendance)
+        return $set;
+    }
+
+    /** Holiday dates (Y-m-d => true) for a group within [start, end], re-anchoring
+     *  recurring holidays to the window's year. */
+    private function holidayDatesInRange(int $groupId, Carbon $start, Carbon $end): array
+    {
+        if (!\Illuminate\Support\Facades\Schema::hasTable('holidays')) return [];
+        $rows = DB::table('holidays')
+            ->where('holiday_group_id', $groupId)
+            ->whereNull('deleted_at')
+            ->get(['date', 'is_recurring']);
+        $out = [];
+        foreach ($rows as $r) {
+            if (!$r->date) continue;
+            $d = Carbon::parse($r->date);
+            if ($r->is_recurring) $d = Carbon::create($start->year, $d->month, $d->day);
+            if ($d->lt($start) || $d->gt($end)) continue;
+            $out[$d->toDateString()] = true;
+        }
+        return $out;
     }
 
     /**
