@@ -16,6 +16,7 @@ import { VaultModal } from '../employee-onboarding/HrEmployeeOnboarding';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import { leavePlansApi } from './leavePlansApi';
+import { resolveProbation } from '../../utils/probation';
 import '../../../css/recruitment.css';
 
 
@@ -1568,6 +1569,14 @@ export default function HrEmployees() {
     return `${cap.getFullYear()}-${pad(cap.getMonth() + 1)}-${pad(cap.getDate())}`;
   }, [eJoinDate]);
 
+  // Probation length + end date, derived live from the joining date and the
+  // selected probation policy. Stored on save so the daily probation-completion
+  // email job just reads probation_end_date (no backend recalculation).
+  const probationInfo = useMemo(() => {
+    const policyText = eProbationPolicy === CUSTOM_PROBATION_VALUE ? eCustomProbation : eProbationPolicy;
+    return resolveProbation(policyText, eJoinDate);
+  }, [eJoinDate, eProbationPolicy, eCustomProbation]);
+
   const validateStep4 = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
     if (!eEnablePayroll) return e;
@@ -1665,6 +1674,8 @@ export default function HrEmployees() {
       })(),
       date_of_joining: eJoinDate || null,
       probation_policy: eProbationPolicy === CUSTOM_PROBATION_VALUE ? (eCustomProbation || 'Custom') : eProbationPolicy,
+      probation_months: probationInfo.months,
+      probation_end_date: probationInfo.endIso || null,
       notice_period:    eNoticePeriod === CUSTOM_NOTICE_VALUE ? (eCustomNotice || 'Custom') : eNoticePeriod,
       designation_name: mDesignations.find(d => String(d.id) === String(eDesignation))?.name,
 
@@ -3459,7 +3470,7 @@ export default function HrEmployees() {
                     <i className="ri-file-list-3-line" /> Employment Terms
                   </div>
                   <Row className="g-3">
-                    <Col md={6}>
+                    <Col md={4}>
                       <label className="emp-label">Probation Policy<span className="req">*</span></label>
                       <MasterSelect value={eProbationPolicy} onChange={(v) => { setEProbationPolicy(v); clearEErr('probation_policy'); }} options={PROBATION_POLICY_OPTIONS} placeholder="Select probation policy" invalid={!!eErrors.probation_policy} />
                       {eProbationPolicy === CUSTOM_PROBATION_VALUE && (
@@ -3474,7 +3485,21 @@ export default function HrEmployees() {
                       )}
                       {eErrors.probation_policy && <small className="emp-err">{eErrors.probation_policy}</small>}
                     </Col>
-                    <Col md={6}>
+                    <Col md={4}>
+                      <label className="emp-label">
+                        Probation End Date
+                        <span className="hint">(auto-calculated)</span>
+                      </label>
+                      <input
+                        className="emp-input is-readonly"
+                        type="text"
+                        value={probationInfo.endDisplay}
+                        readOnly
+                        tabIndex={-1}
+                        placeholder={!eJoinDate ? 'Set the joining date' : (probationInfo.months > 0 ? '' : 'No probation')}
+                      />
+                    </Col>
+                    <Col md={4}>
                       <label className="emp-label">Notice Period<span className="req">*</span></label>
                       <MasterSelect value={eNoticePeriod} onChange={(v) => { setENoticePeriod(v); clearEErr('notice_period'); }} options={NOTICE_PERIOD_OPTIONS} placeholder="Select notice period" invalid={!!eErrors.notice_period} />
                       {eNoticePeriod === CUSTOM_NOTICE_VALUE && (

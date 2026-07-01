@@ -18,6 +18,7 @@ import WorklistPager from '../../components/ui/WorklistPager';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
+import { resolveProbation } from '../../utils/probation';
 import './HrEmployeeOnboarding.css';
 
 import '../../../css/recruitment.css';
@@ -574,14 +575,14 @@ export default function HrEmployeeOnboarding() {
   };
   const closeEdit = () => { setEditOpen(false); setEditRow(null); };
 
-  // Pagination — match the master tables (7 per page).
+  // Pagination — mirrors the Employee page (rows-per-page dropdown, default 10).
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 7;
+  const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  // Reset filters and page when tabbing across; also reset page when filters
-  // change so the user always lands on page 1 of the new filtered set.
+  // Reset filters and page when tabbing across; also reset page when filters or
+  // the rows-per-page choice change so the user always lands on page 1.
   useEffect(() => { setStatusFilter('All'); setQ(''); setPage(1); }, [tab]);
-  useEffect(() => { setPage(1); }, [q, deptFilter, statusFilter]);
+  useEffect(() => { setPage(1); }, [q, deptFilter, statusFilter, rowsPerPage]);
 
   const counts = useMemo(() => {
     const pendingRows   = liveSplit.pending;
@@ -617,10 +618,10 @@ export default function HrEmployeeOnboarding() {
       });
   }, [rows, q, deptFilter, statusFilter]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
   const safePage  = Math.min(page, pageCount);
-  const sliceFrom = (safePage - 1) * PAGE_SIZE;
-  const visible   = filtered.slice(sliceFrom, sliceFrom + PAGE_SIZE);
+  const sliceFrom = (safePage - 1) * rowsPerPage;
+  const visible   = filtered.slice(sliceFrom, sliceFrom + rowsPerPage);
   const goto = (p: number) => setPage(Math.min(Math.max(1, p), pageCount));
 
   // ── Dynamic fill height — stretch the list body to the bottom of the
@@ -959,7 +960,7 @@ export default function HrEmployeeOnboarding() {
                 </div>
 
           {/* Pagination — My Workplace / Client-table style */}
-          <WorklistPager total={filtered.length} page={safePage} pageSize={PAGE_SIZE} onPage={goto} />
+          <WorklistPager total={filtered.length} page={safePage} pageSize={rowsPerPage} onPage={goto} onPageSize={setRowsPerPage} pageSizeOptions={[5, 10, 25, 50, 100]} />
         </div>
       </div>
 
@@ -3617,6 +3618,11 @@ const joinMax = _shiftYears(1);
 const salaryMin = s1.date_of_joining || _shiftYears(-1);
 const salaryMax = _shiftYears(1);
 
+// Probation length + end date, derived live from the joining date + probation
+// policy. Stored on save (probation_months / probation_end_date) so the daily
+// probation-completion email job reads it directly. Read-only in the UI.
+const onbProbation = resolveProbation(s1.probation_policy, s1.date_of_joining);
+
 // Ordered list of required field keys — drives both validation and
 // scroll-to-first-error so the user lands on the topmost missing field
 // in form order rather than alphabetical map order.
@@ -3829,6 +3835,9 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       other_master_asset_ids: s1.other_master_asset_ids
         .map(v => parseInt(v, 10))
         .filter(n => Number.isFinite(n)),
+      // Derived from probation policy + joining date; read-only in the UI.
+      probation_months:   onbProbation.months,
+      probation_end_date: onbProbation.endIso || null,
     };
     // Strip the composite picker key — backend doesn't know about it.
     delete payload.reporting_manager;
@@ -4807,9 +4816,10 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 
                 <p className="onb-init-subgroup">Employment Terms</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Probation Policy<span className="req">*</span></label><MasterSelect options={ONB_PROBATION} value={s1.probation_policy} placeholder="Select probation policy" onChange={(v) => setS1(p => ({ ...p, probation_policy: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Notice Period<span className="req">*</span></label><MasterSelect options={ONB_NOTICE} value={s1.notice_period} placeholder="Select notice period" onChange={(v) => setS1(p => ({ ...p, notice_period: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Work Mode <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly value="On-site" /></Col>
+                  <Col md={3}><label className="onb-init-label">Probation Policy<span className="req">*</span></label><MasterSelect options={ONB_PROBATION} value={s1.probation_policy} placeholder="Select probation policy" onChange={(v) => setS1(p => ({ ...p, probation_policy: v }))} /></Col>
+                  <Col md={3}><label className="onb-init-label">Probation End Date <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly tabIndex={-1} value={onbProbation.endDisplay} placeholder={!s1.date_of_joining ? 'Set joining date' : (onbProbation.months > 0 ? '' : 'No probation')} /></Col>
+                  <Col md={3}><label className="onb-init-label">Notice Period<span className="req">*</span></label><MasterSelect options={ONB_NOTICE} value={s1.notice_period} placeholder="Select notice period" onChange={(v) => setS1(p => ({ ...p, notice_period: v }))} /></Col>
+                  <Col md={3}><label className="onb-init-label">Work Mode <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly value="On-site" /></Col>
                 </Row>
               </div>
             </div>

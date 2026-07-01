@@ -127,7 +127,7 @@ class LeavePlanController extends Controller
         $plan = $this->findPlanOrFail($user, $id);
         // Locked once fully set up — edit by cloning. (make-default has its own
         // endpoint and stays allowed.)
-        $this->assertPlanEditable($plan->id);
+        $this->assertPlanEditable($plan);
 
         $data = $request->validate([
             'plan_name' => ['sometimes', 'required', 'string', 'max:255'],
@@ -202,6 +202,11 @@ class LeavePlanController extends Controller
             $copy = $source->replicate(['is_default']);
             $copy->plan_name = $newName;
             $copy->is_default = false;
+            // Born editable: a clone copies the source's full config, so without
+            // this override it would be "setup-complete" and locked the instant
+            // it is created. `unlocked` keeps it an editable draft so quotas can
+            // be changed freely (the whole point of cloning).
+            $copy->unlocked = true;
             $copy->created_by = $user->id;
             $copy->save();
 
@@ -256,7 +261,7 @@ class LeavePlanController extends Controller
         if (!$user) abort(401);
 
         $plan = $this->findPlanOrFail($user, $id);
-        $this->assertPlanEditable($plan->id);
+        $this->assertPlanEditable($plan);
 
         $data = $request->validate([
             'leave_type_ids' => ['required', 'array'],
@@ -300,7 +305,7 @@ class LeavePlanController extends Controller
         if (!$user) abort(401);
 
         $plan = $this->findPlanOrFail($user, $id);
-        $this->assertPlanEditable($plan->id);
+        $this->assertPlanEditable($plan);
 
         LeavePlanLeaveType::where('leave_plan_id', $plan->id)
             ->where('leave_type_id', $typeId)
@@ -322,7 +327,7 @@ class LeavePlanController extends Controller
         $plan = $this->findPlanOrFail($user, $id);
         // Allowed while the plan is still incomplete (incl. the save that
         // completes the last type); blocked once every type is configured.
-        $this->assertPlanEditable($plan->id);
+        $this->assertPlanEditable($plan);
 
         $data = $request->validate([
             'config' => ['required', 'array'],
@@ -933,10 +938,15 @@ class LeavePlanController extends Controller
      * completed plan is view-only — changes are made by cloning it into a new
      * plan. (Assigning/removing employees, cloning and make-default stay
      * allowed; this only guards the leave-policy setup itself.)
+     *
+     * The `unlocked` override exempts cloned plans: a clone is born fully
+     * configured, so without this it would be locked the instant it is created
+     * and could never be edited. Clones keep `unlocked = true` and stay
+     * editable.
      */
-    private function assertPlanEditable(int $planId): void
+    private function assertPlanEditable(LeavePlans $plan): void
     {
-        if ($this->isPlanSetupComplete($planId)) {
+        if (!$plan->unlocked && $this->isPlanSetupComplete($plan->id)) {
             abort(422, 'This leave plan is fully set up and locked. To change it, clone it into a new plan and edit that.');
         }
     }
