@@ -76,12 +76,6 @@ interface LeaveAppConfig {
   minIfBalanceMore: { enabled: boolean; balance: number; minDays: number };
   managerCannotOverride: boolean;
   maxPerMonth: { enabled: boolean; days: number };
-  // Sandwich policy — counts intervening weekly-offs / holidays as leave when a
-  // leave spans them (e.g. Sat + Mon leave makes the Sunday weekly-off count
-  // as leave too). `sandwichClub` extends this across leave types.
-  sandwichWeeklyOff: boolean;
-  sandwichHoliday: boolean;
-  sandwichClub: boolean;
 }
 
 interface ApprovalLevel {
@@ -169,9 +163,6 @@ const defaultLeaveTypeConfig = (): LeaveTypeConfig => ({
     minIfBalanceMore: { enabled: false, balance: 0, minDays: 0 },
     managerCannotOverride: false,
     maxPerMonth: { enabled: false, days: 0 },
-    sandwichWeeklyOff: false,
-    sandwichHoliday: false,
-    sandwichClub: false,
   },
   approval: {
     required: true, approverRole: 'reporting_manager',
@@ -2567,26 +2558,6 @@ function LeaveAppSectionView({ cfg, update }: { cfg: LeaveAppConfig; update: (p:
               day(s) of this leave type per calendar month
             </span>
           }
-        />
-      </SectionCard>
-
-      {/* Sandwich Policy — when a leave spans an intervening weekly-off / holiday
-          (e.g. Sat + Mon leave), that off-day is counted as part of the leave. */}
-      <SectionCard icon="ri-restaurant-line" iconBg="#fde8c4" title="Sandwich Policy">
-        <CheckRow
-          checked={cfg.sandwichWeeklyOff}
-          onChange={v => update({ sandwichWeeklyOff: v })}
-          label="If applied leave adjoins a weekly off, the weekly off is considered as part of leave."
-        />
-        <CheckRow
-          checked={cfg.sandwichHoliday}
-          onChange={v => update({ sandwichHoliday: v })}
-          label="If applied leave adjoins a holiday, the holiday is considered as part of leave."
-        />
-        <CheckRow
-          checked={cfg.sandwichClub}
-          onChange={v => update({ sandwichClub: v })}
-          label="Club sandwich policy across leave types."
         />
       </SectionCard>
     </>
