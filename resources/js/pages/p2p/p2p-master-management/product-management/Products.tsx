@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState, useCallback, useRef, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef, type ReactNode, type CSSProperties } from 'react';
 import { readProductMasterBundle, writeProductMasterBundle } from './productBundleCache';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useAuth } from '../../../../contexts/AuthContext';
 import api from '../../../../api';
-import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import AddProductModal from './AddProductModal';
+import ProductView from './ProductView';
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../../../components/ui/Tooltip';
 
@@ -71,6 +71,21 @@ const THUMB_GRADIENTS = [
   'linear-gradient(135deg,#1f2937,#374151)',
 ];
 
+/* Per-card accent colour (drives the thumb tint + segment badge), keyed
+   off the numeric id so a product keeps the same accent across reloads.
+   Palette mirrors the agriculture greens/ambers of the P2P prototype. */
+const PRODUCT_ACCENTS = ['#16a34a', '#ca8a04', '#eab308', '#f59e0b', '#65a30d', '#d97706', '#84cc16', '#dc2626', '#22c55e', '#a16207', '#0891b2', '#7c3aed'];
+
+/* Normalize a product code so the trailing number is always 3 digits
+   (P-1 → P-001, P-03 → P-003, P-119 stays P-119). Codes without a trailing
+   number are shown untouched. */
+function formatProductCode(raw: string): string {
+  const m = raw.match(/^(.*?)(\d+)\s*$/);
+  if (!m) return raw;
+  const prefix = m[1] || 'P-';
+  return `${prefix}${m[2].padStart(3, '0')}`;
+}
+
 function apiToCard(row: Record<string, unknown>): Product {
   const get = <T,>(k: string, fallback: T): T => (row[k] as T) ?? fallback;
   const segObj = row.segment as { title?: string } | null;
@@ -97,7 +112,7 @@ function apiToCard(row: Record<string, unknown>): Product {
   const images = [primaryUrl, ...secondaryUrls].filter(Boolean);
   return {
     apiId: idNum,
-    id: String(row.product_code ?? `P-${idNum}`),
+    id: formatProductCode(String(row.product_code ?? `P-${idNum}`)),
     name: get('name', ''),
     genericName: get('generic_name', '') as string,
     brand: get('brand', '—') as string,
@@ -127,7 +142,6 @@ function apiToCard(row: Record<string, unknown>): Product {
 }
 
 const SEGMENTS = ['All Segments', 'Dry Fruits', 'Rice & Grains', 'Spices', 'Coconut Oil', 'Seeds', 'Coffee Beans', 'Pulses', 'Mango Pulp', 'Millets', 'Chemicals'];
-const STATUSES = ['All Status', 'Active', 'Inactive', 'Draft'];
 
 /* ─── Sidebar filter options ─── */
 const GST_RATES = ['0%', '5%', '12%', '18%', '28%'];
@@ -166,10 +180,6 @@ export default function Products() {
   const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
-  /* Vendor deep-link filter — populated when the Vendors page Map
-     Products action navigates to /products?vendor_id=…. While set,
-     the list only shows products mapped to that vendor and a chip
-     header surfaces the active filter so the user can clear it. */
   const [searchParams, setSearchParams] = useSearchParams();
   const vendorFilterId   = searchParams.get('vendor_id');
   const vendorFilterCode = searchParams.get('vendor_code') ?? '';
@@ -185,6 +195,10 @@ export default function Products() {
   const [sort, setSort] = useState<'recent' | 'price-asc' | 'price-desc' | 'rating'>('recent');
   const [addOpen, setAddOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  /* Product detail opens as a popup over the list (not a full-screen route).
+     Clicking a card sets this; the ProductView renders inside a modal. */
+  const [detailId, setDetailId] = useState<number | null>(null);
+  const [brefOpen, setBrefOpen] = useState(true);
 
   /* ─── Filter sidebar ─── */
   const [filterOpen, setFilterOpen] = useState(false);
@@ -378,6 +392,15 @@ export default function Products() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
+  /* Lock the page scroll while the detail popup is open so the list behind
+     it stays put instead of scrolling under the fixed overlay. */
+  useEffect(() => {
+    if (detailId == null) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [detailId]);
+
   // NOTE: previously there was a separate `requestIdleCallback` preload
   // here that warmed /products/master-bundle for the Add Product modal.
   // It was removed because the filter-dropdowns useEffect above already
@@ -459,18 +482,21 @@ export default function Products() {
     return src;
   }, [products, q, segment, statusFilter, filters]);
 
-  /* Tab counts derived from the filter-applied set. Inactive bucket
-   * mirrors the backend's old `/products/stats` rule: Inactive + Draft
-   * both roll up under the "Inactive" tab. */
+  /* Tab counts derived from the filter-applied set. The two tabs split
+   * the catalogue by supplier mapping (matches the shared design):
+   *   • "Supplier Mapped Products"  → at least one vendor mapped
+   *   • "Zero Supplier Products"    → no vendor mapped yet
+   * The green/red "Active / Inactive" pills describe each bucket's
+   * procurement readiness, not the product's own status column. */
   const stats = useMemo(() => ({
-    active:   filteredAllStatus.filter(p => p.status === 'Active').length,
-    inactive: filteredAllStatus.filter(p => p.status !== 'Active').length,
+    active:   filteredAllStatus.filter(p => p.vendorCount > 0).length,
+    inactive: filteredAllStatus.filter(p => p.vendorCount === 0).length,
   }), [filteredAllStatus]);
 
   const filtered = useMemo(() => {
     let src = statusTab === 'active'
-      ? filteredAllStatus.filter(p => p.status === 'Active')
-      : filteredAllStatus.filter(p => p.status !== 'Active');
+      ? filteredAllStatus.filter(p => p.vendorCount > 0)
+      : filteredAllStatus.filter(p => p.vendorCount === 0);
 
     const sorted = [...src];
     if (sort === 'price-asc')  sorted.sort((a, b) => a.price - b.price);
@@ -609,100 +635,121 @@ export default function Products() {
     <div className="prd-root">
       <style>{SCOPED_CSS}</style>
 
-      {/* Header strip — same shape as the Clients / Branches headers. */}
-      <div className="frm-cstrip mb-3">
-        <span className="frm-cstrip-accent" />
-        <div className="frm-cstrip-left">
-          <div className="frm-cstrip-icon"><i className="ri-box-3-line" /></div>
+      {/* Header strip — purple "Product Management" hero (ported from the
+          P2P prototype .cstrip design). */}
+      <div className="prd-hero">
+        <span className="prd-hero-accent" />
+        <span className="prd-hero-glow" />
+        <span className="prd-hero-sheen" />
+        <div className="prd-hero-left">
+          <div className="prd-hero-avatar-wrap">
+            <div className="prd-hero-avatar">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>
+            </div>
+            <span className="prd-hero-dot" />
+          </div>
           <div className="min-w-0">
-            <div className="frm-cstrip-title">Products</div>
-            <div className="frm-cstrip-sub">Manage your product catalog — pricing, compliance, suppliers and documents in one place</div>
+            <div className="prd-hero-title">Product Management</div>
+            <div className="prd-hero-sub">Create and manage products with pricing, compliance, quality controls, and supplier mapping for procurement and sales readiness.</div>
           </div>
         </div>
-        <button className="prd-add-btn flex-shrink-0" onClick={() => { setEditingId(null); setAddOpen(true); }}>
-          <i className="ri-add-line" />
+        <button type="button" className="prd-hero-btn" onClick={() => { setEditingId(null); setAddOpen(true); }}>
+          <span className="prd-hero-btn-sheen" />
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
           Add Product
         </button>
       </div>
 
-      {/* Status tab strip — Active / Inactive */}
-      <div className="prd-status-tabs">
-        <button
-          className={`prd-status-tab ${statusTab === 'active' ? 'on' : ''}`}
-          onClick={() => setStatusTab('active')}
-        >
-          <span className="prd-status-dot is-active" />
-          Active
-          <span className="prd-status-count">{stats.active}</span>
-        </button>
-        <button
-          className={`prd-status-tab ${statusTab === 'inactive' ? 'on' : ''}`}
-          onClick={() => setStatusTab('inactive')}
-        >
-          <span className="prd-status-dot is-inactive" />
-          Inactive
-          <span className="prd-status-count">{stats.inactive}</span>
-        </button>
+      {/* WHAT WE ARE DOING HERE — collapsible 5-step guide (ported .bref-box) */}
+      <div className={`prd-bref ${brefOpen ? '' : 'is-collapsed'}`}>
+        <div className="prd-bref-head" onClick={() => setBrefOpen(o => !o)}>
+          <div className="prd-bref-head-ico">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>
+          </div>
+          <div className="prd-bref-head-mid">
+            <div className="prd-bref-head-row">
+              <div className="prd-bref-head-label">Product Management</div>
+              <div className="prd-bref-head-sep" />
+              <div className="prd-bref-head-title">What We Are Doing Here</div>
+            </div>
+            <div className="prd-bref-head-sub">Manage product master records, pricing, compliance requirements, quality standards, and supplier mapping to ensure procurement, sales, and operational readiness.</div>
+          </div>
+          <div className="prd-bref-head-right">
+            <div className="prd-bref-toggle">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+            </div>
+          </div>
+        </div>
+        <div className="prd-bref-body">
+          {[
+            { svg: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>, num: 'Step 01', title: 'Product Registration',          desc: 'Create and manage product master records.' },
+            { svg: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>, num: 'Step 02', title: 'Pricing & Sales Configuration',  desc: 'Configure pricing, GST, and sales details.' },
+            { svg: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg>, num: 'Step 03', title: 'Quality & Compliance Management', desc: 'Manage quality and regulatory requirements.' },
+            { svg: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>, num: 'Step 04', title: 'Supplier Mapping & Sourcing',     desc: 'Link products with approved suppliers.' },
+            { svg: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>, num: 'Step 05', title: 'Product Readiness & Activation',  desc: 'Approve products for operational use.' },
+          ].map((s) => (
+            <div className="prd-bref-item" key={s.num}>
+              <div className="prd-bref-item-top">
+                <div className="prd-bref-item-ico">{s.svg}</div>
+                <span className="prd-bref-item-num">{s.num}</span>
+              </div>
+              <div className="prd-bref-item-title">{s.title}</div>
+              <div className="prd-bref-item-desc">{s.desc}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* Filters bar */}
-      <div className="prd-filters">
-        <button
-          className={`prd-filter-toggle ${filterOpen ? 'on' : ''}`}
-          onClick={() => setFilterOpen(o => !o)}
-          aria-label="Open filters"
-          title="Open filters"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
-            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-          </svg>
-          Filters
-          {activeFilterCount > 0 && <span className="prd-filter-toggle-badge">{activeFilterCount}</span>}
-        </button>
+      {/* Product panel — toolbar + card grid + pagination in ONE container
+          (matches the prototype .pl-panel). */}
+      <div className="prd-panel">
+      {/* Toolbar — supplier-mapping tabs + search + Filter (ported .pl-toolbar) */}
+      <div className="prd-toolbar">
+        <div className="prd-tabs">
+          <button
+            type="button"
+            className={`prd-tab ${statusTab === 'active' ? 'is-active' : ''}`}
+            onClick={() => setStatusTab('active')}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
+            <span>Supplier Mapped Products</span>
+            <span className="prd-tab-badge prd-tab-badge--active"><span className="prd-tab-badge-dot" />Active<span className="prd-tab-badge-count">{stats.active}</span></span>
+          </button>
+          <button
+            type="button"
+            className={`prd-tab ${statusTab === 'inactive' ? 'is-active' : ''}`}
+            onClick={() => setStatusTab('inactive')}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
+            <span>Zero Supplier Products</span>
+            <span className="prd-tab-badge prd-tab-badge--inactive"><span className="prd-tab-badge-dot" />Inactive<span className="prd-tab-badge-count">{stats.inactive}</span></span>
+          </button>
+        </div>
         <div className="prd-search">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
+          <svg className="prd-search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
           <input
             type="text"
-            placeholder="Search products by name, brand, HSN, segment…"
+            placeholder="Search products by code, name, HSN or segment…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
+          {q && (
+            <button type="button" className="prd-search-clear" title="Clear search" onClick={() => setQ('')}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          )}
         </div>
-        <div className="prd-ms-wrap">
-          <MasterSelect
-            value={segment}
-            onChange={setSegment}
-            placeholder="All Segments"
-            options={['All Segments', ...segmentOpts.filter(s => s !== 'All Segments')].map(s => ({ value: s, label: s }))}
-          />
-        </div>
-        <div className="prd-ms-wrap">
-          <MasterSelect
-            value={statusFilter}
-            onChange={setStatusFilter}
-            placeholder="All Status"
-            options={STATUSES.map(s => ({ value: s, label: s }))}
-          />
-        </div>
-        <div className="prd-ms-wrap">
-          <MasterSelect
-            value={sort}
-            onChange={(v) => setSort(v as typeof sort)}
-            placeholder="Sort"
-            options={[
-              { value: 'recent',     label: 'Sort: Recent' },
-              { value: 'price-asc',  label: 'Price: Low to High' },
-              { value: 'price-desc', label: 'Price: High to Low' },
-              { value: 'rating',     label: 'Top Rated' },
-            ]}
-          />
-        </div>
-        <div className="prd-view-toggle">
-          <button className={`prd-view-btn ${view === 'grid' ? 'on' : ''}`} onClick={() => setView('grid')} aria-label="Grid view" title="Grid view">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></svg>
-          </button>
-          <button className={`prd-view-btn ${view === 'list' ? 'on' : ''}`} onClick={() => setView('list')} aria-label="List view" title="List view">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><circle cx="4" cy="6" r="1.2" /><circle cx="4" cy="12" r="1.2" /><circle cx="4" cy="18" r="1.2" /></svg>
+        <div className="prd-filter-wrap">
+          <button
+            type="button"
+            className={`prd-filter-btn ${filterOpen ? 'is-active' : ''}`}
+            onClick={() => setFilterOpen(o => !o)}
+            aria-label="Open filters"
+            title="Open filters"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
+            <span>Filter</span>
+            {activeFilterCount > 0 && <span className="prd-filter-badge">{activeFilterCount}</span>}
           </button>
         </div>
       </div>
@@ -730,12 +777,15 @@ export default function Products() {
         </div>
       )}
 
-      {/* Active-filter chips (product count badge removed per request) */}
-      <div className="prd-meta">
-        {q && <span className="prd-meta-chip">Search: <strong>{q}</strong></span>}
-        {segment !== 'All Segments' && <span className="prd-meta-chip">Segment: <strong>{segment}</strong></span>}
-        {statusFilter !== 'All Status' && <span className="prd-meta-chip">Status: <strong>{statusFilter}</strong></span>}
-      </div>
+      {/* Active-filter chips — only rendered when at least one is set, so the
+          panel shows no empty gap between the toolbar and the card grid. */}
+      {(q || segment !== 'All Segments' || statusFilter !== 'All Status') && (
+        <div className="prd-meta">
+          {q && <span className="prd-meta-chip">Search: <strong>{q}</strong></span>}
+          {segment !== 'All Segments' && <span className="prd-meta-chip">Segment: <strong>{segment}</strong></span>}
+          {statusFilter !== 'All Status' && <span className="prd-meta-chip">Status: <strong>{statusFilter}</strong></span>}
+        </div>
+      )}
 
       {/* Grid / List view */}
       {loading ? (
@@ -772,14 +822,14 @@ export default function Products() {
           )}
         </div>
       ) : view === 'grid' ? (
-        <div className="prd-list-card">
+        <>
           <div className="prd-grid" ref={resultsRef}>
             {paged.map(p => (
               <ProductCard
                 key={p.apiId}
                 product={p}
                 onAction={(act) => {
-                  if (act === 'View')        navigate(`/products/${p.apiId}`);
+                  if (act === 'View')        setDetailId(p.apiId);
                   else if (act === 'Edit')   handleEdit(p);
                   else if (act === 'Delete') handleDelete(p);
                   else                       toast.info(act, `${act}: ${p.name}`);
@@ -788,16 +838,16 @@ export default function Products() {
             ))}
           </div>
           <ProductPagination page={page} totalPages={totalPages} pageSize={pageSize} total={filtered.length} onPage={setPage} onRowsPerPage={setRowsPerPage} />
-        </div>
+        </>
       ) : (
-        <div className="prd-list-card">
+        <>
           <div className="prd-list" ref={resultsRef}>
             {paged.map(p => (
               <ProductRow
                 key={p.apiId}
                 product={p}
                 onAction={(act) => {
-                  if (act === 'View')        navigate(`/products/${p.apiId}`);
+                  if (act === 'View')        setDetailId(p.apiId);
                   else if (act === 'Edit')   handleEdit(p);
                   else if (act === 'Delete') handleDelete(p);
                   else                       toast.info(act, `${act}: ${p.name}`);
@@ -806,8 +856,9 @@ export default function Products() {
             ))}
           </div>
           <ProductPagination page={page} totalPages={totalPages} pageSize={pageSize} total={filtered.length} onPage={setPage} onRowsPerPage={setRowsPerPage} />
-        </div>
+        </>
       )}
+      </div>{/* /prd-panel */}
 
       {addOpen && (
         <AddProductModal
@@ -820,6 +871,18 @@ export default function Products() {
           }}
         />
       )}
+
+      {/* Product detail — opens as a popup over the list (not a full page). */}
+      {detailId != null && createPortal((
+        <div className="prd-detail-overlay" onClick={() => setDetailId(null)}>
+          <div className="prd-detail-modal" onClick={(e) => e.stopPropagation()}>
+            <ProductView
+              productId={detailId}
+              onClose={() => { setDetailId(null); refresh(); }}
+            />
+          </div>
+        </div>
+      ), document.body)}
 
       <DeleteConfirmModal
         open={deleteTarget !== null}
@@ -1141,115 +1204,73 @@ function ProductCard(props: {
   onAction: (label: string) => void;
 }) {
   const { product, onAction } = props;
-  // Auto-cycle the carousel every 1.8s when 2+ images exist.
-  const [imgIndex, setImgIndex] = useState(0);
-  useEffect(() => {
-    if (product.images.length < 2) return;
-    const t = setInterval(() => {
-      setImgIndex(i => (i + 1) % product.images.length);
-    }, 1800);
-    return () => clearInterval(t);
-  }, [product.images.length]);
-  const hasImage = product.images.length > 0;
+  // Show the primary image; drop to the tinted-icon fallback if it 404s.
+  const [imgOk, setImgOk] = useState(true);
+  const accent = PRODUCT_ACCENTS[product.apiId % PRODUCT_ACCENTS.length];
+  const img = product.images[0] || '';
+  const isActive = product.vendorCount > 0;
+  const suppliers = product.vendorCount;
+  const showImg = !!img && imgOk;
 
   return (
-    <div
-      className="prd-card prd-card-clickable"
-      role="link"
-      tabIndex={0}
-      onClick={() => onAction('View')}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAction('View'); } }}
-    >
-      {/* Active / Inactive / Draft pill in the top-right corner of the image */}
-      <span className={`prd-card-status-pill status-${product.status.replace(/\s+/g, '').toLowerCase()}`}>
-        <span className="prd-card-status-dot" /> {product.status}
-      </span>
-      {product.badge && <span className={`prd-card-badge prd-badge-${product.badge.replace(/\s+/g, '').toLowerCase()}`}>{product.badge}</span>}
-      <div className="prd-card-thumb" style={{ background: hasImage ? '#f5f3ff' : product.thumb }}>
-        {hasImage ? (
-          <div className="prd-card-thumb-slider">
-            {product.images.map((src, i) => (
-              <img
-                key={`${product.apiId}-${i}`}
-                src={src}
-                alt={product.name}
-                className={`prd-card-thumb-img ${i === imgIndex ? 'on' : ''}`}
-                draggable={false}
-              />
-            ))}
-            {product.images.length > 1 && (
-              <div className="prd-card-thumb-dots">
-                {product.images.map((_, i) => (
-                  <span key={i} className={`prd-card-thumb-dot ${i === imgIndex ? 'on' : ''}`} />
-                ))}
-              </div>
-            )}
-          </div>
+    <div className="prd-pcard" style={{ '--acc': accent } as CSSProperties}>
+      <div className="prd-pcard-thumb" onClick={() => onAction('View')} style={{ cursor: 'pointer' }}>
+        {showImg ? (
+          <img className="prd-pcard-img" src={img} alt={product.name} loading="lazy" onError={() => setImgOk(false)} />
         ) : (
-          <div className="prd-card-thumb-letter">{product.name.charAt(0).toUpperCase()}</div>
+          <span className="prd-pcard-thumb-ico">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
+          </span>
         )}
-        <div className="prd-card-hover">
-          <button className="prd-card-hover-btn" onClick={(e) => { e.stopPropagation(); onAction('View'); }}>View</button>
-          <button className="prd-card-hover-btn primary" onClick={(e) => { e.stopPropagation(); onAction('Edit'); }}>Edit</button>
-          <Tooltip label="Delete product">
-          <button className="prd-card-hover-btn danger" aria-label="Delete product" onClick={(e) => { e.stopPropagation(); onAction('Delete'); }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>
-          </button>
-          </Tooltip>
+        <span className="prd-pcard-thumb-grad" />
+        <span className="prd-pcard-thumb-seg">{product.segment}</span>
+        <span className={`prd-pcard-status prd-pcard-status--${isActive ? 'active' : 'inactive'}`}>
+          <span className="prd-pcard-status-dot" />{isActive ? 'Active' : 'Inactive'}
+        </span>
+      </div>
+
+      <div className="prd-pcard-body">
+        <div className="prd-pcard-title" title={`${product.id} | ${product.name}`} onClick={() => onAction('View')} style={{ cursor: 'pointer' }}>
+          <span className="prd-pcard-code">{product.id}</span>
+          <span className="prd-pcard-sep">|</span>
+          {product.name}
+        </div>
+
+        <div className="prd-pcard-info">
+          <span className="prd-pcard-info-item"><span className="prd-pcard-info-k">HSN</span><span className="prd-pcard-info-v">{product.hsn}</span></span>
+          <span className="prd-pcard-info-div" />
+          <span className="prd-pcard-info-item"><span className="prd-pcard-info-k">GST</span><span className="prd-pcard-info-v">{product.gstRate}%</span></span>
+          <span className="prd-pcard-info-div" />
+          <span className="prd-pcard-info-item prd-pcard-info-item--supplier">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>
+            {suppliers} Supplier{suppliers !== 1 ? 's' : ''}
+          </span>
+        </div>
+
+        <div className="prd-pcard-line3">
+          {product.hazClass === 'HAZ' ? (
+            <span className="prd-pcard-haz prd-pcard-haz--yes" title={product.hazClassName ? `Hazardous: ${product.hazClassName}` : 'Hazardous'}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+              <span className="prd-pcard-haz-txt">{product.hazClassName ? `Hazardous: ${product.hazClassName}` : 'Hazardous'}</span>
+            </span>
+          ) : (
+            <span className="prd-pcard-haz prd-pcard-haz--no" title="Non-Hazardous">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+              <span className="prd-pcard-haz-txt">Non-Hazardous</span>
+            </span>
+          )}
         </div>
       </div>
 
-      <div className="prd-card-body">
-        {/* ID|Name as a single line link */}
-        <button className="prd-card-title-link" title={product.name} onClick={(e) => { e.stopPropagation(); onAction('View'); }}>
-          <span className="prd-card-id-inline">{product.id}</span>
-          <span className="prd-card-id-sep">|</span>
-          <span className="prd-card-name-inline">{product.name}</span>
+      <div className="prd-pcard-foot">
+        <button type="button" className="prd-pcard-cta prd-pcard-cta--wish" onClick={() => onAction('Wishlist')}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></svg>
+          Add to Wishlist
         </button>
-
-        {/* Meta block — aligned label : value rows for the key product
-            attributes, so every card reads on the same grid. */}
-        <div className="prd-card-meta-list">
-          <div className="prd-card-meta-line">
-            <span className="prd-card-meta-label">HSN/SAC</span>
-            <span className="prd-card-meta-value">{product.hsn}</span>
-          </div>
-          <div className="prd-card-meta-line prd-card-meta-line-split">
-            <span className="prd-card-meta-label">GST</span>
-            <span className="prd-card-meta-value">{product.gstRate}%</span>
-            <span className="prd-card-vendor-cell" title={`${product.vendorCount} linked supplier${product.vendorCount === 1 ? '' : 's'}`}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
-              {product.vendorCount}
-            </span>
-          </div>
-          <div className="prd-card-meta-line">
-            <span className="prd-card-meta-label">Segment</span>
-            <span className="prd-card-meta-value" title={product.segment}>{product.segment}</span>
-          </div>
-        </div>
-
-        {/* Hazard tag */}
-        <div className="prd-card-tags">
-          <span className={`prd-card-haz-pill ${product.hazClass === 'HAZ' ? 'is-haz' : 'is-nonhaz'}`}>
-            <span className="prd-card-haz-dot" />
-            {product.hazClass === 'HAZ'
-              ? (product.hazClassName ? `Hazardous · ${product.hazClassName}` : 'Hazardous')
-              : 'Non-Hazardous'}
-          </span>
-        </div>
-
-        {/* Selling price footer — label left, value right */}
-        <div className="prd-card-buyrow">
-          <span className="prd-card-price-label">Selling Price</span>
-          <span className="prd-card-price">
-            {product.currency}{product.price.toLocaleString()}
-          </span>
-        </div>
+        <button type="button" className="prd-pcard-cta prd-pcard-cta--cart" onClick={() => onAction('Cart')}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1.4" /><circle cx="19" cy="21" r="1.4" /><path d="M2.5 3h2.2l2.6 12.6a1.6 1.6 0 0 0 1.6 1.3h8.7a1.6 1.6 0 0 0 1.6-1.25l1.6-7.55H6" /></svg>
+          Add to Cart
+        </button>
       </div>
     </div>
   );
@@ -1423,6 +1444,165 @@ const SCOPED_CSS = `
 .prd-add-btn i { font-size: 16px; }
 .prd-add-btn:hover { transform: translateY(-1px); filter: brightness(1.05); box-shadow: 0 9px 24px rgba(124,58,237,.48), 0 1px 0 rgba(255,255,255,.22) inset; }
 .prd-add-btn:active { transform: translateY(0); }
+
+/* ═══ Container 1 — HERO (.cstrip ported from P2P prototype) ═══ */
+.prd-hero { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; min-height: 62px; padding: 0 20px; border: 1px solid #c4b5fd; border-radius: 16px; background: linear-gradient(110deg,#faf5ff 0%,#f3e8ff 25%,#ede9fe 55%,#ddd6fe 85%,#c4b5fd 100%); box-shadow: 0 2px 0 rgba(255,255,255,.85) inset, 0 8px 28px rgba(139,92,246,.2), 0 2px 8px rgba(0,0,0,.06); }
+.prd-hero-accent { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: linear-gradient(180deg,#a78bfa,#7c3aed,#5b21b6); border-radius: 16px 0 0 16px; }
+.prd-hero-glow { position: absolute; inset: 0; pointer-events: none; background-image: radial-gradient(ellipse at 10% 50%,rgba(196,181,253,.45) 0%,transparent 50%), radial-gradient(ellipse at 90% 50%,rgba(167,139,250,.25) 0%,transparent 55%); }
+.prd-hero-sheen { position: absolute; top: 0; left: 0; right: 0; height: 50%; pointer-events: none; background: linear-gradient(180deg,rgba(255,255,255,.5),transparent); border-radius: 16px 16px 0 0; }
+.prd-hero-left { display: flex; align-items: center; gap: 13px; z-index: 1; padding-left: 10px; min-width: 0; }
+.prd-hero-avatar-wrap { position: relative; flex-shrink: 0; }
+.prd-hero-avatar { width: 38px; height: 38px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg,#8b5cf6 0%,#7c3aed 55%,#5b21b6 100%); box-shadow: 0 0 0 3px rgba(139,92,246,.25), 0 4px 14px rgba(124,58,237,.45); }
+.prd-hero-dot { position: absolute; bottom: -1px; right: -1px; width: 10px; height: 10px; border-radius: 50%; background: linear-gradient(135deg,#4ade80,#22c55e); border: 2px solid #f3e8ff; box-shadow: 0 2px 4px rgba(34,197,94,.4); }
+.prd-hero-title { font-size: 15px; font-weight: 800; color: #3b0764; letter-spacing: -.4px; line-height: 1.2; }
+.prd-hero-sub { font-size: 11px; font-weight: 500; color: #6d28d9; opacity: .85; margin-top: 2px; line-height: 1.35; }
+.prd-hero-btn { position: relative; overflow: hidden; display: flex; align-items: center; gap: 7px; padding: 9px 18px; border: none; border-radius: 12px; font-family: inherit; font-size: 12px; font-weight: 700; color: #fff; letter-spacing: .02em; white-space: nowrap; cursor: pointer; flex-shrink: 0; z-index: 1; background: linear-gradient(135deg,#8b5cf6 0%,#7c3aed 50%,#5b21b6 100%); box-shadow: 0 4px 16px rgba(124,58,237,.5), 0 1px 3px rgba(91,33,182,.3), 0 1px 0 rgba(255,255,255,.2) inset; text-shadow: 0 1px 2px rgba(0,0,0,.2); transition: background .2s, transform .2s, box-shadow .2s; }
+.prd-hero-btn:hover { background: linear-gradient(135deg,#7c3aed 0%,#5b21b6 50%,#4c1d95 100%); transform: translateY(-1.5px); box-shadow: 0 8px 24px rgba(124,58,237,.6), 0 2px 6px rgba(91,33,182,.35), 0 1px 0 rgba(255,255,255,.2) inset; }
+.prd-hero-btn-sheen { position: absolute; top: 0; left: 0; right: 0; height: 50%; pointer-events: none; background: linear-gradient(180deg,rgba(255,255,255,.18),transparent); border-radius: 12px 12px 0 0; }
+
+/* ═══ Container 2 — WHAT WE ARE DOING HERE (.bref-box ported) ═══ */
+.prd-bref { background: #fff; border: 1px solid #c4b5fd; border-radius: 16px; overflow: hidden; position: relative; box-shadow: 0 2px 0 rgba(255,255,255,.9) inset, 0 8px 28px rgba(139,92,246,.2), 0 2px 8px rgba(0,0,0,.06); }
+.prd-bref::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: linear-gradient(180deg,#a78bfa,#7c3aed,#5b21b6); border-radius: 16px 0 0 16px; z-index: 10; }
+.prd-bref-head { position: relative; overflow: hidden; display: flex; align-items: center; gap: 12px; padding: 7px 12px; background: linear-gradient(110deg,#faf5ff 0%,#f3e8ff 25%,#ede9fe 55%,#ddd6fe 85%,#c4b5fd 100%); border-bottom: 1px solid #c4b5fd; cursor: pointer; user-select: none; min-height: 48px; }
+.prd-bref.is-collapsed .prd-bref-head { border-bottom-color: transparent; }
+.prd-bref-head::before { content: ''; position: absolute; inset: 0; pointer-events: none; background-image: radial-gradient(ellipse at 10% 50%,rgba(196,181,253,.45) 0%,transparent 50%), radial-gradient(ellipse at 90% 50%,rgba(167,139,250,.25) 0%,transparent 55%); }
+.prd-bref-head::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; pointer-events: none; background: linear-gradient(180deg,rgba(255,255,255,.5),transparent); }
+.prd-bref-head-ico { width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0; background: linear-gradient(135deg,#8b5cf6 0%,#7c3aed 55%,#5b21b6 100%); display: flex; align-items: center; justify-content: center; color: #fff; position: relative; z-index: 1; box-shadow: 0 0 0 3px rgba(139,92,246,.25), 0 4px 14px rgba(124,58,237,.45); }
+.prd-bref-head-mid { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; position: relative; z-index: 1; }
+.prd-bref-head-row { display: flex; align-items: center; gap: 9px; }
+.prd-bref-head-label { font-size: 9.5px; font-weight: 800; letter-spacing: -.2px; color: #7c3aed; line-height: 1; white-space: nowrap; flex-shrink: 0; }
+.prd-bref-head-sep { width: 1px; height: 13px; background: #c4b5fd; flex-shrink: 0; }
+.prd-bref-head-title { font-size: 11px; font-weight: 800; color: #3b0764; letter-spacing: -.2px; line-height: 1; white-space: nowrap; }
+.prd-bref-head-sub { font-size: 9.5px; font-weight: 500; color: #6d28d9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prd-bref-head-right { flex-shrink: 0; display: flex; align-items: center; gap: 6px; position: relative; z-index: 1; }
+.prd-bref-toggle { width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,.75); border: 1.5px solid rgba(124,58,237,.22); color: #7c3aed; transition: transform .24s cubic-bezier(.22,1,.36,1); box-shadow: 0 1px 4px rgba(124,58,237,.10), inset 0 1px 0 rgba(255,255,255,.9); }
+.prd-bref.is-collapsed .prd-bref-toggle { transform: rotate(-90deg); }
+.prd-bref-body { display: grid; grid-template-columns: repeat(5, 1fr); background: linear-gradient(180deg,#f7f4ff 0%,#f8fafc 100%); gap: 0; overflow: hidden; max-height: 320px; transition: max-height .3s cubic-bezier(.22,1,.36,1), opacity .22s; opacity: 1; }
+.prd-bref.is-collapsed .prd-bref-body { max-height: 0; opacity: 0; }
+.prd-bref-item { position: relative; padding: 10px 11px 11px; background: #fff; margin: 7px 5px; border-radius: 11px; border: 1.5px solid #ece7f8; transition: box-shadow .18s, border-color .18s, transform .18s; cursor: default; display: flex; flex-direction: column; gap: 0; overflow: hidden; box-shadow: 0 1px 4px rgba(15,23,42,.04); }
+.prd-bref-item:first-child { margin-left: 7px; }
+.prd-bref-item:last-child { margin-right: 7px; }
+.prd-bref-item:hover { border-color: #c4b5fd; box-shadow: 0 6px 18px rgba(124,58,237,.14), 0 1px 4px rgba(15,23,42,.04); transform: translateY(-2px); }
+.prd-bref-item::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; border-radius: 11px 11px 0 0; background: linear-gradient(90deg,#8b5cf6,#7c3aed); }
+.prd-bref-item-top { display: flex; align-items: center; gap: 6px; margin-bottom: 0; }
+.prd-bref-item-ico { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #7c3aed; }
+.prd-bref-item-num { font-size: 8.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #94a3b8; line-height: 1; }
+.prd-bref-item-title { font-size: 11px; font-weight: 800; color: #0f172a; letter-spacing: -.2px; line-height: 1.25; margin-bottom: 3px; margin-top: 5px; }
+.prd-bref-item-desc { font-size: 9.5px; font-weight: 500; color: #94a3b8; line-height: 1.4; }
+@media (max-width: 1100px) { .prd-bref-body { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 700px)  { .prd-bref-body { grid-template-columns: repeat(2, 1fr); } }
+
+/* ═══ Container 3 — PANEL (.pl-panel: toolbar + card grid + pager in ONE box) ═══ */
+.prd-panel { display: flex; flex-direction: column; background: #fff; border: 1px solid #c4b5fd; border-radius: 16px; overflow: hidden; box-shadow: 0 2px 0 rgba(255,255,255,.85) inset, 0 8px 28px rgba(139,92,246,.16), 0 2px 8px rgba(0,0,0,.05); }
+.prd-panel .prd-grid, .prd-panel .prd-list { padding: 16px; margin: 0; }
+.prd-panel .prd-meta { padding: 10px 16px 0; }
+.prd-panel .prd-vendor-banner { margin: 12px 16px 0; }
+.prd-panel .prd-empty { margin: 16px; }
+/* Toolbar — the panel's top strip (borderless, divider below) */
+.prd-toolbar { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #ece7f8; flex-wrap: wrap; }
+
+/* ═══ Product detail popup — renders ProductView over the list ═══ */
+.prd-detail-overlay {
+  position: fixed; inset: 0; z-index: 1050;
+  background: radial-gradient(ellipse at 50% 0%, rgba(91,33,182,.5), rgba(20,12,40,.62));
+  backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 24px; overflow-y: auto;
+}
+.prd-detail-modal {
+  width: 100%; max-width: 1320px; margin: auto;
+  border-radius: 20px; overflow: hidden;
+  box-shadow: 0 40px 90px rgba(45,20,90,.5), 0 0 0 1px rgba(255,255,255,.35) inset;
+  animation: prdDetailPop .26s cubic-bezier(.22,1,.36,1);
+}
+@keyframes prdDetailPop { from { transform: translateY(18px) scale(.98); opacity: 0; } to { transform: none; opacity: 1; } }
+/* Neutralise ProductView's full-page chrome so it fits inside the modal. */
+.prd-detail-modal .pv2-root { margin: 0; min-height: 0; border-radius: 20px; }
+.prd-tabs { display: flex; gap: 8px; flex-shrink: 0; background: #fff; border: 1px solid #e6e2f5; border-radius: 11px; padding: 4px; box-shadow: 0 2px 6px rgba(15,23,42,.05), 0 6px 18px rgba(124,58,237,.06); }
+.prd-tab { position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 7px; font-family: inherit; font-size: 12.5px; font-weight: 700; color: #6d28d9; background: linear-gradient(135deg,#f5f1fe,#ede9fe); border: 1px solid rgba(139,92,246,.2); border-radius: 8px; padding: 8px 14px; cursor: pointer; white-space: nowrap; transition: background .16s, color .16s, box-shadow .16s, border-color .16s; }
+.prd-tab:hover { color: #5b21b6; background: linear-gradient(135deg,#ede9fe,#ddd6fe); border-color: rgba(139,92,246,.35); }
+.prd-tab.is-active { color: #fff; background: linear-gradient(135deg,#a78bfa 0%,#8b5cf6 35%,#7c3aed 68%,#5b21b6 100%); border: none; box-shadow: 0 5px 14px rgba(124,58,237,.5), 0 1px 0 rgba(255,255,255,.4) inset, 0 -2px 6px rgba(91,33,182,.3) inset; text-shadow: 0 1px 2px rgba(76,29,149,.4); }
+.prd-tab.is-active::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; background: linear-gradient(180deg,rgba(255,255,255,.26),transparent); pointer-events: none; }
+.prd-tab > svg, .prd-tab > span { position: relative; z-index: 1; }
+.prd-tab-badge { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 800; letter-spacing: .01em; border-radius: 20px; padding: 4px 5px 4px 11px; line-height: 1; white-space: nowrap; }
+.prd-tab-badge-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.prd-tab-badge-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 6px; border-radius: 20px; font-size: 10px; font-weight: 800; line-height: 1; }
+.prd-tab-badge--active { color: #15803d; background: #dcfce7; border: 1px solid #86efac; }
+.prd-tab-badge--active .prd-tab-badge-dot { background: #16a34a; box-shadow: 0 0 0 3px rgba(34,197,94,.22); }
+.prd-tab-badge--active .prd-tab-badge-count { color: #fff; background: linear-gradient(135deg,#22c55e,#16a34a); }
+.prd-tab-badge--inactive { color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; }
+.prd-tab-badge--inactive .prd-tab-badge-dot { background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.18); }
+.prd-tab-badge--inactive .prd-tab-badge-count { color: #fff; background: linear-gradient(135deg,#f87171,#dc2626); }
+.prd-tab.is-active .prd-tab-badge--active { color: #fff; background: rgba(255,255,255,.16); border-color: rgba(255,255,255,.32); }
+.prd-tab.is-active .prd-tab-badge--active .prd-tab-badge-dot { background: #fff; box-shadow: 0 0 0 3px rgba(255,255,255,.22); }
+.prd-tab.is-active .prd-tab-badge--active .prd-tab-badge-count { color: #16a34a; background: #fff; }
+.prd-tab.is-active .prd-tab-badge--inactive { color: #fff; background: rgba(255,255,255,.16); border-color: rgba(255,255,255,.32); }
+.prd-tab.is-active .prd-tab-badge--inactive .prd-tab-badge-dot { background: #fff; box-shadow: 0 0 0 3px rgba(255,255,255,.22); }
+.prd-tab.is-active .prd-tab-badge--inactive .prd-tab-badge-count { color: #dc2626; background: #fff; }
+.prd-search { flex: 1; min-width: 220px; height: 42px; display: flex; align-items: center; gap: 9px; background: #fff; border: 1.5px solid #e6e2f5; border-radius: 11px; padding: 0 8px 0 14px; box-shadow: 0 2px 6px rgba(15,23,42,.05), 0 6px 18px rgba(124,58,237,.05); transition: border-color .16s, box-shadow .16s; }
+.prd-search:focus-within { border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167,139,250,.18); }
+.prd-search-ico { flex-shrink: 0; }
+.prd-search input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-family: inherit; font-size: 13px; font-weight: 500; color: #3b0764; }
+.prd-search input::placeholder { color: #a78bfa; font-weight: 500; }
+.prd-search-clear { flex-shrink: 0; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border: none; border-radius: 7px; background: rgba(139,92,246,.12); color: #7c3aed; cursor: pointer; transition: background .14s, color .14s; }
+.prd-search-clear:hover { background: #7c3aed; color: #fff; }
+.prd-filter-wrap { position: relative; flex-shrink: 0; }
+.prd-filter-btn { position: relative; overflow: hidden; height: 42px; display: flex; align-items: center; gap: 9px; padding: 0 20px; border: none; border-radius: 12px; background: linear-gradient(135deg,#c4b5fd 0%,#a78bfa 22%,#8b5cf6 50%,#7c3aed 76%,#6d28d9 100%); background-size: 200% 200%; font-family: inherit; font-size: 13px; font-weight: 700; letter-spacing: .01em; color: #fff; cursor: pointer; box-shadow: 0 1px 0 rgba(255,255,255,.5) inset, 0 -2px 6px rgba(76,29,149,.4) inset, 0 6px 18px rgba(124,58,237,.5), 0 2px 5px rgba(76,29,149,.35); animation: prdBtnGradient 6s ease infinite; transition: transform .16s cubic-bezier(.34,1.56,.64,1), filter .2s; }
+@keyframes prdBtnGradient { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+.prd-filter-btn::before { content: ''; position: absolute; inset: 0; border-radius: 12px; padding: 1.4px; background: linear-gradient(135deg,rgba(255,255,255,.9),rgba(255,255,255,0) 45%); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; z-index: 2; }
+.prd-filter-btn::after { content: ''; position: absolute; top: 0; left: -130%; width: 50%; height: 100%; border-radius: 12px; background: linear-gradient(100deg,transparent,rgba(255,255,255,.6),transparent); transform: skewX(-18deg); animation: prdShine 3.4s ease-in-out infinite; pointer-events: none; z-index: 1; }
+@keyframes prdShine { 0%,66% { left: -130%; } 85% { left: 160%; } 100% { left: 160%; } }
+.prd-filter-btn > span, .prd-filter-btn > svg { position: relative; z-index: 3; }
+.prd-filter-btn svg { stroke: #fff; filter: drop-shadow(0 1px 1px rgba(76,29,149,.45)); }
+.prd-filter-btn:hover { filter: brightness(1.08) saturate(1.1); transform: translateY(-2px) scale(1.03); }
+.prd-filter-btn:active { transform: translateY(0) scale(.99); }
+.prd-filter-btn.is-active { box-shadow: 0 1px 0 rgba(255,255,255,.5) inset, 0 -2px 6px rgba(76,29,149,.4) inset, 0 0 0 3px rgba(167,139,250,.5), 0 8px 24px rgba(124,58,237,.55); }
+.prd-filter-badge { position: relative; z-index: 3; display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px; background: #fff; color: #7c3aed; font-size: 10px; font-weight: 800; }
+@media (max-width: 640px) { .prd-toolbar { flex-direction: column; align-items: stretch; } .prd-tabs { justify-content: center; flex-wrap: wrap; } }
+
+/* ═══ Product card (.pl-card ported from the P2P prototype) ═══ */
+.prd-pcard { position: relative; display: flex; flex-direction: column; background: #fff; border: 1px solid #e6e2f5; border-radius: 18px; overflow: hidden; box-shadow: 0 2px 6px rgba(15,23,42,.05), 0 8px 22px rgba(124,58,237,.07); transition: transform .2s cubic-bezier(.22,1,.36,1), box-shadow .2s, border-color .2s; }
+.prd-pcard:hover { transform: translateY(-4px); border-color: #c4b5fd; box-shadow: 0 10px 30px rgba(124,58,237,.18), 0 3px 10px rgba(15,23,42,.06); }
+.prd-pcard-thumb { position: relative; height: 172px; display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--acc); background: linear-gradient(135deg, color-mix(in srgb, var(--acc) 16%, #fff), color-mix(in srgb, var(--acc) 6%, #f4f1fd)); border-bottom: 1px solid #efebfa; }
+.prd-pcard-thumb::before { content: ''; position: absolute; inset: 0; z-index: 0; background: radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--acc) 22%, transparent), transparent 60%); }
+.prd-pcard-thumb::after { content: ''; position: absolute; inset: 0; z-index: 0; opacity: .5; background-image: radial-gradient(color-mix(in srgb, var(--acc) 30%, transparent) 1px, transparent 1.4px); background-size: 16px 16px; -webkit-mask: radial-gradient(circle at 50% 42%, #000, transparent 70%); mask: radial-gradient(circle at 50% 42%, #000, transparent 70%); }
+.prd-pcard-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; transition: transform .35s cubic-bezier(.22,1,.36,1); }
+.prd-pcard:hover .prd-pcard-img { transform: scale(1.06); }
+.prd-pcard-thumb-ico { position: relative; z-index: 1; width: 66px; height: 66px; border-radius: 18px; display: flex; align-items: center; justify-content: center; color: var(--acc); background: rgba(255,255,255,.82); border: 1px solid color-mix(in srgb, var(--acc) 30%, #fff); box-shadow: 0 8px 22px color-mix(in srgb, var(--acc) 28%, transparent), 0 1px 0 rgba(255,255,255,.95) inset; transition: transform .3s cubic-bezier(.22,1,.36,1); }
+.prd-pcard:hover .prd-pcard-thumb-ico { transform: translateY(-3px) scale(1.04); }
+.prd-pcard-thumb-ico svg { width: 30px; height: 30px; }
+.prd-pcard-thumb-grad { position: absolute; inset: 0; z-index: 2; pointer-events: none; background: linear-gradient(180deg,rgba(15,23,42,.04) 0%,transparent 32%,transparent 60%,rgba(15,23,42,.28) 100%); }
+.prd-pcard-thumb-seg { position: absolute; left: 10px; bottom: 9px; z-index: 3; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #fff; background: color-mix(in srgb, var(--acc) 88%, #000); border-radius: 20px; padding: 3px 10px; box-shadow: 0 2px 6px rgba(0,0,0,.25); }
+.prd-pcard-status { position: absolute; right: 10px; top: 10px; z-index: 3; display: inline-flex; align-items: center; gap: 5px; font-size: 9.5px; font-weight: 800; border-radius: 20px; padding: 4px 9px; box-shadow: 0 2px 6px rgba(0,0,0,.12); }
+.prd-pcard-status-dot { width: 6px; height: 6px; border-radius: 50%; }
+.prd-pcard-status--active { color: #15803d; background: rgba(220,252,231,.96); border: 1px solid #86efac; }
+.prd-pcard-status--active .prd-pcard-status-dot { background: #16a34a; box-shadow: 0 0 0 3px rgba(34,197,94,.25); }
+.prd-pcard-status--inactive { color: #b91c1c; background: rgba(254,242,242,.96); border: 1px solid #fecaca; }
+.prd-pcard-status--inactive .prd-pcard-status-dot { background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.2); }
+.prd-pcard-body { flex: 1; display: flex; flex-direction: column; gap: 10px; padding: 13px 13px 11px; }
+.prd-pcard-title { font-size: 13px; font-weight: 800; color: #7c3aed; line-height: 1.34; letter-spacing: -.25px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.prd-pcard-code { font-weight: 800; color: #7c3aed; letter-spacing: .01em; }
+.prd-pcard-sep { color: #cbd5e1; font-weight: 600; margin: 0 6px; }
+.prd-pcard-info { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; background: #f9fafc; border: 1px solid #eef1f6; border-radius: 10px; padding: 7px 11px; overflow: hidden; }
+.prd-pcard-info-item { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 800; color: #334155; line-height: 1; white-space: nowrap; }
+.prd-pcard-info-k { font-size: 8px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: #a0aec0; }
+.prd-pcard-info-v { font-size: 10.5px; font-weight: 800; color: #1e293b; font-family: ui-monospace,Menlo,Consolas,monospace; letter-spacing: .01em; }
+.prd-pcard-info-div { width: 1px; height: 13px; background: #e2e8f0; flex-shrink: 0; }
+.prd-pcard-info-item--supplier { margin-left: auto; color: #7c3aed; }
+.prd-pcard-info-item--supplier svg { opacity: .85; }
+.prd-pcard-line3 { display: flex; }
+.prd-pcard-haz { display: inline-flex; align-items: center; gap: 5px; width: fit-content; max-width: 100%; font-size: 9.5px; font-weight: 800; letter-spacing: .01em; border-radius: 8px; padding: 5px 11px; line-height: 1.3; white-space: nowrap; overflow: hidden; }
+.prd-pcard-haz svg { flex-shrink: 0; }
+.prd-pcard-haz-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.prd-pcard-haz--no { color: #15803d; background: linear-gradient(135deg,#f0fdf4,#dcfce7); border: 1px solid #bbf7d0; }
+.prd-pcard-haz--yes { color: #b45309; background: linear-gradient(135deg,#fffbeb,#fef3c7); border: 1px solid #fde68a; }
+.prd-pcard-foot { display: flex; align-items: center; gap: 8px; padding: 9px 13px 11px; border-top: 1px dashed #ece7f8; margin-top: auto; background: linear-gradient(180deg,transparent,rgba(245,241,254,.45)); }
+.prd-pcard-cta { flex: 1; justify-content: center; display: inline-flex; align-items: center; gap: 6px; font-family: inherit; font-size: 11.5px; font-weight: 800; color: #fff; border: none; border-radius: 11px; padding: 8px 13px; cursor: pointer; white-space: nowrap; transition: transform .15s, box-shadow .15s, background .15s; }
+.prd-pcard-cta svg { flex-shrink: 0; }
+.prd-pcard-cta--wish { background: #fff; color: #7c3aed; border: 1.5px solid #d8cef0; box-shadow: 0 2px 6px rgba(124,58,237,.1); }
+.prd-pcard-cta--wish:hover { background: #f6f2ff; border-color: #b9a6ed; color: #6d28d9; transform: translateY(-1.5px); box-shadow: 0 6px 14px rgba(124,58,237,.18); }
+.prd-pcard-cta--cart { background: linear-gradient(135deg,#a78bfa 0%,#8b5cf6 35%,#7c3aed 68%,#5b21b6 100%); box-shadow: 0 5px 14px rgba(124,58,237,.5), 0 1px 0 rgba(255,255,255,.4) inset, 0 -2px 6px rgba(91,33,182,.3) inset; text-shadow: 0 1px 2px rgba(76,29,149,.4); }
+.prd-pcard-cta--cart:hover { background: linear-gradient(135deg,#8b5cf6 0%,#7c3aed 45%,#6d28d9 100%); transform: translateY(-1.5px); box-shadow: 0 8px 20px rgba(124,58,237,.58), 0 1px 0 rgba(255,255,255,.45) inset, 0 -2px 6px rgba(76,29,149,.35) inset; }
 
 /* ─── List card — grid / list + its pagination footer in ONE container,
    matching the leads-list layout (rounded card, violet ring, footer band). */
@@ -2360,6 +2540,59 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .prd-search input { color: #ede9fe; }
 [data-bs-theme="dark"] .prd-search input::placeholder { color: #6d6391; }
+
+/* Dark — hero */
+[data-bs-theme="dark"] .prd-hero { background: #34216b; border-color: rgba(167,139,250,.28); box-shadow: 0 8px 28px rgba(0,0,0,.4); }
+[data-bs-theme="dark"] .prd-hero-glow,
+[data-bs-theme="dark"] .prd-hero-sheen { display: none; }
+[data-bs-theme="dark"] .prd-hero-title { color: #f3e8ff; }
+[data-bs-theme="dark"] .prd-hero-sub { color: #c4b5fd; }
+
+/* Dark — What We Are Doing Here stepper */
+[data-bs-theme="dark"] .prd-bref { background: #1c1633; border-color: rgba(167,139,250,.22); box-shadow: 0 8px 28px rgba(0,0,0,.35); }
+[data-bs-theme="dark"] .prd-bref-head { background: #241a47; border-bottom-color: rgba(167,139,250,.2); }
+[data-bs-theme="dark"] .prd-bref-head::before,
+[data-bs-theme="dark"] .prd-bref-head::after { display: none; }
+[data-bs-theme="dark"] .prd-bref-head-title { color: #f3e8ff; }
+[data-bs-theme="dark"] .prd-bref-head-sub,
+[data-bs-theme="dark"] .prd-bref-head-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-bref-head-sep { background: rgba(167,139,250,.35); }
+[data-bs-theme="dark"] .prd-bref-body { background: #171029; }
+[data-bs-theme="dark"] .prd-bref-item { background: #221a40; border-color: rgba(167,139,250,.16); box-shadow: none; }
+[data-bs-theme="dark"] .prd-bref-item-title { color: #ede9fe; }
+[data-bs-theme="dark"] .prd-bref-item-desc,
+[data-bs-theme="dark"] .prd-bref-item-num { color: #a89fc7; }
+[data-bs-theme="dark"] .prd-bref-item-ico { color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-bref-toggle { background: rgba(255,255,255,.08); border-color: rgba(167,139,250,.25); color: #c4b5fd; }
+
+/* Dark — panel + toolbar tabs + Filter */
+[data-bs-theme="dark"] .prd-panel { background: #1a1430; border-color: #3b2a6b; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+[data-bs-theme="dark"] .prd-toolbar { background: transparent; border-bottom-color: #3b2a6b; box-shadow: none; }
+[data-bs-theme="dark"] .prd-tabs { background: rgba(124,58,237,.10); border-color: rgba(167,139,250,.22); box-shadow: none; }
+[data-bs-theme="dark"] .prd-tab { color: #9b8fc4; background: transparent; border-color: transparent; box-shadow: none; }
+[data-bs-theme="dark"] .prd-tab:hover { color: #fff; background: rgba(124,58,237,.28); }
+[data-bs-theme="dark"] .prd-tab.is-active { color: #fff; background: linear-gradient(135deg,#a78bfa,#8b5cf6,#7c3aed,#5b21b6); border-color: transparent; box-shadow: 0 4px 16px rgba(124,58,237,.6), 0 0 0 1.5px rgba(196,181,253,.45), 0 1px 0 rgba(255,255,255,.4) inset; }
+[data-bs-theme="dark"] .prd-tab-badge--active { color: #86efac; background: rgba(22,163,74,.18); border-color: rgba(74,222,128,.35); }
+[data-bs-theme="dark"] .prd-tab-badge--inactive { color: #fca5a5; background: rgba(220,38,38,.16); border-color: rgba(248,113,113,.35); }
+[data-bs-theme="dark"] .prd-search { background: #110c25; border-color: #3b2a6b; box-shadow: none; }
+[data-bs-theme="dark"] .prd-filter-badge { background: #ede9fe; color: #5b21b6; }
+
+/* Dark — product card */
+[data-bs-theme="dark"] .prd-pcard { background: #1a2130; border-color: rgba(167,139,250,.18); box-shadow: 0 8px 22px rgba(0,0,0,.4); }
+[data-bs-theme="dark"] .prd-pcard:hover { border-color: rgba(167,139,250,.4); box-shadow: 0 12px 30px rgba(0,0,0,.5); }
+[data-bs-theme="dark"] .prd-pcard-thumb { border-bottom-color: rgba(167,139,250,.14); }
+[data-bs-theme="dark"] .prd-pcard-title { color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-pcard-code { color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-pcard-info { background: rgba(255,255,255,.03); border-color: rgba(167,139,250,.14); }
+[data-bs-theme="dark"] .prd-pcard-info-item { color: #cbd5e1; }
+[data-bs-theme="dark"] .prd-pcard-info-v { color: #e2e8f0; }
+[data-bs-theme="dark"] .prd-pcard-info-item--supplier { color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-pcard-info-div { background: rgba(167,139,250,.2); }
+[data-bs-theme="dark"] .prd-pcard-haz--no { color: #86efac; background: rgba(22,163,74,.16); border-color: rgba(74,222,128,.32); }
+[data-bs-theme="dark"] .prd-pcard-haz--yes { color: #fcd34d; background: rgba(180,83,9,.18); border-color: rgba(251,191,36,.32); }
+[data-bs-theme="dark"] .prd-pcard-foot { border-top-color: rgba(167,139,250,.16); background: rgba(255,255,255,.02); }
+[data-bs-theme="dark"] .prd-pcard-cta--wish { background: rgba(124,58,237,.16); color: #d6c9f5; border-color: rgba(167,139,250,.32); box-shadow: none; }
+[data-bs-theme="dark"] .prd-pcard-cta--wish:hover { background: rgba(124,58,237,.28); color: #fff; border-color: rgba(167,139,250,.5); }
 [data-bs-theme="dark"] .prd-ms-wrap .master-select-wrap .master-select-toggle {
   background: #110c25 !important;
   border-color: #3b2a6b !important;

@@ -179,6 +179,10 @@ export default function AddProductModal(props: {
    * the raw show() response (data fields + segment_uploads). When
    * absent, the modal falls back to fetching itself. */
   initialProduct?: any | null;
+  /* When true (and the product already exists), the modal jumps straight to
+   * the supplier-mapping step and pops the "Map Supplier" form on mount —
+   * used by ProductView's "Map Supplier" action. */
+  openSupplierMap?: boolean;
   onClose: () => void;
   onSaved: (productId: number, finalised: boolean) => void;
 }) {
@@ -370,6 +374,13 @@ export default function AddProductModal(props: {
   const [primaryImageUrl, setPrimaryImageUrl]     = useState<string | null>(null);
   const [secondaryImageUrls, setSecondaryImageUrls] = useState<string[]>([]);
 
+  /* Product-level attachment — a single supporting document / certificate,
+     shown in its own "PRODUCT ATTACHMENT" card. Sent with the Core save;
+     an already-stored path is kept on edit-load. */
+  const [prodAttachmentFile, setProdAttachmentFile] = useState<File | null>(null);
+  const [prodAttachmentPath, setProdAttachmentPath] = useState<string | null>(null);
+  const [prodAttachmentUrl,  setProdAttachmentUrl]  = useState<string | null>(null);
+
   const primaryPreview = primaryImageFile
     ? URL.createObjectURL(primaryImageFile)
     : (primaryImageUrl || (primaryImagePath ? resolveFileUrl(primaryImagePath) : ''));
@@ -377,6 +388,9 @@ export default function AddProductModal(props: {
     ...secondaryImagePaths.map((p, i) => secondaryImageUrls[i] || resolveFileUrl(p)),
     ...secondaryImageFiles.map(f => URL.createObjectURL(f)),
   ];
+  const attachmentPreview = prodAttachmentFile
+    ? URL.createObjectURL(prodAttachmentFile)
+    : (prodAttachmentUrl || (prodAttachmentPath ? resolveFileUrl(prodAttachmentPath) : ''));
 
   /* ─── Step 1: Sales ─── */
   const [basePrice, setBasePrice] = useState<string>('');
@@ -489,6 +503,9 @@ export default function AddProductModal(props: {
   /* ─── Step 2: Vendor ─── */
   const [vendors, setVendors] = useState<VendorEntry[]>([]);
   const [vendorDraftOpen, setVendorDraftOpen] = useState(false);
+  /* The supplier-mapping UI now opens as a compact popup (from the header
+     "Map Supplier" button) instead of a full wizard step. */
+  const [supplierPopupOpen, setSupplierPopupOpen] = useState(false);
   /* Vendors loaded from /api/vendors. Both Active and Inactive show
      up — the user may map either, since a draft vendor still needs
      its products linked before the vendor itself can flip to Active. */
@@ -598,6 +615,20 @@ export default function AddProductModal(props: {
     setPrimaryImageFile(null);
     setPrimaryImagePath(null);
     setPrimaryImageUrl(null);
+  };
+
+  const onAttachmentUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!validateImageSize(f)) { e.target.value = ''; return; }
+    setProdAttachmentFile(f);
+    setProdAttachmentPath(null);
+    setProdAttachmentUrl(null);
+  };
+  const clearAttachment = () => {
+    setProdAttachmentFile(null);
+    setProdAttachmentPath(null);
+    setProdAttachmentUrl(null);
   };
 
   const openQcModal = () => {
@@ -809,6 +840,14 @@ export default function AddProductModal(props: {
     setVendorPurchasePrice('');
     setVendorGstPct('');
     setVendorRemarks('');
+  };
+
+  /* Close the Mapped Suppliers popup. In supplier-only mode (opened from a
+     product's "Map Supplier" action) the wizard is hidden, so dismissing the
+     popup must close the whole modal and return to the product view. */
+  const closeSupplierPopup = () => {
+    setSupplierPopupOpen(false);
+    if (props.openSupplierMap) onClose();
   };
 
   const removeVendor = (id: string) =>
@@ -1261,6 +1300,10 @@ export default function AddProductModal(props: {
       secondaryImagePaths.forEach(p => fd.append('secondary_images[]', p));
       secondaryImageFiles.forEach(f => fd.append('secondary_image_files[]', f));
 
+      // Product attachment (optional supporting document/certificate).
+      fd.append('product_attachment', prodAttachmentPath ?? '');
+      if (prodAttachmentFile) fd.append('product_attachment_file', prodAttachmentFile);
+
       const res = await api.post<{
         id: number; product_code?: string;
         primary_image?: string | null; secondary_images?: string[] | null;
@@ -1301,7 +1344,6 @@ export default function AddProductModal(props: {
     const errs: Record<string, string> = {};
     if (!basePrice || basePriceNum <= 0) errs.basePrice  = 'Selling Price is required (must be greater than 0)';
     if (!gstId)                          errs.gstId      = 'GST % is required';
-    if (!markBottom)                     errs.markBottom = 'Mark Bottom / Non Bottom is required';
     if (Object.keys(errs).length) {
       setFieldErrors(errs);
       toast.error('Missing required fields', 'Please fix the highlighted fields');
@@ -1317,10 +1359,11 @@ export default function AddProductModal(props: {
         total_price: totalPrice || null,
         mark_bottom: markBottom || null,
       });
-      onSaved(productId, false);
-      toast.success('Sales saved', 'Pricing and GST saved');
-      markTabReached('quality');
-      setTab('quality');
+      // Stage 2 is the final stage now — saving Sales finalises the product
+      // and closes the wizard (the parent refreshes the list). Suppliers are
+      // mapped afterwards via the header "Map Supplier" popup.
+      onSaved(productId, true);
+      toast.success('Product saved', 'Product created successfully');
     } catch (e: unknown) {
       const msg = extractError(e, 'Failed to save Sales information.');
       toast.error('Save failed', msg);
@@ -1507,14 +1550,29 @@ export default function AddProductModal(props: {
     }
   };
 
+  /* One-shot: when opened via ProductView's "Map Supplier" action, jump to
+     the supplier step and pop the Map Supplier form once the product and
+     masters have finished loading. */
+  const supplierMapFiredRef = useRef(false);
+  useEffect(() => {
+    if (props.openSupplierMap && !supplierMapFiredRef.current && productId && !mastersLoading && !loadingEdit) {
+      supplierMapFiredRef.current = true;
+      setSupplierPopupOpen(true);
+      setVendorDraftOpen(true);
+    }
+  }, [props.openSupplierMap, productId, mastersLoading, loadingEdit]);
+
   return createPortal((
     // Backdrop click intentionally does NOT close the wizard — the
     // user has multi-step form data in flight; an accidental click
     // outside would wipe everything. The Cancel button and the
     // top-right X are the only dismissal paths.
-    <div className="apm-backdrop">
+    <div className={`apm-backdrop ${props.openSupplierMap ? 'apm-backdrop-supplieronly' : ''}`}>
       <style>{SCOPED_CSS}</style>
-      <div className="apm-modal" onClick={(e) => e.stopPropagation()}>
+      {/* Supplier-only mode (opened from a product's "Map Supplier"): the
+          full edit wizard is hidden so only the standalone Map Supplier
+          popup shows over the dim backdrop. */}
+      <div className={`apm-modal ${props.openSupplierMap ? 'apm-modal-hidden' : ''}`} onClick={(e) => e.stopPropagation()}>
         {/* ─── Gradient header ─── */}
         <div className="apm-head">
           <div className="apm-head-left">
@@ -1536,19 +1594,61 @@ export default function AddProductModal(props: {
                   ? 'Link this product to one or more suppliers with purchase pricing.'
                   : (initialId
                       ? 'Update product details — identity, pricing, compliance and dimensions.'
-                      : 'Add complete product details — identity, pricing, compliance and dimensions.')}
+                      : 'Create products with pricing, compliance, quality controls, and supplier mapping for procurement and sales readiness.')}
               </div>
             </div>
           </div>
-          <button className="apm-close" onClick={onClose} aria-label="Close">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-          </button>
+          {/* Header quick-action pills — reuse the modal's EXISTING handlers:
+              · GST (%)      → the same GST-master quick-add used by the Sales
+                               tab's GST "+" (setQuickAdd('gst_percentage')).
+              · Map Supplier → the same supplier-mapping draft used on Step 2
+                               (setVendorDraftOpen). On Step 1 we only jump to
+                               Step 2 when the product already exists so we
+                               never bypass the save gating. */}
+          <div className="apm-head-actions">
+            <button
+              type="button"
+              className="apm-head-btn"
+              title="Add / manage GST %"
+              onClick={() => setQuickAdd('gst_percentage')}
+            >
+              GST (%)
+            </button>
+            <button
+              type="button"
+              className="apm-head-btn"
+              title="Map a supplier to this product"
+              onClick={() => {
+                if (productId) { setSupplierPopupOpen(true); return; }
+                toast.error('Save the product first', 'Complete Product Information (Save & Next) before mapping suppliers.');
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>
+              Map Supplier
+            </button>
+            <button className="apm-close" onClick={onClose} aria-label="Close">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          </div>
         </div>
 
-        {/* ─── Step strip — two pill cards side by side ─── */}
+        {/* ─── Step strip — the prototype's two stages: Core → Sales ─── */}
         <div className="apm-stepper">
-          <StepperItem n={1} title="Product Information" sub="Identity, pricing, compliance" current={step} icon={<i className="ri-home-line" />} />
-          <StepperItem n={2} title="Map Product Supplier"  sub="Link suppliers with pricing"  current={step} icon={<i className="ri-shield-check-line" />} />
+          <StepperItem
+            n={1}
+            title="Product Core Information"
+            sub="Identity, classification & general info"
+            current={tab === 'core' ? 1 : 2}
+            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>}
+          />
+          <div className={`apm-step-connector${tab !== 'core' ? ' done' : ''}`} />
+          <StepperItem
+            n={2}
+            title="For Sales Department"
+            sub="Pricing, GST & sales details"
+            current={tab === 'core' ? 1 : 2}
+            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>}
+          />
         </div>
 
         {/* ─── Body ─── */}
@@ -1562,8 +1662,8 @@ export default function AddProductModal(props: {
                 <PreviousStages
                   open={previousOpen}
                   onToggle={() => setPreviousOpen(v => !v)}
-                  completed={tab === 'sales' ? 1 : 2}
-                  total={3}
+                  completed={1}
+                  total={1}
                   stages={[
                     {
                       name: 'PRODUCT CORE',
@@ -1594,37 +1694,15 @@ export default function AddProductModal(props: {
                 />
               )}
 
-              <div className="apm-tabs">
-                {(['core', 'sales', 'quality'] as Tab[]).map(t => {
-                  const labels: Record<Tab, string> = { core: 'Product Core Information', sales: 'For Sales Department', quality: 'Quality & Compliance' };
-                  const locked = !canSwitchToTab(t);
-                  return (
-                    <button
-                      key={t}
-                      className={`apm-tab ${tab === t ? 'on' : ''}${locked ? ' is-locked' : ''}`}
-                      onClick={() => {
-                        if (locked) {
-                          toast.error('Locked', 'Complete the previous step with "Save & Next" to unlock this tab.');
-                          return;
-                        }
-                        setTab(t);
-                      }}
-                      title={locked ? 'Locked — complete the previous step first' : undefined}
-                    >
-                      {labels[t]}{locked && <i className="ri-lock-line" style={{ marginLeft: 6, fontSize: 12 }} />}
-                    </button>
-                  );
-                })}
-              </div>
-
               {tab === 'core' && (
+                <>
                 <SectionCard
-                  tone="blue"
+                  tone="violet"
                   icon={
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
                   }
-                  title="Product Core Information"
-                  subtitle="Basic identity, classification and media"
+                  title="PRODUCT CORE INFORMATION"
+                  subtitle="Product identity, description, and classification"
                 >
                   <div className="apm-grid-2">
                     <Field label="Product Name" required icon={<i className="ri-product-hunt-line" />} error={fieldErrors.name}>
@@ -1644,7 +1722,7 @@ export default function AddProductModal(props: {
                       maxLength={DESCRIPTION_MAX}
                       rows={3}
                     />
-                    <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2, textAlign: 'right' }}>
+                    <div style={{ position: 'absolute', right: 10, bottom: 8, fontSize: 11, color: 'var(--vz-secondary-color)', pointerEvents: 'none' }}>
                       {description.length}/{DESCRIPTION_MAX}
                     </div>
                   </Field>
@@ -1679,8 +1757,14 @@ export default function AddProductModal(props: {
                     />
                   </div>
 
-                  <div className="apm-inner-section">
-                    <div className="apm-inner-title">PRODUCT GENERAL INFORMATION</div>
+                </SectionCard>
+
+                <SectionCard
+                  tone="amber"
+                  icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /></svg>}
+                  title="PRODUCT GENERAL INFORMATION"
+                  subtitle="Handling, classification, and packaging attributes"
+                >
                     <div className="apm-grid-3">
                       <Field label="Haz / Non Haz" required error={fieldErrors.hazType}>
                         <SelectInput
@@ -1731,69 +1815,34 @@ export default function AddProductModal(props: {
                         <SelectInput value={packagingMaterialId} onChange={(v) => { setPackagingMaterialId(v); clearFieldError('packagingMaterialId'); }} placeholder="Select" options={optPackaging} />
                       </Field>
                     </div>
-                    <div className="apm-grid-2 apm-inv-conf-row">
-                      <div className="apm-inv-grid">
-                        {/* Batch / Serial / Cat / Lot numbers are alphanumeric in
-                            real use (e.g. "BATCH-2024-A1", "SN12345-Z"). The old
-                            handler stripped every non-digit, so anything the user
-                            typed with letters or hyphens was silently truncated —
-                            and pure-letter codes got saved as empty strings, which
-                            is why the Product View later showed "—" for all four
-                            fields. Accept the full string verbatim now. */}
-                        <Field label="Batch No" icon={<i className="ri-hashtag" />}>
-                          <input
-                            className="apm-input apm-input-mf"
-                            placeholder="Numeric only"
-                            value={batchNo}
-                            inputMode="numeric"
-                            maxLength={TRACKING_MAX}
-                            onChange={e => handleNumericTrackingChange(e.target.value, setBatchNo)}
-                          />
-                        </Field>
-                        <Field label="Serial No" icon={<i className="ri-barcode-line" />}>
-                          <input
-                            className="apm-input apm-input-mf"
-                            placeholder="Numeric only"
-                            value={serialNo}
-                            inputMode="numeric"
-                            maxLength={TRACKING_MAX}
-                            onChange={e => handleNumericTrackingChange(e.target.value, setSerialNo)}
-                          />
-                        </Field>
-                        <Field label="Cat No" icon={<i className="ri-price-tag-3-line" />}>
-                          <input
-                            className="apm-input apm-input-mf"
-                            placeholder="Numeric only"
-                            value={catNo}
-                            inputMode="numeric"
-                            maxLength={TRACKING_MAX}
-                            onChange={e => handleNumericTrackingChange(e.target.value, setCatNo)}
-                          />
-                        </Field>
-                        <Field label="Lot No" icon={<i className="ri-list-check-2" />}>
-                          <input
-                            className="apm-input apm-input-mf"
-                            placeholder="Numeric only"
-                            value={lotNo}
-                            inputMode="numeric"
-                            maxLength={TRACKING_MAX}
-                            onChange={e => handleNumericTrackingChange(e.target.value, setLotNo)}
-                          />
-                        </Field>
-                      </div>
-                      <Field label="Confidential Info" icon={<i className="ri-lock-2-line" />}>
-                        <textarea
-                          className="apm-input apm-input-mf apm-textarea apm-conf-textarea"
-                          placeholder="Confidential information"
-                          value={confidential}
-                          onChange={e => handleConfidentialChange(e.target.value)}
-                          maxLength={CONFIDENTIAL_MAX}
-                          rows={6}
-                        />
-                      </Field>
-                    </div>
-                  </div>
+                    <Field label="Confidential Info" icon={<i className="ri-lock-2-line" />}>
+                      <textarea
+                        className="apm-input apm-input-mf apm-textarea"
+                        placeholder="Confidential information"
+                        value={confidential}
+                        onChange={e => handleConfidentialChange(e.target.value)}
+                        maxLength={CONFIDENTIAL_MAX}
+                        rows={4}
+                      />
+                    </Field>
                 </SectionCard>
+
+                <SectionCard
+                  tone="violet"
+                  icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>}
+                  title="PRODUCT ATTACHMENT"
+                  subtitle="Supporting document, certificate or specification"
+                >
+                  <UploadDropzone
+                    label="Product Attachment"
+                    hint="Click to upload attachment"
+                    multiple={false}
+                    preview={attachmentPreview ? [attachmentPreview] : []}
+                    onPick={onAttachmentUpload}
+                    onRemove={clearAttachment}
+                  />
+                </SectionCard>
+                </>
               )}
 
               {tab === 'sales' && (
@@ -1832,9 +1881,6 @@ export default function AddProductModal(props: {
                       </div>
                     </Field>
                   </div>
-                  <Field label="Mark Bottom / Non Bottom" required error={fieldErrors.markBottom}>
-                    <SelectInput value={markBottom} onChange={(v) => { setMarkBottom(v); clearFieldError('markBottom'); }} placeholder="Select" options={BOTTOM_OPTIONS} />
-                  </Field>
                 </SectionCard>
               )}
 
@@ -2001,78 +2047,28 @@ export default function AddProductModal(props: {
             </>
           )}
 
-          {!mastersLoading && !loadingEdit && step === 2 && (
-            <>
-              {/* All Step-1 data carried into Step 2 */}
-              <PreviousStages
-                open={previousOpen}
-                onToggle={() => setPreviousOpen(v => !v)}
-                completed={3}
-                total={3}
-                stages={[
-                  {
-                    name: 'PRODUCT CORE',
-                    tone: 'violet',
-                    fields: [
-                      { label: 'Product Name', value: name || '—' },
-                      { label: 'Generic Name', value: genericName || '—' },
-                      { label: 'HSN/SAC',      value: labelOf(optHsn, hsnId) },
-                      { label: 'Segment',      value: labelOf(optSegments, segmentId) },
-                      { label: 'Haz/Non-Haz',  value: hazType || '—' },
-                      { label: 'UOM',          value: labelOf(optUoms, uomId) },
-                      { label: 'Brand',        value: brand || '—' },
-                      { label: 'Condition',    value: labelOf(optConditions, conditionId) },
-                    ],
-                  },
-                  {
-                    name: 'SALES CONFIG',
-                    tone: 'amber',
-                    fields: [
-                      { label: 'Base Price',  value: basePrice ? `₹${basePriceNum}` : '—' },
-                      { label: 'GST %',       value: gstPctStr || '—' },
-                      { label: 'GST Amount',  value: gstAmt ? `₹${gstAmt}` : '—' },
-                      { label: 'Total Price', value: totalPrice ? `₹${totalPrice}` : '—' },
-                      { label: 'Mark Bottom', value: markBottom || '—' },
-                    ],
-                  },
-                  {
-                    name: 'QUALITY & COMPLIANCE',
-                    tone: 'green',
-                    fields: [
-                      { label: 'Net Weight',   value: netWeight   ? `${netWeight} kg` : '—' },
-                      { label: 'Gross Weight', value: grossWeight ? `${grossWeight} kg` : '—' },
-                      { label: 'Length',       value: length ? `${length} cm` : '—' },
-                      { label: 'Width',        value: width  ? `${width} cm`  : '—' },
-                      { label: 'Height',       value: height ? `${height} cm` : '—' },
-                    ],
-                    /* Per-QC detail rows replace the "QC Records : N"
-                       count so the user can scan what was actually
-                       captured (and open the attachment) without
-                       flipping back to the QC tab. */
-                    extras: qcRecords.map((q, i) => ({
-                      label: `QC ${String(i + 1).padStart(2, '0')}`,
-                      pairs: [
-                        { k: 'Name',       v: q.name || '—' },
-                        { k: 'Purpose',    v: q.purpose || '—' },
-                        { k: 'Issued By',  v: q.issuedBy || '—' },
-                        { k: 'Min Accept', v: q.minAcceptance || '—' },
-                      ],
-                      attachment: q.attachmentName
-                        ? { name: q.attachmentName, href: q.attachmentUrl || '' }
-                        : null,
-                    })),
-                  },
-                ]}
-              />
-
-              {!vendorDraftOpen && (
-                <div className="apm-vendor-toolbar">
-                  <div className="apm-vendor-toolbar-title">Map Product Supplier</div>
-                  <button className="apm-btn-primary" onClick={() => setVendorDraftOpen(true)}>
-                    <span>+</span> Map New Supplier
+          {supplierPopupOpen && createPortal((
+            <div className="apm-sup-overlay" onClick={closeSupplierPopup}>
+              <div className="apm-sup-modal" onClick={(e) => e.stopPropagation()}>
+                <div className="apm-sup-head">
+                  <div className="apm-sup-head-ico">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+                  </div>
+                  <div className="apm-sup-head-txt">
+                    <div className="apm-sup-title">Mapped Suppliers</div>
+                    <div className="apm-sup-sub">Suppliers linked to this product with purchase price &amp; GST</div>
+                  </div>
+                  <button className="apm-sup-close" onClick={closeSupplierPopup} aria-label="Close">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                   </button>
                 </div>
-              )}
+                <div className="apm-sup-body">
+              <div className="apm-sup-bar">
+                <span className="apm-sup-countpill">{vendors.length} supplier{vendors.length !== 1 ? 's' : ''} mapped</span>
+                <button type="button" className="apm-sup-map" onClick={() => setVendorDraftOpen(true)}>
+                  <span>+</span> Map Supplier
+                </button>
+              </div>
 
               {vendorDraftOpen && createPortal((
                 /* Backdrop click does NOT close — the Map Vendor form
@@ -2084,8 +2080,8 @@ export default function AddProductModal(props: {
                       <div className="apm-mv-popup-title">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
                         <div>
-                          <div className="apm-mv-popup-title-main">{vendorEditingId ? 'Edit Mapped Supplier' : 'Map Product Supplier'}</div>
-                          <div className="apm-mv-popup-title-sub">{vendorEditingId ? 'Update supplier selection and pricing' : 'Select a supplier and enter purchase pricing'}</div>
+                          <div className="apm-mv-popup-title-main">{vendorEditingId ? 'Edit Mapped Supplier' : 'Map Supplier'}</div>
+                          <div className="apm-mv-popup-title-sub">Link a supplier with purchase price &amp; GST for this product</div>
                         </div>
                       </div>
                       <button className="apm-close apm-mv-close" onClick={closeVendorDraft} aria-label="Close">
@@ -2094,189 +2090,131 @@ export default function AddProductModal(props: {
                     </div>
 
                     <div className="apm-mv-popup-body">
-                      <div className="apm-grid-2">
-                        <Field label="Select Supplier" required>
-                          <SelectInput value={vendorSelectedCode} onChange={setVendorSelectedCode} placeholder="Select supplier"
+                      {/* 3-column grid (prototype "Map Supplier" form) */}
+                      <div className="apm-grid-3">
+                        <Field label="Supplier Name" required>
+                          <SelectInput value={vendorSelectedCode} onChange={setVendorSelectedCode} placeholder="Select Supplier Name"
                             options={vendorOpts.map(v => ({
                               value: v.code,
-                              label: `${v.code} — ${v.name}${v.status && v.status !== 'active' ? ` (${v.status.charAt(0).toUpperCase()}${v.status.slice(1)})` : ''}`,
+                              label: `${v.name}${v.status && v.status !== 'active' ? ` (${v.status.charAt(0).toUpperCase()}${v.status.slice(1)})` : ''}`,
                             }))}
                           />
                         </Field>
-                        <span />
-                      </div>
+                        <Field label="Supplier Code">
+                          <input className="apm-input apm-readonly" value={vendorSelected?.code ?? ''} readOnly placeholder="Auto-fills from supplier" />
+                        </Field>
+                        <Field label="Supplier Type">
+                          <input className="apm-input apm-readonly" value={vendorSelected ? '—' : ''} readOnly placeholder="—" />
+                        </Field>
 
-                      {/* Read-only vendor info grid */}
-                      <div className="apm-vendor-info">
-                        <InfoCell label="Supplier Code"        value={vendorSelected?.code   ?? 'NA'} />
-                        <InfoCell label="Supplier Company Name" value={vendorSelected?.name  ?? 'NA'} />
-                        <InfoCell label="Company Website"      value={vendorSelected?.website ?? 'NA'} />
-                        <InfoCell label="Contact person name" value={vendorSelected?.contact ?? 'NA'} />
-                        <InfoCell label="Contact no"           value={vendorSelected?.phone  ?? 'NA'} />
-                        <InfoCell label="Email ID"             value={vendorSelected?.email  ?? 'NA'} />
-                        <InfoCell label="Designation"          value={vendorSelected?.designation ?? 'NA'} />
-                        <InfoCell label="Attachments"          value="—" />
-                      </div>
-
-                      <div className="apm-grid-4">
-                        <Field label="Purchase Price" required>
+                        <Field label="State">
+                          <input className="apm-input apm-readonly" value={vendorSelected ? '—' : ''} readOnly placeholder="—" />
+                        </Field>
+                        <Field label="Contact Person">
+                          <input className="apm-input apm-readonly" value={vendorSelected?.contact ?? ''} readOnly placeholder="—" />
+                        </Field>
+                        <Field label="Purchase Price (₹)" required>
                           <div className="apm-input-icon">
                             <span className="apm-input-icon-prefix">₹</span>
-                            <input className="apm-input has-prefix" type="number" placeholder="0.00" value={vendorPurchasePrice} onChange={e => setVendorPurchasePrice(e.target.value)} />
+                            <input className="apm-input has-prefix" type="number" placeholder="Enter purchase price" value={vendorPurchasePrice} onChange={e => setVendorPurchasePrice(e.target.value)} />
                           </div>
                         </Field>
-                        {/* GST% is inherited from the product's Sales Config
-                            step — locked here so a vendor mapping can never
-                            carry a different rate than the parent product. */}
+
+                        {/* GST% is inherited from the product's Sales Config step —
+                            locked so a vendor mapping can't carry a different rate. */}
                         <Field label="GST %">
-                          <input
-                            className="apm-input apm-readonly"
-                            value={gstPctStr || '—'}
-                            readOnly
-                            title="GST % comes from the product's Sales Config (Step 2)"
-                          />
+                          <input className="apm-input apm-readonly" value={gstPctStr || '—'} readOnly title="GST % comes from the product's Sales Config (Step 2)" />
                         </Field>
-                        <Field label="GST Amount">
+                        <Field label="GST Amount (₹)">
                           <div className="apm-input-icon">
                             <span className="apm-input-icon-prefix">₹</span>
-                            <input className="apm-input has-prefix apm-readonly" value={vendorGsta.toFixed(2)} readOnly />
+                            <input className="apm-input has-prefix apm-readonly" value={vendorGsta > 0 ? vendorGsta.toFixed(2) : ''} readOnly placeholder="Auto-computed" />
                           </div>
                         </Field>
-                        <Field label="Total Amount">
+                        <Field label="Total Amount (₹)">
                           <div className="apm-input-icon">
                             <span className="apm-input-icon-prefix">₹</span>
-                            <input className="apm-input has-prefix apm-readonly apm-total" value={vendorTota.toFixed(2)} readOnly />
+                            <input className="apm-input has-prefix apm-readonly apm-total" value={vendorTota > 0 ? vendorTota.toFixed(2) : ''} readOnly placeholder="Auto-computed" />
                           </div>
                         </Field>
                       </div>
-
-                      {/* Map date is auto-stamped server-side (and locally
-                          defaults to today()), so the user no longer picks
-                          it. Remarks gets the full row. */}
-                      <Field label="Remarks" icon={<i className="ri-chat-3-line" />} error={vendorRemarksError(vendorRemarks)}>
-                        <textarea
-                          className="apm-input apm-input-mf apm-textarea"
-                          placeholder={`Enter remarks (${REMARKS_MIN}–${REMARKS_MAX} characters)`}
-                          value={vendorRemarks}
-                          onChange={e => setVendorRemarks(e.target.value)}
-                          maxLength={REMARKS_MAX}
-                          rows={2}
-                        />
-                        <span className="apm-char-count">{vendorRemarks.length}/{REMARKS_MAX}</span>
-                      </Field>
                     </div>
 
                     <div className="apm-mv-popup-foot">
                       <button className="apm-btn-ghost" onClick={closeVendorDraft}>Cancel</button>
                       <button className="apm-btn-primary" onClick={saveVendorDraft} disabled={!vendorSelected || !vendorPp}>
-                        {vendorEditingId ? 'Save Changes' : 'Save Supplier'}
+                        {vendorEditingId ? 'Save Changes' : 'Save'}
                       </button>
                     </div>
                   </div>
                 </div>
               ), document.body)}
 
-              {/* Mapped vendor table — same shell as the Clients master table */}
-              {vendors.length > 0 && (
-                <div className="apm-vendor-table-card">
-                  <div className="apm-vendor-table-head">
-                    <div className="apm-vendor-table-title">
-                      <i className="ri-links-line" />
-                      Mapped Suppliers
-                      <span className="apm-vendor-table-count">{vendors.length}</span>
-                    </div>
-                  </div>
-                  <div className="table-responsive table-card border rounded">
-                    <table className="table align-middle table-nowrap mb-0">
-                      <thead className="table-light">
-                        <tr>
-                          <th scope="col">Sr No</th>
-                          <th scope="col">Product/Supplier Code</th>
-                          <th scope="col">Supplier Company Name</th>
-                          <th scope="col">Company Website</th>
-                          <th scope="col">Purchase Price</th>
-                          <th scope="col">GST %</th>
-                          <th scope="col">GST Amount</th>
-                          <th scope="col">Total Amount</th>
-                          <th scope="col">Map Date</th>
-                          <th scope="col">Remarks</th>
-                          <th scope="col">Actions</th>
+              {/* Compact mapped-suppliers table (prototype design) */}
+              {vendors.length === 0 ? (
+                <div className="apm-sup-empty">No suppliers mapped yet. Click &quot;Map Supplier&quot; to begin.</div>
+              ) : (
+                <div className="apm-sup-tablewrap">
+                  <table className="apm-sup-table">
+                    <thead>
+                      <tr>
+                        <th>Sr No</th><th>Supplier</th><th>Code</th><th>Type</th><th>State</th><th>Contact</th>
+                        <th>Price (₹)</th><th>GST %</th><th>GST (₹)</th><th>Total (₹)</th><th aria-label="Remove" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {vendors.map((v, i) => (
+                        <tr key={v.id}>
+                          <td><span className="apm-sup-sr">{String(i + 1).padStart(2, '0')}</span></td>
+                          <td className="apm-sup-cname">{v.vendorName}</td>
+                          <td><span className="apm-sup-code">{v.vendorCode}</span></td>
+                          <td>—</td>
+                          <td>—</td>
+                          <td className="apm-sup-cperson">{v.contactPerson || '—'}</td>
+                          <td>₹{v.purchasePrice.toLocaleString()}</td>
+                          <td>{v.gstPct.toFixed(0)}%</td>
+                          <td>₹{v.gstAmt.toFixed(2)}</td>
+                          <td className="apm-sup-ctotal">₹{v.totalAmt.toLocaleString()}</td>
+                          <td>
+                            <button type="button" className="apm-sup-del" title="Remove supplier" onClick={() => setVendorDeleteTarget(v)}>×</button>
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {vendors.map((v, i) => (
-                          <tr key={v.id}>
-                            <td><span className="text-muted fs-13">{i + 1}</span></td>
-                            <td><span className="fw-medium text-primary font-monospace fs-13">{v.productCode}/{v.vendorCode}</span></td>
-                            <td><span className="fw-semibold fs-13">{v.vendorName}</span></td>
-                            <td>
-                              {v.website ? (
-                                <a href={`https://${v.website}`} target="_blank" rel="noreferrer" className="text-body text-decoration-none d-inline-flex align-items-center gap-1">
-                                  <i className="ri-global-line text-muted fs-13" />
-                                  <span className="fs-13">{v.website}</span>
-                                </a>
-                              ) : <span className="text-muted fs-13">—</span>}
-                            </td>
-                            <td><span className="fw-medium fs-13">₹{v.purchasePrice.toLocaleString()}</span></td>
-                            <td><span className="fs-13">{v.gstPct.toFixed(2)}%</span></td>
-                            <td><span className="fs-13">₹{v.gstAmt.toFixed(2)}</span></td>
-                            <td><span className="text-success fw-semibold fs-13">₹{v.totalAmt.toLocaleString()}</span></td>
-                            <td><span className="fs-13">{v.mapDate || <span className="text-muted">—</span>}</span></td>
-                            <td>
-                              {/* Remarks can be arbitrarily long and were
-                                  blowing out the table width / forcing a long
-                                  horizontal scroll. Truncate the display to 25
-                                  chars with an ellipsis and surface the full
-                                  text in a hover tooltip (native title). */}
-                              {v.remarks
-                                ? (
-                                  <span className="fs-13" title={v.remarks}>
-                                    {v.remarks.length > 25 ? `${v.remarks.slice(0, 25)}…` : v.remarks}
-                                  </span>
-                                )
-                                : <span className="text-muted fs-13">—</span>}
-                            </td>
-                            <td>
-                              <div className="d-flex gap-1">
-                                <QcActionBtn
-                                  title="Edit"
-                                  icon="ri-pencil-line"
-                                  color="info"
-                                  onClick={() => openVendorEdit(v)}
-                                />
-                                <QcActionBtn
-                                  title="Delete"
-                                  icon="ri-delete-bin-line"
-                                  color="danger"
-                                  onClick={() => setVendorDeleteTarget(v)}
-                                />
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
-            </>
-          )}
+                </div>
+                <div className="apm-sup-foot">
+                  <button className="apm-btn-ghost" onClick={closeSupplierPopup}>Close</button>
+                  <button className="apm-btn-primary" onClick={saveVendorsAndFinish} disabled={saving || vendors.length === 0}>
+                    {saving ? 'Saving…' : 'Save Product'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ), document.body)}
         </div>
 
         {/* ─── Footer ─── */}
         {/* Footer Cancel removed — the header ✕ already dismisses the
             modal, and shipping two Cancel paths confused users. The
             action cluster (Previous + Save) now sits flush right. */}
-        <div className="apm-foot apm-foot-actions-only">
+        <div className="apm-foot">
+          <div className="apm-foot-left">
+            <span className="apm-req-hint">
+              <span className="apm-req-hint-dot" />
+              Fields marked with <span className="apm-req">*</span> are required
+            </span>
+          </div>
           <div className="apm-foot-right">
             {(step === 2 || (step === 1 && tab !== 'core')) && (
               <button
                 className="apm-btn-outline"
                 disabled={saving}
                 onClick={() => {
-                  if (step === 2)              { setStep(1); setTab('quality'); }
-                  else if (tab === 'quality')  { setTab('sales'); }
-                  else if (tab === 'sales')    { setTab('core'); }
+                  if (step === 2)            { setStep(1); setTab('sales'); }
+                  else if (tab === 'sales')  { setTab('core'); }
                 }}
               >
                 ← Previous
@@ -2296,13 +2234,12 @@ export default function AddProductModal(props: {
                 className="apm-btn-primary"
                 disabled={saving || loadingEdit || mastersLoading}
                 onClick={() => {
-                  if (tab === 'core')         saveCore();
-                  else if (tab === 'sales')   saveSales();
-                  else if (tab === 'quality') saveQuality();
+                  if (tab === 'core')       saveCore();
+                  else if (tab === 'sales') saveSales();
                 }}
               >
                 {saving ? <span className="apm-spinner" /> : null}
-                {saving ? 'Saving…' : <>Save &amp; Next →</>}
+                {saving ? 'Saving…' : (tab === 'core' ? <>Save &amp; Next →</> : <>Submit Product</>)}
               </button>
             )}
           </div>
@@ -2419,6 +2356,8 @@ function StepperItem(props: { n: number; title: string; sub: string; current: nu
         <div className="apm-step-title">{title}</div>
         <div className="apm-step-sub">{sub}</div>
       </div>
+      {state === 'active' && <span className="apm-step-flag">In Progress</span>}
+      {state === 'done' && <span className="apm-step-flag apm-step-flag-done">Completed</span>}
     </div>
   );
 }
@@ -2436,9 +2375,9 @@ function SectionCard(props: {
       <div className="apm-section-head">
         <div className="apm-section-head-left">
           <div className="apm-section-icon">{props.icon}</div>
-          <div>
-            <div className="apm-section-title">{props.title}</div>
-            <div className="apm-section-sub">{props.subtitle}</div>
+          <div className="apm-section-titles">
+            <span className="apm-section-title">{props.title}</span>
+            {props.subtitle && <span className="apm-section-sub">| {props.subtitle}</span>}
           </div>
         </div>
         {props.headerAction}
@@ -2519,7 +2458,6 @@ function Field(props: {
       </span>
       {props.icon ? (
         <div className="apm-master-field">
-          <span className="apm-master-field-icon">{props.icon}</span>
           {props.children}
         </div>
       ) : props.children}
@@ -2642,29 +2580,35 @@ function PreviousStages(props: {
   stages: PrevStage[];
 }) {
   return (
-    <div className="apm-prev">
-      <div className="apm-prev-head">
-        <div className="apm-prev-title">
-          <span className="apm-prev-check">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-          </span>
-          What you did in previous stages
-          <span className="apm-prev-chip">Stage {props.completed} of {props.total} Complete</span>
+    <div className={`apm-prev ${props.open ? 'is-open' : ''}`}>
+      <div className="apm-prev-head" onClick={props.onToggle}>
+        <span className="apm-prev-ico">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+        </span>
+        <div className="apm-prev-headtext">
+          <div className="apm-prev-title">What you did in previous stages</div>
+          <div className="apm-prev-sub">Stage {props.completed} completed — review your entry below</div>
         </div>
-        <button className="apm-prev-toggle" onClick={props.onToggle}>{props.open ? 'Hide' : 'Show'}</button>
+        <span className="apm-prev-badge">{props.completed} stage{props.completed !== 1 ? 's' : ''} completed</span>
+        <span className="apm-prev-chev">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+        </span>
       </div>
       {props.open && (
         <div className="apm-prev-body">
-          {props.stages.map(s => (
+          {props.stages.map((s, si) => (
             <div key={s.name} className={`apm-prev-stage tone-${s.tone}`}>
-              <div className="apm-prev-stage-label">⊕ {s.name}</div>
-              <div className="apm-prev-grid">
+              <div className="apm-prev-sumtitle">
+                <span className="apm-prev-sumcheck">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                </span>
+                STAGE {si + 1} — {s.name}
+              </div>
+              <div className="apm-prev-sumgrid">
                 {s.fields.map(f => (
-                  <div key={f.label} className="apm-prev-field">
-                    <div className="apm-prev-field-label">{f.label}</div>
-                    {/* `title` exposes the full value as a native tooltip
-                        when the cell truncates — cheap and a11y-friendly. */}
-                    <div className="apm-prev-field-value" title={f.value}>{f.value}</div>
+                  <div key={f.label} className="apm-prev-sumcell">
+                    <span className="apm-prev-sumk">{f.label}</span>
+                    <span className="apm-prev-sumv" title={f.value}>{f.value}</span>
                   </div>
                 ))}
               </div>
@@ -3154,8 +3098,8 @@ const SCOPED_CSS = `
   position: fixed; inset: 0;
   /* Above Velzon topbar (1002) and vertical-menu overlays (1003-1004). */
   z-index: 1090;
-  background: rgba(15, 23, 42, .55);
-  backdrop-filter: blur(3px);
+  background: radial-gradient(ellipse at 50% 0%, rgba(91,33,182,.5), rgba(20,12,40,.62));
+  backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
   display: flex; align-items: center; justify-content: center;
   padding: 24px 20px;
   overflow-y: auto;
@@ -3166,29 +3110,44 @@ const SCOPED_CSS = `
      (both reduced from their original ~1440 cap to the same 1224
      value for visual consistency across the three onboarding
      forms). */
-  width: 100%; max-width: 1224px;
+  width: 100%; max-width: 1200px;
   max-height: calc(100vh - 48px);
   margin: auto;
-  background: #fff;
-  border-radius: 18px;
+  background:
+    radial-gradient(ellipse at 12% 0%, rgba(196,181,253,.25), transparent 45%),
+    radial-gradient(ellipse at 100% 8%, rgba(167,139,250,.22), transparent 50%),
+    linear-gradient(180deg, #fbf9ff 0%, #f5f1fe 55%, #efe9fd 100%);
+  border: 1px solid rgba(196,181,253,.7);
+  border-radius: 22px;
   overflow: hidden;
   display: flex; flex-direction: column;
-  box-shadow: 0 30px 80px rgba(15, 23, 42, .45);
+  box-shadow: 0 40px 90px rgba(45,20,90,.5), 0 0 0 1px rgba(255,255,255,.5) inset;
   color: #1e1b4b;
+  animation: apmPop .26s cubic-bezier(.22,1,.36,1);
 }
+@keyframes apmPop { from { transform: translateY(18px) scale(.97); opacity: 0; } to { transform: none; opacity: 1; } }
 .apm-modal *, .apm-modal *::before, .apm-modal *::after { box-sizing: border-box; }
 
 /* ─── Header ─── */
 .apm-head {
-  position: relative;
+  position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  padding: 18px 22px;
-  background:
-    linear-gradient(115deg, rgba(255,255,255,0.10) 0%, transparent 35%, transparent 65%, rgba(0,0,0,0.08) 100%),
-    linear-gradient(135deg, #5b21b6 0%, #6d28d9 35%, #7c3aed 70%, #8b5cf6 100%);
+  padding: 14px 22px;
+  background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 28%, #6d28d9 55%, #7c3aed 80%, #8b5cf6 100%);
   color: #fff;
 }
-.apm-head-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.apm-head::before {
+  content: ''; position: absolute; inset: 0; opacity: .5; pointer-events: none;
+  background-image:
+    radial-gradient(circle at 18% 120%, rgba(255,255,255,.18), transparent 42%),
+    radial-gradient(circle at 88% -30%, rgba(216,180,254,.4), transparent 45%);
+}
+.apm-head::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.16), transparent);
+}
+.apm-head-left { display: flex; align-items: center; gap: 14px; min-width: 0; position: relative; z-index: 1; }
+.apm-head-actions { position: relative; z-index: 1; }
 .apm-head-icon {
   width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
   background: rgba(255,255,255,.18);
@@ -3206,6 +3165,26 @@ const SCOPED_CSS = `
   transition: background .15s, transform .12s;
 }
 .apm-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
+
+/* ─── Header quick-action pills (GST (%) / Map Supplier) — glassy buttons
+   sitting to the left of the close ✕, mirroring the prototype's sf-head-btn. */
+.apm-head-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.apm-head-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: inherit; font-size: 12px; font-weight: 700; color: #fff;
+  cursor: pointer; white-space: nowrap;
+  border-radius: 10px; padding: 8px 15px;
+  background: linear-gradient(135deg, rgba(255,255,255,.26), rgba(255,255,255,.12));
+  border: 1px solid rgba(255,255,255,.4);
+  box-shadow: 0 4px 12px rgba(0,0,0,.16), 0 1px 0 rgba(255,255,255,.35) inset;
+  text-shadow: 0 1px 2px rgba(0,0,0,.18);
+  transition: background .15s, transform .15s, box-shadow .15s;
+}
+.apm-head-btn:hover {
+  background: linear-gradient(135deg, rgba(255,255,255,.42), rgba(255,255,255,.22));
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0,0,0,.22), 0 1px 0 rgba(255,255,255,.4) inset;
+}
 
 /* ─── Stepper — pill-card style matching the Customer Legal Identity sample.
    Each step is its own rounded card with a coloured icon tile + step number
@@ -3283,6 +3262,30 @@ const SCOPED_CSS = `
   transition: background .25s;
 }
 .apm-step-line.done { background: #16a34a; }
+
+/* Connector line drawn BETWEEN the two step cards — turns green once the
+   first step is complete (step 2 reached), matching sf-stage-link. */
+.apm-step-connector {
+  align-self: center; flex-shrink: 0;
+  width: 36px; height: 3px; border-radius: 3px;
+  background: linear-gradient(90deg, #d6cbf7, #c4b5fd);
+  transition: background .25s;
+}
+.apm-step-connector.done { background: linear-gradient(90deg, #22c55e, #86efac); }
+
+/* Status flag on each card — "In Progress" (violet) on the active card,
+   "Completed" (green) once passed. Mirrors sf-stage-flag. */
+.apm-step-flag {
+  flex-shrink: 0; margin-left: auto;
+  font-size: 8.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
+  color: #fff; border-radius: 20px; padding: 4px 10px;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  box-shadow: 0 3px 8px rgba(124,58,237,.35);
+}
+.apm-step-flag-done {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  box-shadow: 0 3px 8px rgba(34,197,94,.35);
+}
 
 /* ─── Body ─── */
 .apm-body {
@@ -3370,20 +3373,18 @@ const SCOPED_CSS = `
 }
 .apm-section-blue   { border-color: #c4b5fd; border-left-color: #7c3aed; }
 .apm-section-violet { border-color: #c4b5fd; border-left-color: #7c3aed; }
-.apm-section-amber  { border-color: #fde68a; border-left-color: #f59e0b; }
+.apm-section-amber  { border-color: #c4b5fd; border-left-color: #7c3aed; }
 .apm-section-green  { border-color: #bbf7d0; border-left-color: #16a34a; }
 .apm-section-navy   { border-color: #c4b5fd; border-left-color: #4338ca; }
 
 .apm-section-head {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 12px 16px;
+  background: #fff; border-bottom: 1px solid #ece7f8;
 }
-.apm-section-blue   .apm-section-head { background: linear-gradient(135deg, #ede9fe, #f5f3ff); }
-.apm-section-violet .apm-section-head { background: linear-gradient(135deg, #ede9fe, #f3e8ff); }
-.apm-section-amber  .apm-section-head { background: linear-gradient(135deg, #fef3c7, #fef9c3); }
-.apm-section-green  .apm-section-head { background: linear-gradient(135deg, #dcfce7, #ecfdf5); }
-.apm-section-navy   .apm-section-head { background: linear-gradient(135deg, #ede9fe, #e0e7ff); }
-.apm-section-head-left { display: flex; align-items: center; gap: 10px; }
+.apm-section-head-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+/* Inline "TITLE | note" sub-heading (matches the prototype sf-section-head) */
+.apm-section-titles { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; min-width: 0; }
 .apm-section-icon {
   width: 32px; height: 32px; border-radius: 9px;
   display: flex; align-items: center; justify-content: center;
@@ -3395,8 +3396,8 @@ const SCOPED_CSS = `
 .apm-section-green  .apm-section-icon { background: linear-gradient(135deg,#16a34a,#0f8a3e); }
 .apm-section-navy   .apm-section-icon { background: linear-gradient(135deg,#4338ca,#312e81); }
 
-.apm-section-title { font-size: 13.5px; font-weight: 800; color: #1e1b4b; }
-.apm-section-sub   { font-size: 11px; color: #6b7280; margin-top: 1px; }
+.apm-section-title { font-size: 12.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #5b21b6; }
+.apm-section-sub   { font-size: 11px; font-weight: 600; color: #a78bfa; }
 .apm-section-amber .apm-section-title { color: #92400e; }
 .apm-section-amber .apm-section-sub   { color: #b45309; }
 .apm-section-green .apm-section-title { color: #166534; }
@@ -3427,6 +3428,7 @@ const SCOPED_CSS = `
   color: #475569; padding-bottom: 6px;
   border-bottom: 1px dashed #cbd5e1;
 }
+.apm-inner-note { font-weight: 600; letter-spacing: .01em; color: #94a3b8; margin-left: 4px; }
 
 /* ─── Form layout grids ─── */
 .apm-grid-2 { display: grid; grid-template-columns: 1fr 1fr;       gap: 12px; }
@@ -3522,7 +3524,7 @@ const SCOPED_CSS = `
 .apm-master-field:has(textarea.apm-input-mf:focus) .apm-master-field-icon {
   transform: scale(1.08);
 }
-.apm-input-mf { padding-left: 36px !important; }
+.apm-input-mf { padding-left: 12px !important; }
 
 /* ─── MasterSelect inside the modal — restyle the trigger to match apm-input ─── */
 .apm-master-select .master-select-wrap .master-select-toggle {
@@ -3654,14 +3656,18 @@ const SCOPED_CSS = `
 }
 .apm-mv-popup-head {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 18px;
-  background: linear-gradient(135deg, #2b3a85 0%, #1e2a5f 100%);
+  padding: 15px 20px;
+  background: linear-gradient(115deg, #5b21b6 0%, #7c3aed 55%, #8b5cf6 100%);
   color: #fff;
 }
 .apm-mv-popup-title {
-  display: inline-flex; align-items: center; gap: 10px;
+  display: inline-flex; align-items: center; gap: 12px;
 }
-.apm-mv-popup-title svg { flex-shrink: 0; }
+.apm-mv-popup-title > svg {
+  flex-shrink: 0; width: 34px; height: 34px; padding: 8px;
+  border-radius: 11px; background: rgba(255,255,255,.18);
+  border: 1px solid rgba(255,255,255,.25);
+}
 .apm-mv-popup-title-main { font-size: 15px; font-weight: 800; line-height: 1.2; }
 .apm-mv-popup-title-sub  { font-size: 11.5px; font-weight: 500; opacity: .8; margin-top: 2px; }
 .apm-mv-close {
@@ -3801,83 +3807,57 @@ const SCOPED_CSS = `
 
 /* ─── Previous stages summary ─── */
 .apm-prev {
-  background: #f0fdf4;
-  border: 1.5px solid #86efac;
-  border-radius: 12px;
+  position: relative;
+  border: 1px solid #d6cbf7;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f5f1fe, #ede9fe);
   margin-bottom: 14px;
   overflow: hidden;
+  box-shadow: 0 3px 12px rgba(124,58,237,.08);
 }
-.apm-prev-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 10px 14px;
-  background: linear-gradient(135deg, #dcfce7, #ecfdf5);
-  border-bottom: 1px solid #bbf7d0;
+.apm-prev::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
 }
-.apm-prev-title {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-size: 12.5px; font-weight: 800; color: #166534;
+.apm-prev-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; cursor: pointer; user-select: none; }
+.apm-prev-ico {
+  width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  box-shadow: 0 3px 8px rgba(124,58,237,.4);
 }
-.apm-prev-check {
-  width: 22px; height: 22px; border-radius: 50%;
+.apm-prev-headtext { min-width: 0; }
+.apm-prev-title { font-size: 13px; font-weight: 800; color: #3b0764; }
+.apm-prev-sub { font-size: 10.5px; font-weight: 500; color: #7c3aed; margin-top: 1px; }
+.apm-prev-badge {
+  margin-left: auto; flex-shrink: 0;
+  font-size: 10px; font-weight: 800; color: #fff;
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  border-radius: 20px; padding: 5px 12px;
+  box-shadow: 0 3px 8px rgba(124,58,237,.35);
+}
+.apm-prev-chev { color: #7c3aed; display: inline-flex; flex-shrink: 0; transition: transform .22s; }
+.apm-prev.is-open .apm-prev-chev { transform: rotate(180deg); }
+
+.apm-prev-body { background: #fff; }
+.apm-prev-stage { display: block; border-top: 1px solid #f1ecfb; }
+.apm-prev-stage:first-child { border-top: none; }
+.apm-prev-sumtitle {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 11px; font-weight: 800; letter-spacing: .06em; color: #166534;
+  padding: 14px 16px 10px;
+}
+.apm-prev-sumcheck {
+  width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
   background: linear-gradient(135deg, #22c55e, #16a34a);
-  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
-.apm-prev-chip {
-  display: inline-flex; align-items: center;
-  padding: 3px 10px; border-radius: 99px;
-  background: #fff; color: #166534;
-  font-size: 11px; font-weight: 700;
-  border: 1px solid #bbf7d0;
-}
-.apm-prev-toggle {
-  height: 28px; padding: 0 12px;
-  background: #fff; border: 1px solid #bbf7d0; color: #166534;
-  border-radius: 7px;
-  font-family: inherit; font-size: 11.5px; font-weight: 800; cursor: pointer;
-  transition: background .15s, border-color .15s;
-}
-.apm-prev-toggle:hover { background: #dcfce7; border-color: #4ade80; }
-
-.apm-prev-body { padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 10px; }
-.apm-prev-stage { display: flex; flex-direction: column; gap: 6px; }
-.apm-prev-stage-label {
-  font-size: 10.5px; font-weight: 800; letter-spacing: .08em;
-  display: inline-flex; align-items: center;
-}
-.apm-prev-stage.tone-violet .apm-prev-stage-label { color: #5b21b6; }
-.apm-prev-stage.tone-amber  .apm-prev-stage-label { color: #b45309; }
-.apm-prev-stage.tone-green  .apm-prev-stage-label { color: #166534; }
-
-/* Inline "Label : Value" grid — mirrors the customer / consignee /
- * vendor read-only summary so the whole product suite reads the same.
- * Was previously a two-line label-above-value layout; switching to
- * the inline pair format keeps stages compact and visually consistent
- * with the rest of the modals (.acm-hs-grid + .avm-id-summary-row). */
-.apm-prev-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  column-gap: 28px;
-  row-gap: 13px;
-}
-.apm-prev-field {
-  display: flex; align-items: baseline; gap: 6px;
-  font-size: 12px; min-width: 0;
-  cursor: default; padding: 1px 2px; border-radius: 4px;
-  transition: background .12s;
-}
-.apm-prev-field:hover { background: rgba(124,58,237,0.06); }
-.apm-prev-field-label {
-  color: #64748b; font-weight: 600;
-  letter-spacing: .01em; white-space: nowrap; flex-shrink: 0;
-}
-.apm-prev-field-label::after { content: ' :'; }
-.apm-prev-field-value {
-  color: #6d28d9; font-weight: 600; line-height: 1.4;
-  min-width: 0; flex: 1 1 auto;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
+.apm-prev-sumgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 18px; padding: 10px 16px 16px; }
+.apm-prev-sumcell { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.apm-prev-sumk { font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #94a3b8; }
+.apm-prev-sumv { font-size: 13px; font-weight: 700; color: #1e1b2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 900px) {
-  .apm-prev-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .apm-prev-sumgrid { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* Extras row — sits BELOW the field grid for stages that ship
@@ -4003,6 +3983,17 @@ const SCOPED_CSS = `
 .apm-foot.apm-foot-actions-only { justify-content: flex-end; }
 .apm-foot-left  { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
 .apm-foot-right { display: flex; align-items: center; gap: 8px; }
+/* "Fields marked with * are required" hint — dot + red star, mirrors sf-req. */
+.apm-req-hint {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 11.5px; font-weight: 600; color: #7c6ba3;
+}
+.apm-req-hint-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.18);
+  flex-shrink: 0;
+}
+.apm-req-hint .apm-req { text-transform: none; }
 .apm-foot-error {
   font-size: 12.5px; font-weight: 700; color: #b91c1c;
   background: #fef2f2; border: 1px solid #fecaca;
@@ -4080,6 +4071,8 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .apm-step-active .apm-step-title { color: #c4b5fd; }
 [data-bs-theme="dark"] .apm-step-done   { background: linear-gradient(135deg, #14241a 0%, #1a3225 100%); border-color: #166534; }
 [data-bs-theme="dark"] .apm-step-done   .apm-step-title { color: #4ade80; }
+[data-bs-theme="dark"] .apm-step-connector { background: linear-gradient(90deg, #4c1d95, #5b21b6); }
+[data-bs-theme="dark"] .apm-step-connector.done { background: linear-gradient(90deg, #166534, #22c55e); }
 
 [data-bs-theme="dark"] .apm-body {
   background: linear-gradient(180deg, #110c25 0%, #1a1430 100%);
@@ -4116,14 +4109,10 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .apm-section-amber { border-color: #78350f; border-left-color: #f59e0b; }
 [data-bs-theme="dark"] .apm-section-green { border-color: #14532d; border-left-color: #4ade80; }
 
-[data-bs-theme="dark"] .apm-section-blue   .apm-section-head,
-[data-bs-theme="dark"] .apm-section-violet .apm-section-head,
-[data-bs-theme="dark"] .apm-section-navy   .apm-section-head { background: linear-gradient(135deg, #221852, #2a1d5c); }
-[data-bs-theme="dark"] .apm-section-amber  .apm-section-head { background: linear-gradient(135deg, #3f2c0a, #4a3408); }
-[data-bs-theme="dark"] .apm-section-green  .apm-section-head { background: linear-gradient(135deg, #14241a, #1a3225); }
+[data-bs-theme="dark"] .apm-section-head { background: #1c1633; border-bottom-color: #3b2a6b; }
 
-[data-bs-theme="dark"] .apm-section-title { color: #ede9fe; }
-[data-bs-theme="dark"] .apm-section-sub   { color: #a89fc7; }
+[data-bs-theme="dark"] .apm-section-title { color: #c4b5fd; }
+[data-bs-theme="dark"] .apm-section-sub   { color: #8b7fc0; }
 [data-bs-theme="dark"] .apm-section-amber .apm-section-title { color: #fde68a; }
 [data-bs-theme="dark"] .apm-section-amber .apm-section-sub   { color: #fcd34d; }
 [data-bs-theme="dark"] .apm-section-green .apm-section-title { color: #bbf7d0; }
@@ -4201,18 +4190,13 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .apm-vendor-toolbar-title { color: #ede9fe; }
 
 /* Previous stages — dark */
-[data-bs-theme="dark"] .apm-prev { background: #14241a; border-color: #14532d; }
-[data-bs-theme="dark"] .apm-prev-head { background: linear-gradient(135deg, #14241a, #1a3225); border-bottom-color: #14532d; }
-[data-bs-theme="dark"] .apm-prev-title { color: #bbf7d0; }
-[data-bs-theme="dark"] .apm-prev-chip { background: #14241a; color: #bbf7d0; border-color: #166534; }
-[data-bs-theme="dark"] .apm-prev-toggle { background: #14241a; color: #bbf7d0; border-color: #166534; }
-[data-bs-theme="dark"] .apm-prev-toggle:hover { background: #1a3225; border-color: #22c55e; }
-[data-bs-theme="dark"] .apm-prev-field:hover { background: rgba(167,139,250,0.10); }
-[data-bs-theme="dark"] .apm-prev-field-label { color: #94a3b8; }
-[data-bs-theme="dark"] .apm-prev-field-value { color: #c4b5fd; }
-[data-bs-theme="dark"] .apm-prev-stage.tone-violet .apm-prev-stage-label { color: #c4b5fd; }
-[data-bs-theme="dark"] .apm-prev-stage.tone-amber  .apm-prev-stage-label { color: #fde68a; }
-[data-bs-theme="dark"] .apm-prev-stage.tone-green  .apm-prev-stage-label { color: #bbf7d0; }
+[data-bs-theme="dark"] .apm-prev { background: #1c1633; border-color: rgba(167,139,250,.28); }
+[data-bs-theme="dark"] .apm-prev-title { color: #f3e8ff; }
+[data-bs-theme="dark"] .apm-prev-sub { color: #c4b5fd; }
+[data-bs-theme="dark"] .apm-prev-body { background: #241a47; }
+[data-bs-theme="dark"] .apm-prev-stage { border-top-color: rgba(167,139,250,.16); }
+[data-bs-theme="dark"] .apm-prev-sumk { color: #9a93b3; }
+[data-bs-theme="dark"] .apm-prev-sumv { color: #ede9fe; }
 /* QC summary rows in the read-only "previous stages" block — the
    light-mode value text uses #1e1b4b which disappears on dark green.
    Lift k/v/attach contrast so each QC row reads clearly in dark mode. */
@@ -4273,6 +4257,8 @@ const SCOPED_CSS = `
   background: #14102a; border-top-color: #3b2a6b;
 }
 [data-bs-theme="dark"] .apm-foot-error { background: #3f1d1d; border-color: #7f1d1d; color: #fca5a5; }
+[data-bs-theme="dark"] .apm-req-hint { color: #a89fc7; }
+[data-bs-theme="dark"] .apm-req-hint-dot { background: #a78bfa; box-shadow: 0 0 0 3px rgba(167,139,250,.2); }
 [data-bs-theme="dark"] .apm-btn-ghost { background: #1a1430; border-color: #3b2a6b; color: #c4b5fd; }
 [data-bs-theme="dark"] .apm-btn-ghost:hover { background: #221852; border-color: #4c1d95; }
 [data-bs-theme="dark"] .apm-btn-outline { background: #1a1430; border-color: #4c1d95; color: #c4b5fd; }
@@ -4321,4 +4307,48 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .apm-qa-popup { background: #14102a; color: #ede9fe; }
 [data-bs-theme="dark"] .apm-qa-head { background: linear-gradient(135deg, #4c1d95, #7c3aed); }
 [data-bs-theme="dark"] .apm-qa-foot { border-top-color: #3b2a6b; }
+
+/* Supplier-only mode — hide the wizard so only the Map Supplier popup shows. */
+.apm-modal-hidden { display: none; }
+.apm-backdrop-supplieronly { background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; }
+
+/* ═══ Mapped Suppliers list popup (compact, opened from "Map Supplier") ═══ */
+.apm-sup-overlay { position: fixed; inset: 0; z-index: 1095; background: rgba(30,20,60,.5); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: flex; align-items: flex-start; justify-content: center; padding: 40px 24px; overflow-y: auto; font-family: var(--font-sans); }
+.apm-sup-modal { width: 100%; max-width: 1080px; margin: auto; background: #fff; border: 1px solid rgba(196,181,253,.6); border-radius: 18px; overflow: hidden; box-shadow: 0 30px 80px rgba(20,10,60,.45); animation: apmSupPop .24s cubic-bezier(.22,1,.36,1); }
+@keyframes apmSupPop { from { transform: translateY(16px) scale(.98); opacity: 0; } to { transform: none; opacity: 1; } }
+.apm-sup-head { display: flex; align-items: center; gap: 12px; padding: 15px 20px; background: linear-gradient(115deg,#4c1d95 0%,#6d28d9 50%,#8b5cf6 100%); color: #fff; }
+.apm-sup-head-ico { width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.25); display: flex; align-items: center; justify-content: center; }
+.apm-sup-head-txt { flex: 1; min-width: 0; }
+.apm-sup-title { font-size: 16px; font-weight: 800; letter-spacing: -.2px; }
+.apm-sup-sub { font-size: 11.5px; color: rgba(255,255,255,.82); margin-top: 1px; }
+.apm-sup-close { width: 32px; height: 32px; border-radius: 9px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.14); color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: background .15s; }
+.apm-sup-close:hover { background: rgba(255,255,255,.26); }
+.apm-sup-body { padding: 16px 20px; background: #fff; max-height: calc(100vh - 220px); overflow-y: auto; }
+.apm-sup-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 20px; background: #faf8ff; border-top: 1px solid #efe9fb; }
+.apm-sup-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.apm-sup-countpill { font-size: 12px; font-weight: 700; color: #6d28d9; background: #f5f1fe; border: 1px solid #e2d4fa; border-radius: 20px; padding: 6px 14px; }
+.apm-sup-map { display: inline-flex; align-items: center; gap: 6px; font-family: inherit; font-size: 12.5px; font-weight: 700; color: #fff; border: none; border-radius: 10px; padding: 8px 16px; cursor: pointer; background: linear-gradient(135deg,#8b5cf6,#7c3aed,#6d28d9); box-shadow: 0 5px 14px rgba(124,58,237,.4); transition: transform .15s, box-shadow .15s; }
+.apm-sup-map:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(124,58,237,.5); }
+.apm-sup-map span { font-size: 15px; line-height: 1; }
+.apm-sup-empty { text-align: center; color: #7c3aed; font-weight: 600; font-size: 13px; padding: 34px 16px; border: 1.5px dashed #d6cbf7; border-radius: 12px; background: #fbf9ff; }
+.apm-sup-tablewrap { overflow-x: auto; border: 1px solid #efe9fb; border-radius: 12px; }
+.apm-sup-table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
+.apm-sup-table thead th { text-align: left; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #94a3b8; padding: 10px 14px; border-bottom: 1px solid #efe9fb; }
+.apm-sup-table tbody td { padding: 11px 14px; border-bottom: 1px solid #f4f0fc; color: #334155; font-weight: 600; vertical-align: middle; }
+.apm-sup-table tbody tr:last-child td { border-bottom: none; }
+.apm-sup-table tbody tr:hover { background: #faf8ff; }
+.apm-sup-sr { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; border-radius: 6px; font-size: 10.5px; font-weight: 800; color: #6d28d9; background: #f5f1fe; border: 1px solid #e2d4fa; }
+.apm-sup-cname { font-weight: 800; color: #1e1b4b; }
+.apm-sup-cperson { color: #7c3aed; font-weight: 700; }
+.apm-sup-code { font-size: 10.5px; font-weight: 800; color: #5b21b6; background: #f5f1fe; border: 1px solid #e2d4fa; border-radius: 6px; padding: 2px 8px; }
+.apm-sup-ctotal { font-weight: 800; color: #0f172a; }
+.apm-sup-del { width: 26px; height: 26px; border-radius: 7px; border: 1px solid #fecaca; background: #fef2f2; color: #dc2626; font-size: 15px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .14s, color .14s; }
+.apm-sup-del:hover { background: #dc2626; color: #fff; border-color: transparent; }
+[data-bs-theme="dark"] .apm-sup-table thead th { color: #9a93b3; border-bottom-color: rgba(167,139,250,.16); }
+[data-bs-theme="dark"] .apm-sup-table tbody td { color: #cbd5e1; border-bottom-color: rgba(167,139,250,.1); }
+[data-bs-theme="dark"] .apm-sup-table tbody tr:hover { background: rgba(124,58,237,.12); }
+[data-bs-theme="dark"] .apm-sup-cname, [data-bs-theme="dark"] .apm-sup-ctotal { color: #f1f5f9; }
+[data-bs-theme="dark"] .apm-sup-modal { background: #1c1633; border-color: rgba(167,139,250,.28); }
+[data-bs-theme="dark"] .apm-sup-body { background: #1a1430; }
+[data-bs-theme="dark"] .apm-sup-foot { background: rgba(255,255,255,.03); border-top-color: rgba(167,139,250,.16); }
 `;
