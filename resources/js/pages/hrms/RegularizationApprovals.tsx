@@ -87,7 +87,7 @@ export default function RegularizationApprovals() {
         <div className="d-flex align-items-center gap-2">
           <i className="ri-checkbox-multiple-line fs-5 text-primary" />
           <h6 className="mb-0 fw-bold">Regularization Requests</h6>
-          {!loading && <span className="badge bg-light text-dark">{rows.length}</span>}
+          {!loading && <span className="badge bg-light text-dark">{(rows ?? []).length}</span>}
         </div>
         <div className="d-flex align-items-center gap-2">
           <div className="btn-group btn-group-sm" role="group">

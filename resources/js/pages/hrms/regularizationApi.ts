@@ -88,5 +88,9 @@ export const regularizationApi = {
     api.post<{ data: ApiRegularization }>(`/regularizations/${id}/cancel`).then(r => r.data.data),
 
   approvals: (params: { status?: string; search?: string; branch_id?: number } = {}) =>
-    api.get<{ data: ApiRegularization[] }>('/regularizations/approvals', { params }).then(r => r.data.data),
+    api.get<{ data: ApiRegularization[] }>('/regularizations/approvals', { params })
+      // Always resolve to an array — a missing/differently-shaped `data.data`
+      // (e.g. an empty or error body) must not leave `rows` undefined and crash
+      // the list render (`rows.length`).
+      .then(r => (Array.isArray(r.data?.data) ? r.data.data : (Array.isArray(r.data) ? (r.data as unknown as ApiRegularization[]) : []))),
 };

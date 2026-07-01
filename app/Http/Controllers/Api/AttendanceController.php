@@ -177,6 +177,12 @@ class AttendanceController extends Controller
             }
         }
 
+        // Holidays for this employee's group across the log window (the month),
+        // so holiday days surface as "Holiday" in the Log + Calendar.
+        $empHolidaySet = $emp->holiday_group_id
+            ? ($this->holidayDatesForGroups([$emp->holiday_group_id], (clone $start), (clone $end))[$emp->holiday_group_id] ?? [])
+            : [];
+
         return response()->json([
             'employee' => [
                 'id'              => $emp->id,
@@ -210,7 +216,8 @@ class AttendanceController extends Controller
                 $this->expectedMinutesFromWindow($shiftStart, $shiftEnd),
                 $this->parseWeeklyOff((string) ($emp->weekly_off ?? '')),
                 $start->toDateString(),
-                $end->toDateString()
+                $end->toDateString(),
+                $empHolidaySet
             ),
         ]);
     }
@@ -362,6 +369,9 @@ class AttendanceController extends Controller
         // loaded once per request (keyed by group) to avoid an N+1.
         $holidayGroupIds = $employees->pluck('holiday_group_id')->filter()->unique()->values()->all();
         $holidayByGroup  = $this->holidayDatesForGroups($holidayGroupIds, (clone $dateC)->startOfMonth(), (clone $dateC)->endOfMonth());
+        // Wider holiday set covering the full 90-day Log / Calendar window, so
+        // holidays outside the current month still surface in the log/calendar.
+        $holidayByGroupLog = $this->holidayDatesForGroups($holidayGroupIds, \Carbon\Carbon::parse($histStart), (clone $dateC));
 
         // Denominator window end = month-to-date: never count days in the
         // future toward "absent". For a fully-past month this is the month
@@ -394,7 +404,7 @@ class AttendanceController extends Controller
             foreach ($leaveEmpIds as $lid) $onLeaveSet[(int) $lid] = true;
         }
 
-        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $date, $histStart, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $mtdEndC, $dateC, $onLeaveSet) {
+        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $date, $histStart, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $holidayByGroupLog, $mtdEndC, $dateC, $onLeaveSet) {
             [$parsedStart, $parsedEnd] = $this->parseShiftWindow((string) ($emp->shift ?? ''));
             $shiftStart = $parsedStart ?: $defaultShiftStart;
             $shiftEnd   = $parsedEnd   ?: $defaultShiftEnd;
@@ -488,7 +498,7 @@ class AttendanceController extends Controller
             // and the month range pills paint a full picture, not just the
             // days the employee happened to punch.
             $hRows = $historyRows->get($emp->id, collect());
-            $logs = $this->buildHistoryLogs($hRows, $emp, $shiftStart, $expectedMinutes, $weeklyOffSet, $histStart, $date);
+            $logs = $this->buildHistoryLogs($hRows, $emp, $shiftStart, $expectedMinutes, $weeklyOffSet, $histStart, $date, $holidayByGroupLog[$emp->holiday_group_id] ?? []);
 
             return [
                 'id'                => $emp->id,
@@ -720,7 +730,7 @@ class AttendanceController extends Controller
     }
 
   
-    private function buildHistoryLogs($rows, Employee $emp, ?string $shiftStart, int $expectedMinutes, array $weeklyOffSet, string $from, string $to): array
+    private function buildHistoryLogs($rows, Employee $emp, ?string $shiftStart, int $expectedMinutes, array $weeklyOffSet, string $from, string $to, array $holidaySet = []): array
     {
         // Index real Attendance rows by ISO date for O(1) lookup as we
         // walk through the window day-by-day.
@@ -742,6 +752,7 @@ class AttendanceController extends Controller
             $iso = $cursor->toDateString();
             $r   = $byIso[$iso] ?? null;
             $isWO = isset($weeklyOffSet[$cursor->dayOfWeek]);
+            $isHoliday = isset($holidaySet[$iso]);
             $isFuture = $iso > $todayLocal;
 
             if ($r) {
@@ -790,6 +801,14 @@ class AttendanceController extends Controller
                 $lastOut = '—';
                 $worked  = 0;
                 $segments = [];
+            }
+
+            // Company holiday for THIS employee's holiday group → surface it as
+            // "Holiday" in the Attendance Log + Calendar, unless the day already
+            // carries a productive status (the employee actually punched in on
+            // it, e.g. worked a holiday — keep that).
+            if ($isHoliday && in_array(strtolower((string) $status), ['absent', 'weekly off'], true)) {
+                $status = 'Holiday';
             }
 
             // Signed deviation (sub-hour shortfalls were printing "+0h 30m"

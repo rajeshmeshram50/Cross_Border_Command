@@ -89,13 +89,17 @@ export function MasterSelect({
       setDropDir(spaceBelow < ESTIMATED_HEIGHT && spaceAbove > spaceBelow ? 'up' : 'down');
     };
     update();
-    window.addEventListener('resize', update);
+    // Resize / browser-zoom reflows the whole layout and can strand or clip
+    // the portalled menu away from its trigger — close it instead so it never
+    // shows mispositioned; the user reopens it cleanly at the new size.
+    const closeOnResize = () => setOpen(false);
+    window.addEventListener('resize', closeOnResize);
     // capture:true so scrolls inside ANY ancestor (modals, panels) also
     // recompute the open direction — keeps the menu attached to its trigger
-    // on scroll/resize instead of stranding it at a stale position.
+    // on scroll instead of stranding it at a stale position.
     window.addEventListener('scroll', update, true);
     return () => {
-      window.removeEventListener('resize', update);
+      window.removeEventListener('resize', closeOnResize);
       window.removeEventListener('scroll', update, true);
     };
   }, [open]);
