@@ -442,7 +442,19 @@ export default function HrPayroll() {
         const list = (res.data?.data ?? []) as CycleMonth[];
         if (Array.isArray(list) && list.length) {
           setRawCycles(list);
-          const live = list.find(c => c.status === 'In Progress' || c.status === 'Not Started') ?? list[list.length - 1];
+          // Default to the CURRENT year, not the oldest cycle. The strip is a
+          // trailing 13-month window (oldest→newest) where every empty month
+          // reads "Not Started", so the previous `find(In Progress || Not
+          // Started)` matched the oldest month and snapped the year to the
+          // prior year (#37). Prefer: this year's active cycle → the current
+          // month → any active cycle → newest as a last resort.
+          const curY = today.getFullYear();
+          const curM = today.getMonth() + 1;
+          const live =
+            list.find(c => c.status === 'In Progress' && c.year === curY)
+            ?? list.find(c => c.year === curY && c.month === curM)
+            ?? list.find(c => c.status === 'In Progress')
+            ?? list[list.length - 1];
           if (live?.year)  setSelectedYear(live.year);
           if (live?.month) setCycleKey(monthKey(live.year!, live.month - 1));
         }
