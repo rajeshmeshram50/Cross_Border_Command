@@ -439,13 +439,6 @@ export default function HrHoliday() {
                     </div>
                   </div>
 
-                  {groups.length === 0 && (
-                    <div className="px-3 pt-2" style={{ fontSize: 12 }}>
-                      <span className="rec-pill holiday-tip-pill" style={{ background: '#fff1d6', color: '#b66a00' }}>
-                        <i className="ri-information-line me-1" />Tip: create a Holiday Group first (e.g. “Indian Employees”), then add holidays into it.
-                      </span>
-                    </div>
-                  )}
 
                   <div className="rec-list-scroll">
                     <table className="rec-list-table align-middle table-nowrap mb-0">

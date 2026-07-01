@@ -35,6 +35,7 @@ interface LeavePlan {
   customPolicyFile?: string;
   employees: PlanEmployee[];
   leaveTypes: LeaveTypeRow[];
+  unlocked?: boolean;
 }
 
 interface AccrualConfig {
@@ -74,6 +75,7 @@ interface LeaveAppConfig {
   preventFutureExpected: boolean;
   minIfBalanceMore: { enabled: boolean; balance: number; minDays: number };
   managerCannotOverride: boolean;
+  maxPerMonth: { enabled: boolean; days: number };
   // Sandwich policy — counts intervening weekly-offs / holidays as leave when a
   // leave spans them (e.g. Sat + Mon leave makes the Sunday weekly-off count
   // as leave too). `sandwichClub` extends this across leave types.
@@ -166,6 +168,7 @@ const defaultLeaveTypeConfig = (): LeaveTypeConfig => ({
     preventFutureExpected: true,
     minIfBalanceMore: { enabled: false, balance: 0, minDays: 0 },
     managerCannotOverride: false,
+    maxPerMonth: { enabled: false, days: 0 },
     sandwichWeeklyOff: false,
     sandwichHoliday: false,
     sandwichClub: false,
@@ -323,6 +326,7 @@ function apiPlanToFrontend(api: ApiLeavePlan): LeavePlan {
     customPolicyFile: api.policy_doc_path ?? undefined,
     employees: (api.employees ?? []).map(apiEmployeeToPlanEmployee),
     leaveTypes: (api.leave_types ?? []).map(apiTypeToAssigned),
+    unlocked: !!api.unlocked,
   };
 }
 
@@ -581,12 +585,9 @@ export default function HrLeavePlans() {
 
   const activePlan = plans.find(p => p.id === activePlanId) ?? plans[0];
 
-  // A plan locks once it is fully set up — it has ≥1 leave type AND every type
-  // has its quota configured. Locked plans are view-only: no editing the setup,
-  // assigning/removing types, or re-running Setup. Changes are made by cloning.
-  // (Mirrors the backend `setup_complete` guard in LeavePlanController.)
+  
   const isPlanLocked = (p?: LeavePlan | null): boolean =>
-    !!p && p.leaveTypes.length > 0 && p.leaveTypes.every(t => t.configured);
+    !!p && !p.unlocked && p.leaveTypes.length > 0 && p.leaveTypes.every(t => t.configured);
   const activePlanLocked = isPlanLocked(activePlan);
 
   const onSavePlan = async (
@@ -2548,6 +2549,25 @@ function LeaveAppSectionView({ cfg, update }: { cfg: LeaveAppConfig; update: (p:
 
       <SectionCard icon="ri-file-list-3-line" iconBg="#dbeafe" title="Leave Application Rules">
         <CheckRow checked={cfg.allowHalfDay}      onChange={v => update({ allowHalfDay: v })}      label="Allow half day leave" />
+        <CheckRow
+          checked={cfg.maxPerMonth.enabled}
+          onChange={v => update({ maxPerMonth: { ...cfg.maxPerMonth, enabled: v } })}
+          label={
+            <span className="d-inline-flex align-items-center gap-2 flex-wrap">
+              Allow at most
+              <input
+                type="number"
+                min={0}
+                className="lts-input"
+                style={{ width: 70 }}
+                value={cfg.maxPerMonth.days}
+                onChange={e => update({ maxPerMonth: { ...cfg.maxPerMonth, days: Number(e.target.value) || 0 } })}
+                disabled={!cfg.maxPerMonth.enabled}
+              />
+              day(s) of this leave type per calendar month
+            </span>
+          }
+        />
       </SectionCard>
 
       {/* Sandwich Policy — when a leave spans an intervening weekly-off / holiday

@@ -42,6 +42,7 @@ export interface ApiLeavePlan {
    *  quota setup saved. The employee-form dropdowns hide plans where this is
    *  false (server-computed in LeavePlanController::index). */
   setup_complete?: boolean;
+  unlocked?: boolean;
   client?: { id: number; org_name: string };
   branch?: { id: number; name: string };
   leave_types?: ApiLeaveType[];
